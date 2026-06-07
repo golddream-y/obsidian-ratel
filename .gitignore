@@ -1,0 +1,30 @@
+# vscode
+.vscode
+
+# Intellij
+*.iml
+.idea
+
+# npm
+node_modules
+
+# Don't include the compiled main.js file in the repo.
+# They should be uploaded to GitHub releases instead.
+main.js
+worker.js
+
+# Exclude sourcemaps
+*.map
+
+# obsidian
+data.json
+
+# macOS
+.DS_Store
+
+# ratel-vault data (stored in .obsidian/plugins/ratel-vault/)
+*.db
+*.lance
+
+# superpowers skills (from github.com/obra/superpowers, not project code)
+.superpowers/
