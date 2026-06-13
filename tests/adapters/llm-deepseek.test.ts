@@ -123,6 +123,67 @@ describe('DeepSeekLLM', () => {
 		}).rejects.toThrow('LLM API error: 401 Unauthorized');
 	});
 
+	it('serializes tool call messages correctly in request body', async () => {
+		const llm = new DeepSeekLLM({
+			apiBase: 'https://api.deepseek.com',
+			apiKey: 'sk-test',
+			model: 'deepseek-chat',
+		});
+
+		// Capture the request body
+		let capturedBody: Record<string, unknown> | null = null;
+		mockFetch.mockImplementationOnce(async (_url: string, options: RequestInit) => {
+			capturedBody = JSON.parse(options.body as string);
+			// Return minimal SSE stream
+			const encoder = new TextEncoder();
+			const stream = new ReadableStream({
+				start(controller) {
+					controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"ok"}}]}\n\n'));
+					controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+					controller.close();
+				},
+			});
+			return { ok: true, body: stream };
+		});
+
+		const req: ChatRequest = {
+			messages: [
+				{ role: 'user', content: 'Read test.md' },
+				{ role: 'assistant', content: '', toolCallId: 'call_1', toolName: 'read_note' },
+				{ role: 'tool', content: 'Content of test.md', toolCallId: 'call_1' },
+			],
+			tools: [{
+				name: 'read_note',
+				description: 'Read a note',
+				parameters: { type: 'object', properties: { path: { type: 'string' } } },
+			}],
+		};
+
+		for await (const _ of llm.chat(req)) { /* consume */ }
+
+		expect(capturedBody).not.toBeNull();
+		const messages = capturedBody!.messages as Record<string, unknown>[];
+
+		// User message
+		expect(messages[0]).toEqual({ role: 'user', content: 'Read test.md' });
+
+		// Assistant message with tool_calls
+		expect(messages[1]!.role).toBe('assistant');
+		expect(messages[1]).toHaveProperty('tool_calls');
+		const toolCalls = (messages[1] as { tool_calls: unknown[] }).tool_calls;
+		expect(toolCalls).toHaveLength(1);
+		expect(toolCalls[0]).toEqual({
+			id: 'call_1',
+			type: 'function',
+			function: { name: 'read_note', arguments: '{}' },
+		});
+		// content should be null (not empty string) when toolCallId present and content is empty
+		expect(messages[1]!.content).toBeNull();
+
+		// Tool message with tool_call_id
+		expect(messages[2]).toEqual({ role: 'tool', content: 'Content of test.md', tool_call_id: 'call_1' });
+	});
+
 	it('countTokens returns rough estimate', () => {
 		const llm = new DeepSeekLLM({
 			apiBase: 'https://api.deepseek.com',
