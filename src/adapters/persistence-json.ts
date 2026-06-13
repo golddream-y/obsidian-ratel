@@ -1,4 +1,4 @@
-import type { Persistence, Session, NoteMeta, HookLogEntry } from '../ports/persistence';
+import type { Persistence, SessionRepository, NoteMetaRepository, HookLogRepository, Session, NoteMeta, HookLogEntry } from '../ports/persistence';
 
 interface DataStore {
 	sessions: Record<string, Session>;
@@ -7,9 +7,9 @@ interface DataStore {
 }
 
 export class PersistenceJson implements Persistence {
-	public readonly sessions: PersistenceJson['sessions'];
-	public readonly notes: PersistenceJson['notes'];
-	public readonly hooks: PersistenceJson['hooks'];
+	public readonly sessions: SessionRepository;
+	public readonly notes: NoteMetaRepository;
+	public readonly hooks: HookLogRepository;
 
 	private data: DataStore = { sessions: {}, notes: {}, hookLog: [] };
 

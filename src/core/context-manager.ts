@@ -22,36 +22,36 @@ export class ContextManager {
 	}
 
 	addUserMessage(content: string): void {
-		this.requireSession();
-		this.session.messages.push({ role: 'user', content });
-		this.session.updatedAt = Date.now();
+		const session = this.requireSession();
+		session.messages.push({ role: 'user', content });
+		session.updatedAt = Date.now();
 	}
 
 	addAssistantMessage(content: string): void {
-		this.requireSession();
-		this.session.messages.push({ role: 'assistant', content });
-		this.session.updatedAt = Date.now();
+		const session = this.requireSession();
+		session.messages.push({ role: 'assistant', content });
+		session.updatedAt = Date.now();
 	}
 
 	addAssistantToolCall(toolCall: ToolCall, text: string): void {
-		this.requireSession();
-		this.session.messages.push({
+		const session = this.requireSession();
+		session.messages.push({
 			role: 'assistant',
 			content: text,
 			toolCallId: toolCall.id,
 			toolName: toolCall.name,
 		});
-		this.session.updatedAt = Date.now();
+		session.updatedAt = Date.now();
 	}
 
 	addToolResult(toolCallId: string, result: string): void {
-		this.requireSession();
-		this.session.messages.push({
+		const session = this.requireSession();
+		session.messages.push({
 			role: 'tool',
 			content: result,
 			toolCallId,
 		});
-		this.session.updatedAt = Date.now();
+		session.updatedAt = Date.now();
 	}
 
 	toMessages(): ChatMessage[] {
@@ -68,15 +68,16 @@ export class ContextManager {
 	}
 
 	async save(): Promise<void> {
-		this.requireSession();
-		await this.persistence.sessions.upsert(this.session!);
+		const session = this.requireSession();
+		await this.persistence.sessions.upsert(session);
 	}
 
 	get sessionId(): string {
 		return this.session?.id ?? '';
 	}
 
-	private requireSession(): asserts this is { session: Session } {
+	private requireSession(): Session {
 		if (!this.session) throw new Error('Session not loaded. Call load() first.');
+		return this.session;
 	}
 }
