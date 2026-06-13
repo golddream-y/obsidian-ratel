@@ -16,45 +16,65 @@ export async function* agentLoop(
 	await ctx.load(req.sessionId);
 	ctx.addUserMessage(req.message);
 
-	for (let step = 0; step < MAX_STEPS; step++) {
-		yield { type: 'message.start', payload: { role: 'assistant' as const } };
+	try {
+		for (let step = 0; step < MAX_STEPS; step++) {
+			yield { type: 'message.start', payload: { role: 'assistant' as const } };
 
-		const stream = llm.chat({
-			messages: ctx.toMessages(),
-			tools: tools.definitions(),
-		});
+			let accumulatedText = '';
+			let toolCall: ToolCall | null = null;
 
-		let accumulatedText = '';
-		let toolCall: ToolCall | null = null;
+			try {
+				const stream = llm.chat({
+					messages: ctx.toMessages(),
+					tools: tools.definitions(),
+				});
 
-		for await (const delta of stream) {
-			if (delta.text) {
-				accumulatedText += delta.text;
-				yield { type: 'message.delta', payload: { text: delta.text } };
+				for await (const delta of stream) {
+					if (delta.text) {
+						accumulatedText += delta.text;
+						yield { type: 'message.delta', payload: { text: delta.text } };
+					}
+					if (delta.toolCall) {
+						toolCall = delta.toolCall;
+					}
+				}
+			} catch (err) {
+				const message = err instanceof Error ? err.message : String(err);
+				yield { type: 'error', payload: { code: 'LLM_ERROR', message } };
+				ctx.addAssistantMessage(accumulatedText || `Error: ${message}`);
+				break;
 			}
-			if (delta.toolCall) {
-				toolCall = delta.toolCall;
+
+			if (!toolCall) {
+				ctx.addAssistantMessage(accumulatedText);
+				break;
 			}
+
+			yield { type: 'tool.call', payload: { name: toolCall.name, args: toolCall.args } };
+
+			// Pre-hook
+			await hooks.run('pre-write', toolCall);
+
+			// Execute tool with error handling
+			let result: unknown;
+			try {
+				result = await tools.execute(toolCall);
+			} catch (err) {
+				const message = err instanceof Error ? err.message : String(err);
+				yield { type: 'error', payload: { code: 'TOOL_ERROR', message } };
+				result = `Error: ${message}`;
+			}
+
+			yield { type: 'tool.result', payload: { name: toolCall.name, result } };
+
+			// Post-hook
+			await hooks.run('post-write', toolCall);
+
+			ctx.addAssistantToolCall(toolCall, accumulatedText);
+			ctx.addToolResult(toolCall.id, JSON.stringify(result));
 		}
-
-		if (!toolCall) {
-			ctx.addAssistantMessage(accumulatedText);
-			break;
-		}
-
-		yield { type: 'tool.call', payload: { name: toolCall.name, args: toolCall.args } };
-
-		await hooks.run('pre-write', toolCall);
-
-		const result = await tools.execute(toolCall);
-		yield { type: 'tool.result', payload: { name: toolCall.name, result } };
-
-		await hooks.run('post-write', toolCall);
-
-		ctx.addAssistantToolCall(toolCall, accumulatedText);
-		ctx.addToolResult(toolCall.id, JSON.stringify(result));
+	} finally {
+		yield { type: 'message.end', payload: { tokens: ctx.tokenCount() } };
+		await ctx.save();
 	}
-
-	yield { type: 'message.end', payload: { tokens: ctx.tokenCount() } };
-	await ctx.save();
 }
