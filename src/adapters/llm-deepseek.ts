@@ -134,6 +134,14 @@ export class DeepSeekLLM implements LLMClient {
 	private buildRequestBody(req: ChatRequest): Record<string, unknown> {
 		const messages: Record<string, unknown>[] = req.messages.map((m) => {
 			const msg: Record<string, unknown> = { role: m.role, content: m.content };
+			if (m.role === 'assistant' && m.toolCallId) {
+				msg.content = m.content || null;
+				msg.tool_calls = [{
+					id: m.toolCallId,
+					type: 'function',
+					function: { name: m.toolName ?? '', arguments: '{}' },
+				}];
+			}
 			if (m.role === 'tool' && m.toolCallId) {
 				msg.tool_call_id = m.toolCallId;
 			}
