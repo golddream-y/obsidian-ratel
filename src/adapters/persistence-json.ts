@@ -79,9 +79,17 @@ export class PersistenceJson implements Persistence {
 	}
 
 	private loaded = false;
+	private loadingPromise: Promise<void> | null = null;
 
 	private async ensureLoaded(): Promise<void> {
 		if (this.loaded) return;
+		if (!this.loadingPromise) {
+			this.loadingPromise = this.doLoad();
+		}
+		await this.loadingPromise;
+	}
+
+	private async doLoad(): Promise<void> {
 		const raw = await this.loadData();
 		if (raw && typeof raw === 'object') {
 			const stored = raw as Partial<DataStore>;
