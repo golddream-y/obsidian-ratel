@@ -102,15 +102,17 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName('API Key')
 			.setDesc('Embedding model API key')
-			.addText((text) =>
+			.addText((text) => {
+				text.inputEl.type = 'password';
 				text
 					.setPlaceholder('sk-...')
 					.setValue(this.plugin.settings.embedApiKey)
 					.onChange(async (value) => {
 						this.plugin.settings.embedApiKey = value;
 						await this.plugin.saveSettings();
-					}),
-			);
+					});
+			},
+		);
 
 		new Setting(containerEl)
 			.setName('API Base URL')
