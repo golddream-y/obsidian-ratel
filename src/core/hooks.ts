@@ -1,7 +1,6 @@
 // Hooks registry — knowledge governance hooks
-// Moved from src/hooks/index.ts
 
-import type { ToolCall } from '../types';
+import type { ToolCall } from '../ports/llm';
 
 export class HookRegistry {
 	private handlers = new Map<string, Array<(toolCall: ToolCall) => Promise<void>>>();
