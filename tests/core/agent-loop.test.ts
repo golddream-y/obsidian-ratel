@@ -167,4 +167,48 @@ describe('agentLoop', () => {
 
 		expect(sessions.has('s1')).toBe(true);
 	});
+
+	it('handles tool execution error gracefully', async () => {
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence);
+
+		const toolCall: ToolCall = {
+			id: 'call_1',
+			name: 'read_note',
+			args: { path: 'missing.md' },
+		};
+
+		// First LLM response: tool call, second: final answer
+		const llm = createMockLLM([
+			[{ text: '', toolCall }],
+			[{ text: 'Sorry, I could not find that note.' }],
+		]);
+
+		const tools = new ToolRegistry();
+		tools.register({
+			definition: { name: 'read_note', description: 'Read a note', parameters: {} },
+			execute: async () => { throw new Error('File not found: missing.md'); },
+		});
+
+		const hooks = new HookRegistry();
+		const events: AgentEvent[] = [];
+
+		for await (const event of agentLoop(
+			{ sessionId: 's1', message: 'Read missing.md' },
+			ctx,
+			llm,
+			tools,
+			hooks,
+		)) {
+			events.push(event);
+		}
+
+		// Should have error event but continue the loop
+		expect(events.some((e) => e.type === 'error')).toBe(true);
+		// Should still have tool.call and tool.result
+		expect(events.some((e) => e.type === 'tool.call')).toBe(true);
+		expect(events.some((e) => e.type === 'tool.result')).toBe(true);
+		// Should still end normally
+		expect(events.some((e) => e.type === 'message.end')).toBe(true);
+	});
 });
