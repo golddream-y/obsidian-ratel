@@ -71,4 +71,47 @@ describe('WorkerManager', () => {
 		manager.destroy();
 		expect(mockWorker.terminate).toHaveBeenCalled();
 	});
+
+	it('Worker 在指定 timeoutMs 内不响应则 reject', async () => {
+		// 关键路径:用真实 50ms timeout 短时间等待,避免 fakeTimers + microtask 死锁
+		const mockWorker = {
+			postMessage: vi.fn(),
+			onmessage: null as ((e: MessageEvent) => void) | null,
+			onerror: null as ((e: ErrorEvent) => void) | null,
+			terminate: vi.fn(),
+		};
+
+		const manager = new WorkerManager(mockWorker as unknown as Worker, {
+			timeoutMs: 50,
+		});
+
+		const responsePromise = manager.request({
+			type: 'index.status',
+			payload: {},
+		});
+
+		await expect(responsePromise).rejects.toThrow(/timeout/i);
+		manager.destroy();
+	});
+
+	it('超时后调用 terminate 释放 Worker', async () => {
+		const mockWorker = {
+			postMessage: vi.fn(),
+			onmessage: null as ((e: MessageEvent) => void) | null,
+			onerror: null as ((e: ErrorEvent) => void) | null,
+			terminate: vi.fn(),
+		};
+
+		const manager = new WorkerManager(mockWorker as unknown as Worker, {
+			timeoutMs: 50,
+		});
+
+		const responsePromise = manager.request({
+			type: 'index.status',
+			payload: {},
+		});
+
+		await expect(responsePromise).rejects.toThrow();
+		expect(mockWorker.terminate).toHaveBeenCalled();
+	});
 });

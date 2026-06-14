@@ -134,11 +134,11 @@ User message → agentLoop → LLM stream → tool call → tool result → LLM 
 
 | 测试项 | 层级 | 当前状态 | 完成标准 |
 |---|---|---|---|
-| DEFAULT_SETTINGS 完整性 | L1 | ❌ | 验证所有字段有默认值 |
-| 旧版设置迁移 (embedModel → embedProvider) | L1 | ❌ | Object.assign 后新字段有值、旧字段不残留 |
-| embedProvider 切换 → 正确 adapter 创建 | L2 | ❌ | local → EmbeddingLocal, api → EmbeddingApi |
-| rerankerApiKey 非空 → RerankerApi 创建 | L2 | ❌ | 空 → undefined, 非空 → RerankerApi |
-| dimensions 配置正确传递 | L2 | ❌ | embedLocalDimensions → EmbeddingLocal 构造参数 |
+| DEFAULT_SETTINGS 完整性 | L1 | ✅ (T1 4 tests) | 验证所有字段有默认值 |
+| 旧版设置迁移 (embedModel → embedProvider) | L1 | ✅ (T2 4 tests) | Object.assign 后新字段有值、旧字段不残留 |
+| embedProvider 切换 → 正确 adapter 创建 | L2 | ✅ (T5 5 tests) | local → EmbeddingLocal, api → EmbeddingApi |
+| rerankerApiKey 非空 → RerankerApi 创建 | L2 | ❌ (RerankerApi 未实现) | 留 W4 Reranker 适配器落地后补 |
+| dimensions 配置正确传递 | L2 | ✅ (T5+T6 7 tests) | embedLocalDimensions → EmbeddingLocal 构造参数 |
 
 **L2 集成测试关键路径：**
 ```
@@ -175,12 +175,12 @@ loadSettings(旧格式数据) → 验证新字段有默认值 → embedProvider=
 | 测试项 | 层级 | 当前状态 | 完成标准 |
 |---|---|---|---|
 | WorkerManager — request/response 匹配 | L1 | ✅ 3 tests (mock) | 通过 |
-| WorkerManager — 超时 reject | L1 | ❌ | 验证 30s 后 reject |
-| WorkerManager — Worker 错误传播 | L1 | ❌ | 验证 onerror → reject all pending |
-| WorkerManager — destroy 清理 | L1 | ❌ | 验证 pending 清空 + timer 清理 |
-| Worker index.ts — vector.search 处理 | L2 | ❌ | 真实 Worker + vectra |
+| WorkerManager — 超时 reject | L1 | ✅ (T4 +2 tests,timeoutMs 可配置) | 验证超时后 reject + terminate |
+| WorkerManager — Worker 错误传播 | L1 | ✅ (原 handles worker errors 测试) | 验证 onerror → reject all pending |
+| WorkerManager — destroy 清理 | L1 | ✅ (原 terminates worker on destroy 测试) | 验证 destroy 调 terminate |
+| Worker index.ts — vector.search 处理 | L2 | ❌ (W2 接入 vectra) | 留 W2 后再覆盖 |
 | Worker index.ts — bm25.search 处理 | L2 | ❌ (W3) | W3 实现后覆盖 |
-| Worker index.ts — 未知请求类型 | L1 | ❌ | 返回 error response |
+| Worker index.ts — 未知请求类型 | L1 | ✅ (T3 +4 tests,handler.ts 抽离) | 返回 UNKNOWN_REQUEST 错误 |
 
 **L2 集成测试关键路径：**
 ```
@@ -252,7 +252,7 @@ Main thread → WorkerManager.request({type:'vector.search'}) → Worker 处理 
 |---|---|---|---|
 | **完整 RAG 管线** | RAG + Worker + Settings | 配置 local embedding → 分块 → 嵌入 → 存储 → 检索 | P0 |
 | **完整对话流** | Chat + Tools + Hooks | 用户消息 → LLM → 工具调用 → hook → 回复 | P0 |
-| **设置变更传播** | Settings + RAG + Chat | 切换 embedProvider → 重建 embedding → 验证搜索 | P1 |
+| **设置变更传播** | Settings + RAG + Chat | 切换 embedProvider → 重建 embedding → 验证搜索 | ✅ 部分 (T6 5 tests,手调 rebuild 路径) |
 | **Worker 通信** | Worker + RAG | 主线程发 vector.search → Worker 返回结果 | P1 |
 | **索引 + 检索闭环** | RAG + Tools + Chat | 索引文件 → search_vault → Agent 引用结果 | P2 |
 

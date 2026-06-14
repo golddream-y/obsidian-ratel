@@ -23,24 +23,35 @@ interface PendingRequest {
 const REQUEST_TIMEOUT_MS = 30_000;
 
 /**
+ * WorkerManager 构造选项。
+ *
+ * - `timeoutMs`:请求超时毫秒数,默认 30_000。超时后 reject Promise 并 terminate Worker。
+ */
+export interface WorkerManagerOptions {
+	timeoutMs?: number;
+}
+
+/**
  * Worker 通信管理器。
  *
  * 设计要点:
  * - 把 `postMessage` 包成 Promise,调用方写 `await manager.request({...})` 即可。
  * - 用自增计数器 + 时间戳生成 `requestId`,把响应回绑到对应 Promise。
- * - 30 秒超时防止 Worker 假死把主线程 hang 住。
+ * - 30 秒超时防止 Worker 假死把主线程 hang 住;超时后 terminate Worker 释放资源。
  * - `destroy()` 主动 terminate Worker,清空所有 pending Promise。
  *
  * @example
- *   const manager = new WorkerManager(worker);
+ *   const manager = new WorkerManager(worker, { timeoutMs: 5000 });
  *   const res = await manager.request({ type: 'index.status', payload: {} });
  *   manager.destroy();
  */
 export class WorkerManager {
 	private pending = new Map<string, PendingRequest>();
 	private requestCounter = 0;
+	private timeoutMs: number;
 
-	constructor(private worker: Worker) {
+	constructor(private worker: Worker, options: WorkerManagerOptions = {}) {
+		this.timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS;
 		this.worker.onmessage = (e: MessageEvent) => {
 			const data = e.data as WorkerResponse & { _requestId?: string };
 			if (data._requestId) {
@@ -78,8 +89,10 @@ export class WorkerManager {
 			const timer = setTimeout(() => {
 				// 修复:超时清理必须在 map 中移除,避免悬挂 Promise 累积。
 				this.pending.delete(requestId);
+				// 关键路径:超时后 terminate Worker 释放资源,假死的 Worker 不可恢复。
+				this.worker.terminate();
 				reject(new Error(`Worker request timeout: ${req.type}`));
-			}, REQUEST_TIMEOUT_MS);
+			}, this.timeoutMs);
 			this.pending.set(requestId, { resolve, reject, timer });
 			this.worker.postMessage({ ...req, _requestId: requestId });
 		});
