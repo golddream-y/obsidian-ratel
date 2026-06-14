@@ -3,7 +3,6 @@
 
 export interface LLMClient {
 	chat(req: ChatRequest): AsyncIterable<ChatDelta>;
-	embed(texts: string[]): Promise<number[][]>;
 	countTokens(text: string): number;
 }
 

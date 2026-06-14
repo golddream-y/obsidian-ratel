@@ -122,10 +122,6 @@ export class DeepSeekLLM implements LLMClient {
 		}
 	}
 
-	async embed(_texts: string[]): Promise<number[][]> {
-		throw new Error('embed() not implemented in W1 — use W2 vector search instead');
-	}
-
 	countTokens(text: string): number {
 		// Rough estimation: ~4 chars per token for mixed CJK/Latin
 		return Math.ceil(text.length / 4);
