@@ -12,6 +12,9 @@ node_modules
 # They should be uploaded to GitHub releases instead.
 dist/
 
+# Test tmp directories (created by vector-vectra + integration tests)
+tests/tmp/
+
 # Exclude sourcemaps
 *.map
 

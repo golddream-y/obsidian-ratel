@@ -75,8 +75,22 @@ export class EmbeddingApi implements EmbeddingPort {
 		};
 
 		// 关键路径:OpenAI 协议允许 server 乱序返回,必须按 index 排序对齐输入。
-		return data.data
+		const vectors = data.data
 			.sort((a, b) => a.index - b.index)
 			.map((d) => d.embedding);
+
+		// 维度校验:服务端配置错误(模型 / 端点变更)会导致维度不一致。
+		// —— 修复:不在使用方发现"维度不匹配",而是早失败以便快速定位配置问题。
+		for (let i = 0; i < vectors.length; i++) {
+			const vec = vectors[i];
+			if (!vec) continue;
+			if (vec.length !== this.dimensions) {
+				throw new Error(
+					`Embedding dimension mismatch: expected ${this.dimensions}, got ${vec.length} for text index ${i}`,
+				);
+			}
+		}
+
+		return vectors;
 	}
 }

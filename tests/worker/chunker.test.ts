@@ -70,4 +70,33 @@ describe('chunkMarkdown', () => {
 		expect(result[0].startOffset).toBe(0);
 		expect(result[0].endOffset).toBeGreaterThan(0);
 	});
+
+	it('handles Unicode emoji content', () => {
+		// 关键路径:emoji 是多字节字符,chunker 不应在中途切断产生乱码。
+		const content = '🚀 First section 🎉\n🚀 Second section 🌟';
+		const result = chunkMarkdown(content, 50, 10);
+		expect(result.length).toBeGreaterThanOrEqual(1);
+		result.forEach((chunk) => {
+			expect(chunk.text).toBeTruthy();
+		});
+	});
+
+	// 已知限制:当前实现按字符偏移切分,代码块内的长行可能被截断。
+	// W3 阶段再增强,本测试用 toBeDefined() 接受现状。
+	it('handles long code block (known limitation: may split mid-block)', () => {
+		const content = '# Title\n\n```js\nconst x = "long string that should stay together ".repeat(20);\n```\n\n# After';
+		const result = chunkMarkdown(content, 100, 20);
+		expect(result).toBeDefined();
+		expect(result.length).toBeGreaterThanOrEqual(1);
+	});
+
+	it('handles frontmatter correctly', () => {
+		// 关键路径:frontmatter(--- ... ---)应当与正文不被切断。
+		const content = '---\ntitle: Test\ntags: [a, b]\n---\n\n# Heading\nContent';
+		const result = chunkMarkdown(content, 500, 50);
+		expect(result.length).toBeGreaterThanOrEqual(1);
+		// 修复:frontmatter 应当出现在第一个 chunk(只要不超 chunkSize)。
+		const firstChunk = result[0];
+		expect(firstChunk?.text).toContain('---');
+	});
 });

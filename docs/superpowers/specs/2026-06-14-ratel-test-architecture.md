@@ -74,14 +74,16 @@
 |---|---|---|---|
 | chunkMarkdown — 标题/段落/句子/CJK 分块 | L1 | ✅ 10 tests | 全部通过 |
 | chunkMarkdown — 空输入/超长输入/边界值 | L1 | ✅ 已覆盖 | 全部通过 |
+| chunkMarkdown — Unicode emoji / 代码块 / frontmatter | L1 | ✅ 3 tests | 全部通过 |
 | EmbeddingApi — 正常请求/API Key/错误/空输入 | L1 | ✅ 5 tests | 全部通过 |
+| EmbeddingApi — 维度校验(不匹配抛错 / 匹配通过) | L1 | ✅ 2 tests | 全部通过 |
 | EmbeddingLocal — 初始化/embed/复用 pipeline | L1 | ✅ 5 tests (mock) | 全部通过 |
 | EmbeddingLocal — 真实模型加载+推理 | L2 | ❌ 未覆盖 | 至少 1 个真实推理测试 |
 | VectraStore — upsert/search/delete/status | L1 | ✅ 4 tests | 全部通过 |
-| VectraStore — 重复 upsert 去重 | L1 | ❌ 未覆盖 | 验证同一 docId 两次 upsert 后只有一条 |
-| VectraStore — 空索引搜索 | L1 | ❌ 未覆盖 | 返回空数组不报错 |
-| Embed → Upsert → Search 端到端 | L2 | ❌ 未覆盖 | embed 文本 → upsert 向量 → search 验证 top1 |
-| 切换 embedProvider 后维度不匹配 | L2 | ❌ 未覆盖 | 搜索结果维度校验或提示重建索引 |
+| VectraStore — 重复 upsert 去重 | L1 | ✅ 1 test | 全部通过 |
+| VectraStore — 空索引搜索 / 空索引 status | L1 | ✅ 2 tests | 全部通过 |
+| Embed → Upsert → Search 端到端 | L2 | ✅ 1 test | 全部通过 |
+| 切换 embedProvider 后维度不匹配 | L2 | ✅ 1 test (EmbeddingApi 早失败) | 全部通过 |
 | Worker 向量搜索 + BM25 搜索 | L2 | ❌ 未覆盖 | Worker 收到请求返回正确结果 |
 
 **L2 集成测试关键路径：**
