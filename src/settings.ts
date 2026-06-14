@@ -1,6 +1,22 @@
+/**
+ * @file src/settings.ts
+ * @description Ratel Vault 设置项定义 + Obsidian 设置面板渲染
+ * @module settings
+ * @depends obsidian, ./main
+ */
+
 import { App, PluginSettingTab, Setting } from 'obsidian';
 import RatelVaultPlugin from './main';
 
+/**
+ * 全部用户可配置项。
+ *
+ * - Chat:DeepSeek / OpenAI 兼容协议的 LLM 配置。
+ * - Embedding:本地 ONNX(`local`)或远端 OpenAI 兼容端点(`api`)。
+ * - Reranker:可选,API Key 留空即视为关闭。
+ * - Indexing:分块大小 / 重叠 / 是否自动重建。
+ * - Link Suggestions:写笔记后是否自动建议链接 + 阈值。
+ */
 export interface RatelVaultSettings {
 	// Chat
 	chatModel: string;
@@ -32,6 +48,12 @@ export interface RatelVaultSettings {
 	linkConfidenceThreshold: number;
 }
 
+/**
+ * 默认设置 — 首次安装时写入 data.json 的初值。
+ *
+ * 关键路径:`embedApiBase` 默认 `http://localhost:11434/v1` 适配本地 Ollama,
+ * 用户无需任何配置就能跑通端到端检索。
+ */
 export const DEFAULT_SETTINGS: RatelVaultSettings = {
 	chatModel: 'deepseek-chat',
 	chatApiKey: '',
@@ -58,6 +80,14 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 	linkConfidenceThreshold: 0.75,
 };
 
+/**
+ * Obsidian 设置面板 — 把 `RatelVaultSettings` 渲染为分组表单。
+ *
+ * 设计要点:
+ * - 切换 Embedding Provider 时调 `this.display()` 整体重渲染,显示对应字段。
+ * - Reranker Provider 切换时自动填入官方默认 `apiBase`,减少用户输入。
+ * - `onChange` 立即写盘(`saveSettings`),无需"保存"按钮。
+ */
 export class RatelVaultSettingTab extends PluginSettingTab {
 	plugin: RatelVaultPlugin;
 
@@ -66,11 +96,17 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 		this.plugin = plugin;
 	}
 
+	/**
+	 * 渲染整个设置面板。
+	 *
+	 * 关键路径:每次 Provider 切换会再调一次 `display()`,
+	 * 整体清空再重建,保证字段组互斥显示(local / api 二选一)。
+	 */
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		// Chat Model
+		// ==================== Chat ====================
 		containerEl.createEl('h2', { text: 'Chat Model' });
 
 		new Setting(containerEl)
@@ -90,6 +126,7 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			.setName('API Key')
 			.setDesc('Chat model API key')
 			.addText((text) => {
+				// 关键路径:inputEl.type 改为 password 让浏览器 / Obsidian 隐藏输入。
 				text.inputEl.type = 'password';
 				text
 					.setPlaceholder('sk-...')
@@ -113,7 +150,7 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 					}),
 			);
 
-		// Embedding Model
+		// ==================== Embedding ====================
 		containerEl.createEl('h2', { text: 'Embedding Model' });
 
 		new Setting(containerEl)
@@ -126,7 +163,8 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 					.onChange(async (value: string) => {
 						this.plugin.settings.embedProvider = value as 'local' | 'api';
 						await this.plugin.saveSettings();
-						this.display(); // Refresh to show/hide fields
+						// 关键路径:切 provider 后整体重渲染,显示对应字段组。
+						this.display();
 					}),
 			);
 
@@ -185,7 +223,7 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 				);
 		}
 
-		// Reranker (optional — auto-enabled when API Key is provided)
+		// ==================== Reranker ====================
 		containerEl.createEl('h2', { text: 'Reranker (Optional)' });
 
 		new Setting(containerEl)
@@ -202,7 +240,7 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.rerankerProvider)
 					.onChange(async (value: string) => {
 						this.plugin.settings.rerankerProvider = value as RatelVaultSettings['rerankerProvider'];
-						// Auto-fill API base for known providers
+						// 关键路径:切 provider 时自动填入官方默认 base,降低用户输入成本。
 						const bases: Record<string, string> = {
 							cohere: 'https://api.cohere.ai/v1',
 							jina: 'https://api.jina.ai/v1',
@@ -253,7 +291,7 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 					}),
 			);
 
-		// Indexing
+		// ==================== Indexing ====================
 		containerEl.createEl('h2', { text: 'Indexing' });
 
 		new Setting(containerEl)
@@ -296,7 +334,7 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 					}),
 			);
 
-		// Link Suggestions
+		// ==================== Link Suggestions ====================
 		containerEl.createEl('h2', { text: 'Link Suggestions' });
 
 		new Setting(containerEl)
