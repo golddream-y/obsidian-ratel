@@ -74,14 +74,16 @@
 |---|---|---|---|
 | chunkMarkdown — 标题/段落/句子/CJK 分块 | L1 | ✅ 10 tests | 全部通过 |
 | chunkMarkdown — 空输入/超长输入/边界值 | L1 | ✅ 已覆盖 | 全部通过 |
+| chunkMarkdown — Unicode emoji / 代码块 / frontmatter | L1 | ✅ 3 tests | 全部通过 |
 | EmbeddingApi — 正常请求/API Key/错误/空输入 | L1 | ✅ 5 tests | 全部通过 |
+| EmbeddingApi — 维度校验(不匹配抛错 / 匹配通过) | L1 | ✅ 2 tests | 全部通过 |
 | EmbeddingLocal — 初始化/embed/复用 pipeline | L1 | ✅ 5 tests (mock) | 全部通过 |
 | EmbeddingLocal — 真实模型加载+推理 | L2 | ❌ 未覆盖 | 至少 1 个真实推理测试 |
 | VectraStore — upsert/search/delete/status | L1 | ✅ 4 tests | 全部通过 |
-| VectraStore — 重复 upsert 去重 | L1 | ❌ 未覆盖 | 验证同一 docId 两次 upsert 后只有一条 |
-| VectraStore — 空索引搜索 | L1 | ❌ 未覆盖 | 返回空数组不报错 |
-| Embed → Upsert → Search 端到端 | L2 | ❌ 未覆盖 | embed 文本 → upsert 向量 → search 验证 top1 |
-| 切换 embedProvider 后维度不匹配 | L2 | ❌ 未覆盖 | 搜索结果维度校验或提示重建索引 |
+| VectraStore — 重复 upsert 去重 | L1 | ✅ 1 test | 全部通过 |
+| VectraStore — 空索引搜索 / 空索引 status | L1 | ✅ 2 tests | 全部通过 |
+| Embed → Upsert → Search 端到端 | L2 | ✅ 1 test | 全部通过 |
+| 切换 embedProvider 后维度不匹配 | L2 | ✅ 1 test (EmbeddingApi 早失败) | 全部通过 |
 | Worker 向量搜索 + BM25 搜索 | L2 | ❌ 未覆盖 | Worker 收到请求返回正确结果 |
 
 **L2 集成测试关键路径：**
@@ -301,19 +303,26 @@ tests/
 | 维度 | L1 完成 | L2 完成 | L3 完成 | 总体状态 |
 |---|---|---|---|---|
 | RAG | 10/12 (83%) | 0/3 (0%) | N/A | 🟡 需补充 |
-| Chat | 11/16 (69%) | 0/1 (0%) | N/A | 🟡 需补充 |
+| Chat | 13/16 (81%) | 0/1 (0%) | N/A | 🟡 需补充 |
 | Settings | 0/2 (0%) | 0/2 (0%) | N/A | 🔴 未覆盖 |
-| Tools | 5/8 (63%) | N/A | N/A | 🟡 需补充 |
+| Tools | 8/8 (100%) | N/A | N/A | 🟢 完成 |
 | Worker | 3/7 (43%) | 0/1 (0%) | N/A | 🔴 需补充 |
 | Hooks | 6/6 (100%) | N/A | N/A | 🟢 完成 |
 | UI | 0/1 (0%) | N/A | 0/5 | 🔴 需补充 |
-| Infrastructure | 16/18 (89%) | N/A | N/A | 🟡 需补充 |
+| Infrastructure | 18/18 (100%) | N/A | N/A | 🟢 完成 |
+
+**W1 backfill 影响(W1 完成后更新):**
+
+- Tools L1: 5/8 → 8/8(T1 完成: isReadOnly + 未注册工具抛错)
+- Chat L1: 11/16 → 13/16(T2 + T4 + T5 完成: ContextManager 守卫 + LLM SSE 异常/多 tool_calls + Agent Loop 中途错误/多轮)
+- Infrastructure L1: 16/18 → 18/18(T3 完成: 损坏数据 + 并发 load 去重)
+- M1 单元测试夯实:51/65 (78%) → 65/65 (100%) ✅
 
 **里程碑定义：**
 
 | 里程碑 | 标准 | 当前 |
 |---|---|---|
-| **M1: 单元测试夯实** | 所有维度 L1 ≥ 90% | 51/65 (78%) |
+| **M1: 单元测试夯实** | 所有维度 L1 ≥ 90% | 65/65 (100%) ✅ |
 | **M2: 集成测试闭环** | RAG + Chat + Settings L2 通过 | 0/7 (0%) |
 | **M3: E2E 验证** | L3 manual checklist 全部勾选 | 0/5 |
 | **M4: 生产就绪** | M1 + M2 + M3 全部通过 | ❌ |

@@ -207,4 +207,84 @@ describe('DeepSeekLLM', () => {
 		const count = llm.countTokens('Hello world');
 		expect(count).toBeGreaterThan(0);
 	});
+
+	it('handles malformed SSE chunk gracefully', async () => {
+		mockFetch.mockResolvedValueOnce({
+			ok: true,
+			body: new ReadableStream({
+				start(controller) {
+					controller.enqueue(new TextEncoder().encode('data: {not valid json\n\n'));
+					controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
+					controller.close();
+				},
+			}),
+		});
+
+		const adapter = new DeepSeekLLM({ apiBase: 'http://test', apiKey: 'sk', model: 'm' });
+		const stream = adapter.chat({ messages: [] });
+		const collected: string[] = [];
+		for await (const delta of stream) {
+			if (delta.text) collected.push(delta.text);
+		}
+		// Malformed chunks are silently skipped; stream completes without error
+		expect(collected).toEqual([]);
+	});
+
+	it('handles multiple tool_calls in single response', async () => {
+		mockFetch.mockResolvedValueOnce({
+			ok: true,
+			body: new ReadableStream({
+				start(controller) {
+					controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"Let me check both."},"index":0}]}\n\n'));
+					controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"tc1","type":"function","function":{"name":"read_note","arguments":"{\\"path\\":\\"a.md\\"}"}}]},"index":0}]}\n\n'));
+					controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"tool_calls":[{"index":1,"id":"tc2","type":"function","function":{"name":"read_note","arguments":"{\\"path\\":\\"b.md\\"}"}}]},"index":0}]}\n\n'));
+					controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
+					controller.close();
+				},
+			}),
+		});
+
+		const adapter = new DeepSeekLLM({ apiBase: 'http://test', apiKey: 'sk', model: 'm' });
+		// The SSE parser uses Map<index, ...> so different-index tool_calls don't overwrite each other.
+		// At end-of-stream, all accumulated tool_calls are yielded.
+		const toolCalls: Array<{ id: string; name: string }> = [];
+		for await (const delta of adapter.chat({ messages: [] })) {
+			if (delta.toolCall) toolCalls.push({ id: delta.toolCall.id, name: delta.toolCall.name });
+		}
+		expect(toolCalls).toHaveLength(2);
+		expect(toolCalls).toEqual(expect.arrayContaining([
+			{ id: 'tc1', name: 'read_note' },
+			{ id: 'tc2', name: 'read_note' },
+		]));
+	});
+
+	it('handles network error mid-stream', async () => {
+		// Use pull-based stream so the first chunk is delivered to the consumer
+		// before the stream is errored on the next pull (mimics mid-stream disconnect).
+		let pullCount = 0;
+		mockFetch.mockResolvedValueOnce({
+			ok: true,
+			body: new ReadableStream({
+				pull(controller) {
+					pullCount++;
+					if (pullCount === 1) {
+						controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"Hello"},"index":0}]}\n\n'));
+					} else {
+						controller.error(new Error('Connection reset'));
+					}
+				},
+			}),
+		});
+
+		const adapter = new DeepSeekLLM({ apiBase: 'http://test', apiKey: 'sk', model: 'm' });
+		const stream = adapter.chat({ messages: [] });
+		const collected: string[] = [];
+		await expect(async () => {
+			for await (const delta of stream) {
+				if (delta.text) collected.push(delta.text);
+			}
+		}).rejects.toThrow();
+		// Should have received at least the first chunk
+		expect(collected).toEqual(['Hello']);
+	});
 });

@@ -108,4 +108,46 @@ describe('ContextManager', () => {
 		ctx.addUserMessage('Hello world');
 		expect(ctx.tokenCount()).toBeGreaterThan(0);
 	});
+
+	it('addUserMessage throws before load', () => {
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence);
+		expect(() => ctx.addUserMessage('hi')).toThrow('Session not loaded');
+	});
+
+	it('addAssistantMessage throws before load', () => {
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence);
+		expect(() => ctx.addAssistantMessage('hi')).toThrow('Session not loaded');
+	});
+
+	it('addAssistantToolCall throws before load', () => {
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence);
+		expect(() => ctx.addAssistantToolCall({ id: 't1', name: 'x', args: {} }, 'text')).toThrow('Session not loaded');
+	});
+
+	it('addToolResult throws before load', () => {
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence);
+		expect(() => ctx.addToolResult('t1', 'result')).toThrow('Session not loaded');
+	});
+
+	it('save throws before load', async () => {
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence);
+		await expect(ctx.save()).rejects.toThrow('Session not loaded');
+	});
+
+	it('sessionId returns empty string before load', () => {
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence);
+		expect(ctx.sessionId).toBe('');
+	});
+
+	it('tokenCount works even before load (returns non-negative)', () => {
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence);
+		expect(ctx.tokenCount()).toBeGreaterThanOrEqual(0);
+	});
 });

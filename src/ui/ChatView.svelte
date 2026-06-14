@@ -1,6 +1,8 @@
 <script lang="ts">
 	import type RatelVaultPlugin from '../main';
 
+	// Ratel 聊天侧栏 — 用户输入 + 流式渲染 + 错误展示
+	// 关键路径:每个 message.delta 触发 messages 数组重建(Svelte 5 反应性依赖引用比较)。
 	interface Message {
 		role: 'user' | 'assistant';
 		content: string;
@@ -10,6 +12,7 @@
 	let messages: Message[] = [];
 	let input = '';
 	let isRunning = false;
+	// 关键路径:sessionId 用于把同一会话的多轮消息绑回 Session 存储。
 	let sessionId = 'session-' + Date.now();
 
 	async function sendMessage() {
@@ -20,6 +23,7 @@
 		input = '';
 		isRunning = true;
 
+		// 关键路径:先占位一个空 assistant 消息,流式 delta 直接 mutate 它。
 		const assistantMsg: Message = { role: 'assistant', content: '' };
 		messages = [...messages, assistantMsg];
 
@@ -30,6 +34,7 @@
 				switch (event.type) {
 					case 'message.delta':
 						assistantMsg.content += event.payload.text;
+						// 修复:重新赋值触发 Svelte 反应性,否则内容变更不可见。
 						messages = [...messages];
 						break;
 					case 'message.end':
@@ -44,11 +49,13 @@
 			assistantMsg.content += '\n\n⚠ Error: ' + (err instanceof Error ? err.message : String(err));
 			messages = [...messages];
 		} finally {
+			// 关键路径:无论成功 / 失败 / 取消,都必须复位 isRunning 释放输入框。
 			isRunning = false;
 		}
 	}
 
 	function handleKeydown(e: KeyboardEvent) {
+		// 关键路径:Enter 发送,Shift+Enter 换行 — 跟主流 IM 一致。
 		if (e.key === 'Enter' && !e.shiftKey) {
 			e.preventDefault();
 			sendMessage();

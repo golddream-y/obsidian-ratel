@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { agentLoop } from '../../src/core/agent-loop';
 import { ContextManager } from '../../src/core/context-manager';
 import { ToolRegistry } from '../../src/core/tool-registry';
@@ -264,5 +264,75 @@ describe('agentLoop', () => {
 		expect(events.some((e) => e.type === 'tool.result')).toBe(true);
 		// Should still end normally
 		expect(events.some((e) => e.type === 'message.end')).toBe(true);
+	});
+
+	it('saves session when LLM stream errors mid-way', async () => {
+		const saveSpy = vi.fn();
+		const mockPersistence = {
+			sessions: {
+				get: vi.fn().mockResolvedValue(null),
+				upsert: saveSpy,
+			},
+		} as unknown as Persistence;
+		const ctx = new ContextManager(mockPersistence);
+
+		const llm = {
+			chat: vi.fn().mockImplementation(async function* () {
+				yield { text: 'Partial ' };
+				yield { text: 'response' };
+				throw new Error('Network error');
+			}),
+			countTokens: vi.fn().mockReturnValue(0),
+		};
+
+		const tools = new ToolRegistry();
+		const hooks = new HookRegistry();
+
+		const events: string[] = [];
+		for await (const e of agentLoop({ sessionId: 's1', message: 'hi' }, ctx, llm as unknown as LLMClient, tools, hooks)) {
+			events.push(e.type);
+		}
+
+		// Should yield error event and still save session
+		expect(events).toContain('error');
+		expect(saveSpy).toHaveBeenCalled();
+	});
+
+	it('handles multiple rounds of tool calls (2+ steps)', async () => {
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence);
+
+		const toolCallCount = { count: 0 };
+		const tools = new ToolRegistry();
+		tools.register({
+			definition: { name: 'counter', description: '', parameters: { type: 'object', properties: {} } },
+			execute: async () => {
+				toolCallCount.count++;
+				return `result-${toolCallCount.count}`;
+			},
+			readOnly: true,
+		});
+
+		let callCount = 0;
+		const llm = {
+			chat: vi.fn().mockImplementation(async function* () {
+				callCount++;
+				if (callCount <= 2) {
+					yield { text: 'Calling tool', toolCall: { id: 'tc1', name: 'counter', args: {} } };
+				} else {
+					yield { text: 'Done' };
+				}
+			}),
+			countTokens: vi.fn().mockReturnValue(0),
+		};
+
+		const hooks = new HookRegistry();
+		for await (const _ of agentLoop({ sessionId: 's1', message: 'hi' }, ctx, llm as unknown as LLMClient, tools, hooks)) {
+			// drain
+			void _;
+		}
+
+		// Verify multiple tool calls happened (truly tests multi-round)
+		expect(toolCallCount.count).toBeGreaterThanOrEqual(2);
 	});
 });
