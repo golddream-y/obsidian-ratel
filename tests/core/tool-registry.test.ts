@@ -60,4 +60,24 @@ describe('ToolRegistry', () => {
 		expect(registry.definitions()).toHaveLength(2);
 		expect(registry.definitions().map((d) => d.name)).toEqual(['test_tool', 'tool2']);
 	});
+
+	it('isReadOnly returns true for tools marked readOnly', () => {
+		const registry = new ToolRegistry();
+		registry.register({
+			definition: { name: 'read_tool', description: '', parameters: { type: 'object', properties: {} } },
+			execute: async () => 'r',
+			readOnly: true,
+		});
+		registry.register({
+			definition: { name: 'write_tool', description: '', parameters: { type: 'object', properties: {} } },
+			execute: async () => 'r',
+		});
+		expect(registry.isReadOnly('read_tool')).toBe(true);
+		expect(registry.isReadOnly('write_tool')).toBe(false);
+	});
+
+	it('isReadOnly returns false for unknown tools', () => {
+		const registry = new ToolRegistry();
+		expect(registry.isReadOnly('nonexistent')).toBe(false);
+	});
 });
