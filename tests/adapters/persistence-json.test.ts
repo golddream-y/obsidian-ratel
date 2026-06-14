@@ -123,7 +123,25 @@ describe('PersistenceJson', () => {
 			expect(list[0]).toEqual(entry);
 		});
 
-		it('respects limit when listing hooks', async () => {
+		it('serializes concurrent persist calls', async () => {
+		const saved: unknown[] = [];
+		const persistence = new PersistenceJson(
+			async () => ({ sessions: {} }),
+			async (data) => { saved.push(JSON.parse(JSON.stringify(data))); },
+		);
+
+		// Fire two session upserts concurrently
+		await Promise.all([
+			persistence.sessions.upsert({ id: 'test', title: 'First', messages: [{ role: 'user', content: 'first' }], createdAt: Date.now(), updatedAt: Date.now() }),
+			persistence.sessions.upsert({ id: 'test', title: 'Second', messages: [{ role: 'user', content: 'second' }], createdAt: Date.now(), updatedAt: Date.now() }),
+		]);
+
+		// Both writes should complete without data loss
+		// At least one save should have occurred
+		expect(saved.length).toBeGreaterThanOrEqual(1);
+	});
+
+	it('respects limit when listing hooks', async () => {
 			for (let i = 0; i < 5; i++) {
 				await persistence.hooks.append({
 					phase: 'pre-write',

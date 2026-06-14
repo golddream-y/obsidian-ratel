@@ -168,6 +168,60 @@ describe('agentLoop', () => {
 		expect(sessions.has('s1')).toBe(true);
 	});
 
+	it('does not fire write hooks for readOnly tools', async () => {
+		const hooks = new HookRegistry();
+		const hookCalls: string[] = [];
+		hooks.register('pre-write', async () => { hookCalls.push('pre-write'); });
+		hooks.register('post-write', async () => { hookCalls.push('post-write'); });
+
+		const tools = new ToolRegistry();
+		tools.register({
+			definition: { name: 'read_only_tool', description: 'test', parameters: { type: 'object', properties: {} } },
+			execute: async () => 'result',
+			readOnly: true,
+		});
+
+		const llm = createMockLLM([{
+			text: '',
+			toolCall: { id: 'tc1', name: 'read_only_tool', args: {} },
+		}]);
+
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence);
+		for await (const _ of agentLoop({ sessionId: 'test', message: 'hi' }, ctx, llm, tools, hooks)) {
+			// consume
+		}
+
+		expect(hookCalls).toEqual([]);
+	});
+
+	it('fires write hooks for non-readOnly tools', async () => {
+		const hooks = new HookRegistry();
+		const hookCalls: string[] = [];
+		hooks.register('pre-write', async () => { hookCalls.push('pre-write'); });
+		hooks.register('post-write', async () => { hookCalls.push('post-write'); });
+
+		const tools = new ToolRegistry();
+		tools.register({
+			definition: { name: 'write_tool', description: 'test', parameters: { type: 'object', properties: {} } },
+			execute: async () => 'result',
+			readOnly: false,
+		});
+
+		const llm = createMockLLM([
+			[{ text: '', toolCall: { id: 'tc1', name: 'write_tool', args: {} } }],
+			[{ text: 'Done' }],
+		]);
+
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence);
+		for await (const _ of agentLoop({ sessionId: 'test', message: 'hi' }, ctx, llm, tools, hooks)) {
+			// consume
+		}
+
+		expect(hookCalls).toEqual(['pre-write', 'post-write']);
+	});
+
 	it('handles tool execution error gracefully', async () => {
 		const persistence = createMockPersistence();
 		const ctx = new ContextManager(persistence);

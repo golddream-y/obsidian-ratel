@@ -43,6 +43,28 @@ describe('chunkMarkdown', () => {
 		expect(result.some((c) => c.text.startsWith('#'))).toBe(true);
 	});
 
+	it('handles CJK content with Chinese period delimiter', () => {
+		const content = '这是第一句话。这是第二句话。这是第三句话。这是第四句话。这是第五句话。这是第六句话。';
+		const result = chunkMarkdown(content, 15, 3);
+		expect(result.length).toBeGreaterThan(1);
+		result.forEach((chunk) => {
+			expect(chunk.text.length).toBeGreaterThan(0);
+		});
+	});
+
+	it('handles chunkSize equal to content length', () => {
+		const content = 'Hello world';
+		const result = chunkMarkdown(content, content.length, 0);
+		expect(result).toHaveLength(1);
+		expect(result[0].text).toBe(content);
+	});
+
+	it('handles overlap larger than chunkSize gracefully', () => {
+		const content = 'Short';
+		const result = chunkMarkdown(content, 10, 50);
+		expect(result).toHaveLength(1);
+	});
+
 	it('sets startOffset and endOffset', () => {
 		const result = chunkMarkdown('Hello world', 500, 100);
 		expect(result[0].startOffset).toBe(0);

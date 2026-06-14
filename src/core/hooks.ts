@@ -14,7 +14,11 @@ export class HookRegistry {
 	async run(phase: string, toolCall: ToolCall): Promise<void> {
 		const list = this.handlers.get(phase) ?? [];
 		for (const handler of list) {
-			await handler(toolCall);
+			try {
+				await handler(toolCall);
+			} catch (err) {
+				console.error(`Hook error in ${phase}:`, err);
+			}
 		}
 	}
 }

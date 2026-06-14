@@ -184,6 +184,20 @@ describe('DeepSeekLLM', () => {
 		expect(messages[2]).toEqual({ role: 'tool', content: 'Content of test.md', tool_call_id: 'call_1' });
 	});
 
+	it('serializes tool call arguments in request body', () => {
+		const adapter = new DeepSeekLLM({ apiBase: 'http://test', apiKey: 'sk-test', model: 'test' });
+		const req: ChatRequest = {
+			messages: [
+				{ role: 'user', content: 'test' },
+				{ role: 'assistant', content: '', toolCallId: 'call_1', toolName: 'read_note', toolArgs: { path: 'notes/test.md' } },
+				{ role: 'tool', content: 'result', toolCallId: 'call_1' },
+			],
+		};
+		const body = (adapter as any).buildRequestBody(req) as { messages: any[] };
+		const assistantMsg = body.messages[1];
+		expect(assistantMsg.tool_calls[0].function.arguments).toBe('{"path":"notes/test.md"}');
+	});
+
 	it('countTokens returns rough estimate', () => {
 		const llm = new DeepSeekLLM({
 			apiBase: 'https://api.deepseek.com',

@@ -74,6 +74,23 @@ describe('EmbeddingApi', () => {
 		await expect(adapter.embed(['test'])).rejects.toThrow('Embedding API error: 401 Unauthorized');
 	});
 
+	it('handles empty array input', async () => {
+		mockFetch.mockResolvedValueOnce({
+			ok: true,
+			json: async () => ({ data: [] }),
+		});
+
+		const adapter = new EmbeddingApi({
+			apiBase: 'http://localhost:11434/v1',
+			apiKey: '',
+			model: 'bge-m3',
+			dimensions: 1024,
+		});
+
+		const result = await adapter.embed([]);
+		expect(result).toEqual([]);
+	});
+
 	it('exposes dimensions and modelId', () => {
 		const adapter = new EmbeddingApi({
 			apiBase: 'http://localhost:11434/v1',
