@@ -40,7 +40,7 @@
 | P-W3-TEST | [2026-06-14-ratel-w3-test-plan.md](plans/2026-06-14-ratel-w3-test-plan.md) | ⏳ Pending | — | — | — | S-TEST-ARCH (W3 计划) |
 | P-W4-TEST | [2026-06-14-ratel-w4-test-plan.md](plans/2026-06-14-ratel-w4-test-plan.md) | ⏳ Pending | — | — | — | S-TEST-ARCH (W4 计划) |
 | P-I18N-IMPL | [2026-06-14-ratel-i18n-implementation.md](plans/2026-06-14-ratel-i18n-implementation.md) | ⏳ Pending | — | — | — | S-I18N |
-| P-TEST-ARCH-COMPL | [2026-06-14-ratel-test-architecture-completion.md](plans/2026-06-14-ratel-test-architecture-completion.md) | ✅ Completed | test/test-arch-completion | 2026-06-14 | 2026-06-14 | S-TEST-ARCH |
+| P-TEST-ARCH-COMPL | [2026-06-14-ratel-test-architecture-completion.md](plans/2026-06-14-ratel-test-architecture-completion.md) | ✅ Completed | test/test-arch-completion → main (`f77d777`) | 2026-06-14 | 2026-06-14 | S-TEST-ARCH |
 | P-DOCS-CN | (无 — 杂项) | ✅ Completed | chore/translate-comments-to-chinese | 2026-06-14 | 2026-06-14 | AGENTS.md § 文档与注释规范 |
 
 ---
@@ -67,7 +67,8 @@
 | T4: Worker L1 WorkerManager timeoutMs 可配置 | `src/worker/manager.ts` + `tests/worker/worker-bridge.test.ts` | ✅ | `833098a` | 加 `WorkerManagerOptions.timeoutMs`,超时后 terminate;+2 tests |
 | T5: Settings L2 embedProvider 切换 | `tests/settings-adapter.test.ts` | ✅ | `46b7d73` | Object.create 绕过 Obsidian 框架;5 tests |
 | T6: 跨维度集成 settings 变更传播 | `tests/integration/settings-propagation.test.ts` | ✅ | `0f9c729` | 改 field → rebuild → 新 config 注入;5 tests |
-| T7: 更新 test-architecture.md 状态 + STATUS | `docs/superpowers/specs/2026-06-14-ratel-test-architecture.md` + `docs/superpowers/STATUS.md` | ✅ | (T7 commit) | Settings 维度 4/5 → 5/5;Worker 维度 4/7 → 7/7 |
+| T7: 更新 test-architecture.md 状态 + STATUS | `docs/superpowers/specs/2026-06-14-ratel-test-architecture.md` + `docs/superpowers/STATUS.md` | ✅ | (squash `88e346d` 包含) | Settings 维度 4/5 → 5/5;Worker 维度 4/7 → 7/7 |
+| Squash + 合并 | (7 commits → 1) | ✅ | `88e346d` (squash) / `f77d777` (merge) | `git reset --soft c378b5a` 后单 commit,再 `--no-ff` 合并到 main |
 
 **测试总数:** 103 → 127(+24),跨 19 个测试文件。
 **build:** 绿;**新增文件 lint:** 6/6 干净(0 errors)。项目 2023 个 pre-existing lint errors 留待后续。
@@ -76,7 +77,7 @@
 - T3 plan Step 4 期望"原有测试 3 个都过",实际加 T3 改了 worker/index.ts,需要 sync 改主 checkout(后续未污染 main,主 checkout git 已恢复)。
 - T4 plan 期望 `vi.useFakeTimers()`,vitest 4.x 跟 async microtask 配合有问题,改用真实 50ms timeout(更稳)。
 
-**分支:** `test/test-arch-completion`(worktree `.worktrees/test-arch-completion/`,待合并到 main)。
+**分支:** `test/test-arch-completion`(worktree `.worktrees/test-arch-completion/`,**已合并并删除**)。
 
 ### 2026-06-14 — W2 RAG 测试回填 (P-W2-TEST-BACKFILL)
 
