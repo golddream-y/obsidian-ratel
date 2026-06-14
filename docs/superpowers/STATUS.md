@@ -37,6 +37,7 @@
 | P-W2-TEST-BACKFILL | [2026-06-14-ratel-w2-test-backfill.md](plans/2026-06-14-ratel-w2-test-backfill.md) | ⏳ Pending | — | — | — | S-TEST-ARCH (W2 backfill) |
 | P-W3-TEST | [2026-06-14-ratel-w3-test-plan.md](plans/2026-06-14-ratel-w3-test-plan.md) | ⏳ Pending | — | — | — | S-TEST-ARCH (W3 plan) |
 | P-W4-TEST | [2026-06-14-ratel-w4-test-plan.md](plans/2026-06-14-ratel-w4-test-plan.md) | ⏳ Pending | — | — | — | S-TEST-ARCH (W4 plan) |
+| P-DOCS-CN | (none — chore) | ✅ Completed | chore/translate-comments-to-chinese | 2026-06-14 | 2026-06-14 | AGENTS.md § 文档与注释规范 |
 
 ---
 
@@ -67,6 +68,23 @@
 
 **W1 backfill commit range:** `87f402f..HEAD` (branch `test/w1-backfill`, ready to merge to main).
 
+### 2026-06-14 — Chinese Comment Translation (P-DOCS-CN)
+
+| Group | Files | Status | Commit | Notes |
+|---|---|---|---|---|
+| G1: src/core/ | agent-loop, context-manager, hooks, tool-registry | ✅ | `69d4579` | JSDoc 类头 / 函数头 / 行内 |
+| G2: src/ports/ | llm, persistence, embedding, vector, vault | ✅ | `69d4579` | 端口接口 5 个全部加 JSDoc |
+| G3: src/adapters/ | llm-deepseek, obsidian-vault, vector-vectra, persistence-json, embedding-local, embedding-api | ✅ | `c0e2a23` | 关键路径 / 修复点 / 设计要点 注释 |
+| G4: src/worker/ | index, manager, chunker | ✅ | `88cf8eb` | Worker 入口 + chunker 三级回退策略 |
+| G5: 其他 | main, settings, types, tools/read-note, ui/ChatView.ts/.svelte, utils/hash | ✅ | `88cf8eb` + `6ff869a` | UI 与入口逐项加注释;lint 修复 |
+| AGENTS.md § 4 | 需加注释的代码判定准则 | ✅ | (同 88cf8eb) | 6 项强制 / 4 项推荐 / 4 项禁止 |
+
+**Total:** 26 源文件 (src/ 全量) + AGENTS.md 扩展 + STATUS.md 登记。
+
+**Branch:** `chore/translate-comments-to-chinese`(当前分支)。
+
+**Verify:** 93/93 tests passing, build green, lint clean (除 ChatView.svelte 已知 svelte-eslint-parser 缺失问题)。
+
 ### Future execution queue (in order)
 
 1. Merge `test/w1-backfill` → main
@@ -76,6 +94,8 @@
 5. P-W4-IMPL (Reranker + Query Rewrite + Indexer)
 6. P-W4-TEST (test plan for W4+)
 7. Manual E2E validation in Obsidian (M3 milestone)
+8. Merge `chore/translate-comments-to-chinese` → main
+9. **Follow-up:** fix `svelte-eslint-parser` config so `npx eslint src/` covers `*.svelte` files
 
 ---
 
