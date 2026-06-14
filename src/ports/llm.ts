@@ -17,6 +17,7 @@ export interface ChatMessage {
 	content: string;
 	toolCallId?: string;
 	toolName?: string;
+	toolArgs?: Record<string, unknown>;
 }
 
 export interface ChatDelta {

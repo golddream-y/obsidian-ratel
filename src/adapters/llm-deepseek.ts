@@ -135,7 +135,7 @@ export class DeepSeekLLM implements LLMClient {
 				msg.tool_calls = [{
 					id: m.toolCallId,
 					type: 'function',
-					function: { name: m.toolName ?? '', arguments: '{}' },
+					function: { name: m.toolName ?? '', arguments: JSON.stringify(m.toolArgs ?? {}) },
 				}];
 			}
 			if (m.role === 'tool' && m.toolCallId) {

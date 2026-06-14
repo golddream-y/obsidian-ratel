@@ -4,8 +4,10 @@ export class EmbeddingLocal implements EmbeddingPort {
 	private extractor: ((texts: string[], options: Record<string, unknown>) => Promise<{ tolist: () => number[][] }>) | null = null;
 	readonly modelId: string;
 	readonly dimensions: number;
+	private readonly rawModelId: string;
 
 	constructor(modelId = 'Xenova/bge-small-zh-v1.5', dimensions = 512) {
+		this.rawModelId = modelId;
 		this.modelId = `local:${modelId}`;
 		this.dimensions = dimensions;
 	}
@@ -14,7 +16,7 @@ export class EmbeddingLocal implements EmbeddingPort {
 		if (this.extractor) return;
 
 		const { pipeline } = await import('@huggingface/transformers');
-		this.extractor = await pipeline('feature-extraction', this.modelId.replace('local:', ''), {
+		this.extractor = await pipeline('feature-extraction', this.rawModelId, {
 			dtype: 'q8',
 			progress_callback: (progress: { status: string; progress?: number; file?: string }) => {
 				if (progress.status === 'progress' && progress.progress !== undefined) {

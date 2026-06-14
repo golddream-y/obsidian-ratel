@@ -45,14 +45,14 @@ export default class RatelVaultPlugin extends Plugin {
 		if (this.settings.embedProvider === 'local') {
 			this.embedding = new EmbeddingLocal(
 				this.settings.embedLocalModel,
-				512, // bge-small-zh dimensions
+				this.settings.embedLocalDimensions,
 			);
 		} else {
 			this.embedding = new EmbeddingApi({
 				apiBase: this.settings.embedApiBase,
 				apiKey: this.settings.embedApiKey,
 				model: this.settings.embedApiModel,
-				dimensions: 1024, // bge-m3 dimensions
+				dimensions: this.settings.embedApiDimensions,
 			});
 		}
 

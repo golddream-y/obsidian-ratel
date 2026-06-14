@@ -4,6 +4,7 @@ import { LocalDocumentIndex, type EmbeddingsModel, type DocumentChunkMetadata } 
 export class VectraStore implements VectorStore {
 	private index: LocalDocumentIndex | null = null;
 	private indexDir: string;
+	private _lastIndexTime = 0;
 	private embeddings: EmbeddingsModel | undefined;
 
 	constructor(indexDir: string, embeddings?: EmbeddingsModel) {
@@ -32,6 +33,7 @@ export class VectraStore implements VectorStore {
 			undefined,
 			metadata as Record<string, import('vectra').MetadataTypes>,
 		);
+		this._lastIndexTime = Date.now();
 	}
 
 	async search(queryVector: number[], topK: number, filter?: SearchFilter): Promise<VectorSearchResult[]> {
@@ -99,7 +101,7 @@ export class VectraStore implements VectorStore {
 			const stats = await index.getCatalogStats();
 			return {
 				totalDocs: stats.documents,
-				lastIndexTime: Date.now(),
+				lastIndexTime: this._lastIndexTime,
 				isIndexing: false,
 			};
 		} catch {

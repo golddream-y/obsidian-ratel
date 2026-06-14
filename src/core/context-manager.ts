@@ -40,6 +40,7 @@ export class ContextManager {
 			content: text,
 			toolCallId: toolCall.id,
 			toolName: toolCall.name,
+			toolArgs: toolCall.args,
 		});
 		session.updatedAt = Date.now();
 	}

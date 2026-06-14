@@ -10,9 +10,11 @@ export interface RatelVaultSettings {
 	// Embedding
 	embedProvider: 'local' | 'api';
 	embedLocalModel: string;
+	embedLocalDimensions: number;
 	embedApiBase: string;
 	embedApiKey: string;
 	embedApiModel: string;
+	embedApiDimensions: number;
 
 	// Reranker (optional — auto-enabled when apiKey is set)
 	rerankerProvider: 'cohere' | 'jina' | 'siliconflow' | 'custom';
@@ -37,9 +39,11 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 
 	embedProvider: 'local',
 	embedLocalModel: 'Xenova/bge-small-zh-v1.5',
+	embedLocalDimensions: 512,
 	embedApiBase: 'http://localhost:11434/v1',
 	embedApiKey: '',
 	embedApiModel: 'bge-m3',
+	embedApiDimensions: 1024,
 
 	rerankerProvider: 'cohere',
 	rerankerApiBase: 'https://api.cohere.ai/v1',

@@ -10,6 +10,7 @@
 	let messages: Message[] = [];
 	let input = '';
 	let isRunning = false;
+	let sessionId = 'session-' + Date.now();
 
 	async function sendMessage() {
 		const text = input.trim();
@@ -23,7 +24,6 @@
 		messages = [...messages, assistantMsg];
 
 		try {
-			const sessionId = 'session-' + Date.now();
 			const events = plugin.ask(sessionId, text);
 
 			for await (const event of events) {
