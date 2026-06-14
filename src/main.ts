@@ -65,19 +65,7 @@ export default class RatelVaultPlugin extends Plugin {
 		});
 
 		// Embedding 适配器:本地 ONNX vs 远端 OpenAI 兼容端点,按设置二选一。
-		if (this.settings.embedProvider === 'local') {
-			this.embedding = new EmbeddingLocal(
-				this.settings.embedLocalModel,
-				this.settings.embedLocalDimensions,
-			);
-		} else {
-			this.embedding = new EmbeddingApi({
-				apiBase: this.settings.embedApiBase,
-				apiKey: this.settings.embedApiKey,
-				model: this.settings.embedApiModel,
-				dimensions: this.settings.embedApiDimensions,
-			});
-		}
+		this.rebuildEmbeddingAdapter();
 
 		// ==================== Worker ====================
 		// 关键路径:`__dirname` 在 esbuild 编译后指向 main.js 同目录,worker.js 必须存在。
@@ -126,8 +114,42 @@ export default class RatelVaultPlugin extends Plugin {
 
 		// 设置面板
 		this.addSettingTab(new RatelVaultSettingTab(this.app, this));
+	}
 
-		console.log('Ratel loaded');
+	/**
+	 * 重建 LLM 适配器。
+	 *
+	 * 关键路径:LLM 在 onload 时一次性构造,内部捕获的是构造时的 apiKey / apiBase / model。
+	 * 用户在设置面板改了这些字段后,内存里 settings 改了,data.json 也存了,
+	 * 但已构造的 LLM 还指向旧值。重建一次让新 key 生效。
+	 */
+	rebuildLLM(): void {
+		this.llm = new DeepSeekLLM({
+			apiBase: this.settings.chatApiBase,
+			apiKey: this.settings.chatApiKey,
+			model: this.settings.chatModel,
+		});
+	}
+
+	/**
+	 * 重建 Embedding 适配器(按当前 `embedProvider` 二选一)。
+	 *
+	 * 关键路径:同 `rebuildLLM`,embedProvider 切换或 API 类字段改后必须重建。
+	 */
+	rebuildEmbeddingAdapter(): void {
+		if (this.settings.embedProvider === 'local') {
+			this.embedding = new EmbeddingLocal(
+				this.settings.embedLocalModel,
+				this.settings.embedLocalDimensions,
+			);
+		} else {
+			this.embedding = new EmbeddingApi({
+				apiBase: this.settings.embedApiBase,
+				apiKey: this.settings.embedApiKey,
+				model: this.settings.embedApiModel,
+				dimensions: this.settings.embedApiDimensions,
+			});
+		}
 	}
 
 	/**

@@ -119,6 +119,8 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 					.onChange(async (value) => {
 						this.plugin.settings.chatModel = value;
 						await this.plugin.saveSettings();
+						// 关键路径:模型标识变更需重建 LLM,新值才在请求里生效。
+						this.plugin.rebuildLLM();
 					}),
 			);
 
@@ -134,6 +136,8 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 					.onChange(async (value) => {
 						this.plugin.settings.chatApiKey = value;
 						await this.plugin.saveSettings();
+						// 关键路径:Authorization header 在 LLM 构造时定型,改 key 后必须重建。
+						this.plugin.rebuildLLM();
 					});
 			});
 
@@ -147,6 +151,8 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 					.onChange(async (value) => {
 						this.plugin.settings.chatApiBase = value;
 						await this.plugin.saveSettings();
+						// 关键路径:换 base URL(切到其他 OpenAI 兼容端点)需重建 LLM。
+						this.plugin.rebuildLLM();
 					}),
 			);
 
@@ -163,6 +169,8 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 					.onChange(async (value: string) => {
 						this.plugin.settings.embedProvider = value as 'local' | 'api';
 						await this.plugin.saveSettings();
+						// 关键路径:切 provider 需重建 Embedding 适配器(local / api 是不同实现)。
+						this.plugin.rebuildEmbeddingAdapter();
 						// 关键路径:切 provider 后整体重渲染,显示对应字段组。
 						this.display();
 					}),
@@ -179,6 +187,8 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 						.onChange(async (value) => {
 							this.plugin.settings.embedLocalModel = value;
 							await this.plugin.saveSettings();
+							// 关键路径:换本地模型需重建 Embedding 适配器,新模型才被加载。
+							this.plugin.rebuildEmbeddingAdapter();
 						}),
 				);
 		} else {
@@ -192,6 +202,8 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 						.onChange(async (value) => {
 							this.plugin.settings.embedApiBase = value;
 							await this.plugin.saveSettings();
+							// 关键路径:换 base URL 需重建 Embedding 适配器。
+							this.plugin.rebuildEmbeddingAdapter();
 						}),
 				);
 
@@ -206,6 +218,8 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 						.onChange(async (value) => {
 							this.plugin.settings.embedApiKey = value;
 							await this.plugin.saveSettings();
+							// 关键路径:Authorization header 在适配器构造时定型,改 key 后必须重建。
+							this.plugin.rebuildEmbeddingAdapter();
 						});
 				});
 
@@ -219,6 +233,8 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 						.onChange(async (value) => {
 							this.plugin.settings.embedApiModel = value;
 							await this.plugin.saveSettings();
+							// 关键路径:换 API 模型需重建 Embedding 适配器。
+							this.plugin.rebuildEmbeddingAdapter();
 						}),
 				);
 		}
