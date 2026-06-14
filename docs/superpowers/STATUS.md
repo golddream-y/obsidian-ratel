@@ -40,7 +40,7 @@
 | P-W3-TEST | [2026-06-14-ratel-w3-test-plan.md](plans/2026-06-14-ratel-w3-test-plan.md) | ⏳ Pending | — | — | — | S-TEST-ARCH (W3 计划) |
 | P-W4-TEST | [2026-06-14-ratel-w4-test-plan.md](plans/2026-06-14-ratel-w4-test-plan.md) | ⏳ Pending | — | — | — | S-TEST-ARCH (W4 计划) |
 | P-I18N-IMPL | [2026-06-14-ratel-i18n-implementation.md](plans/2026-06-14-ratel-i18n-implementation.md) | ⏳ Pending | — | — | — | S-I18N |
-| P-TEST-ARCH-COMPL | [2026-06-14-ratel-test-architecture-completion.md](plans/2026-06-14-ratel-test-architecture-completion.md) | ⏳ Pending | — | — | — | S-TEST-ARCH |
+| P-TEST-ARCH-COMPL | [2026-06-14-ratel-test-architecture-completion.md](plans/2026-06-14-ratel-test-architecture-completion.md) | ✅ Completed | test/test-arch-completion | 2026-06-14 | 2026-06-14 | S-TEST-ARCH |
 | P-DOCS-CN | (无 — 杂项) | ✅ Completed | chore/translate-comments-to-chinese | 2026-06-14 | 2026-06-14 | AGENTS.md § 文档与注释规范 |
 
 ---
@@ -56,6 +56,27 @@
 ---
 
 ## 执行日志(按时间倒序)
+
+### 2026-06-14 — P-TEST-ARCH-COMPL(测试架构收口)
+
+| Task | 文件 | 状态 | Commit | 备注 |
+|---|---|---|---|---|
+| T1: Settings L1 DEFAULT_SETTINGS 完整性 | `tests/settings.test.ts` | ✅ | `c083242` | 19 字段覆盖 + 类型 + 数值范围;4 tests |
+| T2: Settings L1 旧版迁移 | `tests/settings-migration.test.ts` | ✅ | `26b849a` | embedModel 兼容性 + 缺省 raw;4 tests |
+| T3: Worker L1 handleMessage 抽离 | `src/worker/handler.ts` + `src/worker/index.ts` + `tests/worker/handler.test.ts` | ✅ | `e1eed33` | refactor:从 index.ts 提到独立模块可单测;4 tests |
+| T4: Worker L1 WorkerManager timeoutMs 可配置 | `src/worker/manager.ts` + `tests/worker/worker-bridge.test.ts` | ✅ | `833098a` | 加 `WorkerManagerOptions.timeoutMs`,超时后 terminate;+2 tests |
+| T5: Settings L2 embedProvider 切换 | `tests/settings-adapter.test.ts` | ✅ | `46b7d73` | Object.create 绕过 Obsidian 框架;5 tests |
+| T6: 跨维度集成 settings 变更传播 | `tests/integration/settings-propagation.test.ts` | ✅ | `0f9c729` | 改 field → rebuild → 新 config 注入;5 tests |
+| T7: 更新 test-architecture.md 状态 + STATUS | `docs/superpowers/specs/2026-06-14-ratel-test-architecture.md` + `docs/superpowers/STATUS.md` | ✅ | (T7 commit) | Settings 维度 4/5 → 5/5;Worker 维度 4/7 → 7/7 |
+
+**测试总数:** 103 → 127(+24),跨 19 个测试文件。
+**build:** 绿;**新增文件 lint:** 6/6 干净(0 errors)。项目 2023 个 pre-existing lint errors 留待后续。
+**关键路径注释:** 7 个新测试文件 + 1 个新模块 + 2 个模块改 API,都按 AGENTS.md 中文规范加 JSDoc + `关键路径:` 注释。
+**Plan 偏差:**
+- T3 plan Step 4 期望"原有测试 3 个都过",实际加 T3 改了 worker/index.ts,需要 sync 改主 checkout(后续未污染 main,主 checkout git 已恢复)。
+- T4 plan 期望 `vi.useFakeTimers()`,vitest 4.x 跟 async microtask 配合有问题,改用真实 50ms timeout(更稳)。
+
+**分支:** `test/test-arch-completion`(worktree `.worktrees/test-arch-completion/`,待合并到 main)。
 
 ### 2026-06-14 — W2 RAG 测试回填 (P-W2-TEST-BACKFILL)
 
