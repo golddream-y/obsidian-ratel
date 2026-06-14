@@ -28,5 +28,8 @@ data.json
 *.db
 *.lance
 
+# Git worktrees (per using-git-worktrees skill)
+.worktrees/
+
 # superpowers skills (from github.com/obra/superpowers, not project code)
 .superpowers/
