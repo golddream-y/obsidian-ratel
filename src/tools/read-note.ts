@@ -1,7 +1,7 @@
 import type { Tool } from '../core/tool-registry';
-import type { ObsidianVault } from '../adapters/obsidian-vault';
+import type { VaultPort } from '../ports/vault';
 
-export function createReadNoteTool(vault: ObsidianVault): Tool {
+export function createReadNoteTool(vault: VaultPort): Tool {
 	return {
 		definition: {
 			name: 'read_note',
@@ -17,6 +17,7 @@ export function createReadNoteTool(vault: ObsidianVault): Tool {
 				required: ['path'],
 			},
 		},
+		readOnly: true,
 		async execute(args: Record<string, unknown>) {
 			const path = args.path as string;
 			const content = await vault.readFile(path);

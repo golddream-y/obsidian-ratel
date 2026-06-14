@@ -2,8 +2,9 @@
 // From ARCHITECTURE.md section 5
 
 import { type App, type CachedMetadata, TFile } from 'obsidian';
+import type { VaultPort, VaultMetadata } from '../ports/vault';
 
-export class ObsidianVault {
+export class ObsidianVault implements VaultPort {
 	constructor(private app: App) {}
 
 	/** Read file content */
@@ -40,10 +41,16 @@ export class ObsidianVault {
 	}
 
 	/** Get file metadata (frontmatter / links / tags) */
-	getMetadata(path: string): CachedMetadata | null {
+	getMetadata(path: string): VaultMetadata | null {
 		const file = this.app.vault.getAbstractFileByPath(path);
 		if (!file) return null;
-		return this.app.metadataCache.getFileCache(file as TFile);
+		const cache = this.app.metadataCache.getFileCache(file as TFile);
+		if (!cache) return null;
+		return {
+			frontmatter: cache.frontmatter as Record<string, unknown> | undefined,
+			tags: cache.tags?.map((t) => ({ tag: t.tag })),
+			links: cache.links?.map((l) => ({ link: l.link })),
+		};
 	}
 
 	/** Listen for file modifications */

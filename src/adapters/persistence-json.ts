@@ -80,6 +80,7 @@ export class PersistenceJson implements Persistence {
 
 	private loaded = false;
 	private loadingPromise: Promise<void> | null = null;
+	private persistPromise: Promise<void> | null = null;
 
 	private async ensureLoaded(): Promise<void> {
 		if (this.loaded) return;
@@ -103,6 +104,13 @@ export class PersistenceJson implements Persistence {
 	}
 
 	private async persist(): Promise<void> {
-		await this.saveData(this.data);
+		// Serialize writes to prevent concurrent overwrites
+		if (this.persistPromise) {
+			this.persistPromise = this.persistPromise.then(() => this.saveData(this.data));
+		} else {
+			this.persistPromise = this.saveData(this.data);
+		}
+		await this.persistPromise;
+		this.persistPromise = null;
 	}
 }

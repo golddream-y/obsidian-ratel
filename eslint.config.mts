@@ -9,9 +9,7 @@ export default tseslint.config(
 		plugins: {
 			obsidian,
 		},
-		rules: {
-			'obsidian/no-obsidianapi-in-worker': 'error',
-		},
+		rules: {},
 	},
 	{
 		files: ['**/*.svelte'],

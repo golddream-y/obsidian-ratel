@@ -52,8 +52,10 @@ export async function* agentLoop(
 
 			yield { type: 'tool.call', payload: { name: toolCall.name, args: toolCall.args } };
 
-			// Pre-hook
-			await hooks.run('pre-write', toolCall);
+			// Pre-hook (only for write tools)
+			if (!tools.isReadOnly(toolCall.name)) {
+				await hooks.run('pre-write', toolCall);
+			}
 
 			// Execute tool with error handling
 			let result: unknown;
@@ -67,8 +69,10 @@ export async function* agentLoop(
 
 			yield { type: 'tool.result', payload: { name: toolCall.name, result } };
 
-			// Post-hook
-			await hooks.run('post-write', toolCall);
+			// Post-hook (only for write tools)
+			if (!tools.isReadOnly(toolCall.name)) {
+				await hooks.run('post-write', toolCall);
+			}
 
 			ctx.addAssistantToolCall(toolCall, accumulatedText);
 			ctx.addToolResult(toolCall.id, JSON.stringify(result));
