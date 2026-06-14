@@ -3,9 +3,9 @@
 ## 项目概述
 
 - 目标平台:Obsidian 社区插件(TypeScript → 打包后 JavaScript)。
-- 主线程入口:`src/main.ts` 编译为 `main.js`,由 Obsidian 加载。
-- Worker 入口:`src/worker/index.ts` 编译为 `worker.js`(CPU 密集型任务)。
-- 发布产物:`main.js`、`worker.js`、`manifest.json`,以及可选的 `styles.css`。
+- 主线程入口:`src/main.ts` 编译为 `dist/main.js`,由 Obsidian 加载。
+- Worker 入口:`src/worker/index.ts` 编译为 `dist/worker.js`(CPU 密集型任务)。
+- 发布产物:`dist/main.js`、`dist/worker.js`、`manifest.json`、可选 `styles.css`,从 `dist/` 取。
 
 ## 架构
 
