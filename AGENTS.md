@@ -129,3 +129,24 @@ This project uses [Superpowers](https://github.com/obra/superpowers) skills for 
 - **User instructions override skills** — If AGENTS.md says "don't use TDD" and a skill says "always TDD," follow the user.
 - **Check for skills BEFORE any action** — Even a 1% chance a skill applies → read it first.
 - **Skills are mandatory workflows, not suggestions** — When triggered, follow them.
+
+### Spec & Plan Lifecycle (mandatory)
+
+Every brainstorming session, spec, or plan must be tracked. This is non-negotiable — it keeps the project navigable.
+
+**Canonical registry:** [`docs/superpowers/STATUS.md`](docs/superpowers/STATUS.md) is the single source of truth for all specs and plans in this project.
+
+**Update rules:**
+
+1. **brainstorming** skill finishes → create a new spec under `docs/superpowers/specs/` AND register it in `STATUS.md` (status: Active).
+2. **writing-plans** skill finishes → create a new plan under `docs/superpowers/plans/` AND register it in `STATUS.md` (status: Pending), linking to the spec it implements.
+3. **executing-plans** or **subagent-driven-development** starts → update `STATUS.md` to status: In Progress, set the branch name.
+4. Plan execution completes → update `STATUS.md` to status: Completed with the merged commit / branch.
+5. Spec/plan abandoned or superseded → move to the "Superseded / Archived" section with explanation.
+
+**Commit convention:** Always update `STATUS.md` in the SAME commit as the file it tracks. Never leave the registry out of sync.
+
+**Spec vs Plan distinction:**
+- **Spec** = WHAT we're building (design, architecture, requirements). Lives in `specs/`.
+- **Plan** = HOW we're building it (tasks, files, tests). Lives in `plans/`.
+- A spec can have multiple plans (e.g., an implementation plan and a separate test plan).
