@@ -11,7 +11,10 @@
 		"lint": "eslint .",
 		"svelte-check": "svelte-check --tsconfig tsconfig.json",
 		"test": "vitest run",
-		"test:watch": "vitest"
+		"test:watch": "vitest",
+		"link:vault": "node scripts/link-vault.mjs",
+		"link:dev": "npm run build && npm run link:vault --",
+		"unlink:vault": "node scripts/link-vault.mjs --unlink"
 	},
 	"keywords": [
 		"obsidian",
