@@ -154,4 +154,64 @@ describe('PersistenceJson', () => {
 			expect(list).toHaveLength(3);
 		});
 	});
+
+	describe('resilience', () => {
+		it('recovers from corrupt JSON on load', async () => {
+			const persistence = new PersistenceJson(
+				async () => {
+					throw new Error('data.json contains invalid JSON');
+				},
+				async () => {},
+			);
+
+			// Should not throw — corrupt data should trigger a fresh start.
+			// Using sessions.get to force ensureLoaded(); expect null (no session after recovery).
+			await expect(persistence.sessions.get('test')).resolves.toBeNull();
+		});
+
+		it('deduplicates concurrent load calls via loadingPromise', async () => {
+			let loadCallCount = 0;
+			const persistence = new PersistenceJson(
+				async () => {
+					loadCallCount++;
+					await new Promise((r) => setTimeout(r, 50));
+					return { sessions: {} };
+				},
+				async () => {},
+			);
+
+			// Fire 3 concurrent calls that each trigger ensureLoaded()
+			await Promise.all([
+				persistence.sessions.get('s1'),
+				persistence.sessions.get('s2'),
+				persistence.sessions.get('s3'),
+			]);
+
+			// loadData should be called only once due to loadingPromise
+			expect(loadCallCount).toBe(1);
+		});
+
+		it('handles empty data file gracefully', async () => {
+			const persistence = new PersistenceJson(
+				async () => ({}),
+				async () => {},
+			);
+
+			// Force ensureLoaded() on an empty object
+			await persistence.sessions.get('test');
+			await expect(persistence.sessions.upsert({ id: 's', title: '', messages: [], createdAt: 0, updatedAt: 0 })).resolves.toBeUndefined();
+		});
+
+		it('handles missing sessions key', async () => {
+			const persistence = new PersistenceJson(
+				async () => ({ otherData: 'foo' }),
+				async () => {},
+			);
+
+			// Force ensureLoaded() on data that lacks the sessions key
+			await persistence.sessions.get('test');
+			// Should be able to upsert without error
+			await expect(persistence.sessions.upsert({ id: 's', title: '', messages: [], createdAt: 0, updatedAt: 0 })).resolves.toBeUndefined();
+		});
+	});
 });

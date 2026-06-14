@@ -85,22 +85,26 @@ export class PersistenceJson implements Persistence {
 	private async ensureLoaded(): Promise<void> {
 		if (this.loaded) return;
 		if (!this.loadingPromise) {
-			this.loadingPromise = this.doLoad();
+			this.loadingPromise = (async () => {
+				try {
+					const raw = await this.loadData();
+					const stored = (raw ?? {}) as Partial<DataStore>;
+					this.data = {
+						sessions: (stored.sessions as Record<string, Session>) ?? {},
+						notes: (stored.notes as Record<string, NoteMeta>) ?? {},
+						hookLog: (stored.hookLog as HookLogEntry[]) ?? [],
+					};
+					this.loaded = true;
+				} catch (err) {
+					console.error('Failed to load data, starting fresh:', err);
+					this.data = { sessions: {}, notes: {}, hookLog: [] };
+					this.loaded = true;
+				} finally {
+					this.loadingPromise = null;
+				}
+			})();
 		}
 		await this.loadingPromise;
-	}
-
-	private async doLoad(): Promise<void> {
-		const raw = await this.loadData();
-		if (raw && typeof raw === 'object') {
-			const stored = raw as Partial<DataStore>;
-			this.data = {
-				sessions: (stored.sessions as Record<string, Session>) ?? {},
-				notes: (stored.notes as Record<string, NoteMeta>) ?? {},
-				hookLog: (stored.hookLog as HookLogEntry[]) ?? [],
-			};
-		}
-		this.loaded = true;
 	}
 
 	private async persist(): Promise<void> {
