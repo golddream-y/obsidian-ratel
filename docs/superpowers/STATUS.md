@@ -22,6 +22,7 @@
 | S-RAG-ROADMAP | [2026-06-13-rag-enhancement-roadmap-design.md](specs/2026-06-13-rag-enhancement-roadmap-design.md) | Active | 2026-06-13 | RAG 三阶段路线图 |
 | S-RAG-ARCH | [2026-06-14-ratel-rag-architecture.md](specs/2026-06-14-ratel-rag-architecture.md) | Active | 2026-06-14 | 最终 RAG 架构(取代 S-RAG-ROADMAP 中的初步想法) |
 | S-TEST-ARCH | [2026-06-14-ratel-test-architecture.md](specs/2026-06-14-ratel-test-architecture.md) | Active | 2026-06-14 | 按功能维度划分的测试架构 + 4 个里程碑 |
+| S-I18N | [2026-06-14-ratel-i18n-design.md](specs/2026-06-14-ratel-i18n-design.md) | Draft | 2026-06-14 | i18n 基础设施:中英文切换,settings.ts + ChatView + 命令 + Notice 全覆盖 |
 
 ---
 
