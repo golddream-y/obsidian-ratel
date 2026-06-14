@@ -8,7 +8,11 @@
 		content: string;
 	}
 
-	let plugin: RatelVaultPlugin;
+	// 修复:加 `export` 让 Svelte 5 识别为 prop 声明。
+	// 原因:Svelte 4 时代 `let x;` 隐式 prop,Svelte 5 改为必须 `export let` 或 `$props()`。
+	// 没 `export` 时 esbuild-svelte 0.9 编译出 `let t,` 但不绑定 props,
+	// 导致父组件传的 plugin 永远 undefined,Svelte 5 effect 链某处 .call() 失败。
+	export let plugin: RatelVaultPlugin;
 	let messages: Message[] = [];
 	let input = '';
 	let isRunning = false;
