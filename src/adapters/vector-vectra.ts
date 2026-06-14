@@ -79,7 +79,8 @@ export class VectraStore implements VectorStore {
 	 * @param filter - 元数据过滤(当前实现未使用,留作扩展)。
 	 * @returns 文档级结果,按相关性降序。
 	 */
-	async search(queryVector: number[], topK: number, filter?: SearchFilter): Promise<VectorSearchResult[]> {
+	async search(queryVector: number[], topK: number, _filter?: SearchFilter): Promise<VectorSearchResult[]> {
+		void _filter; // 关键路径:filter 当前实现未启用,保留以满足端口契约。
 		const index = await this.ensureIndex();
 		// 过度抓取:确保聚合后 topK 文档都能拿到。
 		const results = await index.queryItems(queryVector, '', topK * 10);
