@@ -273,7 +273,7 @@ describe('agentLoop', () => {
 				get: vi.fn().mockResolvedValue(null),
 				upsert: saveSpy,
 			},
-		} as any;
+		} as unknown as Persistence;
 		const ctx = new ContextManager(mockPersistence);
 
 		const llm = {
@@ -289,7 +289,7 @@ describe('agentLoop', () => {
 		const hooks = new HookRegistry();
 
 		const events: string[] = [];
-		for await (const e of agentLoop({ sessionId: 's1', message: 'hi' }, ctx, llm as any, tools, hooks)) {
+		for await (const e of agentLoop({ sessionId: 's1', message: 'hi' }, ctx, llm as unknown as LLMClient, tools, hooks)) {
 			events.push(e.type);
 		}
 
@@ -329,6 +329,7 @@ describe('agentLoop', () => {
 		const hooks = new HookRegistry();
 		for await (const _ of agentLoop({ sessionId: 's1', message: 'hi' }, ctx, llm as unknown as LLMClient, tools, hooks)) {
 			// drain
+			void _;
 		}
 
 		// Verify multiple tool calls happened (truly tests multi-round)
