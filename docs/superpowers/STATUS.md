@@ -60,7 +60,7 @@
 | T2: ContextManager before-load guards | ✅ | `dc0c442` | Reviewer flagged misleading test name, fixed |
 | T3: PersistenceJson corrupt + concurrent | ✅ | `7a11ad8` | Reviewer approved with minor concerns (non-blocking) |
 | T4: DeepSeekLLM SSE + multi tool_calls | ✅ | `e724423` | Reviewer found weak assertion + misleading comment, fixed |
-| T5: Agent Loop mid-stream + multi-round | ✅ | `dd86b86` | Tests pass; reviewer minor concerns (non-blocking) |
+| T5: Agent Loop mid-stream + multi-round | ✅ | `dd86b86` + `9e7f245` | Multi-round mock fix + 3 lint errors cleaned (`9e7f245`) |
 | T6: Final verify + docs update | ✅ | this commit | Full suite 93/93 green; build green; M1 L1 100% reached |
 
 **Current state:** 93/93 tests passing across 13 files (was 75 at start, +18 from W1 backfill T1-T5). M1 (L1 单元测试夯实) reached: 65/65 (100%).
