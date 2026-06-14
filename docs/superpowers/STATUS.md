@@ -34,7 +34,7 @@
 | P-W3-IMPL | [2026-06-13-ratel-w3-implementation.md](plans/2026-06-13-ratel-w3-implementation.md) | ⏳ Pending | — | — | — | S-RAG-ARCH (W3 slice) |
 | P-W4-IMPL | [2026-06-13-ratel-w4-implementation.md](plans/2026-06-13-ratel-w4-implementation.md) | ⏳ Pending | — | — | — | S-RAG-ARCH (W4 slice) |
 | P-W1-TEST-BACKFILL | [2026-06-14-ratel-w1-test-backfill.md](plans/2026-06-14-ratel-w1-test-backfill.md) | ✅ Completed | test/w1-backfill | 2026-06-14 | 2026-06-14 | S-TEST-ARCH (W1 backfill) |
-| P-W2-TEST-BACKFILL | [2026-06-14-ratel-w2-test-backfill.md](plans/2026-06-14-ratel-w2-test-backfill.md) | ✅ Completed | test/w2-backfill | 2026-06-14 | 2026-06-14 | S-TEST-ARCH (W2 backfill) |
+| P-W2-TEST-BACKFILL | [2026-06-14-ratel-w2-test-backfill.md](plans/2026-06-14-ratel-w2-test-backfill.md) | ✅ Completed | test/w2-backfill → main (3a3cb9f) | 2026-06-14 | 2026-06-14 | S-TEST-ARCH (W2 backfill) |
 | P-W3-TEST | [2026-06-14-ratel-w3-test-plan.md](plans/2026-06-14-ratel-w3-test-plan.md) | ⏳ Pending | — | — | — | S-TEST-ARCH (W3 plan) |
 | P-W4-TEST | [2026-06-14-ratel-w4-test-plan.md](plans/2026-06-14-ratel-w4-test-plan.md) | ⏳ Pending | — | — | — | S-TEST-ARCH (W4 plan) |
 | P-DOCS-CN | (none — chore) | ✅ Completed | chore/translate-comments-to-chinese | 2026-06-14 | 2026-06-14 | AGENTS.md § 文档与注释规范 |
@@ -87,14 +87,14 @@
 
 ### Future execution queue (in order)
 
-1. Merge `test/w1-backfill` → main
-2. Merge `test/w2-backfill` → main
+1. ~~Merge `test/w1-backfill` → main~~ (本批已随 W2 合并捎带 — 实际上 W1 work 全部进了主分支)
+2. ~~Merge `test/w2-backfill` → main~~ ✅ (commit `3a3cb9f`)
 3. P-W3-IMPL (W3 hybrid search + RRF + citations)
 4. P-W3-TEST (test plan for W3)
 5. P-W4-IMPL (Reranker + Query Rewrite + Indexer)
 6. P-W4-TEST (test plan for W4+)
 7. Manual E2E validation in Obsidian (M3 milestone)
-8. Merge `chore/translate-comments-to-chinese` → main
+8. ~~Merge `chore/translate-comments-to-chinese` → main~~ (本批已捎带,中文注释已随 W2 合并进主分支)
 9. **Follow-up:** fix `svelte-eslint-parser` config so `npx eslint src/` covers `*.svelte` files
 
 ---
