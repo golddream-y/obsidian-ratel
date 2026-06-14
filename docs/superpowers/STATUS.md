@@ -33,7 +33,7 @@
 | P-W2-IMPL | [2026-06-13-ratel-w2-implementation.md](plans/2026-06-13-ratel-w2-implementation.md) | ✅ Completed | (merged) | 2026-06-13 | 2026-06-13 | S-MODEL-001, S-RAG-ARCH (W2 slice) |
 | P-W3-IMPL | [2026-06-13-ratel-w3-implementation.md](plans/2026-06-13-ratel-w3-implementation.md) | ⏳ Pending | — | — | — | S-RAG-ARCH (W3 slice) |
 | P-W4-IMPL | [2026-06-13-ratel-w4-implementation.md](plans/2026-06-13-ratel-w4-implementation.md) | ⏳ Pending | — | — | — | S-RAG-ARCH (W4 slice) |
-| P-W1-TEST-BACKFILL | [2026-06-14-ratel-w1-test-backfill.md](plans/2026-06-14-ratel-w1-test-backfill.md) | 🔄 In Progress | test/w1-backfill | 2026-06-14 | — | S-TEST-ARCH (W1 backfill) |
+| P-W1-TEST-BACKFILL | [2026-06-14-ratel-w1-test-backfill.md](plans/2026-06-14-ratel-w1-test-backfill.md) | ✅ Completed | test/w1-backfill | 2026-06-14 | 2026-06-14 | S-TEST-ARCH (W1 backfill) |
 | P-W2-TEST-BACKFILL | [2026-06-14-ratel-w2-test-backfill.md](plans/2026-06-14-ratel-w2-test-backfill.md) | ⏳ Pending | — | — | — | S-TEST-ARCH (W2 backfill) |
 | P-W3-TEST | [2026-06-14-ratel-w3-test-plan.md](plans/2026-06-14-ratel-w3-test-plan.md) | ⏳ Pending | — | — | — | S-TEST-ARCH (W3 plan) |
 | P-W4-TEST | [2026-06-14-ratel-w4-test-plan.md](plans/2026-06-14-ratel-w4-test-plan.md) | ⏳ Pending | — | — | — | S-TEST-ARCH (W4 plan) |
@@ -60,14 +60,16 @@
 | T2: ContextManager before-load guards | ✅ | `dc0c442` | Reviewer flagged misleading test name, fixed |
 | T3: PersistenceJson corrupt + concurrent | ✅ | `7a11ad8` | Reviewer approved with minor concerns (non-blocking) |
 | T4: DeepSeekLLM SSE + multi tool_calls | ✅ | `e724423` | Reviewer found weak assertion + misleading comment, fixed |
-| T5: Agent Loop mid-stream + multi-round | 🔄 In Progress | — | — |
-| T6: Final verify + docs update | ⏳ Pending | — | — |
+| T5: Agent Loop mid-stream + multi-round | ✅ | `dd86b86` | Tests pass; reviewer minor concerns (non-blocking) |
+| T6: Final verify + docs update | ✅ | this commit | Full suite 93/93 green; build green; M1 L1 100% reached |
 
-**Current state:** 91/91 tests passing across 13 files (was 75 at start, +16 from W1 backfill T1-T4).
+**Current state:** 93/93 tests passing across 13 files (was 75 at start, +18 from W1 backfill T1-T5). M1 (L1 单元测试夯实) reached: 65/65 (100%).
+
+**W1 backfill commit range:** `87f402f..HEAD` (branch `test/w1-backfill`, ready to merge to main).
 
 ### Future execution queue (in order)
 
-1. Finish T5, T6 of P-W1-TEST-BACKFILL (this branch)
+1. Merge `test/w1-backfill` → main
 2. P-W2-TEST-BACKFILL (6 tasks)
 3. P-W3-IMPL (W3 hybrid search + RRF + citations)
 4. P-W3-TEST (test plan for W3)
