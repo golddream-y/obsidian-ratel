@@ -6,6 +6,7 @@
  */
 
 import { ItemView, type WorkspaceLeaf } from 'obsidian';
+import { mount, unmount } from 'svelte';
 import ChatViewComponent from './ChatView.svelte';
 import type RatelVaultPlugin from '../main';
 
@@ -16,12 +17,16 @@ export const VIEW_TYPE_CHAT = 'ratel-chat';
  * Ratel 聊天侧栏的 Obsidian 视图。
  *
  * 设计要点:
- * - `onOpen` 时把 Svelte 组件 mount 到 `containerEl.children[1]`(主内容区)。
- * - `onClose` 时调用 `$destroy()` 释放 Svelte 内部资源,避免内存泄漏。
+ * - `onOpen` 时用 Svelte 5 的 `mount()` 把组件挂到 `containerEl.children[1]`(主内容区)。
+ * - `onClose` 时调 `unmount()` 释放 Svelte 内部资源,避免内存泄漏。
+ * - 关键路径:用 `mount` / `unmount` 而非 Svelte 4 风格 `new Component({...})` + `$destroy()`。
+ *   Svelte 5 编译 export let 后的组件函数签名是 `(target, props)` 双参,
+ *   旧的单参 options 对象调用会让第二个参数变 undefined,Svelte 5 effect 链
+ *   内部对 undefined 用 in 算符找 Symbol($state) 直接抛。
  * - 持有 `plugin` 引用以便 Svelte 组件访问主线程 API(`ask`、`persistence` 等)。
  */
 export class ChatView extends ItemView {
-	component: { $destroy: () => void } | null = null;
+	component: ReturnType<typeof mount> | null = null;
 
 	constructor(leaf: WorkspaceLeaf, private plugin: RatelVaultPlugin) {
 		super(leaf);
@@ -52,22 +57,24 @@ export class ChatView extends ItemView {
 		const container = this.containerEl.children[1] as HTMLElement;
 		container.empty();
 
-		this.component = new ChatViewComponent({
+		this.component = mount(ChatViewComponent, {
 			target: container,
 			props: {
 				plugin: this.plugin,
 			},
-		}) as { $destroy: () => void };
+		});
 	}
 
 	/**
-	 * 视图关闭时销毁 Svelte 组件并清空引用。
+	 * 视图关闭时卸载 Svelte 组件并清空引用。
 	 *
-	 * 关键路径:不调 `$destroy()` 会导致 Svelte 5 的 effect / signal 仍持有 DOM 引用,
+	 * 关键路径:不调 `unmount()` 会导致 Svelte 5 的 effect / signal 仍持有 DOM 引用,
 	 * 在多次开关后出现内存泄漏。
 	 */
 	async onClose(): Promise<void> {
-		this.component?.$destroy();
-		this.component = null;
+		if (this.component) {
+			unmount(this.component);
+			this.component = null;
+		}
 	}
 }
