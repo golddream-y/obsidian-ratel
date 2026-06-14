@@ -5,7 +5,7 @@
  * @depends obsidian, ports/vault
  */
 
-import { type App, type CachedMetadata, TFile } from 'obsidian';
+import { type App, TFile } from 'obsidian';
 import type { VaultPort, VaultMetadata } from '../ports/vault';
 
 /**

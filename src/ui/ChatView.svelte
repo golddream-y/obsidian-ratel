@@ -1,15 +1,8 @@
 <script lang="ts">
-	/**
-	 * @file src/ui/ChatView.svelte
-	 * @description Ratel 聊天侧栏 — 用户输入 + 流式渲染 + 错误展示
-	 *
-	 * 关键路径:
-	 * - `sendMessage` 把用户消息写入 messages,然后 `for await` 消费 `AgentEvent`。
-	 * - 每个 `message.delta` 触发 messages 数组重建(Svelte 5 反应性依赖引用比较)。
-	 * - 错误在 try / catch / finally 三处收集,确保 isRunning 一定被复位。
-	 */
 	import type RatelVaultPlugin from '../main';
 
+	// Ratel 聊天侧栏 — 用户输入 + 流式渲染 + 错误展示
+	// 关键路径:每个 message.delta 触发 messages 数组重建(Svelte 5 反应性依赖引用比较)。
 	interface Message {
 		role: 'user' | 'assistant';
 		content: string;

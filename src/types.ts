@@ -50,7 +50,7 @@ export type WorkerRequest =
 	| { type: 'vector.search'; payload: { queryVector: number[]; topK: number; filter?: import('./ports/vector').SearchFilter } }
 	| { type: 'vector.upsert'; payload: { docId: string; text: string; metadata: Record<string, unknown> } }
 	| { type: 'vector.delete'; payload: { docIds: string[] } }
-	| { type: 'index.status'; payload: {} };
+	| { type: 'index.status'; payload: Record<string, never> };
 
 // ==================== Worker 响应(Worker → 主线程) ====================
 
