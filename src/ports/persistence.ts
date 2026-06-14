@@ -1,6 +1,8 @@
 // Persistence Port — zero-implementation interface contract
 // From ARCHITECTURE.md section 4.1
 
+import type { ChatMessage } from './llm';
+
 export interface Persistence {
 	sessions: SessionRepository;
 	notes: NoteMetaRepository;
@@ -52,9 +54,6 @@ export interface HookLogEntry {
 	message?: string;
 }
 
-export interface ChatMessage {
-	role: 'system' | 'user' | 'assistant' | 'tool';
-	content: string;
-	toolCallId?: string;
-	toolName?: string;
-}
+// ChatMessage is defined in ports/llm.ts (the canonical source)
+// Re-exported here for convenience
+export type { ChatMessage } from './llm';
