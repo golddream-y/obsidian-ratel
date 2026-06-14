@@ -8,6 +8,9 @@ import { ToolRegistry } from './core/tool-registry';
 import { ObsidianVault } from './adapters/obsidian-vault';
 import { PersistenceJson } from './adapters/persistence-json';
 import { DeepSeekLLM } from './adapters/llm-deepseek';
+import type { EmbeddingPort } from './ports/embedding';
+import { EmbeddingLocal } from './adapters/embedding-local';
+import { EmbeddingApi } from './adapters/embedding-api';
 import { WorkerManager } from './worker/manager';
 import { createReadNoteTool } from './tools/read-note';
 import { ChatView, VIEW_TYPE_CHAT } from './ui/ChatView';
@@ -18,6 +21,7 @@ export default class RatelVaultPlugin extends Plugin {
 	vault!: ObsidianVault;
 	persistence!: PersistenceJson;
 	llm!: DeepSeekLLM;
+	embedding!: EmbeddingPort;
 	tools!: ToolRegistry;
 	hooks!: HookRegistry;
 	workerManager!: WorkerManager;
@@ -36,6 +40,21 @@ export default class RatelVaultPlugin extends Plugin {
 			apiKey: this.settings.chatApiKey,
 			model: this.settings.chatModel,
 		});
+
+		// Initialize embedding adapter
+		if (this.settings.embedProvider === 'local') {
+			this.embedding = new EmbeddingLocal(
+				this.settings.embedLocalModel,
+				512, // bge-small-zh dimensions
+			);
+		} else {
+			this.embedding = new EmbeddingApi({
+				apiBase: this.settings.embedApiBase,
+				apiKey: this.settings.embedApiKey,
+				model: this.settings.embedApiModel,
+				dimensions: 1024, // bge-m3 dimensions
+			});
+		}
 
 		// Initialize Worker
 		const workerPath = path.join(__dirname, 'worker.js');
