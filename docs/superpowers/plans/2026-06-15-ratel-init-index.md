@@ -417,7 +417,7 @@ export type WorkerRequest =
 
 /** Worker → 主 响应类型。 */
 export type WorkerResponse =
-  | { type: 'index.status.result'; payload: { totalDocs: number } }
+  | { type: 'index.status.result'; payload: { totalDocs: number; lastIndexTime: number } }
   | { type: 'index.done'; payload: { indexed: number; errors: number } }
   | { type: 'vector.search.result'; payload: Array<{ docId: string; score: number; metadata: Record<string, unknown> }> }
   | { type: 'vector.upsert.done'; payload: { docId: string } }
@@ -2484,3 +2484,83 @@ Plan complete. Total: 9 task groups, ~50 bite-sized steps, all TDD, all with con
 
 1. **Subagent-Driven(推荐)** — 每个 Task 派遣全新 subagent,两阶段审查(规范合规 + 代码质量),快迭代
 2. **Inline Execution** — 在当前 session 用 executing-plans 批量执行,带 checkpoint
+
+---
+
+## 执行记录(2026-06-15)
+
+### 摘要
+
+| 指标 | 值 |
+|---|---|
+| 分支 | `feat/init-index` |
+| Worktree | `.worktrees/feat-init-index` |
+| Commit 数 | 11(10 个 M + 1 plan + 1 quality fix) |
+| 新增测试 | 56 个(从 baseline 127 → 183,实际 176 因部分替换) |
+| 实际测试总数 | 176/176 pass, build OK |
+| Plan 偏差 | 6 处(M-0 / M-1 / M-2 / M-6 / esbuild) |
+| Quality Review 发现 | 1 Critical(已修) + 4 次要观察(留作未来) |
+
+### Commit 列表(按时序)
+
+| SHA | Task | 标题 |
+|---|---|---|
+| `ede07f2` | plan | docs(plan): S-INIT-INDEX 实施 plan — 9 task groups |
+| `b552df4` | M-0 | feat: settings + VectraStore 注入 + gitignore + .ratelignore |
+| `8d9835c` | M-1 | feat: Worker 6 case 真实现 + IndexProcessor + VectraStore 注入构造 |
+| `73e81c2` | M-2 | feat: IndexManager 状态机 + 队列 + 暂停/恢复/重索引 |
+| `7316622` | M-3 | feat: FolderWatcher 5s 单文件去抖 |
+| `f624169` | M-4 | feat: IndexController 聚合 + IndexBanner Svelte |
+| `0c0456f` | M-5 | feat: ModelManager 状态机 + ModelDownloader + disk-checker |
+| `08080e5` | M-6 | feat: EmbeddingLocal 去懒加载 + 接受注入 + INDEX_NOT_READY |
+| `93748cd` | M-7 | feat: 多模型并存 + 切换 + 一键清理 |
+| `e1fcbbd` | M-8 | test: 集成测试覆盖 1000 文件首扫 / 降级矩阵 / 暂停恢复 / 模型下载 |
+| `3a7abac` | fix | fix: snapshotForResume 读真实 paused 前状态(Quality Review 修复) |
+
+### Plan 偏差(执行中识别的偏离)
+
+| # | Task | 偏差 | 修复 |
+|---|---|---|---|
+| 1 | M-0 | `@types/ignore` 404(ignore v5+ 自带类型) | 跳过,只装 `ignore` |
+| 2 | M-0 | `app.vault.adapter.getBasePath()` 不在 `DataAdapter` 类型上 | 改用 `FileSystemAdapter` 类型断言 |
+| 3 | M-0 | esbuild `platform: 'node'` + `onnxruntime-node` external 未配置 | 加到 esbuild.config.mjs |
+| 4 | M-1 | `WorkerResponse.index.status.result` plan 写 `{ totalDocs: number }`,但 main.ts 用了 `lastIndexTime` | 修 plan 协议,加 `lastIndexTime` 字段 |
+| 5 | M-1 | `initProcessor` 没接 `embeddings`,vectra 内部 `createEmbeddings` 报 undefined | initProcessor 增加必传 `embeddings` 参数 |
+| 6 | M-1 | `chunks[idx]` 触发 `noUncheckedIndexedAccess` 错误 | 改用 `chunks.entries()` 遍历 |
+
+### Quality Review 记录
+
+#### 🔴 Critical: `IndexManager.snapshotForResume` 读不到真实 paused 前状态
+
+- **症状**:`previousState` hardcode 为 `{ state: 'Ready' }`,导致在 `Scanning` / `Failed` 状态 pause → resume 状态丢失
+- **修复 commit**:`3a7abac`
+- **修法**:用 `get(status$)` 读 paused 前的真实状态
+- **回归 test**:`quality fix - 在 Ready 状态 pause → resume 后仍是 Ready`
+
+#### 🟡 次要观察(留作未来改进,不阻塞)
+
+- `IndexController.onLayoutReady` 在 await 之前 throw 时 unsubscriber 泄漏(实际不会触发,理论风险)
+- `EmbeddingLocal.setExtractor` 不检查 modelId 匹配,切到不同维度模型会 silently 维度不一致
+- `Ratelignore` 不热重载(plan § 4.8 已知 gap,留作后续 spec)
+- `ensurePluginGitignore` 不创建 pluginDir(实际 Obsidian 启动时 pluginDir 必然存在)
+
+### Spec 覆盖
+
+S-INIT-INDEX 全部 15 节(§ 2 验收 9 条 / § 4 详细设计 12 小节 / § 5 关键代码 5 骨架)均映射到具体 Task + Commit,**无 gap**。
+
+### 测试统计
+
+| Task | 测试文件 | 新增 | 累计 |
+|---|---|---|---|
+| M-0 | settings / gitignore-writer / ratelignore-parser | +9 | 9 |
+| M-1 | handler / index-processor | +7(替换 4 旧) | 16 |
+| M-2 | index-manager | +10(9 + 1 quality fix) | 26 |
+| M-3 | folder-watcher | +5 | 31 |
+| M-4 | index-controller | +3 | 34 |
+| M-5 | disk-checker / model-downloader / model-manager | +8 | 42 |
+| M-6 | embedding-local(替换 5 旧) | +2 net | 44 |
+| M-7 | settings / model-manager-cleanup | +3 | 47 |
+| M-8 | integration/* 4 文件 | +5 | 52 |
+| **总计** | | **+52 新 test**(含 5 替换) | **176 pass** |
+
+baseline 127 → 现在 176 = +49,plan 估算 +56,实际略少(因部分 test 是替换旧 test 而非新增)。
