@@ -5,7 +5,7 @@
  * @depends obsidian, settings, types, core/*, adapters/*, ports/*, worker/*, tools/*, ui/*
  */
 
-import { Notice, Plugin } from 'obsidian';
+import { FileSystemAdapter, Notice, Plugin } from 'obsidian';
 import { type RatelVaultSettings, DEFAULT_SETTINGS, RatelVaultSettingTab } from './settings';
 import type { AgentEvent } from './types';
 import { agentLoop } from './core/agent-loop';
@@ -18,9 +18,11 @@ import { DeepSeekLLM } from './adapters/llm-deepseek';
 import type { EmbeddingPort } from './ports/embedding';
 import { EmbeddingLocal } from './adapters/embedding-local';
 import { EmbeddingApi } from './adapters/embedding-api';
+import { VectraStore } from './adapters/vector-vectra';
 import { WorkerManager } from './worker/manager';
 import { createReadNoteTool } from './tools/read-note';
 import { ChatView, VIEW_TYPE_CHAT } from './ui/ChatView';
+import { ensurePluginGitignore } from './utils/gitignore-writer';
 import path from 'path';
 
 /**
@@ -40,6 +42,8 @@ export default class RatelVaultPlugin extends Plugin {
 	tools!: ToolRegistry;
 	hooks!: HookRegistry;
 	workerManager!: WorkerManager;
+	// 关键路径:vectraStore 持有 vectra 索引目录的引用,需在 plugin 生命周期内常驻。
+	vectraStore!: VectraStore;
 
 	/**
 	 * Obsidian 插件生命周期入口。
@@ -66,6 +70,16 @@ export default class RatelVaultPlugin extends Plugin {
 
 		// Embedding 适配器:本地 ONNX vs 远端 OpenAI 兼容端点,按设置二选一。
 		this.rebuildEmbeddingAdapter();
+
+		// ==================== 索引目录(启动期) ====================
+		// 关键路径:`app.vault.adapter` 实际运行时是 `FileSystemAdapter`,
+		// `getBasePath()` 是 FileSystemAdapter 的方法,DataAdapter 基类不暴露,需要类型断言。
+		const adapter = this.app.vault.adapter as FileSystemAdapter;
+		const vaultBase = adapter.getBasePath();
+		const pluginDir = path.join(vaultBase, '.obsidian', 'plugins', 'ratel-vault');
+		const indexDir = path.join(pluginDir, '.index');
+		this.vectraStore = new VectraStore(indexDir);
+		ensurePluginGitignore(pluginDir);
 
 		// ==================== Worker ====================
 		// 关键路径:`__dirname` 在 esbuild 编译后指向 main.js 同目录,worker.js 必须存在。
@@ -160,6 +174,8 @@ export default class RatelVaultPlugin extends Plugin {
 	 */
 	onunload() {
 		this.workerManager.destroy();
+		// 关键路径:vectra 内部句柄释放,否则 reload 后会泄漏旧 index 引用。
+		void this.vectraStore;
 		console.log('Ratel unloaded');
 	}
 

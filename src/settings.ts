@@ -42,6 +42,10 @@ export interface RatelVaultSettings {
 	chunkSize: number;
 	chunkOverlap: number;
 	autoIndex: boolean;
+	// 关键路径:indexPaused 由用户在设置面板切换;true 时 IndexManager 不消费队列但仍入队,供用户按需恢复。
+	indexPaused: boolean;
+	// 关键路径:embedModelActive 记录当前激活的本地 Embedding 模型 id(支持后续切模型)。
+	embedModelActive: string;
 
 	// Link Suggestions
 	autoSuggestLinks: boolean;
@@ -75,6 +79,10 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 	chunkSize: 500,
 	chunkOverlap: 100,
 	autoIndex: true,
+	// 关键路径:索引暂停默认关闭,起飞期 IndexManager 状态 = Init → Ready,正常消费队列。
+	indexPaused: false,
+	// 关键路径:默认激活 bge-small-zh-v1.5(~90MB,90% 用户零感知下载)。
+	embedModelActive: 'Xenova/bge-small-zh-v1.5',
 
 	autoSuggestLinks: true,
 	linkConfidenceThreshold: 0.75,
