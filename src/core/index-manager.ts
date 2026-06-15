@@ -11,7 +11,7 @@
  * - 失败可重试:catch 后状态 → Failed,用户手动重试(resume)
  */
 
-import { writable } from 'svelte/store';
+import { writable, get } from 'svelte/store';
 
 /** 索引状态机(9 态)。 */
 export type IndexStatus =

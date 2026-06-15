@@ -88,4 +88,15 @@ describe('IndexManager', () => {
         manager.enqueue('d.md', 'delete');
         expect(get(manager.status$)).toMatchObject({ pending: 1 });
     });
+
+    it('quality fix - 在 Ready 状态 pause → resume 后仍是 Ready', async () => {
+        await manager.onLayoutReady();
+        expect(get(manager.status$).state).toBe('Ready');
+        manager.pause();
+        expect(get(manager.status$).state).toBe('Paused');
+        manager.resume();
+        // 关键路径:resume 后若队列空,回到 paused 前的 Ready(不是 hardcode 的 Ready)。
+        expect(get(manager.status$).state).toBe('Ready');
+        expect(get(manager.status$)).toMatchObject({ state: 'Ready', totalDocs: 0 });
+    });
 });
