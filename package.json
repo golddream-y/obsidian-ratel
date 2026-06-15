@@ -43,6 +43,7 @@
 		"vitest": "^4.1.8"
 	},
 	"dependencies": {
+		"ignore": "^7.0.5",
 		"vectra": "^0.15.0"
 	}
 }

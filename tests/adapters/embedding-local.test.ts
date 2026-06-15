@@ -1,66 +1,53 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { EmbeddingLocal } from '../../src/adapters/embedding-local';
+/**
+ * @file tests/adapters/embedding-local.test.ts
+ * @description EmbeddingLocal 行为 — 构造默认值 / 注入 extractor / 未就绪抛 IndexNotReadyError
+ * @module tests/adapters/embedding-local
+ * @depends adapters/embedding-local
+ *
+ * 关键路径:M-6 改造后,EmbeddingLocal 不再懒加载,所有加载由 ModelManager 负责。
+ * 这里只验证两件事:
+ * 1. 构造时 modelId / dimensions 正确
+ * 2. 注入 extractor 后 embed 可调;未注入时抛 IndexNotReadyError
+ */
 
-// Mock @huggingface/transformers pipeline
-vi.mock('@huggingface/transformers', () => ({
-	pipeline: vi.fn().mockResolvedValue(
-		vi.fn(async (texts: string[], options: Record<string, unknown>) => {
-			// Return mock tensor-like object with tolist()
-			const dims = 512;
-			const batch = Array.isArray(texts) ? texts : [texts];
-			const vectors = batch.map(() =>
-				Array.from({ length: dims }, () => Math.random()),
-			);
-			return { tolist: () => vectors };
-		}),
-	),
-}));
+import { describe, it, expect, vi } from 'vitest';
+import { EmbeddingLocal, IndexNotReadyError } from '../../src/adapters/embedding-local';
 
-describe('EmbeddingLocal', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
+describe('EmbeddingLocal - 构造', () => {
+    it('默认值 - modelId / dimensions', () => {
+        const adapter = new EmbeddingLocal();
+        expect(adapter.modelId).toBe('local:Xenova/bge-small-zh-v1.5');
+        expect(adapter.dimensions).toBe(512);
+    });
 
-	it('creates instance with correct defaults', () => {
-		const adapter = new EmbeddingLocal();
-		expect(adapter.modelId).toBe('local:Xenova/bge-small-zh-v1.5');
-		expect(adapter.dimensions).toBe(512);
-	});
+    it('自定义模型 - modelId / dimensions', () => {
+        const adapter = new EmbeddingLocal('Xenova/bge-micro-v2', 384);
+        expect(adapter.modelId).toBe('local:Xenova/bge-micro-v2');
+        expect(adapter.dimensions).toBe(384);
+    });
+});
 
-	it('creates instance with custom model', () => {
-		const adapter = new EmbeddingLocal('Xenova/bge-micro-v2', 384);
-		expect(adapter.modelId).toBe('local:Xenova/bge-micro-v2');
-		expect(adapter.dimensions).toBe(384);
-	});
+describe('EmbeddingLocal - M-6 注入式', () => {
+    it('未注入 extractor 时 embed - 抛 IndexNotReadyError(code=INDEX_NOT_READY)', async () => {
+        const e = new EmbeddingLocal();
+        try {
+            await e.embed(['hello']);
+            expect.fail('应该抛错');
+        } catch (err) {
+            expect(err).toBeInstanceOf(IndexNotReadyError);
+            expect((err as IndexNotReadyError).code).toBe('INDEX_NOT_READY');
+        }
+    });
 
-	it('embeds texts and returns number[][]', async () => {
-		const adapter = new EmbeddingLocal();
-		const result = await adapter.embed(['hello', 'world']);
-		expect(result).toHaveLength(2);
-		expect(result[0]).toHaveLength(512);
-		expect(result[1]).toHaveLength(512);
-	});
-
-	it('initializes pipeline lazily on first embed call', async () => {
-		const { pipeline } = await import('@huggingface/transformers');
-		const adapter = new EmbeddingLocal();
-		// Pipeline not called yet
-		expect(pipeline).not.toHaveBeenCalled();
-		await adapter.embed(['test']);
-		// Pipeline called on first embed
-		expect(pipeline).toHaveBeenCalledWith(
-			'feature-extraction',
-			'Xenova/bge-small-zh-v1.5',
-			expect.objectContaining({ dtype: 'q8' }),
-		);
-	});
-
-	it('reuses pipeline on subsequent calls', async () => {
-		const adapter = new EmbeddingLocal();
-		await adapter.embed(['first']);
-		await adapter.embed(['second']);
-		const { pipeline } = await import('@huggingface/transformers');
-		// Pipeline only initialized once
-		expect(pipeline).toHaveBeenCalledOnce();
-	});
+    it('注入 extractor 后 embed - 调用并返回', async () => {
+        const mockExtractor = vi.fn().mockResolvedValue({
+            tolist: () => [Array(512).fill(0.5)],
+        });
+        const e = new EmbeddingLocal();
+        e.setExtractor(mockExtractor as unknown as Parameters<EmbeddingLocal['setExtractor']>[0]);
+        const vectors = await e.embed(['hello']);
+        expect(vectors).toHaveLength(1);
+        expect(vectors[0]).toHaveLength(512);
+        expect(mockExtractor).toHaveBeenCalledWith(['hello'], expect.objectContaining({ pooling: 'mean', normalize: true }));
+    });
 });

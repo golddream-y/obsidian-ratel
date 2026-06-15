@@ -56,10 +56,27 @@ describe('DEFAULT_SETTINGS', () => {
     });
 
     it('数值字段在合理范围内', () => {
-        expect(DEFAULT_SETTINGS.chunkSize).toBeGreaterThan(0);
-        expect(DEFAULT_SETTINGS.chunkOverlap).toBeGreaterThanOrEqual(0);
-        expect(DEFAULT_SETTINGS.chunkOverlap).toBeLessThan(DEFAULT_SETTINGS.chunkSize);
-        expect(DEFAULT_SETTINGS.linkConfidenceThreshold).toBeGreaterThanOrEqual(0);
-        expect(DEFAULT_SETTINGS.linkConfidenceThreshold).toBeLessThanOrEqual(1);
-    });
+    expect(DEFAULT_SETTINGS.chunkSize).toBeGreaterThan(0);
+    expect(DEFAULT_SETTINGS.chunkOverlap).toBeGreaterThanOrEqual(0);
+    expect(DEFAULT_SETTINGS.chunkOverlap).toBeLessThan(DEFAULT_SETTINGS.chunkSize);
+    expect(DEFAULT_SETTINGS.linkConfidenceThreshold).toBeGreaterThanOrEqual(0);
+    expect(DEFAULT_SETTINGS.linkConfidenceThreshold).toBeLessThanOrEqual(1);
+});
+
+it('DEFAULT_SETTINGS - 包含 indexPaused 默认 false', () => {
+    expect(DEFAULT_SETTINGS.indexPaused).toBe(false);
+});
+
+it('DEFAULT_SETTINGS - 包含 embedModelActive 默认 Xenova/bge-small-zh-v1.5', () => {
+    expect(DEFAULT_SETTINGS.embedModelActive).toBe('Xenova/bge-small-zh-v1.5');
+});
+
+it('DEFAULT_SETTINGS - embedAvailableModels 含 5 个常见模型', () => {
+    expect(DEFAULT_SETTINGS.embedAvailableModels).toHaveLength(5);
+    expect(DEFAULT_SETTINGS.embedAvailableModels[0]).toMatchObject({ id: 'Xenova/bge-small-zh-v1.5' });
+});
+
+it('DEFAULT_SETTINGS - embedDownloadedModels 初始为空数组', () => {
+    expect(DEFAULT_SETTINGS.embedDownloadedModels).toEqual([]);
+});
 });
