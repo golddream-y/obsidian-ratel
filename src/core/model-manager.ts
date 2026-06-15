@@ -74,4 +74,17 @@ export class ModelManager {
         this.currentModelId = null;
         this.status$.set({ state: 'NotStarted' });
     }
+
+    /**
+     * 一键清理所有已下载模型。
+     *
+     * @param modelIds - 要清理的模型 ID 列表。
+     */
+    async cleanup(modelIds: string[]): Promise<void> {
+        for (const id of modelIds) {
+            await this.backend.remove(id);
+        }
+        this.currentModelId = null;
+        this.status$.set({ state: 'NotStarted' });
+    }
 }

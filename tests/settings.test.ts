@@ -70,4 +70,13 @@ it('DEFAULT_SETTINGS - 包含 indexPaused 默认 false', () => {
 it('DEFAULT_SETTINGS - 包含 embedModelActive 默认 Xenova/bge-small-zh-v1.5', () => {
     expect(DEFAULT_SETTINGS.embedModelActive).toBe('Xenova/bge-small-zh-v1.5');
 });
+
+it('DEFAULT_SETTINGS - embedAvailableModels 含 5 个常见模型', () => {
+    expect(DEFAULT_SETTINGS.embedAvailableModels).toHaveLength(5);
+    expect(DEFAULT_SETTINGS.embedAvailableModels[0]).toMatchObject({ id: 'Xenova/bge-small-zh-v1.5' });
+});
+
+it('DEFAULT_SETTINGS - embedDownloadedModels 初始为空数组', () => {
+    expect(DEFAULT_SETTINGS.embedDownloadedModels).toEqual([]);
+});
 });

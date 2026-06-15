@@ -46,6 +46,10 @@ export interface RatelVaultSettings {
 	indexPaused: boolean;
 	// 关键路径:embedModelActive 记录当前激活的本地 Embedding 模型 id(支持后续切模型)。
 	embedModelActive: string;
+	// 关键路径:embedAvailableModels 列出可下载的模型(尺寸/维度/推荐位),UI 设置面板展示。
+	embedAvailableModels: Array<{ id: string; sizeBytes: number; dimensions: number; recommended: boolean }>;
+	// 关键路径:embedDownloadedModels 记录用户已下载到本地的模型 id,切换/清理用。
+	embedDownloadedModels: string[];
 
 	// Link Suggestions
 	autoSuggestLinks: boolean;
@@ -83,6 +87,14 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 	indexPaused: false,
 	// 关键路径:默认激活 bge-small-zh-v1.5(~90MB,90% 用户零感知下载)。
 	embedModelActive: 'Xenova/bge-small-zh-v1.5',
+	embedAvailableModels: [
+		{ id: 'Xenova/bge-small-zh-v1.5', sizeBytes: 90 * 1024 * 1024, dimensions: 512, recommended: true },
+		{ id: 'Xenova/bge-base-zh-v1.5', sizeBytes: 210 * 1024 * 1024, dimensions: 768, recommended: false },
+		{ id: 'Xenova/bge-large-zh-v1.5', sizeBytes: 650 * 1024 * 1024, dimensions: 1024, recommended: false },
+		{ id: 'BAAI/bge-m3', sizeBytes: 600 * 1024 * 1024, dimensions: 1024, recommended: false },
+		{ id: 'Xenova/all-MiniLM-L6-v2', sizeBytes: 25 * 1024 * 1024, dimensions: 384, recommended: false },
+	],
+	embedDownloadedModels: [],
 
 	autoSuggestLinks: true,
 	linkConfidenceThreshold: 0.75,
