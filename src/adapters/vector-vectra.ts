@@ -9,6 +9,18 @@ import type { VectorStore, VectorSearchResult, IndexStatus, SearchFilter } from 
 import { LocalDocumentIndex, type EmbeddingsModel, type DocumentChunkMetadata } from 'vectra';
 
 /**
+ * VectraStore 构造选项(M-1 扩展)。
+ *
+ * 设计要点:
+ * - `embeddings`:由主线程注入的 ONNX FeatureExtractor;Worker 启动期由调用方注入,避免重复构造。
+ * - `autoInit`:默认 true,构造时调一次 `init()` 预热;Worker 启动期显式 init 后可传 false 避免双重 init。
+ */
+export interface VectraStoreOptions {
+	embeddings?: EmbeddingsModel;
+	autoInit?: boolean;
+}
+
+/**
  * vectra 向量库适配器。
  *
  * 设计要点:
@@ -22,19 +34,31 @@ export class VectraStore implements VectorStore {
 	private indexDir: string;
 	private _lastIndexTime = 0;
 	private embeddings: EmbeddingsModel | undefined;
+	// 关键路径:缓存 init 的 promise,避免并发首次调用的竞态。
+	private _ready: Promise<void> | null = null;
 
-	constructor(indexDir: string, embeddings?: EmbeddingsModel) {
+	constructor(indexDir: string, embeddingsOrOptions?: EmbeddingsModel | VectraStoreOptions) {
 		this.indexDir = indexDir;
-		this.embeddings = embeddings;
+		// 关键路径:兼容旧的 `(dir, embeddings?)` 签名,新签名 `(dir, options?)`。
+		if (embeddingsOrOptions && typeof embeddingsOrOptions === 'object' && 'embeddings' in embeddingsOrOptions) {
+			this.embeddings = embeddingsOrOptions.embeddings;
+			if (embeddingsOrOptions.autoInit !== false) {
+				this._ready = this.init();
+			}
+		} else {
+			this.embeddings = embeddingsOrOptions as EmbeddingsModel | undefined;
+			this._ready = this.init();
+		}
 	}
 
 	/**
-	 * 懒加载索引:首次调用时创建 `LocalDocumentIndex`,必要时初始化磁盘文件。
+	 * 显式预热索引 — 构造 LocalDocumentIndex 并确保磁盘文件就绪。
 	 *
-	 * @returns 已就绪的 `LocalDocumentIndex`。
-	 * @throws 当磁盘不可写或 vectra 内部初始化失败时抛出。
+	 * 关键路径:
+	 * - 幂等:多次调用共享同一 promise,不会出现并发首次调用竞态。
+	 * - Worker 启动期会调一次,避免首个请求才触发 init 的延迟。
 	 */
-	private async ensureIndex(): Promise<LocalDocumentIndex> {
+	async init(): Promise<void> {
 		if (!this.index) {
 			this.index = new LocalDocumentIndex({
 				folderPath: this.indexDir,
@@ -45,6 +69,18 @@ export class VectraStore implements VectorStore {
 				await this.index.createIndex();
 			}
 		}
+	}
+
+	/**
+	 * 懒加载索引:首次调用时创建 `LocalDocumentIndex`,必要时初始化磁盘文件。
+	 *
+	 * @returns 已就绪的 `LocalDocumentIndex`。
+	 * @throws 当磁盘不可写或 vectra 内部初始化失败时抛出。
+	 */
+	private async ensureIndex(): Promise<LocalDocumentIndex> {
+		if (!this._ready) this._ready = this.init();
+		await this._ready;
+		if (!this.index) throw new Error('VectraStore init failed');
 		return this.index;
 	}
 

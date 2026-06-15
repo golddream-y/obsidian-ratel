@@ -24,9 +24,16 @@ const mainContext = await esbuild.context({
 	},
 	entryPoints: ['src/main.ts'],
 	bundle: true,
+	// 关键路径:vectra 等 node-only 依赖使用 `node:fs` / `node:path` 协议,
+	// 必须在 `platform: 'node'` 下 esbuild 才识别。
+	platform: 'node',
+	// 关键路径:`onnxruntime-node` 包含 `.node` native 二进制,
+	// esbuild 不会打,需留到运行时 require。
 	external: [
 		'obsidian',
 		'electron',
+		'onnxruntime-node',
+		'@huggingface/transformers',
 		'@codemirror/autocomplete',
 		'@codemirror/collab',
 		'@codemirror/commands',
@@ -59,9 +66,14 @@ const mainContext = await esbuild.context({
 const workerContext = await esbuild.context({
 	entryPoints: ['src/worker/index.ts'],
 	bundle: true,
+	// 关键路径:Worker 也是 node 环境,vectra 同样依赖 node:fs / node:path。
+	platform: 'node',
+	// 关键路径:同上,Worker 不做 ONNX 推理,但 vectra 仍需 external。
 	external: [
 		'obsidian',
 		'electron',
+		'onnxruntime-node',
+		'@huggingface/transformers',
 		...builtinModules,
 	],
 	format: 'cjs',
