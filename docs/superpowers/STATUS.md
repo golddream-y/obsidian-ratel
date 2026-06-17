@@ -21,7 +21,6 @@
 | S-RAG-ARCH | [2026-06-14-ratel-rag-architecture.md](specs/2026-06-14-ratel-rag-architecture.md) | Active | 2026-06-14 | 最终 RAG 架构(取代 S-RAG-ROADMAP 中的初步想法) |
 | S-I18N | [2026-06-14-ratel-i18n-design.md](specs/2026-06-14-ratel-i18n-design.md) | Draft | 2026-06-14 | i18n 基础设施:中英文切换,settings.ts + ChatView + 命令 + Notice 全覆盖 |
 | S-DEFENSIVE | [2026-06-14-ratel-defensive-programming-design.md](specs/2026-06-14-ratel-defensive-programming-design.md) | Draft | 2026-06-14 | 防御性编程:反应式 Settings Proxy + Svelte 5 svelte-check + ChatView mount 单测,根治「改 key 不生效」「let 隐式 prop」「new Component 单参」3 类反复 bug |
-| S-RAG-LOOP | [2026-06-15-rag-loop-design.md](specs/2026-06-15-rag-loop-design.md) | Active | 2026-06-15 | RAG 最小可用闭环:main.ts 接入层 + search_vault + 上下文注入 + RAG 提示词 |
 
 ---
 
@@ -35,7 +34,6 @@
 | P-W4-TEST | [2026-06-14-ratel-w4-test-plan.md](plans/2026-06-14-ratel-w4-test-plan.md) | ⏳ Pending | — | — | — | S-TEST-ARCH (W4 计划) |
 | P-I18N-IMPL | [2026-06-14-ratel-i18n-implementation.md](plans/2026-06-14-ratel-i18n-implementation.md) | ⏳ Pending | — | — | — | S-I18N |
 | P-INIT-INDEX | [2026-06-15-ratel-init-index.md](plans/2026-06-15-ratel-init-index.md) | ✅ Completed | feat/init-index | 2026-06-15 | 2026-06-15 | S-INIT-INDEX |
-| P-RAG-LOOP | [2026-06-16-ratel-rag-loop-implementation.md](plans/2026-06-16-ratel-rag-loop-implementation.md) | ✅ Completed | feat/rag-loop | 2026-06-17 | 2026-06-17 | S-RAG-LOOP |
 
 ---
 
@@ -76,6 +74,7 @@
 | S-MODEL-001 | [archive/S-MODEL-001/](archive/S-MODEL-001/) | 2026-06-14 |
 | S-TEST-ARCH | [archive/S-TEST-ARCH/](archive/S-TEST-ARCH/) | 2026-06-14 |
 | P-DOCS-CN | [archive/P-DOCS-CN/](archive/P-DOCS-CN/) | 2026-06-14 |
+| S-RAG-LOOP | [archive/S-RAG-LOOP/](archive/S-RAG-LOOP/) | 2026-06-17 |
 
 ---
 
