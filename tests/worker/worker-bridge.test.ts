@@ -1,13 +1,31 @@
+/**
+ * @file tests/worker/worker-bridge.test.ts
+ * @description WorkerManager 单元测试 — Node Worker Threads 事件封装
+ * @module tests/worker/worker-bridge
+ * @depends worker/manager
+ */
+
 import { describe, it, expect, vi } from 'vitest';
 import { WorkerManager } from '../../src/worker/manager';
 
+function createMockWorker() {
+	const listeners: Record<string, ((...args: unknown[]) => void) | undefined> = {};
+	return {
+		postMessage: vi.fn(),
+		on: vi.fn((event: string, listener: (...args: unknown[]) => void) => {
+			listeners[event] = listener;
+			return createMockWorker();
+		}),
+		terminate: vi.fn(),
+		_emit(event: string, ...args: unknown[]) {
+			listeners[event]?.(...args);
+		},
+	};
+}
+
 describe('WorkerManager', () => {
 	it('sends index.status request and receives response', async () => {
-		const mockWorker = {
-			postMessage: vi.fn(),
-			onmessage: null as ((e: MessageEvent) => void) | null,
-			terminate: vi.fn(),
-		};
+		const mockWorker = createMockWorker();
 
 		const manager = new WorkerManager(mockWorker as unknown as Worker);
 
@@ -25,13 +43,11 @@ describe('WorkerManager', () => {
 		const sentMessage = mockWorker.postMessage.mock.calls[0]![0] as Record<string, unknown>;
 		const requestId = sentMessage._requestId as string;
 
-		mockWorker.onmessage!({
-			data: {
-				type: 'index.status.result',
-				payload: { totalDocs: 42, lastIndexTime: 1000 },
-				_requestId: requestId,
-			},
-		} as MessageEvent);
+		mockWorker._emit('message', {
+			type: 'index.status.result',
+			payload: { totalDocs: 42, lastIndexTime: 1000 },
+			_requestId: requestId,
+		});
 
 		const response = await responsePromise;
 		expect(response).toEqual({
@@ -41,12 +57,7 @@ describe('WorkerManager', () => {
 	});
 
 	it('handles worker errors', async () => {
-		const mockWorker = {
-			postMessage: vi.fn(),
-			onmessage: null as ((e: MessageEvent) => void) | null,
-			onerror: null as ((e: ErrorEvent) => void) | null,
-			terminate: vi.fn(),
-		};
+		const mockWorker = createMockWorker();
 
 		const manager = new WorkerManager(mockWorker as unknown as Worker);
 
@@ -55,17 +66,13 @@ describe('WorkerManager', () => {
 			payload: { vaultPath: '/test' },
 		});
 
-		mockWorker.onerror!({ message: 'Worker crashed' } as ErrorEvent);
+		mockWorker._emit('error', new Error('Worker crashed'));
 
 		await expect(responsePromise).rejects.toThrow('Worker error: Worker crashed');
 	});
 
 	it('terminates worker on destroy', () => {
-		const mockWorker = {
-			postMessage: vi.fn(),
-			onmessage: null as ((e: MessageEvent) => void) | null,
-			terminate: vi.fn(),
-		};
+		const mockWorker = createMockWorker();
 
 		const manager = new WorkerManager(mockWorker as unknown as Worker);
 		manager.destroy();
@@ -74,12 +81,7 @@ describe('WorkerManager', () => {
 
 	it('Worker 在指定 timeoutMs 内不响应则 reject', async () => {
 		// 关键路径:用真实 50ms timeout 短时间等待,避免 fakeTimers + microtask 死锁
-		const mockWorker = {
-			postMessage: vi.fn(),
-			onmessage: null as ((e: MessageEvent) => void) | null,
-			onerror: null as ((e: ErrorEvent) => void) | null,
-			terminate: vi.fn(),
-		};
+		const mockWorker = createMockWorker();
 
 		const manager = new WorkerManager(mockWorker as unknown as Worker, {
 			timeoutMs: 50,
@@ -95,12 +97,7 @@ describe('WorkerManager', () => {
 	});
 
 	it('超时后调用 terminate 释放 Worker', async () => {
-		const mockWorker = {
-			postMessage: vi.fn(),
-			onmessage: null as ((e: MessageEvent) => void) | null,
-			onerror: null as ((e: ErrorEvent) => void) | null,
-			terminate: vi.fn(),
-		};
+		const mockWorker = createMockWorker();
 
 		const manager = new WorkerManager(mockWorker as unknown as Worker, {
 			timeoutMs: 50,

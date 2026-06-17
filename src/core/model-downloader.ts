@@ -75,4 +75,24 @@ export class ModelDownloader {
         });
         return extractor;
     }
+
+    /**
+     * 删除本地缓存的指定模型。
+     *
+     * 关键路径:Hugging Face cache 目录形如 `models--<org>--<model>`,同时尝试
+     * `cacheDir/hub/` 与 `cacheDir/` 两种布局,不存在时静默忽略。
+     *
+     * @param modelId - 要删除的模型 ID。
+     */
+    async remove(modelId: string): Promise<void> {
+        const fs = await import('fs/promises');
+        const safeId = modelId.replace(/\//g, '--');
+        const candidates = [
+            path.join(this.cacheDir, 'hub', `models--${safeId}`),
+            path.join(this.cacheDir, `models--${safeId}`),
+        ];
+        for (const dir of candidates) {
+            await fs.rm(dir, { recursive: true, force: true });
+        }
+    }
 }

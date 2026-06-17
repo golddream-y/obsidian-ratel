@@ -6,6 +6,7 @@
  */
 
 import type { WorkerRequest, WorkerResponse } from '../types';
+import type { Worker } from 'worker_threads';
 
 /**
  * 待响应请求的内部结构。
@@ -52,8 +53,8 @@ export class WorkerManager {
 
 	constructor(private worker: Worker, options: WorkerManagerOptions = {}) {
 		this.timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS;
-		this.worker.onmessage = (e: MessageEvent) => {
-			const data = e.data as WorkerResponse & { _requestId?: string };
+		// 关键路径:Node Worker Threads 通过 'message' 事件返回数据,数据本身就是响应对象。
+		this.worker.on('message', (data: WorkerResponse & { _requestId?: string }) => {
 			if (data._requestId) {
 				const pending = this.pending.get(data._requestId);
 				if (pending) {
@@ -64,16 +65,26 @@ export class WorkerManager {
 					pending.resolve(response as WorkerResponse);
 				}
 			}
-		};
+		});
 
-		this.worker.onerror = (e: ErrorEvent) => {
+		this.worker.on('error', (err: Error) => {
 			// 关键路径:Worker 整个挂掉时,所有挂起的请求一并拒绝,避免永久悬挂。
 			for (const [id, pending] of this.pending) {
 				clearTimeout(pending.timer);
 				this.pending.delete(id);
-				pending.reject(new Error(`Worker error: ${e.message}`));
+				pending.reject(new Error(`Worker error: ${err.message}`));
 			}
-		};
+		});
+
+		this.worker.on('exit', (code: number) => {
+			// 关键路径:Worker 进程异常退出(如崩溃或 process.exit)时不一定先触发 'error',
+			// 必须拒绝所有挂起请求,避免调用方永远等待。
+			for (const [id, pending] of this.pending) {
+				clearTimeout(pending.timer);
+				this.pending.delete(id);
+				pending.reject(new Error(`Worker exited with code ${code}`));
+			}
+		});
 	}
 
 	/**
