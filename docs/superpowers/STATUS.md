@@ -35,6 +35,7 @@
 | P-W4-TEST | [2026-06-14-ratel-w4-test-plan.md](plans/2026-06-14-ratel-w4-test-plan.md) | ⏳ Pending | — | — | — | S-TEST-ARCH (W4 计划) |
 | P-I18N-IMPL | [2026-06-14-ratel-i18n-implementation.md](plans/2026-06-14-ratel-i18n-implementation.md) | ⏳ Pending | — | — | — | S-I18N |
 | P-INIT-INDEX | [2026-06-15-ratel-init-index.md](plans/2026-06-15-ratel-init-index.md) | ✅ Completed | feat/init-index | 2026-06-15 | 2026-06-15 | S-INIT-INDEX |
+| P-RAG-LOOP | [2026-06-16-ratel-rag-loop-implementation.md](plans/2026-06-16-ratel-rag-loop-implementation.md) | ✅ Completed | feat/rag-loop | 2026-06-17 | 2026-06-17 | S-RAG-LOOP |
 
 ---
 

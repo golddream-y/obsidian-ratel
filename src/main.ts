@@ -6,6 +6,7 @@
  */
 
 import { FileSystemAdapter, Notice, Plugin } from 'obsidian';
+import { Worker } from 'worker_threads';
 import { type RatelVaultSettings, DEFAULT_SETTINGS, RatelVaultSettingTab } from './settings';
 import type { AgentEvent } from './types';
 import { agentLoop } from './core/agent-loop';
@@ -21,6 +22,11 @@ import { EmbeddingApi } from './adapters/embedding-api';
 import { VectraStore } from './adapters/vector-vectra';
 import { WorkerManager } from './worker/manager';
 import { createReadNoteTool } from './tools/read-note';
+import { createSearchVaultTool } from './tools/search-vault';
+import { ModelManager } from './core/model-manager';
+import { IndexController } from './core/index-controller';
+import { ModelDownloader } from './core/model-downloader';
+import type { IndexBackend } from './core/index-manager';
 import { ChatView, VIEW_TYPE_CHAT } from './ui/ChatView';
 import { ensurePluginGitignore } from './utils/gitignore-writer';
 import path from 'path';
@@ -44,6 +50,8 @@ export default class RatelVaultPlugin extends Plugin {
 	workerManager!: WorkerManager;
 	// 关键路径:vectraStore 持有 vectra 索引目录的引用,需在 plugin 生命周期内常驻。
 	vectraStore!: VectraStore;
+	modelManager!: ModelManager;
+	indexController!: IndexController;
 
 	/**
 	 * Obsidian 插件生命周期入口。
@@ -83,13 +91,67 @@ export default class RatelVaultPlugin extends Plugin {
 
 		// ==================== Worker ====================
 		// 关键路径:`__dirname` 在 esbuild 编译后指向 main.js 同目录,worker.js 必须存在。
+		// Worker 启动期需要 indexDir + modelId 来自初始化 embeddings,故通过 workerData 传入。
+		// 仅本地 Embedding 模式传入 modelId;API 模式不传,避免 Worker 加载不存在的本地模型。
 		const workerPath = path.join(__dirname, 'worker.js');
-		const worker = new Worker(workerPath);
+		const worker = new Worker(workerPath, {
+			workerData:
+				this.settings.embedProvider === 'local'
+					? { indexDir, modelId: this.settings.embedLocalModel }
+					: { indexDir },
+		});
 		this.workerManager = new WorkerManager(worker);
+
+		// ==================== 模型与索引 ====================
+		const modelBackend = new ModelDownloader();
+		this.modelManager = new ModelManager(modelBackend);
+
+		const indexBackend: IndexBackend = {
+			fullReindex: async () => {
+				const files = this.vault.listMarkdownFiles();
+				const filtered: Array<{ path: string; content: string }> = [];
+				for (const f of files) {
+					const content = await this.vault.readFile(f);
+					filtered.push({ path: f, content });
+				}
+				const response = await this.workerManager.request({
+					type: 'index.full',
+					payload: { files: filtered },
+				});
+				if (response.type === 'index.done') {
+					return { indexed: response.payload.indexed, errors: response.payload.errors };
+				}
+				return { indexed: 0, errors: 1 };
+			},
+			incrementalIndex: async (file) => {
+				const response = await this.workerManager.request({
+					type: 'index.incremental',
+					payload: { file },
+				});
+				if (response.type === 'index.done') {
+					return { indexed: response.payload.indexed, errors: response.payload.errors };
+				}
+				return { indexed: 0, errors: 1 };
+			},
+			deleteFile: async (filePath) => {
+				const response = await this.workerManager.request({
+					type: 'index.delete',
+					payload: { filePath },
+				});
+				if (response.type === 'index.done') {
+					return response.payload.indexed;
+				}
+				return 0;
+			},
+		};
+
+		// 关键路径:ObsidianVault 已实现 VaultEventListener 接口,直接传入可保证所有 Obsidian API 访问都走外观层。
+		this.indexController = new IndexController(this.vault, indexBackend, vaultBase);
 
 		// ==================== 工具与钩子 ====================
 		this.tools = new ToolRegistry();
 		this.tools.register(createReadNoteTool(this.vault));
+		this.tools.register(createSearchVaultTool(this.embedding, this.workerManager));
 		this.hooks = new HookRegistry();
 
 		// ==================== 视图与命令 ====================
@@ -128,6 +190,38 @@ export default class RatelVaultPlugin extends Plugin {
 
 		// 设置面板
 		this.addSettingTab(new RatelVaultSettingTab(this.app, this));
+
+		// 关键路径:Obsidian UI 布局就绪后再启动模型下载与索引,避免阻塞 onload。
+		this.app.workspace.onLayoutReady(() => {
+			void this.onLayoutReady();
+		});
+	}
+
+	/**
+	 * 布局就绪后启动模型下载与自动索引。
+	 *
+	 * 关键路径:
+	 * - S-RAG-LOOP 仅支持本地 Embedding;API 模式跳过索引,避免 Worker 内发 HTTP。
+	 * - 模型下载完成后把 extractor 注入 EmbeddingLocal,主线程与 Worker 才能生成向量。
+	 */
+	async onLayoutReady(): Promise<void> {
+		// S-RAG-LOOP 仅支持本地 Embedding;API 模式跳过索引,避免 Worker 内发 HTTP。
+		if (this.settings.embedProvider !== 'local') {
+			new Notice('Ratel: API embedding 模式暂不支持自动索引,请切换到本地模型');
+			return;
+		}
+
+		try {
+			await this.modelManager.download(this.settings.embedLocalModel);
+			const extractor = this.modelManager.getExtractor?.();
+			if (extractor && this.embedding instanceof EmbeddingLocal) {
+				this.embedding.setExtractor(extractor as Parameters<EmbeddingLocal['setExtractor']>[0]);
+			}
+			await this.indexController.onLayoutReady();
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			new Notice(`Ratel 模型下载失败: ${message}`);
+		}
 	}
 
 	/**
@@ -173,6 +267,8 @@ export default class RatelVaultPlugin extends Plugin {
 	 * 否则下次 onload 会创建第二个 Worker 进程,最终 OOM。
 	 */
 	onunload() {
+		// 关键路径:先停 IndexController 释放 vault 事件订阅与 watcher,再终止 Worker。
+		this.indexController.destroy();
 		this.workerManager.destroy();
 		// 关键路径:vectra 内部句柄释放,否则 reload 后会泄漏旧 index 引用。
 		void this.vectraStore;

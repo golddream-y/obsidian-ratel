@@ -25,6 +25,7 @@ export class ModelManager {
     readonly status$ = writable<ModelStatus>({ state: 'NotStarted' });
     private backend: ModelBackend;
     private currentModelId: string | null = null;
+    private extractor: unknown | null = null;
 
     constructor(backend: ModelBackend) {
         this.backend = backend;
@@ -40,7 +41,7 @@ export class ModelManager {
         try {
             this.status$.set({ state: 'Downloading', progress: 0, speed: 0, eta: 0 });
             const startTime = Date.now();
-            await this.backend.ensureModel(modelId, (p) => {
+            this.extractor = await this.backend.ensureModel(modelId, (p) => {
                 onProgress?.(p);
                 const elapsed = (Date.now() - startTime) / 1000;
                 const speed = p.progress > 0 ? p.progress / elapsed : 0;
@@ -61,6 +62,15 @@ export class ModelManager {
         }
     }
 
+    /**
+     * 获取当前已加载的 transformers extractor。
+     *
+     * @returns 已下载模型对应的 pipeline;未下载时为 null。
+     */
+    getExtractor(): unknown | null {
+        return this.extractor;
+    }
+
     /** 切换当前激活模型(简化版:直接调 download)。 */
     async switchTo(modelId: string): Promise<void> {
         const prev = this.currentModelId ?? 'unknown';
@@ -72,6 +82,7 @@ export class ModelManager {
     async remove(modelId: string): Promise<void> {
         await this.backend.remove(modelId);
         this.currentModelId = null;
+        this.extractor = null;
         this.status$.set({ state: 'NotStarted' });
     }
 
@@ -85,6 +96,7 @@ export class ModelManager {
             await this.backend.remove(id);
         }
         this.currentModelId = null;
+        this.extractor = null;
         this.status$.set({ state: 'NotStarted' });
     }
 }
