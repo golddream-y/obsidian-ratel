@@ -20,7 +20,8 @@ const SYSTEM_PROMPT = `You are Ratel, an AI assistant that helps users explore a
  * 设计要点:
  * - `session` 在 `load()` 之前为 `null`,所有 mutator 方法都先调 `requireSession()` 做护栏。
  * - 任何 `add*` 方法都会更新 `session.updatedAt`,便于上层按"最近活跃"排序。
- * - `toMessages()` 总是返回 `[system, ...session.messages]`,保证 LLM 始终看到最新系统提示。
+ * - `toMessages()` 总是返回 `[system, ...searchResultsMessages, ...session.messages]`,保证 LLM 始终看到最新系统提示与当前检索上下文。
+ * - `load()` 切换 session 时会清空 `searchResultsMessages`,避免旧 session 的检索结果泄漏到新 session。
  *
  * @example
  *   const ctx = new ContextManager(persistence);
@@ -30,6 +31,11 @@ const SYSTEM_PROMPT = `You are Ratel, an AI assistant that helps users explore a
  */
 export class ContextManager {
 	private session: Session | null = null;
+	/**
+	 * 当前 session 的检索结果消息,保存在 session.messages 之外,
+	 * 便于在切换 session 时整体丢弃,避免旧 session 的检索结果泄漏。
+	 */
+	private searchResultsMessages: ChatMessage[] = [];
 
 	/**
 	 * @param persistence - 持久化端口,用于加载/保存 session。
@@ -38,11 +44,13 @@ export class ContextManager {
 
 	/**
 	 * 加载已有 session;若不存在则创建新 session(in-memory,不落盘)。
+	 * 切换 session 时清空当前检索结果,防止旧 session 的检索上下文泄漏到新 session。
 	 *
 	 * @param sessionId - 会话标识。
 	 * @returns 加载完成(无返回值)。
 	 */
 	async load(sessionId: string): Promise<void> {
+		this.searchResultsMessages = [];
 		this.session = await this.persistence.sessions.get(sessionId);
 		if (!this.session) {
 			this.session = {
@@ -113,13 +121,36 @@ export class ContextManager {
 	}
 
 	/**
-	 * 拼接最终给 LLM 的消息列表(系统提示 + 历史消息)。
+	 * 将知识库检索结果格式化为 tool 消息注入上下文。
+	 * 多次调用会追加新的检索结果消息,不覆盖已有结果。
+	 *
+	 * @param results - 检索结果条目,每条包含笔记路径与内容。
+	 */
+	addSearchResults(results: Array<{ path: string; content: string }>): void {
+		const session = this.requireSession();
+		if (results.length === 0) return;
+
+		const formatted = results
+			.map((r, i) => `[${i + 1}] ${r.path}\n${r.content}`)
+			.join('\n\n');
+
+		this.searchResultsMessages.push({
+			role: 'tool',
+			content: `--- 知识库检索结果 ---\n\n${formatted}`,
+			toolCallId: '__search_vault__',
+		});
+		session.updatedAt = Date.now();
+	}
+
+	/**
+	 * 拼接最终给 LLM 的消息列表(系统提示 + 检索结果 + 历史消息)。
 	 *
 	 * @returns 消息数组,首条为 system 角色。
 	 */
 	toMessages(): ChatMessage[] {
 		return [
 			{ role: 'system', content: SYSTEM_PROMPT },
+			...this.searchResultsMessages,
 			...(this.session?.messages ?? []),
 		];
 	}

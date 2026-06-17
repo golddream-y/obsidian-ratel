@@ -27,6 +27,10 @@ const mainContext = await esbuild.context({
 	// 关键路径:vectra 等 node-only 依赖使用 `node:fs` / `node:path` 协议,
 	// 必须在 `platform: 'node'` 下 esbuild 才识别。
 	platform: 'node',
+	// 关键路径:Svelte 5 的 `svelte` 包按 condition 导出 client/server 两套运行时,
+	// `exports."."` 的 default 指向 server 端(无 `mount`,只有 SSR 的 `render`)。
+	// Obsidian 是浏览器宿主,必须显式加 `browser` condition 才能命中 client runtime。
+	conditions: ['browser'],
 	// 关键路径:`onnxruntime-node` 包含 `.node` native 二进制,
 	// esbuild 不会打,需留到运行时 require。
 	external: [
