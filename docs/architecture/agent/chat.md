@@ -1,0 +1,240 @@
+# 对话体验
+
+> 领域:Agent | 端到端:用户输入 → Agent Loop → 流式渲染
+
+---
+
+## 1. 职责
+
+从用户在侧栏输入问题,到看到流式回答的端到端体验。是 Agent 领域的「门面」— agent-loop / context-manager / tools 都是它的内部实现。
+
+**不做的事**:
+- 不负责检索(检索属于 [rag/retriever](../rag/retriever.md))
+- 不负责模型管理(模型属于 [llm/model-management](../llm/model-management.md))
+- 不负责 Obsidian API 细节(属于 [host/obsidian-integration](../host/obsidian-integration.md))
+
+---
+
+## 2. 设计原则
+
+### 2.1 流式优先
+
+**决策**:从 LLM 到 UI 全链路流式,用户看到的是逐字输出,不是等完再显示。
+
+**原因**:
+- LLM 响应延迟 1-5 秒,流式可感知延迟 < 200ms
+- Obsidian 侧栏空间有限,流式避免"长时间空白"
+
+### 2.2 工具调用对用户可见
+
+**决策**:工具调用过程(搜索中... / 读取笔记... / 分析中...)在 UI 中显示。
+
+**原因**:
+- 用户知道 Agent 在做什么,减少焦虑
+- 调试时能看到工具调用链路
+- 类似 ChatGPT 的 "Searching the web..." 体验
+
+### 2.3 会话持久化
+
+**决策**:每个对话(session)自动保存,重新打开可恢复。
+
+**原因**:
+- 用户关闭侧栏不应丢失对话
+- 跨 Obsidian 重启保持上下文
+
+---
+
+## 3. 端到端流程
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as User
+    participant CV as ChatView<br/>(Svelte 5)
+    participant AL as Agent Loop
+    participant CTX as ContextManager
+    participant TL as Tools
+    participant LLM as LLM API
+
+    Note over U,LLM: 对话体验 — 端到端
+
+    U->>CV: 输入问题
+    CV->>AL: agentLoop(req)
+    AL->>CTX: load(sessionId)
+    AL->>CTX: addUserMessage(message)
+
+    loop 最多 MAX_STEPS 轮
+        AL->>LLM: chat(messages, tools)
+        LLM-->>AL: 流式 tokens
+
+        alt 纯文本回复
+            AL-->>CV: token 事件
+            CV-->>U: 逐字渲染
+        else 工具调用
+            AL-->>CV: tool_call 事件
+            CV-->>U: "搜索中..."
+            AL->>TL: execute(toolCall)
+            TL-->>AL: 工具结果
+            AL->>CTX: addToolResult(result)
+            AL-->>CV: tool_result 事件
+            CV-->>U: "已找到 3 篇相关笔记"
+            Note over AL: 继续下一轮 LLM 调用
+        end
+    end
+
+    AL-->>CV: message.end 事件
+    AL->>CTX: save(sessionId)
+```
+
+---
+
+## 4. 事件协议
+
+Agent Loop 通过 `AsyncIterable<AgentEvent>` 向 UI 推送事件:
+
+```mermaid
+stateDiagram-v2
+    [*] --> message_start
+    message_start --> token: 流式文本
+    message_start --> tool_call: LLM 决定调工具
+    token --> token: 持续输出
+    token --> message_end: 文本结束
+    tool_call --> tool_result: 工具返回
+    tool_result --> message_start: 继续下一轮
+    message_end --> [*]
+```
+
+| 事件类型 | 含义 | UI 行为 |
+|---|---|---|
+| `message.start` | 新一轮 LLM 回复开始 | 显示"思考中..." |
+| `token` | 流式文本片段 | 逐字渲染到消息气泡 |
+| `tool_call` | LLM 请求调用工具 | 显示工具名 + 参数摘要 |
+| `tool_result` | 工具执行结果 | 显示结果摘要 |
+| `error` | 错误 | 显示错误提示 |
+| `message.end` | 整个对话轮结束 | 保存会话,显示 token 统计 |
+
+---
+
+## 5. ChatView 生命周期
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant O as Obsidian
+    participant CV as ChatView
+    participant Svelte as Svelte 5 组件
+    participant Plugin as RatelVaultPlugin
+
+    Note over O,Plugin: 视图打开
+
+    O->>CV: onOpen()
+    CV->>CV: containerEl.children[1].empty()
+    CV->>Svelte: mount(Component, { target, props })
+    Note over Svelte: props = { plugin }<br/>组件通过 plugin 访问 API
+
+    Note over O,Plugin: 用户交互
+
+    Svelte->>Plugin: plugin.ask(message)
+    Plugin->>Plugin: agentLoop(req)
+    Plugin-->>Svelte: AgentEvent 流
+    Svelte->>Svelte: 渲染消息 + 工具调用 + 流式文本
+
+    Note over O,Plugin: 视图关闭
+
+    O->>CV: onClose()
+    CV->>Svelte: unmount(component)
+    Note over Svelte: 释放 Svelte 内部资源
+```
+
+**Svelte 5 mount 注意事项**:
+- 必须用 `mount(Component, { target, props })` 双参形式
+- 不能用 Svelte 4 的 `new Component({ target, props })` 单参形式
+- esbuild 必须加 `conditions: ['browser']`,否则 Svelte 5 解析到 server runtime,`mount` 不可用
+
+---
+
+## 6. 会话管理
+
+```mermaid
+graph TB
+    subgraph "会话存储"
+        S1["session-001.json"]
+        S2["session-002.json"]
+        SL["sessions.json<br/>会话列表索引"]
+    end
+
+    subgraph "单个会话"
+        META["meta: { id, title, createdAt }"]
+        MSGS["messages: [<br/>  { role: 'user', content },<br/>  { role: 'assistant', content },<br/>  { role: 'tool', name, result }<br/>]"]
+    end
+
+    S1 --> META
+    S1 --> MSGS
+```
+
+| 操作 | 说明 |
+|---|---|
+| 新建会话 | 用户点击"新对话"或首次打开侧栏 |
+| 恢复会话 | 侧栏显示历史会话列表,点击恢复 |
+| 自动保存 | 每次 `message.end` 后自动保存 |
+| 删除会话 | 用户主动删除,从索引和文件中移除 |
+
+---
+
+## 7. RAG 对话模式
+
+当用户问题涉及 vault 内容时,Chat 的完整流程:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as User
+    participant AL as Agent Loop
+    participant SV as search_vault
+    participant RN as read_note
+    participant CTX as ContextManager
+    participant LLM as LLM API
+
+    U->>AL: "我的项目用了什么技术栈?"
+    AL->>LLM: chat(messages, tools)
+    LLM-->>AL: tool_call: search_vault({ query: "项目技术栈" })
+    AL-->>U: "搜索中..."
+    AL->>SV: execute({ query, topK: 5 })
+    SV-->>AL: [{ docId, score, metadata }]
+
+    AL->>LLM: chat(messages + tool_result, tools)
+    LLM-->>AL: tool_call: read_note({ path: "notes/project.md" })
+    AL-->>U: "读取笔记..."
+    AL->>RN: execute({ path })
+    RN-->>AL: 文档内容
+
+    AL->>CTX: addSearchResults([{ path, content }])
+    AL->>LLM: chat(messages + search_results, tools)
+    LLM-->>AL: 流式回答
+    AL-->>U: "根据你的项目笔记,使用了 TypeScript + esbuild..."
+```
+
+**关键**:Agent Loop 自主决定检索 → 读取 → 回答的节奏,用户只看到中间状态提示。
+
+---
+
+## 8. 边界
+
+| 与...的接口 | 方向 | 说明 |
+|---|---|---|
+| [agent-loop](agent-loop.md) | 包含 | Chat 是门面,agent-loop 是引擎 |
+| [context-manager](context-manager.md) | 包含 | 上下文管理是 Chat 的内部机制 |
+| [tools](tools.md) | 包含 | 工具是 Chat 的能力扩展 |
+| [rag/retriever](../rag/retriever.md) | 依赖 | search_vault 工具调用检索器 |
+| [llm/streaming](../llm/streaming.md) | 依赖 | LLM 流式协议 |
+| [host/obsidian-integration](../host/obsidian-integration.md) | 依赖 | ItemView + Svelte mount |
+
+---
+
+## 9. 演进路径
+
+| 阶段 | 能力 | 状态 |
+|---|---|---|
+| 当前 | 基础对话 + 流式输出 + 工具调用 | ✅ 已实现 |
+| S-RAG-LOOP | search_vault + RAG 提示词 + 上下文注入 | 待实现 |
+| 远期 | 多会话 + 会话搜索 + 对话导出 | 远期 |
