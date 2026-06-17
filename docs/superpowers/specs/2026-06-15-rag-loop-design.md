@@ -118,6 +118,8 @@ interface SearchVaultResult {
 addSearchResults(results: { path: string; content: string }[]): void
 ```
 
+> **注意**:search_vault 只返回 docId + score + metadata(不含 chunk 原文)。Agent Loop 需先用 read_note 读取文档内容,再将 path + content 传给 addSearchResults。
+
 **格式化输出**(插入 context):
 
 ```
@@ -132,6 +134,8 @@ addSearchResults(results: { path: string; content: string }[]): void
 **插入位置**:system prompt 之后、用户消息之前
 
 **幂等性**:多次调用追加,不覆盖
+
+**上下文压缩**:本 spec 实现 Layer 1 截断(从最旧历史裁剪)。完整的三层压缩策略(截断→滑窗→LLM 摘要)和四池 Token 预算设计见 [context-manager.md](../../architecture/agent/context-manager.md) §2.4 和 §6。
 
 ### 4.4 RAG 系统提示词
 

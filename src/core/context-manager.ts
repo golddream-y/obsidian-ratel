@@ -121,13 +121,17 @@ export class ContextManager {
 	}
 
 	/**
-	 * 将知识库检索结果格式化为 tool 消息注入上下文。
-	 * 多次调用会追加新的检索结果消息,不覆盖已有结果。
+	 * 把搜索结果格式化为系统消息追加到上下文。
 	 *
-	 * @param results - 检索结果条目,每条包含笔记路径与内容。
+	 * 设计要点:
+	 * - 插入位置固定:base system prompt 之后、历史消息之前。
+	 * - 多次调用追加,不覆盖,支持多轮检索。
+	 * - content 来自 read_note,不是 search_vault(工具只返回 metadata)。
+	 *
+	 * @param results - 搜索结果,每项包含文档路径与已读取的内容。
 	 */
 	addSearchResults(results: Array<{ path: string; content: string }>): void {
-		const session = this.requireSession();
+		this.requireSession();
 		if (results.length === 0) return;
 
 		const formatted = results
@@ -135,11 +139,10 @@ export class ContextManager {
 			.join('\n\n');
 
 		this.searchResultsMessages.push({
-			role: 'tool',
+			role: 'system',
 			content: `--- 知识库检索结果 ---\n\n${formatted}`,
-			toolCallId: '__search_vault__',
 		});
-		session.updatedAt = Date.now();
+		// 修复:检索结果消息不应更新 session.updatedAt,它不属于会话历史;但保留对旧行为兼容,暂不影响功能。
 	}
 
 	/**
