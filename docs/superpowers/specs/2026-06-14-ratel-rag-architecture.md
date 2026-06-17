@@ -545,7 +545,7 @@ adapters/                 ← 具体实现
 |---|---|---|
 | HyDE | 用户问题表述模糊 | LLM 生成假设答案 → embed 假设答案 → 检索 |
 | 摘要索引 | 长笔记检索不准 | 预生成笔记摘要 → 摘要做索引 → 检索摘要再读原文 |
-| 上下文压缩 | Context 超长 | 检索结果去重/压缩后再塞 Context |
+| 上下文压缩 | Context 超长 | 四池 Token 预算 + 三层压缩(截断→滑窗→摘要),详见 [context-manager.md](../../architecture/agent/context-manager.md) §2.4 |
 | 语义分块 | 固定分块切断语义 | 基于嵌入相似度的语义分块（替代固定 500 token） |
 
 ---

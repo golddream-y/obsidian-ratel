@@ -5,6 +5,8 @@
 **状态**:Draft
 **关联 plan**:待 writing-plans 阶段产出
 
+> **对齐更新(2026-06-16)**:Bug #2 的 esbuild 侧根因已在 `esbuild.config.mjs` 中修复(加 `conditions: ['browser']`),详见 [obsidian-integration.md](../../architecture/host/obsidian-integration.md) §4.2。本 spec 的 G4(ChatView mount 回归测试)仍然有效,但 esbuild 修复已独立完成。
+
 ---
 
 ## 1. 背景

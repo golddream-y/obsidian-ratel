@@ -1,8 +1,22 @@
 # Ratel RAG 增强路线设计
 
 > 日期: 2026-06-13
-> 状态: Approved
+> 状态: **Superseded** — 已被 [S-RAG-ARCH](2026-06-14-ratel-rag-architecture.md) 和 [docs/architecture/](../../architecture/) 架构文档取代
 > 关联: ARCHITECTURE.md / 2026-06-07-architecture-feasibility-review-design.md
+
+---
+
+> **注意**: 本文档是早期路线图,部分设计与最新架构文档不一致。请以以下文档为准:
+> - 架构总览: `docs/architecture/overview.md`
+> - 检索器设计: `docs/architecture/rag/retriever.md`
+> - 上下文管理: `docs/architecture/agent/context-manager.md`
+> - 模型管理: `docs/architecture/llm/model-management.md`
+>
+> 主要偏差:
+> 1. 索引时 embed 位置:本文档写"主线程 embed",实际为 Worker 内(vectra 内部调 createEmbeddings)
+> 2. 上下文压缩:本文档写"检索结果去重/压缩",实际为四池 Token 预算 + 三层压缩(截断→滑窗→摘要)
+> 3. Reranker:本文档只提 Ollama,实际支持 Cohere/Jina/SiliconFlow(仅远程 API,不做本地)
+> 4. search_vault:本文档含 BM25+RRF,实际 S-RAG-LOOP 只做向量检索,BM25+RRF 留给 P-W3-IMPL
 
 ---
 

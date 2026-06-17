@@ -10,6 +10,17 @@
 
 **Prerequisite:** W2 plan fully executed (EmbeddingPort, EmbeddingApi/Local adapters, VectraStore, Markdown chunker, Settings updated)
 
+> **⚠️ 与架构文档对齐说明(2026-06-16 更新)**
+>
+> 本 plan 编写于架构文档重建之前,以下设计需按架构文档调整:
+>
+> 1. **search_vault 返回值**:本 plan 的 Task 5 返回 `docId + score + text + metadata + vectorScore + bm25Score`,但架构文档(retriever.md / tools.md)明确 **search_vault 只返回 docId + score + metadata,不返回 text**。text 由模型自主用 read_note 读取。
+> 2. **addSearchResults 输入**:本 plan 的 Task 4 接收含 text 的搜索结果,但架构文档明确 **content 来自 read_note,不是 search_vault**。Agent Loop 流程:search_vault → read_note → addSearchResults([{ path, content }])。
+> 3. **上下文压缩**:本 plan 未涉及,但架构文档(context-manager.md §2.4/§6)定义了四池 Token 预算 + 三层压缩。P-W3 应实现 Layer 2 滑动窗口。
+> 4. **Reranker**:本 plan 未涉及 Reranker,架构文档(retriever.md §3.3 / model-management.md §5)定义了 Reranker 仅远程 API,`settings.rerankerApiKey` 非空即启用。
+>
+> 执行时请以架构文档为准: `docs/architecture/rag/retriever.md`、`docs/architecture/agent/context-manager.md`、`docs/architecture/agent/tools.md`
+
 ---
 
 ## File Structure
