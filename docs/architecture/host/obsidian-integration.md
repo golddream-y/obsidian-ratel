@@ -56,18 +56,18 @@ graph TB
     subgraph "封装的 API"
         V1["listMarkdownFiles()"]
         V2["readFile(path)"]
-        V3["createFile(path, content)"]
-        V4["modifyFile(path, content)"]
-        V5["deleteFile(path)"]
+        V3["writeFile(path, content)"]
+        V4["getBacklinks(path)"]
+        V5["getMetadata(path)"]
         V6["onFileCreate(cb)"]
         V7["onFileModify(cb)"]
         V8["onFileDelete(cb)"]
-        V9["getBasePath()"]
+        V9["onFileRename(cb)"]
     end
 
     subgraph "底层 Obsidian API"
         AV["app.vault"]
-        AA["app.vault.adapter<br/>(FileSystemAdapter)"]
+        MC["app.metadataCache"]
     end
 
     OV --> V1
@@ -83,15 +83,15 @@ graph TB
     V1 --> AV
     V2 --> AV
     V3 --> AV
-    V4 --> AV
-    V5 --> AV
+    V4 --> MC
+    V5 --> MC
     V6 --> AV
     V7 --> AV
     V8 --> AV
-    V9 --> AA
+    V9 --> AV
 ```
 
-**关键**:`getBasePath()` 需要 `FileSystemAdapter` 类型断言,因为 `DataAdapter` 上没有这个方法。
+**关键**:`getBacklinks` / `getMetadata` 走 `metadataCache`(同步),其余走 `app.vault`。`writeFile` 自动处理"文件存在则 modify,不存在则 create + 自动建父目录"。
 
 ---
 
@@ -148,11 +148,12 @@ graph TB
 
 ## 6. 命令注册
 
-| 命令 | 触发 | 行为 |
+| 命令 ID | 命令名 | 行为 |
 |---|---|---|
-| `ratel:open-chat` | Ctrl+Shift+R | 打开聊天侧栏 |
-| `ratel:reindex` | 命令面板 | 重建索引 |
-| `ratel:toggle-index` | 命令面板 | 暂停/恢复索引 |
+| `ask-vault` | Ask vault | 打开聊天侧栏 |
+| `index-status` | Show index status | 通过 Worker 拉取索引统计,Notice 提示 |
+
+**Ribbon 图标**:点击 brain 图标同样打开聊天侧栏。
 
 ---
 
@@ -171,6 +172,6 @@ graph TB
 
 | 阶段 | 能力 | 状态 |
 |---|---|---|
-| 当前 | 基础 Facade + ChatView + 设置面板 | ✅ 已实现 |
-| S-RAG-LOOP | esbuild conditions 修复 | 待实现 |
+| 当前 | 基础 Facade + ChatView + 设置面板 + Ribbon | ✅ 已实现 |
+| S-RAG-LOOP | esbuild conditions 修复 + RAG 接入 | ✅ 已实现(已归档) |
 | 远期 | IndexBanner 真正工作 + 设置面板模型选择 | 远期 |
