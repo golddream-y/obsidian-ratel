@@ -1,11 +1,20 @@
 <script lang="ts">
 	import type RatelVaultPlugin from '../main';
 
-	// Ratel 聊天侧栏 — 用户输入 + 流式渲染 + 错误展示
+	// Ratel 聊天侧栏 — 用户输入 + 流式渲染 + 工具调用过程 + 错误展示
 	// 关键路径:每个 message.delta 触发 messages 数组重建(Svelte 5 反应性依赖引用比较)。
+	interface ToolCallEntry {
+		name: string;
+		args: unknown;
+		status: 'calling' | 'done';
+		result?: unknown;
+	}
+
 	interface Message {
 		role: 'user' | 'assistant';
 		content: string;
+		// 关键路径:assistant 消息可附带工具调用过程,按到达顺序追加。
+		toolCalls?: ToolCallEntry[];
 	}
 
 	// 修复:加 `export` 让 Svelte 5 识别为 prop 声明。
@@ -41,6 +50,32 @@
 						// 修复:重新赋值触发 Svelte 反应性,否则内容变更不可见。
 						messages = [...messages];
 						break;
+					case 'tool.call':
+						// 关键路径:工具调用过程对用户可见,减少等待焦虑。
+						if (!assistantMsg.toolCalls) assistantMsg.toolCalls = [];
+						assistantMsg.toolCalls.push({
+							name: event.payload.name,
+							args: event.payload.args,
+							status: 'calling',
+						});
+						messages = [...messages];
+						break;
+					case 'tool.result':
+						// 关键路径:匹配最后一个同名 calling 条目,更新为 done。
+						if (assistantMsg.toolCalls) {
+							for (let i = assistantMsg.toolCalls.length - 1; i >= 0; i--) {
+								if (
+									assistantMsg.toolCalls[i].name === event.payload.name &&
+									assistantMsg.toolCalls[i].status === 'calling'
+								) {
+									assistantMsg.toolCalls[i].result = event.payload.result;
+									assistantMsg.toolCalls[i].status = 'done';
+									break;
+								}
+							}
+						}
+						messages = [...messages];
+						break;
 					case 'message.end':
 						break;
 					case 'error':
@@ -65,6 +100,24 @@
 			sendMessage();
 		}
 	}
+
+	/**
+	 * 把工具结果格式化为简短摘要,避免在 UI 中显示过长内容。
+	 * 数组 → "找到 N 项";字符串 → 截断 60 字符;对象 → JSON 截断。
+	 */
+	function formatToolResult(result: unknown): string {
+		if (Array.isArray(result)) {
+			return `找到 ${result.length} 项`;
+		}
+		if (typeof result === 'string') {
+			return result.length > 60 ? result.slice(0, 60) + '...' : result;
+		}
+		if (result && typeof result === 'object') {
+			const json = JSON.stringify(result);
+			return json.length > 60 ? json.slice(0, 60) + '...' : json;
+		}
+		return String(result);
+	}
 </script>
 
 <div class="ratel-chat">
@@ -72,6 +125,21 @@
 		{#each messages as msg}
 			<div class="ratel-message ratel-{msg.role}">
 				<div class="ratel-role">{msg.role === 'user' ? 'You' : 'Ratel'}</div>
+				{#if msg.toolCalls && msg.toolCalls.length > 0}
+					<div class="ratel-tool-calls">
+						{#each msg.toolCalls as tc}
+							<div class="ratel-tool-call ratel-tool-{tc.status}">
+								<span class="ratel-tool-icon">{tc.status === 'calling' ? '⟳' : '✓'}</span>
+								<span class="ratel-tool-name">{tc.name}</span>
+								{#if tc.status === 'calling'}
+									<span class="ratel-tool-status">...</span>
+								{:else if tc.result != null}
+									<span class="ratel-tool-summary">{formatToolResult(tc.result)}</span>
+								{/if}
+							</div>
+						{/each}
+					</div>
+				{/if}
 				<div class="ratel-content">{msg.content}</div>
 			</div>
 		{/each}
@@ -136,6 +204,54 @@
 	.ratel-content {
 		white-space: pre-wrap;
 		word-break: break-word;
+	}
+
+	.ratel-tool-calls {
+		margin-bottom: 8px;
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+
+	.ratel-tool-call {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		font-size: 0.85em;
+		padding: 4px 8px;
+		border-radius: 4px;
+		background: var(--background-modifier-form-field);
+	}
+
+	.ratel-tool-calling {
+		color: var(--text-muted);
+	}
+
+	.ratel-tool-done {
+		color: var(--text-normal);
+		opacity: 0.8;
+	}
+
+	.ratel-tool-icon {
+		font-size: 0.9em;
+	}
+
+	.ratel-tool-name {
+		font-weight: 600;
+		font-family: var(--font-monospace);
+	}
+
+	.ratel-tool-status {
+		color: var(--text-muted);
+	}
+
+	.ratel-tool-summary {
+		color: var(--text-muted);
+		font-style: italic;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		max-width: 200px;
 	}
 
 	.ratel-typing {
