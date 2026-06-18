@@ -340,7 +340,7 @@ graph TB
 | 17 | 增量索引消费 | ✅ 已实现 | 质量修复 | enqueue 自动触发 scheduleFlush |
 | 18 | 上下文压缩 | ⚠️ 部分实现 | 质量修复 | Layer 1 截断已实现(maxHistoryTokens=8000);Layer 2/3 未实现 |
 | 19 | 工具调用 UI 可见 | ✅ 已实现 | 质量修复 | ChatView 处理 tool.call/tool.result 事件,显示工具名+结果摘要 |
-| 20 | 取消机制 | ❌ 未实现 | 待规划 | 无 AbortController |
+| 20 | 取消机制 | ✅ 已实现 | 质量修复 | agentLoop 接受 AbortSignal,3 个检查点(循环开始/流式输出中/流式输出后);ChatView Stop 按钮触发 abort |
 
 ### 执行优先级
 

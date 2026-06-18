@@ -27,6 +27,8 @@
 	let isRunning = false;
 	// 关键路径:sessionId 用于把同一会话的多轮消息绑回 Session 存储。
 	let sessionId = 'session-' + Date.now();
+	// 关键路径:AbortController 用于取消正在进行的 agentLoop。
+	let abortController: AbortController | null = null;
 
 	async function sendMessage() {
 		const text = input.trim();
@@ -35,13 +37,15 @@
 		messages = [...messages, { role: 'user', content: text }];
 		input = '';
 		isRunning = true;
+		// 关键路径:每次发送创建新的 AbortController,供 Stop 按钮触发。
+		abortController = new AbortController();
 
 		// 关键路径:先占位一个空 assistant 消息,流式 delta 直接 mutate 它。
 		const assistantMsg: Message = { role: 'assistant', content: '' };
 		messages = [...messages, assistantMsg];
 
 		try {
-			const events = plugin.ask(sessionId, text);
+			const events = plugin.ask(sessionId, text, abortController.signal);
 
 			for await (const event of events) {
 				switch (event.type) {
@@ -90,7 +94,15 @@
 		} finally {
 			// 关键路径:无论成功 / 失败 / 取消,都必须复位 isRunning 释放输入框。
 			isRunning = false;
+			abortController = null;
 		}
+	}
+
+	/**
+	 * 取消正在进行的 agentLoop — 触发 AbortController,agentLoop 在下一个检查点退出。
+	 */
+	function stopGeneration() {
+		abortController?.abort();
 	}
 
 	function handleKeydown(e: KeyboardEvent) {
@@ -156,9 +168,15 @@
 			disabled={isRunning}
 			rows="2"
 		></textarea>
-		<button on:click={sendMessage} disabled={isRunning || !input.trim()}>
-			Send
-		</button>
+		{#if isRunning}
+			<button on:click={stopGeneration} class="ratel-stop-btn">
+				Stop
+			</button>
+		{:else}
+			<button on:click={sendMessage} disabled={isRunning || !input.trim()}>
+				Send
+			</button>
+		{/if}
 	</div>
 </div>
 
@@ -298,5 +316,10 @@
 	.ratel-input-area button:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
+	}
+
+	.ratel-stop-btn {
+		background: var(--text-error, #e53935) !important;
+		color: var(--text-on-accent, #fff) !important;
 	}
 </style>

@@ -335,4 +335,106 @@ describe('agentLoop', () => {
 		// Verify multiple tool calls happened (truly tests multi-round)
 		expect(toolCallCount.count).toBeGreaterThanOrEqual(2);
 	});
+
+	// ==================== 取消机制 ====================
+
+	it('取消 - signal 已 abort - 不调 LLM,直接 yield error + message.end', async () => {
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence);
+		const llm = createMockLLM([[{ text: 'should not reach' }]]);
+		const tools = new ToolRegistry();
+		const hooks = new HookRegistry();
+
+		const controller = new AbortController();
+		controller.abort();
+
+		const events: AgentEvent[] = [];
+		for await (const event of agentLoop(
+			{ sessionId: 's1', message: 'Hi' },
+			ctx,
+			llm,
+			tools,
+			hooks,
+			controller.signal,
+		)) {
+			events.push(event);
+		}
+
+		// 关键路径:signal 已 abort,第一轮就退出,不产生 message.delta
+		expect(events.filter((e) => e.type === 'message.delta')).toHaveLength(0);
+		expect(events.some((e) => e.type === 'error' && e.payload.code === 'CANCELLED')).toBe(true);
+		// finally 块仍执行
+		expect(events.some((e) => e.type === 'message.end')).toBe(true);
+	});
+
+	it('取消 - 流式输出期间 abort - 保留已收到文本,yield error + message.end', async () => {
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence);
+
+		const controller = new AbortController();
+		const llm: LLMClient = {
+			async *chat(): AsyncIterable<ChatDelta> {
+				yield { text: 'Partial ' };
+				// 关键路径:第二个 delta 前触发取消
+				controller.abort();
+				yield { text: 'response' };
+			},
+			embed: async () => [],
+			countTokens: () => 10,
+		};
+
+		const tools = new ToolRegistry();
+		const hooks = new HookRegistry();
+		const events: AgentEvent[] = [];
+
+		for await (const event of agentLoop(
+			{ sessionId: 's1', message: 'Hi' },
+			ctx,
+			llm,
+			tools,
+			hooks,
+			controller.signal,
+		)) {
+			events.push(event);
+		}
+
+		// 关键路径:至少收到第一个 delta,取消后不再有更多 delta
+		const deltas = events.filter((e) => e.type === 'message.delta');
+		expect(deltas.length).toBeGreaterThanOrEqual(1);
+		expect(events.some((e) => e.type === 'error' && e.payload.code === 'CANCELLED')).toBe(true);
+		expect(events.some((e) => e.type === 'message.end')).toBe(true);
+	});
+
+	it('取消 - 仍保存 session', async () => {
+		const sessions = new Map<string, Session>();
+		const persistence = createMockPersistence(sessions);
+		const ctx = new ContextManager(persistence);
+
+		const controller = new AbortController();
+		const llm: LLMClient = {
+			async *chat(): AsyncIterable<ChatDelta> {
+				yield { text: 'Hello' };
+				controller.abort();
+			},
+			embed: async () => [],
+			countTokens: () => 10,
+		};
+
+		const tools = new ToolRegistry();
+		const hooks = new HookRegistry();
+
+		for await (const _ of agentLoop(
+			{ sessionId: 's1', message: 'Hi' },
+			ctx,
+			llm,
+			tools,
+			hooks,
+			controller.signal,
+		)) {
+			void _;
+		}
+
+		// 关键路径:取消后 finally 块仍执行 save()
+		expect(sessions.has('s1')).toBe(true);
+	});
 });
