@@ -26,16 +26,19 @@ const MAX_STEPS = 10;
  * - 单步内部再嵌套一层 `try / catch`,把 LLM 流错误和工具执行错误分别转成 `error` 事件,
  *   避免异常逃逸到外层 try,影响 session 保存与 message.end 事件。
  * - 工具调用只对"写工具"(`readOnly !== true`)触发 pre/post hook,避免读操作触发治理。
+ * - 取消机制:传入 `AbortSignal` 后,每轮循环开始前检查 `aborted` 状态,中止时 yield error 并 break。
  *
  * @param req - 用户消息请求(含 sessionId 与 message)
  * @param ctx - 上下文管理器,负责 session 加载/保存与消息累积
  * @param llm - LLM 客户端,产生 ChatDelta 流
  * @param tools - 工具注册表,提供 LLM 可调用的工具列表与执行能力
  * @param hooks - 钩子注册表,提供工具调用前后的治理点
+ * @param signal - 可选的 AbortSignal,用于取消循环
  * @returns AgentEvent 异步可迭代流
  * @throws 不会向上抛错 — 内部错误一律转 `error` 事件
  * @example
- *   for await (const event of agentLoop(req, ctx, llm, tools, hooks)) {
+ *   const controller = new AbortController();
+ *   for await (const event of agentLoop(req, ctx, llm, tools, hooks, controller.signal)) {
  *     ui.emit(event);
  *   }
  */
@@ -45,6 +48,7 @@ export async function* agentLoop(
 	llm: LLMClient,
 	tools: ToolRegistry,
 	hooks: HookRegistry,
+	signal?: AbortSignal,
 ): AsyncIterable<AgentEvent> {
 	// 加载或初始化 session,然后把用户消息压入上下文。
 	await ctx.load(req.sessionId);
@@ -53,6 +57,12 @@ export async function* agentLoop(
 	try {
 		// 单步循环:每轮产生一段 assistant 回复 + (可选)一次工具调用。
 		for (let step = 0; step < MAX_STEPS; step++) {
+			// 关键路径:每轮开始前检查取消信号,中止时 yield error 并退出循环。
+			if (signal?.aborted) {
+				yield { type: 'error', payload: { code: 'CANCELLED', message: '用户取消' } };
+				break;
+			}
+
 			yield { type: 'message.start', payload: { role: 'assistant' as const } };
 
 			let accumulatedText = '';
@@ -66,6 +76,11 @@ export async function* agentLoop(
 				});
 
 				for await (const delta of stream) {
+					// 关键路径:流式输出期间也检查取消信号,及时停止。
+					if (signal?.aborted) {
+						yield { type: 'error', payload: { code: 'CANCELLED', message: '用户取消' } };
+						break;
+					}
 					if (delta.text) {
 						accumulatedText += delta.text;
 						yield { type: 'message.delta', payload: { text: delta.text } };
@@ -80,6 +95,12 @@ export async function* agentLoop(
 				const message = err instanceof Error ? err.message : String(err);
 				yield { type: 'error', payload: { code: 'LLM_ERROR', message } };
 				ctx.addAssistantMessage(accumulatedText || `Error: ${message}`);
+				break;
+			}
+
+			// 关键路径:流式输出被取消时,把已收到的文本存入 session 后退出。
+			if (signal?.aborted) {
+				ctx.addAssistantMessage(accumulatedText);
 				break;
 			}
 

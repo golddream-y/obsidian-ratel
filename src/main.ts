@@ -303,7 +303,7 @@ export default class RatelVaultPlugin extends Plugin {
 	 * @param message - 用户最新一条消息。
 	 * @returns 异步迭代的 `AgentEvent` 流。
 	 */
-	async *ask(sessionId: string, message: string): AsyncIterable<AgentEvent> {
+	async *ask(sessionId: string, message: string, signal?: AbortSignal): AsyncIterable<AgentEvent> {
 		const ctx = new ContextManager(this.persistence);
 
 		yield* agentLoop(
@@ -312,6 +312,7 @@ export default class RatelVaultPlugin extends Plugin {
 			this.llm,
 			this.tools,
 			this.hooks,
+			signal,
 		);
 	}
 
