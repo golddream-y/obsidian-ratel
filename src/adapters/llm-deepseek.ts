@@ -2,9 +2,10 @@
  * @file src/adapters/llm-deepseek.ts
  * @description DeepSeek 聊天补全适配器(OpenAI 兼容协议,支持流式 SSE 与工具调用)
  * @module adapters/llm-deepseek
- * @depends fetch, ports/llm
+ * @depends obsidian(requestUrl), ports/llm
  */
 
+import { requestUrl } from 'obsidian';
 import type { LLMClient, ChatRequest, ChatDelta, ToolCall } from '../ports/llm';
 
 /**
@@ -60,6 +61,11 @@ export class DeepSeekLLM implements LLMClient {
 	 * - 工具调用在 `[DONE]` 之前累积,流结束后按 index 顺序 yield `{ toolCall }`(text 为空字符串)。
 	 * - 若 SSE 出现无法解析的 JSON chunk,静默跳过,不影响后续 chunk。
 	 *
+	 * 关键路径:用 Obsidian `requestUrl` 替代浏览器 `fetch` 绕过 CORS 限制。
+	 * `requestUrl` 走 Node.js HTTP,不受浏览器同源策略约束。
+	 * `requestUrl` 不支持 ReadableStream 流式读取,返回完整 `text`;
+	 * 内部解析 `text` 中的 SSE 事件后逐条 yield,保持接口契约不变。
+	 *
 	 * @param req - 对话消息 + 可选工具定义。
 	 * @returns 异步迭代的 `ChatDelta`。
 	 * @throws 当 HTTP 状态非 2xx、响应体为空、或底层网络异常时抛出。
@@ -67,95 +73,79 @@ export class DeepSeekLLM implements LLMClient {
 	async *chat(req: ChatRequest): AsyncIterable<ChatDelta> {
 		const body = this.buildRequestBody(req);
 
-		const response = await fetch(`${this.config.apiBase}/chat/completions`, {
+		// 关键路径:requestUrl 走 Node.js HTTP 绕过 CORS;throw:false 让我们自行检查 status。
+		const response = await requestUrl({
+			url: `${this.config.apiBase}/chat/completions`,
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json',
 				'Authorization': `Bearer ${this.config.apiKey}`,
 			},
 			body: JSON.stringify(body),
+			throw: false,
 		});
 
-		if (!response.ok) {
-			throw new Error(`LLM API error: ${response.status} ${response.statusText}`);
+		if (response.status < 200 || response.status >= 300) {
+			throw new Error(`LLM API error: ${response.status}`);
 		}
 
-		if (!response.body) {
-			throw new Error('LLM API returned no body');
+		const text = response.text;
+		if (!text) {
+			throw new Error('LLM API returned empty body');
 		}
 
 		// 工具调用增量缓冲:key = tool_call.index,value = {id, name, arguments 字符串拼接}
 		// —— 关键路径:DeepSeek 的工具调用参数以片段方式到达,需要按 index 聚合。
 		const toolCallAccumulators = new Map<number, { id: string; name: string; arguments: string }>();
 
-		const reader = response.body.getReader();
-		const decoder = new TextDecoder();
-		let buffer = '';
+		// 解析 SSE 格式的 text:每行以 "data: " 前缀,空行分隔事件。
+		const lines = text.split('\n');
+		for (const line of lines) {
+			const trimmed = line.trim();
+			if (!trimmed || !trimmed.startsWith('data: ')) continue;
 
-		try {
-			readLoop: while (true) {
-				const { done, value } = await reader.read();
-				if (done) break;
+			const data = trimmed.slice(6);
+			if (data === '[DONE]') break;
 
-				// 关键路径:SSE 按行分割,`stream: true` 让多字节字符跨 chunk 也能正确解码。
-				buffer += decoder.decode(value, { stream: true });
-				const lines = buffer.split('\n');
-				// 保留最后一段(可能是不完整的行)等待下一轮拼接。
-				buffer = lines.pop() ?? '';
-
-				for (const line of lines) {
-					const trimmed = line.trim();
-					if (!trimmed || !trimmed.startsWith('data: ')) continue;
-
-					const data = trimmed.slice(6);
-					if (data === '[DONE]') {
-						break readLoop;
-					}
-
-					try {
-						const parsed = JSON.parse(data) as {
-							choices?: Array<{
-								delta?: {
-									content?: string;
-									tool_calls?: OpenAIToolCallChunk[];
-								};
-							}>;
+			try {
+				const parsed = JSON.parse(data) as {
+					choices?: Array<{
+						delta?: {
+							content?: string;
+							tool_calls?: OpenAIToolCallChunk[];
 						};
+					}>;
+				};
 
-						const choice = parsed.choices?.[0];
-						if (!choice?.delta) continue;
+				const choice = parsed.choices?.[0];
+				if (!choice?.delta) continue;
 
-						// 文本增量
-						if (choice.delta.content) {
-							yield { text: choice.delta.content };
-						}
+				// 文本增量
+				if (choice.delta.content) {
+					yield { text: choice.delta.content };
+				}
 
-						// 工具调用:按 index 累积参数(arguments 是 JSON 字符串片段)。
-						if (choice.delta.tool_calls) {
-							for (const tc of choice.delta.tool_calls) {
-								const existing = toolCallAccumulators.get(tc.index);
-								if (existing) {
-									if (tc.function?.arguments) {
-										existing.arguments += tc.function.arguments;
-									}
-								} else {
-									// 首个 chunk 携带 id 与 name,后续 chunk 仅补全 arguments。
-									toolCallAccumulators.set(tc.index, {
-										id: tc.id ?? '',
-										name: tc.function?.name ?? '',
-										arguments: tc.function?.arguments ?? '',
-									});
-								}
+				// 工具调用:按 index 累积参数(arguments 是 JSON 字符串片段)。
+				if (choice.delta.tool_calls) {
+					for (const tc of choice.delta.tool_calls) {
+						const existing = toolCallAccumulators.get(tc.index);
+						if (existing) {
+							if (tc.function?.arguments) {
+								existing.arguments += tc.function.arguments;
 							}
+						} else {
+							// 首个 chunk 携带 id 与 name,后续 chunk 仅补全 arguments。
+							toolCallAccumulators.set(tc.index, {
+								id: tc.id ?? '',
+								name: tc.function?.name ?? '',
+								arguments: tc.function?.arguments ?? '',
+							});
 						}
-					} catch {
-						// 修复:协议偶发返回非法 JSON,跳过单条以保证流继续。
 					}
 				}
+			} catch {
+				// 修复:协议偶发返回非法 JSON,跳过单条以保证流继续。
 			}
-		} finally {
-			// 关键路径:无论正常 / 异常结束都要释放底层流,避免连接泄漏。
-			reader.releaseLock();
 		}
 
 		// 收尾:把累积的工具调用一次性 yield 出去,text 留空以便调用方区分。
