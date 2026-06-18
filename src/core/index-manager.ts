@@ -41,6 +41,7 @@ export class IndexManager {
     readonly status$ = writable<IndexStatus>({ state: 'Idle' });
     private queue = new Map<string, QueueEntry>();
     private paused = false;
+    private processing = false;
     private previousState: IndexStatus = { state: 'Idle' };
 
     constructor(private backend: IndexBackend) {}
@@ -64,6 +65,7 @@ export class IndexManager {
      * 入队增量事件。
      *
      * 关键路径:同 path 多次 enqueue 只保留最后一次(后写覆盖先写,Map.set)。
+     * 入队后自动触发非阻塞消费(若未暂停且无正在处理的批次)。
      */
     enqueue(path: string, op: 'upsert' | 'delete', content?: string): void {
         this.queue.set(path, { op, content });
@@ -71,6 +73,8 @@ export class IndexManager {
             this.status$.set({ state: 'Paused', pending: this.queue.size });
         } else {
             this.status$.set({ state: 'Queueing', pending: this.queue.size });
+            // 关键路径:自动触发队列消费,不阻塞调用方(事件回调)。
+            void this.scheduleFlush();
         }
     }
 
@@ -86,7 +90,12 @@ export class IndexManager {
     resume(): void {
         if (!this.paused) return;
         this.paused = false;
-        this.status$.set(this.queue.size > 0 ? { state: 'Queueing', pending: this.queue.size } : this.previousState);
+        if (this.queue.size > 0) {
+            this.status$.set({ state: 'Queueing', pending: this.queue.size });
+            void this.scheduleFlush();
+        } else {
+            this.status$.set(this.previousState);
+        }
     }
 
     /** 重新索引 — 清队列 + 走全量。 */
@@ -95,7 +104,7 @@ export class IndexManager {
         await this.onLayoutReady();
     }
 
-    /** 取出队首并处理,测试用。 */
+    /** 取出队首并处理。 */
     async processNext(): Promise<void> {
         const iter = this.queue.entries().next();
         if (iter.done) return;
@@ -114,17 +123,36 @@ export class IndexManager {
         }
     }
 
-    /** 把队列中所有项消费完,测试用。 */
+    /** 把队列中所有项消费完。 */
     async flush(): Promise<void> {
-        if (this.paused) return;
-        while (this.queue.size > 0) {
-            await this.processNext();
+        if (this.paused || this.processing) return;
+        this.processing = true;
+        try {
+            while (this.queue.size > 0 && !this.paused) {
+                await this.processNext();
+            }
+        } finally {
+            this.processing = false;
         }
     }
 
+    /**
+     * 内部调度 — 防止并发消费。
+     * 多次 enqueue 只会触发一次实际 flush(processing 标志去重)。
+     */
+    private async scheduleFlush(): Promise<void> {
+        if (this.processing || this.paused) return;
+        await this.flush();
+    }
+
     private snapshotForResume(): void {
-        // 关键路径:paused 前若在 Ready,记为 Ready;其他情况统一记 Queueing。
-        // 简化:此处不读 status$(避免订阅泄漏),假设 paused 前是 Ready。
-        this.previousState = { state: 'Ready', totalDocs: 0, lastIndexTime: Date.now() };
+        // 修复:读真实状态而非 hardcode Ready,避免 paused 前非 Ready 时恢复错误。
+        const current = get(this.status$);
+        if (current.state === 'Ready' || current.state === 'Idle' || current.state === 'Failed') {
+            this.previousState = current;
+        } else {
+            // 处理中暂停,恢复后回 Ready。
+            this.previousState = { state: 'Ready', totalDocs: 0, lastIndexTime: Date.now() };
+        }
     }
 }
