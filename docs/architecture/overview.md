@@ -191,6 +191,7 @@ graph TB
         A1["agent-loop<br/>主循环 + 状态机"]
         A2["context-manager<br/>上下文管理"]
         A3["tools<br/>工具系统"]
+        A4["hooks<br/>知识治理钩子"]
     end
 
     subgraph "LLM 领域(模型管理 + 流式协议)"
@@ -201,6 +202,9 @@ graph TB
     subgraph "Host 领域(宿主集成 + 持久化)"
         H1["obsidian-integration<br/>Obsidian 宿主集成"]
         H2["persistence<br/>持久化 + 存储"]
+        H3["settings<br/>设置系统"]
+        H4["index-controller<br/>索引控制器"]
+        H5["folder-watcher<br/>文件去抖监听"]
     end
 
     R2 --> R1
@@ -223,10 +227,14 @@ graph TB
 | **Agent** | agent-loop | 主循环:思考 → 调工具 → 拿结果 → 生成回答 | [agent/agent-loop.md](agent/agent-loop.md) |
 | **Agent** | context-manager | 上下文管理:消息历史 / 系统提示词 / 搜索结果注入 / 上下文压缩 | [agent/context-manager.md](agent/context-manager.md) |
 | **Agent** | tools | 工具系统:注册、发现、调用、返回格式 | [agent/tools.md](agent/tools.md) |
+| **Agent** | hooks | 知识治理钩子:pre-write / post-write 阶段化扩展点 | [agent/hooks.md](agent/hooks.md) |
 | **LLM** | model-management | 模型管理:Embedding + Reranker + LLM 的接口级统一管理 | [llm/model-management.md](llm/model-management.md) |
 | **LLM** | streaming | 流式协议:SSE 解析、取消、重试、CORS 策略 | [llm/streaming.md](llm/streaming.md) |
 | **Host** | obsidian-integration | Obsidian 集成:API 封装、UI 挂载、设置、命令 | [host/obsidian-integration.md](host/obsidian-integration.md) |
 | **Host** | persistence | 持久化:设置存储、索引目录、数据迁移 | [host/persistence.md](host/persistence.md) |
+| **Host** | settings | 设置系统:5 组配置项、设置面板、配置热重载 | [host/settings.md](host/settings.md) |
+| **Host** | index-controller | 索引控制器:聚合 Vault 事件 + 去抖 + 过滤 + 队列 | [host/index-controller.md](host/index-controller.md) |
+| **Host** | folder-watcher | 文件去抖:单文件 5s 计时,delete 立即触发 | [host/folder-watcher.md](host/folder-watcher.md) |
 | **Host** | worker-protocol | Worker 通信:postMessage 协议、请求/响应关联、超时控制 | [host/worker-protocol.md](host/worker-protocol.md) |
 
 ---
