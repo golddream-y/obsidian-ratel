@@ -16,12 +16,15 @@ import { Ratelignore } from '../utils/ratelignore-parser';
 
 /**
  * Vault 事件订阅接口(从 VaultPort 抽离,避免在 IndexController 强依赖全 VaultPort)。
+ *
+ * 关键路径:包含 readFile 方法,用于增量索引时读取文件内容。
  */
 export interface VaultEventListener {
     onFileCreate(cb: (path: string) => void): () => void;
     onFileModify(cb: (path: string) => void): () => void;
     onFileDelete(cb: (path: string) => void): () => void;
     onFileRename(cb: (newPath: string, oldPath: string) => void): () => void;
+    readFile(path: string): Promise<string>;
 }
 
 export class IndexController {
@@ -38,7 +41,14 @@ export class IndexController {
     /** 启动期调用 — 注册 vault 事件 + 全量索引。 */
     async onLayoutReady(): Promise<void> {
         this.watcher.start({
-            onUpsert: (p) => this.indexManager.enqueue(p, 'upsert'),
+            // 关键路径:去抖触发后读取文件内容,随 op 一起入队。
+            // 文件可能在去抖期间被删,readFile 失败时静默跳过。
+            onUpsert: (p) => {
+                void this.vault.readFile(p).then(
+                    (content) => this.indexManager.enqueue(p, 'upsert', content),
+                    () => { /* 文件可能在去抖期间被删,忽略 */ },
+                );
+            },
             onDelete: (p) => this.indexManager.enqueue(p, 'delete'),
         });
 

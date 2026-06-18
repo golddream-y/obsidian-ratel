@@ -21,6 +21,7 @@ const mockVault: VaultEventListener = {
     onFileModify: (cb) => { listeners.modify(cb); return () => {}; },
     onFileDelete: (cb) => { listeners.delete(cb); return () => {}; },
     onFileRename: (cb) => { listeners.rename(cb); return () => {}; },
+    readFile: vi.fn().mockResolvedValue('mock content'),
 };
 
 describe('IndexController', () => {
@@ -71,6 +72,7 @@ describe('IndexController', () => {
                 onFileModify: () => unsubs[1],
                 onFileDelete: () => unsubs[2],
                 onFileRename: () => unsubs[3],
+                readFile: vi.fn().mockResolvedValue(''),
             },
             {
                 fullReindex: vi.fn().mockResolvedValue({ indexed: 0, errors: 0 }),
