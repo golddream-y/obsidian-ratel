@@ -54,17 +54,16 @@
 ├── worker.js                  ← Worker 入口
 ├── manifest.json              ← 插件元数据
 ├── styles.css                 ← 样式(可选)
-├── data.json                  ← 设置 + 会话索引
+├── data.json                  ← 设置 + 会话 + 笔记元数据 + Hook 日志
 ├── .gitignore                 ← 自动生成(排除索引/缓存)
-├── index/                     ← vectra 向量索引
-│   ├── index.json             ← 文档元数据
-│   └── items/                 ← 向量 + 文本
-│       ├── doc1.json
-│       └── ...
-└── sessions/                  ← 对话历史
-    ├── session-001.json
-    └── session-002.json
+└── index/                     ← vectra 向量索引
+    ├── index.json             ← 文档元数据
+    └── items/                 ← 向量 + 文本
+        ├── doc1.json
+        └── ...
 ```
+
+**关键**:`data.json` 内部由 `PersistenceJson` 管理三个仓库:`sessions` / `notes` / `hookLog`,共存于同一 JSON 文件。会话不单独存文件。
 
 **模型缓存**(不在插件目录):
 
@@ -81,14 +80,20 @@
 
 ## 4. data.json 结构
 
+`data.json` 由两层共存:
+
+1. **设置层** — `main.ts:loadSettings` 用 `Object.assign(DEFAULT_SETTINGS, raw)` 浅合并,顶层键即 `RatelVaultSettings` 字段。
+2. **仓库层** — `PersistenceJson` 管理的 `sessions` / `notes` / `hookLog` 三个键,与设置层共存于同一文件。
+
 ```mermaid
 graph TB
-    subgraph "data.json"
-        LLM["llmProvider: 'deepseek'<br/>llmApiKey: 'sk-...'<br/>llmModel: 'deepseek-chat'"]
-        EMB["embedLocalModel: 'Xenova/bge-small-zh-v1.5'<br/>embedApiBase: ''<br/>embedApiKey: ''"]
-        IDX["indexPaused: false<br/>embedModelActive: ''"]
-        AVAIL["embedAvailableModels: [...]<br/>embedDownloadedModels: [...]"]
-        CUSTOM["customPrompt: ''<br/>debugMode: false"]
+    subgraph "data.json 顶层"
+        CHAT["Chat<br/>chatModel / chatApiKey / chatApiBase"]
+        EMB["Embedding<br/>embedProvider / embedLocalModel /<br/>embedLocalDimensions / embedApiBase /<br/>embedApiKey / embedApiModel / embedApiDimensions"]
+        RER["Reranker(可选)<br/>rerankerProvider / rerankerApiBase /<br/>rerankerApiKey / rerankerModel"]
+        IDX["Indexing<br/>chunkSize / chunkOverlap / autoIndex /<br/>indexPaused / embedModelActive /<br/>embedAvailableModels / embedDownloadedModels"]
+        LINK["Link Suggestions<br/>autoSuggestLinks / linkConfidenceThreshold"]
+        REPO["仓库层(PersistenceJson)<br/>sessions: Record<br/>notes: Record<br/>hookLog: HookLogEntry[]"]
     end
 ```
 
@@ -99,40 +104,42 @@ graph TB
 **自动生成**:插件 `onload` 时调用 `ensurePluginGitignore()`,幂等写入:
 
 ```gitignore
-# Ratel Vault 自动生成 — 索引和缓存数据,不应纳入版本控制
-index/
-sessions/
-*.tmp
+# Ratel Vault
+.index/
+cache/
 ```
 
 **原则**:
-- 索引和会话是派生数据,可重建,不应 git 跟踪
+- 索引(`.index/`)和模型缓存(`cache/`)是派生数据,可重建,不应 git 跟踪
 - 设置(`data.json`)应跟踪(包含用户配置)
-- 幂等:已有行不重复添加
+- 幂等:已有行不重复添加,保留用户已写的其他行
 
 ---
 
 ## 6. 数据迁移
 
+**当前策略**:`main.ts:loadSettings` 用 `Object.assign(DEFAULT_SETTINGS, raw)` 浅合并。无版本号、无正式迁移框架。
+
 ```mermaid
 flowchart TB
-    START["插件加载"] --> CHECK{"data.json 版本?"}
-    CHECK -->|"无版本号"| MIGRATE["迁移:添加默认字段"]
-    CHECK -->|"旧版本"| MIGRATE2["迁移:补新字段 + 转换旧格式"]
-    CHECK -->|"当前版本"| LOAD["正常加载"]
-
-    MIGRATE --> SAVE["saveData(迁移后)"]
-    MIGRATE2 --> SAVE
-    SAVE --> LOAD
+    START["插件加载"] --> LOAD["loadData()"]
+    LOAD --> CHECK{"raw 为空?"}
+    CHECK -->|"是"| DEFAULT["使用 DEFAULT_SETTINGS"]
+    CHECK -->|"否"| MERGE["Object.assign(DEFAULT_SETTINGS, raw)"]
+    DEFAULT --> SAVE["saveData(合并后)"]
+    MERGE --> SAVE
+    SAVE --> READY["设置就绪"]
 ```
 
 | 迁移场景 | 处理 |
 |---|---|
-| 首次安装 | 写入默认设置 |
-| 新增字段 | 补默认值,保留旧值 |
-| 字段重命名 | 旧字段值迁移到新字段 |
-| 字段删除 | 忽略旧字段 |
-| 索引格式变化 | 标记需要重建索引 |
+| 首次安装 | `raw` 为空,写入 `DEFAULT_SETTINGS` |
+| 新增字段 | 浅合并自动补默认值,保留旧值 |
+| 字段重命名 | 旧字段保留在对象上但不参与逻辑(无迁移) |
+| 字段删除 | 旧字段保留在对象上(无清理) |
+| 索引格式变化 | 无自动检测,需用户手动重建 |
+
+**已知限制**:无版本号追踪,无法区分"需要迁移"与"已是最新"。远期计划引入版本号 + 正式迁移函数。
 
 ---
 
@@ -151,6 +158,6 @@ flowchart TB
 
 | 阶段 | 能力 | 状态 |
 |---|---|---|
-| 当前 | data.json + 索引目录 + .gitignore | ✅ 已实现 |
-| 后续 | 数据迁移框架 + 版本号 | 待实现 |
+| 当前 | data.json + 索引目录 + .gitignore + 浅合并迁移 | ✅ 已实现 |
+| 后续 | 版本号 + 正式迁移函数 | 待实现 |
 | 远期 | 增量备份 + 索引校验 | 远期 |
