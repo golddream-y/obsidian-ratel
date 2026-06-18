@@ -68,15 +68,15 @@ sequenceDiagram
         LLM-->>AL: 流式 tokens
 
         alt 纯文本回复
-            AL-->>CV: token 事件
+            AL-->>CV: message.delta 事件
             CV-->>U: 逐字渲染
         else 工具调用
-            AL-->>CV: tool_call 事件
+            AL-->>CV: tool.call 事件
             CV-->>U: "搜索中..."
             AL->>TL: execute(toolCall)
             TL-->>AL: 工具结果
             AL->>CTX: addToolResult(result)
-            AL-->>CV: tool_result 事件
+            AL-->>CV: tool.result 事件
             CV-->>U: "已找到 3 篇相关笔记"
             Note over AL: 继续下一轮 LLM 调用
         end
@@ -94,22 +94,22 @@ Agent Loop 通过 `AsyncIterable<AgentEvent>` 向 UI 推送事件:
 
 ```mermaid
 stateDiagram-v2
-    [*] --> message_start
-    message_start --> token: 流式文本
-    message_start --> tool_call: LLM 决定调工具
-    token --> token: 持续输出
-    token --> message_end: 文本结束
-    tool_call --> tool_result: 工具返回
-    tool_result --> message_start: 继续下一轮
-    message_end --> [*]
+    [*] --> message.start
+    message.start --> message.delta: 流式文本
+    message.start --> tool.call: LLM 决定调工具
+    message.delta --> message.delta: 持续输出
+    message.delta --> message.end: 文本结束
+    tool.call --> tool.result: 工具返回
+    tool.result --> message.start: 继续下一轮
+    message.end --> [*]
 ```
 
 | 事件类型 | 含义 | UI 行为 |
 |---|---|---|
 | `message.start` | 新一轮 LLM 回复开始 | 显示"思考中..." |
-| `token` | 流式文本片段 | 逐字渲染到消息气泡 |
-| `tool_call` | LLM 请求调用工具 | 显示工具名 + 参数摘要 |
-| `tool_result` | 工具执行结果 | 显示结果摘要 |
+| `message.delta` | 流式文本片段 | 逐字渲染到消息气泡 |
+| `tool.call` | LLM 请求调用工具 | 显示工具名 + 参数摘要 |
+| `tool.result` | 工具执行结果 | 显示结果摘要 |
 | `error` | 错误 | 显示错误提示 |
 | `message.end` | 整个对话轮结束 | 保存会话,显示 token 统计 |
 
@@ -197,13 +197,13 @@ sequenceDiagram
 
     U->>AL: "我的项目用了什么技术栈?"
     AL->>LLM: chat(messages, tools)
-    LLM-->>AL: tool_call: search_vault({ query: "项目技术栈" })
+    LLM-->>AL: tool.call: search_vault({ query: "项目技术栈" })
     AL-->>U: "搜索中..."
     AL->>SV: execute({ query, topK: 5 })
     SV-->>AL: [{ docId, score, metadata }]
 
-    AL->>LLM: chat(messages + tool_result, tools)
-    LLM-->>AL: tool_call: read_note({ path: "notes/project.md" })
+    AL->>LLM: chat(messages + tool.result, tools)
+    LLM-->>AL: tool.call: read_note({ path: "notes/project.md" })
     AL-->>U: "读取笔记..."
     AL->>RN: execute({ path })
     RN-->>AL: 文档内容
@@ -236,5 +236,5 @@ sequenceDiagram
 | 阶段 | 能力 | 状态 |
 |---|---|---|
 | 当前 | 基础对话 + 流式输出 + 工具调用 | ✅ 已实现 |
-| S-RAG-LOOP | search_vault + RAG 提示词 + 上下文注入 | 待实现 |
+| S-RAG-LOOP | search_vault + RAG 提示词 + 上下文注入 | ✅ 已实现(已归档) |
 | 远期 | 多会话 + 会话搜索 + 对话导出 | 远期 |
