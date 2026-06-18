@@ -111,7 +111,7 @@ sequenceDiagram
     AL->>CTX: addSearchResults([{ path, content }])
     AL->>LLM: chat(messages, tools)
     LLM-->>AL: 流式 tokens
-    AL-->>CV: token 事件
+    AL-->>CV: message.delta 事件
     CV-->>U: 实时渲染
 ```
 
@@ -320,34 +320,38 @@ graph TB
 
 | # | 步骤 | 实现状态 | 归属 spec/plan | 说明 |
 |---|------|----------|----------------|------|
-| 1 | 模型自动下载 | 组件就绪,main.ts 未接入 | S-RAG-LOOP | ModelManager + ModelDownloader 已实现 |
-| 2 | 索引自动构建 | 组件就绪,main.ts 未接入 | S-RAG-LOOP | IndexManager + IndexController + FolderWatcher 已实现 |
-| 3 | Embedding 注入 | 组件就绪,main.ts 未接入 | S-RAG-LOOP | EmbeddingLocal.setExtractor() 已实现 |
-| 4 | Worker 初始化 | 组件就绪,main.ts 未接入 | S-RAG-LOOP | WorkerManager + handler 6 case 已实现 |
-| 5 | 文档分块 | 已实现 | S-INIT-INDEX | chunker.ts |
-| 6 | 向量存储 | 已实现 | S-INIT-INDEX | VectraStore upsert/search/delete |
-| 7 | search_vault 工具 | 未实现 | S-RAG-LOOP | 需新建 |
-| 8 | 查询向量化 | 接口就绪 | S-RAG-LOOP | EmbeddingPort.embed(),search_vault 调用 |
-| 9 | BM25 检索 | 未实现 | P-W3-IMPL | Worker handler 无 bm25.search case |
-| 10 | RRF 融合 | 未实现 | P-W3-IMPL | src/core/rrf.ts 不存在 |
-| 11 | 上下文注入 | 未实现 | S-RAG-LOOP | ContextManager.addSearchResults() |
-| 12 | RAG 系统提示词 | 未实现 | S-RAG-LOOP | 现有提示词不含 RAG 指令 |
-| 13 | 引用标记 | 未实现 | P-W3-IMPL | |
-| 14 | LLM 调用 | 已实现 | — | DeepSeekLLM + agentLoop |
-| 15 | 流式输出 | 已实现 | — | ChatView + agentLoop yield |
-| 16 | 主动智能 | 未实现 | 远期 | Heartbeat + 分析 + 推荐 |
+| 1 | 模型自动下载 | ✅ 已实现 | S-RAG-LOOP(已归档) | ModelManager + ModelDownloader,main.ts onLayoutReady 接入 |
+| 2 | 索引自动构建 | ✅ 已实现 | S-RAG-LOOP(已归档) | IndexManager + IndexController + FolderWatcher,main.ts 接入 |
+| 3 | Embedding 注入 | ✅ 已实现 | S-RAG-LOOP(已归档) | EmbeddingLocal.setExtractor(),main.ts onLayoutReady 注入 |
+| 4 | Worker 初始化 | ✅ 已实现 | S-RAG-LOOP(已归档) | WorkerManager + handler,main.ts 启动;Worker 自初始化 embeddings |
+| 5 | 文档分块 | ✅ 已实现 | S-INIT-INDEX(已归档) | chunker.ts 三级回退 |
+| 6 | 向量存储 | ✅ 已实现 | S-INIT-INDEX(已归档) | VectraStore upsert/search/delete |
+| 7 | search_vault 工具 | ✅ 已实现 | S-RAG-LOOP(已归档) | src/tools/search-vault.ts,返回 docId+score+metadata |
+| 8 | 查询向量化 | ✅ 已实现 | S-RAG-LOOP(已归档) | search_vault 调用 embedding.embed() 主线程执行 |
+| 9 | BM25 检索 | ❌ 未实现 | P-W3-IMPL | Worker handler 无 bm25.search case |
+| 10 | RRF 融合 | ❌ 未实现 | P-W3-IMPL | src/core/rrf.ts 不存在 |
+| 11 | 上下文注入 | ✅ 已实现 | S-RAG-LOOP(已归档) | ContextManager.addSearchResults() |
+| 12 | RAG 系统提示词 | ❌ 未实现 | 待规划 | SYSTEM_PROMPT 不含 RAG 指令 |
+| 13 | 引用标记 | ❌ 未实现 | P-W3-IMPL | |
+| 14 | LLM 调用 | ✅ 已实现 | — | DeepSeekLLM + agentLoop,requestUrl 绕过 CORS |
+| 15 | 流式输出 | ⚠️ 部分实现 | — | requestUrl 返回完整 text 后解析 SSE,非真流式;ChatView 仅处理 message.delta |
+| 16 | 主动智能 | ❌ 未实现 | 远期 | Heartbeat + 分析 + 推荐 |
+| 17 | 增量索引消费 | ✅ 已实现 | 质量修复 | enqueue 自动触发 scheduleFlush |
+| 18 | 上下文压缩 | ❌ 未实现 | 待规划 | 四池预算 + 三层压缩均未实现 |
+| 19 | 工具调用 UI 可见 | ❌ 未实现 | 待规划 | ChatView 不处理 tool.call/tool.result 事件 |
+| 20 | 取消机制 | ❌ 未实现 | 待规划 | 无 AbortController |
 
 ### 执行优先级
 
 ```
-S-RAG-LOOP (当前)          P-W3-IMPL (后续)         远期增强
-─────────────────          ────────────────         ──────────
-#1-4 main.ts 接入层         #9 BM25 检索              #16 主动智能
-#7-8 search_vault           #10 RRF 融合              HyDE
-#11 上下文注入              #13 引用标记               摘要索引
-#12 RAG 提示词              滑动窗口(L2)              LLM 摘要(L3)
-截断(L1 压缩)                                         语义分块
-                                                      工具结果字段投影
+已完成                      P-W3-IMPL (后续)         待规划
+──────────                  ────────────────         ──────────
+#1-4 main.ts 接入层         #9 BM25 检索              #12 RAG 提示词
+#7-8 search_vault           #10 RRF 融合              #18 上下文压缩
+#11 上下文注入              #13 引用标记               #19 工具调用 UI 可见
+#17 增量索引消费                                      #20 取消机制
+质量修复(fetch→requestUrl,
+增量队列消费)
 ```
 
 ---
@@ -356,8 +360,6 @@ S-RAG-LOOP (当前)          P-W3-IMPL (后续)         远期增强
 
 | 文档 | 位置 | 说明 |
 |---|---|---|
-| ARCHITECTURE.md | `docs/ARCHITECTURE.md` | 历史总架构(保留) |
-| RAG 架构 | `docs/superpowers/specs/2026-06-14-ratel-rag-architecture.md` | RAG 子系统详细设计(待迁移) |
-| RAG 路线图 | `docs/superpowers/specs/2026-06-13-rag-enhancement-roadmap-design.md` | RAG 三阶段演进(待迁移) |
 | ADR-001 CORS | `docs/adr/2026-06-14-ratel-cors-strategy.md` | LLM 端点 CORS 处理策略 |
 | STATUS.md | `docs/superpowers/STATUS.md` | spec / plan 状态追踪 |
+| 归档 | `docs/superpowers/archive/` | 已完成的 spec/plan 历史档案 |

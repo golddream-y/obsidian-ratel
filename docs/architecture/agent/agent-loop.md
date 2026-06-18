@@ -54,15 +54,15 @@ flowchart TB
     STEP --> LLM["LLM.chat(messages, tools)"]
     LLM --> CHECK{"LLM 返回"}
 
-    CHECK -->|"纯文本"| YIELD["yield token 事件"]
+    CHECK -->|"纯文本"| YIELD["yield message.delta 事件"]
     YIELD --> END["message.end"]
 
-    CHECK -->|"工具调用"| TC["yield tool_call 事件"]
+    CHECK -->|"工具调用"| TC["yield tool.call 事件"]
     TC --> HOOK{"readOnly?"}
     HOOK -->|"否"| PRE["pre-hook 校验"]
     PRE --> EXEC["execute(toolCall)"]
     HOOK -->|"是"| EXEC
-    EXEC --> RESULT["yield tool_result 事件"]
+    EXEC --> RESULT["yield tool.result 事件"]
     RESULT --> HOOK2{"readOnly?"}
     HOOK2 -->|"否"| POST["post-hook 审计"]
     HOOK2 -->|"是"| NEXT["step++"]
@@ -95,10 +95,10 @@ flowchart TB
 2. LLM.chat(messages, tools) → 流式响应
 3. 累积文本 + 检测工具调用
 4. if 纯文本:
-     yield token 事件 → 结束
+     yield message.delta 事件 → 结束
    if 工具调用:
-     yield tool_call 事件
-     执行工具 → yield tool_result 事件
+     yield tool.call 事件
+     执行工具 → yield tool.result 事件
      ctx.addToolResult(result)
      继续下一轮
 ```
@@ -127,7 +127,7 @@ sequenceDiagram
     Note over AL,HK: 工具调用流程
 
     AL->>LLM: chat(messages, tools)
-    LLM-->>AL: tool_call: { name, arguments }
+    LLM-->>AL: tool.call: { name, args }
 
     AL->>TL: getTool(name)
     TL-->>AL: tool definition
@@ -151,9 +151,9 @@ sequenceDiagram
 
 ```typescript
 interface ToolCall {
-  id: string;        // 调用唯一 ID
-  name: string;      // 工具名
-  arguments: string; // JSON 字符串
+  id: string;                          // 调用唯一 ID
+  name: string;                        // 工具名
+  args: Record<string, unknown>;       // 参数对象(LLM 解析后传入)
 }
 ```
 
@@ -194,5 +194,5 @@ graph TB
 | 阶段 | 能力 | 状态 |
 |---|---|---|
 | 当前 | 单步循环 + 工具调用 + Hook | ✅ 已实现 |
-| S-RAG-LOOP | search_vault 工具 + RAG 提示词 | 待实现 |
+| S-RAG-LOOP | search_vault 工具 + RAG 提示词 | ✅ 已实现(已归档) |
 | 远期 | 多 Agent 协作 + 子 Agent 调度 | 远期 |

@@ -153,7 +153,7 @@ sequenceDiagram
     participant TOOL as 具体工具
     participant HK as HookRegistry
 
-    LLM-->>AL: tool_call: { name, arguments }
+    LLM-->>AL: tool.call: { name, args }
     AL->>TR: getTool(name)
     TR-->>AL: ToolDefinition
 
@@ -176,7 +176,7 @@ sequenceDiagram
 
 | 分类 | 工具 | readOnly | 触发 Hook | 阶段 |
 |---|---|---|---|---|
-| **检索类** | search_vault | ✅ | ❌ | S-RAG-LOOP |
+| **检索类** | search_vault | ✅ | ❌ | 已实现 |
 | **读取类** | read_note | ✅ | ❌ | 已实现 |
 | **写入类** | create_note, edit_note | ❌ | ✅ | 远期 |
 | **管理类** | list_notes, move_note | ❌ | ✅ | 远期 |
@@ -198,5 +198,5 @@ sequenceDiagram
 | 阶段 | 能力 | 状态 |
 |---|---|---|
 | 当前 | read_note + 基础 ToolRegistry | ✅ 已实现 |
-| S-RAG-LOOP | search_vault | 待实现 |
+| S-RAG-LOOP | search_vault | ✅ 已实现(已归档) |
 | 远期 | create_note + edit_note + Hook 治理 | 远期 |
