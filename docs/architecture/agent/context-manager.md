@@ -264,7 +264,7 @@ flowchart TB
 
 | 阶段 | 能力 | 状态 |
 |---|---|---|
-| 当前 | 基础消息管理 + session 持久化 | ✅ 已实现 |
-| S-RAG-LOOP | addSearchResults + RAG 系统提示词 + 截断(三层压缩 Layer 1) | 待实现 |
+| 当前 | 基础消息管理 + session 持久化 + Layer 1 截断 | ✅ 已实现 |
+| S-RAG-LOOP | addSearchResults + RAG 系统提示词 | ✅ 已实现(已归档) |
 | P-W3-IMPL | 引用标记格式化 + 滑动窗口(三层压缩 Layer 2) | 待实现 |
 | 远期 | LLM 摘要(三层压缩 Layer 3) + 工具结果字段投影 | 远期 |

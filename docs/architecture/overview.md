@@ -337,7 +337,7 @@ graph TB
 | 15 | 流式输出 | ⚠️ 部分实现 | — | requestUrl 返回完整 text 后解析 SSE,非真流式;ChatView 仅处理 message.delta |
 | 16 | 主动智能 | ❌ 未实现 | 远期 | Heartbeat + 分析 + 推荐 |
 | 17 | 增量索引消费 | ✅ 已实现 | 质量修复 | enqueue 自动触发 scheduleFlush |
-| 18 | 上下文压缩 | ❌ 未实现 | 待规划 | 四池预算 + 三层压缩均未实现 |
+| 18 | 上下文压缩 | ⚠️ 部分实现 | 质量修复 | Layer 1 截断已实现(maxHistoryTokens=8000);Layer 2/3 未实现 |
 | 19 | 工具调用 UI 可见 | ✅ 已实现 | 质量修复 | ChatView 处理 tool.call/tool.result 事件,显示工具名+结果摘要 |
 | 20 | 取消机制 | ❌ 未实现 | 待规划 | 无 AbortController |
 
