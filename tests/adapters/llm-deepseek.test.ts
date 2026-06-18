@@ -1,36 +1,46 @@
+/**
+ * @file tests/adapters/llm-deepseek.test.ts
+ * @description DeepSeek LLM 适配器单元测试(requestUrl + SSE 解析 + 工具调用)
+ * @module tests/adapters/llm-deepseek
+ * @depends src/adapters/llm-deepseek, src/ports/llm
+ */
+
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+// 关键路径:vi.hoisted 确保 mockRequestUrl 在 vi.mock 提升前完成初始化。
+const { mockRequestUrl } = vi.hoisted(() => ({
+	mockRequestUrl: vi.fn(),
+}));
+
+vi.mock('obsidian', () => ({
+	requestUrl: mockRequestUrl,
+}));
+
 import { DeepSeekLLM } from '../../src/adapters/llm-deepseek';
 import type { ChatRequest } from '../../src/ports/llm';
 
-// Mock fetch globally
-const mockFetch = vi.fn();
-vi.stubGlobal('fetch', mockFetch);
+/**
+ * 把 SSE 事件数组拼接为完整的 SSE text(每行一个 data: 事件,以 [DONE] 结尾)。
+ */
+function buildSseText(events: string[]): string {
+	return events.map((e) => `data: ${e}`).join('\n') + '\n';
+}
 
 describe('DeepSeekLLM', () => {
 	beforeEach(() => {
-		mockFetch.mockReset();
+		mockRequestUrl.mockReset();
 	});
 
 	it('sends chat request and yields text deltas', async () => {
-		// Simulate SSE stream with two text chunks
-		const sseChunks = [
-			'data: {"choices":[{"delta":{"content":"Hello"}}]}\n\n',
-			'data: {"choices":[{"delta":{"content":" world"}}]}\n\n',
-			'data: [DONE]\n\n',
-		];
-		const encoder = new TextEncoder();
-		const stream = new ReadableStream({
-			start(controller) {
-				for (const chunk of sseChunks) {
-					controller.enqueue(encoder.encode(chunk));
-				}
-				controller.close();
-			},
-		});
+		const sseText = buildSseText([
+			'{"choices":[{"delta":{"content":"Hello"}}]}',
+			'{"choices":[{"delta":{"content":" world"}}]}',
+			'[DONE]',
+		]);
 
-		mockFetch.mockResolvedValueOnce({
-			ok: true,
-			body: stream,
+		mockRequestUrl.mockResolvedValueOnce({
+			status: 200,
+			text: sseText,
 		});
 
 		const llm = new DeepSeekLLM({
@@ -49,32 +59,23 @@ describe('DeepSeekLLM', () => {
 		}
 
 		expect(deltas).toEqual(['Hello', ' world']);
-		expect(mockFetch).toHaveBeenCalledOnce();
-		const [url, options] = mockFetch.mock.calls[0]!;
-		expect(url).toBe('https://api.deepseek.com/chat/completions');
-		expect((options as RequestInit).method).toBe('POST');
+		expect(mockRequestUrl).toHaveBeenCalledOnce();
+		const callArg = mockRequestUrl.mock.calls[0]![0] as Record<string, unknown>;
+		expect(callArg.url).toBe('https://api.deepseek.com/chat/completions');
+		expect(callArg.method).toBe('POST');
 	});
 
 	it('handles tool calls in stream', async () => {
-		const sseChunks = [
-			'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"read_note","arguments":""}}]}}]}\n\n',
-			'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\\"path\\":"}}]}}]}\n\n',
-			'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\\"test.md\\"}"}}]}}]}\n\n',
-			'data: [DONE]\n\n',
-		];
-		const encoder = new TextEncoder();
-		const stream = new ReadableStream({
-			start(controller) {
-				for (const chunk of sseChunks) {
-					controller.enqueue(encoder.encode(chunk));
-				}
-				controller.close();
-			},
-		});
+		const sseText = buildSseText([
+			'{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"read_note","arguments":""}}]}}]}',
+			'{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\\"path\\":"}}]}}]}',
+			'{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\\"test.md\\"}"}}]}}]}',
+			'[DONE]',
+		]);
 
-		mockFetch.mockResolvedValueOnce({
-			ok: true,
-			body: stream,
+		mockRequestUrl.mockResolvedValueOnce({
+			status: 200,
+			text: sseText,
 		});
 
 		const llm = new DeepSeekLLM({
@@ -104,11 +105,9 @@ describe('DeepSeekLLM', () => {
 	});
 
 	it('throws on API error', async () => {
-		mockFetch.mockResolvedValueOnce({
-			ok: false,
+		mockRequestUrl.mockResolvedValueOnce({
 			status: 401,
-			statusText: 'Unauthorized',
-			body: null,
+			text: '',
 		});
 
 		const llm = new DeepSeekLLM({
@@ -120,30 +119,26 @@ describe('DeepSeekLLM', () => {
 		await expect(async () => {
 			const stream = llm.chat({ messages: [{ role: 'user', content: 'Hi' }] });
 			for await (const _ of stream) { /* consume */ }
-		}).rejects.toThrow('LLM API error: 401 Unauthorized');
+		}).rejects.toThrow('LLM API error: 401');
 	});
 
 	it('serializes tool call messages correctly in request body', async () => {
+		let capturedBody: Record<string, unknown> | null = null;
+		mockRequestUrl.mockImplementationOnce(async (params: Record<string, unknown>) => {
+			capturedBody = JSON.parse(params.body as string);
+			return {
+				status: 200,
+				text: buildSseText([
+					'{"choices":[{"delta":{"content":"ok"}}]}',
+					'[DONE]',
+				]),
+			};
+		});
+
 		const llm = new DeepSeekLLM({
 			apiBase: 'https://api.deepseek.com',
 			apiKey: 'sk-test',
 			model: 'deepseek-chat',
-		});
-
-		// Capture the request body
-		let capturedBody: Record<string, unknown> | null = null;
-		mockFetch.mockImplementationOnce(async (_url: string, options: RequestInit) => {
-			capturedBody = JSON.parse(options.body as string);
-			// Return minimal SSE stream
-			const encoder = new TextEncoder();
-			const stream = new ReadableStream({
-				start(controller) {
-					controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"ok"}}]}\n\n'));
-					controller.enqueue(encoder.encode('data: [DONE]\n\n'));
-					controller.close();
-				},
-			});
-			return { ok: true, body: stream };
 		});
 
 		const req: ChatRequest = {
@@ -193,9 +188,11 @@ describe('DeepSeekLLM', () => {
 				{ role: 'tool', content: 'result', toolCallId: 'call_1' },
 			],
 		};
-		const body = (adapter as any).buildRequestBody(req) as { messages: any[] };
-		const assistantMsg = body.messages[1];
-		expect(assistantMsg.tool_calls[0].function.arguments).toBe('{"path":"notes/test.md"}');
+		const body = (adapter as unknown as { buildRequestBody: (req: ChatRequest) => Record<string, unknown> }).buildRequestBody(req) as { messages: Array<Record<string, unknown>> };
+		const assistantMsg = body.messages[1]!;
+		const toolCall = (assistantMsg.tool_calls as Array<Record<string, unknown>>)[0]!;
+		const fn = toolCall.function as Record<string, unknown>;
+		expect(fn.arguments).toBe('{"path":"notes/test.md"}');
 	});
 
 	it('countTokens returns rough estimate', () => {
@@ -209,15 +206,12 @@ describe('DeepSeekLLM', () => {
 	});
 
 	it('handles malformed SSE chunk gracefully', async () => {
-		mockFetch.mockResolvedValueOnce({
-			ok: true,
-			body: new ReadableStream({
-				start(controller) {
-					controller.enqueue(new TextEncoder().encode('data: {not valid json\n\n'));
-					controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
-					controller.close();
-				},
-			}),
+		// 混合合法与非法 JSON 行,非法行应被跳过。
+		const sseText = 'data: {not valid json\ndata: {"choices":[{"delta":{"content":"ok"}}]}\ndata: [DONE]\n';
+
+		mockRequestUrl.mockResolvedValueOnce({
+			status: 200,
+			text: sseText,
 		});
 
 		const adapter = new DeepSeekLLM({ apiBase: 'http://test', apiKey: 'sk', model: 'm' });
@@ -226,27 +220,24 @@ describe('DeepSeekLLM', () => {
 		for await (const delta of stream) {
 			if (delta.text) collected.push(delta.text);
 		}
-		// Malformed chunks are silently skipped; stream completes without error
-		expect(collected).toEqual([]);
+		// 非法行跳过后,合法行仍被解析
+		expect(collected).toEqual(['ok']);
 	});
 
 	it('handles multiple tool_calls in single response', async () => {
-		mockFetch.mockResolvedValueOnce({
-			ok: true,
-			body: new ReadableStream({
-				start(controller) {
-					controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"Let me check both."},"index":0}]}\n\n'));
-					controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"tc1","type":"function","function":{"name":"read_note","arguments":"{\\"path\\":\\"a.md\\"}"}}]},"index":0}]}\n\n'));
-					controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"tool_calls":[{"index":1,"id":"tc2","type":"function","function":{"name":"read_note","arguments":"{\\"path\\":\\"b.md\\"}"}}]},"index":0}]}\n\n'));
-					controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
-					controller.close();
-				},
-			}),
+		const sseText = buildSseText([
+			'{"choices":[{"delta":{"content":"Let me check both."},"index":0}]}',
+			'{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"tc1","type":"function","function":{"name":"read_note","arguments":"{\\"path\\":\\"a.md\\"}"}}]},"index":0}]}',
+			'{"choices":[{"delta":{"tool_calls":[{"index":1,"id":"tc2","type":"function","function":{"name":"read_note","arguments":"{\\"path\\":\\"b.md\\"}"}}]},"index":0}]}',
+			'[DONE]',
+		]);
+
+		mockRequestUrl.mockResolvedValueOnce({
+			status: 200,
+			text: sseText,
 		});
 
 		const adapter = new DeepSeekLLM({ apiBase: 'http://test', apiKey: 'sk', model: 'm' });
-		// The SSE parser uses Map<index, ...> so different-index tool_calls don't overwrite each other.
-		// At end-of-stream, all accumulated tool_calls are yielded.
 		const toolCalls: Array<{ id: string; name: string }> = [];
 		for await (const delta of adapter.chat({ messages: [] })) {
 			if (delta.toolCall) toolCalls.push({ id: delta.toolCall.id, name: delta.toolCall.name });
@@ -258,33 +249,28 @@ describe('DeepSeekLLM', () => {
 		]));
 	});
 
-	it('handles network error mid-stream', async () => {
-		// Use pull-based stream so the first chunk is delivered to the consumer
-		// before the stream is errored on the next pull (mimics mid-stream disconnect).
-		let pullCount = 0;
-		mockFetch.mockResolvedValueOnce({
-			ok: true,
-			body: new ReadableStream({
-				pull(controller) {
-					pullCount++;
-					if (pullCount === 1) {
-						controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"Hello"},"index":0}]}\n\n'));
-					} else {
-						controller.error(new Error('Connection reset'));
-					}
-				},
-			}),
-		});
+	it('handles network error', async () => {
+		// requestUrl 网络错误直接 reject
+		mockRequestUrl.mockRejectedValueOnce(new Error('Network error'));
 
 		const adapter = new DeepSeekLLM({ apiBase: 'http://test', apiKey: 'sk', model: 'm' });
 		const stream = adapter.chat({ messages: [] });
-		const collected: string[] = [];
+
 		await expect(async () => {
-			for await (const delta of stream) {
-				if (delta.text) collected.push(delta.text);
-			}
-		}).rejects.toThrow();
-		// Should have received at least the first chunk
-		expect(collected).toEqual(['Hello']);
+			for await (const _ of stream) { /* consume */ }
+		}).rejects.toThrow('Network error');
+	});
+
+	it('throws on empty response body', async () => {
+		mockRequestUrl.mockResolvedValueOnce({
+			status: 200,
+			text: '',
+		});
+
+		const adapter = new DeepSeekLLM({ apiBase: 'http://test', apiKey: 'sk', model: 'm' });
+
+		await expect(async () => {
+			for await (const _ of adapter.chat({ messages: [] })) { /* consume */ }
+		}).rejects.toThrow('empty body');
 	});
 });
