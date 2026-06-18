@@ -227,6 +227,7 @@ graph TB
 | **LLM** | streaming | 流式协议:SSE 解析、取消、重试、CORS 策略 | [llm/streaming.md](llm/streaming.md) |
 | **Host** | obsidian-integration | Obsidian 集成:API 封装、UI 挂载、设置、命令 | [host/obsidian-integration.md](host/obsidian-integration.md) |
 | **Host** | persistence | 持久化:设置存储、索引目录、数据迁移 | [host/persistence.md](host/persistence.md) |
+| **Host** | worker-protocol | Worker 通信:postMessage 协议、请求/响应关联、超时控制 | [host/worker-protocol.md](host/worker-protocol.md) |
 
 ---
 
