@@ -150,4 +150,98 @@ describe('ContextManager', () => {
 		const ctx = new ContextManager(persistence);
 		expect(ctx.tokenCount()).toBeGreaterThanOrEqual(0);
 	});
+
+	// ==================== Layer 1 截断 ====================
+
+	it('Layer 1 截断 - 历史超预算 - 从最旧裁剪,保留最后一条', async () => {
+		const sessions = new Map<string, Session>();
+		// 关键路径:5 条消息,每条 ~100 字符(~25 tokens),总 ~125 tokens。
+		// maxHistoryTokens=50 触发截断,保留最后 1-2 条。
+		sessions.set('s1', {
+			id: 's1',
+			title: '',
+			messages: [
+				{ role: 'user', content: 'A'.repeat(100) },
+				{ role: 'assistant', content: 'B'.repeat(100) },
+				{ role: 'user', content: 'C'.repeat(100) },
+				{ role: 'assistant', content: 'D'.repeat(100) },
+				{ role: 'user', content: 'E'.repeat(100) },
+			],
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		});
+		const persistence = createMockPersistence(sessions);
+		const ctx = new ContextManager(persistence, 50);
+		await ctx.load('s1');
+
+		const msgs = ctx.toMessages();
+		// system + 截断后的历史
+		const history = msgs.slice(1); // 去掉 system prompt
+		expect(history.length).toBeLessThan(5);
+		// 关键路径:最后一条(当前用户消息)必须保留
+		expect(history[history.length - 1]!.content).toBe('E'.repeat(100));
+	});
+
+	it('Layer 1 截断 - 历史未超预算 - 不裁剪', async () => {
+		const sessions = new Map<string, Session>();
+		sessions.set('s1', {
+			id: 's1',
+			title: '',
+			messages: [
+				{ role: 'user', content: 'Hello' },
+				{ role: 'assistant', content: 'Hi' },
+			],
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		});
+		const persistence = createMockPersistence(sessions);
+		const ctx = new ContextManager(persistence, 8000);
+		await ctx.load('s1');
+
+		const msgs = ctx.toMessages();
+		// system + 2 history = 3
+		expect(msgs).toHaveLength(3);
+	});
+
+	it('Layer 1 截断 - 不影响 session.messages 原文', async () => {
+		const sessions = new Map<string, Session>();
+		sessions.set('s1', {
+			id: 's1',
+			title: '',
+			messages: [
+				{ role: 'user', content: 'A'.repeat(200) },
+				{ role: 'assistant', content: 'B'.repeat(200) },
+				{ role: 'user', content: 'C'.repeat(200) },
+			],
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		});
+		const persistence = createMockPersistence(sessions);
+		const ctx = new ContextManager(persistence, 10);
+		await ctx.load('s1');
+
+		ctx.toMessages();
+		await ctx.save();
+
+		const saved = sessions.get('s1')!;
+		// 关键路径:截断只影响 toMessages() 输出,session.messages 原文不变。
+		expect(saved.messages).toHaveLength(3);
+	});
+
+	it('Layer 1 截断 - 搜索结果不被裁剪', async () => {
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence, 10);
+		await ctx.load('s1');
+
+		ctx.addUserMessage('A'.repeat(200));
+		ctx.addSearchResults([{ path: 'note.md', content: 'X'.repeat(500) }]);
+
+		const msgs = ctx.toMessages();
+		// system + search result + 至少 1 条历史(截断后保留最后一条)
+		expect(msgs[0]!.role).toBe('system');
+		expect(msgs[1]!.role).toBe('system'); // 搜索结果
+		expect(msgs[1]!.content).toContain('知识库检索结果');
+		// 关键路径:搜索结果内容完整保留,不受历史池预算限制
+		expect(msgs[1]!.content).toContain('X'.repeat(500));
+	});
 });

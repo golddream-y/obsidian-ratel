@@ -22,6 +22,7 @@ const SYSTEM_PROMPT = `You are Ratel, an AI assistant that helps users explore a
  * - 任何 `add*` 方法都会更新 `session.updatedAt`,便于上层按"最近活跃"排序。
  * - `toMessages()` 总是返回 `[system, ...searchResultsMessages, ...session.messages]`,保证 LLM 始终看到最新系统提示与当前检索上下文。
  * - `load()` 切换 session 时会清空 `searchResultsMessages`,避免旧 session 的检索结果泄漏到新 session。
+ * - Layer 1 截断:历史消息超过 `maxHistoryTokens` 时从最旧开始裁剪,保护系统提示词 + 搜索结果 + 最近消息。
  *
  * @example
  *   const ctx = new ContextManager(persistence);
@@ -36,11 +37,19 @@ export class ContextManager {
 	 * 便于在切换 session 时整体丢弃,避免旧 session 的检索结果泄漏。
 	 */
 	private searchResultsMessages: ChatMessage[] = [];
+	/**
+	 * 历史池 token 预算上限。超出时触发 Layer 1 截断(从最旧消息裁剪)。
+	 * 默认 8000 tokens(~32K 字符),适配 32K 窗口模型的历史池占比。
+	 */
+	private readonly maxHistoryTokens: number;
 
 	/**
 	 * @param persistence - 持久化端口,用于加载/保存 session。
+	 * @param maxHistoryTokens - 历史池 token 上限,默认 8000。
 	 */
-	constructor(private persistence: Persistence) {}
+	constructor(private persistence: Persistence, maxHistoryTokens = 8000) {
+		this.maxHistoryTokens = maxHistoryTokens;
+	}
 
 	/**
 	 * 加载已有 session;若不存在则创建新 session(in-memory,不落盘)。
@@ -148,14 +157,49 @@ export class ContextManager {
 	/**
 	 * 拼接最终给 LLM 的消息列表(系统提示 + 检索结果 + 历史消息)。
 	 *
+	 * 关键路径:历史消息超出 `maxHistoryTokens` 时触发 Layer 1 截断 —
+	 * 从最旧消息开始裁剪,直到 token 估算值落入预算内。
+	 * 系统提示词和搜索结果不在裁剪范围(指令池 / 检索池独立预算)。
+	 * 至少保留最后一条消息(当前用户输入或最近工具结果),避免空上下文。
+	 *
 	 * @returns 消息数组,首条为 system 角色。
 	 */
 	toMessages(): ChatMessage[] {
+		const history = this.session?.messages ?? [];
+		const trimmed = this.trimHistory(history);
 		return [
 			{ role: 'system', content: SYSTEM_PROMPT },
 			...this.searchResultsMessages,
-			...(this.session?.messages ?? []),
+			...trimmed,
 		];
+	}
+
+	/**
+	 * Layer 1 截断:从最旧历史消息开始裁剪,直到 token 估算落入预算。
+	 *
+	 * 关键路径:
+	 * - 至少保留最后 1 条消息(当前用户输入 / 最近工具结果),避免空上下文。
+	 * - 截断只影响发给 LLM 的消息列表,不修改 session.messages 原文(持久化不受影响)。
+	 * - tool 消息如果对应的 assistant tool call 被裁掉,LLM 会忽略孤立 tool result(可接受,Layer 2 再处理配对)。
+	 *
+	 * @param messages - session 内的完整历史消息。
+	 * @returns 裁剪后的消息数组(可能比输入短)。
+	 */
+	private trimHistory(messages: ChatMessage[]): ChatMessage[] {
+		if (messages.length <= 1) return messages;
+
+		const estimateTokens = (msgs: ChatMessage[]): number =>
+			Math.ceil(msgs.map((m) => m.content).join('').length / 4);
+
+		let tokens = estimateTokens(messages);
+		if (tokens <= this.maxHistoryTokens) return messages;
+
+		// 关键路径:从最旧开始裁剪,保留最后 1 条(当前上下文)。
+		const trimmed = [...messages];
+		while (trimmed.length > 1 && estimateTokens(trimmed) > this.maxHistoryTokens) {
+			trimmed.shift();
+		}
+		return trimmed;
 	}
 
 	/**
