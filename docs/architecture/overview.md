@@ -332,7 +332,7 @@ graph TB
 | 1 | 模型自动下载 | ✅ 已实现 | S-RAG-LOOP(已归档) | ModelManager + ModelDownloader,main.ts onLayoutReady 接入 |
 | 2 | 索引自动构建 | ✅ 已实现 | S-RAG-LOOP(已归档) | IndexManager + IndexController + FolderWatcher,main.ts 接入 |
 | 3 | Embedding 注入 | ✅ 已实现 | S-RAG-LOOP(已归档) | EmbeddingLocal.setExtractor(),main.ts onLayoutReady 注入 |
-| 4 | Worker 初始化 | ✅ 已实现 | S-RAG-LOOP(已归档) | WorkerManager + handler,main.ts 启动;Worker 自初始化 embeddings |
+| 4 | Worker 初始化 | ✅ 已实现 | ADR-002 / 质量修复 | WorkerManager + handler,main.ts 启动;优先 Node Worker Threads,Obsidian 渲染进程不支持时降级 InlineWorker;InlineWorker 复用主线程 VectraStore |
 | 5 | 文档分块 | ✅ 已实现 | S-INIT-INDEX(已归档) | chunker.ts 三级回退 |
 | 6 | 向量存储 | ✅ 已实现 | S-INIT-INDEX(已归档) | VectraStore upsert/search/delete |
 | 7 | search_vault 工具 | ✅ 已实现 | S-RAG-LOOP(已归档) | src/tools/search-vault.ts,返回 docId+score+metadata |

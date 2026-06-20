@@ -8,6 +8,8 @@
 import { FileSystemAdapter, Notice, Plugin } from 'obsidian';
 import { Worker } from 'worker_threads';
 import { type RatelVaultSettings, DEFAULT_SETTINGS, RatelVaultSettingTab } from './settings';
+
+type FeatureExtractor = (texts: string[], options: Record<string, unknown>) => Promise<{ tolist: () => number[][] }>;
 import type { AgentEvent } from './types';
 import { agentLoop } from './core/agent-loop';
 import { ContextManager } from './core/context-manager';
@@ -20,7 +22,9 @@ import type { EmbeddingPort } from './ports/embedding';
 import { EmbeddingLocal } from './adapters/embedding-local';
 import { EmbeddingApi } from './adapters/embedding-api';
 import { VectraStore } from './adapters/vector-vectra';
+import type { EmbeddingsModel, EmbeddingsResponse } from 'vectra';
 import { WorkerManager } from './worker/manager';
+import { InlineWorker } from './worker/inline-worker';
 import { createReadNoteTool } from './tools/read-note';
 import { createSearchVaultTool } from './tools/search-vault';
 import { ModelManager } from './core/model-manager';
@@ -50,6 +54,10 @@ export default class RatelVaultPlugin extends Plugin {
 	workerManager!: WorkerManager;
 	// 关键路径:vectraStore 持有 vectra 索引目录的引用,需在 plugin 生命周期内常驻。
 	vectraStore!: VectraStore;
+	// 关键路径:InlineWorker 在主线程模拟 Worker,用于 Obsidian 渲染进程不支持 Worker Threads 的环境。
+	private inlineWorker?: InlineWorker;
+	// 关键路径:indexDir 在 onload 计算,onLayoutReady 初始化 InlineWorker 时需要复用。
+	private indexDir!: string;
 	modelManager!: ModelManager;
 	indexController!: IndexController;
 
@@ -85,22 +93,16 @@ export default class RatelVaultPlugin extends Plugin {
 		const adapter = this.app.vault.adapter as FileSystemAdapter;
 		const vaultBase = adapter.getBasePath();
 		const pluginDir = path.join(vaultBase, '.obsidian', 'plugins', 'ratel-vault');
-		const indexDir = path.join(pluginDir, '.index');
-		this.vectraStore = new VectraStore(indexDir);
+		this.indexDir = path.join(pluginDir, '.index');
+		// 关键路径:启动期 vectraStore 可能尚无 embeddings(本地模型在 onLayoutReady 才下载),
+		// 因此只做目录占位;InlineWorker 场景下会在模型就绪后重新创建带 embeddings 的 store。
+		this.vectraStore = new VectraStore(this.indexDir);
 		ensurePluginGitignore(pluginDir);
 
 		// ==================== Worker ====================
-		// 关键路径:`__dirname` 在 esbuild 编译后指向 main.js 同目录,worker.js 必须存在。
-		// Worker 启动期需要 indexDir + modelId 来自初始化 embeddings,故通过 workerData 传入。
-		// 仅本地 Embedding 模式传入 modelId;API 模式不传,避免 Worker 加载不存在的本地模型。
-		const workerPath = path.join(__dirname, 'worker.js');
-		const worker = new Worker(workerPath, {
-			workerData:
-				this.settings.embedProvider === 'local'
-					? { indexDir, modelId: this.settings.embedLocalModel }
-					: { indexDir },
-		});
-		this.workerManager = new WorkerManager(worker);
+		// 关键路径:优先尝试 Node.js Worker Threads;Obsidian 渲染进程不支持时降级到 InlineWorker。
+		// InlineWorker 在同线程执行,能解决 CORS/平台限制,但大索引会阻塞 UI。
+		this.workerManager = this.createWorkerManager();
 
 		// ==================== 模型与索引 ====================
 		const modelBackend = new ModelDownloader();
@@ -214,8 +216,15 @@ export default class RatelVaultPlugin extends Plugin {
 		try {
 			await this.modelManager.download(this.settings.embedLocalModel);
 			const extractor = this.modelManager.getExtractor?.();
-			if (extractor && this.embedding instanceof EmbeddingLocal) {
-				this.embedding.setExtractor(extractor as Parameters<EmbeddingLocal['setExtractor']>[0]);
+			if (extractor) {
+				if (this.embedding instanceof EmbeddingLocal) {
+					this.embedding.setExtractor(extractor as Parameters<EmbeddingLocal['setExtractor']>[0]);
+				}
+				// 关键路径:InlineWorker 在主线程运行,模型就绪后必须注入带 embeddings 的 VectraStore。
+				if (this.inlineWorker) {
+					this.vectraStore = this.createEmbeddingsVectraStore(extractor);
+					this.inlineWorker.initWithStore(this.vectraStore);
+				}
 			}
 			await this.indexController.onLayoutReady();
 		} catch (err) {
@@ -314,6 +323,48 @@ export default class RatelVaultPlugin extends Plugin {
 			this.hooks,
 			signal,
 		);
+	}
+
+	/**
+	 * 创建 WorkerManager,优先 Node.js Worker Threads,失败则降级 InlineWorker。
+	 *
+	 * 关键路径:
+	 * - Obsidian 渲染进程的 V8 平台禁用了 Worker Threads,`new Worker()` 会抛错。
+	 * - InlineWorker 复用主线程 VectraStore,避免双写;但初始化延迟到模型下载完成后。
+	 */
+	private createWorkerManager(): WorkerManager {
+		const workerPath = path.join(__dirname, 'worker.js');
+		const workerData =
+			this.settings.embedProvider === 'local'
+				? { indexDir: this.indexDir, modelId: this.settings.embedLocalModel }
+				: { indexDir: this.indexDir };
+
+		try {
+			const worker = new Worker(workerPath, { workerData });
+			return new WorkerManager(worker);
+		} catch (err) {
+			console.log('Ratel: Worker Threads 不可用,降级到 InlineWorker', err instanceof Error ? err.message : String(err));
+			this.inlineWorker = new InlineWorker();
+			return new WorkerManager(this.inlineWorker);
+		}
+	}
+
+	/**
+	 * 用已下载的 extractor 构造带 embeddings 的 VectraStore。
+	 *
+	 * 关键路径:worker/index.ts 在 Worker 线程内用同样方式包装 extractor;
+	 * 主线程内复用该逻辑,保证 InlineWorker 与 Node Worker 行为一致。
+	 */
+	private createEmbeddingsVectraStore(extractor: unknown): VectraStore {
+		const embeddings: EmbeddingsModel = {
+			maxTokens: 8192,
+			async createEmbeddings(inputs: string | string[]): Promise<EmbeddingsResponse> {
+				const arr = Array.isArray(inputs) ? inputs : [inputs];
+				const output = await (extractor as FeatureExtractor)(arr, { pooling: 'mean', normalize: true });
+				return { status: 'success', output: output.tolist() };
+			},
+		};
+		return new VectraStore(this.indexDir, { embeddings, autoInit: true });
 	}
 
 	/**
