@@ -6,7 +6,6 @@
  */
 
 import { FileSystemAdapter, Notice, Plugin } from 'obsidian';
-import { Worker } from 'worker_threads';
 import { type RatelVaultSettings, DEFAULT_SETTINGS, RatelVaultSettingTab } from './settings';
 
 type FeatureExtractor = (texts: string[], options: Record<string, unknown>) => Promise<{ tolist: () => number[][] }>;
@@ -195,7 +194,11 @@ export default class RatelVaultPlugin extends Plugin {
 
 		// 关键路径:Obsidian UI 布局就绪后再启动模型下载与索引,避免阻塞 onload。
 		this.app.workspace.onLayoutReady(() => {
-			void this.onLayoutReady();
+			// 关键路径:onLayoutReady 失败会更新 status$ = Failed,
+			// 显式 catch 仅兜底日志,避免 void 包装吞错(原版:下载失败静默无提示)。
+			this.onLayoutReady().catch((err) => {
+				console.error('Ratel onLayoutReady 失败', err);
+			});
 		});
 	}
 
@@ -326,27 +329,16 @@ export default class RatelVaultPlugin extends Plugin {
 	}
 
 	/**
-	 * 创建 WorkerManager,优先 Node.js Worker Threads,失败则降级 InlineWorker。
+	 * 创建 WorkerManager,使用 InlineWorker。
 	 *
 	 * 关键路径:
-	 * - Obsidian 渲染进程的 V8 平台禁用了 Worker Threads,`new Worker()` 会抛错。
+	 * - Obsidian 渲染进程的 V8 平台禁用了 Worker Threads(见 ADR-002),
+	 *   直接创建 InlineWorker,不做 try/catch 降级。
 	 * - InlineWorker 复用主线程 VectraStore,避免双写;但初始化延迟到模型下载完成后。
 	 */
 	private createWorkerManager(): WorkerManager {
-		const workerPath = path.join(__dirname, 'worker.js');
-		const workerData =
-			this.settings.embedProvider === 'local'
-				? { indexDir: this.indexDir, modelId: this.settings.embedLocalModel }
-				: { indexDir: this.indexDir };
-
-		try {
-			const worker = new Worker(workerPath, { workerData });
-			return new WorkerManager(worker);
-		} catch (err) {
-			console.log('Ratel: Worker Threads 不可用,降级到 InlineWorker', err instanceof Error ? err.message : String(err));
-			this.inlineWorker = new InlineWorker();
-			return new WorkerManager(this.inlineWorker);
-		}
+		this.inlineWorker = new InlineWorker();
+		return new WorkerManager(this.inlineWorker);
 	}
 
 	/**

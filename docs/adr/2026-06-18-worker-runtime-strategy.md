@@ -1,7 +1,8 @@
 # ADR-002:Ratel Vault Worker 运行时策略
 
-**状态**:Accepted  
+**状态**:Accepted
 **日期**:2026-06-18
+**更新**:2026-06-20 — 决策从"try/catch 降级"改为"Obsidian 环境直接使用 InlineWorker"
 
 ---
 
@@ -28,7 +29,7 @@ app.js:1 Plugin failure: ratel-vault Error: The V8 platform used by this instanc
 | 能力 | 状态 | 说明 |
 |---|---|---|
 | Node.js `fs` / `path` | ✅ 可用 | 渲染进程保留部分 Node API,大量 Obsidian 插件依赖 |
-| `worker_threads` | ❌ 不可用 | 本次报错根源 |
+| `worker_threads` | ❌ 不可用 | V8 平台级限制,不是"偶尔失败",是**永远不可用** |
 | Web Worker(无 Node 集成) | ⚠️ 可创建 | 但 vectra 需要 `fs`,无 Node 集成就无法运行 |
 | Web Worker + Node 集成 | ❌ 不可用 | 需要 Electron `webPreferences.nodeIntegrationInWorker: true`,Obsidian 不会为第三方插件开启 |
 | `child_process.fork` | ❓ 不确定 | 渲染进程可能受沙箱限制,且跨平台 Node 可执行文件位置复杂 |
@@ -44,27 +45,31 @@ app.js:1 Plugin failure: ratel-vault Error: The V8 platform used by this instanc
 
 ## Decision(决策)
 
-**采用方案 A:InlineWorker(主线程内 Worker 模拟)**
+**采用方案 A:InlineWorker(主线程内 Worker 模拟),Obsidian 环境下直接使用,不做 try/catch 降级。**
 
-在 `main.ts` 中对 `new Worker()` 做 try/catch:
+原决策(2026-06-18)是"先尝试 Worker Threads,失败再降级 InlineWorker"。经分析,Worker Threads 在 Obsidian 渲染进程中**永远不可用**,try/catch 分支是死代码。改为直接创建 InlineWorker。
 
-- **成功**:继续使用 Node.js Worker Threads(保留未来在支持环境中回退可能)
-- **失败**:构造 `InlineWorker`,在同一线程内直接调用 `src/worker/handler.ts` 的 `handleMessage`,并通过 `setTimeout(..., 0)` 模拟 postMessage 异步
+`InlineWorker` 复用 `main.ts` 已创建的 `VectraStore` 实例,避免主线程与 Worker 各持一个 `VectraStore` 写同一个 `indexDir`。
 
-`InlineWorker` 将复用 `main.ts` 已创建的 `VectraStore` 实例,避免主线程与 Worker 各持一个 `VectraStore` 写同一个 `indexDir`。
+### 决策变更理由
+
+1. **Worker Threads 在 Obsidian 渲染进程中是硬限制**,不是"偶尔失败"或"将来会修复"的问题——Electron 架构决定了渲染进程 V8 不支持创建 Worker
+2. **try/catch 降级是误导性代码**:每次运行都走 catch 分支,try 分支永远不执行,增加阅读负担
+3. **`import { Worker } from 'worker_threads'` 在渲染进程中无意义**:esbuild 标 external 后运行时 require 不到;不标 external 则打包时触发 `.node` loader 错误
+4. **保留 `worker.js` 产物**:作为独立产物,如果将来有非 Obsidian 环境(如 CLI 模式)需要真正的 Worker,仍然可用
 
 ### 具体改动
 
-1. 新增 `src/worker/inline-worker.ts`
+1. `src/worker/inline-worker.ts` — 已实现,无需修改
    - 实现 `WorkerLike` 接口:`postMessage` / `on` / `terminate`
    - 内部调用 `handleMessage`,响应通过 `message` 事件回调返回
-2. 新增 `src/worker/worker-like.ts` 或直接在 `manager.ts` 中定义 `WorkerLike` 接口
-   - 替换 `WorkerManager` 对 `worker_threads.Worker` 的强依赖
-3. 修改 `src/worker/handler.ts`
-   - 新增 `initProcessorWithStore(store: VectraStore): void`,避免 `InlineWorker` 重复创建 store
-4. 修改 `src/main.ts`
-   - `new Worker()` 加 try/catch
-   - catch 分支创建 `InlineWorker` 并传入 `this.vectraStore`
+2. `src/worker/manager.ts` — 已实现 `WorkerLike` 接口,无需修改
+   - 替换了 `WorkerManager` 对 `worker_threads.Worker` 的强依赖
+3. `src/worker/handler.ts` — 已实现 `initProcessorWithStore`,无需修改
+4. `src/main.ts` — **需修改**:
+   - 移除 `import { Worker } from 'worker_threads'`
+   - `createWorkerManager()` 直接创建 `InlineWorker`,不再 try/catch Worker Threads
+   - 移除 `workerData` 构造(InlineWorker 不需要)
 
 ### 不采纳
 
@@ -72,6 +77,7 @@ app.js:1 Plugin failure: ratel-vault Error: The V8 platform used by this instanc
 - **方案 C:Web Worker + fs 代理**:vectra 深层 fs 调用难完全代理,工作量大,性能差
 - **方案 D:完全放弃 Worker 抽象**:需大量改动 `IndexController` / `main.ts`,不如 InlineWorker 保留协议层干净
 - **方案 E:等待 Obsidian 开放 Worker Threads**:不可控,无法解决当前插件无法加载的问题
+- **方案 F:保留 try/catch 降级**:try 分支是死代码,误导读者,增加不必要的 `worker_threads` import
 
 ---
 
@@ -82,7 +88,7 @@ app.js:1 Plugin failure: ratel-vault Error: The V8 platform used by this instanc
 - 插件在 Obsidian 桌面版能立即加载并运行,解决当前阻塞性故障
 - 保留现有 `WorkerManager` + postMessage 协议,后续切真 Worker 时改动小
 - `InlineWorker` 复用主线程 `VectraStore`,避免双写冲突
-- 默认行为是「能用 Worker 就用 Worker,不能用就降级」,对未来环境变化友好
+- 代码意图清晰:Obsidian 环境 = InlineWorker,不做无意义的 try/catch
 
 **负面**:
 
@@ -92,11 +98,11 @@ app.js:1 Plugin failure: ratel-vault Error: The V8 platform used by this instanc
 
 **影响面**:
 
-- `src/main.ts`:Worker 启动逻辑加 try/catch + fallback
-- `src/worker/manager.ts`:Worker 类型从 `worker_threads.Worker` 改为 `WorkerLike` 接口
-- `src/worker/inline-worker.ts`:新增文件
-- `src/worker/handler.ts`:新增 `initProcessorWithStore`
-- 测试:新增 `tests/worker/inline-worker.test.ts` 验证消息转发；现有 `manager.test.ts` / `handler.test.ts` 应继续通过
+- `src/main.ts`:移除 `worker_threads` import,`createWorkerManager()` 直接创建 InlineWorker
+- `src/worker/manager.ts`:无变化(已用 `WorkerLike` 接口)
+- `src/worker/inline-worker.ts`:无变化
+- `src/worker/handler.ts`:无变化
+- 测试:现有 `inline-worker.test.ts` / `manager.test.ts` / `handler.test.ts` 应继续通过
 - 文档:README 增加「桌面版索引在部分系统上可能短暂阻塞 UI」的说明
 
 **安全与隐私**:
@@ -110,7 +116,8 @@ app.js:1 Plugin failure: ratel-vault Error: The V8 platform used by this instanc
 ## 参考
 
 - [Electron Multithreading 官方文档](https://www.electronjs.org/docs/latest/tutorial/multithreading)
-- `src/main.ts:92-103`(当前 Worker 启动逻辑)
-- `src/worker/manager.ts:54`(当前 `WorkerManager` 强依赖 `worker_threads.Worker`)
-- `src/worker/handler.ts:26-29`(当前 `initProcessor` 会新建 `VectraStore`)
+- `src/main.ts`(Worker 启动逻辑)
+- `src/worker/manager.ts`(`WorkerLike` 接口与 `WorkerManager`)
+- `src/worker/inline-worker.ts`(InlineWorker 实现)
+- `src/worker/handler.ts`(`initProcessorWithStore`)
 - 报错堆栈:`node:internal/worker:213:21`

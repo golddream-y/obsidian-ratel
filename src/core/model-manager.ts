@@ -34,7 +34,12 @@ export class ModelManager {
     /**
      * 下载指定模型(后台,带进度)。
      *
-     * 关键路径:状态推进顺序 Checking → Downloading → Ready/Failed,UI 可订阅 status$。
+     * 关键路径:
+     * - 状态推进顺序 Checking → Downloading → Ready/Failed,UI 可订阅 status$。
+     * - 失败时同时设置 status$ 与 throw,让调用方既能看到状态也能 catch。
+     *   修复:原版本只更新状态、不抛错,导致 main.ts 误判为"成功",模型未就绪 UI 也不提示。
+     *
+     * @throws Error 任何 backend 失败都抛出,便于 main.ts / onLayoutReady catch。
      */
     async download(modelId: string, onProgress?: (p: ProgressInfo) => void): Promise<void> {
         this.status$.set({ state: 'Checking' });
@@ -55,10 +60,13 @@ export class ModelManager {
             this.currentModelId = modelId;
             this.status$.set({ state: 'Ready', modelId, size: 0, loadedAt: Date.now() });
         } catch (err) {
-            this.status$.set({
-                state: 'Failed',
-                reason: err instanceof InsufficientDiskError ? '磁盘空间不足' : String(err),
-            });
+            const reason = err instanceof InsufficientDiskError
+                ? '磁盘空间不足'
+                : err instanceof Error
+                    ? err.message
+                    : String(err);
+            this.status$.set({ state: 'Failed', reason });
+            throw err instanceof Error ? err : new Error(reason);
         }
     }
 
