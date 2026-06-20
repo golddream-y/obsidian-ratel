@@ -29,13 +29,14 @@ describe('ModelManager', () => {
         expect(get(manager.status$)).toMatchObject({ state: 'Ready', modelId: 'Xenova/bge-small-zh-v1.5' });
     });
 
-    it('download 失败 - 状态 Failed', async () => {
+    it('download 失败 - 状态 Failed + 抛错', async () => {
         const failManager = new ModelManager({
             ensureModel: vi.fn().mockRejectedValue(new Error('net error')),
             remove: vi.fn().mockResolvedValue(undefined),
         });
-        await failManager.download('Xenova/bge-small-zh-v1.5');
-        expect(get(failManager.status$)).toMatchObject({ state: 'Failed' });
+        // 修复:download 失败时除更新 status$ 外也 throw,让调用方 catch。
+        await expect(failManager.download('Xenova/bge-small-zh-v1.5')).rejects.toThrow('net error');
+        expect(get(failManager.status$)).toMatchObject({ state: 'Failed', reason: 'net error' });
     });
 
     it('switchTo - 状态 Switching → Ready', async () => {
