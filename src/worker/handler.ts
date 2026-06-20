@@ -28,6 +28,16 @@ export function initProcessor(indexDir: string, embeddings: EmbeddingsModel): vo
     processor = new IndexProcessor(store);
 }
 
+/**
+ * 用已构造好的 VectraStore 初始化 IndexProcessor。
+ *
+ * 关键路径:InlineWorker 在主线程运行时复用主线程的 vectraStore,
+ * 避免主线程与 Worker 各持一个 VectraStore 同时写同一个 indexDir。
+ */
+export function initProcessorWithStore(store: VectraStore): void {
+    processor = new IndexProcessor(store);
+}
+
 export async function handleMessage(msg: WorkerRequest & { _requestId?: string }): Promise<WorkerResponse> {
     if (!processor) {
         return {

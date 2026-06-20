@@ -6,7 +6,21 @@
  */
 
 import type { WorkerRequest, WorkerResponse } from '../types';
-import type { Worker } from 'worker_threads';
+
+/**
+ * 与 WorkerManager 兼容的 Worker 抽象接口。
+ *
+ * 设计要点:
+ * - 同时适配 Node.js Worker Threads 和 InlineWorker(主线程内模拟)。
+ * - Obsidian 渲染进程不支持 Worker Threads,InlineWorker 作为降级实现。
+ */
+export interface WorkerLike {
+	postMessage(message: unknown): void;
+	on(event: 'message', listener: (data: WorkerResponse & { _requestId?: string }) => void): void;
+	on(event: 'error', listener: (err: Error) => void): void;
+	on(event: 'exit', listener: (code: number) => void): void;
+	terminate(): void;
+}
 
 /**
  * 待响应请求的内部结构。
@@ -51,7 +65,7 @@ export class WorkerManager {
 	private requestCounter = 0;
 	private timeoutMs: number;
 
-	constructor(private worker: Worker, options: WorkerManagerOptions = {}) {
+	constructor(private worker: WorkerLike, options: WorkerManagerOptions = {}) {
 		this.timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS;
 		// 关键路径:Node Worker Threads 通过 'message' 事件返回数据,数据本身就是响应对象。
 		this.worker.on('message', (data: WorkerResponse & { _requestId?: string }) => {
