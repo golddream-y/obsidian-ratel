@@ -95,6 +95,13 @@ export async function handleMessage(
             return { type: 'vector.search.result', payload: results };
         }
 
+        case 'hybrid.search': {
+            // 关键路径:queryVector 由主线程 embedding 后传入(Worker 不发 HTTP),query 用于 BM25。
+            const req = msg as WorkerRequest & { payload: { query: string; queryVector: number[]; topK: number } };
+            const results = await processor.hybridSearch(req.payload.query, req.payload.queryVector, req.payload.topK);
+            return { type: 'hybrid.search.result', payload: results };
+        }
+
         case 'vector.upsert': {
             const req = msg as WorkerRequest & { payload: { docId: string; text: string; metadata: Record<string, unknown> } };
             // 关键路径:复用 processor 内部已初始化的 store,不走 await import() 临时构造。
@@ -116,4 +123,15 @@ export async function handleMessage(
             };
         }
     }
+}
+
+/**
+ * 仅供测试 — 替换全局 processor。
+ *
+ * 关键路径:测试需要 mock processor.hybridSearch,但 initProcessor/initProcessorWithStore
+ * 会重建 VectraStore,不适合纯函数测试。此 helper 让测试直接注入 mock processor,
+ * 测试结束传 null 清理,避免污染后续用例。
+ */
+export function setProcessorForTest(p: IndexProcessor | null): void {
+    processor = p;
 }

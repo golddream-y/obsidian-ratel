@@ -121,6 +121,20 @@ export class IndexProcessor {
     }
 
     /**
+     * 混合搜索 — 向量 + BM25 关键词。
+     *
+     * 关键路径:委托给 VectraStore.hybridSearch,后者调 vectra queryItems 传 isBm25=true,
+     * 同文档多 chunk 取最高分聚合到文档级,与 vectorSearch 的 chunk 级返回不同。
+     *
+     * @param query - 用户查询文本(用于 BM25)
+     * @param queryVector - 查询向量(主线程 embedding,Worker 不发 HTTP)
+     * @param topK - 返回文档上限
+     */
+    async hybridSearch(query: string, queryVector: number[], topK: number) {
+        return this.store.hybridSearch(query, queryVector, topK);
+    }
+
+    /**
      * 索引状态 — 真实数据,占位返回已替换。
      */
     async status() {
