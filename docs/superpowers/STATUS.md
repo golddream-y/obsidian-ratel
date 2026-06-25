@@ -34,7 +34,7 @@
 | P-W3-IMPL | [2026-06-13-ratel-w3-implementation.md](plans/2026-06-13-ratel-w3-implementation.md) | **Superseded** | — | — | — | ~~S-RAG-ARCH (W3 切片)~~ → S-W3-HYBRID |
 | P-W4-IMPL | [2026-06-13-ratel-w4-implementation.md](plans/2026-06-13-ratel-w4-implementation.md) | **Superseded** | — | — | — | ~~S-RAG-ARCH (W4 切片)~~ → S-W4-RAG-ENHANCEMENT |
 | **P-W3-HYBRID** | [2026-06-26-ratel-w3-hybrid-implementation.md](plans/2026-06-26-ratel-w3-hybrid-implementation.md) | ✅ Completed | main | 2026-06-26 | 2026-06-26 | S-W3-HYBRID |
-| **P-W4-RAG** | [2026-06-26-ratel-w4-rag-implementation.md](plans/2026-06-26-ratel-w4-rag-implementation.md) | ⏳ Pending | — | — | — | S-W4-RAG-ENHANCEMENT |
+| **P-W4-RAG** | [2026-06-26-ratel-w4-rag-implementation.md](plans/2026-06-26-ratel-w4-rag-implementation.md) | 🔄 In Progress | main | 2026-06-26 | — | S-W4-RAG-ENHANCEMENT |
 | P-W3-TEST | [2026-06-14-ratel-w3-test-plan.md](plans/2026-06-14-ratel-w3-test-plan.md) | ⏳ Pending | — | — | — | S-TEST-ARCH (W3 计划) |
 | P-W4-TEST | [2026-06-14-ratel-w4-test-plan.md](plans/2026-06-14-ratel-w4-test-plan.md) | ⏳ Pending | — | — | — | S-TEST-ARCH (W4 计划) |
 | P-I18N-IMPL | [2026-06-14-ratel-i18n-implementation.md](plans/2026-06-14-ratel-i18n-implementation.md) | ⏳ Pending | — | — | — | S-I18N |
