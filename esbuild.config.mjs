@@ -3,7 +3,95 @@ import process from 'process';
 import { builtinModules } from 'node:module';
 import esbuildSvelte from 'esbuild-svelte';
 import { sveltePreprocess } from 'svelte-preprocess';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, copyFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// 关键路径:onnxruntime-web 的 WASM 文件路径,构建时复制到 dist/,与 main.js 同级。
+const ORT_WASM_SRC = path.resolve(__dirname, 'node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm');
+const ORT_WASM_DEST = path.resolve(__dirname, 'dist/ort-wasm-simd-threaded.wasm');
+
+/**
+ * 将 onnxruntime-web 所需的 WASM 文件复制到 dist 目录。
+ *
+ * 关键路径:每次构建(包括 watch 模式下的 rebuild)后都复制,确保 dist/ 中的 wasm 是最新的。
+ */
+function copyOrtWasmPlugin() {
+	return {
+		name: 'copy-ort-wasm',
+		setup(build) {
+			build.onEnd(() => {
+				copyFileSync(ORT_WASM_SRC, ORT_WASM_DEST);
+			});
+		},
+	};
+}
+
+/**
+ * 将 onnxruntime-node / @huggingface/transformers 整体替换为空模块,
+ * 防止 Node 原生模块被打包进浏览器产物。
+ *
+ * 关键路径:
+ * - Obsidian 渲染进程禁止加载 .node 原生模块;onnxruntime-web 的 Node 回退会引入 onnxruntime-node。
+ * - 仅靠 `external` 配置无法拦截包内相对路径(如 `./binding`),需要用 onResolve/onLoad 兜底。
+ * - 该插件同时用于主线程与 Worker,防止 vectra 等依赖意外把原生模块带进来。
+ * - onnxruntime-web 的入口由顶层 alias 强制指向 wasm bundle,不在本插件中处理。
+ */
+function externalOnnxruntimeNodePlugin() {
+	const emptyModulePath = path.resolve(__dirname, 'src/adapters/empty-module.cjs');
+	const emptyTransformersPath = path.resolve(__dirname, 'src/adapters/empty-transformers.cjs');
+	const emptyContents = 'module.exports = {};\n';
+
+	return {
+		name: 'external-onnxruntime-node',
+		setup(build) {
+			// 关键路径:任何包含 onnxruntime-node 的导入路径(包括子路径如 onnxruntime-node/dist/binding)
+			// 全部替换为空模块,阻止 esbuild 继续解析包内文件。
+			build.onResolve({ filter: /onnxruntime-node/ }, () => ({
+				path: emptyModulePath,
+			}));
+
+			// 关键路径:包内相对导入(如 ./binding)的 path 不含 onnxruntime-node,
+			// 但 importer 在该包目录下,此时同样替换为空模块。
+			build.onResolve({ filter: /.*/ }, (args) => {
+				if (args.importer && args.importer.includes('node_modules/onnxruntime-node')) {
+					return { path: emptyModulePath };
+				}
+			});
+
+			// 关键路径:vectra 的 LocalEmbeddings/TransformersEmbeddings 依赖 @huggingface/transformers,
+			// 本项目已改用 onnxruntime-web 自写推理;将 transformers 替换为空模块,避免打包 .node 原生文件。
+			build.onResolve({ filter: /@huggingface\/transformers/ }, () => ({
+				path: emptyTransformersPath,
+			}));
+
+			// 关键路径:.node 原生文件直接标记为 external,避免 esbuild 因无 loader 而报错。
+			build.onResolve({ filter: /\.node$/ }, () => ({
+				path: 'empty.node',
+				external: true,
+			}));
+
+			// 关键路径:如果 onnxruntime-node 目录下的任何 JS 文件仍被加载,直接返回空模块。
+			// 这是 onResolve 兜底后的第二道防线,防止 binding.js 中的动态 require 触发解析。
+			build.onLoad({ filter: /\/onnxruntime-node\//, namespace: 'file' }, (args) => {
+				// package.json 等 JSON 文件交给 esbuild 默认处理,不做替换。
+				if (args.path.endsWith('.json')) {
+					return undefined;
+				}
+				return { contents: emptyContents, loader: 'js' };
+			});
+
+			// 关键路径:若 esbuild 直接尝试加载 .node 二进制,返回空模块内容,
+			// 防止 "No loader" 报错中断构建。
+			build.onLoad({ filter: /\.node$/, namespace: 'file' }, () => ({
+				contents: emptyContents,
+				loader: 'js',
+			}));
+		},
+	};
+}
 
 // 关键路径:产物统一放 dist/ 下,避免污染仓库根。
 // 开发期和发布期的 main.js / worker.js 都从 dist/ 读。
@@ -28,16 +116,29 @@ const mainContext = await esbuild.context({
 	// 必须在 `platform: 'node'` 下 esbuild 才识别。
 	platform: 'node',
 	// 关键路径:Svelte 5 的 `svelte` 包按 condition 导出 client/server 两套运行时,
-	// `exports."."` 的 default 指向 server 端(无 `mount`,只有 SSR 的 `render`)。
+	// `exports"."` 的 default 指向 server 端(无 `mount`,只有 SSR 的 `render`)。
 	// Obsidian 是浏览器宿主,必须显式加 `browser` condition 才能命中 client runtime。
-	conditions: ['browser'],
-	// 关键路径:`onnxruntime-node` 包含 `.node` native 二进制,
-	// esbuild 不会打,需留到运行时 require。
+	conditions: ['browser', 'default'],
+	// 关键路径:onnxruntime-web 的 `main` 指向 Node 版本(ort.node.min.js),
+	// 会引入 onnxruntime-node 原生模块;强制使用 wasm bundle 入口(ort.wasm.bundle.min.mjs),
+	// 该版本内联了 wasm JS wrapper,避免动态 import .mjs 文件;WASM 二进制本身由运行时
+	// 通过 ort.env.wasm.wasmBinary 直接传入(从 dist/ort-wasm-simd-threaded.wasm 读取)。
+	mainFields: ['browser', 'module', 'main'],
+	alias: {
+		'onnxruntime-web': path.resolve(__dirname, 'node_modules/onnxruntime-web/dist/ort.wasm.bundle.min.mjs'),
+		'onnxruntime-node': path.resolve(__dirname, 'src/adapters/empty-module.cjs'),
+		'@huggingface/transformers': path.resolve(__dirname, 'src/adapters/empty-transformers.cjs'),
+		// 关键路径:vectra 的 Node 入口(index.js)会 re-export server 模块,连带引入 @grpc/grpc-js。
+		// Obsidian 渲染进程不需要 server 能力,强制走 browser 入口,只打包纯 JS 索引逻辑。
+		'vectra': path.resolve(__dirname, 'node_modules/vectra/lib/browser.js'),
+	},
+	// 关键路径:本地 Embedding 改走 onnxruntime-web(纯 JS/WASM),
+	// 不打包 @huggingface/transformers(已移除依赖)。
+	// onnxruntime-node / transformers 由 externalOnnxruntimeNodePlugin 替换为空模块,
+	// 不再出现在 external 列表中,避免残留运行时 require。
 	external: [
 		'obsidian',
 		'electron',
-		'onnxruntime-node',
-		'@huggingface/transformers',
 		'@codemirror/autocomplete',
 		'@codemirror/collab',
 		'@codemirror/commands',
@@ -53,16 +154,22 @@ const mainContext = await esbuild.context({
 	],
 	format: 'cjs',
 	target: 'es2021',
-	logLevel: 'info',
+	logLevel: 'verbose',
 	sourcemap: prod ? false : 'inline',
 	treeShaking: true,
 	outfile: 'dist/main.js',
 	minify: prod,
+	metafile: true,
+	// 关键路径:为 .node 原生文件配置 loader,避免 esbuild 因无 loader 而报错。
+	// 这些文件仅来自 onnxruntime-node 的 Node 回退路径,实际在 Obsidian 渲染进程中不会执行。
+	loader: { '.node': 'text' },
 	plugins: [
 		esbuildSvelte({
 			compilerOptions: { css: 'injected' },
 			preprocess: sveltePreprocess(),
 		}),
+		externalOnnxruntimeNodePlugin(),
+		copyOrtWasmPlugin(),
 	],
 });
 
@@ -72,12 +179,13 @@ const workerContext = await esbuild.context({
 	bundle: true,
 	// 关键路径:Worker 也是 node 环境,vectra 同样依赖 node:fs / node:path。
 	platform: 'node',
-	// 关键路径:同上,Worker 不做 ONNX 推理,但 vectra 仍需 external。
+	// 关键路径:Worker 实际在 Obsidian 渲染进程内运行(InlineWorker 降级),也需要 browser 条件。
+	conditions: ['browser', 'default'],
+	// 关键路径:同上,Worker 不做 ONNX 推理,但 vectra 仍可能间接携带 onnxruntime-node / transformers,
+	// 使用同一插件兜底替换为空模块。
 	external: [
 		'obsidian',
 		'electron',
-		'onnxruntime-node',
-		'@huggingface/transformers',
 		...builtinModules,
 	],
 	format: 'cjs',
@@ -87,11 +195,21 @@ const workerContext = await esbuild.context({
 	treeShaking: true,
 	outfile: 'dist/worker.js',
 	minify: prod,
+	alias: {
+		// 关键路径:Worker 同样使用 vectra 的 browser 入口,避免 grpc 等 Node-only 依赖被打包。
+		'vectra': path.resolve(__dirname, 'node_modules/vectra/lib/browser.js'),
+	},
+	plugins: [externalOnnxruntimeNodePlugin()],
 });
 
 if (prod) {
-	await mainContext.rebuild();
+	const mainResult = await mainContext.rebuild();
 	await workerContext.rebuild();
+	if (mainResult.metafile) {
+		await import('node:fs/promises').then(({ writeFile }) =>
+			writeFile(path.join(__dirname, 'dist', 'meta-main.json'), JSON.stringify(mainResult.metafile)),
+		);
+	}
 	process.exit(0);
 } else {
 	await mainContext.watch();

@@ -24,9 +24,15 @@
 		"harness"
 	],
 	"license": "MIT",
+	"overrides": {
+		"vectra": {
+			"@huggingface/transformers": false
+		},
+		"@huggingface/transformers": false,
+		"onnxruntime-node": false
+	},
 	"devDependencies": {
 		"@eslint/js": "^9.39.4",
-		"@huggingface/transformers": "^4.2.0",
 		"@types/node": "^22.15.17",
 		"esbuild": "0.25.5",
 		"esbuild-svelte": "^0.9.3",
@@ -44,6 +50,7 @@
 	},
 	"dependencies": {
 		"ignore": "^7.0.5",
+		"onnxruntime-web": "^1.27.0",
 		"vectra": "^0.15.0"
 	}
 }

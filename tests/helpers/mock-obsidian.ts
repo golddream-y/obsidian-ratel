@@ -31,7 +31,7 @@ export function createMockApp(overrides?: Partial<App>): App {
 				.filter((p) => p.endsWith('.md'))
 				.map((p) => ({ path: p, stat: { mtime: files.get(p)!.mtime } }));
 		},
-		on: (_event: string, _callback: Function) => ({}),
+		on: (_event: string, _callback: () => void) => ({}),
 		offref: (_ref: unknown) => {},
 	};
 
@@ -55,7 +55,7 @@ export function addMockFile(
 	mockApp: App,
 	path: string,
 	content: string,
-	mtime = Date.now(),
+	_mtime = Date.now(),
 ): void {
 	// Use create to add file
 	(mockApp.vault as { create: (p: string, c: string) => Promise<void> }).create(path, content);

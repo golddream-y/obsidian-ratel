@@ -71,8 +71,9 @@ it('DEFAULT_SETTINGS - 包含 embedModelActive 默认 Xenova/bge-small-zh-v1.5',
     expect(DEFAULT_SETTINGS.embedModelActive).toBe('Xenova/bge-small-zh-v1.5');
 });
 
-it('DEFAULT_SETTINGS - embedAvailableModels 含 5 个常见模型', () => {
-    expect(DEFAULT_SETTINGS.embedAvailableModels).toHaveLength(5);
+it('DEFAULT_SETTINGS - embedAvailableModels 仅含 1 个内置本地模型', () => {
+    // 关键路径:本地模式只内置 bge-small-zh-v1.5,其他模型走 API 配置。
+    expect(DEFAULT_SETTINGS.embedAvailableModels).toHaveLength(1);
     expect(DEFAULT_SETTINGS.embedAvailableModels[0]).toMatchObject({ id: 'Xenova/bge-small-zh-v1.5' });
 });
 

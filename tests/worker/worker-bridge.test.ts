@@ -96,7 +96,7 @@ describe('WorkerManager', () => {
 		manager.destroy();
 	});
 
-	it('超时后调用 terminate 释放 Worker', async () => {
+	it('超时后 reject 但不 terminate Worker(InlineWorker 主线程不可中断)', async () => {
 		const mockWorker = createMockWorker();
 
 		const manager = new WorkerManager(mockWorker as unknown as Worker, {
@@ -108,7 +108,10 @@ describe('WorkerManager', () => {
 			payload: {},
 		});
 
-		await expect(responsePromise).rejects.toThrow();
-		expect(mockWorker.terminate).toHaveBeenCalled();
+		await expect(responsePromise).rejects.toThrow(/timeout/i);
+		// 关键路径:超时不 terminate Worker,因为 InlineWorker 在主线程执行 ONNX 推理无法中断,
+		// terminate 会清空监听器导致后续所有请求永久失败。
+		expect(mockWorker.terminate).not.toHaveBeenCalled();
+		manager.destroy();
 	});
 });

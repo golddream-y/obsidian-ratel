@@ -1,20 +1,19 @@
 /**
  * @file src/core/model-downloader.ts
- * @description 模型下载器 — 包装 transformers pipeline 加载
+ * @description 本地 Embedding 模型下载器 — 从 ModelScope 下载 ONNX 模型 + vocab.txt
  * @module core/model-downloader
- * @depends utils/disk-checker
+ * @depends node:fs/promises, node:path, utils/disk-checker
  *
  * 设计要点:
- * - 磁盘检测在下载前(1.2 倍缓冲)
- * - transformers pipeline 内部按需下载 + 缓存
- * - 进度回调由 transformers `progress_callback` 透传
+ * - 固定模型:bge-small-zh-v1.5(Xenova 导出的 ONNX 版本)。
+ * - 下载源:ModelScope(国内可访问),不走 HuggingFace Hub。
+ * - 只下载两个文件:onnx/model_quantized.onnx(24MB) + vocab.txt(109KB)。
+ * - 磁盘检测在下载前(1.2 倍缓冲)。
  */
 
 import { hasEnoughDiskSpace } from '../utils/disk-checker';
-import path from 'path';
-import os from 'os';
-
-const DEFAULT_CACHE_DIR = path.join(os.homedir(), '.cache', 'huggingface');
+import path from 'node:path';
+import { mkdir, writeFile, access, rm } from 'node:fs/promises';
 
 /** 磁盘不足错误。 */
 export class InsufficientDiskError extends Error {
@@ -29,70 +28,137 @@ export interface ProgressInfo {
     speed?: number;
 }
 
+/** 默认模型信息。 */
+export const DEFAULT_LOCAL_MODEL = {
+    modelId: 'Xenova/bge-small-zh-v1.5',
+    onnxPath: 'onnx/model_quantized.onnx',
+    vocabPath: 'vocab.txt',
+    // 24MB ONNX + 109KB vocab,留 1.2 倍缓冲。
+    neededBytes: 30 * 1024 * 1024,
+} as const;
+
+/** ModelScope 下载基地址。 */
+const MODELSCOPE_BASE = 'https://modelscope.cn/models/Xenova/bge-small-zh-v1.5/resolve/master';
+
 export class ModelDownloader {
     private cacheDir: string;
-    private modelSizes: Map<string, number> = new Map([
-        ['Xenova/bge-small-zh-v1.5', 90 * 1024 * 1024],
-        ['Xenova/bge-base-zh-v1.5', 210 * 1024 * 1024],
-        ['Xenova/bge-large-zh-v1.5', 650 * 1024 * 1024],
-        ['BAAI/bge-m3', 600 * 1024 * 1024],
-    ]);
 
-    constructor(cacheDir: string = DEFAULT_CACHE_DIR) {
+    constructor(cacheDir: string) {
         this.cacheDir = cacheDir;
     }
 
     /**
-     * 启动 pipeline 加载(transformers 内部按需下载 + 缓存)。
+     * 确保本地缓存目录存在并返回模型缓存根目录。
      *
-     * @param modelId - HuggingFace model id。
-     * @param onProgress - 进度回调。
-     * @returns transformers FeatureExtractor。
-     * @throws InsufficientDiskError 磁盘不足。
+     * 关键路径:cacheDir 由调用方(ModelManager/main.ts)传入,已经是模型缓存根目录(如 <pluginDir>/models),
+     * 这里只追加 modelId 命名空间(Xenova/bge-small-zh-v1.5),不再额外拼接 models/ 层。
      */
-    async ensureModel(
-        modelId: string,
-        onProgress?: (p: ProgressInfo) => void,
-    ): Promise<unknown> {
-        const size = this.modelSizes.get(modelId) ?? 100 * 1024 * 1024;
-        const enough = await hasEnoughDiskSpace(this.cacheDir, size);
-        if (!enough) {
-            throw new InsufficientDiskError(size, 0);
-        }
-
-        const { pipeline } = await import('@huggingface/transformers');
-        const extractor = await pipeline('feature-extraction', modelId, {
-            dtype: 'q8',
-            cache_dir: this.cacheDir,
-            progress_callback: (progress: { status: string; progress?: number; file?: string }) => {
-                if (progress.status === 'progress' && progress.progress !== undefined) {
-                    onProgress?.({
-                        file: progress.file ?? modelId,
-                        progress: progress.progress / 100,
-                    });
-                }
-            },
-        });
-        return extractor;
+    private async ensureCacheDir(): Promise<string> {
+        const dir = path.join(this.cacheDir, DEFAULT_LOCAL_MODEL.modelId);
+        await mkdir(dir, { recursive: true });
+        return dir;
     }
 
     /**
-     * 删除本地缓存的指定模型。
+     * 下载指定文件到本地缓存目录。
      *
-     * 关键路径:Hugging Face cache 目录形如 `models--<org>--<model>`,同时尝试
-     * `cacheDir/hub/` 与 `cacheDir/` 两种布局,不存在时静默忽略。
-     *
-     * @param modelId - 要删除的模型 ID。
+     * @param remoteName - ModelScope 上的相对路径。
+     * @param localPath - 本地保存路径。
+     * @param onProgress - 进度回调,progress 为 0-1。
+     * @throws InsufficientDiskError 磁盘不足。
+     * @throws Error 下载失败。
      */
-    async remove(modelId: string): Promise<void> {
-        const fs = await import('fs/promises');
-        const safeId = modelId.replace(/\//g, '--');
-        const candidates = [
-            path.join(this.cacheDir, 'hub', `models--${safeId}`),
-            path.join(this.cacheDir, `models--${safeId}`),
-        ];
-        for (const dir of candidates) {
-            await fs.rm(dir, { recursive: true, force: true });
+    private async downloadFile(
+        remoteName: string,
+        localPath: string,
+        onProgress?: (p: ProgressInfo) => void,
+    ): Promise<void> {
+        const url = `${MODELSCOPE_BASE}/${remoteName}`;
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`下载 ${remoteName} 失败: ${response.status} ${response.statusText}`);
         }
+
+        const total = Number(response.headers.get('content-length')) || 0;
+        const reader = response.body?.getReader();
+        if (!reader) {
+            throw new Error(`下载 ${remoteName} 失败: response.body 为空`);
+        }
+
+        const chunks: Uint8Array[] = [];
+        let received = 0;
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(value);
+            received += value.length;
+            if (total > 0) {
+                onProgress?.({
+                    file: remoteName,
+                    progress: received / total,
+                });
+            }
+        }
+
+        // 关键路径:浏览器/Node fetch 返回的 chunks 合并成完整 ArrayBuffer 后写入磁盘。
+        const all = new Uint8Array(received);
+        let offset = 0;
+        for (const chunk of chunks) {
+            all.set(chunk, offset);
+            offset += chunk.length;
+        }
+
+        await writeFile(localPath, all);
+    }
+
+    /**
+     * 确保本地 Embedding 模型文件已下载。
+     *
+     * @param onProgress - 进度回调。
+     * @returns 本地缓存的模型目录路径。
+     * @throws InsufficientDiskError 磁盘不足。
+     * @throws Error 网络或文件系统错误。
+     */
+    async ensureModel(onProgress?: (p: ProgressInfo) => void): Promise<string> {
+        const enough = await hasEnoughDiskSpace(this.cacheDir, DEFAULT_LOCAL_MODEL.neededBytes);
+        if (!enough) {
+            throw new InsufficientDiskError(DEFAULT_LOCAL_MODEL.neededBytes, 0);
+        }
+
+        const dir = await this.ensureCacheDir();
+        const onnxLocal = path.join(dir, 'model_quantized.onnx');
+        const vocabLocal = path.join(dir, 'vocab.txt');
+
+        let onnxExists = false;
+        let vocabExists = false;
+        try {
+            await access(onnxLocal);
+            onnxExists = true;
+        } catch { /* 文件不存在 */ }
+        try {
+            await access(vocabLocal);
+            vocabExists = true;
+        } catch { /* 文件不存在 */ }
+
+        if (!onnxExists) {
+            await this.downloadFile(DEFAULT_LOCAL_MODEL.onnxPath, onnxLocal, (p) => {
+                onProgress?.({ file: p.file, progress: p.progress * 0.99 });
+            });
+        }
+        if (!vocabExists) {
+            await this.downloadFile(DEFAULT_LOCAL_MODEL.vocabPath, vocabLocal, (p) => {
+                onProgress?.({ file: p.file, progress: 0.99 + p.progress * 0.01 });
+            });
+        }
+
+        return dir;
+    }
+
+    /**
+     * 删除本地缓存的默认模型。
+     */
+    async remove(): Promise<void> {
+        const dir = path.join(this.cacheDir, DEFAULT_LOCAL_MODEL.modelId);
+        await rm(dir, { recursive: true, force: true });
     }
 }

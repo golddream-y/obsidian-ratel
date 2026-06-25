@@ -31,12 +31,20 @@ jobs:
               run: |
                   [ -f styles.css ] && echo "exists=true" >> "$GITHUB_OUTPUT" || echo "exists=false" >> "$GITHUB_OUTPUT"
 
+            - name: Collect ONNX runtime assets
+              id: onnx
+              run: |
+                  assets=$(ls dist/*.wasm dist/*.mjs 2>/dev/null | tr '\n' ' ')
+                  echo "assets=$assets" >> "$GITHUB_OUTPUT"
+
             - name: Attest build provenance
               uses: actions/attest@v4
               with:
                   subject-path: |
                       main.js
                       worker.js
+                      dist/*.wasm
+                      dist/*.mjs
                       ${{ steps.styles.outputs.exists == 'true' && 'styles.css' || '' }}
 
             - name: Create release
@@ -48,4 +56,4 @@ jobs:
                   gh release create "$tag" \
                     --title="$tag" \
                     --draft \
-                    main.js worker.js manifest.json ${{ steps.styles.outputs.exists == 'true' && 'styles.css' || '' }}
+                    main.js worker.js manifest.json ${{ steps.styles.outputs.exists == 'true' && 'styles.css' || '' }} ${{ steps.onnx.outputs.assets }}
