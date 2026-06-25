@@ -147,15 +147,17 @@ export async function* agentLoop(
 
 			yield { type: 'tool.result', payload: { name: toolCall.name, result } };
 
-			// 关键路径:search_vault 返回后发 search.result 事件(payload 用扁平结构)。
+			// 关键路径:search_vault 返回后发 search.result 事件(payload 用扁平结构 + reranked 标记)。
 			// 从 metadata.path 提取 path,避免 UI 层再嵌套解析 metadata。
 			if (toolCall.name === 'search_vault' && Array.isArray(result)) {
-				const searchResults = (result as Array<{
+				const rawResults = result as Array<{
 					docId: string;
 					score: number;
 					metadata: { path?: string };
 					index: number;
-				}>)
+					reranked?: boolean;
+				}>;
+				const searchResults = rawResults
 					.filter((r) => r.metadata && typeof r.metadata.path === 'string')
 					.map((r) => ({
 						docId: r.docId,
@@ -163,10 +165,12 @@ export async function* agentLoop(
 						path: r.metadata.path as string,
 						index: r.index,
 					}));
+				// 关键路径:从结果推断是否经过 Rerank;无 reranked 字段时降级 false(W3 旧 mock 兼容)。
+				const reranked = rawResults.some((r) => r.reranked === true);
 				if (searchResults.length > 0) {
 					yield {
 						type: 'search.result',
-						payload: { results: searchResults },
+						payload: { results: searchResults, reranked },
 					};
 				}
 			}

@@ -586,4 +586,191 @@ describe('agentLoop', () => {
 		// 关键路径:无 error 事件(降级是静默的,与 classifyIntent 自身行为一致)
 		expect(events.some((e) => e.type === 'error')).toBe(false);
 	});
+
+	// ==================== W4: search.result reranked 字段 ====================
+
+	it('agentLoop - search_vault 结果含 reranked=true - search.result 事件带 reranked=true', async () => {
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence);
+
+		const toolCall: ToolCall = {
+			id: 'call_1',
+			name: 'search_vault',
+			args: { query: '技术栈', topK: 3 },
+		};
+
+		const llm = createMockLLM([
+			[{ text: '', toolCall }],
+			[{ text: '根据 [1] 的内容...' }],
+		]);
+
+		const tools = new ToolRegistry();
+		tools.register({
+			definition: { name: 'search_vault', description: 'search', parameters: {} },
+			readOnly: true,
+			execute: async () => [
+				{ docId: 'notes/a.md#chunk-0', score: 0.9, metadata: { path: 'notes/a.md', chunkIndex: 0 }, index: 1, reranked: true },
+			],
+		});
+
+		const hooks = new HookRegistry();
+		const events: AgentEvent[] = [];
+
+		for await (const event of agentLoop(
+			{ sessionId: 's1', message: '查技术栈' },
+			ctx,
+			llm,
+			tools,
+			hooks,
+		)) {
+			events.push(event);
+		}
+
+		// 关键路径:search.result 事件 payload 含 reranked=true
+		const searchResultEvent = events.find((e) => e.type === 'search.result');
+		expect(searchResultEvent).toBeDefined();
+		if (searchResultEvent?.type === 'search.result') {
+			expect(searchResultEvent.payload.reranked).toBe(true);
+		}
+	});
+
+	it('agentLoop - search_vault 结果 reranked=false - search.result 事件带 reranked=false', async () => {
+		// 关键路径:无 Reranker 时 reranked=false,ChatView 不显示精排标记
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence);
+
+		const toolCall: ToolCall = {
+			id: 'call_1',
+			name: 'search_vault',
+			args: { query: '技术栈' },
+		};
+
+		const llm = createMockLLM([
+			[{ text: '', toolCall }],
+			[{ text: '结果' }],
+		]);
+
+		const tools = new ToolRegistry();
+		tools.register({
+			definition: { name: 'search_vault', description: 'search', parameters: {} },
+			readOnly: true,
+			execute: async () => [
+				{ docId: 'notes/a.md#chunk-0', score: 0.9, metadata: { path: 'notes/a.md', chunkIndex: 0 }, index: 1, reranked: false },
+			],
+		});
+
+		const hooks = new HookRegistry();
+		const events: AgentEvent[] = [];
+
+		for await (const event of agentLoop(
+			{ sessionId: 's1', message: '查' },
+			ctx,
+			llm,
+			tools,
+			hooks,
+		)) {
+			events.push(event);
+		}
+
+		const searchResultEvent = events.find((e) => e.type === 'search.result');
+		// 关键路径:先确认事件确实发射,避免 if 跳过导致空过测试
+		expect(searchResultEvent).toBeDefined();
+		if (searchResultEvent?.type === 'search.result') {
+			expect(searchResultEvent.payload.reranked).toBe(false);
+		}
+	});
+
+	it('agentLoop - search_vault 结果无 reranked 字段 - search.result 降级 reranked=false', async () => {
+		// 关键路径:W3 旧 mock 不带 reranked 字段,W4 agent-loop 应降级为 false
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence);
+
+		const toolCall: ToolCall = {
+			id: 'call_1',
+			name: 'search_vault',
+			args: { query: '技术栈' },
+		};
+
+		const llm = createMockLLM([
+			[{ text: '', toolCall }],
+			[{ text: '结果' }],
+		]);
+
+		const tools = new ToolRegistry();
+		tools.register({
+			definition: { name: 'search_vault', description: 'search', parameters: {} },
+			readOnly: true,
+			execute: async () => [
+				{ docId: 'notes/a.md#chunk-0', score: 0.9, metadata: { path: 'notes/a.md', chunkIndex: 0 }, index: 1 },
+			],
+		});
+
+		const hooks = new HookRegistry();
+		const events: AgentEvent[] = [];
+
+		for await (const event of agentLoop(
+			{ sessionId: 's1', message: '查' },
+			ctx,
+			llm,
+			tools,
+			hooks,
+		)) {
+			events.push(event);
+		}
+
+		const searchResultEvent = events.find((e) => e.type === 'search.result');
+		// 关键路径:先确认事件确实发射,避免 if 跳过导致空过测试
+		expect(searchResultEvent).toBeDefined();
+		if (searchResultEvent?.type === 'search.result') {
+			// 关键路径:无 reranked 字段时降级为 false
+			expect(searchResultEvent.payload.reranked).toBe(false);
+		}
+	});
+
+	it('agentLoop - search_vault 结果混合 reranked - search.result 事件带 reranked=true', async () => {
+		// 关键路径:部分结果 reranked=true、部分 false → 事件级 reranked=true(any 语义)
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence);
+
+		const toolCall: ToolCall = {
+			id: 'call_1',
+			name: 'search_vault',
+			args: { query: '技术栈' },
+		};
+
+		const llm = createMockLLM([
+			[{ text: '', toolCall }],
+			[{ text: '结果' }],
+		]);
+
+		const tools = new ToolRegistry();
+		tools.register({
+			definition: { name: 'search_vault', description: 'search', parameters: {} },
+			readOnly: true,
+			execute: async () => [
+				{ docId: 'notes/a.md#chunk-0', score: 0.9, metadata: { path: 'notes/a.md', chunkIndex: 0 }, index: 1, reranked: true },
+				{ docId: 'notes/b.md#chunk-0', score: 0.8, metadata: { path: 'notes/b.md', chunkIndex: 0 }, index: 2, reranked: false },
+			],
+		});
+
+		const hooks = new HookRegistry();
+		const events: AgentEvent[] = [];
+
+		for await (const event of agentLoop(
+			{ sessionId: 's1', message: '查' },
+			ctx,
+			llm,
+			tools,
+			hooks,
+		)) {
+			events.push(event);
+		}
+
+		const searchResultEvent = events.find((e) => e.type === 'search.result');
+		expect(searchResultEvent).toBeDefined();
+		if (searchResultEvent?.type === 'search.result') {
+			// 关键路径:任一结果 reranked=true 即事件级 reranked=true
+			expect(searchResultEvent.payload.reranked).toBe(true);
+		}
+	});
 });
