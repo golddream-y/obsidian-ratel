@@ -33,7 +33,7 @@
 |---|---|---|---|---|---|---|
 | P-W3-IMPL | [2026-06-13-ratel-w3-implementation.md](plans/2026-06-13-ratel-w3-implementation.md) | **Superseded** | — | — | — | ~~S-RAG-ARCH (W3 切片)~~ → S-W3-HYBRID |
 | P-W4-IMPL | [2026-06-13-ratel-w4-implementation.md](plans/2026-06-13-ratel-w4-implementation.md) | **Superseded** | — | — | — | ~~S-RAG-ARCH (W4 切片)~~ → S-W4-RAG-ENHANCEMENT |
-| **P-W3-HYBRID** | [2026-06-26-ratel-w3-hybrid-implementation.md](plans/2026-06-26-ratel-w3-hybrid-implementation.md) | 🔄 In Progress | main | 2026-06-26 | — | S-W3-HYBRID |
+| **P-W3-HYBRID** | [2026-06-26-ratel-w3-hybrid-implementation.md](plans/2026-06-26-ratel-w3-hybrid-implementation.md) | ✅ Completed | main | 2026-06-26 | 2026-06-26 | S-W3-HYBRID |
 | **P-W4-RAG** | [2026-06-26-ratel-w4-rag-implementation.md](plans/2026-06-26-ratel-w4-rag-implementation.md) | ⏳ Pending | — | — | — | S-W4-RAG-ENHANCEMENT |
 | P-W3-TEST | [2026-06-14-ratel-w3-test-plan.md](plans/2026-06-14-ratel-w3-test-plan.md) | ⏳ Pending | — | — | — | S-TEST-ARCH (W3 计划) |
 | P-W4-TEST | [2026-06-14-ratel-w4-test-plan.md](plans/2026-06-14-ratel-w4-test-plan.md) | ⏳ Pending | — | — | — | S-TEST-ARCH (W4 计划) |
@@ -63,7 +63,7 @@
 1. ~~合并 `test/w1-backfill` → main~~(本批已随 W2 合并捎带 — 实际上 W1 work 全部进了主分支)
 2. ~~合并 `test/w2-backfill` → main~~ ✅(commit `3a3cb9f`)
 3. ~~P-W3-IMPL~~ → **Superseded**,改由 S-W3-HYBRID 衍生新 plan → **P-W3-HYBRID**(已生成,⏳ Pending)
-4. **P-W3-HYBRID**(W3 实现 plan,待执行)
+4. ~~**P-W3-HYBRID**~~(W3 实现 plan) ✅(2026-06-26 完成,9 tasks,275/275 测试通过)
 5. P-W3-TEST(W3 测试计划,需基于 S-W3-HYBRID 新架构重写)
 6. ~~P-W4-IMPL~~ → **Superseded**,改由 S-W4-RAG-ENHANCEMENT 衍生新 plan → **P-W4-RAG**(已生成,⏳ Pending)
 7. **P-W4-RAG**(W4 实现 plan,需在 P-W3-HYBRID 完成后执行)
