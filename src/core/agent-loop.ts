@@ -10,6 +10,7 @@ import type { LLMClient, ToolCall } from '../ports/llm';
 import type { ContextManager } from './context-manager';
 import type { ToolRegistry } from './tool-registry';
 import type { HookRegistry } from './hooks';
+import type { Intent } from './intent-classifier';
 
 /**
  * Agent Loop 的最大步数上限,防止工具调用陷入死循环。
@@ -34,6 +35,7 @@ const MAX_STEPS = 10;
  * @param tools - 工具注册表,提供 LLM 可调用的工具列表与执行能力
  * @param hooks - 钩子注册表,提供工具调用前后的治理点
  * @param signal - 可选的 AbortSignal,用于取消循环
+ * @param intentClassifier - 可选的意图分类函数,判断用户消息是否需要 RAG 工作流。未传时默认 'direct'(向后兼容)
  * @returns AgentEvent 异步可迭代流
  * @throws 不会向上抛错 — 内部错误一律转 `error` 事件
  * @example
@@ -49,10 +51,24 @@ export async function* agentLoop(
 	tools: ToolRegistry,
 	hooks: HookRegistry,
 	signal?: AbortSignal,
+	intentClassifier?: (message: string) => Promise<Intent>,
 ): AsyncIterable<AgentEvent> {
 	// 加载或初始化 session,然后把用户消息压入上下文。
 	await ctx.load(req.sessionId);
 	ctx.addUserMessage(req.message);
+
+	// 关键路径:意图分类,判断是否需要 RAG 工作流。无 classifier 时降级 direct(向后兼容)。
+	// 关键路径:分类器异常时静默降级 rag(与 classifyIntent 自身降级方向一致,宁可多搜不漏),
+	// 不向上抛错以遵守 agentLoop 的 @throws 契约(message.end 与 save 仍由 finally 保证)。
+	let intent: Intent = 'direct';
+	if (intentClassifier) {
+		try {
+			intent = await intentClassifier(req.message);
+		} catch {
+			// 关键路径:分类失败降级 rag,保证主流程继续(search_vault 仍可工作)
+			intent = 'rag';
+		}
+	}
 
 	try {
 		// 单步循环:每轮产生一段 assistant 回复 + (可选)一次工具调用。
@@ -71,7 +87,7 @@ export async function* agentLoop(
 			try {
 				// 让 LLM 流式产出;逐步把 text 投递给 UI,toolCall 在最后保留(单轮只支持一个工具调用)。
 				const stream = llm.chat({
-					messages: ctx.toMessages(),
+					messages: ctx.toMessages(intent),
 					tools: tools.definitions(),
 				});
 
@@ -130,6 +146,30 @@ export async function* agentLoop(
 			}
 
 			yield { type: 'tool.result', payload: { name: toolCall.name, result } };
+
+			// 关键路径:search_vault 返回后发 search.result 事件(payload 用扁平结构)。
+			// 从 metadata.path 提取 path,避免 UI 层再嵌套解析 metadata。
+			if (toolCall.name === 'search_vault' && Array.isArray(result)) {
+				const searchResults = (result as Array<{
+					docId: string;
+					score: number;
+					metadata: { path?: string };
+					index: number;
+				}>)
+					.filter((r) => r.metadata && typeof r.metadata.path === 'string')
+					.map((r) => ({
+						docId: r.docId,
+						score: r.score,
+						path: r.metadata.path as string,
+						index: r.index,
+					}));
+				if (searchResults.length > 0) {
+					yield {
+						type: 'search.result',
+						payload: { results: searchResults },
+					};
+				}
+			}
 
 			// 写后钩子:与 pre-write 对称。
 			if (!tools.isReadOnly(toolCall.name)) {

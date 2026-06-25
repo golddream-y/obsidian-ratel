@@ -437,4 +437,153 @@ describe('agentLoop', () => {
 		// 关键路径:取消后 finally 块仍执行 save()
 		expect(sessions.has('s1')).toBe(true);
 	});
+
+	// ==================== W3: 意图分类 + search.result 事件 ====================
+
+	it('agentLoop - 注入 intentClassifier - 调用分类器并按意图选提示词', async () => {
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence);
+		// 关键路径:LLM 第二轮调用用于真实 chat,第一轮被意图分类器消费
+		const chatSpy = vi.fn();
+		const llm: LLMClient = {
+			async *chat(req: ChatRequest): AsyncIterable<ChatDelta> {
+				chatSpy(req);
+				// 关键路径:第一次调用是意图分类(maxTokens=5),第二次是真实回复
+				if (req.options?.maxTokens === 5) {
+					yield { text: 'rag' };
+					return;
+				}
+				yield { text: '回答' };
+			},
+			countTokens: () => 10,
+		};
+		const tools = new ToolRegistry();
+		const hooks = new HookRegistry();
+		const intentClassifier = vi.fn().mockResolvedValue('rag' as const);
+
+		const events: AgentEvent[] = [];
+		for await (const event of agentLoop(
+			{ sessionId: 's1', message: '我的笔记有什么' },
+			ctx,
+			llm,
+			tools,
+			hooks,
+			undefined,
+			intentClassifier,
+		)) {
+			events.push(event);
+		}
+
+		// 关键路径:意图分类器被调用,参数是用户消息
+		expect(intentClassifier).toHaveBeenCalledWith('我的笔记有什么');
+		// 关键路径:第二次 chat 调用的 messages[0] 应是 RAG_PROMPT(含 search_vault)
+		const realChatCall = chatSpy.mock.calls.find(([{ options }]) => !options?.maxTokens || options.maxTokens !== 5);
+		const realMessages = realChatCall?.[0]?.messages;
+		expect(realMessages?.[0]?.content).toContain('search_vault');
+	});
+
+	it('agentLoop - 无 intentClassifier - 不调分类,默认 direct 提示词', async () => {
+		// 关键路径:向后兼容,老调用方不传 intentClassifier 仍能工作
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence);
+		const llm = createMockLLM([[{ text: 'hi' }]]);
+		const tools = new ToolRegistry();
+		const hooks = new HookRegistry();
+
+		const events: AgentEvent[] = [];
+		for await (const event of agentLoop(
+			{ sessionId: 's1', message: 'Hi' },
+			ctx,
+			llm,
+			tools,
+			hooks,
+		)) {
+			events.push(event);
+		}
+
+		// 关键路径:无 search.result 事件(没有调 search_vault)
+		expect(events.some((e) => e.type === 'search.result')).toBe(false);
+	});
+
+	it('agentLoop - search_vault 返回后发 search.result 事件', async () => {
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence);
+
+		const toolCall: ToolCall = {
+			id: 'call_1',
+			name: 'search_vault',
+			args: { query: '技术栈', topK: 3 },
+		};
+
+		const llm = createMockLLM([
+			[{ text: '', toolCall }],
+			[{ text: '根据 [1] 的内容...' }],
+		]);
+
+		const tools = new ToolRegistry();
+		tools.register({
+			definition: { name: 'search_vault', description: 'search', parameters: {} },
+			readOnly: true,
+			execute: async () => [
+				{ docId: 'notes/a.md#chunk-0', score: 0.9, metadata: { path: 'notes/a.md', chunkIndex: 0 }, index: 1 },
+				{ docId: 'notes/b.md#chunk-0', score: 0.8, metadata: { path: 'notes/b.md', chunkIndex: 0 }, index: 2 },
+			],
+		});
+
+		const hooks = new HookRegistry();
+		const events: AgentEvent[] = [];
+
+		for await (const event of agentLoop(
+			{ sessionId: 's1', message: '查技术栈' },
+			ctx,
+			llm,
+			tools,
+			hooks,
+		)) {
+			events.push(event);
+		}
+
+		// 关键路径:search.result 事件被发出
+		const searchResultEvent = events.find((e) => e.type === 'search.result');
+		expect(searchResultEvent).toBeDefined();
+		if (searchResultEvent?.type === 'search.result') {
+			expect(searchResultEvent.payload.results).toHaveLength(2);
+			// 关键路径:path 从 metadata.path 提取,扁平结构(不嵌套 metadata)
+			expect(searchResultEvent.payload.results[0]).toEqual({
+				docId: 'notes/a.md#chunk-0',
+				score: 0.9,
+				path: 'notes/a.md',
+				index: 1,
+			});
+		}
+	});
+
+	it('agentLoop - intentClassifier 抛错 - 静默降级 rag,主流程不中断', async () => {
+		// 关键路径:自定义分类器抛错时,agentLoop 应降级 rag 且不向上抛(遵守 @throws 契约)
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence);
+		const llm = createMockLLM([[{ text: '回答' }]]);
+		const tools = new ToolRegistry();
+		const hooks = new HookRegistry();
+		const throwingClassifier = vi.fn().mockRejectedValue(new Error('classifier down'));
+
+		const events: AgentEvent[] = [];
+		for await (const event of agentLoop(
+			{ sessionId: 's1', message: 'hi' },
+			ctx,
+			llm,
+			tools,
+			hooks,
+			undefined,
+			throwingClassifier,
+		)) {
+			events.push(event);
+		}
+
+		// 关键路径:分类器被调用但抛错,主流程不中断
+		expect(throwingClassifier).toHaveBeenCalledWith('hi');
+		expect(events.some((e) => e.type === 'message.end')).toBe(true);
+		// 关键路径:无 error 事件(降级是静默的,与 classifyIntent 自身行为一致)
+		expect(events.some((e) => e.type === 'error')).toBe(false);
+	});
 });
