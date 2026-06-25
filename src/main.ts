@@ -33,6 +33,7 @@ import { devLogger } from './logging/dev-logger';
 import { UserNotice } from './user-feedback/user-notice';
 import { UserStatus } from './user-feedback/user-status';
 import { isSearchReady } from './ui/chat-send-gate';
+import { resolveChatApiKey, resolveEmbedApiKey } from './secrets/ratel-secrets';
 import { ChatView, VIEW_TYPE_CHAT } from './ui/ChatView';
 import { get } from 'svelte/store';
 import { ensurePluginGitignore } from './utils/gitignore-writer';
@@ -87,7 +88,9 @@ export default class RatelVaultPlugin extends Plugin {
 		);
 		this.llm = new DeepSeekLLM({
 			apiBase: this.settings.chatApiBase,
-			apiKey: this.settings.chatApiKey,
+			// 关键路径:apiKey 不再存 settings,从 Obsidian 钥匙串按 chatApiBase 端点类型解析;
+			// localhost Ollama 免 Key 返回 null → 空串透传给 LLM(本地服务不校验)。
+			apiKey: resolveChatApiKey(this.app, this.settings) ?? '',
 			model: this.settings.chatModel,
 		});
 
@@ -303,7 +306,9 @@ export default class RatelVaultPlugin extends Plugin {
 	rebuildLLM(): void {
 		this.llm = new DeepSeekLLM({
 			apiBase: this.settings.chatApiBase,
-			apiKey: this.settings.chatApiKey,
+			// 关键路径:apiKey 不再存 settings,从 Obsidian 钥匙串按 chatApiBase 端点类型解析;
+			// localhost Ollama 免 Key 返回 null → 空串透传给 LLM(本地服务不校验)。
+			apiKey: resolveChatApiKey(this.app, this.settings) ?? '',
 			model: this.settings.chatModel,
 		});
 	}
@@ -320,7 +325,8 @@ export default class RatelVaultPlugin extends Plugin {
 		} else {
 			this.embedding = new EmbeddingApi({
 				apiBase: this.settings.embedApiBase,
-				apiKey: this.settings.embedApiKey,
+				// 关键路径:apiKey 走钥匙串;builtin / ollama-local 返回 null → 空串透传。
+				apiKey: resolveEmbedApiKey(this.app, this.settings) ?? '',
 				model: this.settings.embedApiModel,
 				dimensions: this.settings.embedApiDimensions,
 			});

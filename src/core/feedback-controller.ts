@@ -21,7 +21,8 @@ export interface FeedbackControllerDeps {
 	userStatus: UserStatus;
 	getEmbeddingReady: () => boolean;
 	getWorkerMode: () => 'thread' | 'inline';
-	getSettings: () => { embedProvider: 'local' | 'api'; embedApiKey: string; chatApiKey: string };
+	// 关键路径:Key 已迁至钥匙串,这里只暴露端点分类所需的最小字段(不传明文 Key)。
+	getSettings: () => { embedProvider: 'local' | 'api'; embedApiBase: string; chatApiBase: string };
 	onFullIndexComplete?: (indexed: number, errors: number) => void;
 }
 
