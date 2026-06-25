@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { VectraStore } from '../../src/adapters/vector-vectra';
 import type { EmbeddingsModel, EmbeddingsResponse } from 'vectra';
 import path from 'path';
@@ -91,5 +91,71 @@ describe('VectraStore', () => {
 		const emptyStore = new VectraStore(path.join(TEST_INDEX_DIR, 'empty-status-test'), mockEmbeddings);
 		const status = await emptyStore.status();
 		expect(status.totalDocs).toBe(0);
+	});
+});
+
+describe('VectraStore.hybridSearch', () => {
+	it('hybridSearch - 调用 queryItems 传 isBm25=true 且 query 非空', async () => {
+		// 关键路径:mock LocalDocumentIndex,捕获 queryItems 的入参
+		const queryItemsMock = vi.fn().mockResolvedValue([]);
+		const listDocumentsMock = vi.fn().mockResolvedValue([]);
+		const isIndexCreatedMock = vi.fn().mockResolvedValue(true);
+		const fakeIndex = {
+			queryItems: queryItemsMock,
+			listDocuments: listDocumentsMock,
+			isIndexCreated: isIndexCreatedMock,
+			createIndex: vi.fn(),
+			getDocumentUri: vi.fn(),
+			getCatalogStats: vi.fn().mockResolvedValue({ documents: 0 }),
+		} as unknown as import('vectra').LocalDocumentIndex;
+
+		// 关键路径:用 Object.defineProperty 注入 fakeIndex,绕过 ensureIndex 的真实初始化
+		const store = new VectraStore('/tmp/test-index');
+		// 把 store.index 私有字段强行替换为 fakeIndex
+		(store as unknown as { index: unknown }).index = fakeIndex;
+		// 把 _ready 设为已 resolved,跳过 init()
+		(store as unknown as { _ready: Promise<void> | null })._ready = Promise.resolve();
+
+		await store.hybridSearch('我的笔记', [0.1, 0.2, 0.3], 5);
+
+		expect(queryItemsMock).toHaveBeenCalledTimes(1);
+		const [vectorArg, queryArg, topKArg, filterArg, isBm25Arg] = queryItemsMock.mock.calls[0]!;
+		expect(queryArg).toBe('我的笔记');
+		expect(vectorArg).toEqual([0.1, 0.2, 0.3]);
+		expect(topKArg).toBe(50); // 5 * 10 过度抓取
+		expect(filterArg).toBeUndefined();
+		expect(isBm25Arg).toBe(true);
+	});
+
+	it('hybridSearch - 聚合 chunk 到文档级并按分数降序', async () => {
+		// mock 两条 chunk,同属 notes/a.md,聚合后取最高分
+		const queryItemsMock = vi.fn().mockResolvedValue([
+			{ score: 0.8, item: { metadata: { documentId: 'doc-1', path: 'notes/a.md', chunkIndex: 0 } } },
+			{ score: 0.9, item: { metadata: { documentId: 'doc-1', path: 'notes/a.md', chunkIndex: 1 } } },
+			{ score: 0.6, item: { metadata: { documentId: 'doc-2', path: 'notes/b.md', chunkIndex: 0 } } },
+		]);
+		const fakeIndex = {
+			queryItems: queryItemsMock,
+			isIndexCreated: vi.fn().mockResolvedValue(true),
+			createIndex: vi.fn(),
+			getDocumentUri: vi.fn().mockImplementation(async (id: string) => `uri-${id}`),
+			getCatalogStats: vi.fn(),
+			listDocuments: vi.fn(),
+		} as unknown as import('vectra').LocalDocumentIndex;
+
+		const store = new VectraStore('/tmp/test-index');
+		(store as unknown as { index: unknown }).index = fakeIndex;
+		(store as unknown as { _ready: Promise<void> | null })._ready = Promise.resolve();
+
+		const results = await store.hybridSearch('query', [0.1, 0.2], 5);
+
+		// 关键路径:聚合后 doc-1 取最高分 0.9,doc-2 取 0.6,按降序
+		expect(results).toHaveLength(2);
+		expect(results[0]!.docId).toBe('uri-doc-1');
+		expect(results[0]!.score).toBe(0.9);
+		expect(results[1]!.docId).toBe('uri-doc-2');
+		expect(results[1]!.score).toBe(0.6);
+		// 关键路径:hybridSearch 不填 index(由 search_vault 工具层填)
+		expect(results[0]!.index).toBeUndefined();
 	});
 });
