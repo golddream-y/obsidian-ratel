@@ -59,6 +59,12 @@ export interface VectorSearchResult {
 	 * VectraStore.hybridSearch / Worker 协议层不填(默认 undefined)。
 	 */
 	index?: number;
+	/**
+	 * 是否经过 Rerank 精排(W4 新增)。
+	 * MultiQuerySearcher 填充:true = 经 Reranker 精排;false = 仅 RRF 融合。
+	 * VectraStore.hybridSearch / Worker 协议层不填(默认 undefined)。
+	 */
+	reranked?: boolean;
 }
 
 /**
