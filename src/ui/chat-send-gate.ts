@@ -1,11 +1,12 @@
 /**
  * @file src/ui/chat-send-gate.ts
- * @description Chat 发送硬拦/软拦判定 — API Key 硬拦,检索未就绪软拦
+ * @description Chat 发送硬拦/软拦判定 — 端点感知 Key 硬拦,检索未就绪软拦
  * @module ui/chat-send-gate
- * @depends user-feedback/user-status
+ * @depends user-feedback/user-status, secrets/ratel-secrets
  */
 
 import type { UserStatusSnapshot } from '../user-feedback/user-status';
+import { requiresChatApiKey, type ChatSecretSettings } from '../secrets/ratel-secrets';
 
 /** evaluateChatSendGate 的返回结构 */
 export interface ChatSendGateResult {
@@ -15,22 +16,25 @@ export interface ChatSendGateResult {
 }
 
 /**
- * 根据设置与 UserStatus 快照判定 Chat 发送是否允许,以及硬拦/软拦提示文案。
+ * 根据端点类型、钥匙串状态与 UserStatus 快照判定 Chat 发送是否允许,以及硬拦/软拦提示文案。
  *
  * 设计要点:
- * - 缺少 Chat API Key 时硬拦,禁止发送
- * - 检索子系统未就绪时软拦,仍可纯对话发送
+ * - 端点感知:本地 Ollama(localhost)免 Key 可发送;openai-compatible 缺钥匙串密钥时硬拦。
+ * - 检索子系统未就绪时软拦,仍可纯对话发送。
  *
- * @param settings - 至少包含 chatApiKey
+ * @param settings - 含 chatApiBase 的设置片段(用于端点分类)
  * @param status - StatusBar 当前快照
+ * @param opts - hasChatApiKey: 钥匙串是否已配置 Chat 密钥(由调用方解析后传入)
  * @returns 是否可发送及可选的硬拦/软拦文案
  */
 export function evaluateChatSendGate(
-	settings: { chatApiKey: string },
+	settings: ChatSecretSettings,
 	status: UserStatusSnapshot,
+	opts: { hasChatApiKey: boolean },
 ): ChatSendGateResult {
-	if (!settings.chatApiKey?.trim()) {
-		return { canSend: false, hardBlockReason: '请先在设置中配置 Chat API Key' };
+	// 关键路径:仅 openai-compatible 端点需要钥匙串密钥;本地 Ollama 直接放行。
+	if (requiresChatApiKey(settings) && !opts.hasChatApiKey) {
+		return { canSend: false, hardBlockReason: '请先在 Obsidian 钥匙串配置 Chat API 密钥' };
 	}
 	const searchDegraded =
 		status.embedding !== 'ready' ||
