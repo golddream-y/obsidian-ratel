@@ -6,6 +6,7 @@
  */
 
 import type { App } from 'obsidian';
+import { devLogger } from '../logging/dev-logger';
 
 // ==================== 固定密钥名常量 ====================
 
@@ -120,13 +121,29 @@ export function requiresEmbedApiKey(settings: EmbedSecretSettings): boolean {
 /**
  * 从 Obsidian secretStorage 读取密钥并 trim。
  *
+ * 关键路径:
+ * - SecretStorage API 缺失时兜底日志(minAppVersion 1.11.4 已阻止老版,理论上不可达)。
+ * - OS 钥匙串异常(如 macOS Keychain 拒绝访问)不冒泡,视为未配置,避免阻断 rebuild。
+ *
  * @param app - Obsidian App 实例
  * @param id - RATEL_SECRET_IDS 中的密钥名
  * @returns 密钥值(非空 trim 后),未配置或空白返回 null
  */
 function getSecret(app: App, id: string): string | null {
-	const value = app.secretStorage?.getSecret?.(id);
-	return value && value.trim() ? value.trim() : null;
+	try {
+		const fn = app.secretStorage?.getSecret;
+		if (!fn) {
+			// 修复:SecretStorage API 缺失,理论上 minAppVersion 已阻止,兜底日志。
+			devLogger.error('secrets', 'SecretStorage API 不可用,需 Obsidian ≥ 1.11.4');
+			return null;
+		}
+		const value = fn.call(app.secretStorage, id);
+		return value && value.trim() ? value.trim() : null;
+	} catch (err) {
+		// 修复:OS 钥匙串异常(权限拒绝 / Keychain 锁定)不冒泡,视为未配置。
+		devLogger.error('secrets', `读取密钥 ${id} 失败`, err);
+		return null;
+	}
 }
 
 // ==================== resolve / has ====================
