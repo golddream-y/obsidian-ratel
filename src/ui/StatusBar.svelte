@@ -17,7 +17,8 @@
 		snap.embedding !== 'ready' ||
 		!!snap.degraded;
 	$: tone = computeTone(snap);
-	$: summary = `模型${labelModel(snap)} · 索引${snap.indexDocCount ?? 0} 篇 · Embedding${labelEmbedding(snap.embedding)}`;
+	$: workerTag = snap.worker === 'inline' ? ' · 内联' : '';
+	$: summary = `模型${labelModel(snap)} · 索引${snap.indexDocCount ?? 0} 篇 · Embedding${labelEmbedding(snap.embedding)}${workerTag}`;
 
 	/**
 	 * 根据快照判定状态条色调 — 绿(就绪)、黄(进行中/降级)、红(失败)。
@@ -115,8 +116,11 @@
 <div class="ratel-status-bar" data-expanded={expanded} data-tone={tone}>
 	{#if expanded}
 		<div>模型: {labelModel(snap)}{snap.modelDetail && snap.model !== 'downloading' ? ` — ${snap.modelDetail}` : ''}</div>
-		<div>索引: {labelIndex(snap.index)}{snap.indexDetail ? ` (${snap.indexDetail})` : ''}</div>
+		<div>索引: {labelIndex(snap.index)}{snap.indexDetail ? ` (${snap.indexDetail})` : ''}{snap.indexDocCount != null && snap.index === 'ready' ? ` · ${snap.indexDocCount} 篇` : ''}</div>
 		<div>Embedding: {labelEmbedding(snap.embedding)}</div>
+		{#if snap.worker === 'inline'}
+			<div class="ratel-status-degraded">运行模式: 主线程内联(大库索引较慢)</div>
+		{/if}
 		{#if snap.degraded}
 			<div class="ratel-status-degraded">{snap.degraded}</div>
 		{/if}

@@ -223,10 +223,6 @@ export default class RatelVaultPlugin extends Plugin {
 			getEmbeddingReady: () => !(this.embedding instanceof EmbeddingLocal) || this.embedding.isReady,
 			getWorkerMode: () => this.workerMode,
 			getSettings: () => this.settings,
-			onFullIndexComplete: (indexed, errors) => {
-				const suffix = errors > 0 ? `, ${errors} 个失败` : '';
-				this.userNotice.toast(`Ratel: 索引完成 — ${indexed} 个文档已索引${suffix}`);
-			},
 		});
 		this.feedbackController.start();
 
@@ -343,8 +339,8 @@ export default class RatelVaultPlugin extends Plugin {
 		// 关键路径:先停 IndexController 释放 vault 事件订阅与 watcher,再终止 Worker。
 		this.indexController.destroy();
 		this.workerManager.destroy();
-		// 关键路径:vectra 内部句柄释放,否则 reload 后会泄漏旧 index 引用。
-		void this.vectraStore;
+		// 修复:VectraStore 无显式 close,JS 垃圾回收会释放文件句柄;
+		// 之前的 `void this.vectraStore;` 是空操作,已移除。
 		devLogger.info('main', 'Ratel unloaded');
 	}
 

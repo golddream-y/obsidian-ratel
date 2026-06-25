@@ -75,6 +75,7 @@ export function renderEmbeddingTest(container: HTMLElement, plugin: RatelVaultPl
 
 			const t0 = performance.now();
 			const vectors = await embedding.embed([query]);
+			const tEmb = performance.now();
 			const queryVector = vectors[0];
 			if (!queryVector) {
 				throw new Error('Embedding 返回空向量');
@@ -91,7 +92,7 @@ export function renderEmbeddingTest(container: HTMLElement, plugin: RatelVaultPl
 
 			const info = searchResult.createDiv();
 			info.createSpan({ cls: 'diag-status-dot diag-status-ok' });
-			info.createSpan({ text: `命中 ${results.length} / ${topK} 个文档 | 耗时 ${(t1 - t0).toFixed(0)}ms(embedding ${(t1 - t0).toFixed(0)}ms + 检索)` });
+			info.createSpan({ text: `命中 ${results.length} / ${topK} 个文档 | 总耗时 ${(t1 - t0).toFixed(0)}ms(embedding ${(tEmb - t0).toFixed(0)}ms + 检索 ${(t1 - tEmb).toFixed(0)}ms)` });
 
 			const list = searchResult.createDiv({ cls: 'diag-similarity-list', attr: { style: 'margin-top: 10px;' } });
 			for (const [idx, r] of results.entries()) {
@@ -209,12 +210,12 @@ function checkEmbeddingReady(plugin: RatelVaultPlugin) {
 	const emb = plugin.embedding;
 	if (!emb) {
 		const err = new Error('Embedding 适配器未初始化,请重新加载插件');
-		(err as Error & { type?: string }).type = 'config';
+		(err as Error & { code?: string }).code = 'EMBEDDING';
 		throw err;
 	}
 	if (emb instanceof EmbeddingLocal && !emb.isReady) {
 		const err = new Error('本地模型尚未加载完成。请等待模型下载/初始化完毕(观察 Notice 提示),或检查模型下载是否失败。');
-		(err as Error & { type?: string }).type = 'model';
+		(err as Error & { code?: string }).code = 'MODEL_NOT_READY';
 		throw err;
 	}
 	return emb;
