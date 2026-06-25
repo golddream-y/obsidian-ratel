@@ -13,8 +13,6 @@ import { HookRegistry } from '../../src/core/hooks';
 import { createSearchVaultTool } from '../../src/tools/search-vault';
 import { createReadNoteTool } from '../../src/tools/read-note';
 import type { LLMClient, ToolCall, ChatRequest, ChatDelta } from '../../src/ports/llm';
-import type { EmbeddingPort } from '../../src/ports/embedding';
-import type { WorkerManager } from '../../src/worker/manager';
 import type { VectorSearchResult } from '../../src/ports/vector';
 import type { Persistence, Session } from '../../src/ports/persistence';
 import type { VaultPort } from '../../src/ports/vault';
@@ -39,27 +37,6 @@ describe('RAG loop integration', () => {
 		const persistence = createMockPersistence(sessions);
 		const ctx = new ContextManager(persistence);
 
-		const embedding: EmbeddingPort = {
-			embed: vi.fn(async () => [[0.1, 0.2]]),
-			dimensions: 2,
-			modelId: 'local:mock',
-		};
-
-		const worker = {
-			request: vi.fn(async (req) => {
-				if (req.type === 'vector.search') {
-					return {
-						type: 'vector.search.result',
-						payload: [
-							{ docId: 'notes/project.md#chunk-0', score: 0.9, metadata: { path: 'notes/project.md', chunkIndex: 0 } },
-						] as VectorSearchResult[],
-					};
-				}
-				return { type: 'error', payload: { code: 'UNKNOWN', message: 'unknown' } };
-			}),
-			destroy: vi.fn(),
-		} as unknown as WorkerManager;
-
 		const vault: VaultPort = {
 			readFile: vi.fn(async () => '项目使用 TypeScript + esbuild'),
 			getMetadata: vi.fn(() => null),
@@ -68,8 +45,15 @@ describe('RAG loop integration', () => {
 			listMarkdownFiles: vi.fn(() => []),
 		};
 
+		// 关键路径:W4 — search_vault 内部改调 MultiQuerySearcher,这里用 mock searcher 返回固定结果
+		const searcher = {
+			search: vi.fn(async () => [
+				{ docId: 'notes/project.md#chunk-0', score: 0.9, metadata: { path: 'notes/project.md', chunkIndex: 0 } },
+			] as VectorSearchResult[]),
+		};
+
 		const tools = new ToolRegistry();
-		tools.register(createSearchVaultTool(embedding, worker, () => true));
+		tools.register(createSearchVaultTool(searcher as never, () => true));
 		tools.register(createReadNoteTool(vault));
 
 		const toolCalls: ToolCall[] = [
