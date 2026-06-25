@@ -22,6 +22,7 @@
 | S-I18N | [2026-06-14-ratel-i18n-design.md](specs/2026-06-14-ratel-i18n-design.md) | Draft | 2026-06-14 | i18n 基础设施:中英文切换,settings.ts + ChatView + 命令 + Notice 全覆盖 |
 | S-DEFENSIVE | [2026-06-14-ratel-defensive-programming-design.md](specs/2026-06-14-ratel-defensive-programming-design.md) | Draft | 2026-06-14 | 防御性编程:反应式 Settings Proxy + Svelte 5 svelte-check + ChatView mount 单测,根治「改 key 不生效」「let 隐式 prop」「new Component 单参」3 类反复 bug |
 | S-DIAG | [2026-06-25-diagnostics-page-design.md](specs/2026-06-25-diagnostics-page-design.md) | Active | 2026-06-25 | 诊断测试页:设置页新增「诊断测试」主 Tab,内含 Embedding(库内检索+AB 相似度)/ LLM / Rerank 三个子 Tab,错误结构化展示供调试 |
+| P-DIAG | [2026-06-25-diagnostics-page.md](plans/2026-06-25-diagnostics-page.md) | Pending | 2026-06-25 | 诊断测试页实施 plan:7 个 task 覆盖 VectorStore 扩展 + 库内检索 + 索引禁用 + 验收,关联 S-DIAG |
 
 ---
 
