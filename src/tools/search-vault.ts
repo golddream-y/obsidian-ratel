@@ -1,6 +1,6 @@
 /**
  * @file src/tools/search-vault.ts
- * @description `search_vault` 工具 — 在知识库中做向量搜索,返回 docId + score + metadata
+ * @description `search_vault` 工具 — 在知识库中做向量 + BM25 混合搜索,返回带 index 编号的 docId + score + metadata,供 LLM 引用
  * @module tools/search-vault
  * @depends core/tool-registry, ports/embedding, worker/manager
  */
@@ -17,11 +17,13 @@ const DEFAULT_TOP_K = 5;
  *
  * 设计要点:
  * - 只读工具(`readOnly: true`),不触发写钩子。
- * - 查询 embedding 在主线程执行(ms 级,不卡 UI);向量检索走 Worker(读索引文件)。
+ * - 查询 embedding 在主线程执行(ms 级,不卡 UI);混合检索走 Worker(读索引文件)。
+ * - Worker 端做 vectra 混合搜索(向量 + BM25,vectra 内置融合),query 字符串供 BM25,queryVector 供向量召回。
  * - 只返回 docId + score + metadata,不返回 chunk 原文,让模型自主用 read_note 读取。
+ * - 返回结果加 `index` 编号(从 1 开始),供 LLM 在回答中用 [1][2] 引用检索命中的来源。
  *
  * @param embedding - Embedding 端口,用于把 query 编码为向量。
- * @param workerManager - Worker 管理器,用于向 Worker 发起 vector.search 请求。
+ * @param workerManager - Worker 管理器,用于向 Worker 发起 hybrid.search 请求。
  * @param getSearchReady - 检索就绪检查;未就绪时抛 INDEX_NOT_READY。
  * @returns 符合 `Tool` 接口的工具定义。
  */
@@ -33,7 +35,7 @@ export function createSearchVaultTool(
 	return {
 		definition: {
 			name: 'search_vault',
-			description: 'Search the vault for notes relevant to a query. Returns document paths and relevance scores; use read_note to fetch the actual content.',
+			description: 'Search the vault for notes relevant to a query. Uses hybrid vector + BM25 keyword search. Returns ranked results with index numbers for citation. Use read_note to fetch full content of promising results.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -67,16 +69,21 @@ export function createSearchVaultTool(
 			const [queryVector] = await embedding.embed([query]);
 			// EmbeddingPort 契约保证返回与输入等长的向量,单条查询必然有值;用 ! 关闭 noUncheckedIndexedAccess。
 
+			// Worker 做 vectra 混合搜索(向量 + BM25,vectra 内置融合)
 			const response = await workerManager.request({
-				type: 'vector.search',
-				payload: { queryVector: queryVector!, topK },
+				type: 'hybrid.search',
+				payload: { query, queryVector: queryVector!, topK },
 			});
 
-			if (response.type !== 'vector.search.result') {
+			if (response.type !== 'hybrid.search.result') {
 				throw new Error(`Unexpected worker response type: ${response.type}`);
 			}
 
-			return response.payload;
+			// 关键路径:加 index 编号(从 1 开始),供 LLM 用 [1][2] 引用。
+			return response.payload.map((r, i) => ({
+				...r,
+				index: i + 1,
+			}));
 		},
 	};
 }

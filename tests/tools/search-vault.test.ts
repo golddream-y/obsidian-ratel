@@ -27,26 +27,30 @@ function createMockWorkerManager(): WorkerManager {
 }
 
 describe('createSearchVaultTool', () => {
-	it('search_vault - 查询命中 - 返回 docId + score + metadata', async () => {
+	it('search_vault - 查询命中 - 返回 docId + score + metadata + index(从1开始)', async () => {
 		const embedding = createMockEmbedding();
 		const worker = createMockWorkerManager();
 		worker.request = vi.fn().mockResolvedValue({
-			type: 'vector.search.result',
+			type: 'hybrid.search.result',
 			payload: [
 				{ docId: 'notes/project.md#chunk-0', score: 0.95, metadata: { path: 'notes/project.md', chunkIndex: 0 } },
+				{ docId: 'notes/other.md#chunk-0', score: 0.80, metadata: { path: 'notes/other.md', chunkIndex: 0 } },
 			] as VectorSearchResult[],
 		});
 
 		const tool = createSearchVaultTool(embedding, worker, () => true);
 		const result = await tool.execute({ query: '技术栈', topK: 5 });
 
+		// 关键路径:embedding 在主线程执行,query 传给 worker 用于 BM25
 		expect(embedding.embed).toHaveBeenCalledWith(['技术栈']);
 		expect(worker.request).toHaveBeenCalledWith({
-			type: 'vector.search',
-			payload: { queryVector: [0.1, 0.2, 0.3], topK: 5 },
+			type: 'hybrid.search',
+			payload: { query: '技术栈', queryVector: [0.1, 0.2, 0.3], topK: 5 },
 		});
+		// 关键路径:index 从 1 开始,供 LLM 引用 [1][2]
 		expect(result).toEqual([
-			{ docId: 'notes/project.md#chunk-0', score: 0.95, metadata: { path: 'notes/project.md', chunkIndex: 0 } },
+			{ docId: 'notes/project.md#chunk-0', score: 0.95, metadata: { path: 'notes/project.md', chunkIndex: 0 }, index: 1 },
+			{ docId: 'notes/other.md#chunk-0', score: 0.80, metadata: { path: 'notes/other.md', chunkIndex: 0 }, index: 2 },
 		]);
 	});
 
@@ -54,7 +58,7 @@ describe('createSearchVaultTool', () => {
 		const embedding = createMockEmbedding();
 		const worker = createMockWorkerManager();
 		worker.request = vi.fn().mockResolvedValue({
-			type: 'vector.search.result',
+			type: 'hybrid.search.result',
 			payload: [] as VectorSearchResult[],
 		});
 
@@ -80,7 +84,7 @@ describe('createSearchVaultTool', () => {
 		const embedding = createMockEmbedding();
 		const worker = createMockWorkerManager();
 		worker.request = vi.fn().mockResolvedValue({
-			type: 'vector.search.result',
+			type: 'hybrid.search.result',
 			payload: [] as VectorSearchResult[],
 		});
 
@@ -88,8 +92,8 @@ describe('createSearchVaultTool', () => {
 		await tool.execute({ query: '技术栈' });
 
 		expect(worker.request).toHaveBeenCalledWith({
-			type: 'vector.search',
-			payload: { queryVector: [0.1, 0.2, 0.3], topK: 5 },
+			type: 'hybrid.search',
+			payload: { query: '技术栈', queryVector: [0.1, 0.2, 0.3], topK: 5 },
 		});
 	});
 
