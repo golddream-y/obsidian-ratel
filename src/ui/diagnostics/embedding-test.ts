@@ -15,6 +15,7 @@ import {
 	formatError,
 	renderError,
 } from './diag-utils';
+import { hasEmbedApiKey } from '../../secrets/ratel-secrets';
 
 /**
  * 渲染 Embedding 测试区。
@@ -237,7 +238,8 @@ function renderEmbeddingStatus(container: HTMLElement, plugin: RatelVaultPlugin)
 	if (isLocal) {
 		container.createSpan({ text: `模型: ${s.embedLocalModel} | 维度: ${s.embedLocalDimensions} | 状态: ${isReady ? '就绪' : '加载中...'}` });
 	} else {
-		const keyStatus = s.embedApiKey ? '已配置' : '未配置 Key';
+		// 关键路径:Key 状态从钥匙串解析,不读 settings 明文。
+		const keyStatus = hasEmbedApiKey(plugin.app, s) ? '已配置' : '未配置 Key';
 		container.createSpan({ text: `Base: ${s.embedApiBase} | 模型: ${s.embedApiModel} | 维度: ${s.embedApiDimensions} | Key: ${keyStatus}` });
 	}
 	container.createSpan({ text: ' | ' });

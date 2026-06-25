@@ -6,12 +6,13 @@
  */
 
 import type RatelVaultPlugin from '../../main';
+import { hasRerankApiKey, getRerankSecretId } from '../../secrets/ratel-secrets';
 
 /**
  * 渲染 Rerank 占位区。
  *
  * 当前 Reranker 端口与适配器尚未实现,仅展示:
- * - 当前配置摘要(Provider / Base / Model / Key 状态)
+ * - 当前配置摘要(百炼 Base / Model / 钥匙串密钥状态)
  * - 灰态占位提示,说明功能待实现
  * - 预留未来功能的输入区(禁用态)
  */
@@ -58,13 +59,13 @@ export function renderRerankPlaceholder(container: HTMLElement, plugin: RatelVau
  */
 function renderRerankStatus(container: HTMLElement, plugin: RatelVaultPlugin): void {
     const s = plugin.settings;
-    const hasKey = s.rerankerApiKey.length > 0;
-    const enabled = hasKey;
+    const enabled = hasRerankApiKey(plugin.app);
 
     container.empty();
     container.createSpan({ cls: `diag-status-dot ${enabled ? 'diag-status-ok' : 'diag-status-warn'}` });
     container.createSpan({ text: '当前配置: ' });
     container.createEl('code', { text: 'Reranker' });
     container.createSpan({ text: ' | ' });
-    container.createSpan({ text: `Provider: ${s.rerankerProvider} | Base: ${s.rerankerApiBase} | 模型: ${s.rerankerModel} | 状态: ${enabled ? 'Key已配置(待实现)' : '未配置 Key(关闭)'}` });
+    // 关键路径:Rerank v1 仅支持百炼,密钥走钥匙串;未配置时自动关闭。
+    container.createSpan({ text: `百炼 | Base: ${s.rerankerApiBase} | 模型: ${s.rerankerModel} | 密钥: ${getRerankSecretId()} | 状态: ${enabled ? '已配置' : '未配置(关闭)'}` });
 }
