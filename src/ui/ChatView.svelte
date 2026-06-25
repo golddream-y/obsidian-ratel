@@ -2,7 +2,7 @@
 	import type RatelVaultPlugin from '../main';
 	import StatusBar from './StatusBar.svelte';
 	import { evaluateChatSendGate } from './chat-send-gate';
-	import { hasChatApiKey } from '../secrets/ratel-secrets';
+	import { hasChatApiKey, resolveChatApiKey } from '../secrets/ratel-secrets';
 	import { formatChatError, type DiagError } from './chat-error';
 
 	interface ToolCallEntry {
@@ -29,9 +29,26 @@
 	let abortController: AbortController | null = null;
 
 	$: statusSnap = $plugin.userStatus.statusBar$;
-	// 关键路径:本地 Ollama 免 Key;openai-compatible 需钥匙串密钥,缺失则硬拦。
-	$: hasKey = hasChatApiKey(plugin.app, plugin.settings);
+	// 关键路径:SecretStorage 无文档化事件,plugin.settings 原地 mutate 也不触发响应式;
+	// 用 keyVersion 计数器强制 hasKey 重算,在输入聚焦 / 发送时手动刷新。
+	let keyVersion = 0;
+	$: hasKey = (keyVersion, hasChatApiKey(plugin.app, plugin.settings));
 	$: gate = evaluateChatSendGate(plugin.settings, statusSnap, { hasChatApiKey: hasKey });
+
+	/**
+	 * 重新解析钥匙串状态并按需重建 LLM 适配器。
+	 * SecretStorage 无文档化 onChange 事件,改在输入聚焦 / 发送前手动刷新,
+	 * 让用户在 Obsidian 钥匙串添加密钥后无需重载插件即可生效。
+	 */
+	function refreshKeyState() {
+		// 关键路径:钥匙串值可能已变更,按需 rebuild LLM 让新 key 即时注入 config。
+		const prevKey = plugin.llm?.config?.apiKey ?? '';
+		const currentKey = resolveChatApiKey(plugin.app, plugin.settings) ?? '';
+		if (prevKey !== currentKey) {
+			plugin.rebuildLLM();
+		}
+		keyVersion++;
+	}
 
 	function handleAgentError(assistantMsg: Message, code: string, message: string, toolName?: string): void {
 		if (code === 'CANCELLED') {
@@ -55,8 +72,13 @@
 	}
 
 	async function sendMessage() {
+		refreshKeyState();
 		const text = input.trim();
-		if (!text || isRunning || !gate.canSend) return;
+		// 关键路径:用最新钥匙串状态重算 gate,避免响应式 stale 导致误拦或误放行。
+		const freshGate = evaluateChatSendGate(plugin.settings, statusSnap, {
+			hasChatApiKey: hasChatApiKey(plugin.app, plugin.settings),
+		});
+		if (!text || isRunning || !freshGate.canSend) return;
 
 		messages = [...messages, { role: 'user', content: text }];
 		input = '';
@@ -204,6 +226,7 @@
 		<textarea
 			bind:value={input}
 			on:keydown={handleKeydown}
+			on:focus={refreshKeyState}
 			placeholder="Ask about your vault..."
 			disabled={isRunning || !gate.canSend}
 			rows="2"
