@@ -165,13 +165,3 @@ graph TB
 | [agent/chat](../agent/chat.md) | 提供 | ItemView + Svelte mount |
 | [host/persistence](persistence.md) | 提供 | loadData / saveData |
 | [llm/model-management](../llm/model-management.md) | 提供 | requestUrl |
-
----
-
-## 8. 演进路径
-
-| 阶段 | 能力 | 状态 |
-|---|---|---|
-| 当前 | 基础 Facade + ChatView + 设置面板 + Ribbon | ✅ 已实现 |
-| S-RAG-LOOP | esbuild conditions 修复 + RAG 接入 | ✅ 已实现(已归档) |
-| 远期 | IndexBanner 真正工作 + 设置面板模型选择 | 远期 |

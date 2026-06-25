@@ -61,7 +61,7 @@ sequenceDiagram
     participant WP as Worker
     participant VS as VectraStore
 
-    Note over AL,VS: 向量检索 — 当前实现
+    Note over AL,VS: 向量检索 — 单路(降级路径,见 §3.2 混合检索)
 
     AL->>SV: execute({ query, topK })
     SV->>EL: embed(query)
@@ -95,63 +95,82 @@ sequenceDiagram
     participant SV as search_vault
     participant EL as EmbeddingLocal
     participant WP as Worker
-    participant RRF as RRF 融合
+    participant VS as VectraStore
 
-    Note over AL,RRF: 混合检索 — P-W3-IMPL
+    Note over AL,VS: 混合检索 — 向量 + BM25(vectra 内置融合)
 
     AL->>SV: execute({ query, topK })
-
-    par 向量路
-        SV->>EL: embed(query)
-        EL-->>SV: queryVector
-        SV->>WP: vector.search({ queryVector, topK: topK×3 })
-        WP-->>SV: vectorResults[]
-    and BM25 路
-        SV->>WP: bm25.search({ query, topK: topK×3 })
-        WP-->>SV: bm25Results[]
-    end
-
-    SV->>RRF: rrf(vectorResults, bm25Results, k=60)
-    RRF-->>SV: fusedResults[topK]
-    SV-->>AL: [{ docId, score, metadata }]
+    SV->>EL: embed(query)
+    EL-->>SV: queryVector
+    SV->>WP: hybrid.search({ query, queryVector, topK })
+    WP->>VS: queryItems(queryVector, query, topK×10, undefined, isBm25=true)
+    Note over VS: vectra 内部:向量搜索 + BM25<br/>自动融合(无需手动 RRF)
+    VS-->>WP: chunkResults[]
+    WP->>WP: chunk→doc 聚合
+    WP-->>SV: SearchVaultResult[]
+    SV-->>AL: [{ docId, score, metadata, index }]
 ```
 
-**RRF(Reciprocal Rank Fusion)**:
+**vectra 内置混合搜索**:
 
 ```
-score(d) = Σ 1/(k + rank_i(d))
+LocalIndex.queryItems(vector, query, topK, filter?, isBm25?)
 ```
 
-- k = 60(经验值,降低高排名文档的权重差异)
-- 两路各取 topK×3,融合后截取 topK
+- 第 2 参数传 query 文本(原 search 传空串,BM25 未启用)
+- 第 5 参数 `isBm25=true` 启用 BM25 追加结果
+- vectra 内部基于 `wink-bm25-text-search` 库,自动融合向量 + 关键词结果
+- 主线程无需手动两路搜索 + RRF,降低复杂度
 
-### 3.3 远期:重排
+**返回格式**(含引用编号,供 LLM 用 [1][2] 引用):
+
+```typescript
+interface SearchVaultResult {
+  docId: string;       // "notes/project.md#chunk-0"
+  score: number;       // 融合分数 0~1
+  metadata: {
+    path: string;        // "notes/project.md"
+    chunkIndex: number;  // 0
+  };
+  index: number;        // 引用编号,从 1 开始
+}
+```
+
+### 3.3 远期:重排 + 多查询
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant AL as Agent Loop
     participant SV as search_vault
+    participant MQS as MultiQuerySearcher
     participant RRF as RRF 融合
     participant RR as Reranker API
 
-    Note over AL,RR: 重排 — P-W3-IMPL
+    Note over AL,RR: 重排 + 多查询融合
 
     AL->>SV: execute({ query, topK })
+    SV->>MQS: search(query, topK)
 
-    SV->>RRF: 混合检索结果[topK×2]
-    RRF-->>SV: candidates[topK×2]
-
-    alt Reranker 已配置
-        SV->>RR: rerank(query, candidates, topK)
-        RR-->>SV: rerankedResults[topK]
-        SV-->>AL: [{ docId, score, metadata }]
-    else 未配置
-        SV-->>AL: candidates[topK]
+    MQS->>MQS: Query Rewrite 生成 2-3 个变体
+    loop 每个变体查询
+        MQS->>MQS: embedding + hybrid.search
     end
+    MQS->>RRF: rrf(多份结果, k=60)
+    RRF-->>MQS: fusedResults[topK×2]
+
+    alt Reranker 已配置(钥匙串 ratel-rerank-bailian 非空)
+        MQS->>MQS: vault.read 读取 top-K 文档全文
+        MQS->>RR: rerank(query, documents, topK)
+        RR-->>MQS: rerankedResults[topK]
+        MQS->>MQS: 丢弃 text,只保留 docId + score + metadata
+    end
+
+    MQS-->>SV: results[topK]
+    SV-->>AL: [{ docId, score, metadata, index, reranked? }]
 ```
 
-**Reranker 触发条件**:`settings.rerankerApiKey` 非空即启用。
+**Reranker 触发条件**:`hasRerankApiKey(app) === true`(钥匙串 `ratel-rerank-bailian` 非空)。无 key 时跳过 Rerank,降级为仅 RRF 融合。
 
 ---
 
@@ -159,25 +178,25 @@ sequenceDiagram
 
 ```mermaid
 graph LR
-    subgraph "阶段 1 — 当前(S-RAG-LOOP)"
+    subgraph "阶段 1 — 基线"
         V["向量检索<br/>cosine similarity<br/>topK=5"]
     end
 
-    subgraph "阶段 2 — P-W3-IMPL"
+    subgraph "阶段 2 — 混合检索"
         V2["向量检索 topK×3"]
         B["BM25 检索 topK×3"]
-        R["RRF 融合 → topK"]
+        R["vectra 内置融合 → topK"]
         V2 --> R
         B --> R
     end
 
-    subgraph "阶段 3 — P-W3-IMPL(可选)"
-        R2["RRF 融合 topK×2"]
+    subgraph "阶段 3 — 重排"
+        R2["多查询 RRF 融合 topK×2"]
         RR["Reranker → topK"]
         R2 --> RR
     end
 
-    subgraph "阶段 4 — 远期"
+    subgraph "阶段 4 — 查询优化"
         Q["Query Rewrite"]
         H["HyDE"]
         P["Parent Document<br/>Retrieval"]
@@ -194,8 +213,8 @@ graph LR
 | 阶段 | 能力 | 召回率提升 | 精度提升 | 依赖 |
 |---|---|---|---|---|
 | 1 向量检索 | 基线 | — | — | Embedding |
-| 2 混合检索 | +BM25 +RRF | ~17% | — | BM25 索引 |
-| 3 重排 | +Reranker | — | ~10-20% | Reranker API |
+| 2 混合检索 | +BM25(vectra 内置) | ~17% | — | BM25 索引 |
+| 3 重排 | +Reranker + 多查询 RRF | — | ~10-20% | Reranker API |
 | 4 查询优化 | +Query Rewrite +HyDE | ~5-10% | ~5-10% | LLM 额外调用 |
 
 ---
@@ -207,7 +226,7 @@ graph LR
 ```typescript
 {
   name: 'search_vault',
-  description: '在知识库中搜索与查询相关的文档。返回文档路径和相关性分数,用 read_note 读取内容。',
+  description: '在知识库中搜索与查询相关的文档。使用向量 + BM25 混合检索,返回带引用编号的结果,用 read_note 读取内容。',
   parameters: {
     query: {
       type: 'string',
@@ -225,13 +244,13 @@ graph LR
 **Agent Loop 使用模式**:
 
 ```
-用户问题 → Agent Loop 判断需要检索
+用户问题 → 意图分类器判断 intent='rag'
   → search_vault(query, topK=5)
-  → 拿到 [docId, score, metadata] 列表
-  → 模型判断哪些相关
+  → 拿到 [docId, score, metadata, index] 列表(发 search.result 事件)
+  → 模型用 [1][2] 引用编号,自主决定 read_note 哪些
   → read_note(path) 读取原文
   → ContextManager.addSearchResults()
-  → LLM 生成回答
+  → LLM 生成回答(用 [1][2] 引用)
 ```
 
 ---
@@ -240,17 +259,7 @@ graph LR
 
 | 与...的接口 | 方向 | 协议 |
 |---|---|---|
-| [vector-index](vector-index.md) | 依赖 | VectraStore.search() 提供向量检索 |
+| [vector-index](vector-index.md) | 依赖 | VectraStore.hybridSearch() 提供混合检索 |
 | [model-management](../llm/model-management.md) | 依赖 | EmbeddingPort.embed() 查询向量化 + RerankerPort.rerank() 重排 |
 | [agent/tools](../agent/tools.md) | 被调用 | search_vault 作为工具注册 |
 | [agent/context-manager](../agent/context-manager.md) | 下游 | 检索结果经 read_note 后注入上下文 |
-
----
-
-## 7. 演进路径
-
-| 阶段 | 能力 | 状态 |
-|---|---|---|
-| S-RAG-LOOP | 向量检索 + search_vault 工具 | 待实现 |
-| P-W3-IMPL | BM25 + RRF + Reranker | 待实现 |
-| 远期 | Query Rewrite + HyDE + Parent Document Retrieval | 远期 |

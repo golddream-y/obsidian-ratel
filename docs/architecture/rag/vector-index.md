@@ -315,17 +315,6 @@ graph TB
 | 与...的接口 | 方向 | 协议 |
 |---|---|---|
 | [model-management](../llm/model-management.md) | 依赖 | EmbeddingsModel 实例注入 Worker |
-| [retriever](retriever.md) | 提供 | VectraStore.search() 供查询 |
+| [retriever](retriever.md) | 提供 | VectraStore.hybridSearch() 供混合检索 |
 | [obsidian-integration](../host/obsidian-integration.md) | 依赖 | Vault 事件 + 文件读取 |
 | [persistence](../host/persistence.md) | 依赖 | 索引目录 + .gitignore |
-
----
-
-## 9. 演进路径
-
-| 阶段 | 能力 | 状态 |
-|---|---|---|
-| 当前 | 全量索引 + 增量索引 + 暂停/恢复 | ✅ 已实现 |
-| S-RAG-LOOP | main.ts 接入 + 自动启动 | 待实现 |
-| P-W3-IMPL | BM25 索引 + 混合检索 | 待实现 |
-| 远期 | 语义分块 + 摘要索引 + 哈希校验增量 | 远期 |

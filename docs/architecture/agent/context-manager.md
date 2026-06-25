@@ -116,26 +116,40 @@ graph TB
 
 ```mermaid
 graph LR
-    subgraph "系统提示词组合"
-        BASE["基础指令<br/>'You are Ratel,<br/>an AI assistant...'"]
-        RAG["RAG 指令<br/>'你可以使用 search_vault<br/>搜索知识库...'"]
-        CUSTOM["用户自定义<br/>(settings.customPrompt)"]
+    subgraph "按意图选择基础提示词"
+        INTENT["意图分类器<br/>intent = 'rag' | 'direct'"]
+        BASE["BASE_PROMPT<br/>(direct 用)"]
+        RAG["RAG_PROMPT<br/>= BASE + RAG 指令<br/>(rag 用)"]
     end
 
+    INTENT -->|"direct"| BASE
+    INTENT -->|"rag"| RAG
     BASE --> COMBINED["组合后系统提示词"]
     RAG --> COMBINED
-    CUSTOM --> COMBINED
+    CUSTOM["用户自定义<br/>(settings.customPrompt)"] --> COMBINED
 ```
 
-**RAG 指令**(S-RAG-LOOP 新增):
+**意图分类决策**:Agent Loop 在 `addUserMessage` 之后用一次快速 LLM 调用(maxTokens=5)判断用户消息意图。`direct`(如闲聊、统计、生成任务)用 BASE_PROMPT,不引导搜索;`rag`(如问知识库内容、查笔记关系)用 RAG_PROMPT,引导走 RAG 工作流。详见 [agent-loop.md §4.1](agent-loop.md)。
+
+**BASE_PROMPT**(英文,token 效率高;`Always respond in the same language the user uses` 约束保证中文问中文答):
 
 ```
-你可以使用 search_vault 工具搜索用户知识库中的笔记。
-当用户的问题可能涉及 vault 中的内容时,先搜索再回答。
-搜索返回文档路径和相关性分数,你需要用 read_note 读取感兴趣的文档内容。
-基于文档内容回答时,请标注来源笔记路径。
-如果搜索结果不足以回答问题,请如实说明。
+You are Ratel, an AI assistant that helps users explore and manage their Obsidian vault.
+You can read notes and answer questions about their content.
+Always respond in the same language the user uses.
 ```
+
+**RAG_PROMPT**(在 BASE 基础上追加 RAG 工作流引导):
+
+```
+When answering knowledge base questions, follow this workflow:
+1. Call search_vault to find relevant notes. Results include an index number for citation.
+2. Call read_note for promising results to read the full content.
+3. Answer the question and cite sources using [1], [2] format matching the index numbers from search results.
+4. If search returns no results, tell the user honestly.
+```
+
+**toMessages(intent)**:`intent='rag'` 返回 RAG_PROMPT,`intent='direct'` 返回 BASE_PROMPT。失败降级为 `intent='rag'`(宁可多搜不漏)。
 
 ---
 
@@ -174,7 +188,7 @@ sequenceDiagram
 ```
 
 **设计决策**:
-- 编号 `[1][2]` — LLM 回答时可引用,但不做正式引用标记系统(留给 P-W3)
+- 编号 `[1][2]` — 与 search_vault 返回的 `index` 字段对应,LLM 回答时用 `[1][2]` 格式引用来源
 - 每条结果包含路径 + 内容 — 路径用于标注来源,内容用于生成回答
 - 幂等:多次调用追加,不覆盖
 
@@ -253,18 +267,7 @@ flowchart TB
 
 | 与...的接口 | 方向 | 说明 |
 |---|---|---|
-| [agent-loop](agent-loop.md) | 被依赖 | Agent Loop 调用 ContextManager 管理上下文 |
+| [agent-loop](agent-loop.md) | 被依赖 | Agent Loop 调用 ContextManager 管理上下文 + 传 intent 选提示词 |
 | [chat](chat.md) | 被依赖 | Chat 通过 Agent Loop 间接使用 |
 | [rag/retriever](../rag/retriever.md) | 上游 | 检索结果经 read_note 后注入 |
 | [host/persistence](../host/persistence.md) | 依赖 | session 持久化 |
-
----
-
-## 9. 演进路径
-
-| 阶段 | 能力 | 状态 |
-|---|---|---|
-| 当前 | 基础消息管理 + session 持久化 + Layer 1 截断 | ✅ 已实现 |
-| S-RAG-LOOP | addSearchResults + RAG 系统提示词 | ✅ 已实现(已归档) |
-| P-W3-IMPL | 引用标记格式化 + 滑动窗口(三层压缩 Layer 2) | 待实现 |
-| 远期 | LLM 摘要(三层压缩 Layer 3) + 工具结果字段投影 | 远期 |

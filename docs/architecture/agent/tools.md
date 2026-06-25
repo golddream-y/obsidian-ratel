@@ -97,10 +97,10 @@ interface ToolDefinition {
 | 属性 | 值 |
 |---|---|
 | name | `search_vault` |
-| description | 在知识库中搜索与查询相关的文档。返回文档路径和相关性分数,用 read_note 读取内容。 |
+| description | 在知识库中搜索与查询相关的文档。使用向量 + BM25 混合检索,返回带引用编号的结果,用 read_note 读取内容。 |
 | readOnly | true |
 | 参数 | `query: string`, `topK: number`(默认 5) |
-| 返回 | `[{ docId, score, metadata }]` |
+| 返回 | `[{ docId, score, metadata, index }]` |
 
 **调用路径**:
 
@@ -115,9 +115,11 @@ sequenceDiagram
     AL->>SV: execute({ query, topK })
     SV->>EL: embed(query)
     EL-->>SV: queryVector
-    SV->>WP: vector.search({ queryVector, topK })
+    SV->>WP: hybrid.search({ query, queryVector, topK })
     WP-->>SV: results[]
-    SV-->>AL: [{ docId, score, metadata }]
+    SV->>SV: 加 index 编号(从 1 开始)
+    SV-->>AL: [{ docId, score, metadata, index }]
+    AL->>AL: yield search.result 事件
 ```
 
 ### 4.3 create_note(未来)
@@ -174,12 +176,12 @@ sequenceDiagram
 
 ## 6. 工具分类
 
-| 分类 | 工具 | readOnly | 触发 Hook | 阶段 |
-|---|---|---|---|---|
-| **检索类** | search_vault | ✅ | ❌ | 已实现 |
-| **读取类** | read_note | ✅ | ❌ | 已实现 |
-| **写入类** | create_note, edit_note | ❌ | ✅ | 远期 |
-| **管理类** | list_notes, move_note | ❌ | ✅ | 远期 |
+| 分类 | 工具 | readOnly | 触发 Hook |
+|---|---|---|---|
+| **检索类** | search_vault | ✅ | ❌ |
+| **读取类** | read_note | ✅ | ❌ |
+| **写入类** | create_note, edit_note | ❌ | ✅ |
+| **管理类** | list_notes, move_note | ❌ | ✅ |
 
 ---
 
@@ -188,15 +190,5 @@ sequenceDiagram
 | 与...的接口 | 方向 | 说明 |
 |---|---|---|
 | [agent-loop](agent-loop.md) | 被调用 | Agent Loop 决定何时调哪个工具 |
-| [rag/retriever](../rag/retriever.md) | 依赖 | search_vault 调用检索器 |
+| [rag/retriever](../rag/retriever.md) | 依赖 | search_vault 调用检索器(混合搜索) |
 | [host/obsidian-integration](../host/obsidian-integration.md) | 依赖 | read_note / create_note 调用 Vault API |
-
----
-
-## 8. 演进路径
-
-| 阶段 | 能力 | 状态 |
-|---|---|---|
-| 当前 | read_note + 基础 ToolRegistry | ✅ 已实现 |
-| S-RAG-LOOP | search_vault | ✅ 已实现(已归档) |
-| 远期 | create_note + edit_note + Hook 治理 | 远期 |

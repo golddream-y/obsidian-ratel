@@ -323,46 +323,32 @@ graph TB
 
 ---
 
-## 5. 逻辑执行边界
+## 5. RAG 链路步骤
 
-> 记录 RAG 链路各步骤的实现状态和归属,避免重复设计或遗漏。
+> RAG 对话从用户消息到生成回答的完整链路。各步骤的所属模块详见对应架构文档。
 
-| # | 步骤 | 实现状态 | 归属 spec/plan | 说明 |
-|---|------|----------|----------------|------|
-| 1 | 模型自动下载 | ✅ 已实现 | S-RAG-LOOP(已归档) | ModelManager + ModelDownloader,main.ts onLayoutReady 接入 |
-| 2 | 索引自动构建 | ✅ 已实现 | S-RAG-LOOP(已归档) | IndexManager + IndexController + FolderWatcher,main.ts 接入 |
-| 3 | Embedding 注入 | ✅ 已实现 | S-RAG-LOOP(已归档) | EmbeddingLocal.setExtractor(),main.ts onLayoutReady 注入 |
-| 4 | Worker 初始化 | ✅ 已实现 | ADR-002 / 质量修复 | WorkerManager + handler,main.ts 启动;优先 Node Worker Threads,Obsidian 渲染进程不支持时降级 InlineWorker;InlineWorker 复用主线程 VectraStore |
-| 5 | 文档分块 | ✅ 已实现 | S-INIT-INDEX(已归档) | chunker.ts 三级回退 |
-| 6 | 向量存储 | ✅ 已实现 | S-INIT-INDEX(已归档) | VectraStore upsert/search/delete |
-| 7 | search_vault 工具 | ✅ 已实现 | S-RAG-LOOP(已归档) | src/tools/search-vault.ts,返回 docId+score+metadata |
-| 8 | 查询向量化 | ✅ 已实现 | S-RAG-LOOP(已归档) | search_vault 调用 embedding.embed() 主线程执行 |
-| 9 | BM25 检索 | ❌ 未实现 | P-W3-IMPL | Worker handler 无 bm25.search case |
-| 10 | RRF 融合 | ❌ 未实现 | P-W3-IMPL | src/core/rrf.ts 不存在 |
-| 11 | 上下文注入 | ✅ 已实现 | S-RAG-LOOP(已归档) | ContextManager.addSearchResults() |
-| 12 | RAG 系统提示词 | ❌ 未实现 | 待规划 | SYSTEM_PROMPT 不含 RAG 指令 |
-| 13 | 引用标记 | ❌ 未实现 | P-W3-IMPL | |
-| 14 | LLM 调用 | ✅ 已实现 | — | DeepSeekLLM + agentLoop,requestUrl 绕过 CORS |
-| 15 | 流式输出 | ⚠️ 部分实现 | — | requestUrl 返回完整 text 后解析 SSE,非真流式;ChatView 仅处理 message.delta |
-| 16 | 主动智能 | ❌ 未实现 | 远期 | Heartbeat + 分析 + 推荐 |
-| 17 | 增量索引消费 | ✅ 已实现 | 质量修复 | enqueue 自动触发 scheduleFlush |
-| 18 | 上下文压缩 | ⚠️ 部分实现 | 质量修复 | Layer 1 截断已实现(maxHistoryTokens=8000);Layer 2/3 未实现 |
-| 19 | 工具调用 UI 可见 | ✅ 已实现 | 质量修复 | ChatView 处理 tool.call/tool.result 事件,显示工具名+结果摘要 |
-| 20 | 取消机制 | ✅ 已实现 | 质量修复 | agentLoop 接受 AbortSignal,3 个检查点(循环开始/流式输出中/流式输出后);ChatView Stop 按钮触发 abort |
-
-### 执行优先级
-
-```
-已完成                      P-W3-IMPL (后续)         待规划
-──────────                  ────────────────         ──────────
-#1-4 main.ts 接入层         #9 BM25 检索              #12 RAG 提示词
-#7-8 search_vault           #10 RRF 融合              #18 上下文压缩
-#11 上下文注入              #13 引用标记               #20 取消机制
-#17 增量索引消费
-#19 工具调用 UI 可见
-质量修复(fetch→requestUrl,
-增量队列消费,事件名统一)
-```
+| # | 步骤 | 模块 | 说明 |
+|---|------|------|------|
+| 1 | 模型管理 | [llm/model-management](llm/model-management.md) | ModelManager + 自动下载,main.ts onLayoutReady 接入 |
+| 2 | 索引构建 | [rag/vector-index](rag/vector-index.md) | IndexManager + IndexController + FolderWatcher,全量 + 增量 |
+| 3 | Embedding 注入 | [llm/model-management](llm/model-management.md) | EmbeddingLocal.setExtractor(),主线程 + Worker 共用 |
+| 4 | Worker 通信 | [host/worker-protocol](host/worker-protocol.md) | WorkerManager + handler,优先 Node Worker Threads,降级 InlineWorker |
+| 5 | 文档分块 | [rag/vector-index](rag/vector-index.md) | chunker.ts 三级回退(标题→段落→句子) |
+| 6 | 向量存储 | [rag/vector-index](rag/vector-index.md) | VectraStore upsert / hybridSearch / delete |
+| 7 | 意图分类 | [agent/agent-loop](agent/agent-loop.md) | 一次快速 LLM 调用,判断 'rag' \| 'direct' |
+| 8 | 动态提示词 | [agent/context-manager](agent/context-manager.md) | 按意图选 BASE_PROMPT 或 RAG_PROMPT |
+| 9 | 混合检索 | [rag/retriever](rag/retriever.md) | search_vault 调 vectra isBm25 混合搜索,返回带 index 编号 |
+| 10 | 多查询融合 | [rag/retriever](rag/retriever.md) | Query Rewrite 生成变体 + RRF 融合多份结果 |
+| 11 | 重排 | [rag/retriever](rag/retriever.md) | Reranker 百炼 API 精排(可选,钥匙串有 key 时启用) |
+| 12 | 上下文注入 | [agent/context-manager](agent/context-manager.md) | addSearchResults 注入 read_note 读取的内容 |
+| 13 | 引用标记 | [agent/context-manager](agent/context-manager.md) | LLM 用 [1][2] 引用 search_vault 返回的 index |
+| 14 | LLM 调用 | [agent/agent-loop](agent/agent-loop.md) | LLMClient.chat + requestUrl 绕过 CORS |
+| 15 | 流式输出 | [llm/streaming](llm/streaming.md) | SSE 解析,ChatView 逐字渲染 |
+| 16 | 搜索结果卡片 | [agent/chat](agent/chat.md) | search.result 事件 → ChatView 渲染编号+路径+分数 |
+| 17 | 上下文压缩 | [agent/context-manager](agent/context-manager.md) | 三层:截断 → 滑动窗口 → LLM 摘要 |
+| 18 | 工具调用 UI | [agent/chat](agent/chat.md) | tool.call / tool.result 事件,显示工具名+结果摘要 |
+| 19 | 取消机制 | [agent/agent-loop](agent/agent-loop.md) | AbortSignal,3 个检查点 |
+| 20 | 主动智能 | 远期 | Heartbeat + 分析 + 推荐 |
 
 ---
 
