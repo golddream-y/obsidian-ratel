@@ -169,23 +169,26 @@ export function createActionButton(
     onClick: () => Promise<void>,
     icon?: string,
 ): HTMLButtonElement {
-    const btn = container.createEl('button', { cls: 'diag-btn', text });
+    const btn = container.createEl('button', { cls: 'diag-btn' });
+    // 关键路径:图标 span 与文本 span 分开,避免重置 textContent 时把 SVG 抹掉。
+    let iconSpan: HTMLSpanElement | null = null;
     if (icon) {
-        setIcon(btn.createSpan({ cls: 'diag-btn-icon' }), icon);
+        iconSpan = btn.createSpan({ cls: 'diag-btn-icon' });
+        setIcon(iconSpan, icon);
     }
+    const textSpan = btn.createSpan({ cls: 'diag-btn-text', text });
 
     btn.addEventListener('click', async () => {
         if (btn.disabled) return;
         btn.disabled = true;
         btn.addClass('diag-btn-loading');
-        const originalText = btn.textContent;
-        btn.textContent = '执行中...';
+        textSpan.textContent = '执行中...';
         try {
             await onClick();
         } finally {
             btn.disabled = false;
             btn.removeClass('diag-btn-loading');
-            btn.textContent = originalText ?? text;
+            textSpan.textContent = text;
         }
     });
 
