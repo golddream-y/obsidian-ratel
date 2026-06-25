@@ -39,7 +39,7 @@
 | P-INIT-INDEX | [2026-06-15-ratel-init-index.md](plans/2026-06-15-ratel-init-index.md) | ✅ Completed | feat/init-index | 2026-06-15 | 2026-06-15 | S-INIT-INDEX |
 | P-DIAG | [2026-06-25-diagnostics-page.md](plans/2026-06-25-diagnostics-page.md) | ✅ Completed | main | 2026-06-25 | 2026-06-25 | S-DIAG |
 | P-FEEDBACK | [2026-06-26-ratel-user-feedback.md](plans/2026-06-26-ratel-user-feedback.md) | ✅ Completed | main | 2026-06-24 | 2026-06-24 | S-FEEDBACK |
-| P-KEYCHAIN | [2026-06-26-ratel-keychain.md](plans/2026-06-26-ratel-keychain.md) | ⏳ Pending | — | — | — | S-KEYCHAIN |
+| P-KEYCHAIN | [2026-06-26-ratel-keychain.md](plans/2026-06-26-ratel-keychain.md) | ✅ Completed | main | 2026-06-26 | 2026-06-26 | S-KEYCHAIN |
 
 ---
 
