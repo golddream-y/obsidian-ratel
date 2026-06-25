@@ -19,6 +19,12 @@
 		toolCalls?: ToolCallEntry[];
 		chatError?: DiagError;
 		cancelled?: boolean;
+		searchResults?: Array<{
+			docId: string;
+			score: number;
+			path: string;
+			index: number;
+		}>;
 	}
 
 	export let plugin: RatelVaultPlugin;
@@ -126,6 +132,10 @@
 						}
 						messages = [...messages];
 						break;
+					case 'search.result':
+						assistantMsg.searchResults = event.payload.results;
+						messages = [...messages];
+						break;
 					case 'message.end':
 						break;
 					case 'error':
@@ -195,6 +205,18 @@
 								{:else if tc.result != null}
 									<span class="ratel-tool-summary">{formatToolResult(tc.result)}</span>
 								{/if}
+							</div>
+						{/each}
+					</div>
+				{/if}
+				{#if msg.searchResults && msg.searchResults.length > 0}
+					<div class="ratel-search-results">
+						<div class="ratel-search-header">🔍 搜索结果</div>
+						{#each msg.searchResults as r}
+							<div class="ratel-search-item">
+								<span class="ratel-search-index">[{r.index}]</span>
+								<span class="ratel-search-path">{r.path}</span>
+								<span class="ratel-search-score">{r.score.toFixed(3)}</span>
 							</div>
 						{/each}
 					</div>
@@ -429,5 +451,48 @@
 	.ratel-stop-btn {
 		background: var(--text-error, #e53935) !important;
 		color: var(--text-on-accent, #fff) !important;
+	}
+
+	.ratel-search-results {
+		margin-bottom: 8px;
+		padding: 8px 10px;
+		border-radius: 6px;
+		background: var(--background-modifier-form-field);
+		font-size: 0.85em;
+	}
+
+	.ratel-search-header {
+		font-weight: 600;
+		margin-bottom: 4px;
+		opacity: 0.8;
+	}
+
+	.ratel-search-item {
+		display: flex;
+		gap: 6px;
+		align-items: center;
+		padding: 2px 0;
+	}
+
+	.ratel-search-index {
+		font-family: var(--font-monospace);
+		font-weight: 600;
+		color: var(--interactive-accent);
+		min-width: 24px;
+	}
+
+	.ratel-search-path {
+		flex: 1;
+		font-family: var(--font-monospace);
+		font-size: 0.9em;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.ratel-search-score {
+		font-family: var(--font-monospace);
+		color: var(--text-muted);
+		font-size: 0.85em;
 	}
 </style>
