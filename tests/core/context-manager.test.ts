@@ -244,4 +244,44 @@ describe('ContextManager', () => {
 		// 关键路径:搜索结果内容完整保留,不受历史池预算限制
 		expect(msgs[1]!.content).toContain('X'.repeat(500));
 	});
+
+	// ==================== 动态提示词(W3) ====================
+
+	it('toMessages(direct) - 返回 BASE_PROMPT(不含 RAG 工作流指令)', async () => {
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence);
+		await ctx.load('s1');
+		ctx.addUserMessage('你好');
+
+		const msgs = ctx.toMessages('direct');
+		expect(msgs[0]!.role).toBe('system');
+		// 关键路径:direct 模式不含 RAG workflow 指令
+		expect(msgs[0]!.content).not.toContain('search_vault');
+		expect(msgs[0]!.content).toContain('Ratel');
+	});
+
+	it('toMessages(rag) - 返回 RAG_PROMPT(含 search_vault 工作流指令)', async () => {
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence);
+		await ctx.load('s1');
+		ctx.addUserMessage('我的笔记里有什么?');
+
+		const msgs = ctx.toMessages('rag');
+		expect(msgs[0]!.role).toBe('system');
+		// 关键路径:rag 模式含 search_vault + read_note + 引用 [1][2] 指令
+		expect(msgs[0]!.content).toContain('search_vault');
+		expect(msgs[0]!.content).toContain('read_note');
+		expect(msgs[0]!.content).toContain('[1]');
+	});
+
+	it('toMessages(默认) - 不传 intent 时降级为 direct', async () => {
+		// 关键路径:向后兼容,老调用方不传 intent 仍能工作
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence);
+		await ctx.load('s1');
+		ctx.addUserMessage('hi');
+
+		const msgs = ctx.toMessages();
+		expect(msgs[0]!.content).not.toContain('search_vault');
+	});
 });
