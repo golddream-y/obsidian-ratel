@@ -40,6 +40,8 @@ export type AgentEvent =
 					path: string;
 					index: number;
 				}>;
+				// 关键路径:W4 新增 — 标识是否经过 Rerank 精排,供 ChatView 显示标记。
+				reranked: boolean;
 			};
 		}
 	| { type: 'subagent.spawn'; payload: { role: string; task: string } }
