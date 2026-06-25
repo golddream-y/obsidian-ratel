@@ -25,6 +25,8 @@
 			path: string;
 			index: number;
 		}>;
+		// 关键路径:W4 新增 — 标识搜索结果是否经过 Rerank 精排,供卡片显示标记。
+		searchReranked?: boolean;
 	}
 
 	export let plugin: RatelVaultPlugin;
@@ -134,6 +136,7 @@
 						break;
 					case 'search.result':
 						assistantMsg.searchResults = event.payload.results;
+						assistantMsg.searchReranked = event.payload.reranked;
 						messages = [...messages];
 						break;
 					case 'message.end':
@@ -211,7 +214,12 @@
 				{/if}
 				{#if msg.searchResults && msg.searchResults.length > 0}
 					<div class="ratel-search-results">
-						<div class="ratel-search-header">🔍 搜索结果</div>
+						<div class="ratel-search-header">
+							🔍 搜索结果
+							{#if msg.searchReranked}
+								<span class="ratel-search-reranked" title="结果经过 Reranker 精排">✨ 精排</span>
+							{/if}
+						</div>
 						{#each msg.searchResults as r}
 							<div class="ratel-search-item">
 								<span class="ratel-search-index">[{r.index}]</span>
@@ -494,5 +502,15 @@
 		font-family: var(--font-monospace);
 		color: var(--text-muted);
 		font-size: 0.85em;
+	}
+
+	.ratel-search-reranked {
+		margin-left: 6px;
+		padding: 1px 6px;
+		border-radius: 3px;
+		background: var(--interactive-accent);
+		color: var(--text-on-accent);
+		font-size: 0.75em;
+		font-weight: 600;
 	}
 </style>

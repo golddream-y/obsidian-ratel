@@ -27,7 +27,7 @@ function createMockIndexController(): IndexController {
 }
 
 describe('Indexer', () => {
-	it('fullReindex - 调用 indexController.reindex', async () => {
+	it('fullReindex - 委托 reindex - 调用一次且 indexed>0', async () => {
 		const vault = createMockVault();
 		const indexController = createMockIndexController();
 		const indexer = new Indexer({ vault, indexController });
@@ -39,7 +39,7 @@ describe('Indexer', () => {
 		expect(result.indexed).toBeGreaterThan(0);
 	});
 
-	it('indexFile - 读取文件内容 + enqueue upsert', async () => {
+	it('indexFile - 任意路径 - 先读文件后 enqueue upsert', async () => {
 		const vault = createMockVault();
 		const indexController = createMockIndexController();
 		const indexer = new Indexer({ vault, indexController });
@@ -67,7 +67,7 @@ describe('Indexer', () => {
 		expect(indexController.indexManager.enqueue).not.toHaveBeenCalled();
 	});
 
-	it('deleteFile - enqueue delete(不读文件)', async () => {
+	it('deleteFile - 任意路径 - enqueue delete 且不读文件', async () => {
 		const vault = createMockVault();
 		const indexController = createMockIndexController();
 		const indexer = new Indexer({ vault, indexController });
