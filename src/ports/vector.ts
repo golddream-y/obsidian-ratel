@@ -53,6 +53,12 @@ export interface VectorSearchResult {
 	score: number;
 	/** 写入时传入的元数据(包含 path、chunkIndex 等)。 */
 	metadata: Record<string, unknown>;
+	/**
+	 * 引用编号,从 1 开始(W3 新增)。
+	 * search_vault 工具返回时填充,供 LLM 用 [1][2] 引用;
+	 * VectraStore.hybridSearch / Worker 协议层不填(默认 undefined)。
+	 */
+	index?: number;
 }
 
 /**
