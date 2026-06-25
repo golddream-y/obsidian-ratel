@@ -5,10 +5,9 @@
  * @depends obsidian, settings, types, core/*, adapters/*, ports/*, worker/*, tools/*, ui/*
  */
 
-import { FileSystemAdapter, Notice, Plugin } from 'obsidian';
+import { FileSystemAdapter, Plugin } from 'obsidian';
 import { type RatelVaultSettings, DEFAULT_SETTINGS, RatelVaultSettingTab } from './settings';
 
-type FeatureExtractor = (texts: string[], options: Record<string, unknown>) => Promise<{ tolist: () => number[][] }>;
 import type { AgentEvent } from './types';
 import { agentLoop } from './core/agent-loop';
 import { ContextManager } from './core/context-manager';
@@ -18,8 +17,8 @@ import { ObsidianVault } from './adapters/obsidian-vault';
 import { PersistenceJson } from './adapters/persistence-json';
 import { DeepSeekLLM } from './adapters/llm-deepseek';
 import type { EmbeddingPort } from './ports/embedding';
-import { EmbeddingLocal } from './adapters/embedding-local';
 import { EmbeddingApi } from './adapters/embedding-api';
+import { EmbeddingLocal } from './adapters/embedding-local';
 import { VectraStore } from './adapters/vector-vectra';
 import type { EmbeddingsModel, EmbeddingsResponse } from 'vectra';
 import { WorkerManager } from './worker/manager';
@@ -28,9 +27,14 @@ import { createReadNoteTool } from './tools/read-note';
 import { createSearchVaultTool } from './tools/search-vault';
 import { ModelManager } from './core/model-manager';
 import { IndexController } from './core/index-controller';
-import { ModelDownloader } from './core/model-downloader';
+import { FeedbackController } from './core/feedback-controller';
 import type { IndexBackend } from './core/index-manager';
+import { devLogger } from './logging/dev-logger';
+import { UserNotice } from './user-feedback/user-notice';
+import { UserStatus } from './user-feedback/user-status';
+import { isSearchReady } from './ui/chat-send-gate';
 import { ChatView, VIEW_TYPE_CHAT } from './ui/ChatView';
+import { get } from 'svelte/store';
 import { ensurePluginGitignore } from './utils/gitignore-writer';
 import path from 'path';
 
@@ -59,6 +63,10 @@ export default class RatelVaultPlugin extends Plugin {
 	private indexDir!: string;
 	modelManager!: ModelManager;
 	indexController!: IndexController;
+	userNotice = new UserNotice();
+	userStatus = new UserStatus();
+	private feedbackController?: FeedbackController;
+	private workerMode: 'thread' | 'inline' = 'inline';
 
 	/**
 	 * Obsidian 插件生命周期入口。
@@ -104,8 +112,13 @@ export default class RatelVaultPlugin extends Plugin {
 		this.workerManager = this.createWorkerManager();
 
 		// ==================== 模型与索引 ====================
-		const modelBackend = new ModelDownloader();
-		this.modelManager = new ModelManager(modelBackend);
+		// 关键路径:本地模型缓存放到插件目录,与 index 同级,便于随插件清理。
+		// onnxruntime-web 使用 wasm bundle 入口(JS wrapper 内联),WASM 二进制文件
+		// (ort-wasm-simd-threaded.wasm)由 esbuild 复制到 dist/,部署时与 main.js 一起
+		// 放到插件目录(pluginDir)。用 pluginDir 定位而不是 __dirname,因为 Obsidian/Electron
+		// 环境中 __dirname 可能指向 electron.asar 内部,导致 readFile 报 Invalid package 错误。
+		const wasmPath = path.join(pluginDir, 'ort-wasm-simd-threaded.wasm');
+		this.modelManager = new ModelManager(path.join(pluginDir, 'models'), wasmPath);
 
 		const indexBackend: IndexBackend = {
 			fullReindex: async () => {
@@ -152,7 +165,11 @@ export default class RatelVaultPlugin extends Plugin {
 		// ==================== 工具与钩子 ====================
 		this.tools = new ToolRegistry();
 		this.tools.register(createReadNoteTool(this.vault));
-		this.tools.register(createSearchVaultTool(this.embedding, this.workerManager));
+		this.tools.register(
+			createSearchVaultTool(this.embedding, this.workerManager, () =>
+				isSearchReady(get(this.userStatus.statusBar$)),
+			),
+		);
 		this.hooks = new HookRegistry();
 
 		// ==================== 视图与命令 ====================
@@ -173,6 +190,9 @@ export default class RatelVaultPlugin extends Plugin {
 		});
 
 		// 命令:索引状态 — 通过 Worker 拉取,UI 通过 Notice 提示。
+		// 关键路径:这是用户**主动命令**触发的反馈,Toast 是合理的"命令结果通知",
+		// 与"系统事件提示"(模型下载/索引完成)语义不同,保留 userNotice.toast 形式。
+		// 实时索引状态由 FeedbackController 持续推送到 StatusBar,无需在此命令中重复同步。
 		this.addCommand({
 			id: 'index-status',
 			name: 'Show index status',
@@ -182,9 +202,11 @@ export default class RatelVaultPlugin extends Plugin {
 					payload: {},
 				});
 				if (response.type === 'index.status.result') {
-					new Notice(`Index: ${response.payload.totalDocs} docs, last: ${new Date(response.payload.lastIndexTime).toLocaleString()}`);
+					this.userNotice.toast(
+						`Index: ${response.payload.totalDocs} docs, last: ${new Date(response.payload.lastIndexTime).toLocaleString()}`,
+					);
 				} else {
-					new Notice('Index not available yet');
+					this.userNotice.toast('Index not available yet');
 				}
 			},
 		});
@@ -192,12 +214,28 @@ export default class RatelVaultPlugin extends Plugin {
 		// 设置面板
 		this.addSettingTab(new RatelVaultSettingTab(this.app, this));
 
+		devLogger.setDebugEnabled(this.settings.debugLog);
+		this.feedbackController = new FeedbackController({
+			modelStatus$: this.modelManager.status$,
+			indexStatus$: this.indexController.indexManager.status$,
+			userNotice: this.userNotice,
+			userStatus: this.userStatus,
+			getEmbeddingReady: () => !(this.embedding instanceof EmbeddingLocal) || this.embedding.isReady,
+			getWorkerMode: () => this.workerMode,
+			getSettings: () => this.settings,
+			onFullIndexComplete: (indexed, errors) => {
+				const suffix = errors > 0 ? `, ${errors} 个失败` : '';
+				this.userNotice.toast(`Ratel: 索引完成 — ${indexed} 个文档已索引${suffix}`);
+			},
+		});
+		this.feedbackController.start();
+
 		// 关键路径:Obsidian UI 布局就绪后再启动模型下载与索引,避免阻塞 onload。
 		this.app.workspace.onLayoutReady(() => {
 			// 关键路径:onLayoutReady 失败会更新 status$ = Failed,
 			// 显式 catch 仅兜底日志,避免 void 包装吞错(原版:下载失败静默无提示)。
 			this.onLayoutReady().catch((err) => {
-				console.error('Ratel onLayoutReady 失败', err);
+				devLogger.error('main', 'onLayoutReady 失败', err);
 			});
 		});
 	}
@@ -206,33 +244,56 @@ export default class RatelVaultPlugin extends Plugin {
 	 * 布局就绪后启动模型下载与自动索引。
 	 *
 	 * 关键路径:
-	 * - S-RAG-LOOP 仅支持本地 Embedding;API 模式跳过索引,避免 Worker 内发 HTTP。
-	 * - 模型下载完成后把 extractor 注入 EmbeddingLocal,主线程与 Worker 才能生成向量。
+	 * - 本地 Embedding 模型从 ModelScope 下载 ONNX + vocab.txt(约 24MB)。
+	 * - 下载期间通过 Notice 实时显示进度,避免用户误以为插件无响应。
+	 * - 模型就绪后把 EmbeddingOnnx 同时设给主线程 embedding 与 InlineWorker 的 VectraStore。
 	 */
 	async onLayoutReady(): Promise<void> {
-		// S-RAG-LOOP 仅支持本地 Embedding;API 模式跳过索引,避免 Worker 内发 HTTP。
+		// 关键路径:API embedding 模式不需要本地模型,也不触发自动索引;用户提示由 FeedbackController 处理。
 		if (this.settings.embedProvider !== 'local') {
-			new Notice('Ratel: API embedding 模式暂不支持自动索引,请切换到本地模型');
 			return;
 		}
 
+		// 关键路径:全量索引进度由 Worker 回调驱动;FeedbackController 仅更新 statusBar,不弹 progress Notice。
+		const indexProgressRef: {
+			handle: ReturnType<UserNotice['toastProgress']> | null;
+		} = { handle: null };
+		this.workerManager.setProgressCallback((done, total) => {
+			const message = `Ratel: 正在索引... ${done}/${total} 个文件`;
+			if (!indexProgressRef.handle) {
+				indexProgressRef.handle = this.userNotice.toastProgress(message);
+			} else {
+				indexProgressRef.handle.update(message);
+			}
+		});
+
 		try {
-			await this.modelManager.download(this.settings.embedLocalModel);
-			const extractor = this.modelManager.getExtractor?.();
-			if (extractor) {
+			await this.modelManager.download();
+
+			const embedding = this.modelManager.getEmbedding();
+			if (embedding) {
+				// 关键路径:把 ONNX 适配器注入占位器,search-vault 等工具透明可用。
 				if (this.embedding instanceof EmbeddingLocal) {
-					this.embedding.setExtractor(extractor as Parameters<EmbeddingLocal['setExtractor']>[0]);
+					this.embedding.setEmbedding(embedding);
 				}
 				// 关键路径:InlineWorker 在主线程运行,模型就绪后必须注入带 embeddings 的 VectraStore。
 				if (this.inlineWorker) {
-					this.vectraStore = this.createEmbeddingsVectraStore(extractor);
+					this.vectraStore = this.createEmbeddingsVectraStore(embedding);
 					this.inlineWorker.initWithStore(this.vectraStore);
 				}
 			}
-			await this.indexController.onLayoutReady();
+
+			const indexResult = await this.indexController.onLayoutReady();
+			indexProgressRef.handle?.hide();
+			indexProgressRef.handle = null;
+			if (indexResult) {
+				this.feedbackController?.notifyFullIndexComplete(indexResult.indexed, indexResult.errors);
+			}
 		} catch (err) {
+			indexProgressRef.handle?.hide();
 			const message = err instanceof Error ? err.message : String(err);
-			new Notice(`Ratel 模型下载失败: ${message}`);
+			devLogger.error('main', 'onLayoutReady 失败', err);
+			this.userNotice.toastError(`Ratel 错误: ${message}`);
 		}
 	}
 
@@ -255,13 +316,11 @@ export default class RatelVaultPlugin extends Plugin {
 	 * 重建 Embedding 适配器(按当前 `embedProvider` 二选一)。
 	 *
 	 * 关键路径:同 `rebuildLLM`,embedProvider 切换或 API 类字段改后必须重建。
+	 * 本地模式使用占位适配器,真实 EmbeddingOnnx 在 ModelManager 下载完成后注入。
 	 */
 	rebuildEmbeddingAdapter(): void {
 		if (this.settings.embedProvider === 'local') {
-			this.embedding = new EmbeddingLocal(
-				this.settings.embedLocalModel,
-				this.settings.embedLocalDimensions,
-			);
+			this.embedding = new EmbeddingLocal();
 		} else {
 			this.embedding = new EmbeddingApi({
 				apiBase: this.settings.embedApiBase,
@@ -279,12 +338,14 @@ export default class RatelVaultPlugin extends Plugin {
 	 * 否则下次 onload 会创建第二个 Worker 进程,最终 OOM。
 	 */
 	onunload() {
+		this.feedbackController?.destroy();
+		this.userStatus.reset();
 		// 关键路径:先停 IndexController 释放 vault 事件订阅与 watcher,再终止 Worker。
 		this.indexController.destroy();
 		this.workerManager.destroy();
 		// 关键路径:vectra 内部句柄释放,否则 reload 后会泄漏旧 index 引用。
 		void this.vectraStore;
-		console.log('Ratel unloaded');
+		devLogger.info('main', 'Ratel unloaded');
 	}
 
 	/**
@@ -337,23 +398,23 @@ export default class RatelVaultPlugin extends Plugin {
 	 * - InlineWorker 复用主线程 VectraStore,避免双写;但初始化延迟到模型下载完成后。
 	 */
 	private createWorkerManager(): WorkerManager {
+		this.workerMode = 'inline';
 		this.inlineWorker = new InlineWorker();
 		return new WorkerManager(this.inlineWorker);
 	}
 
 	/**
-	 * 用已下载的 extractor 构造带 embeddings 的 VectraStore。
+	 * 用已加载的本地 Embedding 适配器构造带 embeddings 的 VectraStore。
 	 *
-	 * 关键路径:worker/index.ts 在 Worker 线程内用同样方式包装 extractor;
-	 * 主线程内复用该逻辑,保证 InlineWorker 与 Node Worker 行为一致。
+	 * 关键路径:vectra 需要 EmbeddingsModel 接口(createEmbeddings),本方法把 EmbeddingPort 包装进去。
 	 */
-	private createEmbeddingsVectraStore(extractor: unknown): VectraStore {
+	private createEmbeddingsVectraStore(embedding: EmbeddingPort): VectraStore {
 		const embeddings: EmbeddingsModel = {
 			maxTokens: 8192,
 			async createEmbeddings(inputs: string | string[]): Promise<EmbeddingsResponse> {
 				const arr = Array.isArray(inputs) ? inputs : [inputs];
-				const output = await (extractor as FeatureExtractor)(arr, { pooling: 'mean', normalize: true });
-				return { status: 'success', output: output.tolist() };
+				const output = await embedding.embed(arr);
+				return { status: 'success', output };
 			},
 		};
 		return new VectraStore(this.indexDir, { embeddings, autoInit: true });

@@ -124,7 +124,8 @@ export async function* agentLoop(
 				result = await tools.execute(toolCall);
 			} catch (err) {
 				const message = err instanceof Error ? err.message : String(err);
-				yield { type: 'error', payload: { code: 'TOOL_ERROR', message } };
+				const code = (err as Error & { code?: string }).code ?? 'TOOL_ERROR';
+				yield { type: 'error', payload: { code, message } };
 				result = `Error: ${message}`;
 			}
 

@@ -37,7 +37,7 @@ describe('createSearchVaultTool', () => {
 			] as VectorSearchResult[],
 		});
 
-		const tool = createSearchVaultTool(embedding, worker);
+		const tool = createSearchVaultTool(embedding, worker, () => true);
 		const result = await tool.execute({ query: '技术栈', topK: 5 });
 
 		expect(embedding.embed).toHaveBeenCalledWith(['技术栈']);
@@ -58,7 +58,7 @@ describe('createSearchVaultTool', () => {
 			payload: [] as VectorSearchResult[],
 		});
 
-		const tool = createSearchVaultTool(embedding, worker);
+		const tool = createSearchVaultTool(embedding, worker, () => true);
 		const result = await tool.execute({ query: '不存在', topK: 3 });
 
 		expect(result).toEqual([]);
@@ -72,7 +72,7 @@ describe('createSearchVaultTool', () => {
 			payload: { code: 'WORKER_ERROR', message: 'boom' },
 		});
 
-		const tool = createSearchVaultTool(embedding, worker);
+		const tool = createSearchVaultTool(embedding, worker, () => true);
 		await expect(tool.execute({ query: '技术栈' })).rejects.toThrow('Unexpected worker response type: error');
 	});
 
@@ -84,7 +84,7 @@ describe('createSearchVaultTool', () => {
 			payload: [] as VectorSearchResult[],
 		});
 
-		const tool = createSearchVaultTool(embedding, worker);
+		const tool = createSearchVaultTool(embedding, worker, () => true);
 		await tool.execute({ query: '技术栈' });
 
 		expect(worker.request).toHaveBeenCalledWith({
@@ -96,7 +96,28 @@ describe('createSearchVaultTool', () => {
 	it('search_vault - query 非字符串 - 抛错', async () => {
 		const embedding = createMockEmbedding();
 		const worker = createMockWorkerManager();
-		const tool = createSearchVaultTool(embedding, worker);
+		const tool = createSearchVaultTool(embedding, worker, () => true);
 		await expect(tool.execute({ query: 123 })).rejects.toThrow('search_vault 参数 query 必须是有效字符串');
+	});
+
+	// 关键路径:符合 S-FEEDBACK 验收标准 — 检索未就绪时抛 INDEX_NOT_READY,供 ChatView 在工具行 failed 展示。
+	it('search_vault - 检索未就绪 - 抛 INDEX_NOT_READY', async () => {
+		const embedding = createMockEmbedding();
+		const worker = createMockWorkerManager();
+		const tool = createSearchVaultTool(embedding, worker, () => false);
+
+		let caught: (Error & { code?: string }) | null = null;
+		try {
+			await tool.execute({ query: '技术栈' });
+		} catch (err) {
+			caught = err as Error & { code?: string };
+		}
+
+		expect(caught).not.toBeNull();
+		expect(caught?.code).toBe('INDEX_NOT_READY');
+		expect(caught?.message).toContain('尚未就绪');
+		// 关键路径:未就绪时不调 embedding/worker,避免在不可用阶段浪费算力。
+		expect(embedding.embed).not.toHaveBeenCalled();
+		expect(worker.request).not.toHaveBeenCalled();
 	});
 });

@@ -12,6 +12,7 @@
  */
 
 import { writable, get } from 'svelte/store';
+import { devLogger } from '../logging/dev-logger';
 
 /** 索引状态机(9 态)。 */
 export type IndexStatus =
@@ -47,7 +48,7 @@ export class IndexManager {
     constructor(private backend: IndexBackend) {}
 
     /** 启动期调用 — 全量扫一遍 + 状态 Init → Ready。 */
-    async onLayoutReady(): Promise<void> {
+    async onLayoutReady(): Promise<{ indexed: number; errors: number } | null> {
         this.status$.set({ state: 'Init' });
         try {
             const result = await this.backend.fullReindex();
@@ -56,8 +57,11 @@ export class IndexManager {
                 totalDocs: result.indexed,
                 lastIndexTime: Date.now(),
             });
+            return result;
         } catch (err) {
             this.status$.set({ state: 'Failed', reason: String(err) });
+			devLogger.error('index', '全量索引失败', err);
+            return null;
         }
     }
 

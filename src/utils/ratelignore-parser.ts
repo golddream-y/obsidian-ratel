@@ -13,6 +13,7 @@
 import fs from 'fs';
 import path from 'path';
 import ignore from 'ignore';
+import { devLogger } from '../logging/dev-logger';
 
 const DEFAULT_RATELIGNORE = `.obsidian/
 .trash/
@@ -37,7 +38,7 @@ export class Ratelignore {
                 this.ig.add(content);
             } catch (err) {
                 // 关键路径:语法错降级到默认规则 + 警告,不让索引挂。
-                console.warn('[Ratelignore] 解析失败,使用默认规则:', err);
+                devLogger.warn('vault', 'Ratelignore 解析失败,使用默认规则', err);
             }
         }
     }

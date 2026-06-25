@@ -7,6 +7,12 @@
 
 import { App, PluginSettingTab, Setting } from 'obsidian';
 import RatelVaultPlugin from './main';
+import { createTabBar } from './ui/diagnostics/tab-bar';
+import { renderEmbeddingTest } from './ui/diagnostics/embedding-test';
+import { renderLLMTest } from './ui/diagnostics/llm-test';
+import { renderRerankPlaceholder } from './ui/diagnostics/rerank-placeholder';
+import { ensureDiagStyles } from './ui/diagnostics/diag-utils';
+import { devLogger } from './logging/dev-logger';
 
 /**
  * 全部用户可配置项。
@@ -54,6 +60,9 @@ export interface RatelVaultSettings {
 	// Link Suggestions
 	autoSuggestLinks: boolean;
 	linkConfidenceThreshold: number;
+
+	// Developer
+	debugLog: boolean;
 }
 
 /**
@@ -85,19 +94,18 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 	autoIndex: true,
 	// 关键路径:索引暂停默认关闭,起飞期 IndexManager 状态 = Init → Ready,正常消费队列。
 	indexPaused: false,
-	// 关键路径:默认激活 bge-small-zh-v1.5(~90MB,90% 用户零感知下载)。
+	// 关键路径:默认激活 bge-small-zh-v1.5(ONNX 量化模型约 24MB,多数用户零感知下载)。
 	embedModelActive: 'Xenova/bge-small-zh-v1.5',
+	// 关键路径:本地模式仅内置 bge-small-zh-v1.5,ONNX 量化模型约 24MB;其他模型走 API 配置。
 	embedAvailableModels: [
-		{ id: 'Xenova/bge-small-zh-v1.5', sizeBytes: 90 * 1024 * 1024, dimensions: 512, recommended: true },
-		{ id: 'Xenova/bge-base-zh-v1.5', sizeBytes: 210 * 1024 * 1024, dimensions: 768, recommended: false },
-		{ id: 'Xenova/bge-large-zh-v1.5', sizeBytes: 650 * 1024 * 1024, dimensions: 1024, recommended: false },
-		{ id: 'BAAI/bge-m3', sizeBytes: 600 * 1024 * 1024, dimensions: 1024, recommended: false },
-		{ id: 'Xenova/all-MiniLM-L6-v2', sizeBytes: 25 * 1024 * 1024, dimensions: 384, recommended: false },
+		{ id: 'Xenova/bge-small-zh-v1.5', sizeBytes: 24 * 1024 * 1024, dimensions: 512, recommended: true },
 	],
 	embedDownloadedModels: [],
 
 	autoSuggestLinks: true,
 	linkConfidenceThreshold: 0.75,
+
+	debugLog: false,
 };
 
 /**
@@ -121,11 +129,50 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 	 *
 	 * 关键路径:每次 Provider 切换会再调一次 `display()`,
 	 * 整体清空再重建,保证字段组互斥显示(local / api 二选一)。
+	 *
+	 * 面板分为两个主 Tab:
+	 * - 「常规设置」:所有配置项(原有内容)
+	 * - 「诊断测试」:Embedding / LLM / Rerank 调试工具
 	 */
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
 
+		ensureDiagStyles();
+
+		// 主 Tab 栏
+		const mainTabBar = containerEl.createDiv({ cls: 'diag-tabs' });
+		const mainContent = containerEl.createDiv();
+
+		const settingsBtn = mainTabBar.createEl('button', { cls: 'diag-tab diag-tab-active', text: '常规设置' });
+		const diagBtn = mainTabBar.createEl('button', { cls: 'diag-tab', text: '诊断测试' });
+
+		const activateMain = (which: 'settings' | 'diag') => {
+			mainContent.empty();
+			if (which === 'settings') {
+				settingsBtn.addClass('diag-tab-active');
+				diagBtn.removeClass('diag-tab-active');
+				this.renderSettings(mainContent);
+			} else {
+				diagBtn.addClass('diag-tab-active');
+				settingsBtn.removeClass('diag-tab-active');
+				this.renderDiagnostics(mainContent);
+			}
+		};
+
+		settingsBtn.addEventListener('click', () => activateMain('settings'));
+		diagBtn.addEventListener('click', () => activateMain('diag'));
+
+		activateMain('settings');
+	}
+
+	/**
+	 * 渲染常规设置面板(原有配置项)。
+	 *
+	 * 关键路径:display() 中切到"常规设置"Tab 时调用;
+	 * Provider 切换触发的 display() 重入也会回到这里。
+	 */
+	private renderSettings(containerEl: HTMLElement): void {
 		// ==================== Chat ====================
 		containerEl.createEl('h2', { text: 'Chat Model' });
 
@@ -199,18 +246,11 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 		if (this.plugin.settings.embedProvider === 'local') {
 			new Setting(containerEl)
 				.setName('Model')
-				.setDesc('Local ONNX model identifier (from HuggingFace Xenova/ namespace)')
-				.addText((text) =>
-					text
-						.setPlaceholder('Xenova/bge-small-zh-v1.5')
-						.setValue(this.plugin.settings.embedLocalModel)
-						.onChange(async (value) => {
-							this.plugin.settings.embedLocalModel = value;
-							await this.plugin.saveSettings();
-							// 关键路径:换本地模型需重建 Embedding 适配器,新模型才被加载。
-							this.plugin.rebuildEmbeddingAdapter();
-						}),
-				);
+				.setDesc('本地默认模型为 bge-small-zh-v1.5,首次启用时自动从 ModelScope 下载 ONNX 权重与词表。')
+				.addText((text) => {
+					// 关键路径:当前仅内置一个本地模型,输入框只读展示,避免用户误改为未实现的模型。
+					text.setValue(this.plugin.settings.embedLocalModel).setDisabled(true);
+				});
 		} else {
 			new Setting(containerEl)
 				.setName('API Base URL')
@@ -398,5 +438,49 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					}),
 			);
+
+		// ==================== Developer ====================
+		containerEl.createEl('h2', { text: '开发者' });
+
+		new Setting(containerEl)
+			.setName('Debug 日志')
+			.setDesc('在控制台输出 [Ratel:*] debug 级日志')
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.debugLog)
+					.onChange(async (value) => {
+						this.plugin.settings.debugLog = value;
+						await this.plugin.saveSettings();
+						devLogger.setDebugEnabled(value);
+					}),
+			);
+	}
+
+	/**
+	 * 渲染诊断测试面板 — Embedding / LLM / Rerank 三个子 Tab。
+	 */
+	private renderDiagnostics(containerEl: HTMLElement): void {
+		containerEl.createEl('p', {
+			text: '调试工具:用于验证 Embedding、LLM、Rerank 适配器是否正常工作。所有参数仅临时生效,不会修改插件配置。',
+			attr: { style: 'color: var(--text-muted); margin-bottom: 16px; font-size: 13px;' },
+		});
+
+		createTabBar(containerEl, [
+			{
+				id: 'embedding',
+				label: 'Embedding',
+				render: (el) => renderEmbeddingTest(el, this.plugin),
+			},
+			{
+				id: 'llm',
+				label: 'LLM',
+				render: (el) => renderLLMTest(el, this.plugin),
+			},
+			{
+				id: 'rerank',
+				label: 'Rerank',
+				render: (el) => renderRerankPlaceholder(el, this.plugin),
+			},
+		], 'embedding');
 	}
 }

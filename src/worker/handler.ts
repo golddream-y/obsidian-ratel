@@ -38,7 +38,21 @@ export function initProcessorWithStore(store: VectraStore): void {
     processor = new IndexProcessor(store);
 }
 
-export async function handleMessage(msg: WorkerRequest & { _requestId?: string }): Promise<WorkerResponse> {
+/**
+ * Worker 事件推送回调。
+ *
+ * 关键路径:处理长任务(如全量索引)时,processor 通过此回调主动向主线程推送进度事件,
+ * 不走 request-response 链路(无 _requestId)。
+ *
+ * - 真实 Worker Threads: 实现为 `(msg) => parentPort.postMessage(msg)`
+ * - InlineWorker: 实现为直接通知 messageListeners(异步)
+ */
+export type PostEvent = (msg: WorkerResponse) => void;
+
+export async function handleMessage(
+    msg: WorkerRequest & { _requestId?: string },
+    postEvent?: PostEvent,
+): Promise<WorkerResponse> {
     if (!processor) {
         return {
             type: 'error',
@@ -54,13 +68,18 @@ export async function handleMessage(msg: WorkerRequest & { _requestId?: string }
 
         case 'index.full': {
             const req = msg as WorkerRequest & { payload: { files: Array<{ path: string; content: string }> } };
-            const result = await processor.indexFull(req.payload.files);
+            const result = await processor.indexFull(req.payload.files, (progress) => {
+                // 关键路径:每处理完一批文件推送一次进度事件,不带 _requestId(广播式)。
+                postEvent?.({ type: 'index.progress', payload: progress });
+            });
             return { type: 'index.done', payload: result };
         }
 
         case 'index.incremental': {
             const req = msg as WorkerRequest & { payload: { file: { path: string; content: string } } };
-            const result = await processor.indexIncremental(req.payload.file);
+            const result = await processor.indexIncremental(req.payload.file, (progress) => {
+                postEvent?.({ type: 'index.progress', payload: progress });
+            });
             return { type: 'index.done', payload: result };
         }
 
