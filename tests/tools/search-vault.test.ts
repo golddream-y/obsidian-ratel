@@ -1,114 +1,63 @@
 /**
  * @file tests/tools/search-vault.test.ts
- * @description search_vault 工具单元测试
+ * @description search_vault 工具单元测试(W4 — 内部改调 MultiQuerySearcher)
  * @module tests/tools/search-vault
- * @depends tools/search-vault
  */
 
 import { describe, it, expect, vi } from 'vitest';
 import { createSearchVaultTool } from '../../src/tools/search-vault';
-import type { EmbeddingPort } from '../../src/ports/embedding';
-import type { WorkerManager } from '../../src/worker/manager';
 import type { VectorSearchResult } from '../../src/ports/vector';
 
-function createMockEmbedding(): EmbeddingPort {
+function createMockSearcher(results: VectorSearchResult[]) {
 	return {
-		embed: vi.fn(async (texts: string[]) => texts.map(() => [0.1, 0.2, 0.3])),
-		dimensions: 3,
-		modelId: 'local:mock',
+		search: vi.fn().mockResolvedValue(results),
 	};
 }
 
-function createMockWorkerManager(): WorkerManager {
-	return {
-		request: vi.fn(),
-		destroy: vi.fn(),
-	} as unknown as WorkerManager;
-}
-
 describe('createSearchVaultTool', () => {
-	it('search_vault - 查询命中 - 返回 docId + score + metadata + index(从1开始)', async () => {
-		const embedding = createMockEmbedding();
-		const worker = createMockWorkerManager();
-		worker.request = vi.fn().mockResolvedValue({
-			type: 'hybrid.search.result',
-			payload: [
-				{ docId: 'notes/project.md#chunk-0', score: 0.95, metadata: { path: 'notes/project.md', chunkIndex: 0 } },
-				{ docId: 'notes/other.md#chunk-0', score: 0.80, metadata: { path: 'notes/other.md', chunkIndex: 0 } },
-			] as VectorSearchResult[],
-		});
+	it('search_vault - 查询命中 - 返回 docId + score + metadata + index(从1) + reranked', async () => {
+		const searcher = createMockSearcher([
+			{ docId: 'notes/project.md#chunk-0', score: 0.95, metadata: { path: 'notes/project.md', chunkIndex: 0 }, reranked: true },
+			{ docId: 'notes/other.md#chunk-0', score: 0.80, metadata: { path: 'notes/other.md', chunkIndex: 0 }, reranked: true },
+		]);
 
-		const tool = createSearchVaultTool(embedding, worker, () => true);
+		const tool = createSearchVaultTool(searcher as never, () => true);
 		const result = await tool.execute({ query: '技术栈', topK: 5 });
 
-		// 关键路径:embedding 在主线程执行,query 传给 worker 用于 BM25
-		expect(embedding.embed).toHaveBeenCalledWith(['技术栈']);
-		expect(worker.request).toHaveBeenCalledWith({
-			type: 'hybrid.search',
-			payload: { query: '技术栈', queryVector: [0.1, 0.2, 0.3], topK: 5 },
-		});
+		// 关键路径:searcher.search 被调用,参数透传
+		expect(searcher.search).toHaveBeenCalledWith('技术栈', 5);
 		// 关键路径:index 从 1 开始,供 LLM 引用 [1][2]
 		expect(result).toEqual([
-			{ docId: 'notes/project.md#chunk-0', score: 0.95, metadata: { path: 'notes/project.md', chunkIndex: 0 }, index: 1 },
-			{ docId: 'notes/other.md#chunk-0', score: 0.80, metadata: { path: 'notes/other.md', chunkIndex: 0 }, index: 2 },
+			{ docId: 'notes/project.md#chunk-0', score: 0.95, metadata: { path: 'notes/project.md', chunkIndex: 0 }, reranked: true, index: 1 },
+			{ docId: 'notes/other.md#chunk-0', score: 0.80, metadata: { path: 'notes/other.md', chunkIndex: 0 }, reranked: true, index: 2 },
 		]);
 	});
 
 	it('search_vault - 未命中 - 返回空数组', async () => {
-		const embedding = createMockEmbedding();
-		const worker = createMockWorkerManager();
-		worker.request = vi.fn().mockResolvedValue({
-			type: 'hybrid.search.result',
-			payload: [] as VectorSearchResult[],
-		});
-
-		const tool = createSearchVaultTool(embedding, worker, () => true);
+		const searcher = createMockSearcher([]);
+		const tool = createSearchVaultTool(searcher as never, () => true);
 		const result = await tool.execute({ query: '不存在', topK: 3 });
-
 		expect(result).toEqual([]);
 	});
 
-	it('search_vault - Worker 返回异常类型 - 抛错', async () => {
-		const embedding = createMockEmbedding();
-		const worker = createMockWorkerManager();
-		worker.request = vi.fn().mockResolvedValue({
-			type: 'error',
-			payload: { code: 'WORKER_ERROR', message: 'boom' },
-		});
-
-		const tool = createSearchVaultTool(embedding, worker, () => true);
-		await expect(tool.execute({ query: '技术栈' })).rejects.toThrow('Unexpected worker response type: error');
-	});
-
 	it('search_vault - 未传 topK - 默认使用 5', async () => {
-		const embedding = createMockEmbedding();
-		const worker = createMockWorkerManager();
-		worker.request = vi.fn().mockResolvedValue({
-			type: 'hybrid.search.result',
-			payload: [] as VectorSearchResult[],
-		});
-
-		const tool = createSearchVaultTool(embedding, worker, () => true);
+		const searcher = createMockSearcher([]);
+		const tool = createSearchVaultTool(searcher as never, () => true);
 		await tool.execute({ query: '技术栈' });
-
-		expect(worker.request).toHaveBeenCalledWith({
-			type: 'hybrid.search',
-			payload: { query: '技术栈', queryVector: [0.1, 0.2, 0.3], topK: 5 },
-		});
+		// 关键路径:未传 topK 时用默认值 5
+		expect(searcher.search).toHaveBeenCalledWith('技术栈', 5);
 	});
 
 	it('search_vault - query 非字符串 - 抛错', async () => {
-		const embedding = createMockEmbedding();
-		const worker = createMockWorkerManager();
-		const tool = createSearchVaultTool(embedding, worker, () => true);
+		const searcher = createMockSearcher([]);
+		const tool = createSearchVaultTool(searcher as never, () => true);
 		await expect(tool.execute({ query: 123 })).rejects.toThrow('search_vault 参数 query 必须是有效字符串');
 	});
 
-	// 关键路径:符合 S-FEEDBACK 验收标准 — 检索未就绪时抛 INDEX_NOT_READY,供 ChatView 在工具行 failed 展示。
 	it('search_vault - 检索未就绪 - 抛 INDEX_NOT_READY', async () => {
-		const embedding = createMockEmbedding();
-		const worker = createMockWorkerManager();
-		const tool = createSearchVaultTool(embedding, worker, () => false);
+		// 关键路径:符合 S-FEEDBACK 验收标准 — 检索未就绪时抛 INDEX_NOT_READY。
+		const searcher = createMockSearcher([]);
+		const tool = createSearchVaultTool(searcher as never, () => false);
 
 		let caught: (Error & { code?: string }) | null = null;
 		try {
@@ -120,8 +69,15 @@ describe('createSearchVaultTool', () => {
 		expect(caught).not.toBeNull();
 		expect(caught?.code).toBe('INDEX_NOT_READY');
 		expect(caught?.message).toContain('尚未就绪');
-		// 关键路径:未就绪时不调 embedding/worker,避免在不可用阶段浪费算力。
-		expect(embedding.embed).not.toHaveBeenCalled();
-		expect(worker.request).not.toHaveBeenCalled();
+		// 关键路径:未就绪时不调 searcher,避免在不可用阶段浪费算力。
+		expect(searcher.search).not.toHaveBeenCalled();
+	});
+
+	it('search_vault - searcher 抛错 - 透传错误', async () => {
+		const searcher = {
+			search: vi.fn().mockRejectedValue(new Error('Worker timeout')),
+		};
+		const tool = createSearchVaultTool(searcher as never, () => true);
+		await expect(tool.execute({ query: '技术栈' })).rejects.toThrow('Worker timeout');
 	});
 });
