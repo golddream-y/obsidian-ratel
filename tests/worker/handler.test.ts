@@ -5,10 +5,12 @@
  * @depends worker/handler, worker/index-processor
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
-import { initProcessor, handleMessage } from '../../src/worker/handler';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { initProcessor, handleMessage, setProcessorForTest } from '../../src/worker/handler';
+import { IndexProcessor } from '../../src/worker/index-processor';
 import type { WorkerRequest } from '../../src/types';
 import type { EmbeddingsModel, EmbeddingsResponse } from 'vectra';
+import type { VectraStore } from '../../src/adapters/vector-vectra';
 import path from 'path';
 import fs from 'fs';
 
@@ -82,5 +84,46 @@ describe('handleMessage - M-1 真实现', () => {
             payload: { queryVector: Array(512).fill(0.5), topK: 5 },
         } as unknown as WorkerRequest);
         expect(res.type).toBe('vector.search.result');
+    });
+});
+
+describe('handler — hybrid.search', () => {
+    afterEach(() => {
+        // 关键路径:每个用例直接替换了全局 processor,必须清理避免污染后续 describe
+        setProcessorForTest(null);
+    });
+
+    it('hybrid.search - 路由到 processor.hybridSearch 并返回 hybrid.search.result', async () => {
+        const fakeStore = {} as VectraStore;
+        const processor = new IndexProcessor(fakeStore);
+        // 关键路径:mock processor.hybridSearch,避免真实 vectra 调用
+        processor.hybridSearch = vi.fn().mockResolvedValue([
+            { docId: 'notes/a.md#chunk-0', score: 0.9, metadata: { path: 'notes/a.md', chunkIndex: 0 } },
+        ]);
+        setProcessorForTest(processor);
+
+        const response = await handleMessage(
+            { type: 'hybrid.search', payload: { query: 'test', queryVector: [0.1, 0.2], topK: 5 } },
+            () => {},
+        );
+
+        expect(response.type).toBe('hybrid.search.result');
+        expect((response as { payload: unknown[] }).payload).toHaveLength(1);
+        expect(processor.hybridSearch).toHaveBeenCalledWith('test', [0.1, 0.2], 5);
+    });
+
+    it('hybrid.search - 未知 payload 字段 - 仍能解析并路由', async () => {
+        // 关键路径:_requestId 是主线程注入的字段,handler 不应受其影响
+        const fakeStore = {} as VectraStore;
+        const processor = new IndexProcessor(fakeStore);
+        processor.hybridSearch = vi.fn().mockResolvedValue([]);
+        setProcessorForTest(processor);
+
+        const response = await handleMessage(
+            { type: 'hybrid.search', payload: { query: 'x', queryVector: [0.1], topK: 3 }, _requestId: 'req_1' },
+            () => {},
+        );
+
+        expect(response.type).toBe('hybrid.search.result');
     });
 });
