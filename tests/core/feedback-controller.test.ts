@@ -32,7 +32,12 @@ describe('FeedbackController', () => {
 			userStatus,
 			getEmbeddingReady: () => false,
 			getWorkerMode: () => 'thread',
-			getSettings: () => ({ embedProvider: 'local', embedApiKey: '', chatApiKey: 'k' }),
+			// 关键路径:Key 已迁至钥匙串,getSettings 只暴露端点分类字段。
+			getSettings: () => ({
+				embedProvider: 'local',
+				embedApiBase: '',
+				chatApiBase: 'https://api.deepseek.com',
+			}),
 			onFullIndexComplete: vi.fn(),
 			...overrides,
 		});

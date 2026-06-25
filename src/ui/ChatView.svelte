@@ -2,6 +2,7 @@
 	import type RatelVaultPlugin from '../main';
 	import StatusBar from './StatusBar.svelte';
 	import { evaluateChatSendGate } from './chat-send-gate';
+	import { hasChatApiKey } from '../secrets/ratel-secrets';
 	import { formatChatError, type DiagError } from './chat-error';
 
 	interface ToolCallEntry {
@@ -28,7 +29,9 @@
 	let abortController: AbortController | null = null;
 
 	$: statusSnap = $plugin.userStatus.statusBar$;
-	$: gate = evaluateChatSendGate(plugin.settings, statusSnap);
+	// 关键路径:本地 Ollama 免 Key;openai-compatible 需钥匙串密钥,缺失则硬拦。
+	$: hasKey = hasChatApiKey(plugin.app, plugin.settings);
+	$: gate = evaluateChatSendGate(plugin.settings, statusSnap, { hasChatApiKey: hasKey });
 
 	function handleAgentError(assistantMsg: Message, code: string, message: string, toolName?: string): void {
 		if (code === 'CANCELLED') {
