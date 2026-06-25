@@ -7,12 +7,33 @@
 
 import type { Persistence, Session, ChatMessage } from '../ports/persistence';
 import type { ToolCall } from '../ports/llm';
+// 关键路径:Intent 复用意图分类器定义,避免类型重复声明导致两端不同步
+import type { Intent } from './intent-classifier';
 
 /**
- * 系统提示词,每次 `toMessages()` 都会插在消息列表首位,作为 LLM 的角色锚定。
- * "Always respond in the same language the user uses" 强制 LLM 跟随用户语言,避免混合中英文。
+ * 基础系统提示词 — direct 模式(闲聊、生成、统计等不需要搜索的场景)。
+ *
+ * 关键路径:英文版,token 效率高于中文;`Always respond in the same language the user uses`
+ * 强制 LLM 跟随用户语言,避免用户问中文时模型用英文回答。
  */
-const SYSTEM_PROMPT = `You are Ratel, an AI assistant that helps users explore and manage their Obsidian vault. You can read notes and answer questions about their content. Always respond in the same language the user uses.`;
+const BASE_PROMPT = `You are Ratel, an AI assistant that helps users explore and manage their Obsidian vault. You can read notes and answer questions about their content. Always respond in the same language the user uses.`;
+
+/**
+ * RAG 系统提示词 — rag 模式(问知识库内容、查笔记关系等需要搜索的场景)。
+ *
+ * 关键路径:在 BASE_PROMPT 基础上追加 RAG 工作流指令,引导 LLM:
+ * 1. 调 search_vault 找相关笔记(结果带 index 编号)
+ * 2. 调 read_note 读全文
+ * 3. 回答时用 [1][2] 引用 search_vault 返回的 index
+ */
+const RAG_PROMPT = BASE_PROMPT + `
+
+When answering knowledge base questions, follow this workflow:
+1. Call search_vault to find relevant notes. Results include an index number for citation.
+2. Call read_note for promising results to read the full content.
+3. Answer the question and cite sources using [1], [2] format matching the index numbers from search results.
+4. If search returns no results, tell the user honestly.
+`;
 
 /**
  * 会话上下文管理器。
@@ -157,18 +178,20 @@ export class ContextManager {
 	/**
 	 * 拼接最终给 LLM 的消息列表(系统提示 + 检索结果 + 历史消息)。
 	 *
-	 * 关键路径:历史消息超出 `maxHistoryTokens` 时触发 Layer 1 截断 —
-	 * 从最旧消息开始裁剪,直到 token 估算值落入预算内。
-	 * 系统提示词和搜索结果不在裁剪范围(指令池 / 检索池独立预算)。
-	 * 至少保留最后一条消息(当前用户输入或最近工具结果),避免空上下文。
+	 * 关键路径:
+	 * - 按意图选择 BASE_PROMPT(direct)或 RAG_PROMPT(rag)
+	 * - 历史消息超出 `maxHistoryTokens` 时触发 Layer 1 截断
+	 * - 系统提示词和搜索结果不在裁剪范围
 	 *
-	 * @returns 消息数组,首条为 system 角色。
+	 * @param intent - 意图分类结果,默认 'direct'(向后兼容)
+	 * @returns 消息数组,首条为 system 角色
 	 */
-	toMessages(): ChatMessage[] {
+	toMessages(intent: Intent = 'direct'): ChatMessage[] {
+		const systemPrompt = intent === 'rag' ? RAG_PROMPT : BASE_PROMPT;
 		const history = this.session?.messages ?? [];
 		const trimmed = this.trimHistory(history);
 		return [
-			{ role: 'system', content: SYSTEM_PROMPT },
+			{ role: 'system', content: systemPrompt },
 			...this.searchResultsMessages,
 			...trimmed,
 		];
