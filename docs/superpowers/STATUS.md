@@ -21,8 +21,7 @@
 | S-RAG-ARCH | [2026-06-14-ratel-rag-architecture.md](specs/2026-06-14-ratel-rag-architecture.md) | Active | 2026-06-14 | 最终 RAG 架构(取代 S-RAG-ROADMAP 中的初步想法) |
 | S-I18N | [2026-06-14-ratel-i18n-design.md](specs/2026-06-14-ratel-i18n-design.md) | Draft | 2026-06-14 | i18n 基础设施:中英文切换,settings.ts + ChatView + 命令 + Notice 全覆盖 |
 | S-DEFENSIVE | [2026-06-14-ratel-defensive-programming-design.md](specs/2026-06-14-ratel-defensive-programming-design.md) | Draft | 2026-06-14 | 防御性编程:反应式 Settings Proxy + Svelte 5 svelte-check + ChatView mount 单测,根治「改 key 不生效」「let 隐式 prop」「new Component 单参」3 类反复 bug |
-| S-DIAG | [2026-06-25-diagnostics-page-design.md](specs/2026-06-25-diagnostics-page-design.md) | Active | 2026-06-25 | 诊断测试页:设置页新增「诊断测试」主 Tab,内含 Embedding(库内检索+AB 相似度)/ LLM / Rerank 三个子 Tab,错误结构化展示供调试 |
-| S-FEEDBACK | [2026-06-26-ratel-user-feedback-design.md](specs/2026-06-26-ratel-user-feedback-design.md) | Active | 2026-06-26 | 用户反馈三模块(DevLogger/UserNotice/UserStatus) + FeedbackController 接线 + Chat StatusBar;严格区分使用者与开发者通道 |
+
 
 ---
 
@@ -35,9 +34,6 @@
 | P-W3-TEST | [2026-06-14-ratel-w3-test-plan.md](plans/2026-06-14-ratel-w3-test-plan.md) | ⏳ Pending | — | — | — | S-TEST-ARCH (W3 计划) |
 | P-W4-TEST | [2026-06-14-ratel-w4-test-plan.md](plans/2026-06-14-ratel-w4-test-plan.md) | ⏳ Pending | — | — | — | S-TEST-ARCH (W4 计划) |
 | P-I18N-IMPL | [2026-06-14-ratel-i18n-implementation.md](plans/2026-06-14-ratel-i18n-implementation.md) | ⏳ Pending | — | — | — | S-I18N |
-| P-INIT-INDEX | [2026-06-15-ratel-init-index.md](plans/2026-06-15-ratel-init-index.md) | ✅ Completed | feat/init-index | 2026-06-15 | 2026-06-15 | S-INIT-INDEX |
-| P-DIAG | [2026-06-25-diagnostics-page.md](plans/2026-06-25-diagnostics-page.md) | ✅ Completed | main | 2026-06-25 | 2026-06-25 | S-DIAG |
-| P-FEEDBACK | [2026-06-26-ratel-user-feedback.md](plans/2026-06-26-ratel-user-feedback.md) | ✅ Completed | main | 2026-06-24 | 2026-06-24 | S-FEEDBACK |
 
 ---
 
@@ -80,6 +76,9 @@
 | P-DOCS-CN | [archive/P-DOCS-CN/](archive/P-DOCS-CN/) | 2026-06-14 |
 | S-RAG-LOOP | [archive/S-RAG-LOOP/](archive/S-RAG-LOOP/) | 2026-06-17 |
 | S-KEYCHAIN | [archive/S-KEYCHAIN/](archive/S-KEYCHAIN/) | 2026-06-26 |
+| S-INIT-INDEX | [archive/S-INIT-INDEX/](archive/S-INIT-INDEX/) | 2026-06-26 |
+| S-DIAG | [archive/S-DIAG/](archive/S-DIAG/) | 2026-06-26 |
+| S-FEEDBACK | [archive/S-FEEDBACK/](archive/S-FEEDBACK/) | 2026-06-26 |
 
 ---
 
