@@ -100,6 +100,7 @@ stateDiagram-v2
     message.delta --> message.delta: 持续输出
     message.delta --> message.end: 文本结束
     tool.call --> tool.result: 工具返回
+    tool.result --> search.result: search_vault 返回
     tool.result --> message.start: 继续下一轮
     message.end --> [*]
 ```
@@ -110,6 +111,7 @@ stateDiagram-v2
 | `message.delta` | 流式文本片段 | 逐字渲染到消息气泡 |
 | `tool.call` | LLM 请求调用工具 | 显示工具名 + 参数摘要 |
 | `tool.result` | 工具执行结果 | 显示结果摘要 |
+| `search.result` | search_vault 返回带编号结果 | 渲染搜索结果卡片(编号 + 路径 + 分数) |
 | `error` | 错误 | 显示错误提示 |
 | `message.end` | 整个对话轮结束 | 保存会话,显示 token 统计 |
 
@@ -225,16 +227,6 @@ sequenceDiagram
 | [agent-loop](agent-loop.md) | 包含 | Chat 是门面,agent-loop 是引擎 |
 | [context-manager](context-manager.md) | 包含 | 上下文管理是 Chat 的内部机制 |
 | [tools](tools.md) | 包含 | 工具是 Chat 的能力扩展 |
-| [rag/retriever](../rag/retriever.md) | 依赖 | search_vault 工具调用检索器 |
+| [rag/retriever](../rag/retriever.md) | 依赖 | search_vault 工具调用检索器(混合搜索) |
 | [llm/streaming](../llm/streaming.md) | 依赖 | LLM 流式协议 |
 | [host/obsidian-integration](../host/obsidian-integration.md) | 依赖 | ItemView + Svelte mount |
-
----
-
-## 9. 演进路径
-
-| 阶段 | 能力 | 状态 |
-|---|---|---|
-| 当前 | 基础对话 + 流式输出 + 工具调用 | ✅ 已实现 |
-| S-RAG-LOOP | search_vault + RAG 提示词 + 上下文注入 | ✅ 已实现(已归档) |
-| 远期 | 多会话 + 会话搜索 + 对话导出 | 远期 |

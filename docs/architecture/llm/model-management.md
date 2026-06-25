@@ -266,19 +266,7 @@ graph TD
 | 与...的接口 | 方向 | 说明 |
 |---|---|---|
 | [rag/vector-index](../rag/vector-index.md) | 提供 | EmbeddingsModel 注入 Worker |
-| [rag/retriever](../rag/retriever.md) | 提供 | EmbeddingPort.embed() + RerankerPort.rerank() |
-| [agent/agent-loop](../agent/agent-loop.md) | 提供 | LLMClient.chat() |
+| [rag/retriever](../rag/retriever.md) | 提供 | EmbeddingPort.embed() 查询向量化 + RerankerPort.rerank() 精排(可选,钥匙串有 key 时启用) |
+| [agent/agent-loop](../agent/agent-loop.md) | 提供 | LLMClient.chat() + 意图分类 LLM 调用 |
 | [streaming](streaming.md) | 依赖 | LLM 流式协议 |
 | [host/persistence](../host/persistence.md) | 依赖 | settings + 模型缓存 |
-
----
-
-## 9. 演进路径
-
-| 阶段 | 能力 | 状态 |
-|---|---|---|
-| 当前 | 本地 Embedding + 远程 API Embedding + DeepSeek LLM | ✅ 已实现 |
-| S-RAG-LOOP | ModelManager 接入 main.ts + 自动下载 | 待实现 |
-| P-W3-IMPL | Reranker API 接入 | 待实现 |
-| P-W4-IMPL | Anthropic LLM + Ollama LLM | 待实现 |
-| 远期 | 自动语言检测选模型 + GPU 加速 + 本地 Reranker(轻量) | 远期 |

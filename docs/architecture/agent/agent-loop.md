@@ -49,7 +49,9 @@
 flowchart TB
     START["用户消息"] --> LOAD["加载 session"]
     LOAD --> ADD["addUserMessage"]
-    ADD --> STEP["step = 0"]
+    ADD --> INTENT["意图分类器<br/>一次快速 LLM 调用<br/>intent = 'rag' | 'direct'"]
+    INTENT --> PROMPT["按意图选提示词<br/>ctx.toMessages(intent)"]
+    PROMPT --> STEP["step = 0"]
 
     STEP --> LLM["LLM.chat(messages, tools)"]
     LLM --> CHECK{"LLM 返回"}
@@ -63,7 +65,10 @@ flowchart TB
     PRE --> EXEC["execute(toolCall)"]
     HOOK -->|"是"| EXEC
     EXEC --> RESULT["yield tool.result 事件"]
-    RESULT --> HOOK2{"readOnly?"}
+    RESULT --> SR{"工具是 search_vault?"}
+    SR -->|"是"| SREVT["yield search.result 事件"]
+    SR -->|"否"| HOOK2
+    SREVT --> HOOK2{"readOnly?"}
     HOOK2 -->|"否"| POST["post-hook 审计"]
     HOOK2 -->|"是"| NEXT["step++"]
     POST --> NEXT
@@ -75,6 +80,10 @@ flowchart TB
     END2 --> SAVE
 ```
 
+**意图分类器**(新增):在 `addUserMessage` 之后、`LLM.chat` 之前插入。用一次快速 LLM 调用(maxTokens=5)判断用户消息是否需要走 RAG 工作流,按结果选择系统提示词(`rag` → RAG 引导提示词,`direct` → 基础提示词)。详见 [context-manager.md §4](context-manager.md)。
+
+**search.result 事件**(新增):`search_vault` 工具返回后发 `search.result` 事件,ChatView 渲染搜索结果卡片。详见 [chat.md](chat.md)。
+
 ---
 
 ## 4. 步骤详解
@@ -82,8 +91,10 @@ flowchart TB
 ### 4.1 初始化
 
 ```
-1. ctx.load(sessionId)     — 加载或创建 session
-2. ctx.addUserMessage(msg) — 用户消息压入上下文
+1. ctx.load(sessionId)          — 加载或创建 session
+2. ctx.addUserMessage(msg)      — 用户消息压入上下文
+3. classifyIntent(msg) → intent — 一次快速 LLM 调用,判断意图('rag' | 'direct')
+4. ctx.toMessages(intent)       — 按意图选择系统提示词,组装 messages
 ```
 
 ### 4.2 单步循环
@@ -182,17 +193,7 @@ graph TB
 | 与...的接口 | 方向 | 说明 |
 |---|---|---|
 | [chat](chat.md) | 被包含 | Chat 是门面,Agent Loop 是引擎 |
-| [context-manager](context-manager.md) | 依赖 | 消息累积 + session 管理 |
+| [context-manager](context-manager.md) | 依赖 | 消息累积 + session 管理 + 动态提示词 |
 | [tools](tools.md) | 依赖 | 工具发现 + 执行 |
-| [llm/model-management](../llm/model-management.md) | 依赖 | LLMClient.chat() |
+| [llm/model-management](../llm/model-management.md) | 依赖 | LLMClient.chat() + 意图分类 LLM 调用 |
 | [llm/streaming](../llm/streaming.md) | 依赖 | SSE 流式解析 |
-
----
-
-## 8. 演进路径
-
-| 阶段 | 能力 | 状态 |
-|---|---|---|
-| 当前 | 单步循环 + 工具调用 + Hook | ✅ 已实现 |
-| S-RAG-LOOP | search_vault 工具 + RAG 提示词 | ✅ 已实现(已归档) |
-| 远期 | 多 Agent 协作 + 子 Agent 调度 | 远期 |

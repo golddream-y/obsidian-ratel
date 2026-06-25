@@ -19,6 +19,8 @@
 |---|---|---|---|---|
 | S-RAG-ROADMAP | [2026-06-13-rag-enhancement-roadmap-design.md](specs/2026-06-13-rag-enhancement-roadmap-design.md) | **Superseded** | 2026-06-13 | 已被 S-RAG-ARCH + 架构文档取代 |
 | S-RAG-ARCH | [2026-06-14-ratel-rag-architecture.md](specs/2026-06-14-ratel-rag-architecture.md) | Active | 2026-06-14 | 最终 RAG 架构(取代 S-RAG-ROADMAP 中的初步想法) |
+| S-W3-HYBRID | [2026-06-26-ratel-w3-hybrid-search-design.md](specs/2026-06-26-ratel-w3-hybrid-search-design.md) | Active | 2026-06-26 | W3 切片:vectra 内置混合搜索 + 轻量意图分类器 + 引用 [1][2] + search.result UI 卡片(取代 P-W3-IMPL 设计假设) |
+| S-W4-RAG-ENHANCEMENT | [2026-06-26-ratel-w4-rag-enhancement-design.md](specs/2026-06-26-ratel-w4-rag-enhancement-design.md) | Active | 2026-06-26 | W4 切片:Query Rewrite + RRF 多查询融合 + 百炼 Reranker + Indexer subagent(依赖 S-W3-HYBRID 完成) |
 | S-I18N | [2026-06-14-ratel-i18n-design.md](specs/2026-06-14-ratel-i18n-design.md) | Draft | 2026-06-14 | i18n 基础设施:中英文切换,settings.ts + ChatView + 命令 + Notice 全覆盖 |
 | S-DEFENSIVE | [2026-06-14-ratel-defensive-programming-design.md](specs/2026-06-14-ratel-defensive-programming-design.md) | Draft | 2026-06-14 | 防御性编程:反应式 Settings Proxy + Svelte 5 svelte-check + ChatView mount 单测,根治「改 key 不生效」「let 隐式 prop」「new Component 单参」3 类反复 bug |
 
@@ -29,11 +31,17 @@
 
 | ID | 文件 | 状态 | 分支 | 启动 | 完成 | 所属 Spec |
 |---|---|---|---|---|---|---|
-| P-W3-IMPL | [2026-06-13-ratel-w3-implementation.md](plans/2026-06-13-ratel-w3-implementation.md) | ⏳ Pending | — | — | — | S-RAG-ARCH (W3 切片) |
-| P-W4-IMPL | [2026-06-13-ratel-w4-implementation.md](plans/2026-06-13-ratel-w4-implementation.md) | ⏳ Pending | — | — | — | S-RAG-ARCH (W4 切片) |
+| P-W3-IMPL | [2026-06-13-ratel-w3-implementation.md](plans/2026-06-13-ratel-w3-implementation.md) | **Superseded** | — | — | — | ~~S-RAG-ARCH (W3 切片)~~ → S-W3-HYBRID |
+| P-W4-IMPL | [2026-06-13-ratel-w4-implementation.md](plans/2026-06-13-ratel-w4-implementation.md) | **Superseded** | — | — | — | ~~S-RAG-ARCH (W4 切片)~~ → S-W4-RAG-ENHANCEMENT |
+| **P-W3-HYBRID** | [2026-06-26-ratel-w3-hybrid-implementation.md](plans/2026-06-26-ratel-w3-hybrid-implementation.md) | ⏳ Pending | — | — | — | S-W3-HYBRID |
+| **P-W4-RAG** | [2026-06-26-ratel-w4-rag-implementation.md](plans/2026-06-26-ratel-w4-rag-implementation.md) | ⏳ Pending | — | — | — | S-W4-RAG-ENHANCEMENT |
 | P-W3-TEST | [2026-06-14-ratel-w3-test-plan.md](plans/2026-06-14-ratel-w3-test-plan.md) | ⏳ Pending | — | — | — | S-TEST-ARCH (W3 计划) |
 | P-W4-TEST | [2026-06-14-ratel-w4-test-plan.md](plans/2026-06-14-ratel-w4-test-plan.md) | ⏳ Pending | — | — | — | S-TEST-ARCH (W4 计划) |
 | P-I18N-IMPL | [2026-06-14-ratel-i18n-implementation.md](plans/2026-06-14-ratel-i18n-implementation.md) | ⏳ Pending | — | — | — | S-I18N |
+
+> **Superseded 说明**:
+> - P-W3-IMPL(2026-06-13)基于"手动两路搜索 + RRF"设计,审查发现 vectra 已内置 `isBm25` 混合搜索,设计前提不成立。改由 [S-W3-HYBRID](specs/2026-06-26-ratel-w3-hybrid-search-design.md) 重新设计,新 plan 见 [P-W3-HYBRID](plans/2026-06-26-ratel-w3-hybrid-implementation.md)。
+> - P-W4-IMPL(2026-06-13)需与 W3 新架构对齐(RRF 在 W4 才有真实用途 — 多查询融合)。改由 [S-W4-RAG-ENHANCEMENT](specs/2026-06-26-ratel-w4-rag-enhancement-design.md) 重新设计,新 plan 见 [P-W4-RAG](plans/2026-06-26-ratel-w4-rag-implementation.md)。
 
 ---
 
@@ -54,13 +62,15 @@
 
 1. ~~合并 `test/w1-backfill` → main~~(本批已随 W2 合并捎带 — 实际上 W1 work 全部进了主分支)
 2. ~~合并 `test/w2-backfill` → main~~ ✅(commit `3a3cb9f`)
-3. P-W3-IMPL(W3 混合检索 + RRF + 引用)
-4. P-W3-TEST(W3 测试计划)
-5. P-W4-IMPL(Reranker + Query Rewrite + Indexer)
-6. P-W4-TEST(W4+ 测试计划)
-7. 在 Obsidian 里手动 E2E 验证(M3 里程碑)
-8. ~~合并 `chore/translate-comments-to-chinese` → main~~(本批已捎带,中文注释已随 W2 合并进主分支)
-9. **后续:** 修 `svelte-eslint-parser` 配置,让 `npx eslint src/` 覆盖 `*.svelte` 文件
+3. ~~P-W3-IMPL~~ → **Superseded**,改由 S-W3-HYBRID 衍生新 plan → **P-W3-HYBRID**(已生成,⏳ Pending)
+4. **P-W3-HYBRID**(W3 实现 plan,待执行)
+5. P-W3-TEST(W3 测试计划,需基于 S-W3-HYBRID 新架构重写)
+6. ~~P-W4-IMPL~~ → **Superseded**,改由 S-W4-RAG-ENHANCEMENT 衍生新 plan → **P-W4-RAG**(已生成,⏳ Pending)
+7. **P-W4-RAG**(W4 实现 plan,需在 P-W3-HYBRID 完成后执行)
+8. P-W4-TEST(W4+ 测试计划,需基于 S-W4-RAG-ENHANCEMENT 新架构重写)
+9. 在 Obsidian 里手动 E2E 验证(M3 里程碑)
+10. ~~合并 `chore/translate-comments-to-chinese` → main~~(本批已捎带,中文注释已随 W2 合并进主分支)
+11. **后续:** 修 `svelte-eslint-parser` 配置,让 `npx eslint src/` 覆盖 `*.svelte` 文件
 
 ---
 
