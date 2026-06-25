@@ -32,9 +32,16 @@ export interface VectorStore {
 	 */
 	delete(docIds: string[]): Promise<number>;
 	/**
-	 * 取索引全局状态(用于 UI 展示与心跳检测)。
+	 * 查询索引全局状态(用于 UI 展示与心跳检测)。
 	 */
 	status(): Promise<IndexStatus>;
+	/**
+	 * 取索引中指定 URI 文档的全文(用于诊断页显示命中 chunk 的原文)。
+	 *
+	 * @param uri - 业务层文档 ID(本项目用 vault 相对路径)。
+	 * @returns 文档原文;不存在时返回 null。
+	 */
+	getDocumentText(uri: string): Promise<string | null>;
 }
 
 /**

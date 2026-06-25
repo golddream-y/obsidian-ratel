@@ -24,12 +24,26 @@ export interface LLMClient {
 }
 
 /**
- * 聊天请求:消息历史 + (可选)工具定义。
+ * 生成参数 — LLM 采样参数,测试页可临时覆盖。
+ *
+ * - `temperature`:0~2,默认 1(0 = 确定性输出,越高越随机)。
+ * - `topP`:0~1,默认 1(核采样阈值)。
+ * - `maxTokens`:最大生成 token 数,默认由模型侧决定。
+ */
+export interface GenerationOptions {
+	temperature?: number;
+	topP?: number;
+	maxTokens?: number;
+}
+
+/**
+ * 聊天请求:消息历史 + (可选)工具定义 + (可选)生成参数。
  */
 export interface ChatRequest {
 	messages: ChatMessage[];
 	tools?: ToolDefinition[];
 	maxSteps?: number;
+	options?: GenerationOptions;
 }
 
 /**

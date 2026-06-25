@@ -210,6 +210,13 @@ export class DeepSeekLLM implements LLMClient {
 			stream: true,
 		};
 
+		// 生成参数(测试页或上层调用可覆盖)
+		if (req.options) {
+			if (req.options.temperature !== undefined) body.temperature = req.options.temperature;
+			if (req.options.topP !== undefined) body.top_p = req.options.topP;
+			if (req.options.maxTokens !== undefined) body.max_tokens = req.options.maxTokens;
+		}
+
 		if (req.tools && req.tools.length > 0) {
 			// 仅在有工具时下发 tools 字段,减少无关请求体积。
 			body.tools = req.tools.map((t) => ({
