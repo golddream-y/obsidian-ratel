@@ -90,6 +90,30 @@ export class FeedbackController {
 		this.deps.userNotice.toast(`Ratel: 索引完成 — ${indexed} 个文档已索引${suffix}`);
 	}
 
+	/**
+	 * 本地 Embedding 模型注入完成时由 main.onLayoutReady 调用。
+	 *
+	 * 关键路径:ModelManager.download() 内 status$.set(Ready) 触发 handleModelStatus 时,
+	 * EmbeddingLocal.setEmbedding() 尚未执行,isReady 仍为 false,patchEmbeddingReady 得到 loading。
+	 * 注入真实 ONNX 适配器后需再次 patch,把 embedding 状态推进到 ready。
+	 */
+	notifyEmbeddingReady(): void {
+		this.safeRun(() => {
+			this.deps.userStatus.patch({ embedding: 'ready' });
+		});
+	}
+
+	/**
+	 * 重新评估 Embedding 就绪状态 — embedProvider 切换或适配器重建后调用。
+	 *
+	 * 关键路径:settings 面板切 embedProvider 会调 rebuildEmbeddingAdapter(),
+	 * 新 EmbeddingApi 立即可用(ready)、新 EmbeddingLocal 占位需等模型下载(loading),
+	 * 需让 FeedbackController 重新读 getEmbeddingReady() 同步状态。
+	 */
+	refreshEmbeddingStatus(): void {
+		this.safeRun(() => this.patchEmbeddingReady());
+	}
+
 	private applyStartupChecks(): void {
 		this.safeRun(() => {
 			this.patchEmbeddingReady();
