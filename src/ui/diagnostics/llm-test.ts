@@ -9,6 +9,7 @@ import type RatelVaultPlugin from '../../main';
 import type { ChatMessage } from '../../ports/llm';
 import { formatError, renderError } from './diag-utils';
 import { devLogger } from '../../logging/dev-logger';
+import { hasChatApiKey, requiresChatApiKey } from '../../secrets/ratel-secrets';
 
 /**
  * 渲染 LLM 测试区。
@@ -139,12 +140,13 @@ export function renderLLMTest(container: HTMLElement, plugin: RatelVaultPlugin):
             return;
         }
 
-        if (!plugin.settings.chatApiKey && !plugin.settings.chatApiBase.includes('localhost') && !plugin.settings.chatApiBase.includes('127.0.0.1')) {
+        // 关键路径:仅 openai-compatible 端点缺钥匙串密钥时提示;本地 Ollama 免 Key。
+        if (requiresChatApiKey(plugin.settings) && !hasChatApiKey(plugin.app, plugin.settings)) {
             errorArea.empty();
             const warn = errorArea.createDiv({ cls: 'diag-error-block', attr: { style: 'border-left-color: var(--text-warning);' } });
             warn.createDiv({ cls: 'diag-error-header' })
                 .createSpan({ cls: 'diag-error-tag', attr: { style: 'background: var(--text-warning);' }, text: '注意' });
-            warn.createDiv({ text: 'API Key 为空。如果使用需要鉴权的端点(非本地服务),请求将失败。' });
+            warn.createDiv({ text: '钥匙串未配置 Chat API 密钥(ratel-chat-openai-compatible),请求将失败。' });
         }
 
         resetOutput();
@@ -243,13 +245,15 @@ export function renderLLMTest(container: HTMLElement, plugin: RatelVaultPlugin):
  */
 function renderLLMStatus(container: HTMLElement, plugin: RatelVaultPlugin): void {
     const s = plugin.settings;
-    const hasKey = s.chatApiKey.length > 0;
-    const isLocal = s.chatApiBase.includes('localhost') || s.chatApiBase.includes('127.0.0.1');
+    const needsKey = requiresChatApiKey(s);
+    const hasKey = hasChatApiKey(plugin.app, s);
 
     container.empty();
-    container.createSpan({ cls: `diag-status-dot ${hasKey || isLocal ? 'diag-status-ok' : 'diag-status-warn'}` });
+    container.createSpan({ cls: `diag-status-dot ${hasKey ? 'diag-status-ok' : 'diag-status-warn'}` });
     container.createSpan({ text: '当前配置: ' });
     container.createEl('code', { text: 'LLM / Chat' });
     container.createSpan({ text: ' | ' });
-    container.createSpan({ text: `Base: ${s.chatApiBase} | 模型: ${s.chatModel} | Key: ${hasKey ? '已配置(' + s.chatApiKey.slice(0, 6) + '...)' : isLocal ? '本地服务(无 Key)' : '未配置'}` });
+    // 关键路径:不展示 Key 前缀,避免泄露;按端点类型显示密钥状态。
+    const keyLabel = !needsKey ? '本地服务(无 Key)' : hasKey ? '已配置' : '未配置';
+    container.createSpan({ text: `Base: ${s.chatApiBase} | 模型: ${s.chatModel} | Key: ${keyLabel}` });
 }
