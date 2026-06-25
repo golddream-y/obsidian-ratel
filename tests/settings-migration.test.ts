@@ -61,17 +61,17 @@ describe('Settings 迁移', () => {
     });
 
     it('部分字段被 raw 覆盖,其余保持 DEFAULT', () => {
+        // 关键路径:chatApiKey 已移至钥匙串,改用 chunkSize 等非 Key 字段测试覆盖。
         const partial: Partial<RatelVaultSettings> = {
-            chatApiKey: 'sk-test',
             chunkSize: 1000,
+            chatApiBase: 'https://api.openai.com',
         };
 
         const merged = simulateLoadSettings(partial);
 
-        expect(merged.chatApiKey).toBe('sk-test');
         expect(merged.chunkSize).toBe(1000);
+        expect(merged.chatApiBase).toBe('https://api.openai.com');
         // 未提供的字段保持默认
-        expect(merged.chatApiBase).toBe(DEFAULT_SETTINGS.chatApiBase);
         expect(merged.embedProvider).toBe(DEFAULT_SETTINGS.embedProvider);
     });
 });
