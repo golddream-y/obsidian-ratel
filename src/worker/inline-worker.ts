@@ -52,6 +52,7 @@ export class InlineWorker implements WorkerLike {
 	 *
 	 * 关键路径:setTimeout(..., 0) 让调用方保持"异步请求-响应"语义,
 	 * 虽然实际仍在同一线程执行,但避免同步返回破坏 WorkerManager 的假设。
+	 * postEvent 回调也用 setTimeout(0) 异步派发,与真实 Worker 的消息时序一致。
 	 */
 	postMessage(message: WorkerRequest & { _requestId?: string }): void {
 		if (this.terminated) return;
@@ -86,15 +87,30 @@ export class InlineWorker implements WorkerLike {
 		this.exitListeners = [];
 	}
 
+	/**
+	 * 派发事件消息给所有 message 监听器(异步,与 postMessage 语义一致)。
+	 */
+	private emitMessage(msg: WorkerResponse & { _requestId?: string }): void {
+		setTimeout(() => {
+			if (this.terminated) return;
+			for (const listener of this.messageListeners) {
+				listener(msg);
+			}
+		}, 0);
+	}
+
 	private async handle(msg: WorkerRequest & { _requestId?: string }): Promise<void> {
+		// 关键路径:postEvent 通过 emitMessage 异步派发,让进度事件在请求响应前到达主线程。
+		const postEvent = (eventMsg: WorkerResponse) => {
+			this.emitMessage(eventMsg as WorkerResponse & { _requestId?: string });
+		};
+
 		try {
-			const response = await handleMessage(msg);
+			const response = await handleMessage(msg, postEvent);
 			if (msg._requestId) {
 				(response as Record<string, unknown>)._requestId = msg._requestId;
 			}
-			for (const listener of this.messageListeners) {
-				listener(response as WorkerResponse & { _requestId?: string });
-			}
+			this.emitMessage(response as WorkerResponse & { _requestId?: string });
 		} catch (err) {
 			const error = err instanceof Error ? err : new Error(String(err));
 			for (const listener of this.errorListeners) {

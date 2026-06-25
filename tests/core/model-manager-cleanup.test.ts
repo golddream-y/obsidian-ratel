@@ -7,18 +7,24 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { ModelManager } from '../../src/core/model-manager';
+import { ModelDownloader } from '../../src/core/model-downloader';
 import { get } from 'svelte/store';
 
-describe('ModelManager - M-7 cleanup', () => {
-    it('cleanup - 清空所有已下载列表 + 状态 NotStarted', async () => {
-        const removeMock = vi.fn().mockResolvedValue(undefined);
-        const manager = new ModelManager({
-            ensureModel: vi.fn().mockResolvedValue({}),
-            remove: removeMock,
-        });
-        await manager.download('Xenova/bge-small-zh-v1.5');
-        await manager.cleanup(['Xenova/bge-small-zh-v1.5', 'Xenova/bge-base-zh-v1.5']);
-        expect(removeMock).toHaveBeenCalledTimes(2);
-        expect(get(manager.status$)).toEqual({ state: 'NotStarted' });
-    });
+describe('ModelManager - cleanup', () => {
+	it('cleanup - 清空所有已下载列表 + 状态 NotStarted', async () => {
+		const removeMock = vi.fn().mockResolvedValue(undefined);
+		const downloader = {
+			ensureModel: vi.fn().mockResolvedValue('/tmp/models/Xenova/bge-small-zh-v1.5'),
+			remove: removeMock,
+		} as unknown as ModelDownloader;
+		const manager = new ModelManager('/tmp/models', '', downloader, async () => ({
+			modelId: 'local:bge-small-zh-v1.5',
+			dimensions: 512,
+			embed: vi.fn().mockResolvedValue([]),
+		}));
+		await manager.download();
+		await manager.remove();
+		expect(removeMock).toHaveBeenCalledTimes(1);
+		expect(get(manager.status$)).toEqual({ state: 'NotStarted' });
+	});
 });

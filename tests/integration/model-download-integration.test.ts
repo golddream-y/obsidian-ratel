@@ -1,30 +1,53 @@
 /**
  * @file tests/integration/model-download-integration.test.ts
- * @description 模型下载集成 — vi.mock transformers 模拟进度回调
+ * @description 模型下载集成 — mock fetch 模拟 ModelScope 下载与进度回调
  * @module tests/integration/model-download-integration
  * @depends core/model-downloader
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ModelDownloader } from '../../src/core/model-downloader';
-
-vi.mock('@huggingface/transformers', () => ({
-    pipeline: vi.fn().mockImplementation(async (
-        _task: string,
-        _modelId: string,
-        opts: { progress_callback?: (p: { status: string; progress?: number; file?: string }) => void },
-    ) => {
-        opts.progress_callback?.({ status: 'progress', progress: 50, file: 'model.onnx' });
-        opts.progress_callback?.({ status: 'progress', progress: 100, file: 'model.onnx' });
-        return {};
-    }),
-}));
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
 
 describe('ModelDownloader 集成 - 进度回调', () => {
-    it('ensureModel - 进度回调被触发', async () => {
-        const dl = new ModelDownloader();
-        const onProgress = vi.fn();
-        await dl.ensureModel('Xenova/bge-small-zh-v1.5', onProgress);
-        expect(onProgress).toHaveBeenCalledWith(expect.objectContaining({ file: 'model.onnx' }));
-    });
+	let tmpDir: string;
+	let originalFetch: typeof fetch;
+
+	beforeEach(() => {
+		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ratel-dl-'));
+		originalFetch = globalThis.fetch;
+		globalThis.fetch = vi.fn().mockImplementation(async () => {
+			const data = new Uint8Array(1000).fill(65);
+			return {
+				ok: true,
+				headers: { get: () => String(data.length) },
+				body: {
+					getReader: () => {
+						let done = false;
+						return {
+							read: async () => {
+								if (done) return { done: true, value: undefined };
+								done = true;
+								return { done: false, value: data };
+							},
+						};
+					},
+				},
+			} as unknown as Response;
+		}) as unknown as typeof fetch;
+	});
+
+	afterEach(() => {
+		globalThis.fetch = originalFetch;
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it('ensureModel - 进度回调被触发', async () => {
+		const dl = new ModelDownloader(tmpDir);
+		const onProgress = vi.fn();
+		await dl.ensureModel(onProgress);
+		expect(onProgress).toHaveBeenCalledWith(expect.objectContaining({ file: expect.any(String) }));
+	});
 });

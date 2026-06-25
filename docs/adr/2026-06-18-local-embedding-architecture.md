@@ -1,6 +1,6 @@
 # ADR-003:Ratel Vault 本地 Embedding 运行时策略
 
-**状态**:Draft — 待确认 ModelScope 模型可用性后执行
+**状态**:Accepted
 **日期**:2026-06-18
 
 ---
@@ -81,7 +81,8 @@ Ratel: Worker Threads 不可用,降级到 InlineWorker The V8 platform used by t
    - 支持 `[CLS]` / `[SEP]` / `[PAD]` 特殊 token 与 `maxLength` 截断
    - **仅针对 bge-small-zh-v1.5 的词表**,不做多模型抽象
 4. **新增 `src/core/model-downloader-onnx.ts`**:从 ModelScope 下载 .onnx 模型权重 + `vocab.txt`
-   - 下载源:`https://modelscope.cn/models/Xenova/bge-small-zh-v1.5`(具体路径 Phase 0 确认)
+   - 下载源:`https://modelscope.cn/models/Xenova/bge-small-zh-v1.5/resolve/master/`
+   - 文件:`onnx/model_quantized.onnx`(24MB) + `vocab.txt`(109KB)
    - 不支持 HuggingFace Hub 下载(国内用户访问不稳定)
 5. **`EmbeddingLocal` 重构**:移除 `setExtractor` 注入模式;`ModelBackend.ensureModel` 直接返回 `EmbeddingPort` 构造器或实例
 6. **`ModelManager` 适配**:保持 `status$` 状态机,但 `extractor` 类型从 `unknown` 改为 `EmbeddingPort | null`
@@ -89,28 +90,21 @@ Ratel: Worker Threads 不可用,降级到 InlineWorker The V8 platform used by t
 
 ### WASM 分发策略(关键决策)
 
-采用 **方案 A:WASM 作为 release asset,运行时从插件目录加载**。
+采用 **方案 B:使用 `onnxruntime-web` 的 wasm bundle 入口,将 WASM 内联到 main.js**。
 
 | 方案 | 说明 | 选择原因 |
 |---|---|---|
-| A. release asset + 插件目录加载 | esbuild 把 `ort.min.js` 打进 main.js;`ort-wasm-simd-threaded.wasm` 作为单独文件发布到 GitHub release;`main.ts` 启动时设置 `ort.env.wasm.wasmPaths = pluginDir` | ✅ 离线可用、隐私友好、main.js 只增 ~1MB |
-| B. wasm 内嵌到 main.js | 用 `ort.bundle.min.mjs` | ❌ main.js 直接 +12MB,BRAT/手动安装体验差 |
+| A. release asset + 插件目录加载 | esbuild 把 `ort.min.js` 打进 main.js;`ort-wasm-simd-threaded.wasm` 作为单独文件发布到 GitHub release;`main.ts` 启动时设置 `ort.env.wasm.wasmPaths = pluginDir` | ❌ wasm 路径在 Electron/Obsidian 中解析不可靠,多次出现 `ERR_MODULE_NOT_FOUND`/`fetch failed`;且手动安装易漏 wasm 文件 |
+| B. wasm 内嵌到 main.js | 用 `ort.wasm.bundle.min.mjs`,wasm 以 base64 内联 | ✅ 无需额外 wasm 文件,BRAT/手动安装只需 `main.js`/`worker.js`/`manifest.json`/`styles.css`;路径问题彻底消失 |
 | C. 首次运行时从 CDN 下载 wasm | 不打包 wasm,由 onnxruntime-web 默认从 jsdelivr 拉取 | ❌ 首次需联网,违反"默认本地/离线运行"原则 |
 | D. WebGL 后端 | 用 `ort.webgl.min.js`,不加载 wasm | ❌ WebGL 后端对部分算子支持有限,精度/兼容性待验证,暂不作为默认 |
 
-**实施方案 A 的具体要求**:
+**实施方案 B 的具体要求**:
 
-- `esbuild.config.mjs` 把 `onnxruntime-web` 的 WASM 文件通过构建后脚本复制到 `dist/`
-- `version-bump.mjs` 或 release workflow 把 `ort-wasm-simd-threaded.wasm` 与 `main.js` / `worker.js` 一并上传 GitHub release
-- `main.ts` 初始化时:
-  ```ts
-  import * as ort from 'onnxruntime-web';
-  const pluginDir = (this.app.vault.adapter as any).getFullPath(
-    `${this.app.vault.configDir}/plugins/${this.manifest.id}`,
-  );
-  ort.env.wasm.wasmPaths = pluginDir;
-  ```
-- 离线场景:插件目录包含 wasm 文件即可,无需联网
+- `esbuild.config.mjs` 将 `onnxruntime-web` alias 到 `node_modules/onnxruntime-web/dist/ort.wasm.bundle.min.mjs`
+- 不再复制 `.wasm` / `.mjs` 运行时文件到 `dist/`,发布产物只保留 `main.js` / `worker.js` / `manifest.json` / `styles.css`
+- `EmbeddingOnnx.init` 中设置 `ort.env.wasm.numThreads = 1`,避免多线程 worker 在 Electron/Node 测试环境不稳定
+- `main.ts` 无需再计算 `pluginDir` 或设置 `wasmPaths`
 
 ### 不采纳方案(原因)
 
@@ -123,12 +117,12 @@ Ratel: Worker Threads 不可用,降级到 InlineWorker The V8 platform used by t
 ### 已知 trade-off
 
 - **bundle 体积**:
-  - `main.js` 增加约 400KB-1MB(onnxruntime-web JS)
-  - 额外发布 `ort-wasm-simd-threaded.wasm`(12MB) 作为 release asset
+  - `main.js` 增加约 12-13MB(`ort.wasm.bundle.min.mjs` 含内联 wasm)
   - 自写 tokenizer 约 +100-200 行代码,无额外依赖体积
+  - 发布产物更简单,无需单独 wasm asset
 - **代码量**:+400-600 行(ONNX adapter + tokenizer + 下载器 + 集成)
 - **维护成本**:tokenizer 需对 BGE 系列词表做测试;但 WordPiece 是公开算法,边界 case 可控
-- **性能**:WASM 推理速度预计比原生 Node addon 慢 1-3 倍(具体待实测);对单条 query 影响在可接受范围,批量 indexing 仍可分片避免阻塞 UI
+- **性能**:WASM 推理速度预计比原生 Node addon 慢 1-3 倍;强制单线程后略低于多线程 wasm,但避免 worker 兼容性问题;对单条 query 影响在可接受范围,批量 indexing 仍可分片避免阻塞 UI
 - **模型支持范围**:本地模式固定 `bge-small-zh-v1.5`,不支持切换;其他模型走 API embedding
 
 ---
@@ -139,7 +133,7 @@ Ratel: Worker Threads 不可用,降级到 InlineWorker The V8 platform used by t
 
 - 彻底解决 Obsidian 渲染进程无法加载任何 native addon 的问题
 - 不依赖 `@huggingface/transformers` 的版本升级、入口逻辑或运行时检测
-- bundle 体积可控:main.js 只增 ~1MB,12MB wasm 作为独立 asset 不影响主 bundle 解析速度
+- bundle 自包含:main.js 内联 wasm,无需额外 wasm asset,BRAT/手动安装不会漏文件
 - 离线可用,无首次 CDN 下载,符合项目"默认本地/离线运行"原则
 - 同一个 `ort.InferenceSession` 抽象可后续扩展到 reranker / cross-encoder
 - tokenizer 自写后,对词表级错误调试更直观
@@ -148,8 +142,8 @@ Ratel: Worker Threads 不可用,降级到 InlineWorker The V8 platform used by t
 
 - 需要自写 WordPiece tokenizer,并维护多语言(CJK / 拉丁)normalization 细节
 - WASM 推理性能低于原生 addon,批量索引时需更细粒度切片
-- 发布流程变复杂:release asset 除 `main.js` / `worker.js` / `manifest.json` / `styles.css` 外,还需包含 `ort-wasm-simd-threaded.wasm`
-- 用户手动安装插件时,若漏复制 wasm 文件,本地 embedding 会失败,需有清晰错误提示
+- `main.js` 增加约 12-13MB(内联 wasm),首次加载/解析时间略长
+- 强制单线程 WASM,极限吞吐低于多线程 worker 方案
 - 失去 transformers 库的 `pipeline` 高级 API,后续加 vision / reranker 需自写 forward 逻辑
 - 旧版 `ModelDownloader` 下载的模型缓存(基于 transformers pipeline 格式)不再兼容,需在首次运行新版本时清理或忽略旧缓存目录
 
@@ -158,28 +152,28 @@ Ratel: Worker Threads 不可用,降级到 InlineWorker The V8 platform used by t
 - `package.json`:移除 `@huggingface/transformers`,新增 `onnxruntime-web`
 - `esbuild.config.mjs`:
   - 移除 `@huggingface/transformers` / `onnxruntime-node` external
-  - 把 `onnxruntime-web/dist/ort-wasm-simd-threaded.wasm` 复制到 `dist/`
-- `src/adapters/embedding-onnx.ts`:新增,实现 `EmbeddingPort`
+  - 将 `onnxruntime-web` alias 到 `ort.wasm.bundle.min.mjs`,WASM 内联进 main.js
+  - 用 `externalOnnxruntimeNodePlugin` 兜底替换 onnxruntime-node / transformers 子路径
+- `src/adapters/embedding-onnx.ts`:新增,实现 `EmbeddingPort`;init 中设置 `ort.env.wasm.numThreads = 1`
 - `src/adapters/bert-tokenizer.ts`:新增,WordPiece tokenizer
-- `src/core/model-downloader-onnx.ts`:新增,手动下载 .onnx + vocab.txt
+- `src/core/model-downloader.ts`:新增,手动下载 .onnx + vocab.txt
 - `src/adapters/embedding-local.ts`:重构,移除 `setExtractor`,改为 `EmbeddingOnnx` 直接实现 `EmbeddingPort`
 - `src/core/model-manager.ts`:`ModelBackend` 返回 `EmbeddingPort`;`extractor` 类型改为 `EmbeddingPort | null`
-- `src/main.ts`:`onLayoutReady` 改用新 adapter,并设置 `ort.env.wasm.wasmPaths`
+- `src/main.ts`:`onLayoutReady` 改用新 adapter,不再设置 `ort.env.wasm.wasmPaths`
 - 测试:
   - `tests/adapters/bert-tokenizer.test.ts`(与 HF 分词结果对比)
   - `tests/adapters/embedding-onnx.test.ts`(ONNX 推理正确性)
-  - `tests/integration/local-embedding.test.ts`(下载 + 推理 + 索引端到端)
+  - `tests/integration/local-embedding-e2e.test.ts`(真实下载 + 推理端到端)
 - 文档:
   - `docs/architecture/rag/embedding.md` 描述新架构
-  - `README.md` 说明 release asset 需包含 wasm 文件
-- 发布流程:`.github/workflows/release.yml` 上传 `ort-wasm-simd-threaded.wasm`
+  - `README.md` 说明本地模型固定为 bge-small-zh-v1.5
 
 **安全与隐私**:
 
-- 模型权重与 wasm 文件均可离线分发,**无需首次联网**
+- 模型权重与 wasm runtime 均可离线分发,**无需首次联网**
 - 模型权重从 ModelScope 下载(国内源,无需翻墙);不从 HuggingFace Hub 下载
 - 全部推理本地进行,无遥测
-- 若用户手动删除插件目录的 wasm 文件,运行时失败并提示,不会静默恢复为 CDN 下载
+- wasm 以内联方式打包进 `main.js`,不存在手动安装漏放 wasm 文件的问题
 
 ---
 
@@ -189,11 +183,12 @@ Ratel: Worker Threads 不可用,降级到 InlineWorker The V8 platform used by t
 
 ### Phase 0:准备(1 个任务)
 
-1. 确认 Xenova/bge-small-zh-v1.5 的 .onnx + vocab.txt 在 ModelScope 的下载 URL
-   - ⚠️ **阻塞风险**:ModelScope 上的模型命名空间可能与 HuggingFace 不同,需确认实际 model ID 与文件路径
-   - 候选路径:`https://modelscope.cn/models/Xenova/bge-small-zh-v1.5/resolve/master/onnx/model_quantized.onnx`
-   - 候选路径:`https://modelscope.cn/models/Xenova/bge-small-zh-v1.5/resolve/master/vocab.txt`
-   - 若 ModelScope 无此模型,备选方案:在 ModelScope 创建镜像仓库,或从 HuggingFace 下载后上传到 ModelScope
+1. ~~确认 Xenova/bge-small-zh-v1.5 的 .onnx + vocab.txt 在 ModelScope 的下载 URL~~ ✅ 已验证
+   - ModelScope 模型存在:`https://modelscope.cn/models/Xenova/bge-small-zh-v1.5`
+   - ONNX 量化模型:`https://modelscope.cn/models/Xenova/bge-small-zh-v1.5/resolve/master/onnx/model_quantized.onnx`(24MB,INT8 量化)
+   - 词表文件:`https://modelscope.cn/models/Xenova/bge-small-zh-v1.5/resolve/master/vocab.txt`(109KB)
+   - ONNX 全量模型:`https://modelscope.cn/models/Xenova/bge-small-zh-v1.5/resolve/master/onnx/model.onnx`(95MB,FP32)
+   - 选用 `model_quantized.onnx`(24MB) 而非 `model.onnx`(95MB):体积小 4 倍,精度损失可接受
    - 验证 tokenizer 输出与 transformers pipeline 一致
 
 ### Phase 1:Tokenizer 基础(不依赖 ONNX 运行时)

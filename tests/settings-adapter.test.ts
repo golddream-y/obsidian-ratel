@@ -77,19 +77,18 @@ describe('RatelVaultPlugin.rebuildEmbeddingAdapter', () => {
 		expect(plugin.embedding).toBeInstanceOf(EmbeddingApi);
 	});
 
-	it('EmbeddingLocal 接收 dimensions 参数', () => {
+	it('EmbeddingLocal 固定使用 512 维', () => {
 		const plugin = Object.create(RatelVaultPlugin.prototype) as RatelVaultPlugin;
 		plugin.settings = {
 			...DEFAULT_SETTINGS,
 			embedProvider: 'local',
-			embedLocalDimensions: 768,
 		};
 
 		plugin.rebuildEmbeddingAdapter();
 
 		expect(plugin.embedding).toBeInstanceOf(EmbeddingLocal);
-		// 关键路径:dimensions 通过构造参数注入,验证不是默认 512
-		expect((plugin.embedding as EmbeddingLocal).dimensions).toBe(768);
+		// 关键路径:本地只内置 bge-small-zh-v1.5,维度固定 512,与 settings.embedLocalDimensions 无关。
+		expect((plugin.embedding as EmbeddingLocal).dimensions).toBe(512);
 	});
 
 	it('EmbeddingApi 接收 dimensions 参数', () => {

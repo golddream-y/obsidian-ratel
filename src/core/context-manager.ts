@@ -191,7 +191,7 @@ export class ContextManager {
 		const estimateTokens = (msgs: ChatMessage[]): number =>
 			Math.ceil(msgs.map((m) => m.content).join('').length / 4);
 
-		let tokens = estimateTokens(messages);
+		const tokens = estimateTokens(messages);
 		if (tokens <= this.maxHistoryTokens) return messages;
 
 		// 关键路径:从最旧开始裁剪,保留最后 1 条(当前上下文)。

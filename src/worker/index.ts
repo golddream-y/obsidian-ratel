@@ -2,44 +2,31 @@
  * @file src/worker/index.ts
  * @description Worker 线程入口 — 接收主线程消息并委托给 handler
  * @module worker/index
- * @depends types, ./handler, worker_threads, @huggingface/transformers
+ * @depends types, ./handler, worker_threads
  *
  * 硬约束:
  * - 严禁 `import 'obsidian'`
  * - 不发 HTTP 请求(Embedding / LLM 调用都在主线程)
  * - 与主线程通过 `postMessage` 单向通信
- * - Worker 启动时从 workerData 读取 indexDir + modelId,自行初始化 embeddings
+ * - Worker 启动时从 workerData 读取 indexDir + embeddings 配置,自行初始化 embeddings
  */
 
 import type { WorkerRequest, WorkerResponse } from '../types';
-import { handleMessage, initProcessor } from './handler';
+import { handleMessage } from './handler';
 import { workerData } from 'worker_threads';
-import type { EmbeddingsModel, EmbeddingsResponse } from 'vectra';
 
 // 关键路径:Worker 启动时若有 workerData,立即初始化 embeddings 与索引。
 // embeddings 对象不能跨线程序列化,必须在 Worker 线程内部构造。
+// 当前 Obsidian 渲染进程不支持 Worker Threads,实际走 InlineWorker(主线程内运行),
+// 因此 Worker 入口不再自己构造 embeddings;真正的 Worker Threads 场景需主线程后续扩展协议传入。
 async function bootstrapWorker(): Promise<void> {
 	if (!workerData || typeof workerData.indexDir !== 'string') return;
-	if (typeof workerData.modelId !== 'string' || workerData.modelId.length === 0) return;
 
-	const { indexDir, modelId } = workerData as { indexDir: string; modelId: string };
-
-	// 关键路径:外部化(external)的 transformers,运行时由 Worker 线程自己 require。
-	const { pipeline } = await import('@huggingface/transformers');
-	const extractor = (await pipeline('feature-extraction', modelId, {
-		dtype: 'q8',
-	})) as (texts: string[], options: Record<string, unknown>) => Promise<{ tolist: () => number[][] }>;
-
-	const embeddings: EmbeddingsModel = {
-		maxTokens: 8192,
-		async createEmbeddings(inputs: string | string[]): Promise<EmbeddingsResponse> {
-			const arr = Array.isArray(inputs) ? inputs : [inputs];
-			const output = await extractor(arr, { pooling: 'mean', normalize: true });
-			return { status: 'success', output: output.tolist() };
-		},
-	};
-
-	initProcessor(indexDir, embeddings);
+	// 关键路径:若未来 Worker Threads 可用,需要主线程传入 modelDir + vocabPath 才能构造 EmbeddingOnnx。
+	// 目前直接抛出明确错误,避免静默失败。
+	throw new Error(
+		'Worker Threads 场景下暂未实现 embeddings 注入,请使用 InlineWorker 模式',
+	);
 }
 
 /**
@@ -74,8 +61,12 @@ void bootstrapWorker().then(
 			const msg = e.data as WorkerRequest & { _requestId?: string };
 			const requestId = msg._requestId;
 
+			// 关键路径:postEvent 直接转发到 self.postMessage,进度事件不带 _requestId,
+			// 主线程 WorkerManager 会自动区分请求响应(requestId)和事件(无 requestId)。
+			const postEvent = (eventMsg: WorkerResponse) => self.postMessage(eventMsg);
+
 			try {
-				const response = await handleMessage(msg);
+				const response = await handleMessage(msg, postEvent);
 				if (requestId) {
 					(response as Record<string, unknown>)._requestId = requestId;
 				}

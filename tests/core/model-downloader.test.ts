@@ -16,7 +16,7 @@ describe('ModelDownloader', () => {
     it('磁盘不足 - 抛 InsufficientDiskError', async () => {
         const { hasEnoughDiskSpace } = await import('../../src/utils/disk-checker');
         (hasEnoughDiskSpace as ReturnType<typeof vi.fn>).mockResolvedValueOnce(false);
-        const dl = new ModelDownloader();
-        await expect(dl.ensureModel('Xenova/bge-small-zh-v1.5')).rejects.toBeInstanceOf(InsufficientDiskError);
+        const dl = new ModelDownloader('/tmp/models');
+        await expect(dl.ensureModel()).rejects.toBeInstanceOf(InsufficientDiskError);
     });
 });

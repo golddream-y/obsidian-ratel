@@ -56,17 +56,22 @@ describe('InlineWorker', () => {
 		expect(res.payload.code).toBe('NULL_PROCESSOR');
 	});
 
-	it('initWithStore - index.full 能异步返回 indexed 计数', async () => {
+	it('initWithStore - index.full 能异步返回 indexed 计数 + 推送进度事件', async () => {
 		const worker = new InlineWorker();
 		const store = new VectraStore(TMP_DIR, { embeddings: stubEmbedder, autoInit: true });
 		await store.init();
 		worker.initWithStore(store);
 
+		const allMessages: unknown[] = [];
 		const responses: unknown[] = [];
 		await new Promise<void>((resolve) => {
 			worker.on('message', (data) => {
-				responses.push(data);
-				resolve();
+				allMessages.push(data);
+				// 关键路径:无 _requestId 的是进度事件,带 _requestId 的才是请求响应。
+				if (data._requestId) {
+					responses.push(data);
+					resolve();
+				}
 			});
 			worker.postMessage({
 				type: 'index.full',
@@ -74,6 +79,11 @@ describe('InlineWorker', () => {
 				_requestId: 'r2',
 			});
 		});
+
+		// 关键路径:先收到一个 index.progress 事件(done:1,total:1),再收到 index.done 响应。
+		const progressMsgs = allMessages.filter((m: Record<string, unknown>) => m.type === 'index.progress');
+		expect(progressMsgs).toHaveLength(1);
+		expect((progressMsgs[0] as Record<string, unknown>).payload).toEqual({ done: 1, total: 1 });
 
 		expect(responses).toHaveLength(1);
 		const res = responses[0] as { type: string; payload: { indexed: number } };

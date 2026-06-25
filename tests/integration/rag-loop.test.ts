@@ -69,7 +69,7 @@ describe('RAG loop integration', () => {
 		};
 
 		const tools = new ToolRegistry();
-		tools.register(createSearchVaultTool(embedding, worker));
+		tools.register(createSearchVaultTool(embedding, worker, () => true));
 		tools.register(createReadNoteTool(vault));
 
 		const toolCalls: ToolCall[] = [

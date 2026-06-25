@@ -1,17 +1,15 @@
 /**
  * @file src/adapters/embedding-local.ts
- * @description 本地 Embedding 适配器 — 接受 ModelManager 注入的 transformers pipeline
+ * @description 本地 Embedding 适配器占位 — 模型下载完成前抛未就绪错误,下载完成后代理到 EmbeddingOnnx
  * @module adapters/embedding-local
- * @depends ports/embedding
+ * @depends ports/embedding, adapters/embedding-onnx
  *
  * 关键路径:
- * - 不再懒加载:由 ModelManager 负责下载 + 构造 pipeline,本类只接注入的 extractor
- * - 未就绪时返回 `INDEX_NOT_READY` 错误(抛结构化对象),不抛 Error,便于上层工具统一处理
+ * - 插件 onload 时本地模型尚未下载,search-vault 等工具需要一个已就绪的 EmbeddingPort 实例。
+ * - 本类作为占位:未注入真实模型时抛 IndexNotReadyError,注入后直接代理到 EmbeddingOnnx。
  */
 
 import type { EmbeddingPort } from '../ports/embedding';
-
-type FeatureExtractor = (texts: string[], options: Record<string, unknown>) => Promise<{ tolist: () => number[][] }>;
 
 /** 索引未就绪错误(可被工具层识别为 `INDEX_NOT_READY`)。 */
 export class IndexNotReadyError extends Error {
@@ -22,43 +20,41 @@ export class IndexNotReadyError extends Error {
     }
 }
 
+/**
+ * 本地 Embedding 占位适配器。
+ *
+ * 设计要点:
+ * - 固定模型:bge-small-zh-v1.5,512 维。
+ * - 由 ModelManager 在模型下载完成后调用 setEmbedding 注入真实 ONNX 适配器。
+ */
 export class EmbeddingLocal implements EmbeddingPort {
-    private extractor: FeatureExtractor | null = null;
-    readonly modelId: string;
-    readonly dimensions: number;
-    private readonly rawModelId: string;
+    readonly modelId = 'local:bge-small-zh-v1.5';
+    readonly dimensions = 512;
+    private inner: EmbeddingPort | null = null;
 
-    constructor(modelId = 'Xenova/bge-small-zh-v1.5', dimensions = 512) {
-        this.rawModelId = modelId;
-        this.modelId = `local:${modelId}`;
-        this.dimensions = dimensions;
+    /** 本地模型是否已加载就绪。 */
+    get isReady(): boolean {
+        return this.inner !== null;
     }
 
     /**
-     * 由 ModelManager 在模型下载完成后调用,注入 transformers pipeline extractor。
-     *
-     * 关键路径:不在本类内自启动,所有加载逻辑在 ModelManager,
-     * 保证状态机统一(Checking / Downloading / Ready)。
+     * 注入已初始化的真实本地 Embedding 适配器(当前为 EmbeddingOnnx)。
      */
-    setExtractor(extractor: FeatureExtractor): void {
-        this.extractor = extractor;
+    setEmbedding(embedding: EmbeddingPort): void {
+        this.inner = embedding;
     }
 
     /**
      * 批量生成文本向量。
      *
      * @param texts - 待编码文本数组。
-     * @returns 与 `texts` 等长的向量数组。
+     * @returns 与 texts 等长的向量数组。
      * @throws IndexNotReadyError 模型未就绪。
      */
     async embed(texts: string[]): Promise<number[][]> {
-        if (!this.extractor) {
+        if (!this.inner) {
             throw new IndexNotReadyError();
         }
-        const output = await this.extractor(texts, {
-            pooling: 'mean',
-            normalize: true,
-        });
-        return output.tolist();
+        return this.inner.embed(texts);
     }
 }
