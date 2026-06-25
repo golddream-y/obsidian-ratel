@@ -16,17 +16,17 @@ import { Setting } from 'obsidian';
  * @param containerEl - 设置面板容器
  * @param opts.secretId - RATEL_SECRET_IDS 中的密钥名
  * @param opts.hasKey - 钥匙串中是否已有该密钥
+ * @param opts.note - 可选附加说明(如「未配置密钥时 Rerank 自动关闭」),追加到 desc 末尾
  */
 export function renderSecretHint(
 	containerEl: HTMLElement,
-	opts: { secretId: string; hasKey: boolean },
+	opts: { secretId: string; hasKey: boolean; note?: string },
 ): void {
+	const baseDesc = `请在 Obsidian「设置 → 钥匙串」中添加名称为「${opts.secretId}」的密钥(名称必须完全一致)。` +
+		'密钥不会写入插件配置,也不会随库同步到其他设备。';
 	new Setting(containerEl)
 		.setName('API 密钥')
-		.setDesc(
-			`请在 Obsidian「设置 → 钥匙串」中添加名称为「${opts.secretId}」的密钥(名称必须完全一致)。` +
-				'密钥不会写入插件配置,也不会随库同步到其他设备。',
-		)
+		.setDesc(opts.note ? `${baseDesc}${opts.note}` : baseDesc)
 		.addExtraButton((btn) => {
 			btn.setIcon('copy').setTooltip('复制密钥名').onClick(() => {
 				void navigator.clipboard.writeText(opts.secretId);

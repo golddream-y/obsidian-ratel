@@ -322,10 +322,11 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			);
 
 		// 关键路径:Rerank 密钥走钥匙串,未配置时 Rerank 自动关闭。
-		renderSecretHint(containerEl, {
-			secretId: getRerankSecretId(),
-			hasKey: hasRerankApiKey(this.app),
-		});
+	renderSecretHint(containerEl, {
+		secretId: getRerankSecretId(),
+		hasKey: hasRerankApiKey(this.app),
+		note: '未配置密钥时 Rerank 自动关闭。',
+	});
 
 		// ==================== Indexing ====================
 		containerEl.createEl('h2', { text: 'Indexing' });

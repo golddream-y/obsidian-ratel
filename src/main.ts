@@ -354,13 +354,26 @@ export default class RatelVaultPlugin extends Plugin {
 	 * 加载并合并默认设置与已存设置。
 	 *
 	 * 关键路径:用 `Object.assign` 浅合并 — 设置项都是原始类型,无需深拷贝。
+	 *
+	 * 修复:S-KEYCHAIN 已将 API Key 迁至 Obsidian 钥匙串,旧版 data.json 可能残留
+	 * `chatApiKey` / `embedApiKey` / `rerankerApiKey` / `rerankerProvider` 明文字段。
+	 * 这里在合并后一次性清理内存对象,避免老字段污染 settings;下次 `saveSettings`
+	 * 会用清理后的对象自然覆盖 data.json,完成一次性迁移。
 	 */
 	async loadSettings() {
-		this.settings = Object.assign(
-			{},
-			DEFAULT_SETTINGS,
-			(await this.loadData()) as Partial<RatelVaultSettings>,
-		);
+		const loaded = (await this.loadData()) as Partial<RatelVaultSettings> & {
+			chatApiKey?: string;
+			embedApiKey?: string;
+			rerankerApiKey?: string;
+			rerankerProvider?: string;
+		};
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, loaded);
+		// 修复:S-KEYCHAIN 之前的明文残留字段,下次 saveSettings 会用清理后的对象自然覆盖 data.json。
+		const legacy = this.settings as unknown as Record<string, unknown>;
+		delete legacy.chatApiKey;
+		delete legacy.embedApiKey;
+		delete legacy.rerankerApiKey;
+		delete legacy.rerankerProvider;
 	}
 
 	/** 持久化当前设置到 Obsidian data.json。 */
