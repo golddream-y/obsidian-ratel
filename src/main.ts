@@ -10,6 +10,7 @@ import { type RatelVaultSettings, DEFAULT_SETTINGS, RatelVaultSettingTab } from 
 
 import type { AgentEvent } from './types';
 import { agentLoop } from './core/agent-loop';
+import { classifyIntent } from './core/intent-classifier';
 import { ContextManager } from './core/context-manager';
 import { HookRegistry } from './core/hooks';
 import { ToolRegistry } from './core/tool-registry';
@@ -400,6 +401,10 @@ export default class RatelVaultPlugin extends Plugin {
 	async *ask(sessionId: string, message: string, signal?: AbortSignal): AsyncIterable<AgentEvent> {
 		const ctx = new ContextManager(this.persistence);
 
+		// 关键路径:注入意图分类器,让 agentLoop 在 addUserMessage 后判断意图。
+		// 闭包捕获 this.llm,与 agentLoop 解耦。
+		const intentClassifier = (msg: string) => classifyIntent(msg, { llm: this.llm });
+
 		yield* agentLoop(
 			{ sessionId, message },
 			ctx,
@@ -407,6 +412,7 @@ export default class RatelVaultPlugin extends Plugin {
 			this.tools,
 			this.hooks,
 			signal,
+			intentClassifier,
 		);
 	}
 
