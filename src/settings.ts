@@ -21,8 +21,6 @@ import {
 	hasChatApiKey,
 	hasEmbedApiKey,
 	hasRerankApiKey,
-	requiresChatApiKey,
-	requiresEmbedApiKey,
 } from './secrets/ratel-secrets';
 
 /**
