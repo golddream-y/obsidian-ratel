@@ -6,7 +6,9 @@
  */
 
 import type { VectorStore, VectorSearchResult, IndexStatus, SearchFilter } from '../ports/vector';
-import { LocalDocumentIndex, type EmbeddingsModel, type DocumentChunkMetadata } from 'vectra';
+import { devLogger } from '../logging/dev-logger';
+// 关键路径:通过 esbuild conditions 让 'vectra' 走 browser 入口,避免引入 index.js 里 re-export 的 server/grpc 依赖。
+import { LocalDocumentIndex, type EmbeddingsModel, type DocumentChunkMetadata, type MetadataTypes } from 'vectra';
 
 /**
  * VectraStore 构造选项(M-1 扩展)。
@@ -97,7 +99,7 @@ export class VectraStore implements VectorStore {
 			docId,
 			text,
 			undefined,
-			metadata as Record<string, import('vectra').MetadataTypes>,
+			metadata as Record<string, MetadataTypes>,
 		);
 		this._lastIndexTime = Date.now();
 	}
@@ -205,6 +207,36 @@ export class VectraStore implements VectorStore {
 				lastIndexTime: 0,
 				isIndexing: false,
 			};
+		}
+	}
+
+	/**
+	 * 取指定 URI 文档的全文(用于诊断页 chunk 摘要展示)。
+	 *
+	 * 关键路径:
+	 * - vectra 没有提供按 URI 直接取文本的 API,需要 `listDocuments()` 全量列举后过滤。
+	 * - 诊断页只对 Top-K 命中调用,通常 1-10 次,单次 listDocuments 遍历整个 catalog。
+	 * - 大库(>5000 文档)时这是性能瓶颈,但**仅诊断用**,不阻塞主流程;若成为问题,
+	 *   后续可改为读磁盘 index.json(vectra 内部存储格式)。
+	 *
+	 * @param uri - 文档 URI(本项目即 vault 相对路径)。
+	 * @returns 文档原文;URI 不存在时返回 null;底层失败返回 null(诊断场景降级,避免挂 UI)。
+	 */
+	async getDocumentText(uri: string): Promise<string | null> {
+		try {
+			const index = await this.ensureIndex();
+			const docs = await index.listDocuments();
+			for (const doc of docs) {
+				if (doc.uri === uri) {
+					const text = await doc.loadText();
+					return text;
+				}
+			}
+			return null;
+		} catch (err) {
+			// 修复:诊断调用降级,不让 UI 卡死。
+			devLogger.error('vectra', 'getDocumentText failed', err);
+			return null;
 		}
 	}
 }
