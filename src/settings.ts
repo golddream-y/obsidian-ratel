@@ -26,7 +26,6 @@ import { devLogger } from './logging/dev-logger';
 export interface RatelVaultSettings {
 	// Chat
 	chatModel: string;
-	chatApiKey: string;
 	chatApiBase: string;
 
 	// Embedding
@@ -34,14 +33,11 @@ export interface RatelVaultSettings {
 	embedLocalModel: string;
 	embedLocalDimensions: number;
 	embedApiBase: string;
-	embedApiKey: string;
 	embedApiModel: string;
 	embedApiDimensions: number;
 
-	// Reranker (optional — auto-enabled when apiKey is set)
-	rerankerProvider: 'cohere' | 'jina' | 'siliconflow' | 'custom';
+	// Reranker (百炼,可选 — 钥匙串有 ratel-rerank-bailian 即启用)
 	rerankerApiBase: string;
-	rerankerApiKey: string;
 	rerankerModel: string;
 
 	// Indexing
@@ -73,21 +69,18 @@ export interface RatelVaultSettings {
  */
 export const DEFAULT_SETTINGS: RatelVaultSettings = {
 	chatModel: 'deepseek-chat',
-	chatApiKey: '',
 	chatApiBase: 'https://api.deepseek.com',
 
 	embedProvider: 'local',
 	embedLocalModel: 'Xenova/bge-small-zh-v1.5',
 	embedLocalDimensions: 512,
 	embedApiBase: 'http://localhost:11434/v1',
-	embedApiKey: '',
 	embedApiModel: 'bge-m3',
 	embedApiDimensions: 1024,
 
-	rerankerProvider: 'cohere',
-	rerankerApiBase: 'https://api.cohere.ai/v1',
-	rerankerApiKey: '',
-	rerankerModel: 'rerank-v3.5',
+	// 关键路径:Rerank v1 仅支持百炼 DashScope compatible-api,密钥走钥匙串。
+	rerankerApiBase: 'https://dashscope.aliyuncs.com/compatible-api/v1',
+	rerankerModel: 'qwen3-rerank',
 
 	chunkSize: 500,
 	chunkOverlap: 100,

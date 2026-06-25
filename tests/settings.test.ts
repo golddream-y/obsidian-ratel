@@ -27,11 +27,12 @@ import { DEFAULT_SETTINGS, type RatelVaultSettings } from '../src/settings';
 describe('DEFAULT_SETTINGS', () => {
     it('包含全部 RatelVaultSettings 字段', () => {
         // 关键路径:用类型断言做编译期检查,运行时遍历字段名验证
+        // Key 字段(chatApiKey/embedApiKey/rerankerApiKey/rerankerProvider)已移至钥匙串,不在 settings 中。
         const required: Array<keyof RatelVaultSettings> = [
-            'chatModel', 'chatApiKey', 'chatApiBase',
+            'chatModel', 'chatApiBase',
             'embedProvider', 'embedLocalModel', 'embedLocalDimensions',
-            'embedApiBase', 'embedApiKey', 'embedApiModel', 'embedApiDimensions',
-            'rerankerProvider', 'rerankerApiBase', 'rerankerApiKey', 'rerankerModel',
+            'embedApiBase', 'embedApiModel', 'embedApiDimensions',
+            'rerankerApiBase', 'rerankerModel',
             'chunkSize', 'chunkOverlap', 'autoIndex',
             'autoSuggestLinks', 'linkConfidenceThreshold',
         ];
@@ -42,12 +43,19 @@ describe('DEFAULT_SETTINGS', () => {
 
     it('所有字段类型正确', () => {
         expect(typeof DEFAULT_SETTINGS.chatModel).toBe('string');
-        expect(typeof DEFAULT_SETTINGS.chatApiKey).toBe('string');
         expect(typeof DEFAULT_SETTINGS.embedProvider).toBe('string');
         expect(typeof DEFAULT_SETTINGS.embedLocalDimensions).toBe('number');
         expect(typeof DEFAULT_SETTINGS.chunkSize).toBe('number');
         expect(typeof DEFAULT_SETTINGS.autoIndex).toBe('boolean');
         expect(typeof DEFAULT_SETTINGS.linkConfidenceThreshold).toBe('number');
+    });
+
+    it('DEFAULT_SETTINGS - 不含已移除的明文 Key 字段', () => {
+        // 关键路径:API Key 已迁至 Obsidian 钥匙串,data.json 不存储。
+        expect(DEFAULT_SETTINGS).not.toHaveProperty('chatApiKey');
+        expect(DEFAULT_SETTINGS).not.toHaveProperty('embedApiKey');
+        expect(DEFAULT_SETTINGS).not.toHaveProperty('rerankerApiKey');
+        expect(DEFAULT_SETTINGS).not.toHaveProperty('rerankerProvider');
     });
 
     it('embedProvider 默认是 local', () => {
