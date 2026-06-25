@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import { HookRegistry } from '../../src/core/hooks';
-import type { ToolCall } from '../../src/ports/llm';
 
 describe('HookRegistry', () => {
 	it('registers and runs hooks', async () => {

@@ -6,17 +6,18 @@
  */
 
 import type { ToolCall } from '../ports/llm';
+import { devLogger } from '../logging/dev-logger';
 
 /**
  * 钩子注册表。
  *
  * 设计要点:
  * - 钩子按"阶段字符串"分组,目前只用 `pre-write` / `post-write`,预留 `pre-read` / `post-read` 扩展点。
- * - 单个钩子抛错会被 `try/catch` 吞掉,只打 console.error,避免一个坏钩子阻塞整个工具调用。
+ * - 单个钩子抛错会被 `try/catch` 吞掉,只 devLogger.error 记录,避免一个坏钩子阻塞整个工具调用。
  *
  * @example
  *   const hooks = new HookRegistry();
- *   hooks.register('pre-write', async (tc) => { console.log('about to write', tc.name); });
+ *   hooks.register('pre-write', async (tc) => { devLogger.info('hooks', 'about to write', tc.name); });
  */
 export class HookRegistry {
 	private handlers = new Map<string, Array<(toolCall: ToolCall) => Promise<void>>>();
@@ -46,7 +47,7 @@ export class HookRegistry {
 				await handler(toolCall);
 			} catch (err) {
 				// 关键路径:单个钩子失败不应阻塞其他钩子或主流程,只记录错误便于排查。
-				console.error(`Hook error in ${phase}:`, err);
+				devLogger.error('hooks', `Hook error in ${phase}`, err);
 			}
 		}
 	}

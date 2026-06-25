@@ -22,9 +22,14 @@ const DEFAULT_TOP_K = 5;
  *
  * @param embedding - Embedding 端口,用于把 query 编码为向量。
  * @param workerManager - Worker 管理器,用于向 Worker 发起 vector.search 请求。
+ * @param getSearchReady - 检索就绪检查;未就绪时抛 INDEX_NOT_READY。
  * @returns 符合 `Tool` 接口的工具定义。
  */
-export function createSearchVaultTool(embedding: EmbeddingPort, workerManager: WorkerManager): Tool {
+export function createSearchVaultTool(
+	embedding: EmbeddingPort,
+	workerManager: WorkerManager,
+	getSearchReady: () => boolean,
+): Tool {
 	return {
 		definition: {
 			name: 'search_vault',
@@ -47,6 +52,11 @@ export function createSearchVaultTool(embedding: EmbeddingPort, workerManager: W
 		},
 		readOnly: true,
 		async execute(args: Record<string, unknown>) {
+			if (!getSearchReady()) {
+				const err = new Error('索引或 Embedding 尚未就绪,请稍候或在设置 → 诊断测试中检查');
+				(err as Error & { code?: string }).code = 'INDEX_NOT_READY';
+				throw err;
+			}
 			if (typeof args.query !== 'string' || args.query.length === 0) {
 				throw new Error('search_vault 参数 query 必须是有效字符串');
 			}

@@ -6,6 +6,7 @@
  */
 
 import type { Persistence, SessionRepository, NoteMetaRepository, HookLogRepository, Session, NoteMeta, HookLogEntry } from '../ports/persistence';
+import { devLogger } from '../logging/dev-logger';
 
 /**
  * 整体落盘结构 — 三个仓库共存于同一个 JSON 文件,符合 Obsidian 插件一个 `data.json` 的现实约束。
@@ -127,7 +128,7 @@ export class PersistenceJson implements Persistence {
 					this.loaded = true;
 				} catch (err) {
 					// 修复:JSON 损坏时降级为空存储 + 错误日志,避免插件启动失败。
-					console.error('Failed to load data, starting fresh:', err);
+					devLogger.error('vault', 'Failed to load data, starting fresh', err);
 					this.data = { sessions: {}, notes: {}, hookLog: [] };
 					this.loaded = true;
 				} finally {

@@ -39,7 +39,7 @@ export class IndexController {
     }
 
     /** 启动期调用 — 注册 vault 事件 + 全量索引。 */
-    async onLayoutReady(): Promise<void> {
+    async onLayoutReady(): Promise<{ indexed: number; errors: number } | null> {
         this.watcher.start({
             // 关键路径:去抖触发后读取文件内容,随 op 一起入队。
             // 文件可能在去抖期间被删,readFile 失败时静默跳过。
@@ -67,7 +67,7 @@ export class IndexController {
             }),
         );
 
-        await this.indexManager.onLayoutReady();
+        return this.indexManager.onLayoutReady();
     }
 
     pause(): void { this.indexManager.pause(); }

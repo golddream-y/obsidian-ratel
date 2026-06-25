@@ -1,48 +1,68 @@
 <script lang="ts">
 	import type RatelVaultPlugin from '../main';
+	import StatusBar from './StatusBar.svelte';
+	import { evaluateChatSendGate } from './chat-send-gate';
+	import { formatChatError, type DiagError } from './chat-error';
 
-	// Ratel 聊天侧栏 — 用户输入 + 流式渲染 + 工具调用过程 + 错误展示
-	// 关键路径:每个 message.delta 触发 messages 数组重建(Svelte 5 反应性依赖引用比较)。
 	interface ToolCallEntry {
 		name: string;
 		args: unknown;
-		status: 'calling' | 'done';
+		status: 'calling' | 'done' | 'failed';
 		result?: unknown;
+		errorMessage?: string;
 	}
 
 	interface Message {
 		role: 'user' | 'assistant';
 		content: string;
-		// 关键路径:assistant 消息可附带工具调用过程,按到达顺序追加。
 		toolCalls?: ToolCallEntry[];
+		chatError?: DiagError;
+		cancelled?: boolean;
 	}
 
-	// 修复:加 `export` 让 Svelte 5 识别为 prop 声明。
-	// 原因:Svelte 4 时代 `let x;` 隐式 prop,Svelte 5 改为必须 `export let` 或 `$props()`。
-	// 没 `export` 时 esbuild-svelte 0.9 编译出 `let t,` 但不绑定 props,
-	// 导致父组件传的 plugin 永远 undefined,Svelte 5 effect 链某处 .call() 失败。
 	export let plugin: RatelVaultPlugin;
 	let messages: Message[] = [];
 	let input = '';
 	let isRunning = false;
-	// 关键路径:sessionId 用于把同一会话的多轮消息绑回 Session 存储。
 	let sessionId = 'session-' + Date.now();
-	// 关键路径:AbortController 用于取消正在进行的 agentLoop。
 	let abortController: AbortController | null = null;
+
+	$: statusSnap = $plugin.userStatus.statusBar$;
+	$: gate = evaluateChatSendGate(plugin.settings, statusSnap);
+
+	function handleAgentError(assistantMsg: Message, code: string, message: string, toolName?: string): void {
+		if (code === 'CANCELLED') {
+			assistantMsg.cancelled = true;
+			return;
+		}
+		if (code === 'TOOL_ERROR' || code === 'INDEX_NOT_READY') {
+			if (assistantMsg.toolCalls) {
+				for (let i = assistantMsg.toolCalls.length - 1; i >= 0; i--) {
+					const tc = assistantMsg.toolCalls[i];
+					if (tc.status === 'calling' && (!toolName || tc.name === toolName)) {
+						tc.status = 'failed';
+						tc.errorMessage = message;
+						break;
+					}
+				}
+			}
+			return;
+		}
+		assistantMsg.chatError = formatChatError(code, message);
+	}
 
 	async function sendMessage() {
 		const text = input.trim();
-		if (!text || isRunning) return;
+		if (!text || isRunning || !gate.canSend) return;
 
 		messages = [...messages, { role: 'user', content: text }];
 		input = '';
 		isRunning = true;
-		// 关键路径:每次发送创建新的 AbortController,供 Stop 按钮触发。
 		abortController = new AbortController();
 
-		// 关键路径:先占位一个空 assistant 消息,流式 delta 直接 mutate 它。
 		const assistantMsg: Message = { role: 'assistant', content: '' };
 		messages = [...messages, assistantMsg];
+		let lastToolName: string | undefined;
 
 		try {
 			const events = plugin.ask(sessionId, text, abortController.signal);
@@ -51,11 +71,10 @@
 				switch (event.type) {
 					case 'message.delta':
 						assistantMsg.content += event.payload.text;
-						// 修复:重新赋值触发 Svelte 反应性,否则内容变更不可见。
 						messages = [...messages];
 						break;
 					case 'tool.call':
-						// 关键路径:工具调用过程对用户可见,减少等待焦虑。
+						lastToolName = event.payload.name;
 						if (!assistantMsg.toolCalls) assistantMsg.toolCalls = [];
 						assistantMsg.toolCalls.push({
 							name: event.payload.name,
@@ -65,7 +84,6 @@
 						messages = [...messages];
 						break;
 					case 'tool.result':
-						// 关键路径:匹配最后一个同名 calling 条目,更新为 done。
 						if (assistantMsg.toolCalls) {
 							for (let i = assistantMsg.toolCalls.length - 1; i >= 0; i--) {
 								if (
@@ -83,40 +101,32 @@
 					case 'message.end':
 						break;
 					case 'error':
-						assistantMsg.content += '\n\n⚠ Error: ' + event.payload.message;
+						handleAgentError(assistantMsg, event.payload.code, event.payload.message, lastToolName);
 						messages = [...messages];
 						break;
 				}
 			}
 		} catch (err) {
-			assistantMsg.content += '\n\n⚠ Error: ' + (err instanceof Error ? err.message : String(err));
+			const message = err instanceof Error ? err.message : String(err);
+			handleAgentError(assistantMsg, 'LLM_ERROR', message);
 			messages = [...messages];
 		} finally {
-			// 关键路径:无论成功 / 失败 / 取消,都必须复位 isRunning 释放输入框。
 			isRunning = false;
 			abortController = null;
 		}
 	}
 
-	/**
-	 * 取消正在进行的 agentLoop — 触发 AbortController,agentLoop 在下一个检查点退出。
-	 */
 	function stopGeneration() {
 		abortController?.abort();
 	}
 
 	function handleKeydown(e: KeyboardEvent) {
-		// 关键路径:Enter 发送,Shift+Enter 换行 — 跟主流 IM 一致。
 		if (e.key === 'Enter' && !e.shiftKey) {
 			e.preventDefault();
 			sendMessage();
 		}
 	}
 
-	/**
-	 * 把工具结果格式化为简短摘要,避免在 UI 中显示过长内容。
-	 * 数组 → "找到 N 项";字符串 → 截断 60 字符;对象 → JSON 截断。
-	 */
 	function formatToolResult(result: unknown): string {
 		if (Array.isArray(result)) {
 			return `找到 ${result.length} 项`;
@@ -130,9 +140,16 @@
 		}
 		return String(result);
 	}
+
+	function toolIcon(status: ToolCallEntry['status']): string {
+		if (status === 'calling') return '⟳';
+		if (status === 'failed') return '✗';
+		return '✓';
+	}
 </script>
 
 <div class="ratel-chat">
+	<StatusBar status$={plugin.userStatus.statusBar$} />
 	<div class="ratel-messages">
 		{#each messages as msg}
 			<div class="ratel-message ratel-{msg.role}">
@@ -141,10 +158,12 @@
 					<div class="ratel-tool-calls">
 						{#each msg.toolCalls as tc}
 							<div class="ratel-tool-call ratel-tool-{tc.status}">
-								<span class="ratel-tool-icon">{tc.status === 'calling' ? '⟳' : '✓'}</span>
+								<span class="ratel-tool-icon">{toolIcon(tc.status)}</span>
 								<span class="ratel-tool-name">{tc.name}</span>
 								{#if tc.status === 'calling'}
 									<span class="ratel-tool-status">...</span>
+								{:else if tc.status === 'failed'}
+									<span class="ratel-tool-summary ratel-tool-failed">{tc.errorMessage ?? '失败'}</span>
 								{:else if tc.result != null}
 									<span class="ratel-tool-summary">{formatToolResult(tc.result)}</span>
 								{/if}
@@ -152,7 +171,20 @@
 						{/each}
 					</div>
 				{/if}
-				<div class="ratel-content">{msg.content}</div>
+				{#if msg.content}
+					<div class="ratel-content">{msg.content}</div>
+				{/if}
+				{#if msg.chatError}
+					<div class="ratel-chat-error ratel-chat-error-{msg.chatError.type}">
+						<div class="ratel-chat-error-msg">{msg.chatError.message}</div>
+						{#if msg.chatError.suggestion}
+							<div class="ratel-chat-error-suggestion">{msg.chatError.suggestion}</div>
+						{/if}
+					</div>
+				{/if}
+				{#if msg.cancelled}
+					<div class="ratel-chat-cancelled">已停止生成</div>
+				{/if}
 			</div>
 		{/each}
 		{#if isRunning && messages[messages.length - 1]?.content === ''}
@@ -161,21 +193,22 @@
 	</div>
 
 	<div class="ratel-input-area">
+		{#if gate.hardBlockReason}
+			<div class="ratel-chat-gate-hint ratel-chat-gate-hard">{gate.hardBlockReason}</div>
+		{:else if gate.softHint}
+			<div class="ratel-chat-gate-hint">{gate.softHint}</div>
+		{/if}
 		<textarea
 			bind:value={input}
 			on:keydown={handleKeydown}
 			placeholder="Ask about your vault..."
-			disabled={isRunning}
+			disabled={isRunning || !gate.canSend}
 			rows="2"
 		></textarea>
 		{#if isRunning}
-			<button on:click={stopGeneration} class="ratel-stop-btn">
-				Stop
-			</button>
+			<button on:click={stopGeneration} class="ratel-stop-btn">Stop</button>
 		{:else}
-			<button on:click={sendMessage} disabled={isRunning || !input.trim()}>
-				Send
-			</button>
+			<button on:click={sendMessage} disabled={isRunning || !input.trim() || !gate.canSend}>Send</button>
 		{/if}
 	</div>
 </div>
@@ -224,6 +257,43 @@
 		word-break: break-word;
 	}
 
+	.ratel-chat-error {
+		margin-top: 8px;
+		padding: 8px 10px;
+		border-radius: 6px;
+		border-left: 3px solid var(--text-error);
+		background: var(--background-modifier-error);
+		font-size: 0.9em;
+	}
+
+	.ratel-chat-error-msg {
+		font-weight: 600;
+	}
+
+	.ratel-chat-error-suggestion {
+		margin-top: 4px;
+		font-size: 0.85em;
+		color: var(--text-muted);
+	}
+
+	.ratel-chat-cancelled {
+		margin-top: 8px;
+		font-size: 0.85em;
+		color: var(--text-muted);
+		font-style: italic;
+	}
+
+	.ratel-chat-gate-hint {
+		width: 100%;
+		font-size: 0.8em;
+		color: var(--text-warning);
+		margin-bottom: 4px;
+	}
+
+	.ratel-chat-gate-hard {
+		color: var(--text-error);
+	}
+
 	.ratel-tool-calls {
 		margin-bottom: 8px;
 		display: flex;
@@ -248,6 +318,13 @@
 	.ratel-tool-done {
 		color: var(--text-normal);
 		opacity: 0.8;
+	}
+
+	.ratel-tool-failed {
+		color: var(--text-error) !important;
+		font-style: normal !important;
+		white-space: normal !important;
+		max-width: none !important;
 	}
 
 	.ratel-tool-icon {
@@ -280,6 +357,7 @@
 
 	.ratel-input-area {
 		display: flex;
+		flex-wrap: wrap;
 		gap: 8px;
 		align-items: flex-end;
 		border-top: 1px solid var(--background-modifier-border);
@@ -288,6 +366,7 @@
 
 	.ratel-input-area textarea {
 		flex: 1;
+		min-width: 0;
 		resize: none;
 		padding: 8px;
 		border-radius: 6px;
