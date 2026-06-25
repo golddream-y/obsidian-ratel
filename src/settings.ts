@@ -13,6 +13,17 @@ import { renderLLMTest } from './ui/diagnostics/llm-test';
 import { renderRerankPlaceholder } from './ui/diagnostics/rerank-placeholder';
 import { ensureDiagStyles } from './ui/diagnostics/diag-utils';
 import { devLogger } from './logging/dev-logger';
+import { renderSecretHint, renderNoKeyNeeded } from './ui/secret-hint';
+import {
+	getChatSecretId,
+	getEmbedSecretId,
+	getRerankSecretId,
+	hasChatApiKey,
+	hasEmbedApiKey,
+	hasRerankApiKey,
+	requiresChatApiKey,
+	requiresEmbedApiKey,
+} from './secrets/ratel-secrets';
 
 /**
  * 全部用户可配置项。
@@ -185,36 +196,32 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName('API Key')
-			.setDesc('Chat model API key')
-			.addText((text) => {
-				// 关键路径:inputEl.type 改为 password 让浏览器 / Obsidian 隐藏输入。
-				text.inputEl.type = 'password';
-				text
-					.setPlaceholder('sk-...')
-					.setValue(this.plugin.settings.chatApiKey)
-					.onChange(async (value) => {
-						this.plugin.settings.chatApiKey = value;
-						await this.plugin.saveSettings();
-						// 关键路径:Authorization header 在 LLM 构造时定型,改 key 后必须重建。
-						this.plugin.rebuildLLM();
-					});
-			});
+		.setName('API Base URL')
+		.setDesc('Chat model API base URL')
+		.addText((text) =>
+			text
+				.setPlaceholder('https://api.deepseek.com')
+				.setValue(this.plugin.settings.chatApiBase)
+				.onChange(async (value) => {
+					this.plugin.settings.chatApiBase = value;
+					await this.plugin.saveSettings();
+					// 关键路径:换 base URL(切到其他 OpenAI 兼容端点)需重建 LLM。
+					this.plugin.rebuildLLM();
+				}),
+		);
 
-		new Setting(containerEl)
-			.setName('API Base URL')
-			.setDesc('Chat model API base URL')
-			.addText((text) =>
-				text
-					.setPlaceholder('https://api.deepseek.com')
-					.setValue(this.plugin.settings.chatApiBase)
-					.onChange(async (value) => {
-						this.plugin.settings.chatApiBase = value;
-						await this.plugin.saveSettings();
-						// 关键路径:换 base URL(切到其他 OpenAI 兼容端点)需重建 LLM。
-						this.plugin.rebuildLLM();
-					}),
-			);
+	// 关键路径:API Key 从 Obsidian 钥匙串读取,设置页只展示密钥名与状态。
+	{
+		const chatSecretId = getChatSecretId(this.plugin.settings);
+		if (chatSecretId) {
+			renderSecretHint(containerEl, {
+				secretId: chatSecretId,
+				hasKey: hasChatApiKey(this.app, this.plugin.settings),
+			});
+		} else {
+			renderNoKeyNeeded(containerEl, '当前为本地 Ollama,无需 API Key。');
+		}
+	}
 
 		// ==================== Embedding ====================
 		containerEl.createEl('h2', { text: 'Embedding Model' });
@@ -260,21 +267,18 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 						}),
 				);
 
-			new Setting(containerEl)
-				.setName('API Key')
-				.setDesc('Embedding API key (leave empty for Ollama)')
-				.addText((text) => {
-					text.inputEl.type = 'password';
-					text
-						.setPlaceholder('sk-...')
-						.setValue(this.plugin.settings.embedApiKey)
-						.onChange(async (value) => {
-							this.plugin.settings.embedApiKey = value;
-							await this.plugin.saveSettings();
-							// 关键路径:Authorization header 在适配器构造时定型,改 key 后必须重建。
-							this.plugin.rebuildEmbeddingAdapter();
-						});
-				});
+			// 关键路径:Embed API Key 从钥匙串读取,设置页展示密钥名与状态。
+			{
+				const embedSecretId = getEmbedSecretId(this.plugin.settings);
+				if (embedSecretId) {
+					renderSecretHint(containerEl, {
+						secretId: embedSecretId,
+						hasKey: hasEmbedApiKey(this.app, this.plugin.settings),
+					});
+				} else {
+					renderNoKeyNeeded(containerEl, '当前为本地 Ollama Embedding,无需 API Key。');
+				}
+			}
 
 			new Setting(containerEl)
 				.setName('Model')
@@ -293,39 +297,11 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 		}
 
 		// ==================== Reranker ====================
-		containerEl.createEl('h2', { text: 'Reranker (Optional)' });
-
-		new Setting(containerEl)
-			.setName('Provider')
-			.setDesc('Reranker API provider. Auto-enabled when API Key is set.')
-			.addDropdown((dropdown) =>
-				dropdown
-					.addOptions({
-						cohere: 'Cohere',
-						jina: 'Jina',
-						siliconflow: 'SiliconFlow',
-						custom: 'Custom',
-					})
-					.setValue(this.plugin.settings.rerankerProvider)
-					.onChange(async (value: string) => {
-						this.plugin.settings.rerankerProvider = value as RatelVaultSettings['rerankerProvider'];
-						// 关键路径:切 provider 时自动填入官方默认 base,降低用户输入成本。
-						const bases: Record<string, string> = {
-							cohere: 'https://api.cohere.ai/v1',
-							jina: 'https://api.jina.ai/v1',
-							siliconflow: 'https://api.siliconflow.cn/v1',
-						};
-						if (bases[value]) {
-							this.plugin.settings.rerankerApiBase = bases[value];
-						}
-						await this.plugin.saveSettings();
-						this.display();
-					}),
-			);
+		containerEl.createEl('h2', { text: 'Reranker (百炼,可选)' });
 
 		new Setting(containerEl)
 			.setName('API Base URL')
-			.setDesc('Reranker API base URL')
+			.setDesc('Reranker API base URL(百炼 DashScope compatible-api)')
 			.addText((text) =>
 				text
 					.setValue(this.plugin.settings.rerankerApiBase)
@@ -334,19 +310,6 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					}),
 			);
-
-		new Setting(containerEl)
-			.setName('API Key')
-			.setDesc('Reranker API key. Leave empty to disable reranking.')
-			.addText((text) => {
-				text.inputEl.type = 'password';
-				text
-					.setValue(this.plugin.settings.rerankerApiKey)
-					.onChange(async (value) => {
-						this.plugin.settings.rerankerApiKey = value;
-						await this.plugin.saveSettings();
-					});
-			});
 
 		new Setting(containerEl)
 			.setName('Model')
@@ -359,6 +322,12 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					}),
 			);
+
+		// 关键路径:Rerank 密钥走钥匙串,未配置时 Rerank 自动关闭。
+		renderSecretHint(containerEl, {
+			secretId: getRerankSecretId(),
+			hasKey: hasRerankApiKey(this.app),
+		});
 
 		// ==================== Indexing ====================
 		containerEl.createEl('h2', { text: 'Indexing' });
