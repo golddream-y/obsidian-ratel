@@ -28,7 +28,10 @@
 	let sessionId = 'session-' + Date.now();
 	let abortController: AbortController | null = null;
 
-	$: statusSnap = $plugin.userStatus.statusBar$;
+	// 修复:Svelte 5 编译器对 `$plugin.xxx` 形式有歧义(把 plugin 当 store 名订阅 .subscribe),
+	// 这里先把 store 引用提到局部变量,再 $-subscribe,避免编译器误判。
+	$: statusBar = plugin.userStatus.statusBar$;
+	$: statusSnap = $statusBar;
 	// 关键路径:SecretStorage 无文档化事件,plugin.settings 原地 mutate 也不触发响应式;
 	// 用 keyVersion 计数器强制 hasKey 重算,在输入聚焦 / 发送时手动刷新。
 	let keyVersion = 0;

@@ -275,6 +275,9 @@ export default class RatelVaultPlugin extends Plugin {
 				if (this.embedding instanceof EmbeddingLocal) {
 					this.embedding.setEmbedding(embedding);
 				}
+				// 关键路径:ModelManager.download() 内 status$.set(Ready) 触发 FeedbackController
+				// 时 setEmbedding 尚未执行,isReady 仍为 false;注入后需显式通知状态推进到 ready。
+				this.feedbackController?.notifyEmbeddingReady();
 				// 关键路径:InlineWorker 在主线程运行,模型就绪后必须注入带 embeddings 的 VectraStore。
 				if (this.inlineWorker) {
 					this.vectraStore = this.createEmbeddingsVectraStore(embedding);
@@ -331,6 +334,9 @@ export default class RatelVaultPlugin extends Plugin {
 				dimensions: this.settings.embedApiDimensions,
 			});
 		}
+		// 关键路径:重建适配器后需通知 FeedbackController 重评 embedding 状态
+		// (API 模式立即可用→ready;local 占位需等模型下载→loading)。
+		this.feedbackController?.refreshEmbeddingStatus();
 	}
 
 	/**
