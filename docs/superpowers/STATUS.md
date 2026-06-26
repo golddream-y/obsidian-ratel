@@ -25,6 +25,7 @@
 | S-DEFENSIVE | [2026-06-14-ratel-defensive-programming-design.md](specs/2026-06-14-ratel-defensive-programming-design.md) | Draft | 2026-06-14 | 防御性编程:反应式 Settings Proxy + Svelte 5 svelte-check + ChatView mount 单测,根治「改 key 不生效」「let 隐式 prop」「new Component 单参」3 类反复 bug |
 | S-VAULT-TOOLS | [2026-06-26-vault-file-tools-design.md](specs/2026-06-26-vault-file-tools-design.md) | Active | 2026-06-26 | Vault 基础文件操作工具集:grep/glob/list_files(只读) + write_note/append_note/edit_note/delete_note(写入),补齐精确搜索与 CRUD 能力 |
 | S-PROMPTS | [2026-06-26-ratel-prompts-design.md](specs/2026-06-26-ratel-prompts-design.md) | Active | 2026-06-26 | LLM 提示词中文统一 registry + Composer 动态注入 + section 级 promptOverrides;检索外框不可删 |
+| S-CHAT-UI | [2026-06-26-ratel-chat-ui-redesign-design.md](specs/2026-06-26-ratel-chat-ui-redesign-design.md) | Active | 2026-06-26 | Chat UI 重设计:底部 StatusLine + 抽屉 Drawer + 斜杠命令 + 图片上传预留 + Notice 迁移 |
 
 
 ---
@@ -42,6 +43,7 @@
 | P-I18N-IMPL | [2026-06-14-ratel-i18n-implementation.md](plans/2026-06-14-ratel-i18n-implementation.md) | ⏳ Pending | — | — | — | S-I18N |
 | **P-VAULT-TOOLS** | [2026-06-26-ratel-vault-tools-implementation.md](plans/2026-06-26-ratel-vault-tools-implementation.md) | ✅ Completed | feat/vault-tools | 2026-06-24 | 2026-06-24 | S-VAULT-TOOLS |
 | **P-PROMPTS** | [2026-06-26-ratel-prompts-implementation.md](plans/2026-06-26-ratel-prompts-implementation.md) | ⏳ Pending | — | — | — | S-PROMPTS |
+| **P-CHAT-UI** | [2026-06-26-ratel-chat-ui-redesign.md](plans/2026-06-26-ratel-chat-ui-redesign.md) | ⏳ Pending | — | — | — | S-CHAT-UI |
 
 > **Superseded 说明**:
 > - P-W3-IMPL(2026-06-13)基于"手动两路搜索 + RRF"设计,审查发现 vectra 已内置 `isBm25` 混合搜索,设计前提不成立。改由 [S-W3-HYBRID](specs/2026-06-26-ratel-w3-hybrid-search-design.md) 重新设计,新 plan 见 [P-W3-HYBRID](plans/2026-06-26-ratel-w3-hybrid-implementation.md)。
@@ -76,7 +78,8 @@
 10. ~~合并 `chore/translate-comments-to-chinese` → main~~(本批已捎带,中文注释已随 W2 合并进主分支)
 11. **P-PROMPTS**(提示词 registry + 全中文迁移;**应先于 P-VAULT-TOOLS**)
 12. ~~**P-VAULT-TOOLS**~~(Vault 文件工具集) ✅(2026-06-24,328 tests)
-13. **后续:** 修 `svelte-eslint-parser` 配置,让 `npx eslint src/` 覆盖 `*.svelte` 文件
+13. **P-CHAT-UI**(Chat UI 重设计:底部 StatusLine + 抽屉 + 斜杠命令 + 图片上传预留 + ChatView.svelte Svelte 5 迁移;11 tasks,关联 S-CHAT-UI)
+14. **后续:** 修 `svelte-eslint-parser` 配置,让 `npx eslint src/` 覆盖 `*.svelte` 文件
 
 ---
 
