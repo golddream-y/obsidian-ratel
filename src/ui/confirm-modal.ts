@@ -38,16 +38,16 @@ class ToolConfirmModal extends Modal {
 		contentEl.createEl('p', { text: summarizeToolCall(this.toolCall) });
 		const btnRow = contentEl.createDiv({ cls: 'modal-button-container' });
 		btnRow.createEl('button', { text: '允许' }).onclick = () => {
-			this.close();
 			this.settle('allow');
+			this.close();
 		};
 		btnRow.createEl('button', { text: '允许(本次会话不再询问)' }).onclick = () => {
-			this.close();
 			this.settle('session');
+			this.close();
 		};
 		btnRow.createEl('button', { text: '拒绝' }).onclick = () => {
-			this.close();
 			this.settle('deny');
+			this.close();
 		};
 	}
 

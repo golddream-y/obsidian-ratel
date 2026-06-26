@@ -25,12 +25,13 @@ export function createMockVaultPort(state: MockVaultState = { files: {} }): Vaul
 			delete state.files[path];
 		},
 		listFiles: async (dir = '') => {
-			if (state.dirs && dir in state.dirs) return state.dirs[dir]!;
+			const normalized = dir === '.' ? '' : dir;
+			if (state.dirs && normalized in state.dirs) return state.dirs[normalized]!;
 			const files = Object.keys(state.files)
 				.filter((p) => {
 					const slash = p.lastIndexOf('/');
 					const parent = slash >= 0 ? p.slice(0, slash) : '';
-					return parent === dir;
+					return parent === normalized;
 				})
 				.map((p) => {
 					const slash = p.lastIndexOf('/');
