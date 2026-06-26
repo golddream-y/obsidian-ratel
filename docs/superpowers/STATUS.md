@@ -34,7 +34,7 @@
 | P-W3-IMPL | [2026-06-13-ratel-w3-implementation.md](plans/2026-06-13-ratel-w3-implementation.md) | **Superseded** | — | — | — | ~~S-RAG-ARCH (W3 切片)~~ → S-W3-HYBRID |
 | P-W4-IMPL | [2026-06-13-ratel-w4-implementation.md](plans/2026-06-13-ratel-w4-implementation.md) | **Superseded** | — | — | — | ~~S-RAG-ARCH (W4 切片)~~ → S-W4-RAG-ENHANCEMENT |
 | **P-W3-HYBRID** | [2026-06-26-ratel-w3-hybrid-implementation.md](plans/2026-06-26-ratel-w3-hybrid-implementation.md) | ✅ Completed | main | 2026-06-26 | 2026-06-26 | S-W3-HYBRID |
-| **P-W4-RAG** | [2026-06-26-ratel-w4-rag-implementation.md](plans/2026-06-26-ratel-w4-rag-implementation.md) | 🔄 In Progress | main | 2026-06-26 | — | S-W4-RAG-ENHANCEMENT |
+| **P-W4-RAG** | [2026-06-26-ratel-w4-rag-implementation.md](plans/2026-06-26-ratel-w4-rag-implementation.md) | ✅ Completed | main | 2026-06-26 | 2026-06-26 | S-W4-RAG-ENHANCEMENT |
 | P-W3-TEST | [2026-06-14-ratel-w3-test-plan.md](plans/2026-06-14-ratel-w3-test-plan.md) | ⏳ Pending | — | — | — | S-TEST-ARCH (W3 计划) |
 | P-W4-TEST | [2026-06-14-ratel-w4-test-plan.md](plans/2026-06-14-ratel-w4-test-plan.md) | ⏳ Pending | — | — | — | S-TEST-ARCH (W4 计划) |
 | P-I18N-IMPL | [2026-06-14-ratel-i18n-implementation.md](plans/2026-06-14-ratel-i18n-implementation.md) | ⏳ Pending | — | — | — | S-I18N |
@@ -66,7 +66,7 @@
 4. ~~**P-W3-HYBRID**~~(W3 实现 plan) ✅(2026-06-26 完成,9 tasks,275/275 测试通过)
 5. P-W3-TEST(W3 测试计划,需基于 S-W3-HYBRID 新架构重写)
 6. ~~P-W4-IMPL~~ → **Superseded**,改由 S-W4-RAG-ENHANCEMENT 衍生新 plan → **P-W4-RAG**(已生成,⏳ Pending)
-7. **P-W4-RAG**(W4 实现 plan,需在 P-W3-HYBRID 完成后执行)
+7. ~~**P-W4-RAG**~~(W4 实现 plan) ✅(2026-06-26 完成,9 tasks,309/309 测试通过)
 8. P-W4-TEST(W4+ 测试计划,需基于 S-W4-RAG-ENHANCEMENT 新架构重写)
 9. 在 Obsidian 里手动 E2E 验证(M3 里程碑)
 10. ~~合并 `chore/translate-comments-to-chinese` → main~~(本批已捎带,中文注释已随 W2 合并进主分支)
