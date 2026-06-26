@@ -13,6 +13,7 @@ import { renderLLMTest } from './ui/diagnostics/llm-test';
 import { renderRerankPlaceholder } from './ui/diagnostics/rerank-placeholder';
 import { ensureDiagStyles } from './ui/diagnostics/diag-utils';
 import { devLogger } from './logging/dev-logger';
+import type { ToolPermission } from './core/tool-permissions';
 import { renderSecretHint, renderNoKeyNeeded } from './ui/secret-hint';
 import {
 	getChatSecretId,
@@ -68,6 +69,10 @@ export interface RatelVaultSettings {
 
 	// Developer
 	debugLog: boolean;
+
+	// Tool permissions (S-VAULT-TOOLS)
+	toolPermissions: Record<string, ToolPermission>;
+	trustMode: boolean;
 }
 
 /**
@@ -108,6 +113,19 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 	linkConfidenceThreshold: 0.75,
 
 	debugLog: false,
+
+	toolPermissions: {
+		search_vault: 'allow',
+		read_note: 'allow',
+		grep: 'allow',
+		glob: 'allow',
+		list_files: 'allow',
+		write_note: 'ask',
+		append_note: 'ask',
+		edit_note: 'ask',
+		delete_note: 'ask',
+	},
+	trustMode: false,
 };
 
 /**
@@ -400,6 +418,9 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 					}),
 			);
 
+		// ==================== Tool Permissions ====================
+		this.renderToolPermissions(containerEl);
+
 		// ==================== Developer ====================
 		containerEl.createEl('h2', { text: '开发者' });
 
@@ -415,6 +436,51 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 						devLogger.setDebugEnabled(value);
 					}),
 			);
+	}
+
+	private renderToolPermissions(container: HTMLElement): void {
+		container.createEl('h2', { text: '工具权限' });
+
+		new Setting(container)
+			.setName('信任模式')
+			.setDesc('开启后所有工具直接执行,不再弹出确认对话框')
+			.addToggle((toggle) =>
+				toggle.setValue(this.plugin.settings.trustMode).onChange(async (v) => {
+					this.plugin.settings.trustMode = v;
+					await this.plugin.saveSettings();
+				}),
+			);
+
+		const readonlyTools = ['search_vault', 'read_note', 'grep', 'glob', 'list_files'];
+		const writeTools = ['write_note', 'append_note', 'edit_note', 'delete_note'];
+		const labels: Record<string, string> = {
+			search_vault: '语义搜索',
+			read_note: '读取笔记',
+			grep: '精确搜索',
+			glob: '文件名匹配',
+			list_files: '列目录',
+			write_note: '创建/覆盖',
+			append_note: '追加内容',
+			edit_note: '精确替换',
+			delete_note: '移到回收站',
+		};
+		const options: Record<ToolPermission, string> = { allow: '允许', ask: '询问', deny: '拒绝' };
+
+		for (const name of [...readonlyTools, ...writeTools]) {
+			new Setting(container)
+				.setName(labels[name] ?? name)
+				.setDesc(name)
+				.addDropdown((dropdown) => {
+					dropdown.addOption('allow', options.allow);
+					dropdown.addOption('ask', options.ask);
+					dropdown.addOption('deny', options.deny);
+					dropdown.setValue(this.plugin.settings.toolPermissions[name] ?? 'ask');
+					dropdown.onChange(async (v) => {
+						this.plugin.settings.toolPermissions[name] = v as ToolPermission;
+						await this.plugin.saveSettings();
+					});
+				});
+		}
 	}
 
 	/**

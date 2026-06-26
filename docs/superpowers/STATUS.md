@@ -24,6 +24,7 @@
 | S-I18N | [2026-06-14-ratel-i18n-design.md](specs/2026-06-14-ratel-i18n-design.md) | Draft | 2026-06-14 | i18n 基础设施:中英文切换,settings.ts + ChatView + 命令 + Notice 全覆盖 |
 | S-DEFENSIVE | [2026-06-14-ratel-defensive-programming-design.md](specs/2026-06-14-ratel-defensive-programming-design.md) | Draft | 2026-06-14 | 防御性编程:反应式 Settings Proxy + Svelte 5 svelte-check + ChatView mount 单测,根治「改 key 不生效」「let 隐式 prop」「new Component 单参」3 类反复 bug |
 | S-VAULT-TOOLS | [2026-06-26-vault-file-tools-design.md](specs/2026-06-26-vault-file-tools-design.md) | Active | 2026-06-26 | Vault 基础文件操作工具集:grep/glob/list_files(只读) + write_note/append_note/edit_note/delete_note(写入),补齐精确搜索与 CRUD 能力 |
+| S-PROMPTS | [2026-06-26-ratel-prompts-design.md](specs/2026-06-26-ratel-prompts-design.md) | Active | 2026-06-26 | LLM 提示词中文统一 registry + Composer 动态注入 + section 级 promptOverrides;检索外框不可删 |
 
 
 ---
@@ -39,6 +40,8 @@
 | P-W3-TEST | [2026-06-14-ratel-w3-test-plan.md](plans/2026-06-14-ratel-w3-test-plan.md) | ⏳ Pending | — | — | — | S-TEST-ARCH (W3 计划) |
 | P-W4-TEST | [2026-06-14-ratel-w4-test-plan.md](plans/2026-06-14-ratel-w4-test-plan.md) | ⏳ Pending | — | — | — | S-TEST-ARCH (W4 计划) |
 | P-I18N-IMPL | [2026-06-14-ratel-i18n-implementation.md](plans/2026-06-14-ratel-i18n-implementation.md) | ⏳ Pending | — | — | — | S-I18N |
+| **P-VAULT-TOOLS** | [2026-06-26-ratel-vault-tools-implementation.md](plans/2026-06-26-ratel-vault-tools-implementation.md) | ✅ Completed | feat/vault-tools | 2026-06-24 | 2026-06-24 | S-VAULT-TOOLS |
+| **P-PROMPTS** | [2026-06-26-ratel-prompts-implementation.md](plans/2026-06-26-ratel-prompts-implementation.md) | ⏳ Pending | — | — | — | S-PROMPTS |
 
 > **Superseded 说明**:
 > - P-W3-IMPL(2026-06-13)基于"手动两路搜索 + RRF"设计,审查发现 vectra 已内置 `isBm25` 混合搜索,设计前提不成立。改由 [S-W3-HYBRID](specs/2026-06-26-ratel-w3-hybrid-search-design.md) 重新设计,新 plan 见 [P-W3-HYBRID](plans/2026-06-26-ratel-w3-hybrid-implementation.md)。
@@ -71,7 +74,9 @@
 8. P-W4-TEST(W4+ 测试计划,需基于 S-W4-RAG-ENHANCEMENT 新架构重写)
 9. 在 Obsidian 里手动 E2E 验证(M3 里程碑)
 10. ~~合并 `chore/translate-comments-to-chinese` → main~~(本批已捎带,中文注释已随 W2 合并进主分支)
-11. **后续:** 修 `svelte-eslint-parser` 配置,让 `npx eslint src/` 覆盖 `*.svelte` 文件
+11. **P-PROMPTS**(提示词 registry + 全中文迁移;**应先于 P-VAULT-TOOLS**)
+12. ~~**P-VAULT-TOOLS**~~(Vault 文件工具集) ✅(2026-06-24,328 tests)
+13. **后续:** 修 `svelte-eslint-parser` 配置,让 `npx eslint src/` 覆盖 `*.svelte` 文件
 
 ---
 

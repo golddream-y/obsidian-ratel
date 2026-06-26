@@ -26,6 +26,21 @@ import { WorkerManager } from './worker/manager';
 import { InlineWorker } from './worker/inline-worker';
 import { createReadNoteTool } from './tools/read-note';
 import { createSearchVaultTool } from './tools/search-vault';
+import { createGrepTool } from './tools/grep';
+import { createGlobTool } from './tools/glob';
+import { createListFilesTool } from './tools/list-files';
+import { createWriteNoteTool } from './tools/write-note';
+import { createAppendNoteTool } from './tools/append-note';
+import { createEditNoteTool } from './tools/edit-note';
+import { createDeleteNoteTool } from './tools/delete-note';
+import {
+	ToolPermissionSessionGrants,
+	resolveToolPermission,
+	extractToolPath,
+} from './core/tool-permissions';
+import { showToolConfirmModal } from './ui/confirm-modal';
+import { validateVaultPath } from './utils/path-safety';
+import type { ToolCall } from './ports/llm';
 import { ModelManager } from './core/model-manager';
 import { IndexController } from './core/index-controller';
 import { FeedbackController } from './core/feedback-controller';
@@ -76,6 +91,7 @@ export default class RatelVaultPlugin extends Plugin {
 	indexController!: IndexController;
 	// 关键路径:W4 — Indexer subagent 实例,供 Librarian 等子代理调用。
 	indexer!: Indexer;
+	toolSessionGrants = new ToolPermissionSessionGrants();
 	userNotice = new UserNotice();
 	userStatus = new UserStatus();
 	private feedbackController?: FeedbackController;
@@ -217,7 +233,31 @@ export default class RatelVaultPlugin extends Plugin {
 				isSearchReady(get(this.userStatus.statusBar$)),
 			),
 		);
+		this.tools.register(createGrepTool(this.vault));
+		this.tools.register(createGlobTool(this.vault));
+		this.tools.register(createListFilesTool(this.vault));
+		this.tools.register(createWriteNoteTool(this.vault));
+		this.tools.register(createAppendNoteTool(this.vault));
+		this.tools.register(createEditNoteTool(this.vault));
+		this.tools.register(createDeleteNoteTool(this.vault));
 		this.hooks = new HookRegistry();
+		this.hooks.register(
+			'pre-tool-use',
+			async (tc) => {
+				const pathArg = extractToolPath(tc);
+				if (!pathArg) return;
+				try {
+					validateVaultPath(pathArg);
+				} catch (err) {
+					return {
+						allow: false,
+						reason: err instanceof Error ? err.message : String(err),
+					};
+				}
+				return;
+			},
+			'path-safety',
+		);
 
 		// ==================== 视图与命令 ====================
 		this.registerView(VIEW_TYPE_CHAT, (leaf) => new ChatView(leaf, this));
@@ -424,6 +464,10 @@ export default class RatelVaultPlugin extends Plugin {
 			rerankerProvider?: string;
 		};
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, loaded);
+		this.settings.toolPermissions = {
+			...DEFAULT_SETTINGS.toolPermissions,
+			...(loaded.toolPermissions ?? {}),
+		};
 		// 修复:S-KEYCHAIN 之前的明文残留字段,下次 saveSettings 会用清理后的对象自然覆盖 data.json。
 		const legacy = this.settings as unknown as Record<string, unknown>;
 		delete legacy.chatApiKey;
@@ -454,6 +498,17 @@ export default class RatelVaultPlugin extends Plugin {
 		// 闭包捕获 this.llm,与 agentLoop 解耦。
 		const intentClassifier = (msg: string) => classifyIntent(msg, { llm: this.llm });
 
+		const toolPermissionCheck = (tc: ToolCall) =>
+			resolveToolPermission(
+				tc,
+				{
+					trustMode: this.settings.trustMode,
+					toolPermissions: this.settings.toolPermissions,
+				},
+				this.toolSessionGrants,
+				(call) => showToolConfirmModal(this.app, call),
+			);
+
 		yield* agentLoop(
 			{ sessionId, message },
 			ctx,
@@ -462,6 +517,7 @@ export default class RatelVaultPlugin extends Plugin {
 			this.hooks,
 			signal,
 			intentClassifier,
+			toolPermissionCheck,
 		);
 	}
 

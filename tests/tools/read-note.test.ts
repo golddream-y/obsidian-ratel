@@ -11,6 +11,15 @@ function createMockVault(files: Record<string, string> = {}): ObsidianVault {
 		getMetadata: (_path: string) => null,
 		getBacklinks: (_path: string) => new Map(),
 		writeFile: async () => {},
+		cachedRead: async (path: string) => {
+			if (path in files) return files[path]!;
+			throw new Error(`File not found: ${path}`);
+		},
+		appendFile: async () => {},
+		trashFile: async () => {},
+		listFiles: async () => ({ files: [], folders: [] }),
+		fileExists: async (path) => path in files,
+		processFile: async (path, fn) => fn(files[path] ?? ''),
 		onFileModify: () => () => {},
 		onFileCreate: () => () => {},
 		onFileDelete: () => () => {},

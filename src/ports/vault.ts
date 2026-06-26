@@ -57,4 +57,29 @@ export interface VaultPort {
 	 * 列出 vault 内所有 Markdown 文件路径。
 	 */
 	listMarkdownFiles(): string[];
+
+	/**
+	 * 读取文件(优先 Obsidian 缓存,供 grep 等只读扫描)。
+	 */
+	cachedRead(path: string): Promise<string>;
+
+	/** 追加内容;文件不存在则创建。 */
+	appendFile(path: string, content: string): Promise<void>;
+
+	/** 移到回收站(可恢复)。 */
+	trashFile(path: string): Promise<void>;
+
+	/**
+	 * 列出目录内容(非递归)。
+	 * @param dir - vault 相对路径;空串表示根目录
+	 */
+	listFiles(dir?: string): Promise<{ files: string[]; folders: string[] }>;
+
+	/** 文件是否存在。 */
+	fileExists(path: string): Promise<boolean>;
+
+	/**
+	 * 原子读-改-写,返回写入后的新内容。
+	 */
+	processFile(path: string, fn: (content: string) => string): Promise<string>;
 }

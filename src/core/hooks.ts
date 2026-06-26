@@ -1,6 +1,6 @@
 /**
  * @file src/core/hooks.ts
- * @description HookRegistry — 知识治理钩子注册中心,按阶段(phase)组织写工具的 pre/post 钩子。
+ * @description HookRegistry — 知识治理钩子注册中心,按阶段(phase)组织 pre/post 钩子。
  * @module core/hooks
  * @depends ../ports/llm
  */
@@ -9,46 +9,64 @@ import type { ToolCall } from '../ports/llm';
 import { devLogger } from '../logging/dev-logger';
 
 /**
+ * Hook 执行结果。
+ * - void / undefined:放行(无意见)
+ * - { allow: false, reason: string }:阻断
+ * - { allow: true }:显式放行
+ */
+export type HookResult = { allow: boolean; reason?: string } | void;
+
+export interface HookDecision {
+	allowed: boolean;
+	deniedBy?: string;
+	reason?: string;
+}
+
+/**
  * 钩子注册表。
- *
- * 设计要点:
- * - 钩子按"阶段字符串"分组,目前只用 `pre-write` / `post-write`,预留 `pre-read` / `post-read` 扩展点。
- * - 单个钩子抛错会被 `try/catch` 吞掉,只 devLogger.error 记录,避免一个坏钩子阻塞整个工具调用。
- *
- * @example
- *   const hooks = new HookRegistry();
- *   hooks.register('pre-write', async (tc) => { devLogger.info('hooks', 'about to write', tc.name); });
  */
 export class HookRegistry {
-	private handlers = new Map<string, Array<(toolCall: ToolCall) => Promise<void>>>();
+	private handlers = new Map<string, Array<(toolCall: ToolCall) => Promise<HookResult>>>();
+	private handlerIds = new Map<string, string[]>();
 
-	/**
-	 * 注册一个钩子到指定阶段。同一阶段允许多个钩子,按注册顺序串行执行。
-	 *
-	 * @param phase - 阶段名,如 'pre-write' / 'post-write'。
-	 * @param handler - 钩子函数,接收 ToolCall,返回 Promise。
-	 */
-	register(phase: string, handler: (toolCall: ToolCall) => Promise<void>): void {
+	register(
+		phase: string,
+		handler: (toolCall: ToolCall) => Promise<HookResult>,
+		id?: string,
+	): void {
 		const list = this.handlers.get(phase) ?? [];
 		list.push(handler);
 		this.handlers.set(phase, list);
+		if (id) {
+			const ids = this.handlerIds.get(phase) ?? [];
+			ids.push(id);
+			this.handlerIds.set(phase, ids);
+		}
 	}
 
-	/**
-	 * 串行执行指定阶段的所有钩子,任一抛错被吞掉并记录(不阻断后续钩子)。
-	 *
-	 * @param phase - 阶段名。
-	 * @param toolCall - 触发的工具调用,作为参数传给每个钩子。
-	 */
-	async run(phase: string, toolCall: ToolCall): Promise<void> {
+	async run(phase: string, toolCall: ToolCall): Promise<HookDecision> {
 		const list = this.handlers.get(phase) ?? [];
-		for (const handler of list) {
+		const ids = this.handlerIds.get(phase) ?? [];
+		for (let i = 0; i < list.length; i++) {
+			const handler = list[i]!;
 			try {
-				await handler(toolCall);
+				const result = await handler(toolCall);
+				if (result && result.allow === false) {
+					return {
+						allowed: false,
+						deniedBy: ids[i] ?? `hook-${i}`,
+						reason: result.reason ?? '工具调用被钩子拒绝',
+					};
+				}
 			} catch (err) {
-				// 关键路径:单个钩子失败不应阻塞其他钩子或主流程,只记录错误便于排查。
 				devLogger.error('hooks', `Hook error in ${phase}`, err);
 			}
 		}
+		return { allowed: true };
+	}
+
+	/** 向后兼容:不阻断的阶段(post-tool-use 等) */
+	async runVoid(phase: string, toolCall: ToolCall): Promise<void> {
+		await this.run(phase, toolCall);
 	}
 }
