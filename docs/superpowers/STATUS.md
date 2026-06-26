@@ -43,7 +43,7 @@
 | P-I18N-IMPL | [2026-06-14-ratel-i18n-implementation.md](plans/2026-06-14-ratel-i18n-implementation.md) | ⏳ Pending | — | — | — | S-I18N |
 | **P-VAULT-TOOLS** | [2026-06-26-ratel-vault-tools-implementation.md](plans/2026-06-26-ratel-vault-tools-implementation.md) | ✅ Completed | feat/vault-tools | 2026-06-24 | 2026-06-24 | S-VAULT-TOOLS |
 | **P-PROMPTS** | [2026-06-26-ratel-prompts-implementation.md](plans/2026-06-26-ratel-prompts-implementation.md) | ⏳ Pending | — | — | — | S-PROMPTS |
-| **P-CHAT-UI** | [2026-06-26-ratel-chat-ui-redesign.md](plans/2026-06-26-ratel-chat-ui-redesign.md) | ⏳ Pending | — | — | — | S-CHAT-UI |
+| **P-CHAT-UI** | [2026-06-26-ratel-chat-ui-redesign.md](plans/2026-06-26-ratel-chat-ui-redesign.md) | ✅ Completed | feat/chat-ui | 2026-06-26 | 2026-06-27 | S-CHAT-UI |
 
 > **Superseded 说明**:
 > - P-W3-IMPL(2026-06-13)基于"手动两路搜索 + RRF"设计,审查发现 vectra 已内置 `isBm25` 混合搜索,设计前提不成立。改由 [S-W3-HYBRID](specs/2026-06-26-ratel-w3-hybrid-search-design.md) 重新设计,新 plan 见 [P-W3-HYBRID](plans/2026-06-26-ratel-w3-hybrid-implementation.md)。
