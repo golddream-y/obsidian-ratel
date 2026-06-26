@@ -14,6 +14,7 @@ import type { WorkerRequest, WorkerResponse } from '../types';
 import { IndexProcessor } from './index-processor';
 import { VectraStore } from '../adapters/vector-vectra';
 import type { EmbeddingsModel } from 'vectra';
+import { devLogger } from '../logging/dev-logger';
 
 let processor: IndexProcessor | null = null;
 
@@ -60,68 +61,79 @@ export async function handleMessage(
         };
     }
 
-    switch (msg.type) {
-        case 'index.status': {
-            const status = await processor.status();
-            return { type: 'index.status.result', payload: status };
-        }
+    try {
+        switch (msg.type) {
+            case 'index.status': {
+                const status = await processor.status();
+                return { type: 'index.status.result', payload: status };
+            }
 
-        case 'index.full': {
-            const req = msg as WorkerRequest & { payload: { files: Array<{ path: string; content: string }> } };
-            const result = await processor.indexFull(req.payload.files, (progress) => {
-                // 关键路径:每处理完一批文件推送一次进度事件,不带 _requestId(广播式)。
-                postEvent?.({ type: 'index.progress', payload: progress });
-            });
-            return { type: 'index.done', payload: result };
-        }
+            case 'index.full': {
+                const req = msg as WorkerRequest & { payload: { files: Array<{ path: string; content: string }> } };
+                const result = await processor.indexFull(req.payload.files, (progress) => {
+                    // 关键路径:每处理完一批文件推送一次进度事件,不带 _requestId(广播式)。
+                    postEvent?.({ type: 'index.progress', payload: progress });
+                });
+                return { type: 'index.done', payload: result };
+            }
 
-        case 'index.incremental': {
-            const req = msg as WorkerRequest & { payload: { file: { path: string; content: string } } };
-            const result = await processor.indexIncremental(req.payload.file, (progress) => {
-                postEvent?.({ type: 'index.progress', payload: progress });
-            });
-            return { type: 'index.done', payload: result };
-        }
+            case 'index.incremental': {
+                const req = msg as WorkerRequest & { payload: { file: { path: string; content: string } } };
+                const result = await processor.indexIncremental(req.payload.file, (progress) => {
+                    postEvent?.({ type: 'index.progress', payload: progress });
+                });
+                return { type: 'index.done', payload: result };
+            }
 
-        case 'index.delete': {
-            const req = msg as WorkerRequest & { payload: { filePath: string } };
-            const count = await processor.indexDelete(req.payload.filePath);
-            return { type: 'vector.delete.done', payload: { count } };
-        }
+            case 'index.delete': {
+                const req = msg as WorkerRequest & { payload: { filePath: string } };
+                const count = await processor.indexDelete(req.payload.filePath);
+                return { type: 'vector.delete.done', payload: { count } };
+            }
 
-        case 'vector.search': {
-            const req = msg as WorkerRequest & { payload: { queryVector: number[]; topK: number } };
-            const results = await processor.vectorSearch(req.payload.queryVector, req.payload.topK);
-            return { type: 'vector.search.result', payload: results };
-        }
+            case 'vector.search': {
+                const req = msg as WorkerRequest & { payload: { queryVector: number[]; topK: number } };
+                const results = await processor.vectorSearch(req.payload.queryVector, req.payload.topK);
+                return { type: 'vector.search.result', payload: results };
+            }
 
-        case 'hybrid.search': {
-            // 关键路径:queryVector 由主线程 embedding 后传入(Worker 不发 HTTP),query 用于 BM25。
-            const req = msg as WorkerRequest & { payload: { query: string; queryVector: number[]; topK: number } };
-            const results = await processor.hybridSearch(req.payload.query, req.payload.queryVector, req.payload.topK);
-            return { type: 'hybrid.search.result', payload: results };
-        }
+            case 'hybrid.search': {
+                // 关键路径:queryVector 由主线程 embedding 后传入(Worker 不发 HTTP),query 用于 BM25。
+                const req = msg as WorkerRequest & { payload: { query: string; queryVector: number[]; topK: number } };
+                const results = await processor.hybridSearch(req.payload.query, req.payload.queryVector, req.payload.topK);
+                return { type: 'hybrid.search.result', payload: results };
+            }
 
-        case 'vector.upsert': {
-            const req = msg as WorkerRequest & { payload: { docId: string; text: string; metadata: Record<string, unknown> } };
-            // 关键路径:复用 processor 内部已初始化的 store,不走 await import() 临时构造。
-            await processor.store.upsert(req.payload.docId, req.payload.text, req.payload.metadata);
-            return { type: 'vector.upsert.done', payload: { docId: req.payload.docId } };
-        }
+            case 'vector.upsert': {
+                const req = msg as WorkerRequest & { payload: { docId: string; text: string; metadata: Record<string, unknown> } };
+                // 关键路径:复用 processor 内部已初始化的 store,不走 await import() 临时构造。
+                await processor.store.upsert(req.payload.docId, req.payload.text, req.payload.metadata);
+                return { type: 'vector.upsert.done', payload: { docId: req.payload.docId } };
+            }
 
-        case 'vector.delete': {
-            const req = msg as WorkerRequest & { payload: { docIds: string[] } };
-            // 同上:复用 processor.store。
-            const count = await processor.store.delete(req.payload.docIds);
-            return { type: 'vector.delete.done', payload: { count } };
-        }
+            case 'vector.delete': {
+                const req = msg as WorkerRequest & { payload: { docIds: string[] } };
+                // 同上:复用 processor.store。
+                const count = await processor.store.delete(req.payload.docIds);
+                return { type: 'vector.delete.done', payload: { count } };
+            }
 
-        default: {
-            return {
-                type: 'error',
-                payload: { code: 'UNKNOWN_REQUEST', message: `Unknown request type: ${(msg as WorkerRequest).type}` },
-            };
+            default: {
+                return {
+                    type: 'error',
+                    payload: { code: 'UNKNOWN_REQUEST', message: `Unknown request type: ${(msg as WorkerRequest).type}` },
+                };
+            }
         }
+    } catch (err) {
+        // 修复:单条消息处理异常不应触发 Worker 级 error 事件(那会 reject ALL pending requests)。
+        // 捕获后作为 error 响应返回,让调用方自行决定降级策略。
+        const message = err instanceof Error ? err.message : String(err);
+        devLogger.error('worker', `Handler error for ${msg.type}: ${message}`, err);
+        return {
+            type: 'error',
+            payload: { code: 'HANDLER_ERROR', message },
+        };
     }
 }
 

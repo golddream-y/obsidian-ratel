@@ -98,7 +98,11 @@ export class MultiQuerySearcher {
 			});
 
 			if (response.type !== 'hybrid.search.result') {
-				devLogger.warn('search', `Unexpected worker response: ${response.type}`);
+				// 修复:Worker 返回 error 时打印 payload 详情,便于排查(如 HANDLER_ERROR / NULL_PROCESSOR)。
+				const errMsg = response.type === 'error'
+					? (response.payload as { message?: string })?.message ?? 'unknown error'
+					: `unexpected type: ${response.type}`;
+				devLogger.warn('search', `hybrid.search failed for "${queryText}": ${errMsg}`);
 				continue;
 			}
 

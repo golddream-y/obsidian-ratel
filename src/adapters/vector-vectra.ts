@@ -178,8 +178,17 @@ export class VectraStore implements VectorStore {
 	 */
 	async hybridSearch(query: string, queryVector: number[], topK: number): Promise<VectorSearchResult[]> {
 		const index = await this.ensureIndex();
-		// 过度抓取:与 search() 一致,聚合后确保 topK 文档都能拿到。
-		const results = await index.queryItems(queryVector, query, topK * 10, undefined, true);
+
+		let results;
+		try {
+			// 关键路径:过度抓取,与 search() 一致,聚合后确保 topK 文档都能拿到。
+			results = await index.queryItems(queryVector, query, topK * 10, undefined, true);
+		} catch (err) {
+			// 修复:BM25 在文档极少时 winkBM25S consolidation 失败(如 1-2 个文档),
+			// 降级为纯向量搜索,保证 hybrid.search 请求不抛错。
+			devLogger.warn('search', 'BM25 hybrid search failed, falling back to vector-only search', err);
+			return this.search(queryVector, topK);
+		}
 
 		// --- chunk → document 聚合(与 search() 同逻辑) ---
 		const internalIds = new Set<string>();
