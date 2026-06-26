@@ -113,6 +113,13 @@ export interface VaultPort {
    * 检查文件是否存在。
    */
   fileExists(path: string): Promise<boolean>;
+
+  /**
+   * 原子读-改-写:读取文件内容,传入 fn 转换,写回结果。
+   * 封装 Obsidian `vault.process(TFile, fn)` 的原子操作,避免读写竞态。
+   * @returns 写入后的新内容
+   */
+  processFile(path: string, fn: (content: string) => string): Promise<string>;
 }
 ```
 
@@ -152,6 +159,12 @@ async listFiles(dir: string = ''): Promise<{ files: string[]; folders: string[] 
 async fileExists(path: string): Promise<boolean> {
   return this.app.vault.adapter.exists(path);
 }
+
+async processFile(path: string, fn: (content: string) => string): Promise<string> {
+  const file = this.app.vault.getAbstractFileByPath(path);
+  if (!file || !(file instanceof TFile)) throw new Error(`File not found: ${path}`);
+  return this.app.vault.process(file, fn);
+}
 ```
 
 同时需要在 writeFile 中补充 `fileExists` 检查以区分 create/modify 路径,现有实现用 `instanceof TFile` 判断,已正确处理。
@@ -187,11 +200,12 @@ Array<{
 
 **实现要点**:
 1. 获取候选文件列表:用 `vault.listMarkdownFiles()` 得到所有 .md 文件,再用 include glob 过滤
-2. 如指定 path,过滤为该目录下的文件
-3. 逐文件 `vault.cachedRead(file)` 读取内容(利用 Obsidian 缓存,性能好)
-4. 按 `\n` 分行,逐行正则匹配
-5. 收集前后 N 行上下文
-6. 达到 max_results 时提前终止
+2. 始终排除 `.obsidian/` 和 `.trash/` 目录下的文件(插件配置和回收站不应被搜索)
+3. 如指定 path,过滤为该目录下的文件(path 作为目录前缀匹配)
+4. 逐文件 `vault.cachedRead(file)` 读取内容(利用 Obsidian 缓存,性能好)
+5. 按 `\n` 分行,逐行正则匹配
+6. 收集前后 N 行上下文
+7. 达到 max_results 时提前终止
 
 **性能考量**:
 - 千级文件的 vault,逐文件 cachedRead + 正则匹配在 ms~百 ms 级,不阻塞 UI
@@ -212,7 +226,9 @@ Array<{
 }
 ```
 
-**返回**: `string[]`(匹配的文件路径数组)
+**返回**: `string[]`(匹配的文件路径数组,均为 .md 文件)
+
+**范围**:只匹配 Markdown 文件(基于 `vault.getMarkdownFiles()`)。非 md 文件(图片、PDF 等)不在搜索范围内。
 
 **glob 模式支持**(子集,够用即可):
 - `*` — 匹配单层内任意字符(不含 `/`)
@@ -236,12 +252,13 @@ Array<{
 **返回**:
 ```typescript
 {
-  files: string[];    // 文件列表(文件名,非完整路径)
-  folders: string[];  // 子目录列表
+  path: string;         // 实际列出的目录路径(echo 输入的 path 参数,便于 LLM 拼接)
+  files: string[];      // 文件名列表(短名,不含路径前缀)
+  folders: string[];    // 子目录名列表(短名,不含路径前缀)
 }
 ```
 
-直接调用 `vault.listFiles(path)`,返回的文件名和文件夹名是相对于列出目录的短名(不是完整路径)。需要在 description 中说明这一点,让 LLM 知道要拼路径。
+直接调用 `vault.listFiles(path)`。返回的 files/folders 是相对于 path 的短名,LLM 需要拼接 path + "/" + name 得到完整路径。
 
 ### 4.7 write_note 工具
 
@@ -291,13 +308,14 @@ Array<{
 **返回**: `{ path: string; replaced: boolean }`
 
 **实现要点**:
-1. 先用 `vault.readFile(path)` 读取全文(用 read 而非 cachedRead,因为要修改)
-2. 统计 old_string 在文件中出现次数:
-   - 0 次:返回错误"未找到要替换的文本"
+1. 先用 `vault.fileExists(path)` 检查文件是否存在,不存在返回明确错误
+2. 读取全文(用 `vault.readFile` 而非 `cachedRead`,因为后续要修改)
+3. 统计 old_string 在文件中出现次数:
+   - 0 次:返回错误"未找到要替换的文本,请确认 old_string 精确匹配(含空白缩进)"
    - 1 次:执行替换
-   - 多次:返回错误"old_string 在文件中出现多次(共 N 次),请提供更多上下文以唯一确定"
-3. 用 `vault.process(file, fn)` 执行原子替换(fn 做 string replace),避免读写间竞态
-4. 替换成功后返回 `{ path, replaced: true }`
+   - 多次:返回错误"old_string 在文件中出现多次(共 N 次),请提供更多上下文(前后各 3-5 行)以唯一确定"
+4. 用 `vault.processFile(path, fn)` 执行原子替换(fn 中做 string replace),避免读写间竞态
+5. 替换成功后返回 `{ path, replaced: true }`
 
 **安全设计**:old_string 必须唯一匹配的要求参考 Claude Code Edit 工具设计,防止误替换。错误消息中明确告诉 LLM 需要提供更多上下文(前后各 3-5 行)。
 
@@ -385,8 +403,8 @@ When to use grep vs search_vault:
 
 | 文件 | 改动 |
 |------|------|
-| `src/ports/vault.ts` | 新增 appendFile / trashFile / listFiles / fileExists 方法 |
-| `src/adapters/obsidian-vault.ts` | 实现上述 4 个新方法 |
+| `src/ports/vault.ts` | 新增 appendFile / trashFile / listFiles / fileExists / processFile 方法 |
+| `src/adapters/obsidian-vault.ts` | 实现上述 5 个新方法 |
 | `src/main.ts` | 注册 7 个新工具 |
 | `src/core/context-manager.ts` | RAG_PROMPT 补充工具使用指引(grep vs search_vault) |
 
