@@ -23,6 +23,7 @@
 | S-W4-RAG-ENHANCEMENT | [2026-06-26-ratel-w4-rag-enhancement-design.md](specs/2026-06-26-ratel-w4-rag-enhancement-design.md) | Active | 2026-06-26 | W4 切片:Query Rewrite + RRF 多查询融合 + 百炼 Reranker + Indexer subagent(依赖 S-W3-HYBRID 完成) |
 | S-I18N | [2026-06-14-ratel-i18n-design.md](specs/2026-06-14-ratel-i18n-design.md) | Draft | 2026-06-14 | i18n 基础设施:中英文切换,settings.ts + ChatView + 命令 + Notice 全覆盖 |
 | S-DEFENSIVE | [2026-06-14-ratel-defensive-programming-design.md](specs/2026-06-14-ratel-defensive-programming-design.md) | Draft | 2026-06-14 | 防御性编程:反应式 Settings Proxy + Svelte 5 svelte-check + ChatView mount 单测,根治「改 key 不生效」「let 隐式 prop」「new Component 单参」3 类反复 bug |
+| S-VAULT-TOOLS | [2026-06-26-vault-file-tools-design.md](specs/2026-06-26-vault-file-tools-design.md) | Active | 2026-06-26 | Vault 基础文件操作工具集:grep/glob/list_files(只读) + write_note/append_note/edit_note/delete_note(写入),补齐精确搜索与 CRUD 能力 |
 
 
 ---
