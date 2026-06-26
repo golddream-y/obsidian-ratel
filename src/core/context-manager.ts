@@ -258,6 +258,32 @@ export class ContextManager {
 	}
 
 	/**
+	 * 返回当前上下文使用率快照 — 供 StatusLine / StatusDrawer 显示百分比与详情。
+	 *
+	 * 关键路径:
+	 * - usedTokens 复用 toMessages() 输出做 4 字符/token 估算(与 tokenCount 同算法)
+	 * - maxTokens 由调用方从 settings.chatModelMaxTokens 传入,避免本类耦合 settings
+	 * - attachmentTokens 由调用方累加 pendingAttachments$ 中每项 estimatedTokens
+	 * - percentage 在 maxTokens=0 时防除零返回 0
+	 *
+	 * @param maxTokens - 模型上下文窗口上限(从 settings 传入)
+	 * @param attachmentTokens - 待发送附件估算 token 总和(默认 0)
+	 * @param intent - 意图分类(默认 'direct',影响系统提示词长度)
+	 * @returns ContextUsage 快照
+	 */
+	getContextUsage(
+		maxTokens: number,
+		attachmentTokens = 0,
+		intent: Intent = 'direct',
+	): { usedTokens: number; maxTokens: number; attachmentTokens: number; percentage: number } {
+		const text = this.toMessages(intent).map((m) => m.content).join('');
+		const usedTokens = Math.ceil(text.length / 4);
+		const total = usedTokens + attachmentTokens;
+		const percentage = maxTokens > 0 ? Math.round((total / maxTokens) * 100) : 0;
+		return { usedTokens, maxTokens, attachmentTokens, percentage };
+	}
+
+	/**
 	 * 把当前 session 持久化到 storage。
 	 *
 	 * @throws 在 `load()` 之前调用会抛 'Session not loaded'。
