@@ -332,11 +332,17 @@ export default class RatelVaultPlugin extends Plugin {
 			const indexResult = await this.indexController.onLayoutReady();
 			indexProgressRef.handle?.hide();
 			indexProgressRef.handle = null;
+			// 修复:全量索引完成后清除 progress callback,
+			// 避免后续增量索引的 index.progress 事件创建新 toast 却无人 hide。
+			this.workerManager.clearProgressCallback();
 			if (indexResult) {
 				this.feedbackController?.notifyFullIndexComplete(indexResult.indexed, indexResult.errors);
 			}
 		} catch (err) {
 			indexProgressRef.handle?.hide();
+			indexProgressRef.handle = null;
+			// 修复:同上,异常路径也要清除 callback。
+			this.workerManager.clearProgressCallback();
 			const message = err instanceof Error ? err.message : String(err);
 			devLogger.error('main', 'onLayoutReady 失败', err);
 			this.userNotice.toastError(`Ratel 错误: ${message}`);

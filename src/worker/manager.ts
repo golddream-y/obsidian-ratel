@@ -145,6 +145,13 @@ export class WorkerManager {
 	}
 
 	/**
+	 * 清除进度回调(全量索引完成后调用,避免增量索引触发遗留 toast)。
+	 */
+	clearProgressCallback(): void {
+		this.onProgress = undefined;
+	}
+
+	/**
 	 * 销毁 Worker — 终止线程、拒绝所有挂起请求、清空状态。
 	 *
 	 * 关键路径:必须在插件 `onunload` 中调用,否则 Worker 进程残留。
