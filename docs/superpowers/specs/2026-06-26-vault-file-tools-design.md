@@ -388,24 +388,32 @@ When to use grep vs search_vault:
 | 文件 | 职责 |
 |------|------|
 | `src/tools/grep.ts` | grep 工具 |
-| `src/tools/glob.ts` | glob 工具(含 globToRegex 辅助函数) |
+| `src/tools/glob.ts` | glob 工具 |
 | `src/tools/list-files.ts` | list_files 工具 |
 | `src/tools/write-note.ts` | write_note 工具 |
 | `src/tools/append-note.ts` | append_note 工具 |
 | `src/tools/edit-note.ts` | edit_note 工具 |
 | `src/tools/delete-note.ts` | delete_note 工具 |
 | `src/utils/glob-to-regex.ts` | glob 模式转正则(纯函数,供 grep/glob 复用) |
+| `src/utils/path-safety.ts` | validateVaultPath 路径沙箱函数(第 8.1 节) |
+| `src/ui/confirm-modal.ts` | 工具执行确认对话框(第 8.3 节,Obsidian Modal) |
+| `tests/utils/path-safety.test.ts` | 路径校验测试(越界/绝对路径/.obsidian/..穿越) |
+| `tests/utils/glob-to-regex.test.ts` | glob 模式测试 |
 | `tests/tools/grep.test.ts` | grep 工具测试 |
 | `tests/tools/glob.test.ts` | glob 工具测试 |
 | `tests/tools/edit-note.test.ts` | edit_note 工具测试(重点测"多次匹配报错"逻辑) |
+| `tests/core/hooks.test.ts` | HookRegistry 阻断机制测试 |
 
 ### 5.2 修改文件
 
 | 文件 | 改动 |
 |------|------|
 | `src/ports/vault.ts` | 新增 appendFile / trashFile / listFiles / fileExists / processFile 方法 |
-| `src/adapters/obsidian-vault.ts` | 实现上述 5 个新方法 |
-| `src/main.ts` | 注册 7 个新工具 |
+| `src/adapters/obsidian-vault.ts` | 实现上述 5 个新方法 + 每个方法入口调 validateVaultPath |
+| `src/core/hooks.ts` | HookResult 类型 + run() 返回 HookDecision 支持阻断;阶段名统一为 pre-tool-use/post-tool-use/post-tool-failure |
+| `src/core/agent-loop.ts` | 所有工具调用前走 pre-tool-use hook(含权限检查+路径校验),调用后走 post-tool-use hook;失败走 post-tool-failure |
+| `src/settings.ts` | 新增 toolPermissions / trustMode 配置项 + 「工具权限」设置 UI 分组 |
+| `src/main.ts` | 注册 7 个新工具 + 注册内置路径安全 hook;设置变更时重建相关组件 |
 | `src/core/context-manager.ts` | RAG_PROMPT 补充工具使用指引(grep vs search_vault) |
 
 ### 5.3 不需要修改的文件
@@ -421,12 +429,15 @@ When to use grep vs search_vault:
 | 组件 | 测试文件 | 测试要点 |
 |------|----------|----------|
 | globToRegex | `tests/utils/glob-to-regex.test.ts` | `*.md` 匹配根目录 md;`**/*.md` 递归匹配;`daily/*.md` 匹配子目录;边界用例 |
-| grep 工具 | `tests/tools/grep.test.ts` | 正则匹配、字面量匹配、ignore_case、context_lines、max_results 截断、path 限定、include 过滤、空结果 |
-| glob 工具 | `tests/tools/glob.test.ts` | 各种 glob 模式的匹配正确性 |
+| path-safety | `tests/utils/path-safety.test.ts` | 正常路径放行;`../`穿越拒绝;绝对路径拒绝;`.obsidian/`拒绝;`.trash/`拒绝;空路径拒绝;normalizePath 已处理 .. 时仍二次检查 |
+| grep 工具 | `tests/tools/grep.test.ts` | 正则匹配、字面量匹配、ignore_case、context_lines、max_results 截断、path 限定、include 过滤、空结果、排除 .obsidian |
+| glob 工具 | `tests/tools/glob.test.ts` | 各种 glob 模式的匹配正确性;只返回 .md 文件 |
 | edit_note 工具 | `tests/tools/edit-note.test.ts` | 正常替换、old_string 不存在报错、old_string 多次匹配报错、空文件处理 |
 | write_note / append_note / delete_note | `tests/tools/write-append-delete.test.ts` | 创建新文件、覆盖已存在文件、追加到已有/不存在文件、删除到回收站 |
-| list_files 工具 | `tests/tools/list-files.test.ts` | 根目录列表、子目录列表、空目录 |
-| VaultPort 新方法 | `tests/adapters/obsidian-vault.test.ts` | 用 mock App 验证正确调用 Obsidian API |
+| list_files 工具 | `tests/tools/list-files.test.ts` | 根目录列表、子目录列表、空目录、返回 path echo |
+| HookRegistry | `tests/core/hooks.test.ts` | 空 hook 放行;单个 deny 阻断;多个 hook 按序执行;deny 后停止后续 hook;hook 抛错不阻断;pre-tool-use/post-tool-use 阶段隔离 |
+| VaultPort 新方法 | `tests/adapters/obsidian-vault.test.ts` | 用 mock App 验证正确调用 Obsidian API + validateVaultPath 被调用 |
+| 权限检查 | `tests/core/tool-permissions.test.ts`(新文件) | allow/ask/deny 三态;trustMode 覆盖;ask 弹确认后允许/拒绝;会话级临时 allow |
 
 测试全部使用 mock VaultPort,无需启动 Obsidian 环境。
 
@@ -443,14 +454,216 @@ When to use grep vs search_vault:
 
 ---
 
-## 8. 安全与隐私
+## 8. 安全设计:三层防御
+
+参考 Claude Code 的 `PreToolUse` 可阻断 hook + `permissions` allow/ask/deny 三态模型,结合 Obsidian 插件运行时特性,设计三层防御体系,确保所有文件操作严格限制在 vault 范围内且用户可控。
+
+### 8.1 第 1 层:Adapter 路径沙箱(硬性约束,始终启用)
+
+**文件**: `src/utils/path-safety.ts`(新建) + `src/adapters/obsidian-vault.ts`(修改)
+
+所有经过 VaultPort 的路径(读/写/追加/删除/list)在操作前**必须**通过 `validateVaultPath()` 校验。这是最后一道防线,即使 hook 被绕过、LLM 构造恶意路径,adapter 也会拒绝。
+
+**`validateVaultPath(path)` 逻辑**:
+
+```typescript
+/**
+ * 校验路径是否在 vault 安全范围内,返回归一化后的路径。
+ * @throws 路径越界时抛错
+ */
+function validateVaultPath(path: string): string {
+  // 1. 空路径直接拒绝
+  if (!path || typeof path !== 'string') throw new Error('路径不能为空');
+
+  // 2. 使用 Obsidian 内置 normalizePath 归一化(处理 .. / . / 多余斜杠 / 反斜杠)
+  const normalized = normalizePath(path);
+
+  // 3. 禁止绝对路径(normalizePath 不会生成以 / 开头的路径,但做二次确认)
+  if (normalized.startsWith('/') || /^[A-Za-z]:/.test(normalized)) {
+    throw new Error(`路径越界:不允许绝对路径 "${path}"`);
+  }
+
+  // 4. normalizePath 应该已解析 .. 但做二次确认
+  if (normalized.includes('..')) {
+    throw new Error(`路径越界:禁止使用 ".." 穿越 "${path}"`);
+  }
+
+  // 5. 禁止访问 .obsidian/ 目录(插件配置)
+  if (normalized === '.obsidian' || normalized.startsWith('.obsidian/')) {
+    throw new Error(`路径越界:不允许访问 .obsidian 配置目录 "${path}"`);
+  }
+
+  // 6. 禁止访问 .trash/ 目录(回收站)
+  if (normalized === '.trash' || normalized.startsWith('.trash/')) {
+    throw new Error(`路径越界:不允许访问 .trash 回收站 "${path}"`);
+  }
+
+  return normalized;
+}
+```
+
+ObsidianVault 的每个方法入口(`readFile`/`writeFile`/`appendFile`/`trashFile`/`processFile`)开头先调 `validateVaultPath(path)`,通过后再执行。`listFiles` 对 dir 参数也做同样校验。`listMarkdownFiles()` 返回的路径已经是 vault 内部的,不需要再校验。
+
+**为什么不用 Node.js path.resolve + 比较前缀**:ObsidianVault 使用 `app.vault` API 而非 Node fs,路径是 vault 相对的,normalizePath 是 Obsidian 内置的路径归一化函数,天然适配 vault 语义(它把反斜杠转正斜杠、解析 `.` 和 `..`、去掉开头的 `/`、压缩重复斜杠)。
+
+### 8.2 第 2 层:Hook 系统升级支持阻断(治理扩展点)
+
+**文件**: `src/core/hooks.ts`(修改) + `src/core/agent-loop.ts`(修改)
+
+现有 `HookRegistry` 的 hook 签名是 `() => Promise<void>`,返回 void 意味着无法阻断操作。参考 Claude Code PreToolUse 可阻断模型,升级为:
+
+```typescript
+/**
+ * Hook 执行结果。
+ * - void / undefined:放行(无意见)
+ * - { allow: false, reason: string }:阻断,throw Error(reason)
+ * - { allow: true }:显式放行
+ */
+export type HookResult = { allow: boolean; reason?: string } | void;
+```
+
+**HookRegistry.run 改造**:
+- hook handler 签名改为 `(toolCall: ToolCall) => Promise<HookResult>`
+- 串行执行所有 hook,任一返回 `{ allow: false }` 则立即停止并返回阻断结果
+- hook 抛错时仍吞掉并记录(不阻断),但 hook 显式返回 deny 则阻断
+- 新增 `HookDecision` 返回值:
+
+```typescript
+interface HookDecision {
+  allowed: boolean;
+  deniedBy?: string;    // 哪个 hook 阻断的
+  reason?: string;      // 阻断原因
+}
+
+async run(phase: string, toolCall: ToolCall): Promise<HookDecision>;
+```
+
+**Agent Loop 改造**(在现有 pre-write hook 位置):
+- 执行工具前,调用 `hooks.run('pre-tool-use', toolCall)`(所有工具都走,不仅是写工具)
+- 如果 `decision.allowed === false`,throw Error 返回给 LLM:`工具调用被拒绝: {reason}`
+- 工具执行后调用 `hooks.run('post-tool-use', toolCall)`(不阻断,只做审计/通知)
+- 废弃原来的 `pre-write`/`post-write` phase 名,统一为 `pre-tool-use`/`post-tool-use`(与 Claude Code 对齐)
+- 内置注册一个"路径安全 hook"(pre-tool-use),从 toolCall.args 中提取 path 参数,调 `validateVaultPath` 校验。这是对第 1 层的冗余防御(adapter 层已校验,但 hook 层在到达 adapter 前就拦截,错误信息更友好)
+
+**Hook 阶段扩展**(对齐 Claude Code,但只实现我们需要的):
+- `pre-tool-use`:工具执行前,可阻断
+- `post-tool-use`:工具执行成功后,不阻断(用于审计/通知/自动格式化)
+- `post-tool-failure`:工具执行失败后(新增,用于错误审计)
+
+### 8.3 第 3 层:工具权限配置(用户可控)
+
+**文件**: `src/settings.ts`(修改) + 新增设置 UI
+
+参考 Claude Code 的 `permissions.allow/deny` 模型,在设置面板新增「工具权限」分组,为每个工具配置三态:
+
+| 权限模式 | 行为 |
+|----------|------|
+| **allow**(允许) | 工具可直接执行,无需确认 |
+| **ask**(确认) | 执行前弹 Modal 对话框,用户点"允许"才执行,"拒绝"则返回错误给 LLM |
+| **deny**(拒绝) | 工具直接返回错误"该工具已被禁用",不执行 |
+
+**默认值**(开箱即用,安全):
+
+| 工具 | 默认权限 | 理由 |
+|------|----------|------|
+| search_vault | allow | 只读,无副作用 |
+| read_note | allow | 只读,无副作用 |
+| grep | allow | 只读,无副作用 |
+| glob | allow | 只读,无副作用 |
+| list_files | allow | 只读,无副作用 |
+| write_note | ask | 写入操作,默认需确认 |
+| append_note | ask | 写入操作,默认需确认 |
+| edit_note | ask | 写入操作,默认需确认 |
+| delete_note | ask | 删除操作,默认需确认 |
+
+**Settings 配置项新增**:
+
+```typescript
+export type ToolPermission = 'allow' | 'ask' | 'deny';
+
+export interface RatelVaultSettings {
+  // ... 现有字段 ...
+
+  // 工具权限控制(第 8.3 节)
+  toolPermissions: Record<string, ToolPermission>;
+  // 信任模式:开启后所有工具默认 allow,跳过确认对话框(相当于全局 allow)
+  trustMode: boolean;
+}
+```
+
+**默认值**:
+```typescript
+toolPermissions: {
+  search_vault: 'allow',
+  read_note: 'allow',
+  grep: 'allow',
+  glob: 'allow',
+  list_files: 'allow',
+  write_note: 'ask',
+  append_note: 'ask',
+  edit_note: 'ask',
+  delete_note: 'ask',
+},
+trustMode: false,
+```
+
+**Settings UI** 新增「工具权限」分组(在「开发者」分组之前):
+- 一个"信任模式"总开关(toggle):开启后全部工具 allow,不弹确认(适合信任 AI 的高级用户)
+- trustMode 关闭时,逐个工具展示下拉框:允许/询问/拒绝
+- 只读工具组(search_vault/read_note/grep/glob/list_files)默认收起或标注"只读",用户可改但一般不需要
+- 写入工具组(write_note/append_note/edit_note/delete_note)默认展开
+
+**确认对话框实现**:新增 `src/ui/confirm-modal.ts`(Svelte Component 或原生 Obsidian Modal),展示:
+- 工具名(如"write_note")
+- 目标路径
+- 操作摘要(如"创建笔记 notes/meeting.md")
+- 三个按钮:"允许"、"允许(本次会话不再询问)"、"拒绝"
+- "允许(本次会话不再询问)"在当前会话内存中把对应工具+路径对记为 allow,不持久化到 settings
+
+**权限决策逻辑**(Agent Loop 中工具执行前):
+```
+if trustMode → 放行
+if toolPermissions[toolName] === 'allow' → 放行
+if toolPermissions[toolName] === 'deny' → 拒绝,返回错误
+if toolPermissions[toolName] === 'ask' → 弹确认对话框,等待用户选择
+```
+
+### 8.4 工具层参数校验(LLM 友好)
+
+每个工具在 execute 入口做基础参数校验:
+- path 必须是非空字符串
+- content(写入内容)必须是 string(允许空串,创建空文件)
+- pattern(grep/glob)必须是非空字符串
+- 校验失败返回明确的中文错误信息(如"path 参数必须是字符串,收到:number"),帮助 LLM 自纠
+
+### 8.5 安全设计总结
+
+```
+LLM 工具调用
+  ↓
+[8.4 工具层参数校验]  ← 参数类型/非空检查,LLM 友好错误
+  ↓
+[8.3 权限配置]  ← allow/ask/deny + 确认对话框,用户可控
+  ↓
+[8.2 pre-tool-use hook]  ← 路径校验 hook + 可扩展治理钩子
+  ↓
+[8.1 Adapter 路径沙箱]  ← validateVaultPath 强制校验,最后防线
+  ↓
+执行 Obsidian API 操作
+  ↓
+[8.2 post-tool-use hook]  ← 审计/通知
+```
+
+每一层都独立起作用:
+- 即使上层都被绕过,adapter 层的 validateVaultPath 会拒绝越界路径
+- 即使 adapter 层有 bug,hook 层和权限层也提供了深度防御
+- 用户可通过 settings 面板完全控制每个工具的权限
+
+### 8.6 隐私
 
 - **无新增网络调用**:所有工具都是 vault 本地操作
-- **写入安全**:edit_note 要求 old_string 唯一匹配,防止误替换;delete_note 使用 trash 而非永久删除(可恢复)
-- **路径约束**:所有路径是 vault 相对路径,ObsidianVault 实现通过 `getAbstractFileByPath` 访问,无法逃逸到 vault 外
-- **无数据泄露**:工具返回值只包含文件内容片段(grep 的 match 行+上下文),与 read_note 的行为一致
-- **hooks 治理**:写入工具标记 readOnly=false,触发知识治理钩子(如写入确认、内容审查等)
-- **.obsidian 目录**:grep/glob 默认不搜索 `.obsidian/` 目录,避免搜索插件配置文件(在 include 过滤中排除)
+- **无数据收集**:工具调用不上传到任何服务器
+- **审计日志**(可选,留后续):post-tool-use hook 可将写操作记录到本地日志文件,默认关闭
 
 ---
 
