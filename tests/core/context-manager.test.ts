@@ -260,7 +260,7 @@ describe('ContextManager', () => {
 		expect(msgs[0]!.content).toContain('Ratel');
 	});
 
-	it('toMessages(rag) - 返回 RAG_PROMPT(含 search_vault 工作流指令)', async () => {
+	it('toMessages(rag) - 返回 RAG_PROMPT(含 search_vault 与 grep 工具指引)', async () => {
 		const persistence = createMockPersistence();
 		const ctx = new ContextManager(persistence);
 		await ctx.load('s1');
@@ -268,9 +268,8 @@ describe('ContextManager', () => {
 
 		const msgs = ctx.toMessages('rag');
 		expect(msgs[0]!.role).toBe('system');
-		// 关键路径:rag 模式含 search_vault + read_note + 引用 [1][2] 指令
 		expect(msgs[0]!.content).toContain('search_vault');
-		expect(msgs[0]!.content).toContain('read_note');
+		expect(msgs[0]!.content).toContain('grep');
 		expect(msgs[0]!.content).toContain('[1]');
 	});
 

@@ -45,6 +45,18 @@
 
 ---
 
+### 2.4 工具描述来自提示词 registry(目标)
+
+**决策(待 P-PROMPTS 落地):** `ToolDefinition.description` 与参数 `description` 由 `composeToolDefinitions()` 从 `tool.<name>.*` section 生成,不在 `src/tools/*.ts` 硬编码。
+
+**原因:**
+- 与 RAG system 内 `{{toolList}}` 同源,避免指引与 schema 漂移
+- 全中文、集中管理
+
+详见 [prompt-management §8.7](prompt-management.md#87-工具-schema-样例tools-参数)。
+
+---
+
 ## 3. 工具注册表
 
 ```mermaid
@@ -190,5 +202,5 @@ sequenceDiagram
 | 与...的接口 | 方向 | 说明 |
 |---|---|---|
 | [agent-loop](agent-loop.md) | 被调用 | Agent Loop 决定何时调哪个工具 |
-| [rag/retriever](../rag/retriever.md) | 依赖 | search_vault 调用检索器(混合搜索) |
+| [rag/retriever](../rag/retriever.md) | 依赖 | search_vault 调用检索器;多查询时触发 query 改写(见 prompt-management §8.4) |
 | [host/obsidian-integration](../host/obsidian-integration.md) | 依赖 | read_note / create_note 调用 Vault API |

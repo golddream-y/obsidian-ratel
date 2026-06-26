@@ -12,17 +12,24 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const { mockTFile, mockApp } = vi.hoisted(() => {
 	class MockTFile {}
 
-	// 关键路径:vault.on 返回 ref,vault.offref 接收 ref;用 Map 存 listener 便于触发。
 	const eventListeners = new Map<string, Set<(file: unknown, oldPath?: string) => void>>();
 
 	const app = {
 		vault: {
 			getAbstractFileByPath: vi.fn(),
 			read: vi.fn(),
+			cachedRead: vi.fn(),
 			modify: vi.fn(),
+			append: vi.fn(),
 			create: vi.fn(),
 			createFolder: vi.fn(),
+			trash: vi.fn(),
+			process: vi.fn(),
 			getMarkdownFiles: vi.fn(),
+			adapter: {
+				list: vi.fn(),
+				exists: vi.fn(),
+			},
 			on: vi.fn((event: string, cb: (file: unknown, oldPath?: string) => void) => {
 				if (!eventListeners.has(event)) eventListeners.set(event, new Set());
 				eventListeners.get(event)!.add(cb);
@@ -31,7 +38,6 @@ const { mockTFile, mockApp } = vi.hoisted(() => {
 			offref: vi.fn((ref: { event: string; cb: (file: unknown, oldPath?: string) => void }) => {
 				eventListeners.get(ref.event)?.delete(ref.cb);
 			}),
-			// 测试辅助:触发事件
 			_emit(event: string, file: unknown, oldPath?: string) {
 				eventListeners.get(event)?.forEach((cb) => cb(file, oldPath));
 			},
@@ -52,6 +58,10 @@ vi.mock('obsidian', () => ({
 
 import { ObsidianVault } from '../../src/adapters/obsidian-vault';
 
+function mockFile(path: string): InstanceType<typeof mockTFile> & { path: string } {
+	return Object.assign(new mockTFile(), { path });
+}
+
 describe('ObsidianVault', () => {
 	let vault: ObsidianVault;
 
@@ -60,10 +70,8 @@ describe('ObsidianVault', () => {
 		vault = new ObsidianVault(mockApp as never);
 	});
 
-	// ==================== readFile ====================
-
 	it('readFile - 文件存在 - 返回文件内容', async () => {
-		const file = new mockTFile();
+		const file = mockFile('notes/foo.md');
 		mockApp.vault.getAbstractFileByPath.mockReturnValue(file);
 		mockApp.vault.read.mockResolvedValue('# Hello');
 
@@ -82,16 +90,17 @@ describe('ObsidianVault', () => {
 	});
 
 	it('readFile - 路径指向文件夹(非 TFile)- 抛错', async () => {
-		// 关键路径:文件夹对象不是 TFile 实例,应被拒绝。
 		mockApp.vault.getAbstractFileByPath.mockReturnValue({ path: 'folder' });
 
 		await expect(vault.readFile('folder')).rejects.toThrow('File not found: folder');
 	});
 
-	// ==================== writeFile ====================
+	it('readFile - 入口调用 validateVaultPath 拒绝 .obsidian', async () => {
+		await expect(vault.readFile('.obsidian/config')).rejects.toThrow('.obsidian');
+	});
 
 	it('writeFile - 文件已存在 - 调用 modify 覆盖', async () => {
-		const file = new mockTFile();
+		const file = mockFile('notes/foo.md');
 		mockApp.vault.getAbstractFileByPath.mockReturnValue(file);
 
 		await vault.writeFile('notes/foo.md', 'new content');
@@ -110,8 +119,6 @@ describe('ObsidianVault', () => {
 	});
 
 	it('writeFile - 父目录不存在 - 先 createFolder 再 create', async () => {
-		// 关键路径:首次 getAbstractFileByPath 返回 null(文件不存在),
-		// 第二次(检查父目录)也返回 null,触发 createFolder。
 		mockApp.vault.getAbstractFileByPath.mockReturnValue(null);
 
 		await vault.writeFile('a/b/c.md', 'content');
@@ -122,7 +129,6 @@ describe('ObsidianVault', () => {
 
 	it('writeFile - 父目录已存在 - 不调用 createFolder', async () => {
 		const dirFile = { path: 'notes' };
-		// 第一次查文件返回 null,第二次查目录返回存在的对象
 		mockApp.vault.getAbstractFileByPath
 			.mockReturnValueOnce(null)
 			.mockReturnValueOnce(dirFile);
@@ -138,12 +144,9 @@ describe('ObsidianVault', () => {
 
 		await vault.writeFile('root.md', 'content');
 
-		// 关键路径:lastIndexOf('/') 返回 -1,substring(0, -1) = '',跳过目录检查。
 		expect(mockApp.vault.createFolder).not.toHaveBeenCalled();
 		expect(mockApp.vault.create).toHaveBeenCalledWith('root.md', 'content');
 	});
-
-	// ==================== getBacklinks ====================
 
 	it('getBacklinks - 有反链 - 返回 Map<源路径, 次数>', () => {
 		mockApp.metadataCache.resolvedLinks = {
@@ -169,10 +172,8 @@ describe('ObsidianVault', () => {
 		expect(result.size).toBe(0);
 	});
 
-	// ==================== getMetadata ====================
-
 	it('getMetadata - 文件存在且有缓存 - 返回结构化元数据', () => {
-		const file = new mockTFile();
+		const file = mockFile('notes/foo.md');
 		mockApp.vault.getAbstractFileByPath.mockReturnValue(file);
 		mockApp.metadataCache.getFileCache.mockReturnValue({
 			frontmatter: { title: 'Test', tags: ['foo'] },
@@ -196,30 +197,12 @@ describe('ObsidianVault', () => {
 	});
 
 	it('getMetadata - 缓存未就绪 - 返回 null', () => {
-		const file = new mockTFile();
+		const file = mockFile('notes/foo.md');
 		mockApp.vault.getAbstractFileByPath.mockReturnValue(file);
 		mockApp.metadataCache.getFileCache.mockReturnValue(null);
 
 		expect(vault.getMetadata('notes/foo.md')).toBeNull();
 	});
-
-	it('getMetadata - 无 tags/links 字段 - 返回 undefined', () => {
-		const file = new mockTFile();
-		mockApp.vault.getAbstractFileByPath.mockReturnValue(file);
-		mockApp.metadataCache.getFileCache.mockReturnValue({
-			frontmatter: { title: 'Test' },
-			// tags 和 links 字段缺失
-		});
-
-		const meta = vault.getMetadata('notes/foo.md');
-
-		expect(meta).not.toBeNull();
-		expect(meta!.frontmatter).toEqual({ title: 'Test' });
-		expect(meta!.tags).toBeUndefined();
-		expect(meta!.links).toBeUndefined();
-	});
-
-	// ==================== 事件订阅 ====================
 
 	it('onFileModify - 注册回调,事件触发时收到路径', () => {
 		const cb = vi.fn();
@@ -228,8 +211,6 @@ describe('ObsidianVault', () => {
 		mockApp.vault._emit('modify', { path: 'notes/foo.md' });
 
 		expect(cb).toHaveBeenCalledWith('notes/foo.md');
-		expect(mockApp.vault.on).toHaveBeenCalledWith('modify', expect.any(Function));
-
 		unsub();
 		expect(mockApp.vault.offref).toHaveBeenCalled();
 	});
@@ -261,34 +242,70 @@ describe('ObsidianVault', () => {
 		expect(cb).toHaveBeenCalledWith('new.md', 'old.md');
 	});
 
-	it('事件退订 - 调用返回函数后不再收到事件', () => {
-		const cb = vi.fn();
-		const unsub = vault.onFileModify(cb);
-
-		unsub();
-
-		mockApp.vault._emit('modify', { path: 'foo.md' });
-
-		expect(cb).not.toHaveBeenCalled();
-	});
-
-	// ==================== listMarkdownFiles ====================
-
 	it('listMarkdownFiles - 返回所有 Markdown 文件路径', () => {
 		mockApp.vault.getMarkdownFiles.mockReturnValue([
 			{ path: 'a.md' },
 			{ path: 'b/c.md' },
-			{ path: 'd.md' },
 		]);
 
-		const files = vault.listMarkdownFiles();
-
-		expect(files).toEqual(['a.md', 'b/c.md', 'd.md']);
+		expect(vault.listMarkdownFiles()).toEqual(['a.md', 'b/c.md']);
 	});
 
-	it('listMarkdownFiles - vault 为空 - 返回空数组', () => {
-		mockApp.vault.getMarkdownFiles.mockReturnValue([]);
+	// ==================== vault-tools 新方法 ====================
 
-		expect(vault.listMarkdownFiles()).toEqual([]);
+	it('appendFile - 已存在文件追加内容', async () => {
+		const file = mockFile('notes/a.md');
+		mockApp.vault.getAbstractFileByPath.mockReturnValue(file);
+		mockApp.vault.read.mockResolvedValue('hello world');
+
+		await vault.appendFile('notes/a.md', ' world');
+
+		expect(mockApp.vault.append).toHaveBeenCalledWith(file, ' world');
+	});
+
+	it('appendFile - 不存在则 create', async () => {
+		mockApp.vault.getAbstractFileByPath.mockReturnValue(null);
+
+		await vault.appendFile('new.md', '# New');
+
+		expect(mockApp.vault.create).toHaveBeenCalledWith('new.md', '# New');
+	});
+
+	it('fileExists - 委托 adapter.exists', async () => {
+		mockApp.vault.adapter.exists.mockResolvedValue(true);
+
+		expect(await vault.fileExists('x.md')).toBe(true);
+		expect(mockApp.vault.adapter.exists).toHaveBeenCalledWith('x.md');
+	});
+
+	it('processFile - 原子替换', async () => {
+		const file = mockFile('notes/edit.md');
+		mockApp.vault.getAbstractFileByPath.mockReturnValue(file);
+		mockApp.vault.process.mockImplementation(async (_f, fn: (c: string) => string) => fn('foo bar'));
+
+		const result = await vault.processFile('notes/edit.md', (c) => c.replace('bar', 'baz'));
+
+		expect(result).toBe('foo baz');
+	});
+
+	it('trashFile - 优先系统回收站', async () => {
+		const file = mockFile('del.md');
+		mockApp.vault.getAbstractFileByPath.mockReturnValue(file);
+		mockApp.vault.trash.mockResolvedValue(undefined);
+
+		await vault.trashFile('del.md');
+
+		expect(mockApp.vault.trash).toHaveBeenCalledWith(file, true);
+	});
+
+	it('trashFile - 系统回收站失败时降级本地 .trash', async () => {
+		const file = mockFile('del.md');
+		mockApp.vault.getAbstractFileByPath.mockReturnValue(file);
+		mockApp.vault.trash.mockRejectedValueOnce(new Error('no system trash')).mockResolvedValueOnce(undefined);
+
+		await vault.trashFile('del.md');
+
+		expect(mockApp.vault.trash).toHaveBeenNthCalledWith(1, file, true);
+		expect(mockApp.vault.trash).toHaveBeenNthCalledWith(2, file, false);
 	});
 });

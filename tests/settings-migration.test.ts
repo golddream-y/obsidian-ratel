@@ -31,7 +31,13 @@ import { DEFAULT_SETTINGS, type RatelVaultSettings } from '../src/settings';
  * 关键路径:Object.assign 后,新字段用 DEFAULT 兜底,旧字段被 raw 覆盖但不影响新字段。
  */
 function simulateLoadSettings(raw: Partial<RatelVaultSettings> | null): RatelVaultSettings {
-    return Object.assign({}, DEFAULT_SETTINGS, raw ?? {});
+	const loaded = raw ?? {};
+	const settings = Object.assign({}, DEFAULT_SETTINGS, loaded);
+	settings.toolPermissions = {
+		...DEFAULT_SETTINGS.toolPermissions,
+		...(loaded.toolPermissions ?? {}),
+	};
+	return settings;
 }
 
 describe('Settings 迁移', () => {
@@ -73,5 +79,12 @@ describe('Settings 迁移', () => {
         expect(merged.chatApiBase).toBe('https://api.openai.com');
         // 未提供的字段保持默认
         expect(merged.embedProvider).toBe(DEFAULT_SETTINGS.embedProvider);
+    });
+
+    it('toolPermissions 为空对象时合并 DEFAULT 默认值', () => {
+        const merged = simulateLoadSettings({ toolPermissions: {} });
+
+        expect(merged.toolPermissions.read_note).toBe('allow');
+        expect(merged.toolPermissions.write_note).toBe('ask');
     });
 });
