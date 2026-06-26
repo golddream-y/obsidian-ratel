@@ -117,7 +117,49 @@ stateDiagram-v2
 
 ---
 
-## 5. ChatView 生命周期
+## 5. Chat UI 布局
+
+```mermaid
+graph TB
+    subgraph "ChatView.svelte"
+        Messages["Messages Area<br/>(消息流 + 工具调用卡片 + 搜索结果 + 附件缩略图)"]
+        StatusLine["StatusLine<br/>(30px 常驻底部)"]
+        StatusDrawer["StatusDrawer<br/>(展开时显示详情)"]
+        AttachmentStrip["AttachmentStrip<br/>(有附件时显示)"]
+        SlashMenu["SlashMenu<br/>(输入 / 时弹出)"]
+        InputRow["InputRow<br/>(+ 按钮 + textarea + Send/Stop)"]
+    end
+
+    Messages --> StatusLine
+    StatusLine --> StatusDrawer
+    StatusDrawer --> AttachmentStrip
+    AttachmentStrip --> SlashMenu
+    SlashMenu --> InputRow
+```
+
+**组件职责:**
+
+| 组件 | 职责 | 数据源 |
+|------|------|--------|
+| StatusLine | 单行展示 5 种状态(就绪/思考中/错误/未配置/索引中)+ ctx 进度条 + 百分比 | `userStatus.statusBar$` + `contextUsage$` |
+| StatusDrawer | 展开式详情 — 向量化/索引区 + 上下文区(含压缩按钮) | `statusBar$` + `contextUsage$` + `pendingAttachments$` |
+| SlashMenu | 输入 / 弹出命令菜单(`/new` `/compact` `/model` `/reindex`) | `filterCommands(input)` 纯函数 |
+| AttachmentStrip | 图片附件预览条(56×56 缩略图 + × 删除) | `pendingAttachments$` |
+
+**Notice 迁移策略:**
+
+| 类型 | 迁移后 |
+|------|--------|
+| 模型下载进度 | `StatusLine` 状态文字 + `toastProgress`(长驻进度条保留) |
+| 索引进度 | `StatusLine` 状态文字 + `StatusDrawer` 进度条 |
+| 严重错误 | 保留 `toastError` + `StatusLine` 红点 |
+| 降级警告 | `StatusDrawer` 降级区(不弹 toast) |
+
+**CSS 变量约束:** 全部颜色复用 Obsidian CSS 变量(`--background-secondary` / `--text-success` / `--text-warning` / `--text-error` 等),禁止硬编码 hex,禁止 box-shadow,圆角 4-8px。
+
+---
+
+## 6. ChatView 生命周期
 
 ```mermaid
 sequenceDiagram
@@ -155,7 +197,7 @@ sequenceDiagram
 
 ---
 
-## 6. 会话管理
+## 7. 会话管理
 
 ```mermaid
 graph TB
@@ -183,7 +225,7 @@ graph TB
 
 ---
 
-## 7. RAG 对话模式
+## 8. RAG 对话模式
 
 当用户问题涉及 vault 内容时,Chat 的完整流程:
 
@@ -220,7 +262,7 @@ sequenceDiagram
 
 ---
 
-## 8. 边界
+## 9. 边界
 
 | 与...的接口 | 方向 | 说明 |
 |---|---|---|

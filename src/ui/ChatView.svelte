@@ -1,9 +1,23 @@
 <script lang="ts">
+	/**
+	 * @file src/ui/ChatView.svelte
+	 * @description Chat 主视图 — 消息流 + StatusLine/Drawer + 斜杠命令 + 附件预览
+	 * @module ui/ChatView
+	 * @depends main, ui/StatusLine, ui/StatusDrawer, ui/SlashMenu, ui/AttachmentStrip, ui/slash-commands, ui/attachment-utils
+	 */
 	import type RatelVaultPlugin from '../main';
-	import StatusBar from './StatusBar.svelte';
+	import { get } from 'svelte/store';
+	import StatusLine from './StatusLine.svelte';
+	import StatusDrawer from './StatusDrawer.svelte';
+	import SlashMenu from './SlashMenu.svelte';
+	import AttachmentStrip from './AttachmentStrip.svelte';
+	import { filterCommands, type SlashCommand } from './slash-commands';
+	import { validateAttachment, estimateImageTokens } from './attachment-utils';
 	import { evaluateChatSendGate } from './chat-send-gate';
 	import { hasChatApiKey, resolveChatApiKey } from '../secrets/ratel-secrets';
 	import { formatChatError, type DiagError } from './chat-error';
+	import { showCompactConfirm } from './compact-confirm';
+	import { devLogger } from '../logging/dev-logger';
 
 	interface ToolCallEntry {
 		name: string;
@@ -25,40 +39,73 @@
 			path: string;
 			index: number;
 		}>;
-		// 关键路径:W4 新增 — 标识搜索结果是否经过 Rerank 精排,供卡片显示标记。
 		searchReranked?: boolean;
+		attachments?: Array<{ fileName: string; mimeType: string; base64: string }>;
 	}
 
-	export let plugin: RatelVaultPlugin;
-	let messages: Message[] = [];
-	let input = '';
-	let isRunning = false;
-	let sessionId = 'session-' + Date.now();
-	let abortController: AbortController | null = null;
+	// 关键路径:Svelte 5 用 $props() 替代 export let
+	let { plugin }: { plugin: RatelVaultPlugin } = $props();
 
-	// 修复:Svelte 5 编译器对 `$plugin.xxx` 形式有歧义(把 plugin 当 store 名订阅 .subscribe),
-	// 这里先把 store 引用提到局部变量,再 $-subscribe,避免编译器误判。
-	$: statusBar = plugin.userStatus.statusBar$;
-	$: statusSnap = $statusBar;
-	// 关键路径:SecretStorage 无文档化事件,plugin.settings 原地 mutate 也不触发响应式;
-	// 用 keyVersion 计数器强制 hasKey 重算,在输入聚焦 / 发送时手动刷新。
-	let keyVersion = 0;
-	$: hasKey = (keyVersion, hasChatApiKey(plugin.app, plugin.settings));
-	$: gate = evaluateChatSendGate(plugin.settings, statusSnap, { hasChatApiKey: hasKey });
+	// 关键路径:Svelte 5 用 $state 替代 let 响应式变量
+	let messages = $state<Message[]>([]);
+	let input = $state('');
+	let isRunning = $state(false);
+	let sessionId = $state('session-' + Date.now());
+	let abortController: AbortController | null = null;
+	let drawerExpanded = $state(false);
+	let fileInput: HTMLInputElement | null = null;
+
+	// SlashMenu 组件实例引用 — 用于转发键盘事件。
+	// 关键路径:用 $state 让 bind:this 赋值能被 Svelte 5 识别(消除 non_reactive_update 警告)。
+	let slashMenuRef = $state<{ handleKeydown: (e: KeyboardEvent) => boolean } | null>(null);
+
+	// 关键路径:Svelte 5 用 $derived 替代 $: 自动重算
+	const statusBar = $derived(plugin.userStatus.statusBar$);
+	const statusSnap = $derived($statusBar);
+	const contextUsage = $derived(plugin.userStatus.contextUsage$);
+	const pendingAttachments = $derived(plugin.userStatus.pendingAttachments$);
+
+	// 关键路径:SecretStorage 无文档化事件,用 keyVersion 计数器强制 hasKey 重算。
+	// keyVersion >= 0 永真,仅用于让 $derived 追踪 keyVersion 变化,实际值取 hasChatApiKey。
+	let keyVersion = $state(0);
+	const hasKey = $derived(keyVersion >= 0 && hasChatApiKey(plugin.app, plugin.settings));
+	const gate = $derived(
+		evaluateChatSendGate(plugin.settings, statusSnap, { hasChatApiKey: hasKey }),
+	);
+
+	// 斜杠命令:仅当 input 以 / 开头且 filterCommands 返回非空时显示菜单
+	const slashVisible = $derived(filterCommands(input).length > 0 && input.startsWith('/') && !input.includes(' '));
 
 	/**
 	 * 重新解析钥匙串状态并按需重建 LLM 适配器。
-	 * SecretStorage 无文档化 onChange 事件,改在输入聚焦 / 发送前手动刷新,
-	 * 让用户在 Obsidian 钥匙串添加密钥后无需重载插件即可生效。
+	 * SecretStorage 无文档化 onChange 事件,改在输入聚焦 / 发送前手动刷新。
 	 */
 	function refreshKeyState() {
-		// 关键路径:钥匙串值可能已变更,按需 rebuild LLM 让新 key 即时注入 config。
-		const prevKey = plugin.llm?.config?.apiKey ?? '';
+		// 关键路径:DeepSeekLLM.config 是 private,svelte-check 严格模式需 unknown 绕过类型
+		const prevKey = (plugin.llm as unknown as { config?: { apiKey?: string } } | null)?.config?.apiKey ?? '';
 		const currentKey = resolveChatApiKey(plugin.app, plugin.settings) ?? '';
 		if (prevKey !== currentKey) {
 			plugin.rebuildLLM();
 		}
 		keyVersion++;
+	}
+
+	/**
+	 * 刷新上下文使用率 — send 前后与附件变化时调用。
+	 */
+	function refreshContextUsage() {
+		const attachmentTokens = get(plugin.userStatus.pendingAttachments$).reduce(
+			(sum, a) => sum + a.estimatedTokens,
+			0,
+		);
+		// 关键路径:plugin.ask 内部创建 ContextManager,这里临时构造一个估算
+		// 实际 usedTokens 由 agentLoop 在 send 时更新;此处用 messages 粗估
+		const approxUsed = messages.reduce((sum, m) => sum + Math.ceil(m.content.length / 4), 0);
+		plugin.userStatus.patchContextUsage({
+			usedTokens: approxUsed,
+			maxTokens: plugin.settings.chatModelMaxTokens,
+			attachmentTokens,
+		});
 	}
 
 	function handleAgentError(assistantMsg: Message, code: string, message: string, toolName?: string): void {
@@ -69,7 +116,7 @@
 		if (code === 'TOOL_ERROR' || code === 'INDEX_NOT_READY') {
 			if (assistantMsg.toolCalls) {
 				for (let i = assistantMsg.toolCalls.length - 1; i >= 0; i--) {
-					const tc = assistantMsg.toolCalls[i];
+					const tc = assistantMsg.toolCalls[i]!;
 					if (tc.status === 'calling' && (!toolName || tc.name === toolName)) {
 						tc.status = 'failed';
 						tc.errorMessage = message;
@@ -82,16 +129,68 @@
 		assistantMsg.chatError = formatChatError(code, message);
 	}
 
+	/**
+	 * 执行斜杠命令 — 由 SlashMenu onSelect 触发或回车时识别。
+	 */
+	function executeSlashCommand(cmd: SlashCommand): void {
+		input = '';
+		switch (cmd.name) {
+			case '/new':
+				messages = [];
+				sessionId = 'session-' + Date.now();
+				plugin.userStatus.patchContextUsage({ usedTokens: 0 });
+				plugin.userStatus.clearAttachments();
+				break;
+			case '/compact':
+				handleCompact();
+				break;
+			case '/model':
+				// 关键路径:Obsidian SettingCenter 未在 d.ts 导出,用 unknown 绕过类型
+				(plugin as unknown as { app: { setting: { open: () => void; openTabById: (id: string) => void } } }).app.setting.open();
+				(plugin as unknown as { app: { setting: { openTabById: (id: string) => void } } }).app.setting.openTabById('ratel-vault');
+				break;
+			case '/reindex':
+				// 关键路径:不 await,让索引在后台跑,StatusLine 会通过 statusBar$ 显示进度
+				plugin.indexController.reindex().catch((err) => {
+					devLogger.error('index', '/reindex 失败', err);
+				});
+				break;
+		}
+	}
+
+	/**
+	 * 压缩上下文 — 弹确认框,确认后清空 messages(本 spec 只做 UI 入口,
+	 * 压缩逻辑复用 context-manager 的 truncate 能力,LLM 总结式压缩留给后续 spec)。
+	 */
+	async function handleCompact(): Promise<void> {
+		const confirmed = await showCompactConfirm(plugin.app);
+		if (!confirmed) return;
+		// 关键路径:简单实现 — 保留最后 2 条消息,清空历史(spec 非目标:LLM 总结式压缩)
+		messages = messages.slice(-2);
+		refreshContextUsage();
+	}
+
 	async function sendMessage() {
 		refreshKeyState();
 		const text = input.trim();
-		// 关键路径:用最新钥匙串状态重算 gate,避免响应式 stale 导致误拦或误放行。
 		const freshGate = evaluateChatSendGate(plugin.settings, statusSnap, {
 			hasChatApiKey: hasChatApiKey(plugin.app, plugin.settings),
 		});
 		if (!text || isRunning || !freshGate.canSend) return;
 
-		messages = [...messages, { role: 'user', content: text }];
+		// 关键路径:斜杠命令在 sendMessage 前已被 handleKeydown 拦截,这里不会再收到 / 开头的 text
+		const currentAttachments = get(plugin.userStatus.pendingAttachments$).map((a) => ({
+			fileName: a.fileName,
+			mimeType: a.mimeType,
+			base64: a.base64,
+		}));
+
+		const userMsg: Message = {
+			role: 'user',
+			content: text,
+			attachments: currentAttachments.length > 0 ? currentAttachments : undefined,
+		};
+		messages = [...messages, userMsg];
 		input = '';
 		isRunning = true;
 		abortController = new AbortController();
@@ -122,12 +221,13 @@
 					case 'tool.result':
 						if (assistantMsg.toolCalls) {
 							for (let i = assistantMsg.toolCalls.length - 1; i >= 0; i--) {
+								const tc = assistantMsg.toolCalls[i]!;
 								if (
-									assistantMsg.toolCalls[i].name === event.payload.name &&
-									assistantMsg.toolCalls[i].status === 'calling'
+									tc.name === event.payload.name &&
+									tc.status === 'calling'
 								) {
-									assistantMsg.toolCalls[i].result = event.payload.result;
-									assistantMsg.toolCalls[i].status = 'done';
+									tc.result = event.payload.result;
+									tc.status = 'done';
 									break;
 								}
 							}
@@ -140,6 +240,7 @@
 						messages = [...messages];
 						break;
 					case 'message.end':
+						// 关键路径:message.end.payload.tokens 当前未消费,后续可接入 contextUsage 更新
 						break;
 					case 'error':
 						handleAgentError(assistantMsg, event.payload.code, event.payload.message, lastToolName);
@@ -154,6 +255,9 @@
 		} finally {
 			isRunning = false;
 			abortController = null;
+			// 关键路径:发送完成后清空附件并刷新上下文使用率
+			plugin.userStatus.clearAttachments();
+			refreshContextUsage();
 		}
 	}
 
@@ -161,11 +265,102 @@
 		abortController?.abort();
 	}
 
+	/**
+	 * 输入框键盘事件 — 优先转发给 SlashMenu(若可见),否则 Enter 发送。
+	 */
 	function handleKeydown(e: KeyboardEvent) {
+		// 关键路径:斜杠菜单可见时,优先处理导航键
+		if (slashVisible && slashMenuRef) {
+			const handled = slashMenuRef.handleKeydown(e);
+			if (handled) return;
+		}
+		// 关键路径:回车且菜单不可见时,检查是否是斜杠命令
 		if (e.key === 'Enter' && !e.shiftKey) {
 			e.preventDefault();
+			const trimmed = input.trim();
+			// 关键路径:精确匹配命令名(如 /new)直接执行
+			const exactMatch = filterCommands(trimmed).find((c) => c.name === trimmed);
+			if (exactMatch) {
+				executeSlashCommand(exactMatch);
+				return;
+			}
 			sendMessage();
 		}
+	}
+
+	/**
+	 * 文件选择 — 点击 + 按钮触发隐藏 input file。
+	 */
+	function triggerFileInput() {
+		fileInput?.click();
+	}
+
+	/**
+	 * 处理文件选择 — 校验后转 base64 存入 pendingAttachments$。
+	 */
+	async function handleFileSelect(e: Event) {
+		const target = e.target as HTMLInputElement;
+		if (!target.files || target.files.length === 0) return;
+		const file = target.files[0]!;
+		target.value = ''; // 清空,允许重复选同一文件
+
+		const currentCount = get(plugin.userStatus.pendingAttachments$).length;
+		const validateResult = validateAttachment(file, currentCount);
+		if (!validateResult.ok) {
+			// 关键路径:校验失败不弹 Notice(spec 不改 FeedbackController 的错误 Notice),
+			// 改为临时在输入区显示提示
+			input = `[附件错误] ${validateResult.reason}`;
+			return;
+		}
+
+		// 读取图片尺寸用于估算 token
+		const { width, height } = await readImageDimensions(file);
+		const estimatedTokens = estimateImageTokens(width, height);
+		const base64 = await fileToBase64(file);
+
+		plugin.userStatus.addAttachment({
+			fileName: file.name,
+			mimeType: file.type,
+			base64,
+			estimatedTokens,
+		});
+		refreshContextUsage();
+	}
+
+	/**
+	 * 读取图片尺寸 — 用于估算 token。
+	 */
+	function readImageDimensions(file: File): Promise<{ width: number; height: number }> {
+		return new Promise((resolve) => {
+			const url = URL.createObjectURL(file);
+			const img = new Image();
+			img.onload = () => {
+				resolve({ width: img.naturalWidth, height: img.naturalHeight });
+				URL.revokeObjectURL(url);
+			};
+			img.onerror = () => {
+				resolve({ width: 0, height: 0 });
+				URL.revokeObjectURL(url);
+			};
+			img.src = url;
+		});
+	}
+
+	/**
+	 * File 转 base64 字符串(不含 data: 前缀)。
+	 */
+	function fileToBase64(file: File): Promise<string> {
+		return new Promise((resolve, reject) => {
+			const reader = new FileReader();
+			reader.onload = () => {
+				const result = reader.result as string;
+				// 关键路径:FileReader 结果是 "data:image/png;base64,xxxx",去掉前缀
+				const base64 = result.split(',')[1] ?? '';
+				resolve(base64);
+			};
+			reader.onerror = reject;
+			reader.readAsDataURL(file);
+		});
 	}
 
 	function formatToolResult(result: unknown): string {
@@ -190,7 +385,6 @@
 </script>
 
 <div class="ratel-chat">
-	<StatusBar status$={plugin.userStatus.statusBar$} />
 	<div class="ratel-messages">
 		{#each messages as msg}
 			<div class="ratel-message ratel-{msg.role}">
@@ -229,6 +423,18 @@
 						{/each}
 					</div>
 				{/if}
+				{#if msg.attachments && msg.attachments.length > 0}
+					<div class="ratel-msg-attachments">
+						{#each msg.attachments as att}
+							<img
+								class="ratel-msg-attachment-thumb"
+								src="data:{att.mimeType};base64,{att.base64}"
+								alt={att.fileName}
+								title={att.fileName}
+							/>
+						{/each}
+					</div>
+				{/if}
 				{#if msg.content}
 					<div class="ratel-content">{msg.content}</div>
 				{/if}
@@ -250,25 +456,81 @@
 		{/if}
 	</div>
 
+	<!-- 关键路径:StatusLine 常驻底部,左侧点击展开/收起 Drawer -->
+	<StatusLine
+		status$={plugin.userStatus.statusBar$}
+		contextUsage$={plugin.userStatus.contextUsage$}
+		expanded={drawerExpanded}
+		onToggle={() => (drawerExpanded = !drawerExpanded)}
+	/>
+
+	<!-- 关键路径:StatusDrawer 展开式详情,expanded 控制显隐 -->
+	<StatusDrawer
+		expanded={drawerExpanded}
+		status$={plugin.userStatus.statusBar$}
+		contextUsage$={plugin.userStatus.contextUsage$}
+		pendingAttachments$={plugin.userStatus.pendingAttachments$}
+		onCompact={handleCompact}
+	/>
+
 	<div class="ratel-input-area">
 		{#if gate.hardBlockReason}
 			<div class="ratel-chat-gate-hint ratel-chat-gate-hard">{gate.hardBlockReason}</div>
 		{:else if gate.softHint}
 			<div class="ratel-chat-gate-hint">{gate.softHint}</div>
 		{/if}
-		<textarea
-			bind:value={input}
-			on:keydown={handleKeydown}
-			on:focus={refreshKeyState}
-			placeholder="Ask about your vault..."
-			disabled={isRunning || !gate.canSend}
-			rows="2"
-		></textarea>
-		{#if isRunning}
-			<button on:click={stopGeneration} class="ratel-stop-btn">Stop</button>
-		{:else}
-			<button on:click={sendMessage} disabled={isRunning || !input.trim() || !gate.canSend}>Send</button>
+
+		<!-- 关键路径:附件预览条,空时不渲染 -->
+		<AttachmentStrip
+			pendingAttachments$={plugin.userStatus.pendingAttachments$}
+			onRemove={(id) => {
+				plugin.userStatus.removeAttachment(id);
+				refreshContextUsage();
+			}}
+		/>
+
+		<!-- 关键路径:斜杠命令菜单,仅 slashVisible 时渲染 -->
+		{#if slashVisible}
+			<div class="ratel-slash-container">
+				<SlashMenu
+					bind:this={slashMenuRef}
+					input={input}
+					onSelect={executeSlashCommand}
+					onClose={() => { input = ''; }}
+				/>
+			</div>
 		{/if}
+
+		<div class="ratel-input-row">
+			<!-- 关键路径:附件按钮 + 隐藏 file input -->
+			<button
+				class="ratel-attach-btn"
+				type="button"
+				onclick={triggerFileInput}
+				aria-label="添加图片附件"
+				disabled={isRunning}
+			>+</button>
+			<input
+				bind:this={fileInput}
+				type="file"
+				accept="image/png,image/jpeg,image/webp,image/gif"
+				onchange={handleFileSelect}
+				style="display: none;"
+			/>
+			<textarea
+				bind:value={input}
+				onkeydown={handleKeydown}
+				onfocus={refreshKeyState}
+				placeholder="Ask about your vault... (输入 / 查看命令)"
+				disabled={isRunning || !gate.canSend}
+				rows="2"
+			></textarea>
+			{#if isRunning}
+				<button onclick={stopGeneration} class="ratel-stop-btn">Stop</button>
+			{:else}
+				<button onclick={sendMessage} disabled={isRunning || !input.trim() || !gate.canSend}>Send</button>
+			{/if}
+		</div>
 	</div>
 </div>
 
@@ -314,6 +576,21 @@
 	.ratel-content {
 		white-space: pre-wrap;
 		word-break: break-word;
+	}
+
+	.ratel-msg-attachments {
+		display: flex;
+		gap: 4px;
+		margin-bottom: 6px;
+		flex-wrap: wrap;
+	}
+
+	.ratel-msg-attachment-thumb {
+		width: 96px;
+		height: 96px;
+		object-fit: cover;
+		border-radius: 4px;
+		border: 1px solid var(--background-modifier-border);
 	}
 
 	.ratel-chat-error {
@@ -380,10 +657,10 @@
 	}
 
 	.ratel-tool-failed {
-		color: var(--text-error) !important;
-		font-style: normal !important;
-		white-space: normal !important;
-		max-width: none !important;
+		color: var(--text-error);
+		font-style: normal;
+		white-space: normal;
+		max-width: none;
 	}
 
 	.ratel-tool-icon {
@@ -416,14 +693,46 @@
 
 	.ratel-input-area {
 		display: flex;
-		flex-wrap: wrap;
-		gap: 8px;
-		align-items: flex-end;
+		flex-direction: column;
+		gap: 4px;
 		border-top: 1px solid var(--background-modifier-border);
 		padding-top: 8px;
 	}
 
-	.ratel-input-area textarea {
+	.ratel-slash-container {
+		position: relative;
+	}
+
+	.ratel-input-row {
+		display: flex;
+		gap: 8px;
+		align-items: flex-end;
+	}
+
+	.ratel-attach-btn {
+		flex-shrink: 0;
+		width: 32px;
+		height: 32px;
+		padding: 0;
+		border-radius: 6px;
+		border: 1px solid var(--background-modifier-border);
+		background: var(--background-modifier-form-field);
+		color: var(--text-normal);
+		font-size: 18px;
+		line-height: 1;
+		cursor: pointer;
+	}
+
+	.ratel-attach-btn:hover {
+		border-color: var(--interactive-accent);
+	}
+
+	.ratel-attach-btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.ratel-input-row textarea {
 		flex: 1;
 		min-width: 0;
 		resize: none;
@@ -436,12 +745,12 @@
 		font-size: 14px;
 	}
 
-	.ratel-input-area textarea:focus {
+	.ratel-input-row textarea:focus {
 		outline: none;
 		border-color: var(--interactive-accent);
 	}
 
-	.ratel-input-area button {
+	.ratel-input-row button {
 		padding: 8px 16px;
 		border-radius: 6px;
 		border: none;
@@ -451,14 +760,14 @@
 		font-size: 14px;
 	}
 
-	.ratel-input-area button:disabled {
+	.ratel-input-row button:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
 	}
 
 	.ratel-stop-btn {
-		background: var(--text-error, #e53935) !important;
-		color: var(--text-on-accent, #fff) !important;
+		background: var(--text-error) !important;
+		color: var(--text-on-accent) !important;
 	}
 
 	.ratel-search-results {
