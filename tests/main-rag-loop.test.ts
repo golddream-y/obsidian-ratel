@@ -25,9 +25,11 @@ vi.mock('obsidian', () => ({
 	Notice: class {},
 	FileSystemAdapter: class {},
 	TFile: class {},
+	Modal: class {
+		open() {}
+		close() {}
+	},
 }));
-
-// 关键路径:禁止在测试中创建真实 Worker 进程;提供可挂 listener 的 stub。
 vi.mock('worker_threads', () => ({
 	Worker: class {
 		on = vi.fn();

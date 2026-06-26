@@ -168,11 +168,11 @@ describe('agentLoop', () => {
 		expect(sessions.has('s1')).toBe(true);
 	});
 
-	it('does not fire write hooks for readOnly tools', async () => {
+	it('fires pre-tool-use and post-tool-use for readOnly tools', async () => {
 		const hooks = new HookRegistry();
 		const hookCalls: string[] = [];
-		hooks.register('pre-write', async () => { hookCalls.push('pre-write'); });
-		hooks.register('post-write', async () => { hookCalls.push('post-write'); });
+		hooks.register('pre-tool-use', async () => { hookCalls.push('pre-tool-use'); });
+		hooks.register('post-tool-use', async () => { hookCalls.push('post-tool-use'); });
 
 		const tools = new ToolRegistry();
 		tools.register({
@@ -181,10 +181,10 @@ describe('agentLoop', () => {
 			readOnly: true,
 		});
 
-		const llm = createMockLLM([{
-			text: '',
-			toolCall: { id: 'tc1', name: 'read_only_tool', args: {} },
-		}]);
+		const llm = createMockLLM([
+			[{ text: '', toolCall: { id: 'tc1', name: 'read_only_tool', args: {} } }],
+			[{ text: 'Done' }],
+		]);
 
 		const persistence = createMockPersistence();
 		const ctx = new ContextManager(persistence);
@@ -192,14 +192,14 @@ describe('agentLoop', () => {
 			// consume
 		}
 
-		expect(hookCalls).toEqual([]);
+		expect(hookCalls).toEqual(['pre-tool-use', 'post-tool-use']);
 	});
 
-	it('fires write hooks for non-readOnly tools', async () => {
+	it('fires pre-tool-use and post-tool-use for write tools', async () => {
 		const hooks = new HookRegistry();
 		const hookCalls: string[] = [];
-		hooks.register('pre-write', async () => { hookCalls.push('pre-write'); });
-		hooks.register('post-write', async () => { hookCalls.push('post-write'); });
+		hooks.register('pre-tool-use', async () => { hookCalls.push('pre-tool-use'); });
+		hooks.register('post-tool-use', async () => { hookCalls.push('post-tool-use'); });
 
 		const tools = new ToolRegistry();
 		tools.register({
@@ -219,7 +219,41 @@ describe('agentLoop', () => {
 			// consume
 		}
 
-		expect(hookCalls).toEqual(['pre-write', 'post-write']);
+		expect(hookCalls).toEqual(['pre-tool-use', 'post-tool-use']);
+	});
+
+	it('pre-tool-use deny - 写入 session 错误并继续循环', async () => {
+		const hooks = new HookRegistry();
+		hooks.register('pre-tool-use', async () => ({ allow: false, reason: 'blocked by policy' }));
+
+		const tools = new ToolRegistry();
+		tools.register({
+			definition: { name: 'write_tool', description: 'test', parameters: {} },
+			execute: async () => 'should not run',
+			readOnly: false,
+		});
+
+		const llm = createMockLLM([
+			[{ text: '', toolCall: { id: 'tc1', name: 'write_tool', args: { path: 'a.md' } } }],
+			[{ text: 'Understood' }],
+		]);
+
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence);
+		const events: AgentEvent[] = [];
+
+		for await (const event of agentLoop(
+			{ sessionId: 'test', message: 'hi' },
+			ctx,
+			llm,
+			tools,
+			hooks,
+		)) {
+			events.push(event);
+		}
+
+		expect(events.some((e) => e.type === 'error' && e.payload.code === 'TOOL_DENIED')).toBe(true);
+		expect(events.some((e) => e.type === 'tool.result')).toBe(false);
 	});
 
 	it('handles tool execution error gracefully', async () => {
