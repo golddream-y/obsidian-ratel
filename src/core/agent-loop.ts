@@ -26,7 +26,7 @@ const MAX_STEPS = 10;
  *   2. 把当前 session 持久化(由 ContextManager.save 处理)
  * - 单步内部再嵌套一层 `try / catch`,把 LLM 流错误和工具执行错误分别转成 `error` 事件,
  *   避免异常逃逸到外层 try,影响 session 保存与 message.end 事件。
- * - 工具调用只对"写工具"(`readOnly !== true`)触发 pre/post hook,避免读操作触发治理。
+ * - 工具执行前经权限门控 → pre-tool-use hooks → execute → post-tool-use / post-tool-failure。
  * - 取消机制:传入 `AbortSignal` 后,每轮循环开始前检查 `aborted` 状态,中止时 yield error 并 break。
  *
  * @param req - 用户消息请求(含 sessionId 与 message)
@@ -52,6 +52,7 @@ export async function* agentLoop(
 	hooks: HookRegistry,
 	signal?: AbortSignal,
 	intentClassifier?: (message: string) => Promise<Intent>,
+	toolPermissionCheck?: (toolCall: ToolCall) => Promise<void>,
 ): AsyncIterable<AgentEvent> {
 	// 加载或初始化 session,然后把用户消息压入上下文。
 	await ctx.load(req.sessionId);
@@ -128,21 +129,38 @@ export async function* agentLoop(
 
 			yield { type: 'tool.call', payload: { name: toolCall.name, args: toolCall.args } };
 
-			// 写前钩子:仅对写工具触发(读工具直接跳过,避免对搜索/读取等无害操作产生治理噪音)。
-			if (!tools.isReadOnly(toolCall.name)) {
-				await hooks.run('pre-write', toolCall);
+			if (toolPermissionCheck) {
+				try {
+					await toolPermissionCheck(toolCall);
+				} catch (err) {
+					const message = err instanceof Error ? err.message : String(err);
+					yield { type: 'error', payload: { code: 'TOOL_DENIED', message } };
+					ctx.addAssistantToolCall(toolCall, accumulatedText);
+					ctx.addToolResult(toolCall.id, `Error: ${message}`);
+					continue;
+				}
 			}
 
-			// 执行工具:即便工具抛错,也要把错误信息作为 result 返回给 LLM,让它有机会自我修正,
-			// 而不是把异常向上抛导致 session 状态不一致。
+			const preDecision = await hooks.run('pre-tool-use', toolCall);
+			if (!preDecision.allowed) {
+				const message = `工具调用被拒绝: ${preDecision.reason ?? '未知原因'}`;
+				yield { type: 'error', payload: { code: 'TOOL_DENIED', message } };
+				ctx.addAssistantToolCall(toolCall, accumulatedText);
+				ctx.addToolResult(toolCall.id, `Error: ${message}`);
+				continue;
+			}
+
 			let result: unknown;
+			let toolFailed = false;
 			try {
 				result = await tools.execute(toolCall);
 			} catch (err) {
+				toolFailed = true;
 				const message = err instanceof Error ? err.message : String(err);
 				const code = (err as Error & { code?: string }).code ?? 'TOOL_ERROR';
 				yield { type: 'error', payload: { code, message } };
 				result = `Error: ${message}`;
+				await hooks.runVoid('post-tool-failure', toolCall);
 			}
 
 			yield { type: 'tool.result', payload: { name: toolCall.name, result } };
@@ -175,9 +193,9 @@ export async function* agentLoop(
 				}
 			}
 
-			// 写后钩子:与 pre-write 对称。
-			if (!tools.isReadOnly(toolCall.name)) {
-				await hooks.run('post-write', toolCall);
+			// 写后钩子:与 pre-tool-use 对称(仅成功时)。
+			if (!toolFailed) {
+				await hooks.runVoid('post-tool-use', toolCall);
 			}
 
 			// 把这一轮的 assistant tool call + 工具结果写回 session,

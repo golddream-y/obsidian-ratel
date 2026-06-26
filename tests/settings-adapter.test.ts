@@ -20,6 +20,10 @@ vi.mock('obsidian', () => ({
 	WorkspaceLeaf: class {},
 	ItemView: class {},
 	editor: { Editor: class {} },
+	Modal: class {
+		open() {}
+		close() {}
+	},
 }));
 
 // 关键路径:ChatView.ts 拉 ChatView.svelte,svelte 解析器在 vitest 没配会失败。

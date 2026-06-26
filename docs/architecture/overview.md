@@ -225,7 +225,8 @@ graph TB
 | **RAG** | retriever | 检索器:查询向量化 → 向量检索 → BM25 → RRF → 重排 | [rag/retriever.md](rag/retriever.md) |
 | **Agent** | chat | 对话体验(端到端):用户输入 → Agent Loop → 流式渲染 | [agent/chat.md](agent/chat.md) |
 | **Agent** | agent-loop | 主循环:思考 → 调工具 → 拿结果 → 生成回答 | [agent/agent-loop.md](agent/agent-loop.md) |
-| **Agent** | context-manager | 上下文管理:消息历史 / 系统提示词 / 搜索结果注入 / 上下文压缩 | [agent/context-manager.md](agent/context-manager.md) |
+| **Agent** | context-manager | 上下文管理:消息历史 / 搜索结果注入 / 上下文压缩(系统提示词见 prompt-management) | [agent/context-manager.md](agent/context-manager.md) |
+| **Agent** | prompt-management | 提示词 registry + Composer:中文模板 / 动态注入 / section 覆盖 | [agent/prompt-management.md](agent/prompt-management.md) |
 | **Agent** | tools | 工具系统:注册、发现、调用、返回格式 | [agent/tools.md](agent/tools.md) |
 | **Agent** | hooks | 知识治理钩子:pre-write / post-write 阶段化扩展点 | [agent/hooks.md](agent/hooks.md) |
 | **LLM** | model-management | 模型管理:Embedding + Reranker + LLM 的接口级统一管理 | [llm/model-management.md](llm/model-management.md) |
@@ -336,7 +337,7 @@ graph TB
 | 5 | 文档分块 | [rag/vector-index](rag/vector-index.md) | chunker.ts 三级回退(标题→段落→句子) |
 | 6 | 向量存储 | [rag/vector-index](rag/vector-index.md) | VectraStore upsert / hybridSearch / delete |
 | 7 | 意图分类 | [agent/agent-loop](agent/agent-loop.md) | 一次快速 LLM 调用,判断 'rag' \| 'direct' |
-| 8 | 动态提示词 | [agent/context-manager](agent/context-manager.md) | 按意图选 BASE_PROMPT 或 RAG_PROMPT |
+| 8 | 动态提示词 | [agent/prompt-management](agent/prompt-management.md) | Composer 按意图组装中文 system;工具列表与 schema 同源 |
 | 9 | 混合检索 | [rag/retriever](rag/retriever.md) | search_vault 调 vectra isBm25 混合搜索,返回带 index 编号 |
 | 10 | 多查询融合 | [rag/retriever](rag/retriever.md) | Query Rewrite 生成变体 + RRF 融合多份结果 |
 | 11 | 重排 | [rag/retriever](rag/retriever.md) | Reranker 百炼 API 精排(可选,钥匙串有 key 时启用) |

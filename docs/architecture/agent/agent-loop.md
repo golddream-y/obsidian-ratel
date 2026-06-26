@@ -80,7 +80,7 @@ flowchart TB
     END2 --> SAVE
 ```
 
-**意图分类器**(新增):在 `addUserMessage` 之后、`LLM.chat` 之前插入。用一次快速 LLM 调用(maxTokens=5)判断用户消息是否需要走 RAG 工作流,按结果选择系统提示词(`rag` → RAG 引导提示词,`direct` → 基础提示词)。详见 [context-manager.md §4](context-manager.md)。
+**意图分类器:**在 `addUserMessage` 之后、`LLM.chat` 之前插入。模板见 [prompt-management §8.3](prompt-management.md#83--意图分类--完整-messages);按结果选择 `composeAgentSystem` 的 direct/rag 变体。详见 [context-manager §4](context-manager.md)。
 
 **search.result 事件**(新增):`search_vault` 工具返回后发 `search.result` 事件,ChatView 渲染搜索结果卡片。详见 [chat.md](chat.md)。
 
@@ -193,7 +193,8 @@ graph TB
 | 与...的接口 | 方向 | 说明 |
 |---|---|---|
 | [chat](chat.md) | 被包含 | Chat 是门面,Agent Loop 是引擎 |
-| [context-manager](context-manager.md) | 依赖 | 消息累积 + session 管理 + 动态提示词 |
+| [context-manager](context-manager.md) | 依赖 | 消息累积 + session 管理 + 动态提示词组装入口 |
+| [prompt-management](prompt-management.md) | 依赖 | 模板 registry + Composer |
 | [tools](tools.md) | 依赖 | 工具发现 + 执行 |
 | [llm/model-management](../llm/model-management.md) | 依赖 | LLMClient.chat() + 意图分类 LLM 调用 |
 | [llm/streaming](../llm/streaming.md) | 依赖 | SSE 流式解析 |

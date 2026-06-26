@@ -35,6 +35,27 @@ When answering knowledge base questions, follow this workflow:
 4. If search returns no results, tell the user honestly.
 `;
 
+const VAULT_TOOLS_GUIDE_ZH = `
+
+你可使用以下 vault 工具:
+- search_vault: 语义搜索(向量+BM25),适合找概念相关的内容
+- grep: 全文精确/正则搜索,适合查找特定汉字、代码、固定字符串
+- glob: 按文件名模式查找笔记(如 "daily/*.md")
+- list_files: 列出目录内容
+- read_note: 读取笔记全文
+- write_note: 创建或覆盖笔记
+- append_note: 在笔记末尾追加内容
+- edit_note: 精确替换文本(old_string 必须唯一且完全匹配)
+- delete_note: 将笔记移到回收站(可恢复)
+
+何时用 grep 而非 search_vault:
+- 用户要找特定词语、精确字符串、正则模式,或「包含 X 的所有文件」→ 用 grep
+- 用户问主题、概念、语义相关内容 → 用 search_vault
+- 不确定时先试 search_vault;若结果未包含精确词,再用 grep 补充
+`;
+
+const RAG_PROMPT_WITH_TOOLS = RAG_PROMPT + VAULT_TOOLS_GUIDE_ZH;
+
 /**
  * 会话上下文管理器。
  *
@@ -187,7 +208,7 @@ export class ContextManager {
 	 * @returns 消息数组,首条为 system 角色
 	 */
 	toMessages(intent: Intent = 'direct'): ChatMessage[] {
-		const systemPrompt = intent === 'rag' ? RAG_PROMPT : BASE_PROMPT;
+		const systemPrompt = intent === 'rag' ? RAG_PROMPT_WITH_TOOLS : BASE_PROMPT;
 		const history = this.session?.messages ?? [];
 		const trimmed = this.trimHistory(history);
 		return [
