@@ -7,6 +7,7 @@
 import type { Tool } from '../core/tool-registry';
 import type { VaultPort } from '../ports/vault';
 import { optionalString } from './validate-args';
+import { isExcludedVaultPath } from '../utils/path-safety';
 
 export function createListFilesTool(vault: VaultPort): Tool {
 	return {
@@ -22,9 +23,14 @@ export function createListFilesTool(vault: VaultPort): Tool {
 		},
 		readOnly: true,
 		async execute(args) {
-			const path = optionalString(args, 'path') ?? '';
-			const listing = await vault.listFiles(path);
-			return { path, files: listing.files, folders: listing.folders };
+			const rawPath = optionalString(args, 'path') ?? '';
+			const dir = rawPath === '' || rawPath === '.' ? '' : rawPath;
+			const listing = await vault.listFiles(dir);
+			return {
+				path: dir || '.',
+				files: listing.files.filter((f) => !isExcludedVaultPath(f)),
+				folders: listing.folders.filter((f) => !isExcludedVaultPath(f)),
+			};
 		},
 	};
 }
