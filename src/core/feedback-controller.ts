@@ -76,7 +76,10 @@ export class FeedbackController {
 	}
 
 	/**
-	 * 全量索引完成时由 main.onLayoutReady 调用 — 优先走外部回调,否则默认 toast。
+	 * 全量索引完成时由 main.onLayoutReady 调用 — 优先走外部回调,否则更新 statusBar$。
+	 *
+	 * 关键路径:迁移到 StatusLine — 不再弹 toast,只更新 statusBar$ 让 StatusLine 恢复"就绪"。
+	 * 严重失败仍由 IndexManager 的 Failed 状态走 toastError 路径。
 	 *
 	 * @param indexed - 成功索引文档数
 	 * @param errors - 失败文档数
@@ -86,8 +89,13 @@ export class FeedbackController {
 			this.deps.onFullIndexComplete(indexed, errors);
 			return;
 		}
-		const suffix = errors > 0 ? `, ${errors} 个失败` : '';
-		this.deps.userNotice.toast(`Ratel: 索引完成 — ${indexed} 个文档已索引${suffix}`);
+		this.safeRun(() => {
+			this.deps.userStatus.patch({
+				index: 'ready',
+				indexDocCount: indexed,
+				indexDetail: undefined,
+			});
+		});
 	}
 
 	/**
@@ -118,18 +126,22 @@ export class FeedbackController {
 		this.safeRun(() => {
 			this.patchEmbeddingReady();
 
+			// 关键路径:内联模式降级提示迁移到 StatusDrawer 降级区,不再弹 toast。
 			if (this.deps.getWorkerMode() === 'inline' && !this.inlineWorkerNotified) {
 				this.inlineWorkerNotified = true;
-				this.deps.userStatus.patch({ worker: 'inline' });
-				this.deps.userNotice.toast('Ratel: 使用主线程内联模式运行,大库索引可能较慢');
+				this.deps.userStatus.patch({
+					worker: 'inline',
+					degraded: '主线程内联模式,大库索引较慢,可在设置启用 Worker 线程',
+				});
 			}
 
+			// 关键路径:API Embedding 降级提示迁移到 StatusDrawer,不再弹 toast。
 			const settings = this.deps.getSettings();
 			if (settings.embedProvider === 'api' && !this.apiModeNotified) {
 				this.apiModeNotified = true;
-				const degraded = 'API Embedding 模式暂不支持自动索引,请切换到本地模型';
-				this.deps.userStatus.patch({ degraded });
-				this.deps.userNotice.toast(`Ratel: ${degraded}`);
+				this.deps.userStatus.patch({
+					degraded: 'API Embedding 模式暂不支持自动索引,请切换到本地模型',
+				});
 			}
 		});
 	}

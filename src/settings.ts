@@ -37,6 +37,8 @@ export interface RatelVaultSettings {
 	// Chat
 	chatModel: string;
 	chatApiBase: string;
+	/** 模型上下文窗口上限(token) — 用于 StatusLine 上下文使用率计算,默认 32000 */
+	chatModelMaxTokens: number;
 
 	// Embedding
 	embedProvider: 'local' | 'api';
@@ -84,6 +86,8 @@ export interface RatelVaultSettings {
 export const DEFAULT_SETTINGS: RatelVaultSettings = {
 	chatModel: 'deepseek-chat',
 	chatApiBase: 'https://api.deepseek.com',
+	// 关键路径:多数 OpenAI 兼容端点(deepseek-chat、qwen-plus)窗口 32K-128K,默认 32K 安全值。
+	chatModelMaxTokens: 32000,
 
 	embedProvider: 'local',
 	embedLocalModel: 'Xenova/bge-small-zh-v1.5',
