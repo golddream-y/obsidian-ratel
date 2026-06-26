@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ratel Chat UI Mockup</title>
+  <style>
+    :root {
+      --bg-primary: #1e1e1e;
+      --bg-secondary: #252526;
+      --bg-tertiary: #2d2d2d;
+      --bg-input: #3c3c3c;
+      --text-normal: #d4d4d4;
+      --text-muted: #a0a0a0;
+      --accent: #7ee787;
+      --accent-dim: rgba(126, 231, 135, 0.15);
+      --warning: #facc15;
+      --warning-bg: rgba(250, 204, 21, 0.12);
+      --error: #f87171;
+      --border: #3e3e3e;
+      --shadow: 0 4px 20px rgba(0,0,0,0.4);
+      --radius: 8px;
+      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --mono: "SF Mono", Monaco, "Cascadia Code", monospace;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: var(--font);
+      background: #111;
+      color: var(--text-normal);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .chat-frame {
+      width: 420px;
+      height: 760px;
+      background: var(--bg-primary);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: var(--shadow);
+    }
+
+    .chat-header {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-normal);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .chat-header .model-badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 12px;
+      background: var(--accent-dim);
+      color: var(--accent);
+      font-family: var(--mono);
+    }
+
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .message {
+      max-width: 88%;
+      padding: 10px 13px;
+      border-radius: var(--radius);
+      font-size: 13.5px;
+      line-height: 1.5;
+    }
+
+    .message.user {
+      align-self: flex-end;
+      background: var(--bg-tertiary);
+    }
+
+    .message.assistant {
+      align-self: flex-start;
+      background: transparent;
+      padding: 0;
+    }
+
+    .tool-call {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border-radius: 6px;
+      background: var(--bg-tertiary);
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+      font-family: var(--mono);
+    }
+
+    .tool-call.done { color: var(--accent); }
+
+    .status-line {
+      height: 30px;
+      padding: 0 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-top: 1px solid var(--border);
+      background: var(--bg-secondary);
+      font-size: 11.5px;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: background 0.15s;
+      user-select: none;
+    }
+
+    .status-line:hover { background: var(--bg-tertiary); }
+
+    .status-line .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 6px var(--accent);
+      flex-shrink: 0;
+    }
+
+    .status-line .dot.processing {
+      background: var(--warning);
+      box-shadow: 0 0 6px var(--warning);
+      animation: pulse 1.2s infinite;
+    }
+
+    .status-line .dot.error {
+      background: var(--error);
+      box-shadow: 0 0 6px var(--error);
+    }
+
+    .status-line .dot.unconfigured {
+      background: transparent;
+      border: 1.5px solid #666;
+      box-shadow: none;
+    }
+
+    .status-line .status-text {
+      font-weight: 500;
+      color: var(--text-normal);
+    }
+
+    .status-line .status-text.muted { color: var(--text-muted); font-weight: 400; }
+    .status-line .status-text.warn { color: var(--warning); }
+    .status-line .status-text.error { color: var(--error); }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .status-line .divider { color: #555; }
+
+    .status-line .expand-hint {
+      font-size: 10px;
+      opacity: 0.6;
+    }
+
+    .ctx-meter {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-left: auto;
+    }
+
+    .ctx-bar {
+      width: 48px;
+      height: 4px;
+      border-radius: 2px;
+      background: var(--bg-tertiary);
+      overflow: hidden;
+    }
+
+    .ctx-bar-fill {
+      height: 100%;
+      border-radius: 2px;
+      transition: width 0.3s, background 0.3s;
+    }
+
+    .ctx-pct {
+      font-size: 10px;
+      font-family: var(--mono);
+      color: var(--text-muted);
+      min-width: 28px;
+      text-align: right;
+    }
+
+    .ctx-pct.warn { color: var(--warning); }
+    .ctx-pct.danger { color: var(--error); }
+
+    .status-drawer {
+      max-height: 0;
+      overflow: hidden;
+      background: var(--bg-secondary);
+      border-top: 1px solid var(--border);
+      transition: max-height 0.25s ease;
+    }
+
+    .status-drawer.open { max-height: 380px; }
+
+    .drawer-inner {
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .drawer-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+    }
+
+    .drawer-row .label { color: var(--text-muted); }
+    .drawer-row .value { color: var(--text-normal); font-weight: 500; }
+
+    .drawer-section-title {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #666;
+      margin-top: 4px;
+      padding-bottom: 4px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .drawer-section-title:first-child { margin-top: 0; }
+
+    .progress-track {
+      width: 100%;
+      height: 4px;
+      background: var(--bg-tertiary);
+      border-radius: 2px;
+      margin-top: 6px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      width: 45%;
+      background: var(--warning);
+      border-radius: 2px;
+      transition: width 0.3s;
+    }
+
+    .input-area {
+      padding: 10px 14px 14px;
+      border-top: 1px solid var(--border);
+      background: var(--bg-primary);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      position: relative;
+    }
+
+    .attachment-strip {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+    }
+
+    .attachment-thumb {
+      position: relative;
+      width: 56px;
+      height: 56px;
+      border-radius: 6px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .attachment-thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .attachment-thumb .remove {
+      position: absolute;
+      top: 2px;
+      right: 2px;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: rgba(0,0,0,0.7);
+      color: #fff;
+      font-size: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+
+    .input-row {
+      display: flex;
+      align-items: flex-end;
+      gap: 8px;
+    }
+
+    .attach-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--bg-secondary);
+      color: var(--text-muted);
+      font-size: 16px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .attach-btn:hover { color: var(--text-normal); }
+
+    .input-area textarea {
+      flex: 1;
+      min-height: 54px;
+      padding: 10px 12px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: var(--bg-input);
+      color: var(--text-normal);
+      font-size: 13px;
+      resize: none;
+      outline: none;
+    }
+
+    .input-area textarea:focus { border-color: var(--accent); }
+
+    .input-footer {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 4px;
+    }
+
+    .send-btn {
+      padding: 6px 16px;
+      border-radius: 6px;
+      border: none;
+      background: var(--accent);
+      color: #111;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .slash-menu {
+      position: absolute;
+      bottom: 100%;
+      left: 14px;
+      right: 14px;
+      margin-bottom: 4px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: 0 -4px 16px rgba(0,0,0,0.3);
+      overflow: hidden;
+      display: none;
+    }
+
+    .slash-menu.open { display: block; }
+
+    .slash-menu-header {
+      padding: 6px 12px;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #666;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .slash-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      cursor: pointer;
+      font-size: 12.5px;
+    }
+
+    .slash-item:hover, .slash-item.active {
+      background: var(--bg-tertiary);
+    }
+
+    .slash-item .cmd {
+      font-family: var(--mono);
+      color: var(--accent);
+      font-weight: 600;
+      min-width: 72px;
+    }
+
+    .slash-item .desc { color: var(--text-muted); }
+
+    .hint-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      background: var(--warning-bg);
+      color: var(--warning);
+      font-size: 11px;
+    }
+
+    .token-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 1px 6px;
+      border-radius: 8px;
+      background: var(--bg-tertiary);
+      color: var(--text-muted);
+      font-size: 10px;
+      font-family: var(--mono);
+    }
+
+    .token-badge.warn { color: var(--warning); background: var(--warning-bg); }
+
+    .micro-btn {
+      padding: 2px 8px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: var(--bg-tertiary);
+      color: var(--text-muted);
+      font-size: 11px;
+      cursor: pointer;
+    }
+
+    .micro-btn:hover {
+      color: var(--text-normal);
+      border-color: var(--accent);
+    }
+
+    .message-images {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-bottom: 8px;
+    }
+
+    .message-images img {
+      width: 96px;
+      height: 96px;
+      object-fit: cover;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+    }
+
+    .degraded-row {
+      padding: 8px 10px;
+      border-radius: 6px;
+      background: rgba(248, 113, 113, 0.1);
+      color: var(--error);
+      font-size: 11.5px;
+      line-height: 1.4;
+    }
+  </style>
+</head>
+<body>
+
+<div class="chat-frame">
+  <div class="chat-header">
+    <span>Ratel</span>
+    <span class="model-badge">deepseek-chat</span>
+  </div>
+
+  <div class="messages">
+    <div class="message user">
+      <div class="message-images">
+        <img src="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=200&h=200&fit=crop" alt="uploaded">
+      </div>
+      帮我看看这张图，然后生成 vault 的整体目录 markdown
+    </div>
+
+    <div class="message assistant">
+      <div class="tool-call done">✓ list_files Formatting — 7 项</div>
+      <div class="tool-call done">✓ list_files Guides — 4 项</div>
+      <div class="tool-call"><span class="dot processing"></span> list_files Adventurer</div>
+      <div>好的，我先遍历各目录，然后汇总成 markdown。</div>
+    </div>
+  </div>
+
+  <div class="status-line" id="statusLine" onclick="toggleDrawer()">
+    <span class="dot processing"></span>
+    <span class="status-text warn">思考中…</span>
+    <div class="ctx-meter">
+      <div class="ctx-bar"><div class="ctx-bar-fill" style="width:6%; background:var(--accent)"></div></div>
+      <span class="ctx-pct">6%</span>
+    </div>
+    <span class="expand-hint">▲</span>
+  </div>
+
+  <div class="status-drawer" id="statusDrawer">
+    <div class="drawer-inner">
+      <div class="drawer-section-title">向量化 / 索引</div>
+      <div class="drawer-row">
+        <span class="label">索引</span>
+        <span class="value">处理中 12/30</span>
+      </div>
+      <div class="progress-track"><div class="progress-fill"></div></div>
+      <div class="drawer-row">
+        <span class="label">当前文件</span>
+        <span class="value" style="font-family:var(--mono)">Guides/Link notes.md</span>
+      </div>
+      <div class="drawer-row">
+        <span class="label">Embedding</span>
+        <span class="value">就绪</span>
+      </div>
+      <div class="drawer-row">
+        <span class="label">运行模式</span>
+        <span class="value"><span class="hint-pill">内联</span></span>
+      </div>
+      <div class="degraded-row">
+        ⚠ 主线程内联模式。大库索引较慢，可在设置启用 Worker 线程。
+      </div>
+
+      <div class="drawer-section-title">上下文</div>
+      <div class="drawer-row">
+        <span class="label">已用 / 上限</span>
+        <span class="value">12,420 / 200,000 tokens</span>
+      </div>
+      <div class="drawer-row">
+        <span class="label">附件</span>
+        <span class="value">2 张图片 (估 374 tokens)</span>
+      </div>
+      <div class="drawer-row">
+        <button class="micro-btn" style="margin-left:auto" onclick="event.stopPropagation(); alert('将历史消息压缩为摘要并释放 token')">压缩上下文</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="input-area">
+    <div class="slash-menu" id="slashMenu">
+      <div class="slash-menu-header">命令</div>
+      <div class="slash-item active">
+        <span class="cmd">/new</span>
+        <span class="desc">开始新对话，清空当前上下文</span>
+      </div>
+      <div class="slash-item">
+        <span class="cmd">/compact</span>
+        <span class="desc">压缩上下文，将历史总结为摘要</span>
+      </div>
+      <div class="slash-item">
+        <span class="cmd">/model</span>
+        <span class="desc">切换模型</span>
+      </div>
+      <div class="slash-item">
+        <span class="cmd">/reindex</span>
+        <span class="desc">重新索引 vault</span>
+      </div>
+    </div>
+    <div class="attachment-strip">
+      <div class="attachment-thumb">
+        <img src="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=200&h=200&fit=crop" alt="uploaded">
+        <span class="remove">×</span>
+      </div>
+      <div class="attachment-thumb">
+        <img src="https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=200&h=200&fit=crop" alt="uploaded">
+        <span class="remove">×</span>
+      </div>
+    </div>
+    <div class="input-row">
+      <button class="attach-btn">+</button>
+      <textarea id="chatInput" placeholder="输入 / 查看命令，或直接提问..."></textarea>
+    </div>
+    <div class="input-footer">
+      <button class="send-btn">Send</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  function toggleDrawer() {
+    const d = document.getElementById('statusDrawer');
+    d.classList.toggle('open');
+  }
+
+  // 斜杠命令：输入 / 弹出菜单，上下键选择，回车确认，Esc/删除 / 关闭
+  const input = document.getElementById('chatInput');
+  const menu = document.getElementById('slashMenu');
+  const items = menu.querySelectorAll('.slash-item');
+  let activeIdx = 0;
+
+  function updateActive() {
+    items.forEach((el, i) => el.classList.toggle('active', i === activeIdx));
+  }
+
+  function openMenu() {
+    menu.classList.add('open');
+    activeIdx = 0;
+    updateActive();
+  }
+
+  function closeMenu() {
+    menu.classList.remove('open');
+  }
+
+  input.addEventListener('input', () => {
+    const val = input.value;
+    if (val.startsWith('/') && !val.includes(' ')) {
+      openMenu();
+      // 按输入过滤
+      const filter = val.slice(1).toLowerCase();
+      let visibleIdx = [];
+      items.forEach((el, i) => {
+        const cmd = el.querySelector('.cmd').textContent;
+        const visible = cmd.startsWith('/' + filter);
+        el.style.display = visible ? '' : 'none';
+        if (visible) visibleIdx.push(i);
+      });
+      if (visibleIdx.length > 0) {
+        activeIdx = visibleIdx[0];
+        updateActive();
+      }
+    } else {
+      closeMenu();
+    }
+  });
+
+  input.addEventListener('keydown', (e) => {
+    if (!menu.classList.contains('open')) return;
+
+    const visibleItems = Array.from(items).filter(el => el.style.display !== 'none');
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      activeIdx = Math.min(activeIdx + 1, visibleItems.length - 1);
+      // 映射回原始 index
+      const target = visibleItems[activeIdx];
+      activeIdx = Array.from(items).indexOf(target);
+      updateActive();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      activeIdx = Math.max(activeIdx - 1, 0);
+      const target = visibleItems[activeIdx];
+      activeIdx = Array.from(items).indexOf(target);
+      updateActive();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const active = items[activeIdx];
+      const cmd = active.querySelector('.cmd').textContent;
+      input.value = '';
+      closeMenu();
+      alert('执行: ' + cmd);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      input.value = '';
+      closeMenu();
+    }
+  });
+
+  // 点击菜单项
+  items.forEach((el) => {
+    el.addEventListener('click', () => {
+      const cmd = el.querySelector('.cmd').textContent;
+      input.value = '';
+      closeMenu();
+      alert('执行: ' + cmd);
+    });
+  });
+</script>
+
+</body>
+</html>
