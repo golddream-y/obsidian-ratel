@@ -34,7 +34,16 @@ import { devLogger } from './logging/dev-logger';
 import { UserNotice } from './user-feedback/user-notice';
 import { UserStatus } from './user-feedback/user-status';
 import { isSearchReady } from './ui/chat-send-gate';
-import { resolveChatApiKey, resolveEmbedApiKey } from './secrets/ratel-secrets';
+import {
+	hasRerankApiKey,
+	resolveChatApiKey,
+	resolveEmbedApiKey,
+	resolveRerankApiKey,
+} from './secrets/ratel-secrets';
+import { MultiQuerySearcher } from './core/multi-query-searcher';
+import { rewriteQuery } from './core/query-rewriter';
+import { BailianReranker } from './adapters/reranker-bailian';
+import { Indexer } from './subagents/indexer';
 import { ChatView, VIEW_TYPE_CHAT } from './ui/ChatView';
 import { get } from 'svelte/store';
 import { ensurePluginGitignore } from './utils/gitignore-writer';
@@ -65,6 +74,8 @@ export default class RatelVaultPlugin extends Plugin {
 	private indexDir!: string;
 	modelManager!: ModelManager;
 	indexController!: IndexController;
+	// 关键路径:W4 — Indexer subagent 实例,供 Librarian 等子代理调用。
+	indexer!: Indexer;
 	userNotice = new UserNotice();
 	userStatus = new UserStatus();
 	private feedbackController?: FeedbackController;
@@ -166,11 +177,43 @@ export default class RatelVaultPlugin extends Plugin {
 		// 关键路径:ObsidianVault 已实现 VaultEventListener 接口,直接传入可保证所有 Obsidian API 访问都走外观层。
 		this.indexController = new IndexController(this.vault, indexBackend, vaultBase);
 
+		// 关键路径:W4 — Indexer subagent,供其他子代理通过统一接口触发索引。
+		this.indexer = new Indexer({ vault: this.vault, indexController: this.indexController });
+
 		// ==================== 工具与钩子 ====================
 		this.tools = new ToolRegistry();
 		this.tools.register(createReadNoteTool(this.vault));
+
+		// 关键路径:W4 — 构造 MultiQuerySearcher,编排改写 + 多查询 + RRF + 可选 Rerank。
+		// Reranker 仅在钥匙串有 ratel-rerank-bailian 密钥时注入;无密钥自动降级为仅 RRF。
+		const reranker = hasRerankApiKey(this.app)
+			? new BailianReranker({
+					apiBase: this.settings.rerankerApiBase,
+					apiKey: resolveRerankApiKey(this.app) ?? '',
+					model: this.settings.rerankerModel,
+				})
+			: undefined;
+
+		// 关键路径:QueryRewriter 闭包捕获 this.llm,把 rewriteQuery 的 RewrittenQuery[] 适配为 string[]。
+		// 关键路径:rewriteQuery 已返回 [{text: query, variant: 'original'}, ...rewrites],
+		// 因此这里返回的 string[] 已含原始查询,MultiQuerySearcher 直接用,无需再前置 original。
+		const queryRewriter = {
+			rewrite: async (q: string) => {
+				const rewritten = await rewriteQuery(q, { llm: this.llm });
+				return rewritten.map((r) => r.text);
+			},
+		};
+
+		const multiQuerySearcher = new MultiQuerySearcher({
+			embedding: this.embedding,
+			workerManager: this.workerManager,
+			vault: this.vault,
+			reranker,
+			queryRewriter,
+		});
+
 		this.tools.register(
-			createSearchVaultTool(this.embedding, this.workerManager, () =>
+			createSearchVaultTool(multiQuerySearcher, () =>
 				isSearchReady(get(this.userStatus.statusBar$)),
 			),
 		);
