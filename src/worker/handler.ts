@@ -14,6 +14,7 @@ import type { WorkerRequest, WorkerResponse } from '../types';
 import { IndexProcessor } from './index-processor';
 import { VectraStore } from '../adapters/vector-vectra';
 import type { EmbeddingsModel } from 'vectra';
+import type { EmbeddingPort } from '../ports/embedding';
 import { devLogger } from '../logging/dev-logger';
 
 let processor: IndexProcessor | null = null;
@@ -21,12 +22,13 @@ let processor: IndexProcessor | null = null;
 /**
  * 初始化 Worker 内的 IndexProcessor。
  *
- * 关键路径:`embeddings` 必须由调用方注入 ONNX FeatureExtractor(测试用 stub),
+ * 关键路径:`embeddings`(EmbeddingsModel)注入 VectraStore 供 vectra 内部使用;
+ * `embeddingPort`(EmbeddingPort)注入 IndexProcessor 供批量 embed chunk 文本使用。
  * Worker 启动期拿不到(没 HTTP、没 import 顶层),所以走主线程传入。
  */
-export function initProcessor(indexDir: string, embeddings: EmbeddingsModel): void {
+export function initProcessor(indexDir: string, embeddings: EmbeddingsModel, embeddingPort: EmbeddingPort): void {
     const store = new VectraStore(indexDir, { embeddings, autoInit: true });
-    processor = new IndexProcessor(store);
+    processor = new IndexProcessor(store, embeddingPort);
 }
 
 /**
@@ -34,9 +36,10 @@ export function initProcessor(indexDir: string, embeddings: EmbeddingsModel): vo
  *
  * 关键路径:InlineWorker 在主线程运行时复用主线程的 vectraStore,
  * 避免主线程与 Worker 各持一个 VectraStore 同时写同一个 indexDir。
+ * `embeddings`(EmbeddingPort)由主线程注入,IndexProcessor 用它批量 embed chunk 文本。
  */
-export function initProcessorWithStore(store: VectraStore): void {
-    processor = new IndexProcessor(store);
+export function initProcessorWithStore(store: VectraStore, embeddings: EmbeddingPort): void {
+    processor = new IndexProcessor(store, embeddings);
 }
 
 /**

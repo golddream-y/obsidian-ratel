@@ -9,6 +9,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { InlineWorker } from '../../src/worker/inline-worker';
 import { VectraStore } from '../../src/adapters/vector-vectra';
 import type { EmbeddingsModel, EmbeddingsResponse } from 'vectra';
+import type { EmbeddingPort } from '../../src/ports/embedding';
 import path from 'path';
 import fs from 'fs';
 
@@ -22,6 +23,16 @@ const stubEmbedder: EmbeddingsModel = {
 			status: 'success',
 			output: arr.map(() => Array(512).fill(0).map(() => Math.random())),
 		};
+	},
+};
+
+// 关键路径:IndexProcessor 现在通过 EmbeddingPort.embed 批量向量化 chunk 文本,
+// 此 mock 提供零向量供 initWithStore 注入。
+const mockEmbeddingPort: EmbeddingPort = {
+	dimensions: 512,
+	modelId: 'test:mock',
+	async embed(texts: string[]): Promise<number[][]> {
+		return texts.map(() => Array(512).fill(0));
 	},
 };
 
@@ -60,7 +71,7 @@ describe('InlineWorker', () => {
 		const worker = new InlineWorker();
 		const store = new VectraStore(TMP_DIR, { embeddings: stubEmbedder, autoInit: true });
 		await store.init();
-		worker.initWithStore(store);
+		worker.initWithStore(store, mockEmbeddingPort);
 
 		const allMessages: unknown[] = [];
 		const responses: unknown[] = [];
@@ -95,7 +106,7 @@ describe('InlineWorker', () => {
 		const worker = new InlineWorker();
 		const store = new VectraStore(TMP_DIR, { embeddings: stubEmbedder, autoInit: true });
 		await store.init();
-		worker.initWithStore(store);
+		worker.initWithStore(store, mockEmbeddingPort);
 		worker.terminate();
 
 		const responses: unknown[] = [];

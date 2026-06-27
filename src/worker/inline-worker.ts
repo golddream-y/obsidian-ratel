@@ -15,6 +15,7 @@ import type { WorkerRequest, WorkerResponse } from '../types';
 import { VectraStore } from '../adapters/vector-vectra';
 import { handleMessage, initProcessorWithStore } from './handler';
 import type { WorkerLike } from './manager';
+import type { EmbeddingPort } from '../ports/embedding';
 
 type MessageListener = (data: WorkerResponse & { _requestId?: string }) => void;
 type ErrorListener = (err: Error) => void;
@@ -41,9 +42,10 @@ export class InlineWorker implements WorkerLike {
 	 *
 	 * 关键路径:InlineWorker 创建时模型可能尚未下载完成,
 	 * 因此把 init 延迟到主线程 onLayoutReady 模型就绪后。
+	 * `embeddings`(EmbeddingPort)由主线程注入,IndexProcessor 用它批量 embed chunk 文本。
 	 */
-	initWithStore(store: VectraStore): void {
-		initProcessorWithStore(store);
+	initWithStore(store: VectraStore, embeddings: EmbeddingPort): void {
+		initProcessorWithStore(store, embeddings);
 		this.initialized = true;
 	}
 
