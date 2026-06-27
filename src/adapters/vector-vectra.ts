@@ -254,14 +254,19 @@ export class VectraStore implements VectorStore {
 	 *
 	 * 行为契约:出错时返回零值状态,绝不抛错(观测类调用不应阻断主流程)。
 	 *
+	 * 关键路径:用 `getIndexStats().items` 而非 `getCatalogStats().documents` 计数 —
+	 * `upsertItem`(批量 embed 路径)绕过 `upsertDocument`,不写 catalog,
+	 * `getCatalogStats().documents` 会返回 0;`getIndexStats().items` 直接读索引文件,
+	 * 统计所有 item(含 `upsertDocument` 与 `upsertItem` 两条路径写入的 chunk)。
+	 *
 	 * @returns 索引统计信息。
 	 */
 	async status(): Promise<IndexStatus> {
 		try {
 			const index = await this.ensureIndex();
-			const stats = await index.getCatalogStats();
+			const stats = await index.getIndexStats();
 			return {
-				totalDocs: stats.documents,
+				totalDocs: stats.items,
 				lastIndexTime: this._lastIndexTime,
 				isIndexing: false,
 			};
@@ -341,10 +346,15 @@ export class VectraStore implements VectorStore {
 
 	/**
 	 * 提交文件级事务。
+	 *
+	 * 关键路径:在事务提交成功后更新 `_lastIndexTime`,与 `upsert()` 行为对齐 —
+	 * `upsertItem` 绕过了 `upsertDocument`,不会走到 `upsert()` 里的赋值,
+	 * 故在此处补上,保证 `status()` 报告的索引新鲜度准确。
 	 */
 	async endFileUpdate(): Promise<void> {
 		const index = await this.ensureIndex();
 		await index.endUpdate();
+		this._lastIndexTime = Date.now();
 	}
 
 	/**
