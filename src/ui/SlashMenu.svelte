@@ -1,7 +1,7 @@
 <script lang="ts">
 	/**
 	 * @file src/ui/SlashMenu.svelte
-	 * @description 斜杠命令弹窗 — 输入 / 时弹出,过滤/选择/执行
+	 * @description 斜杠命令弹窗 — 输入 / 时弹出,过滤/键盘导航/选中执行
 	 * @module ui/SlashMenu
 	 * @depends ui/slash-commands
 	 */
@@ -17,12 +17,9 @@
 		onClose: () => void;
 	} = $props();
 
-	// 关键路径:input 变化时自动重算过滤结果
 	const commands = $derived(filterCommands(input));
-	// 选中索引:commands 变化时重置为 0
 	let selectedIndex = $state(0);
 
-	// 关键路径:commands 长度变化时 clamp selectedIndex
 	$effect(() => {
 		if (selectedIndex >= commands.length) {
 			selectedIndex = Math.max(0, commands.length - 1);
@@ -31,9 +28,7 @@
 
 	/**
 	 * 处理键盘事件 — 上下键移动,回车确认,Esc 关闭。
-	 * 由 ChatView 在输入框 onkeydown 时转发到此。
-	 *
-	 * @returns true 表示事件已处理(阻止默认行为);false 表示未处理(放行)
+	 * @returns true 表示事件已处理
 	 */
 	export function handleKeydown(e: KeyboardEvent): boolean {
 		if (commands.length === 0) return false;
@@ -63,78 +58,65 @@
 </script>
 
 {#if commands.length > 0}
-	<div class="ratel-slash-menu" role="listbox">
+	<div class="ratel-sm" role="listbox">
+		<div class="ratel-sm-header">命令</div>
 		{#each commands as cmd, i}
-			<button
-				class="ratel-slash-item"
-				class:ratel-slash-selected={i === selectedIndex}
-				type="button"
+			<div
+				class="ratel-sm-item"
+				class:ratel-sm-active={i === selectedIndex}
 				role="option"
 				aria-selected={i === selectedIndex}
 				onclick={() => onSelect(cmd)}
 			>
-				<span class="ratel-slash-icon">{cmd.icon}</span>
-				<span class="ratel-slash-name">{cmd.name}</span>
-				<span class="ratel-slash-desc">{cmd.description}</span>
-			</button>
+				<span class="ratel-sm-cmd">{cmd.name}</span>
+				<span class="ratel-sm-desc">{cmd.description}</span>
+			</div>
 		{/each}
 	</div>
 {/if}
 
 <style>
-	.ratel-slash-menu {
-		position: absolute;
-		bottom: 100%;
-		left: 0;
-		right: 0;
+	.ratel-sm {
 		background: var(--background-secondary);
 		border: 1px solid var(--background-modifier-border);
-		border-radius: 6px;
+		border-radius: 8px;
 		max-height: 240px;
 		overflow-y: auto;
-		z-index: 10;
-		margin-bottom: 4px;
 	}
 
-	.ratel-slash-item {
+	.ratel-sm-header {
+		padding: 6px 12px;
+		font-size: 10px;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+		color: var(--text-faint, var(--text-muted));
+		border-bottom: 1px solid var(--background-modifier-border);
+	}
+
+	.ratel-sm-item {
 		display: flex;
 		align-items: center;
-		gap: 8px;
-		width: 100%;
-		padding: 6px 10px;
-		background: none;
-		border: none;
-		color: var(--text-normal);
-		font: inherit;
-		font-size: 0.85em;
-		text-align: left;
+		gap: 10px;
+		padding: 8px 12px;
 		cursor: pointer;
+		font-size: 12.5px;
 	}
 
-	.ratel-slash-item:hover {
-		background: var(--background-modifier-border-hover);
+	.ratel-sm-item:hover,
+	.ratel-sm-active {
+		background: var(--background-modifier-form-field);
 	}
 
-	.ratel-slash-selected {
-		background: var(--background-modifier-border-hover);
-	}
-
-	.ratel-slash-icon {
-		flex-shrink: 0;
-		width: 18px;
-		text-align: center;
-	}
-
-	.ratel-slash-name {
+	.ratel-sm-cmd {
 		font-family: var(--font-monospace);
+		color: var(--text-accent, var(--interactive-accent));
 		font-weight: 600;
-		flex-shrink: 0;
 		min-width: 72px;
+		flex-shrink: 0;
 	}
 
-	.ratel-slash-desc {
+	.ratel-sm-desc {
 		color: var(--text-muted);
-		font-size: 0.9em;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;

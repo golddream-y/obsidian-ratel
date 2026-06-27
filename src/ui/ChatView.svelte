@@ -1,9 +1,9 @@
 <script lang="ts">
 	/**
 	 * @file src/ui/ChatView.svelte
-	 * @description Chat 主视图 — 消息流 + StatusLine/Drawer + 斜杠命令 + 附件预览
+	 * @description Chat 主视图 — 消息流 + StatusLine/Drawer + 斜杠命令 + 附件预览(Svelte 5)
 	 * @module ui/ChatView
-	 * @depends main, ui/StatusLine, ui/StatusDrawer, ui/SlashMenu, ui/AttachmentStrip, ui/slash-commands, ui/attachment-utils
+	 * @depends main, ui/StatusLine, ui/StatusDrawer, ui/SlashMenu, ui/AttachmentStrip
 	 */
 	import type RatelVaultPlugin from '../main';
 	import { get } from 'svelte/store';
@@ -14,7 +14,7 @@
 	import { filterCommands, type SlashCommand } from './slash-commands';
 	import { validateAttachment, estimateImageTokens } from './attachment-utils';
 	import { evaluateChatSendGate } from './chat-send-gate';
-	import { hasChatApiKey, resolveChatApiKey } from '../secrets/ratel-secrets';
+	import { hasChatApiKey } from '../secrets/ratel-secrets';
 	import { formatChatError, type DiagError } from './chat-error';
 	import { showCompactConfirm } from './compact-confirm';
 	import { devLogger } from '../logging/dev-logger';
@@ -43,64 +43,61 @@
 		attachments?: Array<{ fileName: string; mimeType: string; base64: string }>;
 	}
 
-	// 关键路径:Svelte 5 用 $props() 替代 export let
 	let { plugin }: { plugin: RatelVaultPlugin } = $props();
 
-	// 关键路径:Svelte 5 用 $state 替代 let 响应式变量
+	// ==================== 响应式状态 ====================
+
 	let messages = $state<Message[]>([]);
 	let input = $state('');
 	let isRunning = $state(false);
 	let sessionId = $state('session-' + Date.now());
-	let abortController: AbortController | null = null;
 	let drawerExpanded = $state(false);
-	let fileInput: HTMLInputElement | null = null;
+	let fileInput = $state<HTMLInputElement | null>(null);
+	let slashMenuEl = $state<{ handleKeydown: (e: KeyboardEvent) => boolean } | null>(null);
+	let messagesEl = $state<HTMLDivElement | null>(null);
 
-	// SlashMenu 组件实例引用 — 用于转发键盘事件。
-	// 关键路径:用 $state 让 bind:this 赋值能被 Svelte 5 识别(消除 non_reactive_update 警告)。
-	let slashMenuRef = $state<{ handleKeydown: (e: KeyboardEvent) => boolean } | null>(null);
+	// 关键路径:plugin 是稳定引用,store 是单例,直接提取到局部常量
+	// 在模板/derived 中用 $ 前缀订阅(Svelte 5 store 自动订阅语法)
+	const statusStore = plugin.userStatus.statusBar$;
+	const contextStore = plugin.userStatus.contextUsage$;
+	const attachmentStore = plugin.userStatus.pendingAttachments$;
 
-	// 关键路径:Svelte 5 用 $derived 替代 $: 自动重算
-	const statusBar = $derived(plugin.userStatus.statusBar$);
-	const statusSnap = $derived($statusBar);
-	const contextUsage = $derived(plugin.userStatus.contextUsage$);
-	const pendingAttachments = $derived(plugin.userStatus.pendingAttachments$);
+	// SecretStorage 无文档化 onChange 事件,用 keyTick 强制重算 hasKey
+	let keyTick = $state(0);
+	const hasKey = $derived.by(() => {
+		keyTick; // 追踪依赖
+		return hasChatApiKey(plugin.app, plugin.settings);
+	});
 
-	// 关键路径:SecretStorage 无文档化事件,用 keyVersion 计数器强制 hasKey 重算。
-	// keyVersion >= 0 永真,仅用于让 $derived 追踪 keyVersion 变化,实际值取 hasChatApiKey。
-	let keyVersion = $state(0);
-	const hasKey = $derived(keyVersion >= 0 && hasChatApiKey(plugin.app, plugin.settings));
-	const gate = $derived(
-		evaluateChatSendGate(plugin.settings, statusSnap, { hasChatApiKey: hasKey }),
-	);
+	// 发送门禁:每次 statusStore / keyTick 变化时重算
+	const gate = $derived.by(() => {
+		keyTick;
+		return evaluateChatSendGate(plugin.settings, $statusStore, { hasChatApiKey: hasKey });
+	});
 
-	// 斜杠命令:仅当 input 以 / 开头且 filterCommands 返回非空时显示菜单
-	const slashVisible = $derived(filterCommands(input).length > 0 && input.startsWith('/') && !input.includes(' '));
+	// 斜杠菜单可见性
+	const slashVisible = $derived.by(() => {
+		const v = input.startsWith('/') && !input.includes(' ');
+		if (!v) return false;
+		return filterCommands(input).length > 0;
+	});
 
-	/**
-	 * 重新解析钥匙串状态并按需重建 LLM 适配器。
-	 * SecretStorage 无文档化 onChange 事件,改在输入聚焦 / 发送前手动刷新。
-	 */
+	// 当前模型名(用户切模型后需 reload,此处直接读 settings 即可)
+	const modelName = $derived(plugin.settings.chatModel);
+
+	// ==================== 工具函数 ====================
+
 	function refreshKeyState() {
-		// 关键路径:DeepSeekLLM.config 是 private,svelte-check 严格模式需 unknown 绕过类型
-		const prevKey = (plugin.llm as unknown as { config?: { apiKey?: string } } | null)?.config?.apiKey ?? '';
-		const currentKey = resolveChatApiKey(plugin.app, plugin.settings) ?? '';
-		if (prevKey !== currentKey) {
-			plugin.rebuildLLM();
-		}
-		keyVersion++;
+		// 关键路径:onfocus / send 前刷新,检测用户是否在 Obsidian 设置中配了 Key
+		plugin.rebuildLLM();
+		keyTick++;
 	}
 
-	/**
-	 * 刷新上下文使用率 — send 前后与附件变化时调用。
-	 */
 	function refreshContextUsage() {
-		const attachmentTokens = get(plugin.userStatus.pendingAttachments$).reduce(
-			(sum, a) => sum + a.estimatedTokens,
-			0,
-		);
-		// 关键路径:plugin.ask 内部创建 ContextManager,这里临时构造一个估算
-		// 实际 usedTokens 由 agentLoop 在 send 时更新;此处用 messages 粗估
-		const approxUsed = messages.reduce((sum, m) => sum + Math.ceil(m.content.length / 4), 0);
+		// 关键路径:粗估 — 发送后由 FeedbackController 精确更新,此处仅做即时反馈
+		const atts = get(attachmentStore);
+		const attachmentTokens = atts.reduce((s, a) => s + a.estimatedTokens, 0);
+		const approxUsed = messages.reduce((s, m) => s + Math.ceil(m.content.length / 4), 0);
 		plugin.userStatus.patchContextUsage({
 			usedTokens: approxUsed,
 			maxTokens: plugin.settings.chatModelMaxTokens,
@@ -108,31 +105,32 @@
 		});
 	}
 
-	function handleAgentError(assistantMsg: Message, code: string, message: string, toolName?: string): void {
+	function handleAgentError(am: Message, code: string, message: string, toolName?: string) {
 		if (code === 'CANCELLED') {
-			assistantMsg.cancelled = true;
+			am.cancelled = true;
 			return;
 		}
-		if (code === 'TOOL_ERROR' || code === 'INDEX_NOT_READY') {
-			if (assistantMsg.toolCalls) {
-				for (let i = assistantMsg.toolCalls.length - 1; i >= 0; i--) {
-					const tc = assistantMsg.toolCalls[i]!;
+		// 关键路径:TOOL_DENIED(权限拒绝,如路径越界)、TOOL_ERROR(工具执行异常)、
+		// INDEX_NOT_READY(索引未就绪)都优先附到最近一个 calling 状态的 toolCall 上,
+		// 以红色小字显示在工具条里,不铺大错误块。找不到匹配 toolCall 时降级到 chatError。
+		if (code === 'TOOL_ERROR' || code === 'TOOL_DENIED' || code === 'INDEX_NOT_READY') {
+			if (am.toolCalls) {
+				for (let i = am.toolCalls.length - 1; i >= 0; i--) {
+					const tc = am.toolCalls[i]!;
 					if (tc.status === 'calling' && (!toolName || tc.name === toolName)) {
 						tc.status = 'failed';
 						tc.errorMessage = message;
-						break;
+						return;
 					}
 				}
 			}
-			return;
 		}
-		assistantMsg.chatError = formatChatError(code, message);
+		am.chatError = formatChatError(code, message);
 	}
 
-	/**
-	 * 执行斜杠命令 — 由 SlashMenu onSelect 触发或回车时识别。
-	 */
-	function executeSlashCommand(cmd: SlashCommand): void {
+	// ==================== 斜杠命令 ====================
+
+	function executeSlashCommand(cmd: SlashCommand) {
 		input = '';
 		switch (cmd.name) {
 			case '/new':
@@ -145,12 +143,10 @@
 				handleCompact();
 				break;
 			case '/model':
-				// 关键路径:Obsidian SettingCenter 未在 d.ts 导出,用 unknown 绕过类型
-				(plugin as unknown as { app: { setting: { open: () => void; openTabById: (id: string) => void } } }).app.setting.open();
-				(plugin as unknown as { app: { setting: { openTabById: (id: string) => void } } }).app.setting.openTabById('ratel-vault');
+				// 关键路径:打开 Obsidian 设置面板
+				(plugin.app as unknown as { setting: { open: () => void } }).setting.open();
 				break;
 			case '/reindex':
-				// 关键路径:不 await,让索引在后台跑,StatusLine 会通过 statusBar$ 显示进度
 				plugin.indexController.reindex().catch((err) => {
 					devLogger.error('index', '/reindex 失败', err);
 				});
@@ -158,127 +154,135 @@
 		}
 	}
 
-	/**
-	 * 压缩上下文 — 弹确认框,确认后清空 messages(本 spec 只做 UI 入口,
-	 * 压缩逻辑复用 context-manager 的 truncate 能力,LLM 总结式压缩留给后续 spec)。
-	 */
-	async function handleCompact(): Promise<void> {
+	async function handleCompact() {
 		const confirmed = await showCompactConfirm(plugin.app);
 		if (!confirmed) return;
-		// 关键路径:简单实现 — 保留最后 2 条消息,清空历史(spec 非目标:LLM 总结式压缩)
+		// 简单实现:保留最后 2 条消息(LLM 总结式压缩留给后续 spec)
 		messages = messages.slice(-2);
 		refreshContextUsage();
 	}
 
+	// ==================== 发送消息 ====================
+
 	async function sendMessage() {
 		refreshKeyState();
 		const text = input.trim();
-		const freshGate = evaluateChatSendGate(plugin.settings, statusSnap, {
+		if (!text || isRunning) return;
+
+		const currentGate = evaluateChatSendGate(plugin.settings, get(statusStore), {
 			hasChatApiKey: hasChatApiKey(plugin.app, plugin.settings),
 		});
-		if (!text || isRunning || !freshGate.canSend) return;
+		if (!currentGate.canSend) return;
 
-		// 关键路径:斜杠命令在 sendMessage 前已被 handleKeydown 拦截,这里不会再收到 / 开头的 text
-		const currentAttachments = get(plugin.userStatus.pendingAttachments$).map((a) => ({
+		const currentAttachments = get(attachmentStore).map((a) => ({
 			fileName: a.fileName,
 			mimeType: a.mimeType,
 			base64: a.base64,
 		}));
 
-		const userMsg: Message = {
-			role: 'user',
+		// 关键路径:用 push + 从数组中取出 Proxy 引用(不是原始对象)。
+		// Svelte 5 $state 数组的元素是深度 Proxy,直接修改 Proxy 属性会触发细粒度 DOM 更新,
+		// 实现真正的打字机效果(字符逐字追加)。之前用 map+浅拷贝导致每次 delta
+		// 都替换整条消息引用,Svelte 批处理后变成一段一段刷新。
+		messages.push({
+			role: 'user' as const,
 			content: text,
 			attachments: currentAttachments.length > 0 ? currentAttachments : undefined,
-		};
-		messages = [...messages, userMsg];
+		});
+		messages.push({ role: 'assistant' as const, content: '' });
+		const am = messages[messages.length - 1] as Message; // 这是 Svelte Proxy
+
 		input = '';
 		isRunning = true;
-		abortController = new AbortController();
+		plugin.userStatus.patch({ model: 'checking' });
+		const ac = new AbortController();
 
-		const assistantMsg: Message = { role: 'assistant', content: '' };
-		messages = [...messages, assistantMsg];
 		let lastToolName: string | undefined;
 
+		/** 滚动到底部 — rAF 让浏览器先完成本次 DOM 更新再滚。 */
+		const scrollToBottom = () => {
+			requestAnimationFrame(() => {
+				if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight;
+			});
+		};
+		scrollToBottom();
+
 		try {
-			const events = plugin.ask(sessionId, text, abortController.signal);
+			const events = plugin.ask(sessionId, text, ac.signal);
+			abortController = ac;
 
 			for await (const event of events) {
 				switch (event.type) {
 					case 'message.delta':
-						assistantMsg.content += event.payload.text;
-						messages = [...messages];
+						am.content += event.payload.text;
+						scrollToBottom();
 						break;
 					case 'tool.call':
 						lastToolName = event.payload.name;
-						if (!assistantMsg.toolCalls) assistantMsg.toolCalls = [];
-						assistantMsg.toolCalls.push({
+						if (!am.toolCalls) am.toolCalls = [];
+						am.toolCalls.push({
 							name: event.payload.name,
 							args: event.payload.args,
 							status: 'calling',
 						});
-						messages = [...messages];
+						scrollToBottom();
 						break;
 					case 'tool.result':
-						if (assistantMsg.toolCalls) {
-							for (let i = assistantMsg.toolCalls.length - 1; i >= 0; i--) {
-								const tc = assistantMsg.toolCalls[i]!;
-								if (
-									tc.name === event.payload.name &&
-									tc.status === 'calling'
-								) {
+						if (am.toolCalls) {
+							for (let i = am.toolCalls.length - 1; i >= 0; i--) {
+								const tc = am.toolCalls[i]!;
+								if (tc.name === event.payload.name && tc.status === 'calling') {
 									tc.result = event.payload.result;
 									tc.status = 'done';
 									break;
 								}
 							}
 						}
-						messages = [...messages];
 						break;
 					case 'search.result':
-						assistantMsg.searchResults = event.payload.results;
-						assistantMsg.searchReranked = event.payload.reranked;
-						messages = [...messages];
+						am.searchResults = event.payload.results;
+						am.searchReranked = event.payload.reranked;
+						scrollToBottom();
 						break;
 					case 'message.end':
-						// 关键路径:message.end.payload.tokens 当前未消费,后续可接入 contextUsage 更新
 						break;
 					case 'error':
-						handleAgentError(assistantMsg, event.payload.code, event.payload.message, lastToolName);
-						messages = [...messages];
+						handleAgentError(am, event.payload.code, event.payload.message, lastToolName);
 						break;
 				}
 			}
 		} catch (err) {
-			const message = err instanceof Error ? err.message : String(err);
-			handleAgentError(assistantMsg, 'LLM_ERROR', message);
-			messages = [...messages];
+			if (ac.signal.aborted) {
+				am.cancelled = true;
+			} else {
+				const message = err instanceof Error ? err.message : String(err);
+				handleAgentError(am, 'LLM_ERROR', message);
+			}
 		} finally {
 			isRunning = false;
 			abortController = null;
-			// 关键路径:发送完成后清空附件并刷新上下文使用率
+			plugin.userStatus.patch({ model: 'ready' });
 			plugin.userStatus.clearAttachments();
 			refreshContextUsage();
+			scrollToBottom();
 		}
 	}
+
+	let abortController: AbortController | null = null;
 
 	function stopGeneration() {
 		abortController?.abort();
 	}
 
-	/**
-	 * 输入框键盘事件 — 优先转发给 SlashMenu(若可见),否则 Enter 发送。
-	 */
+	// ==================== 键盘 / 文件 ====================
+
 	function handleKeydown(e: KeyboardEvent) {
-		// 关键路径:斜杠菜单可见时,优先处理导航键
-		if (slashVisible && slashMenuRef) {
-			const handled = slashMenuRef.handleKeydown(e);
-			if (handled) return;
+		if (slashVisible && slashMenuEl) {
+			if (slashMenuEl.handleKeydown(e)) return;
 		}
-		// 关键路径:回车且菜单不可见时,检查是否是斜杠命令
 		if (e.key === 'Enter' && !e.shiftKey) {
 			e.preventDefault();
 			const trimmed = input.trim();
-			// 关键路径:精确匹配命令名(如 /new)直接执行
 			const exactMatch = filterCommands(trimmed).find((c) => c.name === trimmed);
 			if (exactMatch) {
 				executeSlashCommand(exactMatch);
@@ -288,32 +292,23 @@
 		}
 	}
 
-	/**
-	 * 文件选择 — 点击 + 按钮触发隐藏 input file。
-	 */
 	function triggerFileInput() {
 		fileInput?.click();
 	}
 
-	/**
-	 * 处理文件选择 — 校验后转 base64 存入 pendingAttachments$。
-	 */
 	async function handleFileSelect(e: Event) {
 		const target = e.target as HTMLInputElement;
 		if (!target.files || target.files.length === 0) return;
 		const file = target.files[0]!;
-		target.value = ''; // 清空,允许重复选同一文件
+		target.value = '';
 
-		const currentCount = get(plugin.userStatus.pendingAttachments$).length;
-		const validateResult = validateAttachment(file, currentCount);
-		if (!validateResult.ok) {
-			// 关键路径:校验失败不弹 Notice(spec 不改 FeedbackController 的错误 Notice),
-			// 改为临时在输入区显示提示
-			input = `[附件错误] ${validateResult.reason}`;
+		const currentCount = get(attachmentStore).length;
+		const vr = validateAttachment(file, currentCount);
+		if (!vr.ok) {
+			input = `[附件错误] ${vr.reason}`;
 			return;
 		}
 
-		// 读取图片尺寸用于估算 token
 		const { width, height } = await readImageDimensions(file);
 		const estimatedTokens = estimateImageTokens(width, height);
 		const base64 = await fileToBase64(file);
@@ -327,9 +322,6 @@
 		refreshContextUsage();
 	}
 
-	/**
-	 * 读取图片尺寸 — 用于估算 token。
-	 */
 	function readImageDimensions(file: File): Promise<{ width: number; height: number }> {
 		return new Promise((resolve) => {
 			const url = URL.createObjectURL(file);
@@ -346,17 +338,12 @@
 		});
 	}
 
-	/**
-	 * File 转 base64 字符串(不含 data: 前缀)。
-	 */
 	function fileToBase64(file: File): Promise<string> {
 		return new Promise((resolve, reject) => {
 			const reader = new FileReader();
 			reader.onload = () => {
 				const result = reader.result as string;
-				// 关键路径:FileReader 结果是 "data:image/png;base64,xxxx",去掉前缀
-				const base64 = result.split(',')[1] ?? '';
-				resolve(base64);
+				resolve(result.split(',')[1] ?? '');
 			};
 			reader.onerror = reject;
 			reader.readAsDataURL(file);
@@ -364,74 +351,72 @@
 	}
 
 	function formatToolResult(result: unknown): string {
-		if (Array.isArray(result)) {
-			return `找到 ${result.length} 项`;
-		}
-		if (typeof result === 'string') {
-			return result.length > 60 ? result.slice(0, 60) + '...' : result;
-		}
+		if (Array.isArray(result)) return `找到 ${result.length} 项`;
+		if (typeof result === 'string') return result.length > 60 ? result.slice(0, 60) + '…' : result;
 		if (result && typeof result === 'object') {
 			const json = JSON.stringify(result);
-			return json.length > 60 ? json.slice(0, 60) + '...' : json;
+			return json.length > 60 ? json.slice(0, 60) + '…' : json;
 		}
 		return String(result);
 	}
 
-	function toolIcon(status: ToolCallEntry['status']): string {
-		if (status === 'calling') return '⟳';
-		if (status === 'failed') return '✗';
-		return '✓';
-	}
+
 </script>
 
 <div class="ratel-chat">
-	<div class="ratel-messages">
+	<!-- Header — 标题 + 模型徽章 -->
+	<div class="ratel-header">
+		<span class="ratel-header-title">Ratel</span>
+		<span class="ratel-header-badge">{modelName}</span>
+	</div>
+
+	<!-- 消息流 -->
+	<div class="ratel-messages" bind:this={messagesEl}>
 		{#each messages as msg}
-			<div class="ratel-message ratel-{msg.role}">
-				<div class="ratel-role">{msg.role === 'user' ? 'You' : 'Ratel'}</div>
+			<div class="ratel-msg" class:ratel-msg-user={msg.role === 'user'} class:ratel-msg-assistant={msg.role === 'assistant'}>
+				{#if msg.attachments && msg.attachments.length > 0}
+					<div class="ratel-msg-imgs">
+						{#each msg.attachments as att}
+							<img class="ratel-msg-img" src="data:{att.mimeType};base64,{att.base64}" alt={att.fileName} title={att.fileName} />
+						{/each}
+					</div>
+				{/if}
 				{#if msg.toolCalls && msg.toolCalls.length > 0}
-					<div class="ratel-tool-calls">
+					<div class="ratel-tools">
 						{#each msg.toolCalls as tc}
-							<div class="ratel-tool-call ratel-tool-{tc.status}">
-								<span class="ratel-tool-icon">{toolIcon(tc.status)}</span>
-								<span class="ratel-tool-name">{tc.name}</span>
+							<div class="ratel-tool" class:ratel-tool-done={tc.status === 'done'} class:ratel-tool-failed={tc.status === 'failed'} class:ratel-tool-calling={tc.status === 'calling'}>
 								{#if tc.status === 'calling'}
-									<span class="ratel-tool-status">...</span>
+									<span class="ratel-tool-dot"></span>
 								{:else if tc.status === 'failed'}
-									<span class="ratel-tool-summary ratel-tool-failed">{tc.errorMessage ?? '失败'}</span>
-								{:else if tc.result != null}
-									<span class="ratel-tool-summary">{formatToolResult(tc.result)}</span>
+									<span class="ratel-tool-icon">✗</span>
+								{:else}
+									<span class="ratel-tool-icon">✓</span>
+								{/if}
+								<span class="ratel-tool-name">{tc.name}</span>
+								{#if tc.status === 'failed'}
+									<span class="ratel-tool-summary ratel-tool-err">{tc.errorMessage ?? '失败'}</span>
+								{:else if tc.status === 'done' && tc.result != null}
+									<span class="ratel-tool-summary">— {formatToolResult(tc.result)}</span>
 								{/if}
 							</div>
 						{/each}
 					</div>
 				{/if}
 				{#if msg.searchResults && msg.searchResults.length > 0}
-					<div class="ratel-search-results">
-						<div class="ratel-search-header">
-							🔍 搜索结果
+					<div class="ratel-search">
+						<div class="ratel-search-hdr">
+							<span class="ratel-search-icon">🔍</span>
+							搜索结果
 							{#if msg.searchReranked}
-								<span class="ratel-search-reranked" title="结果经过 Reranker 精排">✨ 精排</span>
+								<span class="ratel-search-badge">✨ 精排</span>
 							{/if}
 						</div>
 						{#each msg.searchResults as r}
-							<div class="ratel-search-item">
-								<span class="ratel-search-index">[{r.index}]</span>
+							<div class="ratel-search-row">
+								<span class="ratel-search-idx">[{r.index}]</span>
 								<span class="ratel-search-path">{r.path}</span>
 								<span class="ratel-search-score">{r.score.toFixed(3)}</span>
 							</div>
-						{/each}
-					</div>
-				{/if}
-				{#if msg.attachments && msg.attachments.length > 0}
-					<div class="ratel-msg-attachments">
-						{#each msg.attachments as att}
-							<img
-								class="ratel-msg-attachment-thumb"
-								src="data:{att.mimeType};base64,{att.base64}"
-								alt={att.fileName}
-								title={att.fileName}
-							/>
 						{/each}
 					</div>
 				{/if}
@@ -439,61 +424,65 @@
 					<div class="ratel-content">{msg.content}</div>
 				{/if}
 				{#if msg.chatError}
-					<div class="ratel-chat-error ratel-chat-error-{msg.chatError.type}">
-						<div class="ratel-chat-error-msg">{msg.chatError.message}</div>
+					<div class="ratel-err">
+						<div class="ratel-err-msg">{msg.chatError.message}</div>
 						{#if msg.chatError.suggestion}
-							<div class="ratel-chat-error-suggestion">{msg.chatError.suggestion}</div>
+							<div class="ratel-err-sug">{msg.chatError.suggestion}</div>
 						{/if}
 					</div>
 				{/if}
 				{#if msg.cancelled}
-					<div class="ratel-chat-cancelled">已停止生成</div>
+					<div class="ratel-cancelled">已停止生成</div>
 				{/if}
 			</div>
 		{/each}
-		{#if isRunning && messages[messages.length - 1]?.content === ''}
-			<div class="ratel-typing">Thinking...</div>
+		{#if isRunning && messages.length > 0 && messages[messages.length - 1]!.role === 'assistant' && messages[messages.length - 1]!.content === ''}
+			<div class="ratel-typing">
+				<span class="ratel-typing-dot"></span>
+				思考中…
+			</div>
 		{/if}
 	</div>
 
-	<!-- 关键路径:StatusLine 常驻底部,左侧点击展开/收起 Drawer -->
+	<!-- StatusLine(常驻底部) -->
 	<StatusLine
-		status$={plugin.userStatus.statusBar$}
-		contextUsage$={plugin.userStatus.contextUsage$}
+		status$={statusStore}
+		contextUsage$={contextStore}
 		expanded={drawerExpanded}
 		onToggle={() => (drawerExpanded = !drawerExpanded)}
 	/>
 
-	<!-- 关键路径:StatusDrawer 展开式详情,expanded 控制显隐 -->
+	<!-- StatusDrawer(展开时显示) -->
 	<StatusDrawer
 		expanded={drawerExpanded}
-		status$={plugin.userStatus.statusBar$}
-		contextUsage$={plugin.userStatus.contextUsage$}
-		pendingAttachments$={plugin.userStatus.pendingAttachments$}
+		status$={statusStore}
+		contextUsage$={contextStore}
+		pendingAttachments$={attachmentStore}
 		onCompact={handleCompact}
 	/>
 
-	<div class="ratel-input-area">
+	<!-- 输入区 -->
+	<div class="ratel-input">
 		{#if gate.hardBlockReason}
-			<div class="ratel-chat-gate-hint ratel-chat-gate-hard">{gate.hardBlockReason}</div>
+			<div class="ratel-gate ratel-gate-hard">{gate.hardBlockReason}</div>
 		{:else if gate.softHint}
-			<div class="ratel-chat-gate-hint">{gate.softHint}</div>
+			<div class="ratel-gate">{gate.softHint}</div>
 		{/if}
 
-		<!-- 关键路径:附件预览条,空时不渲染 -->
+		<!-- 附件预览条 -->
 		<AttachmentStrip
-			pendingAttachments$={plugin.userStatus.pendingAttachments$}
+			pendingAttachments$={attachmentStore}
 			onRemove={(id) => {
 				plugin.userStatus.removeAttachment(id);
 				refreshContextUsage();
 			}}
 		/>
 
-		<!-- 关键路径:斜杠命令菜单,仅 slashVisible 时渲染 -->
+		<!-- 斜杠命令(绝对定位,浮在输入框上方) -->
 		{#if slashVisible}
-			<div class="ratel-slash-container">
+			<div class="ratel-slash-wrap">
 				<SlashMenu
-					bind:this={slashMenuRef}
+					bind:this={slashMenuEl}
 					input={input}
 					onSelect={executeSlashCommand}
 					onClose={() => { input = ''; }}
@@ -502,75 +491,101 @@
 		{/if}
 
 		<div class="ratel-input-row">
-			<!-- 关键路径:附件按钮 + 隐藏 file input -->
-			<button
-				class="ratel-attach-btn"
-				type="button"
-				onclick={triggerFileInput}
-				aria-label="添加图片附件"
-				disabled={isRunning}
-			>+</button>
-			<input
-				bind:this={fileInput}
-				type="file"
-				accept="image/png,image/jpeg,image/webp,image/gif"
-				onchange={handleFileSelect}
-				style="display: none;"
-			/>
+			<button class="ratel-plus-btn" type="button" onclick={triggerFileInput} aria-label="添加图片" disabled={isRunning}>+</button>
+			<input bind:this={fileInput} type="file" accept="image/png,image/jpeg,image/webp,image/gif" onchange={handleFileSelect} style="display:none;" />
 			<textarea
 				bind:value={input}
 				onkeydown={handleKeydown}
 				onfocus={refreshKeyState}
-				placeholder="Ask about your vault... (输入 / 查看命令)"
+				placeholder="输入 / 查看命令,或直接提问…"
 				disabled={isRunning || !gate.canSend}
-				rows="2"
+				rows={1}
 			></textarea>
+		</div>
+		<div class="ratel-input-footer">
 			{#if isRunning}
-				<button onclick={stopGeneration} class="ratel-stop-btn">Stop</button>
+				<button class="ratel-send ratel-stop" onclick={stopGeneration}>Stop</button>
 			{:else}
-				<button onclick={sendMessage} disabled={isRunning || !input.trim() || !gate.canSend}>Send</button>
+				<button class="ratel-send" onclick={sendMessage} disabled={!input.trim() || !gate.canSend}>Send</button>
 			{/if}
 		</div>
 	</div>
 </div>
 
 <style>
+	/* ==================== 设计 Token 映射(mockup → Obsidian 变量) ====================
+	 * bg-primary(整体背景) → 继承 Obsidian leaf 背景,不设色
+	 * bg-secondary(#252526,status/slash菜单/attach-btn) → --background-secondary
+	 * bg-tertiary(#2d2d2d,用户气泡/工具条/搜索卡片) → --background-tertiary
+	 * bg-input(#3c3c3c,输入框) → --background-modifier-form-field
+	 * border → --background-modifier-border
+	 * accent(#7ee787,产品绿) → --text-success(徽章/工具done); Send 走 --interactive-accent(尊重主题)
+	 * warning(#facc15) → --text-warning
+	 * error(#f87171) → --text-error
+	 */
+
+	* { box-sizing: border-box; }
+
 	.ratel-chat {
 		display: flex;
 		flex-direction: column;
 		height: 100%;
-		padding: 8px;
+		font-size: 13.5px;
+		line-height: 1.5;
+		color: var(--text-normal);
+		font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 	}
 
+	/* ==================== Header ==================== */
+	.ratel-header {
+		flex-shrink: 0;
+		padding: 10px 14px;
+		border-bottom: 1px solid var(--background-modifier-border);
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+	}
+
+	.ratel-header-title {
+		font-size: 13px;
+		font-weight: 600;
+		color: var(--text-normal);
+	}
+
+	.ratel-header-badge {
+		font-size: 11px;
+		font-family: var(--font-monospace);
+		padding: 2px 8px;
+		border-radius: 12px;
+		background: rgba(126, 231, 135, 0.15);
+		color: #7ee787;
+	}
+
+	/* ==================== 消息流 ==================== */
 	.ratel-messages {
 		flex: 1;
 		overflow-y: auto;
-		padding-bottom: 8px;
+		padding: 14px;
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
 	}
 
-	.ratel-message {
-		margin-bottom: 12px;
-		padding: 8px 12px;
+	.ratel-msg {
+		max-width: 88%;
+	}
+
+	.ratel-msg-user {
+		align-self: flex-end;
+		padding: 10px 13px;
 		border-radius: 8px;
+		background: var(--background-tertiary);
 	}
 
-	.ratel-user {
-		background: var(--interactive-accent);
-		color: var(--text-on-accent);
-		margin-left: 20%;
-	}
-
-	.ratel-assistant {
-		background: var(--background-secondary);
-		color: var(--text-normal);
-		margin-right: 10%;
-	}
-
-	.ratel-role {
-		font-size: 0.75em;
-		font-weight: 600;
-		margin-bottom: 4px;
-		opacity: 0.7;
+	.ratel-msg-assistant {
+		align-self: flex-start;
+		padding: 0;
+		background: transparent;
 	}
 
 	.ratel-content {
@@ -578,248 +593,323 @@
 		word-break: break-word;
 	}
 
-	.ratel-msg-attachments {
+	/* 消息中的图片(mockup: .message-images) */
+	.ratel-msg-imgs {
 		display: flex;
-		gap: 4px;
-		margin-bottom: 6px;
+		gap: 6px;
 		flex-wrap: wrap;
+		margin-bottom: 8px;
 	}
 
-	.ratel-msg-attachment-thumb {
+	.ratel-msg-img {
 		width: 96px;
 		height: 96px;
 		object-fit: cover;
-		border-radius: 4px;
+		border-radius: 6px;
 		border: 1px solid var(--background-modifier-border);
 	}
 
-	.ratel-chat-error {
+	/* 错误(mockup: .degraded-row) */
+	.ratel-err {
 		margin-top: 8px;
 		padding: 8px 10px;
 		border-radius: 6px;
-		border-left: 3px solid var(--text-error);
-		background: var(--background-modifier-error);
-		font-size: 0.9em;
+		background: rgba(248, 113, 113, 0.1);
+		color: var(--text-error);
+		font-size: 11.5px;
+		line-height: 1.4;
 	}
 
-	.ratel-chat-error-msg {
-		font-weight: 600;
-	}
+	.ratel-err-msg { font-weight: 600; }
+	.ratel-err-sug { margin-top: 4px; color: var(--text-muted); }
 
-	.ratel-chat-error-suggestion {
-		margin-top: 4px;
-		font-size: 0.85em;
-		color: var(--text-muted);
-	}
-
-	.ratel-chat-cancelled {
+	.ratel-cancelled {
 		margin-top: 8px;
-		font-size: 0.85em;
+		font-size: 11.5px;
 		color: var(--text-muted);
 		font-style: italic;
 	}
 
-	.ratel-chat-gate-hint {
-		width: 100%;
-		font-size: 0.8em;
+	/* Thinking 指示器 */
+	.ratel-typing {
 		color: var(--text-warning);
-		margin-bottom: 4px;
+		font-size: 12px;
+		padding: 4px 0;
+		display: flex;
+		align-items: center;
+		gap: 8px;
 	}
 
-	.ratel-chat-gate-hard {
-		color: var(--text-error);
+	.ratel-typing-dot {
+		width: 7px;
+		height: 7px;
+		border-radius: 50%;
+		background: var(--text-warning);
+		animation: ratel-pulse 1.2s infinite;
+		flex-shrink: 0;
 	}
 
-	.ratel-tool-calls {
+	@keyframes ratel-pulse {
+		0%, 100% { opacity: 1; }
+		50% { opacity: 0.4; }
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.ratel-typing-dot { animation: none; }
+	}
+
+	/* 门禁提示 */
+	.ratel-gate {
+		font-size: 11px;
+		color: var(--text-warning);
 		margin-bottom: 8px;
+	}
+
+	.ratel-gate-hard { color: var(--text-error); }
+
+	/* ==================== 工具调用(mockup: .tool-call) ==================== */
+	.ratel-tools {
+		margin-bottom: 6px;
 		display: flex;
 		flex-direction: column;
 		gap: 4px;
 	}
 
-	.ratel-tool-call {
+	.ratel-tool {
 		display: flex;
 		align-items: center;
-		gap: 6px;
-		font-size: 0.85em;
-		padding: 4px 8px;
-		border-radius: 4px;
-		background: var(--background-modifier-form-field);
+		gap: 8px;
+		padding: 6px 10px;
+		border-radius: 6px;
+		background: var(--background-tertiary);
+		font-size: 12px;
+		color: var(--text-muted);
+		font-family: var(--font-monospace);
+	}
+
+	.ratel-tool-done {
+		color: var(--text-success);
+	}
+
+	.ratel-tool-failed {
+		color: var(--text-error);
 	}
 
 	.ratel-tool-calling {
 		color: var(--text-muted);
 	}
 
-	.ratel-tool-done {
-		color: var(--text-normal);
-		opacity: 0.8;
-	}
-
-	.ratel-tool-failed {
-		color: var(--text-error);
-		font-style: normal;
-		white-space: normal;
-		max-width: none;
+	.ratel-tool-dot {
+		width: 7px;
+		height: 7px;
+		border-radius: 50%;
+		background: var(--text-warning);
+		animation: ratel-pulse 1.2s infinite;
+		flex-shrink: 0;
 	}
 
 	.ratel-tool-icon {
-		font-size: 0.9em;
+		font-size: 11px;
+		flex-shrink: 0;
+		width: 10px;
+		text-align: center;
 	}
 
 	.ratel-tool-name {
 		font-weight: 600;
-		font-family: var(--font-monospace);
-	}
-
-	.ratel-tool-status {
-		color: var(--text-muted);
+		flex-shrink: 0;
 	}
 
 	.ratel-tool-summary {
-		color: var(--text-muted);
-		font-style: italic;
+		color: inherit;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
-		max-width: 200px;
+		opacity: 0.85;
 	}
 
-	.ratel-typing {
-		color: var(--text-muted);
-		font-style: italic;
-		padding: 4px 12px;
+	.ratel-tool-err {
+		color: var(--text-error);
+		white-space: normal;
+		opacity: 1;
 	}
 
-	.ratel-input-area {
-		display: flex;
-		flex-direction: column;
-		gap: 4px;
-		border-top: 1px solid var(--background-modifier-border);
-		padding-top: 8px;
-	}
-
-	.ratel-slash-container {
-		position: relative;
-	}
-
-	.ratel-input-row {
-		display: flex;
-		gap: 8px;
-		align-items: flex-end;
-	}
-
-	.ratel-attach-btn {
-		flex-shrink: 0;
-		width: 32px;
-		height: 32px;
-		padding: 0;
-		border-radius: 6px;
-		border: 1px solid var(--background-modifier-border);
-		background: var(--background-modifier-form-field);
-		color: var(--text-normal);
-		font-size: 18px;
-		line-height: 1;
-		cursor: pointer;
-	}
-
-	.ratel-attach-btn:hover {
-		border-color: var(--interactive-accent);
-	}
-
-	.ratel-attach-btn:disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
-	}
-
-	.ratel-input-row textarea {
-		flex: 1;
-		min-width: 0;
-		resize: none;
-		padding: 8px;
-		border-radius: 6px;
-		border: 1px solid var(--background-modifier-border);
-		background: var(--background-primary);
-		color: var(--text-normal);
-		font-family: inherit;
-		font-size: 14px;
-	}
-
-	.ratel-input-row textarea:focus {
-		outline: none;
-		border-color: var(--interactive-accent);
-	}
-
-	.ratel-input-row button {
-		padding: 8px 16px;
-		border-radius: 6px;
-		border: none;
-		background: var(--interactive-accent);
-		color: var(--text-on-accent);
-		cursor: pointer;
-		font-size: 14px;
-	}
-
-	.ratel-input-row button:disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
-	}
-
-	.ratel-stop-btn {
-		background: var(--text-error) !important;
-		color: var(--text-on-accent) !important;
-	}
-
-	.ratel-search-results {
+	/* ==================== 搜索结果 ==================== */
+	.ratel-search {
 		margin-bottom: 8px;
 		padding: 8px 10px;
 		border-radius: 6px;
-		background: var(--background-modifier-form-field);
-		font-size: 0.85em;
+		background: var(--background-tertiary);
+		font-size: 12px;
 	}
 
-	.ratel-search-header {
+	.ratel-search-hdr {
 		font-weight: 600;
 		margin-bottom: 4px;
-		opacity: 0.8;
+		color: var(--text-muted);
+		display: flex;
+		align-items: center;
+		gap: 6px;
 	}
 
-	.ratel-search-item {
+	.ratel-search-icon { font-size: 0.9em; }
+
+	.ratel-search-badge {
+		margin-left: 4px;
+		padding: 1px 6px;
+		border-radius: 8px;
+		background: rgba(250, 204, 21, 0.12);
+		color: var(--text-warning);
+		font-size: 10px;
+		font-weight: 500;
+	}
+
+	.ratel-search-row {
 		display: flex;
 		gap: 6px;
 		align-items: center;
 		padding: 2px 0;
 	}
 
-	.ratel-search-index {
+	.ratel-search-idx {
 		font-family: var(--font-monospace);
 		font-weight: 600;
-		color: var(--interactive-accent);
+		color: var(--text-muted);
 		min-width: 24px;
+		flex-shrink: 0;
 	}
 
 	.ratel-search-path {
 		flex: 1;
 		font-family: var(--font-monospace);
-		font-size: 0.9em;
+		font-size: 11px;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+		color: var(--text-normal);
 	}
 
 	.ratel-search-score {
 		font-family: var(--font-monospace);
-		color: var(--text-muted);
-		font-size: 0.85em;
+		color: var(--text-faint);
+		font-size: 10px;
+		flex-shrink: 0;
 	}
 
-	.ratel-search-reranked {
-		margin-left: 6px;
-		padding: 1px 6px;
-		border-radius: 3px;
+	/* ==================== 输入区(mockup: .input-area) ==================== */
+	.ratel-input {
+		flex-shrink: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		border-top: 1px solid var(--background-modifier-border);
+		padding: 10px 14px 14px;
+		position: relative;
+	}
+
+	.ratel-slash-wrap {
+		position: absolute;
+		bottom: 100%;
+		left: 14px;
+		right: 14px;
+		margin-bottom: 4px;
+		z-index: 20;
+	}
+
+	.ratel-input-row {
+		display: flex;
+		align-items: flex-end;
+		gap: 8px;
+	}
+
+	/* + 按钮(mockup: .attach-btn) */
+	.ratel-plus-btn {
+		width: 32px;
+		height: 32px;
+		flex-shrink: 0;
+		border-radius: 6px;
+		border: 1px solid var(--background-modifier-border);
+		background: var(--background-secondary);
+		color: var(--text-muted);
+		font-size: 16px;
+		line-height: 1;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0;
+		transition: color 0.15s;
+		box-shadow: none;
+		-webkit-appearance: none;
+		appearance: none;
+		font-family: inherit;
+	}
+
+	.ratel-plus-btn:hover {
+		color: var(--text-normal);
+	}
+
+	.ratel-plus-btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.ratel-input-row textarea {
+		flex: 1;
+		min-height: 54px;
+		max-height: 160px;
+		padding: 10px 12px;
+		border-radius: 8px;
+		border: 1px solid var(--background-modifier-border);
+		background: var(--background-modifier-form-field);
+		color: var(--text-normal);
+		font-family: inherit;
+		font-size: 13px;
+		line-height: 1.5;
+		resize: none;
+		outline: none;
+		transition: border-color 0.15s;
+		overflow-y: auto;
+	}
+
+	.ratel-input-row textarea:focus {
+		border-color: var(--interactive-accent);
+	}
+
+	.ratel-input-row textarea::placeholder {
+		color: var(--text-faint);
+	}
+
+	.ratel-input-footer {
+		display: flex;
+		justify-content: flex-end;
+		margin-top: 4px;
+	}
+
+	/* Send 按钮(mockup: .send-btn) */
+	.ratel-send {
+		padding: 6px 16px;
+		border-radius: 6px;
+		border: none;
 		background: var(--interactive-accent);
 		color: var(--text-on-accent);
-		font-size: 0.75em;
+		font-size: 12px;
 		font-weight: 600;
+		font-family: inherit;
+		cursor: pointer;
+		transition: opacity 0.15s;
+		box-shadow: none;
+		-webkit-appearance: none;
+		appearance: none;
+	}
+
+	.ratel-send:disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
+	}
+
+	.ratel-stop {
+		background: var(--text-error) !important;
+		color: #fff !important;
 	}
 </style>

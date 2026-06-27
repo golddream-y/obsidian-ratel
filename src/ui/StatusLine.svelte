@@ -1,14 +1,13 @@
 <script lang="ts">
 	/**
 	 * @file src/ui/StatusLine.svelte
-	 * @description 底部常驻单行状态条 — 状态点 + 文字 + ctx 进度条 + 展开 ▲
+	 * @description 底部常驻单行状态条 — 状态点 + 文字 + ctx 进度条 + 展开 ▲(整行可点击)
 	 * @module ui/StatusLine
 	 * @depends svelte/store, user-feedback/user-status
 	 */
 	import type { Readable } from 'svelte/store';
 	import type { UserStatusSnapshot, ContextUsage } from '../user-feedback/user-status';
 
-	// 关键路径:Svelte 5 用 $props() 替代 export let
 	let {
 		status$,
 		contextUsage$,
@@ -21,196 +20,160 @@
 		onToggle: () => void;
 	} = $props();
 
-	// 关键路径:Svelte 5 用 $derived 替代 $: 自动重算
+	// 关键路径:Svelte 5 直接用 $ 前缀订阅 store,无需 $derived 包装
 	const snap = $derived($status$);
 	const usage = $derived($contextUsage$);
 
-	// 状态点 + 文字映射(5 种状态,索引中优先)
-	const state = $derived(
-		computeState(snap),
-	);
+	type Tone = 'ready' | 'thinking' | 'error' | 'unconfigured' | 'indexing';
 
-	function computeState(s: UserStatusSnapshot): {
-		tone: 'ready' | 'thinking' | 'error' | 'unconfigured' | 'indexing';
-		label: string;
-	} {
-		// 关键路径:索引中优先于思考中(spec §2)
+	const state = $derived.by(() => {
+		const s = snap;
+		// 关键路径:索引中优先于思考中
 		if (s.index === 'processing' || s.index === 'scanning' || s.index === 'queueing') {
-			return { tone: 'indexing', label: '索引中' };
+			return { tone: 'indexing' as Tone, label: '索引中' };
 		}
 		if (s.model === 'failed' || s.index === 'failed') {
-			return { tone: 'error', label: '请求失败' };
+			return { tone: 'error' as Tone, label: '请求失败' };
 		}
-		// 关键路径:未配置 — model 空闲且未就绪,或 embedding 不可用
 		if (s.model === 'idle' && s.embedding === 'unavailable') {
-			return { tone: 'unconfigured', label: '未配置' };
+			return { tone: 'unconfigured' as Tone, label: '未配置' };
 		}
-		// 关键路径:思考中 — 模型不在 ready 且不空闲(初始化/下载/检查中)
-		// 关键路径:此处 s.model 已被前面分支收窄为非 'failed',无需再判 !== 'failed'
 		if (s.model !== 'ready' && s.model !== 'idle') {
-			return { tone: 'thinking', label: '思考中…' };
+			return { tone: 'thinking' as Tone, label: '思考中…' };
 		}
-		return { tone: 'ready', label: '就绪' };
-	}
+		return { tone: 'ready' as Tone, label: '就绪' };
+	});
 
 	// ctx 进度条颜色阈值:0-79% 绿,80-94% 黄,95-100% 红
-	const ctxColor = $derived(
-		usage.percentage >= 95
-			? 'var(--text-error)'
-			: usage.percentage >= 80
-				? 'var(--text-warning)'
-				: 'var(--text-success)',
-	);
+	const ctxColor = $derived.by(() => {
+		const p = usage.percentage;
+		if (p >= 95) return 'var(--text-error)';
+		if (p >= 80) return 'var(--text-warning)';
+		return 'var(--text-success)';
+	});
+
+	const pct = $derived(Math.min(usage.percentage, 100));
 </script>
 
-<div class="ratel-status-line">
-	<!-- 关键路径:左侧点击展开/收起 Drawer;右侧 ctx 区域不展开(spec §2 点击区域划分) -->
-	<button
-		class="ratel-status-left"
-		type="button"
-		onclick={onToggle}
-		aria-label={expanded ? '收起详情' : '展开详情'}
-		aria-expanded={expanded}
-	>
-		<span class="ratel-status-dot ratel-dot-{state.tone}"></span>
-		<span class="ratel-status-text ratel-text-{state.tone}">{state.label}</span>
-		<span class="ratel-status-arrow">{expanded ? '▼' : '▲'}</span>
-	</button>
-	<!-- ctx 区域:不展开 Drawer,未来可预留跳转上下文管理 -->
-	<div class="ratel-status-right" title={`已用 ${usage.usedTokens.toLocaleString()} / ${usage.maxTokens.toLocaleString()} tokens`}>
-		<div class="ratel-ctx-bar" style="width: 48px; height: 4px; background: var(--background-modifier-border);">
-			<div class="ratel-ctx-fill" style="width: {Math.min(usage.percentage, 100)}%; background: {ctxColor};"></div>
+<!-- 关键路径:整行可点击切换 Drawer,与 mockup 一致 -->
+<div class="ratel-status-line" onclick={onToggle} role="button" aria-expanded={expanded} aria-label={expanded ? '收起详情' : '展开详情'}>
+	<span class="ratel-sl-dot" class:ratel-sl-dot-ready={state.tone === 'ready'} class:ratel-sl-dot-thinking={state.tone === 'thinking' || state.tone === 'indexing'} class:ratel-sl-dot-error={state.tone === 'error'} class:ratel-sl-dot-unconfigured={state.tone === 'unconfigured'}></span>
+	<span class="ratel-sl-text" class:ratel-sl-text-warn={state.tone === 'thinking' || state.tone === 'indexing'} class:ratel-sl-text-error={state.tone === 'error'} class:ratel-sl-text-muted={state.tone === 'unconfigured'}>{state.label}</span>
+	<div class="ratel-sl-ctx" title={`已用 ${usage.usedTokens.toLocaleString()} / ${usage.maxTokens.toLocaleString()} tokens`}>
+		<div class="ratel-sl-ctx-bar">
+			<div class="ratel-sl-ctx-fill" style={`width: ${pct}%; background: ${ctxColor};`}></div>
 		</div>
-		<span class="ratel-ctx-pct" style="color: {ctxColor};">{usage.percentage}%</span>
+		<span class="ratel-sl-ctx-pct" style={`color: ${ctxColor};`}>{usage.percentage}%</span>
 	</div>
+	<span class="ratel-sl-arrow">{expanded ? '▼' : '▲'}</span>
 </div>
 
 <style>
 	.ratel-status-line {
 		display: flex;
 		align-items: center;
-		justify-content: space-between;
+		gap: 8px;
 		height: 30px;
-		padding: 0 8px;
+		padding: 0 14px;
 		border-top: 1px solid var(--background-modifier-border);
 		background: var(--background-secondary);
-		color: var(--text-normal);
-		font-size: 0.8em;
-		flex-shrink: 0;
-	}
-
-	.ratel-status-left {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		background: none;
-		border: none;
-		padding: 4px 8px;
+		font-size: 11.5px;
+		color: var(--text-muted);
 		cursor: pointer;
-		color: inherit;
-		font: inherit;
-		border-radius: 4px;
+		user-select: none;
+		flex-shrink: 0;
+		transition: background 0.15s;
 	}
 
-	.ratel-status-left:hover {
-		background: var(--background-modifier-border-hover);
+	.ratel-status-line:hover {
+		background: var(--background-modifier-hover);
 	}
 
-	.ratel-status-right {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-	}
-
-	.ratel-status-dot {
-		display: inline-block;
-		width: 8px;
-		height: 8px;
+	.ratel-sl-dot {
+		width: 7px;
+		height: 7px;
 		border-radius: 50%;
 		flex-shrink: 0;
 	}
 
-	/* 就绪:绿点稳定 */
-	.ratel-dot-ready {
+	.ratel-sl-dot-ready {
 		background: var(--text-success);
 	}
 
-	/* 思考中:黄点脉冲 */
-	.ratel-dot-thinking {
+	.ratel-sl-dot-thinking {
 		background: var(--text-warning);
-		animation: ratel-pulse 1.5s ease-in-out infinite;
+		animation: ratel-sl-pulse 1.2s infinite;
 	}
 
-	/* 索引中:黄点脉冲(与思考中同色,文字区分) */
-	.ratel-dot-indexing {
-		background: var(--text-warning);
-		animation: ratel-pulse 1.5s ease-in-out infinite;
-	}
-
-	/* 错误:红点 */
-	.ratel-dot-error {
+	.ratel-sl-dot-error {
 		background: var(--text-error);
 	}
 
-	/* 未配置:灰圈空心 */
-	.ratel-dot-unconfigured {
+	.ratel-sl-dot-unconfigured {
 		background: transparent;
-		border: 1px solid var(--text-muted);
+		border: 1.5px solid var(--text-faint, var(--text-muted));
 	}
 
-	@keyframes ratel-pulse {
+	@keyframes ratel-sl-pulse {
 		0%, 100% { opacity: 1; }
 		50% { opacity: 0.4; }
 	}
 
-	.ratel-status-text {
-		font-size: 0.9em;
+	@media (prefers-reduced-motion: reduce) {
+		.ratel-sl-dot-thinking {
+			animation: none;
+		}
 	}
 
-	.ratel-text-ready {
+	.ratel-sl-text {
+		font-weight: 500;
 		color: var(--text-normal);
 	}
 
-	.ratel-text-thinking,
-	.ratel-text-indexing {
+	.ratel-sl-text-warn {
 		color: var(--text-warning);
 	}
 
-	.ratel-text-error {
+	.ratel-sl-text-error {
 		color: var(--text-error);
 	}
 
-	.ratel-text-unconfigured {
+	.ratel-sl-text-muted {
 		color: var(--text-muted);
+		font-weight: 400;
 	}
 
-	.ratel-status-arrow {
-		font-size: 0.75em;
-		color: var(--text-muted);
+	.ratel-sl-ctx {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		margin-left: auto;
 	}
 
-	.ratel-ctx-bar {
-		position: relative;
-		overflow: hidden;
+	.ratel-sl-ctx-bar {
+		width: 48px;
+		height: 4px;
 		border-radius: 2px;
+		background: var(--background-modifier-form-field, var(--background-primary));
+		overflow: hidden;
 	}
 
-	.ratel-ctx-fill {
+	.ratel-sl-ctx-fill {
 		height: 100%;
-		transition: width 0.2s ease, background 0.2s ease;
+		border-radius: 2px;
+		transition: width 0.3s;
 	}
 
-	.ratel-ctx-pct {
-		font-family: var(--font-monospace);
+	.ratel-sl-ctx-pct {
 		font-size: 10px;
-		min-width: 32px;
+		font-family: var(--font-monospace);
+		min-width: 28px;
 		text-align: right;
 	}
 
-	@media (prefers-reduced-motion: reduce) {
-		.ratel-dot-thinking,
-		.ratel-dot-indexing {
-			animation: none;
-		}
+	.ratel-sl-arrow {
+		font-size: 10px;
+		opacity: 0.6;
+		flex-shrink: 0;
 	}
 </style>
