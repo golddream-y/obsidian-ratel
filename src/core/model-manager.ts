@@ -7,7 +7,7 @@
 
 import { writable } from 'svelte/store';
 import { InsufficientDiskError, type ProgressInfo, ModelDownloader } from './model-downloader';
-import { EmbeddingOnnx } from '../adapters/embedding-onnx';
+import { EmbeddingOnnx, type EmbeddingOnnxDeps } from '../adapters/embedding-onnx';
 import type { EmbeddingPort } from '../ports/embedding';
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
@@ -56,6 +56,10 @@ export class ModelManager {
     private downloader: ModelDownloader;
     private embedding: EmbeddingPort | null = null;
     private cacheDir: string;
+    // 关键路径:wasmPath 保留供 getDeps() 重新读盘,Web Worker 需要全新的 ArrayBuffer 副本 transfer。
+    private wasmPath: string;
+    // 关键路径:modelDir 在 download() 成功后记录,getDeps() 据此重新读取模型文件。
+    private modelDir: string | null = null;
     private createEmbedding: (modelDir: string) => Promise<EmbeddingPort>;
 
     constructor(
@@ -65,6 +69,7 @@ export class ModelManager {
         createEmbedding?: (modelDir: string) => Promise<EmbeddingPort>,
     ) {
         this.cacheDir = cacheDir;
+        this.wasmPath = wasmPath;
         this.downloader = downloader ?? new ModelDownloader(cacheDir);
         // 关键路径:createEmbedding 未传入时,用 wasmPath 构造默认工厂;
         // 测试场景下传入 mock 函数则跳过默认逻辑。
@@ -96,6 +101,8 @@ export class ModelManager {
                     eta: speed > 0 ? (1 - p.progress) / speed : 0,
                 });
             });
+            // 关键路径:记录 modelDir 供 getDeps() 重新读盘,Web Worker 需要全新 ArrayBuffer 副本。
+            this.modelDir = modelDir;
 
             // 关键路径:文件下载完后,ORT 还要编译 WASM + 加载模型权重,这在主线程可能需要几秒到十几秒,
             // 必须给用户状态反馈,否则会以为卡住了。
@@ -124,10 +131,40 @@ export class ModelManager {
         return this.embedding;
     }
 
+    /**
+     * 重新从磁盘读取模型依赖,返回可安全 transfer 给 Web Worker 的 EmbeddingOnnxDeps。
+     *
+     * 关键路径:
+     * - EmbeddingWorkerProxy 在 init 时把 modelBuffer / wasmBinary 作为 transferable postMessage 给 Worker,
+     *   transfer 后主线程的 ArrayBuffer 会被 neuter(长度归零)。
+     * - 因此不能复用主线程 EmbeddingOnnx 实例持有的 buffer,必须重新读盘得到全新副本。
+     * - 模型未下载(modelDir 为 null)时返回 null,调用方据此报错。
+     *
+     * @returns 全新的模型依赖;模型未下载时返回 null。
+     * @throws Error 文件读取失败(模型文件被删除等)。
+     */
+    async getDeps(): Promise<EmbeddingOnnxDeps | null> {
+        if (!this.modelDir) return null;
+        // 关键路径:并行读盘,与 createDefaultEmbeddingFactory 一致的路径结构。
+        const [onnxBuffer, wasmBuffer, vocabContent] = await Promise.all([
+            readFile(path.join(this.modelDir, 'model_quantized.onnx')),
+            readFile(this.wasmPath),
+            readFile(path.join(this.modelDir, 'vocab.txt'), 'utf-8'),
+        ]);
+        // 关键路径:readFile 返回的 Buffer 底层 ArrayBuffer 可能大于实际数据,
+        // 复制为独立 Uint8Array 后再取 buffer,确保 transfer 的是精确大小的 ArrayBuffer。
+        return {
+            vocabContent,
+            modelBuffer: new Uint8Array(onnxBuffer).buffer,
+            wasmBinary: new Uint8Array(wasmBuffer).buffer,
+        };
+    }
+
     /** 删除本地模型缓存。 */
     async remove(): Promise<void> {
         await this.downloader.remove();
         this.embedding = null;
+        this.modelDir = null;
         this.status$.set({ state: 'NotStarted' });
     }
 }
