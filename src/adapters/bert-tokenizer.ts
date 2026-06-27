@@ -2,16 +2,16 @@
  * @file src/adapters/bert-tokenizer.ts
  * @description 基于 vocab.txt 的 WordPiece tokenizer,专用于 bge-small-zh-v1.5
  * @module adapters/bert-tokenizer
- * @depends node:fs/promises
+ * @depends node:fs/promises (仅 loadVocab,动态 import,不污染 Web Worker bundle)
  *
  * 设计要点:
  * - 不解析完整 tokenizer.json,只依赖 vocab.txt(109KB),减小分发体积。
  * - 实现与 HuggingFace BertTokenizer 对齐的 BasicTokenizer + WordPieceTokenizer。
  * - 固定参数:do_lower_case=false, tokenize_chinese_chars=true, model_max_length=512。
  * - 输出 {inputIds, attentionMask, tokenTypeIds},可直接喂给 ONNX BERT 模型。
+ * - parseVocab 为纯函数(无 fs 依赖),供 Web Worker 直接使用;
+ *   loadVocab 仅供主线程使用,动态 import node:fs/promises,避免顶层依赖污染浏览器产物。
  */
-
-import { readFile } from 'node:fs/promises';
 
 /**
  * encode 输出结构。
@@ -44,14 +44,16 @@ const PAD_TOKEN = '[PAD]';
 const UNK_TOKEN = '[UNK]';
 
 /**
- * 读取 vocab.txt 并生成 token → id 映射。
+ * 解析 vocab.txt 文本内容,生成 token → id 映射。
  *
- * @param vocabPath - vocab.txt 本地路径
+ * 关键路径:纯函数,无 fs 依赖,供 Web Worker(浏览器环境)直接使用。
+ * 主线程也可用此函数避免重复的文件读取逻辑。
+ *
+ * @param content - vocab.txt 的文本内容
  * @returns token 到 id 的只读 Map
- * @throws 文件读取失败或格式异常时抛错
+ * @throws 内容为空或解析失败时抛错
  */
-export async function loadVocab(vocabPath: string): Promise<ReadonlyMap<string, number>> {
-	const content = await readFile(vocabPath, 'utf-8');
+export function parseVocab(content: string): ReadonlyMap<string, number> {
 	const vocab = new Map<string, number>();
 	let index = 0;
 	for (const line of content.split(/\r?\n/)) {
@@ -68,6 +70,24 @@ export async function loadVocab(vocabPath: string): Promise<ReadonlyMap<string, 
 		throw new Error('vocab.txt 为空或解析失败');
 	}
 	return vocab;
+}
+
+/**
+ * 读取 vocab.txt 并生成 token → id 映射。
+ *
+ * 关键路径:仅供主线程使用(Node 环境)。动态 import node:fs/promises,
+ * 避免顶层静态 import 污染 Web Worker bundle(浏览器平台无法解析 node:fs)。
+ *
+ * @param vocabPath - vocab.txt 本地路径
+ * @returns token 到 id 的只读 Map
+ * @throws 文件读取失败或格式异常时抛错
+ */
+export async function loadVocab(vocabPath: string): Promise<ReadonlyMap<string, number>> {
+	// 关键路径:动态 import — Web Worker bundle 中 loadVocab 不会被引用(Worker 用 parseVocab),
+	// 经 tree-shaking 移除后,node:fs/promises 不会进入浏览器产物。
+	const { readFile } = await import('node:fs/promises');
+	const content = await readFile(vocabPath, 'utf-8');
+	return parseVocab(content);
 }
 
 /**
