@@ -11,6 +11,7 @@
 	import StatusDrawer from './StatusDrawer.svelte';
 	import SlashMenu from './SlashMenu.svelte';
 	import AttachmentStrip from './AttachmentStrip.svelte';
+	import MarkdownView from './MarkdownView.svelte';
 	import { filterCommands, type SlashCommand } from './slash-commands';
 	import { validateAttachment, estimateImageTokens } from './attachment-utils';
 	import { evaluateChatSendGate } from './chat-send-gate';
@@ -421,7 +422,11 @@
 					</div>
 				{/if}
 				{#if msg.content}
-					<div class="ratel-content">{msg.content}</div>
+					{#if msg.role === 'assistant'}
+						<MarkdownView content={msg.content} streaming={isRunning && msg === messages[messages.length - 1]} />
+					{:else}
+						<div class="ratel-content">{msg.content}</div>
+					{/if}
 				{/if}
 				{#if msg.chatError}
 					<div class="ratel-err">
