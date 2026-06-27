@@ -229,7 +229,8 @@ const embeddingWorkerContext = await esbuild.context({
 	// 关键路径:bert-tokenizer 的 loadVocab 动态 import node:fs/promises(仅主线程调用)。
 	// Worker 路径用 parseVocab(纯函数),loadVocab 经 tree-shaking 移除;
 	// 但 esbuild 在 tree-shaking 前会尝试 resolve 所有 import,标记 external 让扫描阶段跳过。
-	external: ['node:fs/promises'],
+	// 'obsidian' 防御性 external — Worker 不导入 obsidian,但传递依赖可能意外引入。
+	external: ['node:fs/promises', 'obsidian'],
 	plugins: [externalOnnxruntimeNodePlugin()],
 });
 
