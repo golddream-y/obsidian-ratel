@@ -202,9 +202,41 @@ const workerContext = await esbuild.context({
 	plugins: [externalOnnxruntimeNodePlugin()],
 });
 
+// Embedding Worker bundle (Web Worker, browser platform)
+// 关键路径:ONNX 推理在 Web Worker 中执行,platform 必须为 browser(不依赖 Node API)。
+// format: iife — Web Worker 需要自执行,IIFE 格式最兼容。
+const embeddingWorkerContext = await esbuild.context({
+	entryPoints: ['src/worker/embedding-worker.ts'],
+	bundle: true,
+	// 关键路径:Web Worker 运行在浏览器环境,不依赖 node:fs / node:path;
+	// platform: browser 让 esbuild 把浏览器内置模块当作外部,不尝试 polyfill。
+	platform: 'browser',
+	// 关键路径:IIFE 自执行格式,Web Worker 加载脚本后立即执行,兼容性最佳。
+	format: 'iife',
+	target: 'es2021',
+	logLevel: 'info',
+	sourcemap: prod ? false : 'inline',
+	treeShaking: true,
+	outfile: 'dist/embedding-worker.js',
+	minify: prod,
+	// 关键路径:与 mainContext 一致的 alias — onnxruntime-web 强制走 wasm bundle 入口,
+	// onnxruntime-node / @huggingface/transformers 替换为空模块,防止原生模块进浏览器产物。
+	alias: {
+		'onnxruntime-web': path.resolve(__dirname, 'node_modules/onnxruntime-web/dist/ort.wasm.bundle.min.mjs'),
+		'onnxruntime-node': path.resolve(__dirname, 'src/adapters/empty-module.cjs'),
+		'@huggingface/transformers': path.resolve(__dirname, 'src/adapters/empty-transformers.cjs'),
+	},
+	// 关键路径:bert-tokenizer 的 loadVocab 动态 import node:fs/promises(仅主线程调用)。
+	// Worker 路径用 parseVocab(纯函数),loadVocab 经 tree-shaking 移除;
+	// 但 esbuild 在 tree-shaking 前会尝试 resolve 所有 import,标记 external 让扫描阶段跳过。
+	external: ['node:fs/promises'],
+	plugins: [externalOnnxruntimeNodePlugin()],
+});
+
 if (prod) {
 	const mainResult = await mainContext.rebuild();
 	await workerContext.rebuild();
+	await embeddingWorkerContext.rebuild();
 	if (mainResult.metafile) {
 		await import('node:fs/promises').then(({ writeFile }) =>
 			writeFile(path.join(__dirname, 'dist', 'meta-main.json'), JSON.stringify(mainResult.metafile)),
@@ -214,4 +246,5 @@ if (prod) {
 } else {
 	await mainContext.watch();
 	await workerContext.watch();
+	await embeddingWorkerContext.watch();
 }
