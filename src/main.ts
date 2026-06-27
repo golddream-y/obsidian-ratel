@@ -368,9 +368,9 @@ export default class RatelVaultPlugin extends Plugin {
 				this.feedbackController?.notifyEmbeddingReady();
 				// 关键路径:InlineWorker 在主线程运行,模型就绪后注入 VectraStore,embeddings 由 EmbeddingWorkerProxy 提供。
 			if (this.inlineWorker) {
-				this.vectraStore = this.createEmbeddingsVectraStore(embedding);
 				// 关键路径:创建 EmbeddingWorkerProxy,把 ONNX 推理移入 Web Worker,主线程零 CPU 阻塞。
 				// Worker 创建/init 失败不降级,直接抛错提示用户接 API Embedding 端点。
+				// vectraStore 在 initEmbeddingWorkerProxy 内部用无 embeddings 版本创建(IndexProcessor 自己调 proxy.embed)。
 				await this.initEmbeddingWorkerProxy(embedding);
 			}
 			}
