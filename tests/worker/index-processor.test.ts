@@ -2,13 +2,14 @@
  * @file tests/worker/index-processor.test.ts
  * @description IndexProcessor 行为 — indexFull / indexIncremental / indexDelete / vectorSearch / status
  * @module tests/worker/index-processor
- * @depends worker/index-processor, adapters/vector-vectra
+ * @depends worker/index-processor, adapters/vector-vectra, ports/embedding
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { IndexProcessor } from '../../src/worker/index-processor';
 import { VectraStore } from '../../src/adapters/vector-vectra';
 import type { EmbeddingsModel, EmbeddingsResponse } from 'vectra';
+import type { EmbeddingPort } from '../../src/ports/embedding';
 import path from 'path';
 import fs from 'fs';
 
@@ -28,13 +29,24 @@ const stubEmbedder: EmbeddingsModel = {
 describe('IndexProcessor', () => {
     let store: VectraStore;
     let processor: IndexProcessor;
+    let embedCallCount: number;
+
+    const mockEmbedding: EmbeddingPort = {
+        dimensions: 512,
+        modelId: 'test:mock',
+        async embed(texts: string[]): Promise<number[][]> {
+            embedCallCount++;
+            return texts.map(() => Array(512).fill(0).map(() => Math.random()));
+        },
+    };
 
     beforeEach(async () => {
         if (fs.existsSync(TMP_DIR)) fs.rmSync(TMP_DIR, { recursive: true });
         fs.mkdirSync(TMP_DIR, { recursive: true });
+        embedCallCount = 0;
         store = new VectraStore(TMP_DIR, { embeddings: stubEmbedder, autoInit: true });
         await store.init();
-        processor = new IndexProcessor(store);
+        processor = new IndexProcessor(store, mockEmbedding);
     });
 
     afterEach(() => {
@@ -82,5 +94,33 @@ describe('IndexProcessor', () => {
         await processor.indexFull([{ path: 'g.md', content: 'Status test' }]);
         const status = await processor.status();
         expect(status.totalDocs).toBeGreaterThan(0);
+    });
+
+    it('indexIncremental - 批量 embed - 100 chunk 只调 1 次 embed', async () => {
+        // 关键路径:生成一个会产生多个 chunk 的长文档
+        const longContent = Array(50).fill(null).map((_, i) => `## 标题${i}\n\n这是第${i}段内容,填充一些文字确保分块。`).join('\n\n');
+        await processor.indexIncremental({ path: 'long.md', content: longContent });
+
+        // 关键路径:无论多少 chunk,embed 只应被调用 1 次(批量)
+        expect(embedCallCount).toBe(1);
+    });
+
+    it('indexIncremental - 空文件不触发 embed', async () => {
+        await processor.indexIncremental({ path: 'empty.md', content: '' });
+        expect(embedCallCount).toBe(0);
+    });
+
+    it('indexIncremental - embed 失败不挂整批 - 返回 errors=1', async () => {
+        const failEmbedding: EmbeddingPort = {
+            dimensions: 512,
+            modelId: 'test:fail',
+            async embed(): Promise<number[][]> {
+                throw new Error('ONNX 推理失败');
+            },
+        };
+        const failProcessor = new IndexProcessor(store, failEmbedding);
+        const result = await failProcessor.indexIncremental({ path: 'fail.md', content: 'test content' });
+        expect(result.errors).toBe(1);
+        expect(result.indexed).toBe(0);
     });
 });

@@ -2,17 +2,18 @@
  * @file src/worker/index-processor.ts
  * @description Worker 内索引批处理 — index.full / index.incremental / index.delete / vector.search / status
  * @module worker/index-processor
- * @depends worker/chunker, adapters/vector-vectra
+ * @depends worker/chunker, adapters/vector-vectra, ports/embedding
  *
  * 设计要点:
- * - 主线程传文件列表,Worker 内部完成 chunking + embedding + vectra upsert(调用 store.upsert 时触发 ONNX 推理)。
+ * - 主线程传文件列表,Worker 内部完成 chunking + 批量 embedding(EmbeddingPort.embed)+ vectra upsertItem(预计算向量)。
  * - 每个文件处理完就推一次 `index.progress`,UI 实时刷新。
- * - 分批 5/批提交到 vectra,平衡内存和 IO 吞吐。
+ * - 一个文件一个事务(beginFileUpdate/endFileUpdate),避免每 chunk 一次事务。
  */
 
 import { chunkMarkdown } from './chunker';
 import { VectraStore } from '../adapters/vector-vectra';
 import { devLogger } from '../logging/dev-logger';
+import type { EmbeddingPort } from '../ports/embedding';
 
 export interface IndexFile {
     path: string;
@@ -31,7 +32,10 @@ export interface ProgressEvent {
  * 需要直接复用同一份 VectraStore 引用,避免重复构造。
  */
 export class IndexProcessor {
-    constructor(public store: VectraStore) {}
+    constructor(
+        public store: VectraStore,
+        private embeddings: EmbeddingPort,
+    ) {}
 
     /**
      * 全量索引入口 — 逐文件处理,每文件完成推一次进度。
@@ -46,17 +50,30 @@ export class IndexProcessor {
         for (const [i, file] of files.entries()) {
             try {
                 const chunks = chunkMarkdown(file.content, 500, 100);
+                if (chunks.length === 0) {
+                    indexed++;
+                    onProgress?.({ done: i + 1, total: files.length });
+                    continue;
+                }
+
+                // 关键路径:一次性批量 embed 所有 chunk 文本。
+                const chunkTexts = chunks.map((c) => c.text);
+                const vectors = await this.embeddings.embed(chunkTexts);
+
+                await this.store.beginFileUpdate();
                 for (const [idx, chunk] of chunks.entries()) {
-                    await this.store.upsert(
+                    await this.store.upsertItem(
                         `${file.path}#chunk-${idx}`,
-                        chunk.text,
+                        vectors[idx]!,
                         { path: file.path, chunkIndex: idx, startOffset: chunk.startOffset },
                     );
                 }
+                await this.store.endFileUpdate();
                 indexed++;
             } catch (err) {
-                // 关键路径:单文件失败不挂整批,继续后续。
-				devLogger.error('index', `failed to index ${file.path}`, err);
+                // 关键路径:事务回滚,避免半写入的脏数据。
+                try { await this.store.cancelFileUpdate(); } catch { /* 忽略回滚失败 */ }
+                devLogger.error('index', `failed to index ${file.path}`, err);
                 errors++;
             }
             // 关键路径:每个文件处理完推一次进度(不管成功失败),UI 能实时看到数字在增长。
@@ -80,15 +97,29 @@ export class IndexProcessor {
         let errors = 0;
         try {
             const chunks = chunkMarkdown(file.content, 500, 100);
+            if (chunks.length === 0) {
+                onProgress?.({ done: 1, total: 1 });
+                return { indexed: 0, errors: 0 };
+            }
+
+            // 关键路径:一次性批量 embed 所有 chunk 文本,ONNX 调用从 N 降到 N/16。
+            const chunkTexts = chunks.map((c) => c.text);
+            const vectors = await this.embeddings.embed(chunkTexts);
+
+            // 关键路径:一个文件一个事务,避免每 chunk 一次事务。
+            await this.store.beginFileUpdate();
             for (const [idx, chunk] of chunks.entries()) {
-                await this.store.upsert(
+                await this.store.upsertItem(
                     `${file.path}#chunk-${idx}`,
-                    chunk.text,
+                    vectors[idx]!,
                     { path: file.path, chunkIndex: idx, startOffset: chunk.startOffset },
                 );
             }
+            await this.store.endFileUpdate();
             indexed = 1;
         } catch (err) {
+            // 关键路径:事务回滚,避免半写入的脏数据。
+            try { await this.store.cancelFileUpdate(); } catch { /* 忽略回滚失败 */ }
             devLogger.error('index', `failed to index ${file.path}`, err);
             errors = 1;
         }
