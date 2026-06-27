@@ -47,7 +47,7 @@
 | **P-PROMPTS** | [2026-06-26-ratel-prompts-implementation.md](plans/2026-06-26-ratel-prompts-implementation.md) | ⏳ Pending | — | — | — | S-PROMPTS |
 | **P-CHAT-UI** | [2026-06-26-ratel-chat-ui-redesign.md](plans/2026-06-26-ratel-chat-ui-redesign.md) | ✅ Completed | feat/chat-ui | 2026-06-26 | 2026-06-27 | S-CHAT-UI |
 | **P-MD-MERMAID** | [2026-06-27-ratel-streaming-markdown-mermaid-implementation.md](plans/2026-06-27-ratel-streaming-markdown-mermaid-implementation.md) | ✅ Completed | feat/markdown-mermaid | 2026-06-27 | 2026-06-27 | S-MD-MERMAID |
-| **P-INDEX-BLOCK** | [2026-06-27-index-ui-blocking-implementation.md](plans/2026-06-27-index-ui-blocking-implementation.md) | ⏳ Pending | — | — | — | S-INDEX-BLOCK |
+| **P-INDEX-BLOCK** | [2026-06-27-index-ui-blocking-implementation.md](plans/2026-06-27-index-ui-blocking-implementation.md) | ✅ Completed | feat/index-blocking-fix | 2026-06-27 | 2026-06-27 | S-INDEX-BLOCK |
 
 > **Superseded 说明**:
 > - P-W3-IMPL(2026-06-13)基于"手动两路搜索 + RRF"设计,审查发现 vectra 已内置 `isBm25` 混合搜索,设计前提不成立。改由 [S-W3-HYBRID](specs/2026-06-26-ratel-w3-hybrid-search-design.md) 重新设计,新 plan 见 [P-W3-HYBRID](plans/2026-06-26-ratel-w3-hybrid-implementation.md)。
