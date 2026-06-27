@@ -26,6 +26,7 @@
 | S-VAULT-TOOLS | [2026-06-26-vault-file-tools-design.md](specs/2026-06-26-vault-file-tools-design.md) | Active | 2026-06-26 | Vault 基础文件操作工具集:grep/glob/list_files(只读) + write_note/append_note/edit_note/delete_note(写入),补齐精确搜索与 CRUD 能力 |
 | S-PROMPTS | [2026-06-26-ratel-prompts-design.md](specs/2026-06-26-ratel-prompts-design.md) | Active | 2026-06-26 | LLM 提示词中文统一 registry + Composer 动态注入 + section 级 promptOverrides;检索外框不可删 |
 | S-CHAT-UI | [2026-06-26-ratel-chat-ui-redesign-design.md](specs/2026-06-26-ratel-chat-ui-redesign-design.md) | Active | 2026-06-26 | Chat UI 重设计:底部 StatusLine + 抽屉 Drawer + 斜杠命令 + 图片上传预留 + Notice 迁移 |
+| S-MD-MERMAID | [2026-06-27-ratel-streaming-markdown-mermaid-design.md](specs/2026-06-27-ratel-streaming-markdown-mermaid-design.md) | Active | 2026-06-27 | 流式 Markdown + Mermaid 渲染:marked.js + DOMPurify + highlight.js + mermaid v11,独立 MarkdownView.svelte 组件,rAF 节流 |
 
 
 ---
@@ -44,6 +45,7 @@
 | **P-VAULT-TOOLS** | [2026-06-26-ratel-vault-tools-implementation.md](plans/2026-06-26-ratel-vault-tools-implementation.md) | ✅ Completed | feat/vault-tools | 2026-06-24 | 2026-06-24 | S-VAULT-TOOLS |
 | **P-PROMPTS** | [2026-06-26-ratel-prompts-implementation.md](plans/2026-06-26-ratel-prompts-implementation.md) | ⏳ Pending | — | — | — | S-PROMPTS |
 | **P-CHAT-UI** | [2026-06-26-ratel-chat-ui-redesign.md](plans/2026-06-26-ratel-chat-ui-redesign.md) | ✅ Completed | feat/chat-ui | 2026-06-26 | 2026-06-27 | S-CHAT-UI |
+| **P-MD-MERMAID** | [2026-06-27-ratel-streaming-markdown-mermaid-implementation.md](plans/2026-06-27-ratel-streaming-markdown-mermaid-implementation.md) | ⏳ Pending | — | — | — | S-MD-MERMAID |
 
 > **Superseded 说明**:
 > - P-W3-IMPL(2026-06-13)基于"手动两路搜索 + RRF"设计,审查发现 vectra 已内置 `isBm25` 混合搜索,设计前提不成立。改由 [S-W3-HYBRID](specs/2026-06-26-ratel-w3-hybrid-search-design.md) 重新设计,新 plan 见 [P-W3-HYBRID](plans/2026-06-26-ratel-w3-hybrid-implementation.md)。
