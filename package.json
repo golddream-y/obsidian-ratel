@@ -41,6 +41,7 @@
 		"eslint-plugin-obsidianmd": "^0.3.0",
 		"globals": "^17.6.0",
 		"jiti": "^2.6.1",
+		"jsdom": "^29.1.1",
 		"obsidian": "latest",
 		"svelte": "^5.33.3",
 		"svelte-check": "^4.2.1",
@@ -54,6 +55,7 @@
 		"highlight.js": "^11.11.1",
 		"ignore": "^7.0.5",
 		"marked": "^18.0.5",
+		"marked-highlight": "^2.2.4",
 		"mermaid": "^11.16.0",
 		"onnxruntime-web": "^1.27.0",
 		"vectra": "^0.15.0"
