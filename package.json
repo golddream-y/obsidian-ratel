@@ -33,6 +33,7 @@
 	},
 	"devDependencies": {
 		"@eslint/js": "^9.39.4",
+		"@types/dompurify": "^3.0.5",
 		"@types/node": "^22.15.17",
 		"esbuild": "0.25.5",
 		"esbuild-svelte": "^0.9.3",
@@ -49,7 +50,11 @@
 		"vitest": "^4.1.8"
 	},
 	"dependencies": {
+		"dompurify": "^3.4.11",
+		"highlight.js": "^11.11.1",
 		"ignore": "^7.0.5",
+		"marked": "^18.0.5",
+		"mermaid": "^11.16.0",
 		"onnxruntime-web": "^1.27.0",
 		"vectra": "^0.15.0"
 	}
