@@ -36,10 +36,10 @@ export function initProcessor(indexDir: string, embeddings: EmbeddingsModel, emb
  *
  * 关键路径:InlineWorker 在主线程运行时复用主线程的 vectraStore,
  * 避免主线程与 Worker 各持一个 VectraStore 同时写同一个 indexDir。
- * `embeddings`(EmbeddingPort)由主线程注入,IndexProcessor 用它批量 embed chunk 文本。
+ * `embeddingPort`(EmbeddingPort)由主线程注入,IndexProcessor 用它批量 embed chunk 文本。
  */
-export function initProcessorWithStore(store: VectraStore, embeddings: EmbeddingPort): void {
-    processor = new IndexProcessor(store, embeddings);
+export function initProcessorWithStore(store: VectraStore, embeddingPort: EmbeddingPort): void {
+    processor = new IndexProcessor(store, embeddingPort);
 }
 
 /**
