@@ -11,6 +11,7 @@ import { IndexProcessor } from '../../src/worker/index-processor';
 import type { WorkerRequest } from '../../src/types';
 import type { EmbeddingsModel, EmbeddingsResponse } from 'vectra';
 import type { VectraStore } from '../../src/adapters/vector-vectra';
+import type { EmbeddingPort } from '../../src/ports/embedding';
 import path from 'path';
 import fs from 'fs';
 
@@ -27,6 +28,16 @@ const stubEmbedder: EmbeddingsModel = {
     },
 };
 
+// 关键路径:IndexProcessor 现在通过 EmbeddingPort.embed 批量向量化 chunk 文本,
+// 此 mock 提供零向量,与 vector.search 测试用的 512 维 queryVector 维度一致。
+const mockEmbeddingPort: EmbeddingPort = {
+    dimensions: 512,
+    modelId: 'test:mock',
+    async embed(texts: string[]): Promise<number[][]> {
+        return texts.map(() => Array(512).fill(0));
+    },
+};
+
 describe('handleMessage - 未初始化', () => {
     it('init 前调用 index.status - 返 NULL_PROCESSOR', async () => {
         const { handleMessage: fresh } = await import('../../src/worker/handler?init-test=' + Date.now());
@@ -39,7 +50,7 @@ describe('handleMessage - M-1 真实现', () => {
     beforeEach(() => {
         if (fs.existsSync(TMP_HANDLER_DIR)) fs.rmSync(TMP_HANDLER_DIR, { recursive: true });
         fs.mkdirSync(TMP_HANDLER_DIR, { recursive: true });
-        initProcessor(TMP_HANDLER_DIR, stubEmbedder);
+        initProcessor(TMP_HANDLER_DIR, stubEmbedder, mockEmbeddingPort);
     });
 
     it('index.status - 返真实数据(总文档数 >= 0)', async () => {
@@ -95,7 +106,7 @@ describe('handler — hybrid.search', () => {
 
     it('hybrid.search - 路由到 processor.hybridSearch 并返回 hybrid.search.result', async () => {
         const fakeStore = {} as VectraStore;
-        const processor = new IndexProcessor(fakeStore);
+        const processor = new IndexProcessor(fakeStore, mockEmbeddingPort);
         // 关键路径:mock processor.hybridSearch,避免真实 vectra 调用
         processor.hybridSearch = vi.fn().mockResolvedValue([
             { docId: 'notes/a.md#chunk-0', score: 0.9, metadata: { path: 'notes/a.md', chunkIndex: 0 } },
@@ -115,7 +126,7 @@ describe('handler — hybrid.search', () => {
     it('hybrid.search - 未知 payload 字段 - 仍能解析并路由', async () => {
         // 关键路径:_requestId 是主线程注入的字段,handler 不应受其影响
         const fakeStore = {} as VectraStore;
-        const processor = new IndexProcessor(fakeStore);
+        const processor = new IndexProcessor(fakeStore, mockEmbeddingPort);
         processor.hybridSearch = vi.fn().mockResolvedValue([]);
         setProcessorForTest(processor);
 
