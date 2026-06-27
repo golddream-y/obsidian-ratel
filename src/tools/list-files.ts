@@ -17,7 +17,7 @@ export function createListFilesTool(vault: VaultPort): Tool {
 			parameters: {
 				type: 'object',
 				properties: {
-					path: { type: 'string', description: '目录路径,默认根目录' },
+					path: { type: 'string', description: '目录路径(相对 vault 根,如 "daily/" 或 "." 表示根目录)' },
 				},
 			},
 		},

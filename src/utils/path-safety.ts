@@ -23,7 +23,11 @@ function normalizeVaultPath(path: string): string {
 
 /**
  * 校验路径是否在 vault 安全范围内,返回归一化后的路径。
- * @throws 路径越界时抛错
+ *
+ * 关键路径:单个前导 `/`(如 `/notes/foo.md`)被视为 vault 根的相对路径,
+ * 归一化为 `notes/foo.md`,不抛错 — 模型常用 `/` 表示 vault 根,这是合理输入。
+ * Windows 盘符绝对路径(`C:\...`)仍视为真正的系统绝对路径,拒绝。
+ * @throws 路径越界(.. 穿越、Windows 盘符绝对路径)时抛错
  */
 export function validateVaultPath(path: string): string {
 	if (!path || typeof path !== 'string') {
@@ -34,7 +38,9 @@ export function validateVaultPath(path: string): string {
 		throw new Error(`路径越界:禁止使用 ".." 穿越 "${path}"`);
 	}
 
-	if (path.startsWith('/') || /^[A-Za-z]:[/\\]/.test(path)) {
+	// 关键路径:Windows 盘符绝对路径(C:\、D:\)是真正的系统绝对路径,拒绝。
+	// 单个前导 `/` 视为 vault 根的相对路径写法,归一化时去掉,不抛错。
+	if (/^[A-Za-z]:[/\\]/.test(path)) {
 		throw new Error(`路径越界:不允许绝对路径 "${path}"`);
 	}
 

@@ -2,7 +2,7 @@
  * @file src/adapters/llm-deepseek.ts
  * @description DeepSeek 聊天补全适配器(OpenAI 兼容协议,支持流式 SSE 与工具调用)
  * @module adapters/llm-deepseek
- * @depends obsidian(requestUrl), ports/llm
+ * @depends obsidian(requestUrl 备用), ports/llm, node:https/node:http(node 原生流式)
  */
 
 import { requestUrl } from 'obsidian';
@@ -40,9 +40,11 @@ interface OpenAIToolCallChunk {
  *
  * 设计要点:
  * - 走 OpenAI 兼容协议,适用于 DeepSeek / 任何 OpenAI 风格端点(Ollama 部分模型等)。
- * - 使用 SSE(`text/event-stream`)增量流式返回,以便在 UI 中实现逐字输出。
+ * - 使用 Node.js 原生 https/http 模块流式读取 SSE,真正逐 chunk yield delta,
+ *   让 UI 层能实现打字机效果并缩短首 token 时间(TTFT)。
  * - 工具调用在多 chunk 间累积(`toolCallAccumulators` 按 index 聚合)再统一 yield。
  * - 网络错误、协议错误、JSON 解析错误均降级处理,不让单条坏数据中断整次会话。
+ * - 若 URL 解析失败或协议不支持,降级到 Obsidian `requestUrl`(一次性返回,无打字机效果)。
  *
  * @example
  *   const llm = new DeepSeekLLM({ apiBase, apiKey, model: 'deepseek-chat' });
@@ -57,14 +59,13 @@ export class DeepSeekLLM implements LLMClient {
 	 * 向 DeepSeek `/chat/completions` 发起流式请求,逐 chunk yield `ChatDelta`。
 	 *
 	 * 行为契约:
-	 * - 文本增量通过 `{ text }` yield。
+	 * - 文本增量通过 `{ text }` yield,每个 chunk 到达时立即 yield(真流式)。
 	 * - 工具调用在 `[DONE]` 之前累积,流结束后按 index 顺序 yield `{ toolCall }`(text 为空字符串)。
 	 * - 若 SSE 出现无法解析的 JSON chunk,静默跳过,不影响后续 chunk。
 	 *
-	 * 关键路径:用 Obsidian `requestUrl` 替代浏览器 `fetch` 绕过 CORS 限制。
-	 * `requestUrl` 走 Node.js HTTP,不受浏览器同源策略约束。
-	 * `requestUrl` 不支持 ReadableStream 流式读取,返回完整 `text`;
-	 * 内部解析 `text` 中的 SSE 事件后逐条 yield,保持接口契约不变。
+	 * 关键路径:Node.js https/http 原生模块支持 ReadableStream,可以边收边解析 SSE,
+	 * 无需等整个响应完成。相比 Obsidian `requestUrl`(一次性返回 text),首 token 时间大幅缩短,
+	 * UI 层可以实现逐字打字机效果。
 	 *
 	 * @param req - 对话消息 + 可选工具定义。
 	 * @returns 异步迭代的 `ChatDelta`。
@@ -72,8 +73,193 @@ export class DeepSeekLLM implements LLMClient {
 	 */
 	async *chat(req: ChatRequest): AsyncIterable<ChatDelta> {
 		const body = this.buildRequestBody(req);
+		const url = new URL(`${this.config.apiBase}/chat/completions`);
+		const headers: Record<string, string> = {
+			'Content-Type': 'application/json',
+			'Accept': 'text/event-stream',
+		};
+		if (this.config.apiKey) {
+			headers['Authorization'] = `Bearer ${this.config.apiKey}`;
+		}
 
-		// 关键路径:requestUrl 走 Node.js HTTP 绕过 CORS;throw:false 让我们自行检查 status。
+		// 关键路径:Node.js 原生 http/https 流式读取。
+		// 按协议选择 http 或 https 模块,Ollama 本地端点可能走 http。
+		let stream: NodeJS.ReadableStream;
+		let statusCode = 0;
+		try {
+			({ stream, statusCode } = await this.requestStream(url, {
+				method: 'POST',
+				headers,
+				body: JSON.stringify(body),
+			}));
+		} catch (err) {
+			// 降级:若原生流式请求失败(如特殊代理/协议问题),回退到 requestUrl 一次性请求。
+			// 这种降级模式下无打字机效果,但保证功能可用。
+			yield* this.chatViaRequestUrl(req);
+			return;
+		}
+
+		if (statusCode < 200 || statusCode >= 300) {
+			// 消费掉错误体以便连接干净关闭
+			const errText = await this.readAll(stream);
+			throw new Error(`LLM API error: ${statusCode} ${errText.slice(0, 200)}`);
+		}
+
+		// 工具调用增量缓冲:key = tool_call.index,value = {id, name, arguments 字符串拼接}
+		const toolCallAccumulators = new Map<number, { id: string; name: string; arguments: string }>();
+		let buffer = '';
+
+		for await (const chunk of stream as unknown as AsyncIterable<Buffer | string>) {
+			buffer += typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+
+			// SSE 事件以 \n\n 分隔
+			let newlineIdx: number;
+			while ((newlineIdx = buffer.indexOf('\n\n')) !== -1) {
+				const rawEvent = buffer.slice(0, newlineIdx);
+				buffer = buffer.slice(newlineIdx + 2);
+				yield* this.processSSEEvent(rawEvent, toolCallAccumulators);
+			}
+		}
+
+		// 处理尾部可能残留的最后一个事件
+		if (buffer.trim()) {
+			yield* this.processSSEEvent(buffer, toolCallAccumulators);
+		}
+
+		// 收尾:把累积的工具调用一次性 yield 出去,text 留空以便调用方区分。
+		for (const [, tc] of toolCallAccumulators) {
+			let args: Record<string, unknown> = {};
+			try {
+				args = JSON.parse(tc.arguments) as Record<string, unknown>;
+			} catch {
+				// 修复:模型截断或残缺 JSON 时,把原始字符串塞入 raw 字段,避免整轮失败。
+				args = { raw: tc.arguments };
+			}
+			const toolCall: ToolCall = { id: tc.id, name: tc.name, args };
+			yield { text: '', toolCall };
+		}
+	}
+
+	/**
+	 * 处理一段 SSE 事件文本(单条或多条 data: 行),逐行解析并 yield delta。
+	 *
+	 * @param raw - 不含结尾 \n\n 的原始事件文本。
+	 * @param toolCallAccumulators - 工具调用累积 map(跨 chunk 共享)。
+	 */
+	private *processSSEEvent(
+		raw: string,
+		toolCallAccumulators: Map<number, { id: string; name: string; arguments: string }>,
+	): Iterable<ChatDelta> {
+		const lines = raw.split('\n');
+		for (const line of lines) {
+			const trimmed = line.trim();
+			if (!trimmed || !trimmed.startsWith('data: ')) continue;
+
+			const data = trimmed.slice(6);
+			if (data === '[DONE]') return;
+
+			try {
+				const parsed = JSON.parse(data) as {
+					choices?: Array<{
+						delta?: {
+							content?: string;
+							tool_calls?: OpenAIToolCallChunk[];
+						};
+					}>;
+				};
+
+				const choice = parsed.choices?.[0];
+				if (!choice?.delta) continue;
+
+				if (choice.delta.content) {
+					yield { text: choice.delta.content };
+				}
+
+				if (choice.delta.tool_calls) {
+					for (const tc of choice.delta.tool_calls) {
+						const existing = toolCallAccumulators.get(tc.index);
+						if (existing) {
+							if (tc.function?.arguments) {
+								existing.arguments += tc.function.arguments;
+							}
+						} else {
+							toolCallAccumulators.set(tc.index, {
+								id: tc.id ?? '',
+								name: tc.function?.name ?? '',
+								arguments: tc.function?.arguments ?? '',
+							});
+						}
+					}
+				}
+			} catch {
+				// 修复:协议偶发返回非法 JSON,跳过单条以保证流继续。
+			}
+		}
+	}
+
+	/**
+	 * 使用 Node.js 原生 https/http 模块发起请求,返回 Readable 流与状态码。
+	 *
+	 * 关键路径:不用 Obsidian requestUrl 是因为它不支持流式(等完整响应返回);
+	 * 不用浏览器 fetch 是因为 DeepSeek 等 API 端点不返回 CORS 头,浏览器 fetch 被拦截。
+	 * Node.js 原生模块在 Electron 渲染进程中可用(插件 marked isDesktopOnly: true),
+	 * 且不受 CORS 限制,能真实流式读取 SSE。
+	 *
+	 * @param url - 完整请求 URL。
+	 * @param options - 请求方法、头、体。
+	 * @returns { stream, statusCode } 响应流与 HTTP 状态码。
+	 */
+	private requestStream(
+		url: URL,
+		options: { method: string; headers: Record<string, string>; body: string },
+	): Promise<{ stream: NodeJS.ReadableStream; statusCode: number }> {
+		return new Promise((resolve, reject) => {
+			const isHttps = url.protocol === 'https:';
+			const lib = isHttps ? require('node:https') : require('node:http');
+			const req = lib.request(
+				{
+					hostname: url.hostname,
+					port: url.port || (isHttps ? 443 : 80),
+					path: url.pathname + url.search,
+					method: options.method,
+					headers: {
+						...options.headers,
+						'Content-Length': Buffer.byteLength(options.body),
+					},
+				},
+				(res: { statusCode: number; on: (ev: string, cb: (v: unknown) => void) => void }) => {
+					resolve({
+						stream: res as unknown as NodeJS.ReadableStream,
+						statusCode: res.statusCode ?? 0,
+					});
+				},
+			);
+			req.on('error', reject);
+			req.write(options.body);
+			req.end();
+		});
+	}
+
+	/**
+	 * 读取流的剩余内容为字符串(用于错误响应体)。
+	 */
+	private readAll(stream: NodeJS.ReadableStream): Promise<string> {
+		return new Promise((resolve, reject) => {
+			let chunks = '';
+			stream.on('data', (c: Buffer | string) => {
+				chunks += typeof c === 'string' ? c : c.toString('utf8');
+			});
+			stream.on('end', () => resolve(chunks));
+			stream.on('error', reject);
+		});
+	}
+
+	/**
+	 * 降级路径:使用 Obsidian requestUrl 一次性请求(无流式,无打字机效果)。
+	 * 当原生 https 模块因特殊环境(如某些代理配置)失败时作为兜底。
+	 */
+	private async *chatViaRequestUrl(req: ChatRequest): AsyncIterable<ChatDelta> {
+		const body = this.buildRequestBody(req);
 		const response = await requestUrl({
 			url: `${this.config.apiBase}/chat/completions`,
 			method: 'POST',
@@ -90,51 +276,28 @@ export class DeepSeekLLM implements LLMClient {
 		}
 
 		const text = response.text;
-		if (!text) {
-			throw new Error('LLM API returned empty body');
-		}
+		if (!text) throw new Error('LLM API returned empty body');
 
-		// 工具调用增量缓冲:key = tool_call.index,value = {id, name, arguments 字符串拼接}
-		// —— 关键路径:DeepSeek 的工具调用参数以片段方式到达,需要按 index 聚合。
 		const toolCallAccumulators = new Map<number, { id: string; name: string; arguments: string }>();
-
-		// 解析 SSE 格式的 text:每行以 "data: " 前缀,空行分隔事件。
 		const lines = text.split('\n');
 		for (const line of lines) {
 			const trimmed = line.trim();
 			if (!trimmed || !trimmed.startsWith('data: ')) continue;
-
 			const data = trimmed.slice(6);
 			if (data === '[DONE]') break;
-
 			try {
 				const parsed = JSON.parse(data) as {
-					choices?: Array<{
-						delta?: {
-							content?: string;
-							tool_calls?: OpenAIToolCallChunk[];
-						};
-					}>;
+					choices?: Array<{ delta?: { content?: string; tool_calls?: OpenAIToolCallChunk[] } }>;
 				};
-
 				const choice = parsed.choices?.[0];
 				if (!choice?.delta) continue;
-
-				// 文本增量
-				if (choice.delta.content) {
-					yield { text: choice.delta.content };
-				}
-
-				// 工具调用:按 index 累积参数(arguments 是 JSON 字符串片段)。
+				if (choice.delta.content) yield { text: choice.delta.content };
 				if (choice.delta.tool_calls) {
 					for (const tc of choice.delta.tool_calls) {
 						const existing = toolCallAccumulators.get(tc.index);
 						if (existing) {
-							if (tc.function?.arguments) {
-								existing.arguments += tc.function.arguments;
-							}
+							if (tc.function?.arguments) existing.arguments += tc.function.arguments;
 						} else {
-							// 首个 chunk 携带 id 与 name,后续 chunk 仅补全 arguments。
 							toolCallAccumulators.set(tc.index, {
 								id: tc.id ?? '',
 								name: tc.function?.name ?? '',
@@ -144,21 +307,18 @@ export class DeepSeekLLM implements LLMClient {
 					}
 				}
 			} catch {
-				// 修复:协议偶发返回非法 JSON,跳过单条以保证流继续。
+				// 跳过坏 JSON
 			}
 		}
 
-		// 收尾:把累积的工具调用一次性 yield 出去,text 留空以便调用方区分。
 		for (const [, tc] of toolCallAccumulators) {
 			let args: Record<string, unknown> = {};
 			try {
 				args = JSON.parse(tc.arguments) as Record<string, unknown>;
 			} catch {
-				// 修复:模型截断或残缺 JSON 时,把原始字符串塞入 raw 字段,避免整轮失败。
 				args = { raw: tc.arguments };
 			}
-			const toolCall: ToolCall = { id: tc.id, name: tc.name, args };
-			yield { text: '', toolCall };
+			yield { text: '', toolCall: { id: tc.id, name: tc.name, args } };
 		}
 	}
 

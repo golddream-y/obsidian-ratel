@@ -11,9 +11,16 @@ describe('validateVaultPath', () => {
 		expect(() => validateVaultPath('')).toThrow('路径不能为空');
 	});
 
-	it('绝对路径 - 抛错', () => {
-		expect(() => validateVaultPath('/etc/passwd')).toThrow('不允许绝对路径');
+	it('前导斜杠的 vault 相对路径 - 归一化后返回', () => {
+		// 关键路径:模型常用 `/` 表示 vault 根,视为相对路径,不抛错
+		expect(validateVaultPath('/etc/passwd')).toBe('etc/passwd');
+		expect(validateVaultPath('/')).toBe('');
+		expect(validateVaultPath('/notes/foo.md')).toBe('notes/foo.md');
+	});
+
+	it('Windows 盘符绝对路径 - 抛错', () => {
 		expect(() => validateVaultPath('C:\\secret')).toThrow('不允许绝对路径');
+		expect(() => validateVaultPath('D:/path')).toThrow('不允许绝对路径');
 	});
 
 	it('.. 穿越 - 抛错', () => {
