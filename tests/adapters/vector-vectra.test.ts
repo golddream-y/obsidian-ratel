@@ -92,6 +92,28 @@ describe('VectraStore', () => {
 		const status = await emptyStore.status();
 		expect(status.totalDocs).toBe(0);
 	});
+
+	it('upsertItem - 写入预计算向量并搜索', async () => {
+		const vector = Array(512).fill(0).map((_, i) => i / 512);
+		await store.beginFileUpdate();
+		await store.upsertItem('precomputed-1', vector, { path: 'notes/pre.md', chunkIndex: 0 });
+		await store.endFileUpdate();
+
+		const results = await store.search(vector, 1);
+		expect(results.length).toBeGreaterThan(0);
+		expect(results[0].docId).toBe('precomputed-1');
+	});
+
+	it('upsertItem - 事务回滚后数据不写入', async () => {
+		const vector = Array(512).fill(0.5);
+		await store.beginFileUpdate();
+		await store.upsertItem('rollback-1', vector, { path: 'notes/rb.md' });
+		await store.cancelFileUpdate();
+
+		const results = await store.search(vector, 1);
+		const found = results.find((r) => r.docId === 'rollback-1');
+		expect(found).toBeUndefined();
+	});
 });
 
 describe('VectraStore.hybridSearch', () => {
