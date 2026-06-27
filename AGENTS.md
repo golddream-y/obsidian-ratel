@@ -4,14 +4,16 @@
 
 - 目标平台:Obsidian 社区插件(TypeScript → 打包后 JavaScript)。
 - 主线程入口:`src/main.ts` 编译为 `dist/main.js`,由 Obsidian 加载。
-- Worker 入口:`src/worker/index.ts` 编译为 `dist/worker.js`(CPU 密集型任务)。
-- 发布产物:`dist/main.js`、`dist/worker.js`、`manifest.json`、可选 `styles.css`,从 `dist/` 取。
+- Worker 入口:`src/worker/index.ts` 编译为 `dist/worker.js`(索引调度,InlineWorker 模拟)。
+- Embedding Worker 入口:`src/worker/embedding-worker.ts` 编译为 `dist/embedding-worker.js`(ONNX 推理,Web Worker)。
+- 发布产物:`dist/main.js`、`dist/worker.js`、`dist/embedding-worker.js`、`manifest.json`、可选 `styles.css`,从 `dist/` 取。
 
 ## 架构
 
 - **Agent = Model + Harness** — Ratel Vault 是一个面向 Obsidian 知识库管理的 Harness。
-- **主线程**:Agent Loop、Context Manager、Hooks、Tools、Subagents、UI(Svelte)、LLM 调用(HTTP)、Embedding 调用(HTTP)、ObsidianVault 外观。
-- **Worker 线程**:vectra 索引、文本分块、向量计算(无 HTTP,无 Obsidian API)。
+- **主线程**:Agent Loop、Context Manager、Hooks、Tools、Subagents、UI(Svelte)、LLM 调用(HTTP)、Embedding 调用(HTTP)、ObsidianVault 外观、vectra 索引磁盘 IO、文本分块(`chunkMarkdown`)。
+- **InlineWorker(主线程模拟)**:索引调度(`IndexProcessor`),通过 `setTimeout(0)` 异步触发。vectra 磁盘 IO 与文本分块在主线程执行(需要 `fs`)。
+- **Embedding Web Worker(子线程)**:ONNX WASM 向量推理(`session.run()`)。主线程通过 `EmbeddingWorkerProxy`(实现 `EmbeddingPort`)postMessage 到 Worker,Worker 返回向量。不依赖 `fs`、不依赖 Obsidian API、不发 HTTP。
 - **无原生模块** — 用 vectra(纯 JS)替代 LanceDB,用 JSON 替代 sql.js。
 - **无外部服务** — 模型 API 是唯一的网络调用。
 
@@ -53,20 +55,29 @@ src/
   adapters/         # 适配器实现
     obsidian-vault.ts   # Obsidian API 薄包装 (TS)
     persistence-json.ts # Obsidian loadData/saveData
-    vector-vectra.ts    # vectra 包装
+    vector-vectra.ts    # vectra 包装(upsertItem 支持预计算向量)
+    embedding-onnx.ts   # ONNX 推理(在 Web Worker 中执行)
+    embedding-worker-proxy.ts # EmbeddingPort 代理,postMessage 到 Web Worker
     llm-deepseek.ts     # DeepSeek (OpenAI 兼容)
     llm-anthropic.ts    # Claude
   tools/            # 库工具(搜索、读取、创建等)
   hooks/            # 知识治理钩子
   subagents/        # Indexer、Librarian、Reviewer、Curator
   ui/               # Svelte 视图(聊天侧栏、面板)
-  worker/           # Worker 线程入口(索引、分块、向量)
+  worker/           # Worker 入口
+    index.ts            # InlineWorker 入口(索引调度,主线程模拟)
+    embedding-worker.ts # Web Worker 入口(ONNX 推理,子线程)
+    inline-worker.ts    # InlineWorker 实现(主线程 Worker 模拟)
+    handler.ts          # Worker 消息分发
+    index-processor.ts  # 索引批处理(chunkMarkdown → 批量 embed → upsertItem)
+    chunker.ts          # 文本分块(标题→段落→句子四级回退)
   utils/            # 工具函数
 ```
 
 - 保持 `main.ts` 精简 — 只放插件生命周期(`onload`、`onunload`、`addCommand`)。
 - 把所有功能逻辑拆到独立模块。
 - Worker 代码严禁 `import 'obsidian'`。
+- Embedding Web Worker 严禁使用 `node:fs` / `node:path`(纯浏览器环境,只做 ONNX WASM 推理)。
 
 ## manifest 规则
 
@@ -78,16 +89,18 @@ src/
 
 - **无原生模块**:用 vectra(纯 JS)替代 LanceDB;用 JSON(Obsidian loadData/saveData)替代 sql.js。
 - **Worker 中严禁 `import 'obsidian'`**:Worker 只通过 `postMessage` 通信。
-- **Worker 不允许发 HTTP 请求**:Embedding 与 LLM 调用都在主线程。
+- **Embedding Web Worker 严禁使用 Node API**:不 `import 'obsidian'`、不用 `node:fs` / `node:path`、不发 HTTP 请求。只做纯 CPU WASM 推理。
+- **InlineWorker 不允许发 HTTP 请求**:Embedding 与 LLM 调用都在主线程(或 Embedding Web Worker)。
 - **所有 Obsidian API 访问必须走 ObsidianVault 外观**(`adapters/obsidian-vault.ts`)。
-- **单 `main.js` + 单 `worker.js`**:所有主线程代码打到 `main.js`,所有 worker 代码打到 `worker.js`。
+- **三产物**:`main.js`(主线程)+ `worker.js`(InlineWorker 索引调度)+ `embedding-worker.js`(Web Worker ONNX 推理)。
 - **网络调用**:只能是模型 API(DeepSeek / Claude / Ollama),必须在 README 中写明。
 
 ## 性能
 
-- 保持 `onload` 轻量 — 重活(索引)推给 Worker。
+- 保持 `onload` 轻量 — 重活(ONNX 推理)推给 Embedding Web Worker。
 - 文件系统事件在送给 Worker 之前必须去抖。
-- Embedding API 调用要批量。
+- Embedding 调用必须批量 — `IndexProcessor` 一次性 `embeddings.embed(allChunkTexts)`,不逐 chunk 调用。`EmbeddingOnnx` 的 `maxBatchSize=16` 自动分批。
+- ONNX 推理在 Web Worker 线程执行,主线程零 CPU 阻塞。vectra 磁盘 IO 留在主线程(需要 `fs`)。
 
 ## 安全与隐私
 
@@ -101,7 +114,7 @@ src/
 
 - 升级 `manifest.json` 的 `version`(SemVer),并同步 `versions.json`。
 - GitHub release 的 tag 必须严格匹配 `manifest.json` 的 `version`(不带 `v` 前缀)。
-- release 上传 `main.js`、`worker.js`、`manifest.json`、`styles.css`。
+- release 上传 `main.js`、`worker.js`、`embedding-worker.js`、`manifest.json`、`styles.css`。
 
 ## 编码约定
 
