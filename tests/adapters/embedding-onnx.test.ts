@@ -19,12 +19,13 @@ const MODEL_PATH = path.join(FIXTURE_DIR, 'model_quantized.onnx');
 const WASM_PATH = path.join(PROJECT_ROOT, 'node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm');
 
 async function createEmbedding(): Promise<EmbeddingOnnx> {
-	const [modelBuffer, wasmBuffer] = await Promise.all([
+	const [modelBuffer, wasmBuffer, vocabContent] = await Promise.all([
 		readFile(MODEL_PATH),
 		readFile(WASM_PATH),
+		readFile(VOCAB_PATH, 'utf-8'),
 	]);
 	const emb = new EmbeddingOnnx({
-		vocabPath: VOCAB_PATH,
+		vocabContent,
 		modelBuffer: new Uint8Array(modelBuffer).buffer,
 		wasmBinary: new Uint8Array(wasmBuffer).buffer,
 	});
@@ -34,13 +35,14 @@ async function createEmbedding(): Promise<EmbeddingOnnx> {
 
 describe('EmbeddingOnnx', () => {
 	it('构造 - 默认 modelId - 为 local:bge-small-zh-v1.5', () => {
-		const emb = new EmbeddingOnnx({ vocabPath: VOCAB_PATH, modelBuffer: new ArrayBuffer(0), wasmBinary: new ArrayBuffer(0) });
+		// 关键路径:仅验证构造,不调 init(),vocabContent 用占位串即可。
+		const emb = new EmbeddingOnnx({ vocabContent: '', modelBuffer: new ArrayBuffer(0), wasmBinary: new ArrayBuffer(0) });
 		expect(emb.modelId).toBe('local:bge-small-zh-v1.5');
 		expect(emb.dimensions).toBe(512);
 	});
 
 	it('embed - 未 init - 抛错', async () => {
-		const emb = new EmbeddingOnnx({ vocabPath: VOCAB_PATH, modelBuffer: new ArrayBuffer(0), wasmBinary: new ArrayBuffer(0) });
+		const emb = new EmbeddingOnnx({ vocabContent: '', modelBuffer: new ArrayBuffer(0), wasmBinary: new ArrayBuffer(0) });
 		await expect(emb.embed(['hello'])).rejects.toThrow('未初始化');
 	});
 

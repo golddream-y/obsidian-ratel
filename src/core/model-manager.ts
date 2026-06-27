@@ -23,15 +23,17 @@ import { readFile } from 'node:fs/promises';
  */
 export function createDefaultEmbeddingFactory(wasmPath: string) {
     return async (modelDir: string): Promise<EmbeddingPort> => {
-        const [onnxBuffer, wasmBuffer] = await Promise.all([
+        const [onnxBuffer, wasmBuffer, vocabContent] = await Promise.all([
             readFile(path.join(modelDir, 'model_quantized.onnx')),
             readFile(wasmPath),
+            // 关键路径:vocab 用内容传递,与 Web Worker 路径一致(Worker 无 node:fs)。
+            readFile(path.join(modelDir, 'vocab.txt'), 'utf-8'),
         ]);
         // 关键路径:readFile 返回的 Buffer 底层 ArrayBuffer 可能大于实际数据,复制为独立 Uint8Array 后再取 buffer。
         const modelBuffer = new Uint8Array(onnxBuffer).buffer;
         const wasmBinary = new Uint8Array(wasmBuffer).buffer;
         const embedding = new EmbeddingOnnx({
-            vocabPath: path.join(modelDir, 'vocab.txt'),
+            vocabContent,
             modelBuffer,
             wasmBinary,
         });

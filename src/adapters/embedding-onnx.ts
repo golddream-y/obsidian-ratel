@@ -13,19 +13,25 @@
 
 import * as ort from 'onnxruntime-web';
 import type { EmbeddingPort } from '../ports/embedding';
-import { createTokenizer, loadVocab, type BertTokenizer } from './bert-tokenizer';
+import { createTokenizer, parseVocab, type BertTokenizer } from './bert-tokenizer';
 
 // 关键路径:Tensor 构造函数在 embed 中复用,避免每次重复动态 import。
 type TensorConstructor = typeof ort.Tensor;
 
 /**
  * 构造 EmbeddingOnnx 实例所需的依赖。
+ *
+ * 关键路径:vocab 用内容(string)而非路径传递,让 Web Worker(无 node:fs)
+ * 也能直接构造 tokenizer;主线程负责读文件后传入。
  */
 export interface EmbeddingOnnxDeps {
 	/**
-	 * vocab.txt 本地路径。
+	 * vocab.txt 的文本内容。
+	 *
+	 * 关键路径:用内容而非路径,避免 Web Worker 依赖 node:fs 读文件。
+	 * 主线程读取 vocab.txt 后传入,Worker 内用 parseVocab 解析。
 	 */
-	vocabPath: string;
+	vocabContent: string;
 
 	/**
 	 * ONNX 模型文件内容(ArrayBuffer)。
@@ -89,7 +95,9 @@ export class EmbeddingOnnx implements EmbeddingPort {
 	 * - executionProviders 显式指定 ['wasm'],禁止尝试加载 WebGPU/JSEP 后端。
 	 */
 	async init(): Promise<void> {
-		const vocab = await loadVocab(this.deps.vocabPath);
+		// 关键路径:用 parseVocab(纯函数)替代 loadVocab(依赖 node:fs),
+		// 让 Web Worker 也能直接从主线程传入的 vocabContent 构造 tokenizer。
+		const vocab = parseVocab(this.deps.vocabContent);
 		this.tokenizer = createTokenizer(vocab);
 
 		this.TensorCtor = ort.Tensor;

@@ -63,7 +63,7 @@ describe('EmbeddingWorkerProxy', () => {
 	it('init - 收到 ready 后 embed 可用', async () => {
 		const proxy = new EmbeddingWorkerProxy(
 			'mock-url',
-			{ vocabPath: '/vocab', modelBuffer: new ArrayBuffer(0), wasmBinary: new ArrayBuffer(0) },
+			{ vocabContent: '', modelBuffer: new ArrayBuffer(0), wasmBinary: new ArrayBuffer(0) },
 			512,
 		);
 
@@ -92,7 +92,7 @@ describe('EmbeddingWorkerProxy', () => {
 	it('embed - 空数组不调 postMessage', async () => {
 		const proxy = new EmbeddingWorkerProxy(
 			'mock-url',
-			{ vocabPath: '/vocab', modelBuffer: new ArrayBuffer(0), wasmBinary: new ArrayBuffer(0) },
+			{ vocabContent: '', modelBuffer: new ArrayBuffer(0), wasmBinary: new ArrayBuffer(0) },
 			512,
 		);
 		await new Promise((r) => setTimeout(r, 10)); // 等 init
@@ -106,7 +106,7 @@ describe('EmbeddingWorkerProxy', () => {
 	it('terminate - Worker 被 terminate', async () => {
 		const proxy = new EmbeddingWorkerProxy(
 			'mock-url',
-			{ vocabPath: '/vocab', modelBuffer: new ArrayBuffer(0), wasmBinary: new ArrayBuffer(0) },
+			{ vocabContent: '', modelBuffer: new ArrayBuffer(0), wasmBinary: new ArrayBuffer(0) },
 			512,
 		);
 		await new Promise((r) => setTimeout(r, 10));
@@ -118,7 +118,7 @@ describe('EmbeddingWorkerProxy', () => {
 	it('Worker onerror - pending 请求被 reject', async () => {
 		const proxy = new EmbeddingWorkerProxy(
 			'mock-url',
-			{ vocabPath: '/vocab', modelBuffer: new ArrayBuffer(0), wasmBinary: new ArrayBuffer(0) },
+			{ vocabContent: '', modelBuffer: new ArrayBuffer(0), wasmBinary: new ArrayBuffer(0) },
 			512,
 		);
 		await new Promise((r) => setTimeout(r, 10));

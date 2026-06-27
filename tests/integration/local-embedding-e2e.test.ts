@@ -38,10 +38,11 @@ describe('本地 Embedding 端到端', () => {
 
 	it('下载后可用 EmbeddingOnnx 推理出 512 维向量', async () => {
 		const onnxBuffer = await readFile(path.join(modelDir, 'model_quantized.onnx'));
+		const vocabContent = await readFile(path.join(modelDir, 'vocab.txt'), 'utf-8');
 		const modelBuffer = new Uint8Array(onnxBuffer).buffer;
 
 		const embedding = new EmbeddingOnnx({
-			vocabPath: path.join(modelDir, 'vocab.txt'),
+			vocabContent,
 			modelBuffer,
 		});
 		await embedding.init();

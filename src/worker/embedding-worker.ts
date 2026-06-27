@@ -11,7 +11,7 @@
  * - 与主线程通过 postMessage 通信
  *
  * 设计要点:
- * - 主线程在构造时传入 modelBuffer + vocabPath + wasmBinary,Worker 内部初始化 EmbeddingOnnx。
+ * - 主线程在构造时传入 modelBuffer + vocabContent + wasmBinary,Worker 内部初始化 EmbeddingOnnx。
  * - init 完成后回复 ready,之前所有 embed 请求回复 error。
  * - embed 请求用 requestId 关联响应。
  */

@@ -54,7 +54,7 @@ describe('embedding-worker', () => {
 			data: {
 				type: 'init',
 				deps: {
-					vocabPath: '/vocab',
+					vocabContent: '',
 					modelBuffer: new ArrayBuffer(0),
 					wasmBinary: new ArrayBuffer(0),
 				},

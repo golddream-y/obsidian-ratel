@@ -22,7 +22,7 @@ import { workerData } from 'worker_threads';
 async function bootstrapWorker(): Promise<void> {
 	if (!workerData || typeof workerData.indexDir !== 'string') return;
 
-	// 关键路径:若未来 Worker Threads 可用,需要主线程传入 modelDir + vocabPath 才能构造 EmbeddingOnnx。
+	// 关键路径:若未来 Worker Threads 可用,需要主线程传入 modelDir + vocabContent 才能构造 EmbeddingOnnx。
 	// 目前直接抛出明确错误,避免静默失败。
 	throw new Error(
 		'Worker Threads 场景下暂未实现 embeddings 注入,请使用 InlineWorker 模式',
