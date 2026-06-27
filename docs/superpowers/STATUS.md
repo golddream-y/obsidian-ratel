@@ -27,6 +27,7 @@
 | S-PROMPTS | [2026-06-26-ratel-prompts-design.md](specs/2026-06-26-ratel-prompts-design.md) | Active | 2026-06-26 | LLM 提示词中文统一 registry + Composer 动态注入 + section 级 promptOverrides;检索外框不可删 |
 | S-CHAT-UI | [2026-06-26-ratel-chat-ui-redesign-design.md](specs/2026-06-26-ratel-chat-ui-redesign-design.md) | Active | 2026-06-26 | Chat UI 重设计:底部 StatusLine + 抽屉 Drawer + 斜杠命令 + 图片上传预留 + Notice 迁移 |
 | S-MD-MERMAID | [2026-06-27-ratel-streaming-markdown-mermaid-design.md](specs/2026-06-27-ratel-streaming-markdown-mermaid-design.md) | Active | 2026-06-27 | 流式 Markdown + Mermaid 渲染:marked.js + DOMPurify + highlight.js + mermaid v11,独立 MarkdownView.svelte 组件,rAF 节流 |
+| S-INDEX-BLOCK | [2026-06-27-index-ui-blocking-fix-design.md](specs/2026-06-27-index-ui-blocking-fix-design.md) | Active | 2026-06-27 | 索引阻塞 UI 修复:P0 批量 embed(替代逐 chunk upsert)+ P1 ONNX 推理移入 Web Worker,修正 ADR-002 对 Web Worker 的排除 |
 
 
 ---
