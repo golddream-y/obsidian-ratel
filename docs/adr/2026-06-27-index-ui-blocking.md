@@ -92,71 +92,110 @@ Web Worker 只做纯 CPU 计算(WASM 推理),不需要任何 Node API。
 
 ---
 
+## 产品设计权衡(brainstorming 关键决策)
+
+以下决策在 brainstorming 阶段确认,作为后续实现的硬约束。
+
+### 决策 1:本地 ONNX 是插件内置能力,保持默认 — 不改 API Embedding 为默认
+
+**决策**:P2(API Embedding 为默认)**移除**。本地 ONNX 保持默认,API Embedding 仅作为可选项。
+
+**理由**:知识助手必须内置向量化能力。一个知识管理插件如果连向量化都要用户自己配 API 端点,能力边界不清晰。本地 ONNX 是插件的核心能力之一,不是"降级方案"。
+
+**影响**:P1(Web Worker)解决了本地 ONNX 的阻塞问题后,API Embedding 不再是"解决阻塞"的必要手段,而是"可选的增强"。后续不做"自动推荐切换 API Embedding"的设计。
+
+### 决策 2:Web Worker 创建失败不降级 — 直接报错引导用户接 API Embedding
+
+**决策**:Web Worker 创建/初始化失败时,**不降级到 InlineWorker**(ONNX 在主线程),而是直接抛错,提示用户配置 API Embedding 端点。
+
+**理由**:插件绝不能让笔记不可用。如果安装插件后 Obsidian 卡死,用户体验是灾难性的。与其"勉强能用但很卡",不如"明确不可用并给出解决方案"。用户看到错误提示后可以配置 API Embedding 端点(Ollama / 远端),这比"不知道为什么卡"好得多。
+
+**影响**:`EmbeddingWorkerProxy` 构造失败时 `throw new Error(...)`,main.ts 捕获后向用户展示配置引导。ADR-002 的 InlineWorker 保留给 `worker.js`(索引调度),不用于 embedding 降级。
+
+### 决策 3:保留 chunkMarkdown 语义分块 — 不用 vectra 内置 TextSplitter
+
+**决策**:P0 修复时保留 `chunkMarkdown(500, 100)` 的标题→段落→句子四级回退分块,不切换到 vectra 内置的 token 级 `TextSplitter`。
+
+**理由**:vectra 的 `TextSplitter` 是 token 级分块,分块质量依赖模型能力。弱模型的向量切分不见得有按段落分块好。`chunkMarkdown` 按标题/段落/句子切分,保留语义边界,不依赖模型能力,分块质量更稳定可控。
+
+**影响**:P0 修复方式不是"把完整文本交给 vectra upsertDocument",而是"自己分块 → 批量 embed → 用 vectra upsertItem 写入预计算向量"。保留 `chunkMarkdown` 的同时实现批量推理。
+
+### 决策 4:主线程加载模型 + postMessage 传入 Worker — 不是因为改动小,而是因为状态判定
+
+**决策**:ONNX 模型(modelBuffer + vocabPath + wasmBinary)在主线程加载,通过 postMessage(transferable)传入 Web Worker。Worker 不自行加载模型。
+
+**理由**:模型加载的成功/失败状态在主线程判定更可靠。如果 Worker 自行加载,主线程只能通过 Worker 的 postMessage 间接感知状态,错误处理链路更长、更难调试。主线程加载好再传入,Worker 只负责推理,职责清晰。
+
+**影响**:`ModelManager` 流程不变(主线程读取模型文件),`EmbeddingWorkerProxy` 构造时接收 deps 并 postMessage 给 Worker。ArrayBuffer 用 transferable 转移所有权,避免复制大文件(模型 ~40MB + WASM ~10MB)。
+
+---
+
 ## Decision(决策)
 
-**三层修复,按优先级递进:**
+**两层修复(P0 + P1),P2 移除:**
 
-### P0:修复逐 chunk upsert(立即,本次实施)
+### P0:批量 embed 替代逐 chunk upsert(保留 chunkMarkdown)
 
-停止在 `IndexProcessor` 中预分块 + 逐 chunk `store.upsert`。改为:
-- 一次调用 `store.upsert(filePath, fullContent, metadata)`,让 vectra 内部完成分块 + 批量 embedding
-- 或:自己分块后,一次性传所有 chunk 文本给 vectra(需确认 vectra API 支持)
+停止 `IndexProcessor` 逐 chunk 调用 `store.upsert`(每次触发 vectra 内部单独一次 ONNX 推理)。改为:
+
+1. 保留 `chunkMarkdown(500, 100)` 语义分块(决策 3)
+2. 一次性 `embeddings.embed(allChunkTexts)` 批量推理
+3. 用 `VectraStore.upsertItem(vector)` 写入预计算向量,绕过 vectra 的 `upsertDocument`(后者内部会调 embedding)
 
 **预期效果**:ONNX 调用次数从 N(chunk 数)降到 N/16,总阻塞时间减少 ~85%。
 
-**注意**:需要配置 vectra 的 `chunkingConfig` 使其分块策略与当前 `chunkMarkdown(500, 100)` 一致,或接受 vectra 的 token 级分块(更精确)。
-
-### P1:ONNX 推理移入 Web Worker(短期,本次或下次实施)
+### P1:ONNX 推理移入 Web Worker
 
 实现 `EmbeddingsPort` 的 Web Worker 代理:
 
 ```
-主线程                          Web Worker
-──────                          ──────────
-vectra.upsertDocument(text)
-  → TextSplitter 分块
-  → createEmbeddings(batch)  ──→  ONNX session.run(batch)
-                                ←──  返回 vectors[]
-  → 写入磁盘(LocalIndex)
+主线程                                    Web Worker
+──────                                    ──────────
+IndexProcessor
+  ├─ chunkMarkdown() 分块(保留语义分块)
+  ├─ embeddings.embed(allChunks)  ──→   EmbeddingOnnx.embed()
+  │                                       ├─ tokenizer.encode
+  │                                       └─ ONNX session.run() ← WASM
+  │    ←── vectors[]  ──────────────
+  └─ vectra.upsertItem(vector) 写入磁盘
 ```
 
 **实现要点:**
-1. 新建 `src/worker/embedding-worker.ts` — Web Worker 入口,加载 ONNX runtime + 模型
-2. 新建 `src/adapters/embedding-worker-proxy.ts` — 实现 `EmbeddingsPort`,内部 postMessage 到 Web Worker
-3. `main.ts` 创建 Web Worker,传给 proxy,proxy 传给 VectraStore
-4. `onnxruntime-web` 原生支持 Web Worker 环境(WASM 在 Worker 中跑)
+1. 新建 `src/worker/embedding-worker.ts` — Web Worker 入口,加载 ONNX runtime + 处理推理
+2. 新建 `src/adapters/embedding-worker-proxy.ts` — 实现 `EmbeddingPort`,postMessage 到 Worker
+3. `main.ts` 创建 Web Worker proxy,传给 IndexProcessor
+4. 模型依赖由主线程加载后 postMessage 传入 Worker(决策 4)
+5. Web Worker 创建失败直接报错,不降级(决策 2)
 
-**这直接落实 AGENTS.md 的"重活推给 Worker"设计意图。** ADR-002 的 InlineWorker 保留给降级场景(Web Worker 创建失败时)。
+**这直接落实 AGENTS.md 的"重活推给 Worker"设计意图。**
 
 **预期效果**:索引期间主线程零 CPU 阻塞(ONNX 在 Worker 线程),仅 vectra 磁盘 IO 在主线程(轻量)。
 
-### P2:API Embedding 为默认(长期,后续 spec)
+### ~~P2:API Embedding 为默认~~ — 移除(决策 1)
 
-默认推荐 API Embedding 模式(Ollama / 远端端点):
-- 向量计算在服务端执行,连 Web Worker 都不需要
-- 本地 ONNX 仅作离线降级
+本地 ONNX 是插件内置能力,保持默认。P1 Web Worker 已解决阻塞,API Embedding 不再是"解决阻塞"的必要手段。
 
 ### 不采纳(修正 ADR-002 的部分结论)
 
 - ~~**Web Worker + fs 代理**~~:ADR-002 排除了这个,结论仍然正确——vectra 的 fs 调用确实不适合代理到 Web Worker。但 ADR-002 **错误地把"vectra 需要 fs"推广到"Web Worker 完全不可用"**。我们用 Web Worker 只做 ONNX 推理(无 fs),不代理 vectra。
 - **恢复 `worker_threads`**:ADR-002 确认 V8 平台级限制,仍然不可用
-- **仅靠 `setTimeout(0)` 任务切片**:治标不治本,ONNX 推理仍在主线程,只是分段阻塞。可作为 P0/P1 未落地前的临时缓解
+- **仅靠 `setTimeout(0)` 任务切片**:治标不治本,ONNX 推理仍在主线程,只是分段阻塞
+- **降级到 InlineWorker**:不降级(决策 2)。插件绝不能让笔记不可用,不可用就明确报错
 
 ---
 
 ## Consequences(后果)
 
-### P0(修复逐 chunk upsert)
+### P0(批量 embed + 保留 chunkMarkdown)
 
 **正面**:
-- ONNX 调用减少 ~85%,阻塞时间大幅下降
-- 改动面极小(只改 `index-processor.ts` 的 upsert 调用方式)
-- vectra 的批量分批逻辑终于生效
+- ONNX 调用减少 ~85%(从 N 次降到 N/16 次)
+- 保留 `chunkMarkdown` 语义分块,分块质量不依赖模型能力(决策 3)
+- `EmbeddingOnnx` 的 `maxBatchSize=16` 分批逻辑终于生效
 
 **负面**:
-- 放弃自定义 `chunkMarkdown(500, 100)`,改用 vectra 的 `TextSplitter`(token 级分块)
-- 需确认 vectra chunkingConfig 配置,使分块大小符合预期
-- chunk 级 metadata(如 `startOffset`)可能丢失,需评估影响
+- 需绕过 vectra 的 `upsertDocument`,改用底层 `upsertItem`(需处理事务管理)
+- IndexProcessor 需持有 `EmbeddingPort` 引用,构造函数签名变化
 
 ### P1(ONNX 移入 Web Worker)
 
@@ -164,22 +203,11 @@ vectra.upsertDocument(text)
 - **落实架构设计意图**——AGENTS.md"重活推给 Worker"终于落地
 - 索引期间主线程零 CPU 阻塞
 - 全量索引不再卡死 Obsidian
-- ADR-002 的 InlineWorker 保留为降级,向后兼容
 
 **负面**:
 - 新增 Web Worker 产物(embedding-worker.js),esbuild 配置需扩展
-- ONNX 模型需在 Worker 中重新加载(内存占用略增,但避免主线程阻塞)
 - Worker 通信有序列化开销(文本 → Worker → 向量),但远小于 ONNX 推理时间
-
-### P2(API Embedding)
-
-**正面**:
-- 主线程零 CPU 阻塞,不依赖 ONNX runtime
-- 可利用更强大的远端模型
-
-**负面**:
-- 需要网络连接,离线场景不可用
-- 本地 ONNX 仍需维护作为降级
+- Web Worker 创建失败时插件不可用(决策 2:不降级,直接报错引导用户接 API Embedding)
 
 ---
 
@@ -204,19 +232,22 @@ ADR-002 的 Consequences 中的承诺:
 
 | 文件 | 改动 |
 |------|------|
-| `src/worker/index-processor.ts` | 移除 `chunkMarkdown` 预分块,改为单次 `store.upsert` 传完整文本 |
-| `src/adapters/vector-vectra.ts` | 确认/配置 vectra `chunkingConfig` |
-| `tests/worker/index-processor.test.ts` | 更新测试适配新调用方式 |
+| `src/ports/vector.ts` | `VectorStore` 端口新增 `upsertItem` / `beginFileUpdate` / `endFileUpdate` / `cancelFileUpdate` 签名 |
+| `src/adapters/vector-vectra.ts` | 实现上述新方法,绕过 vectra `upsertDocument` |
+| `src/worker/index-processor.ts` | 保留 `chunkMarkdown` 分块,改为批量 `embeddings.embed` + `upsertItem`;构造函数新增 `embeddings` 参数 |
+| `tests/worker/index-processor.test.ts` | 更新测试适配批量 embed + upsertItem |
+| `tests/adapters/vector-vectra.test.ts` | 新增 upsertItem + 事务回滚测试 |
 
 ### P1 改动文件
 
 | 文件 | 改动 |
 |------|------|
 | `src/worker/embedding-worker.ts`(新建) | Web Worker 入口,加载 ONNX + 处理推理请求 |
-| `src/adapters/embedding-worker-proxy.ts`(新建) | `EmbeddingsPort` 代理实现 |
-| `src/main.ts` | 创建 Web Worker,注入 proxy 到 VectraStore |
-| `esbuild.config.ts` | 新增 embedding-worker.js 打包入口 |
-| `src/worker/inline-worker.ts` | 保留,作为 Web Worker 创建失败时的降级 |
+| `src/adapters/embedding-worker-proxy.ts`(新建) | `EmbeddingPort` 代理实现,postMessage 到 Worker |
+| `src/worker/handler.ts` | `initProcessorWithStore` 新增 `embeddings` 参数 |
+| `src/worker/inline-worker.ts` | `initWithStore` 新增 `embeddings` 参数传递 |
+| `src/main.ts` | 创建 `EmbeddingWorkerProxy` 替代直接 `EmbeddingOnnx`;传给 handler init |
+| `esbuild.config.mjs` | 新增 embedding-worker.js 打包入口(platform: browser, format: iife) |
 
 ### 不变的部分
 
