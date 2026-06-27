@@ -366,13 +366,13 @@ export default class RatelVaultPlugin extends Plugin {
 				// 关键路径:ModelManager.download() 内 status$.set(Ready) 触发 FeedbackController
 				// 时 setEmbedding 尚未执行,isReady 仍为 false;注入后需显式通知状态推进到 ready。
 				this.feedbackController?.notifyEmbeddingReady();
-				// 关键路径:InlineWorker 在主线程运行,模型就绪后必须注入带 embeddings 的 VectraStore。
-				if (this.inlineWorker) {
-					this.vectraStore = this.createEmbeddingsVectraStore(embedding);
-					// 关键路径:创建 EmbeddingWorkerProxy,把 ONNX 推理移入 Web Worker,主线程零 CPU 阻塞。
-					// Worker 创建/init 失败不降级,直接抛错提示用户接 API Embedding 端点。
-					await this.initEmbeddingWorkerProxy(embedding);
-				}
+				// 关键路径:InlineWorker 在主线程运行,模型就绪后注入 VectraStore,embeddings 由 EmbeddingWorkerProxy 提供。
+			if (this.inlineWorker) {
+				this.vectraStore = this.createEmbeddingsVectraStore(embedding);
+				// 关键路径:创建 EmbeddingWorkerProxy,把 ONNX 推理移入 Web Worker,主线程零 CPU 阻塞。
+				// Worker 创建/init 失败不降级,直接抛错提示用户接 API Embedding 端点。
+				await this.initEmbeddingWorkerProxy(embedding);
+			}
 			}
 
 			const indexResult = await this.indexController.onLayoutReady();
@@ -562,6 +562,19 @@ export default class RatelVaultPlugin extends Plugin {
 	}
 
 	/**
+	 * 创建不带 embeddings 的 VectraStore。
+	 *
+	 * 关键路径:IndexProcessor 现在自己调 EmbeddingPort.embed 批量推理,
+	 * vectra 的 upsertDocument 不再被调用(改用 upsertItem 写预计算向量),
+	 * 所以 VectraStore 不需要 embeddings 配置。search 也用预计算查询向量。
+	 *
+	 * @returns 不带 embeddings 的 VectraStore 实例。
+	 */
+	private createVectraStore(): VectraStore {
+		return new VectraStore(this.indexDir, { autoInit: true });
+	}
+
+	/**
 	 * 创建并初始化 EmbeddingWorkerProxy,把 ONNX 推理移入 Web Worker。
 	 *
 	 * 关键路径:
@@ -606,6 +619,9 @@ export default class RatelVaultPlugin extends Plugin {
 			);
 		}
 
+		// 关键路径:用不带 embeddings 的 store 覆盖,因为 IndexProcessor 自己调 proxy.embed 批量推理,
+		// vectra 的 upsertDocument 不再被调用(改用 upsertItem 写预计算向量)。
+		this.vectraStore = this.createVectraStore();
 		// 关键路径:proxy 实现 EmbeddingPort,InlineWorker 用它做批量 embed,索引与搜索都走 Worker 线程。
 		this.inlineWorker!.initWithStore(this.vectraStore, proxy);
 	}
