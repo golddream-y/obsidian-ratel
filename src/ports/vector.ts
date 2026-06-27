@@ -42,6 +42,29 @@ export interface VectorStore {
 	 * @returns 文档原文;不存在时返回 null。
 	 */
 	getDocumentText(uri: string): Promise<string | null>;
+	/**
+	 * 用预计算向量插入或更新文档(绕过 vectra 内部 embedding)。
+	 *
+	 * 关键路径:IndexProcessor 批量 embed 后,用此方法写入向量,
+	 * 避免 upsertDocument 内部再次触发 embedding。
+	 *
+	 * @param docId - 文档唯一标识。
+	 * @param vector - 预计算向量(长度必须等于 embedding dimensions)。
+	 * @param metadata - 任意附加元数据。
+	 */
+	upsertItem(docId: string, vector: number[], metadata?: Record<string, unknown>): Promise<void>;
+	/**
+	 * 开始文件级事务 — 一个文件的多个 chunk 在同一事务内写入。
+	 */
+	beginFileUpdate(): Promise<void>;
+	/**
+	 * 提交文件级事务。
+	 */
+	endFileUpdate(): Promise<void>;
+	/**
+	 * 取消文件级事务(回滚)。
+	 */
+	cancelFileUpdate(): Promise<void>;
 }
 
 /**

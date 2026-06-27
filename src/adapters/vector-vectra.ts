@@ -304,4 +304,54 @@ export class VectraStore implements VectorStore {
 			return null;
 		}
 	}
+
+	/**
+	 * 用预计算向量插入或更新文档。
+	 *
+	 * 关键路径:绕过 vectra 的 upsertDocument(它会调 embedding),
+	 * 直接用 LocalIndex.upsertItem 写入预计算向量。
+	 * 必须在 beginFileUpdate/endFileUpdate 事务内调用。
+	 *
+	 * @param docId - 文档唯一标识。
+	 * @param vector - 预计算向量。
+	 * @param metadata - 任意附加元数据。
+	 */
+	async upsertItem(docId: string, vector: number[], metadata?: Record<string, unknown>): Promise<void> {
+		const index = await this.ensureIndex();
+		await index.upsertItem({
+			id: docId,
+			vector,
+			// 关键路径:必须设 documentId,search() 按 documentId 聚合 chunk→doc,
+			// 未设 documentId 的 item 会被 search 跳过(参见 search 中 `if (!internalDocId) continue`)。
+			// 绕过 upsertDocument 时不建 catalog 记录,getDocumentUri 返回 undefined,
+			// search 回退用 documentId 作 docId(见 `uriMap.get(internalDocId) ?? internalDocId`)。
+			// 双重断言:spread 的 Record<string, unknown> 值类型为 unknown,无法直接满足
+			// DocumentChunkMetadata 的索引签名,故先转 unknown 再断言。
+			metadata: { ...metadata, docId, documentId: docId } as unknown as DocumentChunkMetadata,
+		});
+	}
+
+	/**
+	 * 开始文件级事务 — 一个文件的多个 chunk 在同一事务内写入,避免每 chunk 一次事务。
+	 */
+	async beginFileUpdate(): Promise<void> {
+		const index = await this.ensureIndex();
+		await index.beginUpdate();
+	}
+
+	/**
+	 * 提交文件级事务。
+	 */
+	async endFileUpdate(): Promise<void> {
+		const index = await this.ensureIndex();
+		await index.endUpdate();
+	}
+
+	/**
+	 * 取消文件级事务(回滚)。
+	 */
+	async cancelFileUpdate(): Promise<void> {
+		const index = await this.ensureIndex();
+		index.cancelUpdate();
+	}
 }
