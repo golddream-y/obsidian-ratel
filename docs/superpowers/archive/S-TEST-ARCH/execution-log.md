@@ -62,3 +62,19 @@
 
 **当前状态:** 13 个测试文件 93/93 passing(W1 起始 75,+18)。M1(L1 单元测试夯实)达成:65/65(100%)。
 **W1 backfill commit 区间:** `87f402f..HEAD`(分支 `test/w1-backfill`,本批合并时捎带入 main)。
+
+---
+
+## 2026-06-14 — P-W3-TEST / P-W4-TEST(已 Superseded,未执行)
+
+> W3/W4 测试计划,基于旧架构(手动两路搜索 + RRF)编写。
+> W3/W4 实施时 vectra 内置 `isBm25` 混合搜索取代了手动两路搜索,设计前提变化,
+> 测试已在各自实现 plan(P-W3-HYBRID / P-W4-RAG)中随实现一并覆盖。
+>
+> 此条目保留为历史档案,文件见:
+> - `2026-06-14-ratel-w3-test-plan.md`
+> - `2026-06-14-ratel-w4-test-plan.md`
+>
+> 新架构下的测试覆盖见:
+> - [archive/S-W3-HYBRID/execution-log.md](../S-W3-HYBRID/execution-log.md)
+> - [archive/S-W4-RAG-ENHANCEMENT/execution-log.md](../S-W4-RAG-ENHANCEMENT/execution-log.md)
