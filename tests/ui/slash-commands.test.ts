@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { SLASH_COMMANDS, filterCommands, type SlashCommand } from '../../src/ui/slash-commands';
+import { SLASH_COMMANDS, filterCommands, type SlashCommand } from '../../src/ui/chat/input/slash-commands';
 
 describe('slash-commands', () => {
 	it('SLASH_COMMANDS - 含 4 个命令(new/compact/model/reindex)', () => {

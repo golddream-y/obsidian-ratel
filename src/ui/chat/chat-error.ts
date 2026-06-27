@@ -5,7 +5,7 @@
  * @depends ui/diagnostics/diag-utils
  */
 
-import { formatError, type DiagError } from './diagnostics/diag-utils';
+import { formatError, type DiagError } from '../diagnostics/diag-utils';
 
 export type { DiagError };
 

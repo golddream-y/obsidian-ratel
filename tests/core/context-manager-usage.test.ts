@@ -72,4 +72,15 @@ describe('ContextManager.getContextUsage', () => {
 		const rag = ctx.getContextUsage(32000, 0, 'rag').usedTokens;
 		expect(rag).toBeGreaterThan(direct);
 	});
+
+	it('getContextUsage - 中文文本 - 用 estimateTokens 而非 length/4', async () => {
+		// 关键路径:增量测试,避免系统提示词干扰。6 个 CJK 按 estimateTokens = 6/1.5 = 4;
+		// 旧算法 length/4 会给出 6/4=1.5→ceil=2。
+		const ctx = new ContextManager(createMockPersistence());
+		await ctx.load('s1');
+		const before = ctx.getContextUsage(1000, 0, 'direct').usedTokens;
+		ctx.addUserMessage('你好世界测试'); // 6 个 CJK
+		const after = ctx.getContextUsage(1000, 0, 'direct').usedTokens;
+		expect(after - before).toBe(4);
+	});
 });

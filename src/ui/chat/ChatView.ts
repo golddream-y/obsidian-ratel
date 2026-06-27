@@ -8,7 +8,7 @@
 import { ItemView, type WorkspaceLeaf } from 'obsidian';
 import { mount, unmount } from 'svelte';
 import ChatViewComponent from './ChatView.svelte';
-import type RatelVaultPlugin from '../main';
+import type RatelVaultPlugin from '../../main';
 
 /** Obsidian 工作区视图类型 — 唯一字符串,注册到 `registerView`。 */
 export const VIEW_TYPE_CHAT = 'ratel-chat';

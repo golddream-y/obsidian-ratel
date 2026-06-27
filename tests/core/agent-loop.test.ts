@@ -852,4 +852,59 @@ describe('agentLoop', () => {
 			expect(searchResultEvent.payload.reranked).toBe(true);
 		}
 	});
+
+	// ==================== W5: 透传 reasoning / usage ====================
+
+	it('passes reasoning deltas through as message.delta.reasoning', async () => {
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence);
+		const llm = createMockLLM([
+			[
+				{ text: '', reasoning: '思考中' },
+				{ text: '答案' },
+			],
+		]);
+		const tools = new ToolRegistry();
+		const hooks = new HookRegistry();
+
+		const events: AgentEvent[] = [];
+		for await (const event of agentLoop(
+			{ sessionId: 's1', message: 'Hi' }, ctx, llm, tools, hooks,
+		)) {
+			events.push(event);
+		}
+
+		const reasoningDeltas = events.filter(
+			(e): e is Extract<AgentEvent, { type: 'message.delta' }> =>
+				e.type === 'message.delta' && 'reasoning' in e.payload && !!e.payload.reasoning,
+		);
+		expect(reasoningDeltas).toHaveLength(1);
+		expect(reasoningDeltas[0]!.payload.reasoning).toBe('思考中');
+	});
+
+	it('passes usage through to message.end', async () => {
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence);
+		const llm = createMockLLM([
+			[
+				{ text: 'hi' },
+				{ text: '', usage: { promptTokens: 10, completionTokens: 5 } },
+			],
+		]);
+		const tools = new ToolRegistry();
+		const hooks = new HookRegistry();
+
+		const events: AgentEvent[] = [];
+		for await (const event of agentLoop(
+			{ sessionId: 's1', message: 'Hi' }, ctx, llm, tools, hooks,
+		)) {
+			events.push(event);
+		}
+
+		const endEvent = events.find((e) => e.type === 'message.end') as
+			Extract<AgentEvent, { type: 'message.end' }> | undefined;
+		expect(endEvent).toBeDefined();
+		expect(endEvent!.payload.promptTokens).toBe(10);
+		expect(endEvent!.payload.completionTokens).toBe(5);
+	});
 });

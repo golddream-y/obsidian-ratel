@@ -6,7 +6,7 @@
 	 * @depends svelte/store, user-feedback/user-status
 	 */
 	import type { Readable } from 'svelte/store';
-	import type { PendingAttachment } from '../user-feedback/user-status';
+	import type { PendingAttachment } from '../../../user-feedback/user-status';
 
 	let {
 		pendingAttachments$,

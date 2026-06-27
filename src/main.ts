@@ -40,7 +40,7 @@ import {
 	resolveToolPermission,
 	extractToolPath,
 } from './core/tool-permissions';
-import { showToolConfirmModal } from './ui/confirm-modal';
+import { showToolConfirmModal } from './ui/components/confirm-modal';
 import { validateVaultPath } from './utils/path-safety';
 import type { ToolCall } from './ports/llm';
 import { ModelManager } from './core/model-manager';
@@ -50,7 +50,7 @@ import type { IndexBackend } from './core/index-manager';
 import { devLogger } from './logging/dev-logger';
 import { UserNotice } from './user-feedback/user-notice';
 import { UserStatus } from './user-feedback/user-status';
-import { isSearchReady } from './ui/chat-send-gate';
+import { isSearchReady } from './ui/chat/chat-send-gate';
 import {
 	hasRerankApiKey,
 	resolveChatApiKey,
@@ -61,7 +61,7 @@ import { MultiQuerySearcher } from './core/multi-query-searcher';
 import { rewriteQuery } from './core/query-rewriter';
 import { BailianReranker } from './adapters/reranker-bailian';
 import { Indexer } from './subagents/indexer';
-import { ChatView, VIEW_TYPE_CHAT } from './ui/ChatView';
+import { ChatView, VIEW_TYPE_CHAT } from './ui/chat/ChatView';
 import { get } from 'svelte/store';
 import { ensurePluginGitignore } from './utils/gitignore-writer';
 import path from 'path';

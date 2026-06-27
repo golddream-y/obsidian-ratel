@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { evaluateChatSendGate } from '../../src/ui/chat-send-gate';
+import { evaluateChatSendGate } from '../../src/ui/chat/chat-send-gate';
 import { DEFAULT_USER_STATUS } from '../../src/user-feedback/user-status';
 
 describe('evaluateChatSendGate', () => {

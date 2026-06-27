@@ -70,8 +70,12 @@ export interface ChatMessage {
  */
 export interface ChatDelta {
 	text: string;
+	/** 思考过程文本(DeepSeek reasoning_content / Claude thinking),与 text 互斥 */
+	reasoning?: string;
 	toolCall?: ToolCall;
 	finishReason?: 'stop' | 'length' | 'tool_calls' | 'content_filter';
+	/** API 真值 token 统计(流末尾出现一次) */
+	usage?: { promptTokens: number; completionTokens: number };
 }
 
 /**

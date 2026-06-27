@@ -5,7 +5,7 @@
  * @depends obsidian, ./main
  */
 
-import { App, PluginSettingTab, Setting } from 'obsidian';
+import { App, Notice, PluginSettingTab, Setting } from 'obsidian';
 import RatelVaultPlugin from './main';
 import { createTabBar } from './ui/diagnostics/tab-bar';
 import { renderEmbeddingTest } from './ui/diagnostics/embedding-test';
@@ -14,7 +14,7 @@ import { renderRerankPlaceholder } from './ui/diagnostics/rerank-placeholder';
 import { ensureDiagStyles } from './ui/diagnostics/diag-utils';
 import { devLogger } from './logging/dev-logger';
 import type { ToolPermission } from './core/tool-permissions';
-import { renderSecretHint, renderNoKeyNeeded } from './ui/secret-hint';
+import { renderSecretHint, renderNoKeyNeeded } from './ui/components/secret-hint';
 import {
 	getChatSecretId,
 	getEmbedSecretId,
@@ -88,8 +88,8 @@ export interface RatelVaultSettings {
 export const DEFAULT_SETTINGS: RatelVaultSettings = {
 	chatModel: 'deepseek-chat',
 	chatApiBase: 'https://api.deepseek.com',
-	// 关键路径:多数 OpenAI 兼容端点(deepseek-chat、qwen-plus)窗口 32K-128K,默认 32K 安全值。
-	chatModelMaxTokens: 32000,
+	// 关键路径:0 表示未探测,StatusLine 显示"未配置"引导用户去设置面板测试连接。
+	chatModelMaxTokens: 0,
 
 	embedProvider: 'local',
 	embedLocalModel: 'Xenova/bge-small-zh-v1.5',
@@ -231,6 +231,51 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 					// 关键路径:换 base URL(切到其他 OpenAI 兼容端点)需重建 LLM。
 					this.plugin.rebuildLLM();
+				}),
+		);
+
+	// ==================== Context Length 探测 ====================
+	new Setting(containerEl)
+		.setName('Context Length')
+		.setDesc('模型上下文窗口上限(token)。点击测试连接自动推断,或手动填写。')
+		.addText((text) =>
+			text
+				.setPlaceholder('未配置')
+				.setValue(
+					this.plugin.settings.chatModelMaxTokens > 0
+						? String(this.plugin.settings.chatModelMaxTokens)
+						: '',
+				)
+				.onChange(async (value) => {
+					const num = parseInt(value, 10);
+					this.plugin.settings.chatModelMaxTokens = isNaN(num) ? 0 : num;
+					await this.plugin.saveSettings();
+				}),
+		)
+		.addButton((btn) =>
+			btn
+				.setButtonText('测试连接')
+				.onClick(async () => {
+					btn.setButtonText('探测中…');
+					btn.setDisabled(true);
+					const { probeModelContextLength } = await import('./ui/tokens/probe-model');
+					const result = await probeModelContextLength({
+						apiBase: this.plugin.settings.chatApiBase,
+						apiKey: '', // 关键路径:apiKey 从 SecretStorage 读取,设置面板不持有明文
+						model: this.plugin.settings.chatModel,
+					});
+					btn.setButtonText('测试连接');
+					btn.setDisabled(false);
+					if (result.error) {
+						new Notice(`✗ ${result.error}`, 5000);
+					} else if (result.contextLength != null) {
+						this.plugin.settings.chatModelMaxTokens = result.contextLength;
+						await this.plugin.saveSettings();
+						new Notice(`✓ 已探测:${result.contextLength.toLocaleString()} tokens`, 4000);
+						this.display();
+					} else {
+						new Notice('连接成功,但无法自动推断 context length,请手动填写', 5000);
+					}
 				}),
 		);
 

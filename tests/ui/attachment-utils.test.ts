@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { estimateImageTokens, validateAttachment, MAX_ATTACHMENT_SIZE, MAX_ATTACHMENTS, ALLOWED_MIME_TYPES } from '../../src/ui/attachment-utils';
+import { estimateImageTokens, validateAttachment, MAX_ATTACHMENT_SIZE, MAX_ATTACHMENTS, ALLOWED_MIME_TYPES } from '../../src/ui/chat/input/attachment-utils';
 
 describe('attachment-utils', () => {
 	describe('estimateImageTokens', () => {

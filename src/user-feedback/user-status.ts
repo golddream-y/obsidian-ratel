@@ -33,6 +33,8 @@ export interface ContextUsage {
 	attachmentTokens: number;
 	/** 派生:usedTokens / maxTokens * 100,maxTokens=0 时为 0 */
 	percentage: number;
+	/** 数据来源,用于 StatusLine 样式区分(可选,旧调用方不传等同 'estimate') */
+	source?: 'estimate' | 'streaming' | 'api';
 }
 
 /** 待发送的图片附件 */

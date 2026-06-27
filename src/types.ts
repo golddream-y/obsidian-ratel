@@ -27,8 +27,15 @@ export type { Session, NoteMeta, HookLogEntry } from './ports/persistence';
  */
 export type AgentEvent =
 	| { type: 'message.start'; payload: { role: 'user' | 'assistant' } }
-	| { type: 'message.delta'; payload: { text: string } }
-	| { type: 'message.end'; payload: { tokens: number } }
+	| { type: 'message.delta'; payload: { text: string; reasoning?: string } }
+	| {
+			type: 'message.end';
+			payload: {
+				tokens: number;
+				promptTokens?: number;
+				completionTokens?: number;
+			};
+	  }
 	| { type: 'tool.call'; payload: { name: string; args: unknown } }
 	| { type: 'tool.result'; payload: { name: string; result: unknown } }
 	| {

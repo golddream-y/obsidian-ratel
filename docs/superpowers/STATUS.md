@@ -20,6 +20,7 @@
 | S-RAG-ARCH | [2026-06-14-ratel-rag-architecture.md](specs/2026-06-14-ratel-rag-architecture.md) | Active | 2026-06-14 | 最终 RAG 架构(取代 S-RAG-ROADMAP 中的初步想法) |
 | S-I18N | [2026-06-14-ratel-i18n-design.md](specs/2026-06-14-ratel-i18n-design.md) | Draft | 2026-06-14 | i18n 基础设施:中英文切换,settings.ts + ChatView + 命令 + Notice 全覆盖 |
 | S-PROMPTS | [2026-06-26-ratel-prompts-design.md](specs/2026-06-26-ratel-prompts-design.md) | Active | 2026-06-26 | LLM 提示词中文统一 registry + Composer 动态注入 + section 级 promptOverrides;检索外框不可删 |
+| S-MSG-STREAM | [2026-06-28-chat-message-stream-redesign-design.md](specs/2026-06-28-chat-message-stream-redesign-design.md) | Active | 2026-06-28 | Chat 消息流重构(segments 判别联合)+ think 块 + token 三层校准 + 模型长度探测 + UI 目录归拢 + agent-loop 职责拆分 |
 
 ---
 
@@ -29,6 +30,7 @@
 |---|---|---|---|---|
 | P-I18N-IMPL | [2026-06-14-ratel-i18n-implementation.md](plans/2026-06-14-ratel-i18n-implementation.md) | ⏳ Pending | S-I18N | — |
 | P-PROMPTS | [2026-06-26-ratel-prompts-implementation.md](plans/2026-06-26-ratel-prompts-implementation.md) | ⏳ Pending | S-PROMPTS | **下一步优先实施** |
+| P-MSG-STREAM | [2026-06-28-chat-message-stream-redesign-implementation.md](plans/2026-06-28-chat-message-stream-redesign-implementation.md) | ✅ Completed | S-MSG-STREAM | 分支 `feat/s-msg-stream`;20 个 Task 全部完成,453 测试通过(3 个 pre-existing 真实 API 401 失败),三产物构建成功 |
 
 ---
 

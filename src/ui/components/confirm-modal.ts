@@ -5,8 +5,8 @@
  */
 
 import { Modal, type App } from 'obsidian';
-import type { ToolCall } from '../ports/llm';
-import { summarizeToolCall, type ToolConfirmResult } from '../core/tool-permissions';
+import type { ToolCall } from '../../ports/llm';
+import { summarizeToolCall, type ToolConfirmResult } from '../../core/tool-permissions';
 
 export function showToolConfirmModal(app: App, toolCall: ToolCall): Promise<ToolConfirmResult> {
 	return new Promise((resolve) => {
