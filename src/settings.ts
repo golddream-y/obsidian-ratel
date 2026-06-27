@@ -71,6 +71,8 @@ export interface RatelVaultSettings {
 
 	// Developer
 	debugLog: boolean;
+	/** Agent Loop 最大步数上限 — 防止工具调用死循环,默认 50(见 ADR-004) */
+	agentMaxSteps: number;
 
 	// Tool permissions (S-VAULT-TOOLS)
 	toolPermissions: Record<string, ToolPermission>;
@@ -117,6 +119,8 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 	linkConfidenceThreshold: 0.75,
 
 	debugLog: false,
+	// 关键路径:50 步覆盖知识库场景(1 glob + N read + 分析 + write),见 ADR-004。
+	agentMaxSteps: 50,
 
 	toolPermissions: {
 		search_vault: 'allow',
@@ -438,6 +442,20 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 						this.plugin.settings.debugLog = value;
 						await this.plugin.saveSettings();
 						devLogger.setDebugEnabled(value);
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName('Agent 最大步数')
+			.setDesc('Agent Loop 工具调用循环上限,防止死循环(见 ADR-004)')
+			.addSlider((slider) =>
+				slider
+					.setLimits(5, 200, 5)
+					.setValue(this.plugin.settings.agentMaxSteps)
+					.setDynamicTooltip()
+					.onChange(async (value) => {
+						this.plugin.settings.agentMaxSteps = value;
+						await this.plugin.saveSettings();
 					}),
 			);
 	}

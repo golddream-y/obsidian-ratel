@@ -108,6 +108,7 @@ export class DeepSeekLLM implements LLMClient {
 		// 工具调用增量缓冲:key = tool_call.index,value = {id, name, arguments 字符串拼接}
 		const toolCallAccumulators = new Map<number, { id: string; name: string; arguments: string }>();
 		let buffer = '';
+		let finishReason: string | null = null;
 
 		for await (const chunk of stream as unknown as AsyncIterable<Buffer | string>) {
 			buffer += typeof chunk === 'string' ? chunk : chunk.toString('utf8');
@@ -117,13 +118,17 @@ export class DeepSeekLLM implements LLMClient {
 			while ((newlineIdx = buffer.indexOf('\n\n')) !== -1) {
 				const rawEvent = buffer.slice(0, newlineIdx);
 				buffer = buffer.slice(newlineIdx + 2);
-				yield* this.processSSEEvent(rawEvent, toolCallAccumulators);
+				const result = this.processSSEEvent(rawEvent, toolCallAccumulators);
+				if (result.finishReason) finishReason = result.finishReason;
+				yield* result.deltas;
 			}
 		}
 
 		// 处理尾部可能残留的最后一个事件
 		if (buffer.trim()) {
-			yield* this.processSSEEvent(buffer, toolCallAccumulators);
+			const result = this.processSSEEvent(buffer, toolCallAccumulators);
+			if (result.finishReason) finishReason = result.finishReason;
+			yield* result.deltas;
 		}
 
 		// 收尾:把累积的工具调用一次性 yield 出去,text 留空以便调用方区分。
@@ -138,25 +143,33 @@ export class DeepSeekLLM implements LLMClient {
 			const toolCall: ToolCall = { id: tc.id, name: tc.name, args };
 			yield { text: '', toolCall };
 		}
+
+		// 关键路径:流末尾 yield finishReason,让 agent-loop 判断是否被 max_tokens 截断。
+		if (finishReason) {
+			yield { text: '', finishReason: finishReason as ChatDelta['finishReason'] };
+		}
 	}
 
 	/**
-	 * 处理一段 SSE 事件文本(单条或多条 data: 行),逐行解析并 yield delta。
+	 * 处理一段 SSE 事件文本(单条或多条 data: 行),逐行解析并收集 delta 与 finishReason。
 	 *
 	 * @param raw - 不含结尾 \n\n 的原始事件文本。
 	 * @param toolCallAccumulators - 工具调用累积 map(跨 chunk 共享)。
+	 * @returns `{ deltas, finishReason }` — deltas 是本轮收集的 ChatDelta 数组,finishReason 是解析到的结束原因(若有)。
 	 */
-	private *processSSEEvent(
+	private processSSEEvent(
 		raw: string,
 		toolCallAccumulators: Map<number, { id: string; name: string; arguments: string }>,
-	): Iterable<ChatDelta> {
+	): { deltas: ChatDelta[]; finishReason: string | null } {
+		const deltas: ChatDelta[] = [];
+		let finishReason: string | null = null;
 		const lines = raw.split('\n');
 		for (const line of lines) {
 			const trimmed = line.trim();
 			if (!trimmed || !trimmed.startsWith('data: ')) continue;
 
 			const data = trimmed.slice(6);
-			if (data === '[DONE]') return;
+			if (data === '[DONE]') return { deltas, finishReason };
 
 			try {
 				const parsed = JSON.parse(data) as {
@@ -165,17 +178,18 @@ export class DeepSeekLLM implements LLMClient {
 							content?: string;
 							tool_calls?: OpenAIToolCallChunk[];
 						};
+						finish_reason?: string | null;
 					}>;
 				};
 
 				const choice = parsed.choices?.[0];
-				if (!choice?.delta) continue;
+				if (!choice) continue;
 
-				if (choice.delta.content) {
-					yield { text: choice.delta.content };
+				if (choice.delta?.content) {
+					deltas.push({ text: choice.delta.content });
 				}
 
-				if (choice.delta.tool_calls) {
+				if (choice.delta?.tool_calls) {
 					for (const tc of choice.delta.tool_calls) {
 						const existing = toolCallAccumulators.get(tc.index);
 						if (existing) {
@@ -191,10 +205,16 @@ export class DeepSeekLLM implements LLMClient {
 						}
 					}
 				}
+
+				// 关键路径:捕获 finish_reason,用于上层判断是否被 max_tokens 截断。
+				if (choice.finish_reason) {
+					finishReason = choice.finish_reason;
+				}
 			} catch {
 				// 修复:协议偶发返回非法 JSON,跳过单条以保证流继续。
 			}
 		}
+		return { deltas, finishReason };
 	}
 
 	/**
@@ -279,6 +299,7 @@ export class DeepSeekLLM implements LLMClient {
 		if (!text) throw new Error('LLM API returned empty body');
 
 		const toolCallAccumulators = new Map<number, { id: string; name: string; arguments: string }>();
+		let finishReason: string | null = null;
 		const lines = text.split('\n');
 		for (const line of lines) {
 			const trimmed = line.trim();
@@ -287,12 +308,15 @@ export class DeepSeekLLM implements LLMClient {
 			if (data === '[DONE]') break;
 			try {
 				const parsed = JSON.parse(data) as {
-					choices?: Array<{ delta?: { content?: string; tool_calls?: OpenAIToolCallChunk[] } }>;
+					choices?: Array<{
+						delta?: { content?: string; tool_calls?: OpenAIToolCallChunk[] };
+						finish_reason?: string | null;
+					}>;
 				};
 				const choice = parsed.choices?.[0];
-				if (!choice?.delta) continue;
-				if (choice.delta.content) yield { text: choice.delta.content };
-				if (choice.delta.tool_calls) {
+				if (!choice) continue;
+				if (choice.delta?.content) yield { text: choice.delta.content };
+				if (choice.delta?.tool_calls) {
 					for (const tc of choice.delta.tool_calls) {
 						const existing = toolCallAccumulators.get(tc.index);
 						if (existing) {
@@ -306,6 +330,7 @@ export class DeepSeekLLM implements LLMClient {
 						}
 					}
 				}
+				if (choice.finish_reason) finishReason = choice.finish_reason;
 			} catch {
 				// 跳过坏 JSON
 			}
@@ -319,6 +344,10 @@ export class DeepSeekLLM implements LLMClient {
 				args = { raw: tc.arguments };
 			}
 			yield { text: '', toolCall: { id: tc.id, name: tc.name, args } };
+		}
+
+		if (finishReason) {
+			yield { text: '', finishReason: finishReason as ChatDelta['finishReason'] };
 		}
 	}
 

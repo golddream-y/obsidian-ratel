@@ -11,11 +11,22 @@ import type { ContextManager } from './context-manager';
 import type { ToolRegistry } from './tool-registry';
 import type { HookRegistry } from './hooks';
 import type { Intent } from './intent-classifier';
+import { devLogger } from '../logging/dev-logger';
 
 /**
- * Agent Loop 的最大步数上限,防止工具调用陷入死循环。
+ * Agent Loop 的默认最大步数上限,防止工具调用陷入死循环。
+ *
+ * 经验值:读 30+ 文件做分析一般需要 15-30 步(1 glob/list + N read + 分析 + write),
+ * 50 步足够覆盖大部分场景,同时仍然能防止无限循环。
+ *
+ * 调用方可通过 `agentLoop()` 的 `maxSteps` 参数覆盖此值(见 ADR-004)。
  */
-const MAX_STEPS = 10;
+const DEFAULT_MAX_STEPS = 50;
+
+/**
+ * 截断提示文本 — 当回复因步数上限或 max_tokens 被截断时,追加到助手消息末尾。
+ */
+const TRUNCATION_NOTICE = '\n\n---\n⚠️ **回复因长度限制被截断。** 可以发送「继续」让模型接着输出。';
 
 /**
  * Agent 主循环:驱动一次完整的"用户消息 → LLM 流式回复 → 工具调用 → LLM 续传"流程。
@@ -28,6 +39,10 @@ const MAX_STEPS = 10;
  *   避免异常逃逸到外层 try,影响 session 保存与 message.end 事件。
  * - 工具执行前经权限门控 → pre-tool-use hooks → execute → post-tool-use / post-tool-failure。
  * - 取消机制:传入 `AbortSignal` 后,每轮循环开始前检查 `aborted` 状态,中止时 yield error 并 break。
+ * - 支持一轮内多个工具调用(并行/批量场景):收集全部 toolCall delta 后逐个执行,结果逐条入库。
+ * - 截断检测:
+ *   - MAX_STEPS 命中时,yield error 事件告知 UI,并在 assistant 消息末尾追加截断提示。
+ *   - finishReason === 'length' 时,yield error 事件,追加截断提示,但继续循环(给模型续传机会)。
  *
  * @param req - 用户消息请求(含 sessionId 与 message)
  * @param ctx - 上下文管理器,负责 session 加载/保存与消息累积
@@ -36,6 +51,8 @@ const MAX_STEPS = 10;
  * @param hooks - 钩子注册表,提供工具调用前后的治理点
  * @param signal - 可选的 AbortSignal,用于取消循环
  * @param intentClassifier - 可选的意图分类函数,判断用户消息是否需要 RAG 工作流。未传时默认 'direct'(向后兼容)
+ * @param toolPermissionCheck - 可选的工具权限检查回调
+ * @param maxSteps - 可选的最大步数上限,默认 50(见 ADR-004)
  * @returns AgentEvent 异步可迭代流
  * @throws 不会向上抛错 — 内部错误一律转 `error` 事件
  * @example
@@ -53,7 +70,10 @@ export async function* agentLoop(
 	signal?: AbortSignal,
 	intentClassifier?: (message: string) => Promise<Intent>,
 	toolPermissionCheck?: (toolCall: ToolCall) => Promise<void>,
+	maxSteps?: number,
 ): AsyncIterable<AgentEvent> {
+	// 关键路径:maxSteps 可配置(见 ADR-004),未传时降级默认值 50。
+	const effectiveMaxSteps = maxSteps ?? DEFAULT_MAX_STEPS;
 	// 加载或初始化 session,然后把用户消息压入上下文。
 	await ctx.load(req.sessionId);
 	ctx.addUserMessage(req.message);
@@ -72,21 +92,26 @@ export async function* agentLoop(
 	}
 
 	try {
-		// 单步循环:每轮产生一段 assistant 回复 + (可选)一次工具调用。
-		for (let step = 0; step < MAX_STEPS; step++) {
+		let loopExitedViaBreak = false;
+
+		// 单步循环:每轮产生一段 assistant 回复 + 零到多次工具调用。
+		for (let step = 0; step < effectiveMaxSteps; step++) {
 			// 关键路径:每轮开始前检查取消信号,中止时 yield error 并退出循环。
 			if (signal?.aborted) {
 				yield { type: 'error', payload: { code: 'CANCELLED', message: '用户取消' } };
+				loopExitedViaBreak = true;
 				break;
 			}
 
 			yield { type: 'message.start', payload: { role: 'assistant' as const } };
 
 			let accumulatedText = '';
-			let toolCall: ToolCall | null = null;
+			const toolCalls: ToolCall[] = [];
+			let finishReason: string | null = null;
+			let streamAborted = false;
 
 			try {
-				// 让 LLM 流式产出;逐步把 text 投递给 UI,toolCall 在最后保留(单轮只支持一个工具调用)。
+				// 让 LLM 流式产出;逐步把 text 投递给 UI,toolCall 全部收集(支持一轮多工具)。
 				const stream = llm.chat({
 					messages: ctx.toMessages(intent),
 					tools: tools.definitions(),
@@ -95,7 +120,7 @@ export async function* agentLoop(
 				for await (const delta of stream) {
 					// 关键路径:流式输出期间也检查取消信号,及时停止。
 					if (signal?.aborted) {
-						yield { type: 'error', payload: { code: 'CANCELLED', message: '用户取消' } };
+						streamAborted = true;
 						break;
 					}
 					if (delta.text) {
@@ -103,7 +128,10 @@ export async function* agentLoop(
 						yield { type: 'message.delta', payload: { text: delta.text } };
 					}
 					if (delta.toolCall) {
-						toolCall = delta.toolCall;
+						toolCalls.push(delta.toolCall);
+					}
+					if (delta.finishReason) {
+						finishReason = delta.finishReason;
 					}
 				}
 			} catch (err) {
@@ -112,96 +140,152 @@ export async function* agentLoop(
 				const message = err instanceof Error ? err.message : String(err);
 				yield { type: 'error', payload: { code: 'LLM_ERROR', message } };
 				ctx.addAssistantMessage(accumulatedText || `Error: ${message}`);
+				loopExitedViaBreak = true;
 				break;
 			}
 
 			// 关键路径:流式输出被取消时,把已收到的文本存入 session 后退出。
-			if (signal?.aborted) {
+			if (signal?.aborted || streamAborted) {
+				yield { type: 'error', payload: { code: 'CANCELLED', message: '用户取消' } };
 				ctx.addAssistantMessage(accumulatedText);
+				loopExitedViaBreak = true;
 				break;
+			}
+
+			// 关键路径:检测 max_tokens 截断。finishReason === 'length' 表示模型输出被 token 上限切断,
+			// 此时 accumulatedText 可能不完整,且 toolCalls 中最后一个可能有残缺 JSON args(已在适配器层降级)。
+			// 策略:追加截断提示入库,并 yield error 让 UI 显示警告;如果有工具调用仍执行,否则 break。
+			if (finishReason === 'length') {
+				devLogger.warn('agent', `LLM 输出被 max_tokens 截断 (step=${step}),已输出 ${accumulatedText.length} 字符`);
+				accumulatedText += TRUNCATION_NOTICE;
+				yield { type: 'message.delta', payload: { text: TRUNCATION_NOTICE } };
+				// 若截断时无工具调用,通知用户并结束。
+				if (toolCalls.length === 0) {
+					yield {
+						type: 'error',
+						payload: {
+							code: 'LLM_ERROR',
+							message: '模型输出长度达到上限被截断。发送「继续」可让模型接着输出。',
+						},
+					};
+					ctx.addAssistantMessage(accumulatedText);
+					loopExitedViaBreak = true;
+					break;
+				}
+				// 有工具调用 → 继续执行工具(截断的 toolCall args 可能有 raw 字段),然后让下一轮 LLM 续传。
 			}
 
 			// 无 toolCall → 这一步就是纯文本回答,直接收尾。
-			if (!toolCall) {
+			if (toolCalls.length === 0) {
 				ctx.addAssistantMessage(accumulatedText);
+				loopExitedViaBreak = true;
 				break;
 			}
 
-			yield { type: 'tool.call', payload: { name: toolCall.name, args: toolCall.args } };
+			// 关键路径:一轮内逐个执行工具调用(对 UI 展示为逐条 tool.call/tool.result),
+			// 每个工具独立过权限门控与钩子,单个失败不阻断其他工具。
+			for (const tc of toolCalls) {
+				yield { type: 'tool.call', payload: { name: tc.name, args: tc.args } };
 
-			if (toolPermissionCheck) {
-				try {
-					await toolPermissionCheck(toolCall);
-				} catch (err) {
-					const message = err instanceof Error ? err.message : String(err);
+				// 权限门控(信任模式/用户确认)
+				if (toolPermissionCheck) {
+					try {
+						await toolPermissionCheck(tc);
+					} catch (err) {
+						const message = err instanceof Error ? err.message : String(err);
+						yield { type: 'error', payload: { code: 'TOOL_DENIED', message } };
+						ctx.addAssistantToolCall(tc, accumulatedText);
+						ctx.addToolResult(tc.id, `Error: ${message}`);
+						accumulatedText = '';
+						continue;
+					}
+				}
+
+				// pre-tool-use 钩子
+				const preDecision = await hooks.run('pre-tool-use', tc);
+				if (!preDecision.allowed) {
+					const message = `工具调用被拒绝: ${preDecision.reason ?? '未知原因'}`;
 					yield { type: 'error', payload: { code: 'TOOL_DENIED', message } };
-					ctx.addAssistantToolCall(toolCall, accumulatedText);
-					ctx.addToolResult(toolCall.id, `Error: ${message}`);
+					ctx.addAssistantToolCall(tc, accumulatedText);
+					ctx.addToolResult(tc.id, `Error: ${message}`);
+					accumulatedText = '';
 					continue;
 				}
-			}
 
-			const preDecision = await hooks.run('pre-tool-use', toolCall);
-			if (!preDecision.allowed) {
-				const message = `工具调用被拒绝: ${preDecision.reason ?? '未知原因'}`;
-				yield { type: 'error', payload: { code: 'TOOL_DENIED', message } };
-				ctx.addAssistantToolCall(toolCall, accumulatedText);
-				ctx.addToolResult(toolCall.id, `Error: ${message}`);
-				continue;
-			}
-
-			let result: unknown;
-			let toolFailed = false;
-			try {
-				result = await tools.execute(toolCall);
-			} catch (err) {
-				toolFailed = true;
-				const message = err instanceof Error ? err.message : String(err);
-				const code = (err as Error & { code?: string }).code ?? 'TOOL_ERROR';
-				yield { type: 'error', payload: { code, message } };
-				result = `Error: ${message}`;
-				await hooks.runVoid('post-tool-failure', toolCall);
-			}
-
-			yield { type: 'tool.result', payload: { name: toolCall.name, result } };
-
-			// 关键路径:search_vault 返回后发 search.result 事件(payload 用扁平结构 + reranked 标记)。
-			// 从 metadata.path 提取 path,避免 UI 层再嵌套解析 metadata。
-			if (toolCall.name === 'search_vault' && Array.isArray(result)) {
-				const rawResults = result as Array<{
-					docId: string;
-					score: number;
-					metadata: { path?: string };
-					index: number;
-					reranked?: boolean;
-				}>;
-				const searchResults = rawResults
-					.filter((r) => r.metadata && typeof r.metadata.path === 'string')
-					.map((r) => ({
-						docId: r.docId,
-						score: r.score,
-						path: r.metadata.path as string,
-						index: r.index,
-					}));
-				// 关键路径:从结果推断是否经过 Rerank;无 reranked 字段时降级 false(W3 旧 mock 兼容)。
-				const reranked = rawResults.some((r) => r.reranked === true);
-				if (searchResults.length > 0) {
-					yield {
-						type: 'search.result',
-						payload: { results: searchResults, reranked },
-					};
+				let result: unknown;
+				let toolFailed = false;
+				try {
+					result = await tools.execute(tc);
+				} catch (err) {
+					toolFailed = true;
+					const message = err instanceof Error ? err.message : String(err);
+					const code = (err as Error & { code?: string }).code ?? 'TOOL_ERROR';
+					yield { type: 'error', payload: { code, message } };
+					result = `Error: ${message}`;
+					await hooks.runVoid('post-tool-failure', tc);
 				}
+
+				yield { type: 'tool.result', payload: { name: tc.name, result } };
+
+				// 关键路径:search_vault 返回后发 search.result 事件(payload 用扁平结构 + reranked 标记)。
+				// 从 metadata.path 提取 path,避免 UI 层再嵌套解析 metadata。
+				if (tc.name === 'search_vault' && Array.isArray(result)) {
+					const rawResults = result as Array<{
+						docId: string;
+						score: number;
+						metadata: { path?: string };
+						index: number;
+						reranked?: boolean;
+					}>;
+					const searchResults = rawResults
+						.filter((r) => r.metadata && typeof r.metadata.path === 'string')
+						.map((r) => ({
+							docId: r.docId,
+							score: r.score,
+							path: r.metadata.path as string,
+							index: r.index,
+						}));
+					// 关键路径:从结果推断是否经过 Rerank;无 reranked 字段时降级 false(W3 旧 mock 兼容)。
+					const reranked = rawResults.some((r) => r.reranked === true);
+					if (searchResults.length > 0) {
+						yield {
+							type: 'search.result',
+							payload: { results: searchResults, reranked },
+						};
+					}
+				}
+
+				// 写后钩子:与 pre-tool-use 对称(仅成功时)。
+				if (!toolFailed) {
+					await hooks.runVoid('post-tool-use', tc);
+				}
+
+				// 把 assistant tool call + 工具结果写回 session。
+				// 第一个工具携带 accumulatedText(模型在工具调用前的文本),后续工具 text 为空,
+				// 避免在上下文中重复插入相同文本。
+				ctx.addAssistantToolCall(tc, accumulatedText);
+				ctx.addToolResult(tc.id, JSON.stringify(result));
+				accumulatedText = '';
 			}
 
-			// 写后钩子:与 pre-tool-use 对称(仅成功时)。
-			if (!toolFailed) {
-				await hooks.runVoid('post-tool-use', toolCall);
-			}
+			// 截断后执行完工具,继续下一轮让 LLM 续传(不 break)。
+		}
 
-			// 把这一轮的 assistant tool call + 工具结果写回 session,
-			// 让下一轮 LLM 能看到完整的多轮上下文。
-			ctx.addAssistantToolCall(toolCall, accumulatedText);
-			ctx.addToolResult(toolCall.id, JSON.stringify(result));
+		// 关键路径:for 循环通过 break 退出时 loopExitedViaBreak=true(正常结束、错误、取消都已处理),
+		// 只有 for 条件失败(step >= MAX_STEPS)时才会走到这里,说明步数上限被命中。
+		// 此时模型在最后一步执行了工具但没机会产出最终回答(用户看到的"跑到一半停了")。
+		if (!loopExitedViaBreak) {
+			devLogger.warn('agent', `Agent Loop 达到 maxSteps=${effectiveMaxSteps} 上限,强制结束`);
+			const notice = '\n\n---\n⚠️ **思考步数已达上限,回答可能不完整。** 可以继续对话让模型完成报告。';
+			yield { type: 'message.delta', payload: { text: notice } };
+			yield {
+				type: 'error',
+				payload: {
+					code: 'LLM_ERROR',
+					message: `思考步数达到上限(${effectiveMaxSteps}步),回答可能不完整。`,
+				},
+			};
+			ctx.addAssistantMessage(notice);
 		}
 	} finally {
 		// 收尾:无论正常结束、break 还是异常,都保证发出 message.end + 持久化 session。

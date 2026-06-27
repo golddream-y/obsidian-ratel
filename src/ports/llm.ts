@@ -60,12 +60,18 @@ export interface ChatMessage {
 }
 
 /**
- * 流式增量:assistant 文本片段 + (可选)最终的工具调用。
- * `toolCall` 字段在流末才确定(完整 name+args),期间可能为 undefined。
+ * 流式增量:assistant 文本片段 + (可选)工具调用 + (可选)结束原因。
+ * - `toolCall` 在流中可能出现多次(并行工具调用),agent-loop 应全部收集。
+ * - `finishReason` 在流末尾 yield 一次,告知上层为何结束:
+ *   - `stop`:模型正常结束(无后续工具调用)
+ *   - `length`:达到 max_tokens 上限,输出被截断
+ *   - `tool_calls`:模型决定调用工具(后续会有 toolCall 增量)
+ *   - `content_filter`:内容过滤截断
  */
 export interface ChatDelta {
 	text: string;
 	toolCall?: ToolCall;
+	finishReason?: 'stop' | 'length' | 'tool_calls' | 'content_filter';
 }
 
 /**

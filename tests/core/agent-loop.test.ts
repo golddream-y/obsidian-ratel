@@ -110,7 +110,47 @@ describe('agentLoop', () => {
 		expect(events.some((e) => e.type === 'message.end')).toBe(true);
 	});
 
-	it('respects MAX_STEPS limit', async () => {
+	it('respects MAX_STEPS limit - 默认 50 步上限 - 不无限循环', async () => {
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence);
+
+		const infiniteToolCall: ToolCall = {
+			id: 'call_loop',
+			name: 'read_note',
+			args: { path: 'loop.md' },
+		};
+
+		// 关键路径:提供 60 轮响应(超过默认 50 步),验证循环不会无限执行
+		const llm = createMockLLM(
+			Array(60).fill([{ text: '', toolCall: infiniteToolCall }]),
+		);
+
+		const tools = new ToolRegistry();
+		tools.register({
+			definition: { name: 'read_note', description: 'Read', parameters: {} },
+			execute: async () => 'content',
+		});
+
+		const hooks = new HookRegistry();
+		const events: AgentEvent[] = [];
+
+		for await (const event of agentLoop(
+			{ sessionId: 's1', message: 'Loop test' },
+			ctx,
+			llm,
+			tools,
+			hooks,
+		)) {
+			events.push(event);
+		}
+
+		const toolCallCount = events.filter((e) => e.type === 'tool.call').length;
+		expect(toolCallCount).toBeLessThanOrEqual(50);
+		// 关键路径:达到步数上限时应 yield error 事件通知 UI
+		expect(events.some((e) => e.type === 'error')).toBe(true);
+	});
+
+	it('maxSteps 可配置 - 传入 5 - 5 步后强制停止', async () => {
 		const persistence = createMockPersistence();
 		const ctx = new ContextManager(persistence);
 
@@ -139,12 +179,17 @@ describe('agentLoop', () => {
 			llm,
 			tools,
 			hooks,
+			undefined,       // signal
+			undefined,       // intentClassifier
+			undefined,       // toolPermissionCheck
+			5,               // maxSteps = 5
 		)) {
 			events.push(event);
 		}
 
 		const toolCallCount = events.filter((e) => e.type === 'tool.call').length;
-		expect(toolCallCount).toBeLessThanOrEqual(10);
+		expect(toolCallCount).toBeLessThanOrEqual(5);
+		expect(events.some((e) => e.type === 'error')).toBe(true);
 	});
 
 	it('saves session after completion', async () => {
