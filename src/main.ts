@@ -5,6 +5,7 @@
  * @depends obsidian, settings, types, core/*, adapters/*, ports/*, worker/*, tools/*, ui/*
  */
 
+import fs from 'fs';
 import { FileSystemAdapter, Plugin } from 'obsidian';
 import { type RatelVaultSettings, DEFAULT_SETTINGS, RatelVaultSettingTab } from './settings';
 
@@ -88,6 +89,8 @@ export default class RatelVaultPlugin extends Plugin {
 	private inlineWorker?: InlineWorker;
 	// 关键路径:EmbeddingWorkerProxy 把 ONNX 推理移入 Web Worker,onunload 时需 terminate 释放线程。
 	private embeddingWorkerProxy?: EmbeddingWorkerProxy;
+	// 关键路径:Blob URL 在 onunload 需 revokeObjectURL 释放,避免内存泄漏。
+	private embeddingWorkerUrl?: string;
 	// 关键路径:indexDir 在 onload 计算,onLayoutReady 初始化 InlineWorker 时需要复用。
 	private indexDir!: string;
 	modelManager!: ModelManager;
@@ -448,6 +451,11 @@ export default class RatelVaultPlugin extends Plugin {
 		this.indexController.destroy();
 		// 关键路径:terminate EmbeddingWorkerProxy 释放 Web Worker 线程,避免热重载后残留进程 OOM。
 		this.embeddingWorkerProxy?.terminate();
+		// 关键路径:revoke Blob URL 释放内存,避免热重载后泄漏 worker 脚本字符串。
+		if (this.embeddingWorkerUrl) {
+			URL.revokeObjectURL(this.embeddingWorkerUrl);
+			this.embeddingWorkerUrl = undefined;
+		}
 		this.workerManager.destroy();
 		// 修复:VectraStore 无显式 close,JS 垃圾回收会释放文件句柄;
 		// 之前的 `void this.vectraStore;` 是空操作,已移除。
@@ -578,7 +586,8 @@ export default class RatelVaultPlugin extends Plugin {
 	 * 创建并初始化 EmbeddingWorkerProxy,把 ONNX 推理移入 Web Worker。
 	 *
 	 * 关键路径:
-	 * - Worker URL 用 getResourcePath 解析,适配 Obsidian app:// 协议。
+	 * - Worker URL 用 Blob URL 模式:fs.readFileSync 读 worker 脚本 → Blob → createObjectURL,
+	 *   生成同源 blob:app://obsidian.md/<uuid> URL,绕过 app://<hash> 与 app://obsidian.md 跨 origin 的 SecurityError。
 	 * - 模型依赖(modelBuffer / wasmBinary)从 ModelManager.getDeps() 重新读盘,返回全新 ArrayBuffer;
 	 *   transfer 给 Worker 后不影响主线程 EmbeddingOnnx 实例持有的 buffer。
 	 * - Worker 创建/init 失败不降级,直接抛错,提示用户配置 API Embedding 端点。
@@ -588,11 +597,18 @@ export default class RatelVaultPlugin extends Plugin {
 	 * @throws Error Worker 创建或 init 失败,错误消息引导用户切换到 API Embedding。
 	 */
 	private async initEmbeddingWorkerProxy(embedding: EmbeddingPort): Promise<void> {
-		// 关键路径:getResourcePath 把插件目录内的相对路径转为 app:// 协议 URL,
-		// 这是 Obsidian Electron 环境下 new Worker(url) 能正确加载的唯一方式。
-		const workerUrl = this.app.vault.adapter.getResourcePath(
-			this.manifest.dir + '/dist/embedding-worker.js',
-		);
+		// 关键路径: getResourcePath 返回 app://<hash>/... 与页面 origin app://obsidian.md 跨 origin,
+		// Web Worker 同源策略拒绝。改用 Blob URL:读脚本内容 → Blob → createObjectURL,
+		// 生成同源 blob:app://obsidian.md/<uuid>,new Worker(blobUrl) 可正常加载。
+		// 修复: SecurityError Failed to construct 'Worker' — app://<hash> vs app://obsidian.md 跨 origin。
+		// 关键路径: manifest.dir 是相对 vault 的路径(如 ".obsidian/plugins/ratel-vault"),
+		// 插件产物直接放在该目录下(main.js / worker.js / embedding-worker.js),无 dist/ 子目录。
+		const adapter = this.app.vault.adapter as FileSystemAdapter;
+		const workerPath = adapter.getFullPath(this.manifest.dir + '/embedding-worker.js');
+		const workerCode = fs.readFileSync(workerPath, 'utf-8');
+		const blob = new Blob([workerCode], { type: 'application/javascript' });
+		const workerUrl = URL.createObjectURL(blob);
+		this.embeddingWorkerUrl = workerUrl;
 
 		// 关键路径:getDeps 重新读盘,返回全新 ArrayBuffer 副本;transfer 给 Worker 后主线程实例不受影响。
 		const deps = await this.modelManager.getDeps();
