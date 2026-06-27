@@ -30,11 +30,11 @@ vi.mock('svelte', () => ({
 	unmount: () => {},
 }));
 
-vi.mock('../../src/ui/ChatView.svelte', () => ({
+vi.mock('../../src/ui/chat/ChatView.svelte', () => ({
 	default: class {},
 }));
 
-vi.mock('../../src/ui/ChatView', () => ({
+vi.mock('../../src/ui/chat/ChatView', () => ({
 	ChatView: class {},
 	VIEW_TYPE_CHAT: 'ratel-chat',
 }));

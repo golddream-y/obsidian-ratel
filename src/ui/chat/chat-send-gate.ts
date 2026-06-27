@@ -5,8 +5,8 @@
  * @depends user-feedback/user-status, secrets/ratel-secrets
  */
 
-import type { UserStatusSnapshot } from '../user-feedback/user-status';
-import { requiresChatApiKey, type ChatSecretSettings } from '../secrets/ratel-secrets';
+import type { UserStatusSnapshot } from '../../user-feedback/user-status';
+import { requiresChatApiKey, type ChatSecretSettings } from '../../secrets/ratel-secrets';
 
 /** evaluateChatSendGate 的返回结构 */
 export interface ChatSendGateResult {

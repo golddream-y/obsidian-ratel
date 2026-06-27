@@ -12,6 +12,7 @@ import type { ToolRegistry } from './tool-registry';
 import type { HookRegistry } from './hooks';
 import type { Intent } from './intent-classifier';
 import { devLogger } from '../logging/dev-logger';
+import { mapSearchResults } from './search-result-mapper';
 
 /**
  * Agent Loop 的默认最大步数上限,防止工具调用陷入死循环。
@@ -74,6 +75,9 @@ export async function* agentLoop(
 ): AsyncIterable<AgentEvent> {
 	// 关键路径:maxSteps 可配置(见 ADR-004),未传时降级默认值 50。
 	const effectiveMaxSteps = maxSteps ?? DEFAULT_MAX_STEPS;
+	// 关键路径:保存流末尾的 API 真值 token,finally 阶段 yield 到 message.end
+	// 声明在函数顶部,确保 try/finally 与 for 循环都能访问(跨多步累积最后一个 usage)。
+	let lastUsage: { promptTokens: number; completionTokens: number } | undefined;
 	// 加载或初始化 session,然后把用户消息压入上下文。
 	await ctx.load(req.sessionId);
 	ctx.addUserMessage(req.message);
@@ -127,11 +131,19 @@ export async function* agentLoop(
 						accumulatedText += delta.text;
 						yield { type: 'message.delta', payload: { text: delta.text } };
 					}
+					// 关键路径:透传思考过程为 message.delta.reasoning
+					if (delta.reasoning) {
+						yield { type: 'message.delta', payload: { text: '', reasoning: delta.reasoning } };
+					}
 					if (delta.toolCall) {
 						toolCalls.push(delta.toolCall);
 					}
 					if (delta.finishReason) {
 						finishReason = delta.finishReason;
+					}
+					// 关键路径:捕获 API 真值 token,finally 阶段 yield
+					if (delta.usage) {
+						lastUsage = delta.usage;
 					}
 				}
 			} catch (err) {
@@ -227,31 +239,11 @@ export async function* agentLoop(
 
 				yield { type: 'tool.result', payload: { name: tc.name, result } };
 
-				// 关键路径:search_vault 返回后发 search.result 事件(payload 用扁平结构 + reranked 标记)。
-				// 从 metadata.path 提取 path,避免 UI 层再嵌套解析 metadata。
-				if (tc.name === 'search_vault' && Array.isArray(result)) {
-					const rawResults = result as Array<{
-						docId: string;
-						score: number;
-						metadata: { path?: string };
-						index: number;
-						reranked?: boolean;
-					}>;
-					const searchResults = rawResults
-						.filter((r) => r.metadata && typeof r.metadata.path === 'string')
-						.map((r) => ({
-							docId: r.docId,
-							score: r.score,
-							path: r.metadata.path as string,
-							index: r.index,
-						}));
-					// 关键路径:从结果推断是否经过 Rerank;无 reranked 字段时降级 false(W3 旧 mock 兼容)。
-					const reranked = rawResults.some((r) => r.reranked === true);
-					if (searchResults.length > 0) {
-						yield {
-							type: 'search.result',
-							payload: { results: searchResults, reranked },
-						};
+				// 关键路径:search_vault 返回后用 mapSearchResults 扁平化(逻辑外迁到 search-result-mapper)
+				if (tc.name === 'search_vault') {
+					const mapped = mapSearchResults(result);
+					if (mapped) {
+						yield { type: 'search.result', payload: mapped };
 					}
 				}
 
@@ -289,7 +281,14 @@ export async function* agentLoop(
 		}
 	} finally {
 		// 收尾:无论正常结束、break 还是异常,都保证发出 message.end + 持久化 session。
-		yield { type: 'message.end', payload: { tokens: ctx.tokenCount() } };
+		yield {
+			type: 'message.end',
+			payload: {
+				tokens: ctx.tokenCount(),
+				promptTokens: lastUsage?.promptTokens,
+				completionTokens: lastUsage?.completionTokens,
+			},
+		};
 		await ctx.save();
 	}
 }

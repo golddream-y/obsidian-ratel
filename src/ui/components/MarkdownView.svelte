@@ -7,8 +7,8 @@
 	 */
 
 	import { onDestroy } from 'svelte';
-	import { renderMarkdownToHtml, areAllCodeBlocksClosed } from '../utils/markdown-renderer';
-	import { renderMermaidBlocks } from '../utils/mermaid-renderer';
+	import { renderMarkdownToHtml, areAllCodeBlocksClosed } from '../../utils/markdown-renderer';
+	import { renderMermaidBlocks } from '../../utils/mermaid-renderer';
 
 	/**
 	 * 组件 Props。

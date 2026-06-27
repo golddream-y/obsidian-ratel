@@ -6,7 +6,7 @@
 	 * @depends svelte/store, user-feedback/user-status
 	 */
 	import type { Readable } from 'svelte/store';
-	import type { UserStatusSnapshot, ContextUsage, PendingAttachment } from '../user-feedback/user-status';
+	import type { UserStatusSnapshot, ContextUsage, PendingAttachment } from '../../user-feedback/user-status';
 
 	let {
 		expanded,
@@ -237,16 +237,16 @@
 
 	.ratel-drawer-pill-warn {
 		color: var(--text-warning);
-		background: var(--background-modifier-form-field);
+		/* 关键路径:对齐 mockup hint-pill 黄色淡背景,禁止硬编码 */
+		background: color-mix(in srgb, var(--text-warning) 12%, transparent);
 	}
 
-	/* 降级提示 — mockup: 左红边 + 轻量底色,不要铺大红块 */
+	/* 降级提示 — mockup: 红色淡背景 + 红字,无边框 */
 	.ratel-drawer-degraded {
 		margin-top: 8px;
-		padding: 6px 10px;
+		padding: 8px 10px;
 		border-radius: 6px;
-		border-left: 3px solid var(--text-error);
-		background: var(--background-modifier-form-field);
+		background: color-mix(in srgb, var(--text-error) 10%, transparent);
 		color: var(--text-error);
 		font-size: 11.5px;
 		line-height: 1.4;

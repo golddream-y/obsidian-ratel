@@ -273,4 +273,58 @@ describe('DeepSeekLLM', () => {
 			for await (const _ of adapter.chat({ messages: [] })) { /* consume */ }
 		}).rejects.toThrow('empty body');
 	});
+
+	// 关键路径:用 http://test 触发 node https 失败 → 降级到 requestUrl mock 路径
+	// (降级路径复用 processSSEEvent,支持 reasoning_content / usage)
+	it('parses reasoning_content from deepseek-reasoner', async () => {
+		const sseText = buildSseText([
+			'{"choices":[{"delta":{"reasoning_content":"思考中"}}]}',
+			'{"choices":[{"delta":{"reasoning_content":"继续"}}]}',
+			'{"choices":[{"delta":{"content":"答案"}}]}',
+			'[DONE]',
+		]);
+
+		mockRequestUrl.mockResolvedValueOnce({ status: 200, text: sseText });
+
+		const llm = new DeepSeekLLM({
+			apiBase: 'http://test',
+			apiKey: 'sk-test',
+			model: 'deepseek-reasoner',
+		});
+
+		const deltas: Array<{ text?: string; reasoning?: string }> = [];
+		for await (const delta of llm.chat({ messages: [{ role: 'user', content: 'Hi' }] })) {
+			if (delta.reasoning) deltas.push({ reasoning: delta.reasoning });
+			if (delta.text) deltas.push({ text: delta.text });
+		}
+
+		expect(deltas).toEqual([
+			{ reasoning: '思考中' },
+			{ reasoning: '继续' },
+			{ text: '答案' },
+		]);
+	});
+
+	it('parses usage from stream end', async () => {
+		const sseText = buildSseText([
+			'{"choices":[{"delta":{"content":"hi"}}]}',
+			'{"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}',
+			'[DONE]',
+		]);
+
+		mockRequestUrl.mockResolvedValueOnce({ status: 200, text: sseText });
+
+		const llm = new DeepSeekLLM({
+			apiBase: 'http://test',
+			apiKey: 'sk-test',
+			model: 'deepseek-chat',
+		});
+
+		let usageDelta: { promptTokens: number; completionTokens: number } | undefined;
+		for await (const delta of llm.chat({ messages: [{ role: 'user', content: 'Hi' }] })) {
+			if (delta.usage) usageDelta = delta.usage;
+		}
+
+		expect(usageDelta).toEqual({ promptTokens: 10, completionTokens: 5 });
+	});
 });

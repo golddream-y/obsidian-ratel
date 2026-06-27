@@ -9,6 +9,8 @@ import type { Persistence, Session, ChatMessage } from '../ports/persistence';
 import type { ToolCall } from '../ports/llm';
 // 关键路径:Intent 复用意图分类器定义,避免类型重复声明导致两端不同步
 import type { Intent } from './intent-classifier';
+// 关键路径:中英混合 token 估算,比 length/4 更准(中文 1.5 字符/token,英文 4 字符/token)
+import { estimateTokens } from '../ui/tokens/token-estimator';
 
 /**
  * 基础系统提示词 — direct 模式(闲聊、生成、统计等不需要搜索的场景)。
@@ -232,29 +234,29 @@ export class ContextManager {
 	private trimHistory(messages: ChatMessage[]): ChatMessage[] {
 		if (messages.length <= 1) return messages;
 
-		const estimateTokens = (msgs: ChatMessage[]): number =>
-			Math.ceil(msgs.map((m) => m.content).join('').length / 4);
+		const countTokens = (msgs: ChatMessage[]): number =>
+			estimateTokens(msgs.map((m) => m.content).join(''));
 
-		const tokens = estimateTokens(messages);
+		const tokens = countTokens(messages);
 		if (tokens <= this.maxHistoryTokens) return messages;
 
 		// 关键路径:从最旧开始裁剪,保留最后 1 条(当前上下文)。
 		const trimmed = [...messages];
-		while (trimmed.length > 1 && estimateTokens(trimmed) > this.maxHistoryTokens) {
+		while (trimmed.length > 1 && countTokens(trimmed) > this.maxHistoryTokens) {
 			trimmed.shift();
 		}
 		return trimmed;
 	}
 
 	/**
-	 * 估算当前上下文的 token 数(粗略算法,每 4 字符约 1 token,中英文混合经验值)。
+	 * 估算当前上下文的 token 数(中英混合权重估算,真值靠 API usage 校准)。
 	 *
 	 * @returns token 估算值(向上取整)。
 	 */
 	tokenCount(): number {
-		// 粗略估算:中英文混合 ~4 字符/token,精度足够用于"是否需要截断"的判断,不可用于计费。
+		// 关键路径:用 estimateTokens 中英混合估算,比 length/4 更准。
 		const text = this.toMessages().map((m) => m.content).join('');
-		return Math.ceil(text.length / 4);
+		return estimateTokens(text);
 	}
 
 	/**
@@ -277,7 +279,7 @@ export class ContextManager {
 		intent: Intent = 'direct',
 	): { usedTokens: number; maxTokens: number; attachmentTokens: number; percentage: number } {
 		const text = this.toMessages(intent).map((m) => m.content).join('');
-		const usedTokens = Math.ceil(text.length / 4);
+		const usedTokens = estimateTokens(text);
 		const total = usedTokens + attachmentTokens;
 		const percentage = maxTokens > 0 ? Math.round((total / maxTokens) * 100) : 0;
 		return { usedTokens, maxTokens, attachmentTokens, percentage };

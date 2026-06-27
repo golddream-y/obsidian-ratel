@@ -50,7 +50,7 @@ vi.mock('../src/utils/gitignore-writer', () => ({
 }));
 
 // 关键路径:vitest 未配置 Svelte 编译器,避免加载 .svelte 文件。
-vi.mock('../src/ui/ChatView', () => ({
+vi.mock('../src/ui/chat/ChatView', () => ({
 	ChatView: class {},
 	VIEW_TYPE_CHAT: 'ratel-chat',
 }));

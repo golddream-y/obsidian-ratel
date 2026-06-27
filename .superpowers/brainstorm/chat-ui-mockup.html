@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Ratel Chat UI Mockup</title>
+  <title>Ratel Chat UI Mockup — S-MSG-STREAM</title>
   <style>
     :root {
       --bg-primary: #1e1e1e;
@@ -17,6 +17,7 @@
       --warning: #facc15;
       --warning-bg: rgba(250, 204, 21, 0.12);
       --error: #f87171;
+      --error-bg: rgba(248, 113, 113, 0.1);
       --border: #3e3e3e;
       --shadow: 0 4px 20px rgba(0,0,0,0.4);
       --radius: 8px;
@@ -97,6 +98,57 @@
       padding: 0;
     }
 
+    /* segments 模型:按事件时序渲染 */
+    .segment {
+      margin-bottom: 6px;
+    }
+
+    .segment:last-child {
+      margin-bottom: 0;
+    }
+
+    /* ThinkSegment:可折叠,流式中展开 */
+    .think-block {
+      border-left: 2px solid var(--warning);
+      padding: 8px 10px;
+      background: var(--warning-bg);
+      border-radius: 4px;
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    .think-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      user-select: none;
+      font-size: 11px;
+      color: var(--warning);
+      font-weight: 500;
+      margin-bottom: 4px;
+    }
+
+    .think-header .arrow {
+      transition: transform 0.2s;
+    }
+
+    .think-header .arrow.collapsed {
+      transform: rotate(-90deg);
+    }
+
+    .think-content {
+      max-height: 200px;
+      overflow: hidden;
+      transition: max-height 0.3s;
+    }
+
+    .think-content.collapsed {
+      max-height: 0;
+    }
+
+    /* ToolSegment:可折叠,displayName + 详情 */
     .tool-call {
       display: flex;
       align-items: center;
@@ -106,11 +158,111 @@
       background: var(--bg-tertiary);
       font-size: 12px;
       color: var(--text-muted);
-      margin-bottom: 6px;
       font-family: var(--mono);
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .tool-call:hover {
+      background: var(--bg-input);
     }
 
     .tool-call.done { color: var(--accent); }
+    .tool-call.failed { color: var(--error); }
+
+    .tool-call .tool-icon {
+      flex-shrink: 0;
+      font-size: 14px;
+    }
+
+    .tool-call .tool-name {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .tool-call .tool-expand {
+      font-size: 10px;
+      opacity: 0.6;
+      transition: transform 0.2s;
+    }
+
+    .tool-call .tool-expand.expanded {
+      transform: rotate(180deg);
+    }
+
+    .tool-details {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.3s;
+      background: var(--bg-secondary);
+      border-radius: 4px;
+      margin-top: 4px;
+    }
+
+    .tool-details.expanded {
+      max-height: 300px;
+      padding: 8px 10px;
+    }
+
+    .tool-details pre {
+      margin: 0;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text-muted);
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .tool-details .label {
+      font-size: 10px;
+      color: var(--text-faint, #666);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+
+    .tool-details .section {
+      margin-bottom: 8px;
+    }
+
+    .tool-details .section:last-child {
+      margin-bottom: 0;
+    }
+
+    /* TextSegment */
+    .text-segment {
+      font-size: 13.5px;
+      line-height: 1.5;
+    }
+
+    /* SearchResults */
+    .search-results {
+      border-left: 2px solid var(--accent);
+      padding: 6px 10px;
+      background: var(--accent-dim);
+      border-radius: 4px;
+      font-size: 11px;
+    }
+
+    .search-results .result-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 2px 0;
+      color: var(--text-muted);
+    }
+
+    .search-results .result-path {
+      font-family: var(--mono);
+      color: var(--text-normal);
+    }
+
+    .search-results .result-score {
+      font-size: 10px;
+      color: var(--accent);
+    }
 
     .status-line {
       height: 30px;
@@ -207,6 +359,18 @@
 
     .ctx-pct.warn { color: var(--warning); }
     .ctx-pct.danger { color: var(--error); }
+
+    /* token source 指示器 */
+    .token-source {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      margin-left: 4px;
+    }
+
+    .token-source.estimate { background: var(--text-muted); }
+    .token-source.streaming { background: var(--warning); }
+    .token-source.api { background: var(--accent); }
 
     .status-drawer {
       max-height: 0;
@@ -472,10 +636,44 @@
     .degraded-row {
       padding: 8px 10px;
       border-radius: 6px;
-      background: rgba(248, 113, 113, 0.1);
+      background: var(--error-bg);
       color: var(--error);
       font-size: 11.5px;
       line-height: 1.4;
+    }
+
+    /* 测试连接按钮 */
+    .probe-btn {
+      padding: 4px 10px;
+      border-radius: 4px;
+      border: 1px solid var(--accent);
+      background: var(--accent-dim);
+      color: var(--accent);
+      font-size: 11px;
+      cursor: pointer;
+      font-weight: 500;
+    }
+
+    .probe-btn:hover {
+      background: var(--accent);
+      color: #111;
+    }
+
+    .probe-result {
+      font-size: 11px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      margin-top: 4px;
+    }
+
+    .probe-result.success {
+      background: var(--accent-dim);
+      color: var(--accent);
+    }
+
+    .probe-result.error {
+      background: var(--error-bg);
+      color: var(--error);
     }
   </style>
 </head>
@@ -484,10 +682,10 @@
 <div class="chat-frame">
   <div class="chat-header">
     <span>Ratel</span>
-    <span class="model-badge">deepseek-chat</span>
+    <span class="model-badge">deepseek-reasoner</span>
   </div>
 
-  <div class="messages">
+  <div class="messages" id="messages">
     <div class="message user">
       <div class="message-images">
         <img src="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=200&h=200&fit=crop" alt="uploaded">
@@ -496,10 +694,80 @@
     </div>
 
     <div class="message assistant">
-      <div class="tool-call done">✓ list_files Formatting — 7 项</div>
-      <div class="tool-call done">✓ list_files Guides — 4 项</div>
-      <div class="tool-call"><span class="dot processing"></span> list_files Adventurer</div>
-      <div>好的，我先遍历各目录，然后汇总成 markdown。</div>
+      <!-- segments 按事件时序渲染 -->
+      <div class="segment">
+        <div class="text-segment">好的，我先遍历各目录，然后汇总成 markdown。</div>
+      </div>
+
+      <div class="segment">
+        <div class="tool-call done" onclick="toggleToolDetails(this)">
+          <span class="tool-icon">✓</span>
+          <span class="tool-name">list_files Formatting — 7 项</span>
+          <span class="tool-expand">▼</span>
+        </div>
+        <div class="tool-details">
+          <div class="section">
+            <div class="label">参数</div>
+            <pre>{"path": "Formatting"}</pre>
+          </div>
+          <div class="section">
+            <div class="label">结果</div>
+            <pre>["note1.md", "note2.md", "note3.md", "note4.md", "note5.md", "note6.md", "note7.md"]</pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="segment">
+        <div class="tool-call done" onclick="toggleToolDetails(this)">
+          <span class="tool-icon">✓</span>
+          <span class="tool-name">list_files Guides — 4 项</span>
+          <span class="tool-expand">▼</span>
+        </div>
+        <div class="tool-details">
+          <div class="section">
+            <div class="label">参数</div>
+            <pre>{"path": "Guides"}</pre>
+          </div>
+          <div class="section">
+            <div class="label">结果</div>
+            <pre>["guide1.md", "guide2.md", "guide3.md", "guide4.md"]</pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="segment">
+        <div class="think-block">
+          <div class="think-header" onclick="toggleThink(this)">
+            <span class="arrow">▼</span>
+            <span>思考过程 (流式中展开)</span>
+          </div>
+          <div class="think-content">
+            用户要求生成 vault 目录 markdown。我已经遍历了 Formatting (7 项) 和 Guides (4 项) 两个目录。接下来需要继续遍历 Adventurer 目录，然后汇总所有文件路径生成完整的目录结构...
+          </div>
+        </div>
+      </div>
+
+      <div class="segment">
+        <div class="tool-call" onclick="toggleToolDetails(this)">
+          <span class="tool-icon processing-dot"></span>
+          <span class="tool-name">list_files Adventurer</span>
+          <span class="tool-expand">▼</span>
+        </div>
+        <div class="tool-details">
+          <div class="section">
+            <div class="label">参数</div>
+            <pre>{"path": "Adventurer"}</pre>
+          </div>
+          <div class="section">
+            <div class="label">结果</div>
+            <pre>等待返回...</pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="segment">
+        <div class="text-segment">正在分析目录结构...</div>
+      </div>
     </div>
   </div>
 
@@ -507,8 +775,9 @@
     <span class="dot processing"></span>
     <span class="status-text warn">思考中…</span>
     <div class="ctx-meter">
-      <div class="ctx-bar"><div class="ctx-bar-fill" style="width:6%; background:var(--accent)"></div></div>
-      <span class="ctx-pct">6%</span>
+      <div class="ctx-bar"><div class="ctx-bar-fill" id="ctxBarFill" style="width:6%; background:var(--accent)"></div></div>
+      <span class="ctx-pct" id="ctxPct">6%</span>
+      <span class="token-source streaming" title="数据来源:流式估算"></span>
     </div>
     <span class="expand-hint">▲</span>
   </div>
@@ -540,15 +809,32 @@
       <div class="drawer-section-title">上下文</div>
       <div class="drawer-row">
         <span class="label">已用 / 上限</span>
-        <span class="value">12,420 / 200,000 tokens</span>
+        <span class="value" id="tokenDisplay">12,420 / 64,000 tokens</span>
+      </div>
+      <div class="drawer-row">
+        <span class="label">数据来源</span>
+        <span class="value">
+          <span class="token-source streaming" style="display:inline-block;vertical-align:middle"></span>
+          <span style="font-size:11px;color:var(--text-muted)">流式估算</span>
+        </span>
       </div>
       <div class="drawer-row">
         <span class="label">附件</span>
-        <span class="value">2 张图片 (估 374 tokens)</span>
+        <span class="value">1 张图片 (估 187 tokens)</span>
       </div>
       <div class="drawer-row">
         <button class="micro-btn" style="margin-left:auto" onclick="event.stopPropagation(); alert('将历史消息压缩为摘要并释放 token')">压缩上下文</button>
       </div>
+
+      <div class="drawer-section-title">模型配置</div>
+      <div class="drawer-row">
+        <span class="label">Context Length</span>
+        <span class="value" id="contextLengthDisplay">64,000</span>
+      </div>
+      <div class="drawer-row">
+        <button class="probe-btn" onclick="probeModel()">测试连接</button>
+      </div>
+      <div id="probeResult"></div>
     </div>
   </div>
 
@@ -577,28 +863,179 @@
         <img src="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=200&h=200&fit=crop" alt="uploaded">
         <span class="remove">×</span>
       </div>
-      <div class="attachment-thumb">
-        <img src="https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=200&h=200&fit=crop" alt="uploaded">
-        <span class="remove">×</span>
-      </div>
     </div>
     <div class="input-row">
       <button class="attach-btn">+</button>
       <textarea id="chatInput" placeholder="输入 / 查看命令，或直接提问..."></textarea>
     </div>
     <div class="input-footer">
-      <button class="send-btn">Send</button>
+      <button class="send-btn" onclick="simulateSend()">Send</button>
     </div>
   </div>
 </div>
 
 <script>
+  // ==================== Drawer 展开/折叠 ====================
   function toggleDrawer() {
     const d = document.getElementById('statusDrawer');
     d.classList.toggle('open');
   }
 
-  // 斜杠命令：输入 / 弹出菜单，上下键选择，回车确认，Esc/删除 / 关闭
+  // ==================== ToolSegment 展开/折叠 ====================
+  function toggleToolDetails(toolCall) {
+    const details = toolCall.nextElementSibling;
+    const expand = toolCall.querySelector('.tool-expand');
+    details.classList.toggle('expanded');
+    expand.classList.toggle('expanded');
+  }
+
+  // ==================== ThinkSegment 展开/折叠 ====================
+  function toggleThink(header) {
+    const content = header.nextElementSibling;
+    const arrow = header.querySelector('.arrow');
+    content.classList.toggle('collapsed');
+    arrow.classList.toggle('collapsed');
+  }
+
+  // ==================== 模型长度探测 ====================
+  function probeModel() {
+    const resultEl = document.getElementById('probeResult');
+    resultEl.innerHTML = '<div class="probe-result" style="color:var(--text-muted)">探测中...</div>';
+
+    // 模拟 API 调用
+    setTimeout(() => {
+      const success = Math.random() > 0.3;
+      if (success) {
+        resultEl.innerHTML = '<div class="probe-result success">✓ 已探测: 64,000 tokens</div>';
+        document.getElementById('contextLengthDisplay').textContent = '64,000';
+        // 更新 token 显示
+        document.getElementById('tokenDisplay').textContent = '12,420 / 64,000 tokens';
+      } else {
+        resultEl.innerHTML = '<div class="probe-result error">✗ 无法自动探测，请手动填写</div>';
+      }
+    }, 800);
+  }
+
+  // ==================== 模拟 Send (演示 token 三层校准) ====================
+  function simulateSend() {
+    const input = document.getElementById('chatInput');
+    const text = input.value.trim();
+    if (!text) return;
+
+    // 添加用户消息
+    const messagesEl = document.getElementById('messages');
+    const userMsg = document.createElement('div');
+    userMsg.className = 'message user';
+    userMsg.textContent = text;
+    messagesEl.appendChild(userMsg);
+
+    // 添加助手消息(空 segments)
+    const assistantMsg = document.createElement('div');
+    assistantMsg.className = 'message assistant';
+    messagesEl.appendChild(assistantMsg);
+
+    input.value = '';
+
+    // 模拟流式响应
+    simulateStreaming(assistantMsg);
+  }
+
+  function simulateStreaming(msgEl) {
+    // 第 1 层:send 前估算(estimate)
+    updateTokenSource('estimate');
+
+    // 模拟 think 段
+    setTimeout(() => {
+      const thinkSeg = document.createElement('div');
+      thinkSeg.className = 'segment';
+      thinkSeg.innerHTML = `
+        <div class="think-block">
+          <div class="think-header" onclick="toggleThink(this)">
+            <span class="arrow">▼</span>
+            <span>思考过程</span>
+          </div>
+          <div class="think-content">
+            用户问了一个问题，我需要先理解意图...
+          </div>
+        </div>
+      `;
+      msgEl.appendChild(thinkSeg);
+
+      // 第 2 层:流式中(streaming)
+      updateTokenSource('streaming');
+      animateTokenUsage();
+    }, 300);
+
+    // 模拟 text 段
+    setTimeout(() => {
+      const textSeg = document.createElement('div');
+      textSeg.className = 'segment';
+      textSeg.innerHTML = '<div class="text-segment">好的，我来帮你分析...</div>';
+      msgEl.appendChild(textSeg);
+    }, 800);
+
+    // 模拟 tool.call
+    setTimeout(() => {
+      const toolSeg = document.createElement('div');
+      toolSeg.className = 'segment';
+      toolSeg.innerHTML = `
+        <div class="tool-call" onclick="toggleToolDetails(this)">
+          <span class="tool-icon processing-dot"></span>
+          <span class="tool-name">search_vault 分析</span>
+          <span class="tool-expand">▼</span>
+        </div>
+        <div class="tool-details">
+          <div class="section">
+            <div class="label">参数</div>
+            <pre>{"query": "分析"}</pre>
+          </div>
+          <div class="section">
+            <div class="label">结果</div>
+            <pre>等待返回...</pre>
+          </div>
+        </div>
+      `;
+      msgEl.appendChild(toolSeg);
+    }, 1200);
+
+    // 模拟 message.end(API 真值)
+    setTimeout(() => {
+      updateTokenSource('api');
+      document.getElementById('ctxBarFill').style.width = '19%';
+      document.getElementById('ctxPct').textContent = '19%';
+      document.getElementById('tokenDisplay').textContent = '12,160 / 64,000 tokens';
+    }, 2000);
+  }
+
+  function updateTokenSource(source) {
+    const sources = document.querySelectorAll('.token-source');
+    sources.forEach(el => {
+      el.className = 'token-source ' + source;
+      const labels = { estimate: '本地估算', streaming: '流式估算', api: 'API 真值' };
+      el.title = '数据来源:' + labels[source];
+    });
+    // 更新 drawer 内的数据来源显示
+    const drawerSource = document.querySelector('#statusDrawer .drawer-row:nth-child(2) .value span:last-child');
+    if (drawerSource) {
+      const labels = { estimate: '本地估算', streaming: '流式估算', api: 'API 真值' };
+      drawerSource.textContent = labels[source];
+    }
+  }
+
+  function animateTokenUsage() {
+    let current = 6;
+    const interval = setInterval(() => {
+      current += Math.random() * 2;
+      if (current > 18) {
+        clearInterval(interval);
+        return;
+      }
+      document.getElementById('ctxBarFill').style.width = current + '%';
+      document.getElementById('ctxPct').textContent = Math.round(current) + '%';
+    }, 200);
+  }
+
+  // ==================== 斜杠命令 ====================
   const input = document.getElementById('chatInput');
   const menu = document.getElementById('slashMenu');
   const items = menu.querySelectorAll('.slash-item');
@@ -622,7 +1059,6 @@
     const val = input.value;
     if (val.startsWith('/') && !val.includes(' ')) {
       openMenu();
-      // 按输入过滤
       const filter = val.slice(1).toLowerCase();
       let visibleIdx = [];
       items.forEach((el, i) => {
@@ -648,7 +1084,6 @@
     if (e.key === 'ArrowDown') {
       e.preventDefault();
       activeIdx = Math.min(activeIdx + 1, visibleItems.length - 1);
-      // 映射回原始 index
       const target = visibleItems[activeIdx];
       activeIdx = Array.from(items).indexOf(target);
       updateActive();
@@ -672,7 +1107,6 @@
     }
   });
 
-  // 点击菜单项
   items.forEach((el) => {
     el.addEventListener('click', () => {
       const cmd = el.querySelector('.cmd').textContent;
@@ -681,6 +1115,20 @@
       alert('执行: ' + cmd);
     });
   });
+
+  // ==================== processing-dot 动画 ====================
+  const style = document.createElement('style');
+  style.textContent = `
+    .processing-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--warning);
+      animation: pulse 1.2s infinite;
+    }
+  `;
+  document.head.appendChild(style);
 </script>
 
 </body>
