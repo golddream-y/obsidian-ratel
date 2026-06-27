@@ -42,10 +42,10 @@ export class InlineWorker implements WorkerLike {
 	 *
 	 * 关键路径:InlineWorker 创建时模型可能尚未下载完成,
 	 * 因此把 init 延迟到主线程 onLayoutReady 模型就绪后。
-	 * `embeddings`(EmbeddingPort)由主线程注入,IndexProcessor 用它批量 embed chunk 文本。
+	 * `embeddingPort`(EmbeddingPort)由主线程注入,IndexProcessor 用它批量 embed chunk 文本。
 	 */
-	initWithStore(store: VectraStore, embeddings: EmbeddingPort): void {
-		initProcessorWithStore(store, embeddings);
+	initWithStore(store: VectraStore, embeddingPort: EmbeddingPort): void {
+		initProcessorWithStore(store, embeddingPort);
 		this.initialized = true;
 	}
 
