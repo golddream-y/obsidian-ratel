@@ -20,6 +20,7 @@ import { DeepSeekLLM } from './adapters/llm-deepseek';
 import type { EmbeddingPort } from './ports/embedding';
 import { EmbeddingApi } from './adapters/embedding-api';
 import { EmbeddingLocal } from './adapters/embedding-local';
+import { EmbeddingWorkerProxy } from './adapters/embedding-worker-proxy';
 import { VectraStore } from './adapters/vector-vectra';
 import type { EmbeddingsModel, EmbeddingsResponse } from 'vectra';
 import { WorkerManager } from './worker/manager';
@@ -85,6 +86,8 @@ export default class RatelVaultPlugin extends Plugin {
 	vectraStore!: VectraStore;
 	// 关键路径:InlineWorker 在主线程模拟 Worker,用于 Obsidian 渲染进程不支持 Worker Threads 的环境。
 	private inlineWorker?: InlineWorker;
+	// 关键路径:EmbeddingWorkerProxy 把 ONNX 推理移入 Web Worker,onunload 时需 terminate 释放线程。
+	private embeddingWorkerProxy?: EmbeddingWorkerProxy;
 	// 关键路径:indexDir 在 onload 计算,onLayoutReady 初始化 InlineWorker 时需要复用。
 	private indexDir!: string;
 	modelManager!: ModelManager;
@@ -329,7 +332,8 @@ export default class RatelVaultPlugin extends Plugin {
 	 * 关键路径:
 	 * - 本地 Embedding 模型从 ModelScope 下载 ONNX + vocab.txt(约 24MB)。
 	 * - 下载期间通过 Notice 实时显示进度,避免用户误以为插件无响应。
-	 * - 模型就绪后把 EmbeddingOnnx 同时设给主线程 embedding 与 InlineWorker 的 VectraStore。
+	 * - 模型就绪后把 EmbeddingOnnx 同时设给主线程 embedding 占位器与 InlineWorker 的 VectraStore。
+	 * - ONNX 推理移入 EmbeddingWorkerProxy(Web Worker),主线程零 CPU 阻塞;proxy 注入 InlineWorker。
 	 */
 	async onLayoutReady(): Promise<void> {
 		// 关键路径:API embedding 模式不需要本地模型,也不触发自动索引;用户提示由 FeedbackController 处理。
@@ -365,7 +369,9 @@ export default class RatelVaultPlugin extends Plugin {
 				// 关键路径:InlineWorker 在主线程运行,模型就绪后必须注入带 embeddings 的 VectraStore。
 				if (this.inlineWorker) {
 					this.vectraStore = this.createEmbeddingsVectraStore(embedding);
-					this.inlineWorker.initWithStore(this.vectraStore);
+					// 关键路径:创建 EmbeddingWorkerProxy,把 ONNX 推理移入 Web Worker,主线程零 CPU 阻塞。
+					// Worker 创建/init 失败不降级,直接抛错提示用户接 API Embedding 端点。
+					await this.initEmbeddingWorkerProxy(embedding);
 				}
 			}
 
@@ -440,6 +446,8 @@ export default class RatelVaultPlugin extends Plugin {
 		this.userStatus.reset();
 		// 关键路径:先停 IndexController 释放 vault 事件订阅与 watcher,再终止 Worker。
 		this.indexController.destroy();
+		// 关键路径:terminate EmbeddingWorkerProxy 释放 Web Worker 线程,避免热重载后残留进程 OOM。
+		this.embeddingWorkerProxy?.terminate();
 		this.workerManager.destroy();
 		// 修复:VectraStore 无显式 close,JS 垃圾回收会释放文件句柄;
 		// 之前的 `void this.vectraStore;` 是空操作,已移除。
@@ -518,6 +526,7 @@ export default class RatelVaultPlugin extends Plugin {
 			signal,
 			intentClassifier,
 			toolPermissionCheck,
+			this.settings.agentMaxSteps,
 		);
 	}
 
@@ -550,6 +559,55 @@ export default class RatelVaultPlugin extends Plugin {
 			},
 		};
 		return new VectraStore(this.indexDir, { embeddings, autoInit: true });
+	}
+
+	/**
+	 * 创建并初始化 EmbeddingWorkerProxy,把 ONNX 推理移入 Web Worker。
+	 *
+	 * 关键路径:
+	 * - Worker URL 用 getResourcePath 解析,适配 Obsidian app:// 协议。
+	 * - 模型依赖(modelBuffer / wasmBinary)从 ModelManager.getDeps() 重新读盘,返回全新 ArrayBuffer;
+	 *   transfer 给 Worker 后不影响主线程 EmbeddingOnnx 实例持有的 buffer。
+	 * - Worker 创建/init 失败不降级,直接抛错,提示用户配置 API Embedding 端点。
+	 * - proxy 就绪后注入 InlineWorker,IndexProcessor 后续 embed 调用都走 Worker 线程。
+	 *
+	 * @param embedding - 已加载的主线程 EmbeddingPort,用于读取 dimensions。
+	 * @throws Error Worker 创建或 init 失败,错误消息引导用户切换到 API Embedding。
+	 */
+	private async initEmbeddingWorkerProxy(embedding: EmbeddingPort): Promise<void> {
+		// 关键路径:getResourcePath 把插件目录内的相对路径转为 app:// 协议 URL,
+		// 这是 Obsidian Electron 环境下 new Worker(url) 能正确加载的唯一方式。
+		const workerUrl = this.app.vault.adapter.getResourcePath(
+			this.manifest.dir + '/dist/embedding-worker.js',
+		);
+
+		// 关键路径:getDeps 重新读盘,返回全新 ArrayBuffer 副本;transfer 给 Worker 后主线程实例不受影响。
+		const deps = await this.modelManager.getDeps();
+		if (!deps) {
+			throw new Error(
+				'本地 Embedding Worker 初始化失败: 模型依赖不可用。请在设置中配置 API Embedding 端点(如 Ollama)后重启插件。',
+			);
+		}
+
+		const proxy = new EmbeddingWorkerProxy(workerUrl, deps, embedding.dimensions);
+		this.embeddingWorkerProxy = proxy;
+
+		try {
+			// 关键路径:await proxy.ready 确保 Worker 内 EmbeddingOnnx.init() 完成,
+			// 否则后续 embed 调用会在 Worker 内因未初始化而失败。
+			await proxy.ready;
+		} catch (err) {
+			// 关键路径:Worker init 失败需 terminate 释放线程资源,避免悬挂 Worker 进程。
+			proxy.terminate();
+			this.embeddingWorkerProxy = undefined;
+			const message = err instanceof Error ? err.message : String(err);
+			throw new Error(
+				`本地 Embedding Worker 初始化失败: ${message}。请在设置中配置 API Embedding 端点(如 Ollama)后重启插件。`,
+			);
+		}
+
+		// 关键路径:proxy 实现 EmbeddingPort,InlineWorker 用它做批量 embed,索引与搜索都走 Worker 线程。
+		this.inlineWorker!.initWithStore(this.vectraStore, proxy);
 	}
 
 	/**
