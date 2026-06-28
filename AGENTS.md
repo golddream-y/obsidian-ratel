@@ -116,6 +116,70 @@ src/
 - GitHub release 的 tag 必须严格匹配 `manifest.json` 的 `version`(不带 `v` 前缀)。
 - release 上传 `main.js`、`worker.js`、`embedding-worker.js`、`manifest.json`、`styles.css`。
 
+## 文档同步规则(mandatory)
+
+> 当代码变更落地后,必须主动评估是否需要同步文档。不靠 git hook,靠规则约束 AI 主动确认。
+
+### 触发时机
+
+**唯一触发点:`finishing-a-development-branch` 技能启动时**(plan 所有 Task 完成、所有 commit 已提交)。
+此时能看完整 diff,判断最准。brainstorming / writing-plans 阶段不评估(太早,是猜不是确认)。
+
+### AI 必做动作
+
+AI 读 `git log <plan-start-commit>..HEAD`,判断这些 commit 是否改变用户可见行为或架构契约。
+**若有任何 `feat` / `fix` / `perf` / `refactor` 影响下列触发条件,必须主动向用户确认**:
+
+```
+本次变更涉及 X 个 feat/fix,是否需要同步:
+  [ ] README(功能清单 / 安装步骤 / 隐私说明)
+  [ ] user-guide(操作指引 / 斜杠命令 / secret ID / FAQ)
+  [ ] CHANGELOG(下次发版记录,通常由 release 工作流处理,此处仅标记待办)
+  [ ] ARCHITECTURE.md / adr/(架构文档 — ⚠️ 改前必须确认,通常不需要)
+```
+
+用户勾选后,要么加 Task 到当前 plan 补做,要么登记到 `STATUS.md` 待办区。**不允许跳过确认直接 present options。**
+
+### 各文档触发条件
+
+#### README
+- 功能清单增减(新工具 / 新斜杠命令 / 新模型适配器)
+- 安装步骤变更(新增依赖 / 改 minAppVersion)
+- 隐私说明变更(新增外发通道 / 改密钥存储)
+
+#### user-guide
+- 斜杠命令增减或改名(必须与 `src/ui/chat/input/slash-commands.ts` 一致)
+- secret ID 增减或改名(必须与 `src/secrets/ratel-secrets.ts` 一致)
+- 状态条 / 诊断面板 / 设置面板的用户可见行为变更
+- 新增 FAQ 候选(同类 issue 反复出现)
+
+#### CHANGELOG
+- 通常由 release 工作流(spec § 6.3)在发版时统一生成,此处只标记"下次发版需覆盖本次变更"
+- 例外:若本次是 BREAKING CHANGE,必须立即在 CHANGELOG `[Unreleased]` 块补一行,不能等到发版
+
+#### ARCHITECTURE.md / adr/(⚠️ 谨慎,改前必须确认)
+**触发条件(满足任一即需评估):**
+- 新增 / 删除 / 重命名核心模块(`ports/` / `adapters/` / `core/` / `worker/` / `ui/` 子系统目录)
+- 跨线程通信协议变更(主线程 ↔ Worker 消息类型 / payload)
+- 数据模型变更(`MessageSegment` / `Message` / `AgentEvent` / `ChatDelta` 等判别联合或接口)
+- 构建产物变更(新增 / 删除 `dist/` 下文件,改 esbuild 配置)
+- 端口接口契约变更(`ports/` 下任意接口增减方法)
+
+**不触发(普通 feat 不动架构文档):**
+- 加单个工具(`tools/` 下新增文件)
+- 加单个 UI 组件(`ui/` 下新增文件,不新增子系统目录)
+- 改文案 / 改样式 / 改 i18n 文本
+- 内部重构不改变模块边界与接口契约
+
+**adr/ 触发条件:**
+- 做了非显然的技术选型决策(如"tag 不带 v 前缀")
+- 推翻了之前 ADR 的结论
+- 引入了新的硬约束(如本"文档同步规则")
+
+### 落地形式
+
+本规则靠 AGENTS.md 硬约束 + `finishing-a-development-branch` 技能 Step 0 执行。不引入工具依赖,符合项目"对话驱动 + 开发者确认"风格。
+
 ## 编码约定
 
 - TypeScript 启用 `"strict": true`。
