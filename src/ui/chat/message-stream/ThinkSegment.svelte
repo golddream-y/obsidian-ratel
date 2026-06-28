@@ -41,10 +41,10 @@
 
 <div class="ratel-think-wrap" class:ratel-think-streaming={streaming}>
 	<Collapsible
-		title={streaming ? `思考过程…(${text.length} 字)` : `思考过程 (${text.length} 字)`}
+		title={streaming ? '思考过程…' : '思考过程'}
 		icon="💭"
 		iconClass="think"
-		accentColor="var(--text-warning)"
+		variant="think"
 		bind:expanded
 		onToggle={handleToggle}
 	>
