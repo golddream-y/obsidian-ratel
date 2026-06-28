@@ -269,9 +269,14 @@ export default class RatelVaultPlugin extends Plugin {
 		this.registerView(VIEW_TYPE_CHAT, (leaf) => new ChatView(leaf, this));
 
 		// Ribbon 图标:点击打开聊天侧栏。
-		this.addRibbonIcon('brain', 'Ratel', () => {
+		// 关键路径:Lucide 图标集无獾,用 emoji 替换 SVG,贴合 Ratel 品牌形象。
+		const ribbonEl = this.addRibbonIcon('paw-print', 'Ratel', () => {
 			this.activateChatView();
 		});
+		const ribbonSvg = ribbonEl.querySelector('svg');
+		if (ribbonSvg) {
+			ribbonSvg.replaceWith(createSpan({ text: '🦡' }));
+		}
 
 		// 命令:Ask vault — 唤起聊天侧栏。
 		this.addCommand({
