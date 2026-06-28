@@ -3,7 +3,7 @@
 	"name": "Ratel",
 	"version": "0.1.0",
 	"minAppVersion": "1.11.4",
-	"description": "An AI agent that indexes, searches, links, and curates your Obsidian vault with semantic understanding. Supports local Ollama for privacy-first usage.",
+	"description": "Chat with your vault. Ask questions with cited answers, and auto-research across notes to write summaries.",
 	"author": "golddream-y",
 	"authorUrl": "https://github.com/golddream-y",
 	"isDesktopOnly": true
