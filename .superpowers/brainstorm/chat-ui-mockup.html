@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Ratel Chat UI Mockup — S-MSG-STREAM</title>
+  <title>Ratel Chat UI Mockup v2 — 统一卡片式折叠</title>
   <style>
     :root {
       --bg-primary: #1e1e1e;
@@ -13,11 +13,11 @@
       --text-normal: #d4d4d4;
       --text-muted: #a0a0a0;
       --accent: #7ee787;
-      --accent-dim: rgba(126, 231, 135, 0.15);
+      --accent-dim: rgba(126, 231, 135, 0.12);
       --warning: #facc15;
-      --warning-bg: rgba(250, 204, 21, 0.12);
+      --warning-bg: rgba(250, 204, 21, 0.10);
       --error: #f87171;
-      --error-bg: rgba(248, 113, 113, 0.1);
+      --error-bg: rgba(248, 113, 113, 0.10);
       --border: #3e3e3e;
       --shadow: 0 4px 20px rgba(0,0,0,0.4);
       --radius: 8px;
@@ -40,7 +40,7 @@
 
     .chat-frame {
       width: 420px;
-      height: 760px;
+      height: 780px;
       background: var(--bg-primary);
       border: 1px solid var(--border);
       border-radius: 12px;
@@ -50,26 +50,62 @@
       box-shadow: var(--shadow);
     }
 
+    /* ==================== Header ==================== */
     .chat-header {
       padding: 10px 14px;
       border-bottom: 1px solid var(--border);
-      font-size: 13px;
-      font-weight: 600;
-      color: var(--text-normal);
       display: flex;
       align-items: center;
       justify-content: space-between;
+      background: rgba(37, 37, 38, 0.65);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+
+    .chat-header .header-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .chat-header .logo {
+      width: 22px;
+      height: 22px;
+      border-radius: 6px;
+      background: rgba(126, 231, 135, 0.2);
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--mono);
+      border: 1px solid rgba(126, 231, 135, 0.3);
+    }
+
+    .chat-header .title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-normal);
+      letter-spacing: 0.3px;
     }
 
     .chat-header .model-badge {
       font-size: 11px;
-      padding: 2px 8px;
+      padding: 2px 9px;
       border-radius: 12px;
       background: var(--accent-dim);
       color: var(--accent);
       font-family: var(--mono);
+      font-weight: 500;
+      border: 1px solid rgba(126, 231, 135, 0.2);
+      max-width: 180px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
+    /* ==================== Messages ==================== */
     .messages {
       flex: 1;
       overflow-y: auto;
@@ -77,193 +113,272 @@
       display: flex;
       flex-direction: column;
       gap: 12px;
+      scroll-behavior: smooth;
     }
 
     .message {
       max-width: 88%;
-      padding: 10px 13px;
-      border-radius: var(--radius);
-      font-size: 13.5px;
-      line-height: 1.5;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
     }
 
     .message.user {
       align-self: flex-end;
-      background: var(--bg-tertiary);
+      padding: 10px 13px;
+      border-radius: var(--radius);
+      background: rgba(45, 45, 45, 0.78);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(62, 62, 62, 0.7);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      font-size: 13.5px;
+      line-height: 1.5;
     }
 
     .message.assistant {
       align-self: flex-start;
-      background: transparent;
-      padding: 0;
     }
 
-    /* segments 模型:按事件时序渲染 */
-    .segment {
-      margin-bottom: 6px;
-    }
+    .segment { margin-bottom: 6px; }
+    .segment:last-child { margin-bottom: 0; }
 
-    .segment:last-child {
-      margin-bottom: 0;
-    }
-
-    /* ThinkSegment:可折叠,流式中展开 */
-    .think-block {
-      border-left: 2px solid var(--warning);
-      padding: 8px 10px;
-      background: var(--warning-bg);
-      border-radius: 4px;
-      font-size: 12px;
-      color: var(--text-muted);
-      line-height: 1.5;
-    }
-
-    .think-header {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      cursor: pointer;
-      user-select: none;
-      font-size: 11px;
-      color: var(--warning);
-      font-weight: 500;
-      margin-bottom: 4px;
-    }
-
-    .think-header .arrow {
-      transition: transform 0.2s;
-    }
-
-    .think-header .arrow.collapsed {
-      transform: rotate(-90deg);
-    }
-
-    .think-content {
-      max-height: 200px;
+    /* ==================== 统一折叠卡片(Think / Tool / Search 共用骨架) ==================== */
+    .card {
+      border-radius: 6px;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
       overflow: hidden;
-      transition: max-height 0.3s;
+      transition: box-shadow 0.15s;
     }
 
-    .think-content.collapsed {
-      max-height: 0;
+    .card:hover {
+      box-shadow: 0 1px 4px rgba(0,0,0,0.15);
     }
 
-    /* ToolSegment:可折叠,displayName + 详情 */
-    .tool-call {
+    .card-hdr {
       display: flex;
       align-items: center;
       gap: 8px;
-      padding: 6px 10px;
-      border-radius: 6px;
-      background: var(--bg-tertiary);
-      font-size: 12px;
-      color: var(--text-muted);
-      font-family: var(--mono);
+      padding: 8px 12px;
       cursor: pointer;
-      transition: background 0.15s;
+      user-select: none;
+      font-size: 12px;
+      transition: background 0.12s;
     }
 
-    .tool-call:hover {
-      background: var(--bg-input);
+    .card-hdr:hover {
+      background: rgba(255,255,255,0.03);
     }
 
-    .tool-call.done { color: var(--accent); }
-    .tool-call.failed { color: var(--error); }
-
-    .tool-call .tool-icon {
+    .card-hdr .card-icon {
       flex-shrink: 0;
-      font-size: 14px;
+      font-size: 13px;
+      width: 18px;
+      text-align: center;
     }
 
-    .tool-call .tool-name {
+    .card-hdr .card-title {
       flex: 1;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+      font-family: var(--mono);
     }
 
-    .tool-call .tool-expand {
+    .card-hdr .card-arrow {
       font-size: 10px;
-      opacity: 0.6;
-      transition: transform 0.2s;
+      opacity: 0.5;
+      transition: transform 0.25s ease;
+      flex-shrink: 0;
     }
 
-    .tool-call .tool-expand.expanded {
+    .card-hdr .card-arrow.open {
       transform: rotate(180deg);
     }
 
-    .tool-details {
+    .card-body {
       max-height: 0;
       overflow: hidden;
-      transition: max-height 0.3s;
-      background: var(--bg-secondary);
-      border-radius: 4px;
-      margin-top: 4px;
+      transition: max-height 0.3s ease;
+      border-top: 0 solid var(--border);
     }
 
-    .tool-details.expanded {
+    .card-body.open {
       max-height: 300px;
-      padding: 8px 10px;
+      padding: 10px 12px;
+      border-top-width: 1px;
     }
 
-    .tool-details pre {
+    /* ==================== ThinkSegment ==================== */
+    .card.think .card-icon { color: var(--warning); }
+    .card.think .card-title { color: var(--warning); font-weight: 500; font-family: var(--font); }
+
+    .card.think .think-text {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: var(--mono);
+    }
+
+    .card.think .think-cursor {
+      color: var(--warning);
+      font-weight: 600;
+      animation: blink 1s steps(2, start) infinite;
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0; }
+    }
+
+    /* ==================== ToolSegment ==================== */
+    .card.tool .card-icon { font-size: 14px; }
+    .card.tool .card-title { color: var(--text-muted); }
+    .card.tool.done .card-icon { color: var(--accent); }
+    .card.tool.done .card-title { color: var(--accent); }
+    .card.tool.failed .card-icon { color: var(--error); }
+    .card.tool.failed .card-title { color: var(--error); }
+
+    .card.tool .calling-row {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      color: var(--warning);
+      font-size: 11px;
+      margin-bottom: 8px;
+      font-family: var(--mono);
+    }
+
+    .card.tool .calling-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--warning);
+      animation: pulse 1.2s infinite;
+      flex-shrink: 0;
+    }
+
+    .card-body .detail-section { margin-bottom: 8px; }
+    .card-body .detail-section:last-child { margin-bottom: 0; }
+
+    .card-body .detail-label {
+      font-size: 10px;
+      color: var(--text-faint, #666);
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      margin-bottom: 4px;
+      font-weight: 600;
+    }
+
+    .card-body pre {
       margin: 0;
       font-family: var(--mono);
       font-size: 11px;
       color: var(--text-muted);
       white-space: pre-wrap;
       word-break: break-all;
+      line-height: 1.5;
+      padding: 6px 8px;
+      border-radius: 4px;
+      background: rgba(0,0,0,0.2);
+      border: 1px solid rgba(255,255,255,0.04);
     }
 
-    .tool-details .label {
+    /* ==================== SearchResults ==================== */
+    .card.search { border-color: rgba(126, 231, 135, 0.15); }
+
+    .card.search .search-hdr {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+    }
+
+    .card.search .search-icon { font-size: 0.9em; opacity: 0.85; }
+    .card.search .search-title { color: var(--text-normal); font-weight: 600; }
+
+    .card.search .search-count {
+      font-family: var(--mono);
       font-size: 10px;
-      color: var(--text-faint, #666);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-bottom: 4px;
+      padding: 1px 6px;
+      border-radius: 8px;
+      background: rgba(160,160,160,0.15);
+      color: var(--text-muted);
+      font-weight: 500;
     }
 
-    .tool-details .section {
-      margin-bottom: 8px;
+    .card.search .rerank-badge {
+      margin-left: auto;
+      padding: 1px 7px;
+      border-radius: 8px;
+      background: var(--warning-bg);
+      color: var(--warning);
+      font-size: 10px;
+      font-weight: 600;
     }
 
-    .tool-details .section:last-child {
-      margin-bottom: 0;
+    .card.search .search-list {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      padding: 4px 8px;
     }
 
-    /* TextSegment */
+    .card.search .search-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      padding: 4px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+      transition: background 0.12s;
+    }
+
+    .card.search .search-row:hover {
+      background: rgba(126, 231, 135, 0.06);
+    }
+
+    .card.search .search-idx {
+      font-family: var(--mono);
+      font-weight: 700;
+      color: var(--text-muted);
+      min-width: 24px;
+      font-size: 11px;
+    }
+
+    .card.search .search-path {
+      flex: 1;
+      font-family: var(--mono);
+      font-size: 11px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--text-normal);
+    }
+
+    .card.search .search-score {
+      font-family: var(--mono);
+      font-size: 10px;
+      font-weight: 600;
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+
+    .score-high { color: var(--accent); background: var(--accent-dim); }
+    .score-mid { color: var(--warning); background: var(--warning-bg); }
+    .score-low { color: var(--text-muted); background: rgba(160,160,160,0.1); }
+
+    /* ==================== TextSegment ==================== */
     .text-segment {
       font-size: 13.5px;
       line-height: 1.5;
     }
 
-    /* SearchResults */
-    .search-results {
-      border-left: 2px solid var(--accent);
-      padding: 6px 10px;
-      background: var(--accent-dim);
-      border-radius: 4px;
-      font-size: 11px;
-    }
-
-    .search-results .result-item {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 2px 0;
-      color: var(--text-muted);
-    }
-
-    .search-results .result-path {
-      font-family: var(--mono);
-      color: var(--text-normal);
-    }
-
-    .search-results .result-score {
-      font-size: 10px;
-      color: var(--accent);
-    }
-
+    /* ==================== StatusLine ==================== */
     .status-line {
       height: 30px;
       padding: 0 14px;
@@ -271,15 +386,17 @@
       align-items: center;
       gap: 10px;
       border-top: 1px solid var(--border);
-      background: var(--bg-secondary);
+      background: rgba(37, 37, 38, 0.75);
+      backdrop-filter: blur(10px);
       font-size: 11.5px;
       color: var(--text-muted);
       cursor: pointer;
       transition: background 0.15s;
       user-select: none;
+      flex-shrink: 0;
     }
 
-    .status-line:hover { background: var(--bg-tertiary); }
+    .status-line:hover { background: rgba(45, 45, 45, 0.8); }
 
     .status-line .dot {
       width: 7px;
@@ -307,11 +424,7 @@
       box-shadow: none;
     }
 
-    .status-line .status-text {
-      font-weight: 500;
-      color: var(--text-normal);
-    }
-
+    .status-line .status-text { font-weight: 500; color: var(--text-normal); }
     .status-line .status-text.muted { color: var(--text-muted); font-weight: 400; }
     .status-line .status-text.warn { color: var(--warning); }
     .status-line .status-text.error { color: var(--error); }
@@ -321,12 +434,13 @@
       50% { opacity: 0.4; }
     }
 
-    .status-line .divider { color: #555; }
-
     .status-line .expand-hint {
       font-size: 10px;
       opacity: 0.6;
+      transition: opacity 0.15s;
     }
+
+    .status-line:hover .expand-hint { opacity: 0.9; }
 
     .ctx-meter {
       display: flex;
@@ -341,12 +455,14 @@
       border-radius: 2px;
       background: var(--bg-tertiary);
       overflow: hidden;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.06) inset;
     }
 
     .ctx-bar-fill {
       height: 100%;
       border-radius: 2px;
       transition: width 0.3s, background 0.3s;
+      box-shadow: 0 0 4px rgba(126,231,135,0.3);
     }
 
     .ctx-pct {
@@ -355,23 +471,40 @@
       color: var(--text-muted);
       min-width: 28px;
       text-align: right;
+      font-weight: 600;
     }
 
-    .ctx-pct.warn { color: var(--warning); }
-    .ctx-pct.danger { color: var(--error); }
+    /* source 指示器(药丸形,带标签) */
+    .source-pill {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      padding: 1px 6px 1px 5px;
+      border-radius: 8px;
+      font-size: 9.5px;
+      font-family: var(--mono);
+      font-weight: 500;
+      letter-spacing: 0.2px;
+      margin-left: 2px;
+    }
 
-    /* token source 指示器 */
-    .token-source {
-      width: 6px;
-      height: 6px;
+    .source-pill .src-dot {
+      width: 5px;
+      height: 5px;
       border-radius: 50%;
-      margin-left: 4px;
+      flex-shrink: 0;
     }
 
-    .token-source.estimate { background: var(--text-muted); }
-    .token-source.streaming { background: var(--warning); }
-    .token-source.api { background: var(--accent); }
+    .source-pill.estimate { background: rgba(160,160,160,0.12); color: var(--text-muted); }
+    .source-pill.estimate .src-dot { background: var(--text-muted); }
 
+    .source-pill.streaming { background: var(--warning-bg); color: var(--warning); }
+    .source-pill.streaming .src-dot { background: var(--warning); animation: pulse 1.2s infinite; }
+
+    .source-pill.api { background: var(--accent-dim); color: var(--accent); }
+    .source-pill.api .src-dot { background: var(--accent); box-shadow: 0 0 4px rgba(126,231,135,0.5); }
+
+    /* ==================== StatusDrawer ==================== */
     .status-drawer {
       max-height: 0;
       overflow: hidden;
@@ -380,13 +513,13 @@
       transition: max-height 0.25s ease;
     }
 
-    .status-drawer.open { max-height: 380px; }
+    .status-drawer.open { max-height: 560px; }
 
     .drawer-inner {
       padding: 14px;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 10px;
     }
 
     .drawer-row {
@@ -400,24 +533,57 @@
     .drawer-row .value { color: var(--text-normal); font-weight: 500; }
 
     .drawer-section-title {
-      font-size: 10px;
+      font-size: 11.5px;
       font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      color: #666;
-      margin-top: 4px;
-      padding-bottom: 4px;
+      letter-spacing: 0.2px;
+      color: var(--text-muted);
+      padding: 6px 0 6px;
+      margin-top: 2px;
       border-bottom: 1px solid var(--border);
     }
 
-    .drawer-section-title:first-child { margin-top: 0; }
+    .drawer-section-title:first-child {
+      margin-top: 0;
+      padding-top: 0;
+    }
+
+    /* token 进度条(drawer 内) */
+    .token-meter {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 2px 0 4px;
+    }
+
+    .token-meter .meter-track {
+      flex: 1;
+      height: 6px;
+      border-radius: 3px;
+      background: var(--bg-tertiary);
+      overflow: hidden;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.08) inset;
+    }
+
+    .token-meter .meter-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.4s ease, background 0.3s;
+      box-shadow: 0 0 4px rgba(126,231,135,0.3);
+    }
+
+    .token-meter .meter-pct {
+      font-size: 10px;
+      font-family: var(--mono);
+      font-weight: 600;
+      min-width: 32px;
+      text-align: right;
+    }
 
     .progress-track {
       width: 100%;
       height: 4px;
       background: var(--bg-tertiary);
       border-radius: 2px;
-      margin-top: 6px;
       overflow: hidden;
     }
 
@@ -429,14 +595,54 @@
       transition: width 0.3s;
     }
 
+    .hint-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      background: var(--warning-bg);
+      color: var(--warning);
+      font-size: 11px;
+    }
+
+    .degraded-row {
+      padding: 6px 10px;
+      border-radius: 6px;
+      background: var(--error-bg);
+      color: var(--error);
+      font-size: 11px;
+      line-height: 1.4;
+    }
+
+    .micro-btn {
+      padding: 3px 10px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: var(--bg-tertiary);
+      color: var(--text-muted);
+      font-size: 11px;
+      cursor: pointer;
+      transition: color 0.12s, border-color 0.12s;
+    }
+
+    .micro-btn:hover {
+      color: var(--text-normal);
+      border-color: var(--accent);
+    }
+
+
+    /* ==================== Input Area ==================== */
     .input-area {
       padding: 10px 14px 14px;
       border-top: 1px solid var(--border);
-      background: var(--bg-primary);
+      background: rgba(30, 30, 30, 0.65);
+      backdrop-filter: blur(10px);
       display: flex;
       flex-direction: column;
       gap: 8px;
       position: relative;
+      flex-shrink: 0;
     }
 
     .attachment-strip {
@@ -486,33 +692,50 @@
     .attach-btn {
       width: 32px;
       height: 32px;
-      border-radius: 6px;
+      border-radius: 8px;
       border: 1px solid var(--border);
-      background: var(--bg-secondary);
+      background: rgba(37, 37, 38, 0.7);
+      backdrop-filter: blur(6px);
       color: var(--text-muted);
       font-size: 16px;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
+      transition: color 0.15s, border-color 0.15s, background 0.15s;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.05);
     }
 
-    .attach-btn:hover { color: var(--text-normal); }
+    .attach-btn:hover {
+      color: var(--text-normal);
+      border-color: var(--accent);
+      background: rgba(126, 231, 135, 0.08);
+    }
 
     .input-area textarea {
       flex: 1;
       min-height: 54px;
+      max-height: 160px;
       padding: 10px 12px;
       border-radius: var(--radius);
       border: 1px solid var(--border);
       background: var(--bg-input);
       color: var(--text-normal);
+      font-family: inherit;
       font-size: 13px;
+      line-height: 1.5;
       resize: none;
       outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.04) inset;
     }
 
-    .input-area textarea:focus { border-color: var(--accent); }
+    .input-area textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(126, 231, 135, 0.15), 0 1px 2px rgba(0,0,0,0.04) inset;
+    }
+
+    .input-area textarea::placeholder { color: #666; }
 
     .input-footer {
       display: flex;
@@ -521,16 +744,29 @@
     }
 
     .send-btn {
-      padding: 6px 16px;
-      border-radius: 6px;
+      padding: 7px 18px;
+      border-radius: 8px;
       border: none;
       background: var(--accent);
-      color: #111;
+      color: #1a1a1a;
       font-size: 12px;
       font-weight: 600;
+      font-family: inherit;
       cursor: pointer;
+      letter-spacing: 0.3px;
+      transition: box-shadow 0.15s, transform 0.1s;
+      box-shadow: 0 1px 3px rgba(126, 231, 135, 0.3), 0 1px 2px rgba(0,0,0,0.08);
     }
 
+    .send-btn:hover {
+      box-shadow: 0 2px 6px rgba(126, 231, 135, 0.4), 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    .send-btn:active {
+      transform: translateY(1px);
+    }
+
+    /* ==================== SlashMenu ==================== */
     .slash-menu {
       position: absolute;
       bottom: 100%;
@@ -563,6 +799,7 @@
       padding: 8px 12px;
       cursor: pointer;
       font-size: 12.5px;
+      transition: background 0.1s;
     }
 
     .slash-item:hover, .slash-item.active {
@@ -578,46 +815,7 @@
 
     .slash-item .desc { color: var(--text-muted); }
 
-    .hint-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      padding: 2px 8px;
-      border-radius: 10px;
-      background: var(--warning-bg);
-      color: var(--warning);
-      font-size: 11px;
-    }
-
-    .token-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      padding: 1px 6px;
-      border-radius: 8px;
-      background: var(--bg-tertiary);
-      color: var(--text-muted);
-      font-size: 10px;
-      font-family: var(--mono);
-    }
-
-    .token-badge.warn { color: var(--warning); background: var(--warning-bg); }
-
-    .micro-btn {
-      padding: 2px 8px;
-      border-radius: 4px;
-      border: 1px solid var(--border);
-      background: var(--bg-tertiary);
-      color: var(--text-muted);
-      font-size: 11px;
-      cursor: pointer;
-    }
-
-    .micro-btn:hover {
-      color: var(--text-normal);
-      border-color: var(--accent);
-    }
-
+    /* ==================== Misc ==================== */
     .message-images {
       display: flex;
       gap: 6px;
@@ -631,61 +829,93 @@
       object-fit: cover;
       border-radius: 6px;
       border: 1px solid var(--border);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      transition: transform 0.15s ease;
     }
 
-    .degraded-row {
-      padding: 8px 10px;
-      border-radius: 6px;
-      background: var(--error-bg);
-      color: var(--error);
+    .message-images img:hover { transform: scale(1.03); }
+
+    .typing-indicator {
+      color: var(--warning);
+      font-size: 12px;
+      padding: 4px 2px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--mono);
+    }
+
+    .typing-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--warning);
+      animation: pulse 1.2s infinite;
+      flex-shrink: 0;
+      box-shadow: 0 0 6px rgba(250, 204, 21, 0.5);
+    }
+
+    .typing-text { opacity: 0.85; }
+
+    .cancelled {
       font-size: 11.5px;
-      line-height: 1.4;
-    }
-
-    /* 测试连接按钮 */
-    .probe-btn {
-      padding: 4px 10px;
-      border-radius: 4px;
-      border: 1px solid var(--accent);
-      background: var(--accent-dim);
-      color: var(--accent);
-      font-size: 11px;
-      cursor: pointer;
-      font-weight: 500;
-    }
-
-    .probe-btn:hover {
-      background: var(--accent);
-      color: #111;
-    }
-
-    .probe-result {
-      font-size: 11px;
-      padding: 4px 8px;
-      border-radius: 4px;
+      color: var(--text-muted);
+      font-style: italic;
+      display: flex;
+      align-items: center;
+      gap: 6px;
       margin-top: 4px;
     }
 
-    .probe-result.success {
-      background: var(--accent-dim);
-      color: var(--accent);
+    .cancelled-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--text-muted);
+      opacity: 0.7;
     }
 
-    .probe-result.error {
+    .error-block {
+      margin-top: 4px;
+      padding: 8px 10px;
+      border-radius: 6px;
       background: var(--error-bg);
+      backdrop-filter: blur(6px);
+      border-left: 2px solid var(--error);
+      border-top: 1px solid rgba(248,113,113,0.12);
+      border-right: 1px solid rgba(248,113,113,0.12);
+      border-bottom: 1px solid rgba(248,113,113,0.12);
       color: var(--error);
+      font-size: 11.5px;
+      line-height: 1.5;
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .card, .card-hdr, .send-btn, .attach-btn, .status-line, .micro-btn,
+      .input-area textarea, .ctx-bar-fill, .progress-fill, .search-row { transition: none; }
+      .send-btn:active { transform: none; }
+      .message-images img:hover { transform: none; }
     }
   </style>
 </head>
 <body>
 
 <div class="chat-frame">
+  <!-- ==================== Header ==================== -->
   <div class="chat-header">
-    <span>Ratel</span>
+    <div class="header-left">
+      <span class="logo">R</span>
+      <span class="title">Ratel</span>
+    </div>
     <span class="model-badge">deepseek-reasoner</span>
   </div>
 
+  <!-- ==================== Messages ==================== -->
   <div class="messages" id="messages">
+    <!-- 用户消息 -->
     <div class="message user">
       <div class="message-images">
         <img src="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=200&h=200&fit=crop" alt="uploaded">
@@ -693,95 +923,142 @@
       帮我看看这张图，然后生成 vault 的整体目录 markdown
     </div>
 
+    <!-- 助手消息(segments 按时序) -->
     <div class="message assistant">
-      <!-- segments 按事件时序渲染 -->
+      <!-- Text -->
       <div class="segment">
         <div class="text-segment">好的，我先遍历各目录，然后汇总成 markdown。</div>
       </div>
 
+      <!-- Tool: done -->
       <div class="segment">
-        <div class="tool-call done" onclick="toggleToolDetails(this)">
-          <span class="tool-icon">✓</span>
-          <span class="tool-name">list_files Formatting — 7 项</span>
-          <span class="tool-expand">▼</span>
-        </div>
-        <div class="tool-details">
-          <div class="section">
-            <div class="label">参数</div>
-            <pre>{"path": "Formatting"}</pre>
+        <div class="card tool done" onclick="toggleCard(this)">
+          <div class="card-hdr">
+            <span class="card-icon">✓</span>
+            <span class="card-title">list_files Formatting — 7 项</span>
+            <span class="card-arrow">▼</span>
           </div>
-          <div class="section">
-            <div class="label">结果</div>
-            <pre>["note1.md", "note2.md", "note3.md", "note4.md", "note5.md", "note6.md", "note7.md"]</pre>
+          <div class="card-body">
+            <div class="detail-section">
+              <div class="detail-label">参数</div>
+              <pre>{"path": "Formatting"}</pre>
+            </div>
+            <div class="detail-section">
+              <div class="detail-label">结果</div>
+              <pre>["note1.md", "note2.md", "note3.md", "note4.md", "note5.md", "note6.md", "note7.md"]</pre>
+            </div>
           </div>
         </div>
       </div>
 
+      <!-- Tool: done -->
       <div class="segment">
-        <div class="tool-call done" onclick="toggleToolDetails(this)">
-          <span class="tool-icon">✓</span>
-          <span class="tool-name">list_files Guides — 4 项</span>
-          <span class="tool-expand">▼</span>
-        </div>
-        <div class="tool-details">
-          <div class="section">
-            <div class="label">参数</div>
-            <pre>{"path": "Guides"}</pre>
+        <div class="card tool done" onclick="toggleCard(this)">
+          <div class="card-hdr">
+            <span class="card-icon">✓</span>
+            <span class="card-title">list_files Guides — 4 项</span>
+            <span class="card-arrow">▼</span>
           </div>
-          <div class="section">
-            <div class="label">结果</div>
-            <pre>["guide1.md", "guide2.md", "guide3.md", "guide4.md"]</pre>
+          <div class="card-body">
+            <div class="detail-section">
+              <div class="detail-label">参数</div>
+              <pre>{"path": "Guides"}</pre>
+            </div>
+            <div class="detail-section">
+              <div class="detail-label">结果</div>
+              <pre>["guide1.md", "guide2.md", "guide3.md", "guide4.md"]</pre>
+            </div>
           </div>
         </div>
       </div>
 
+      <!-- Think: 卡片式折叠 -->
       <div class="segment">
-        <div class="think-block">
-          <div class="think-header" onclick="toggleThink(this)">
-            <span class="arrow">▼</span>
-            <span>思考过程 (流式中展开)</span>
+        <div class="card think" onclick="toggleCard(this)">
+          <div class="card-hdr">
+            <span class="card-icon">💭</span>
+            <span class="card-title">思考过程</span>
+            <span class="card-arrow">▼</span>
           </div>
-          <div class="think-content">
-            用户要求生成 vault 目录 markdown。我已经遍历了 Formatting (7 项) 和 Guides (4 项) 两个目录。接下来需要继续遍历 Adventurer 目录，然后汇总所有文件路径生成完整的目录结构...
+          <div class="card-body">
+            <div class="think-text">用户要求生成 vault 目录 markdown。我已经遍历了 Formatting (7 项) 和 Guides (4 项) 两个目录。接下来需要继续遍历 Adventurer 目录，然后汇总所有文件路径生成完整的目录结构...</div>
           </div>
         </div>
       </div>
 
+      <!-- Tool: calling -->
       <div class="segment">
-        <div class="tool-call" onclick="toggleToolDetails(this)">
-          <span class="tool-icon processing-dot"></span>
-          <span class="tool-name">list_files Adventurer</span>
-          <span class="tool-expand">▼</span>
-        </div>
-        <div class="tool-details">
-          <div class="section">
-            <div class="label">参数</div>
-            <pre>{"path": "Adventurer"}</pre>
+        <div class="card tool" onclick="toggleCard(this)">
+          <div class="card-hdr">
+            <span class="card-icon"><span class="calling-dot" style="width:8px;height:8px;border-radius:50%;background:var(--warning);animation:pulse 1.2s infinite;display:inline-block"></span></span>
+            <span class="card-title">list_files Adventurer</span>
+            <span class="card-arrow">▼</span>
           </div>
-          <div class="section">
-            <div class="label">结果</div>
-            <pre>等待返回...</pre>
+          <div class="card-body">
+            <div class="calling-row">
+              <span class="calling-dot"></span>
+              <span>执行中…</span>
+            </div>
+            <div class="detail-section">
+              <div class="detail-label">参数</div>
+              <pre>{"path": "Adventurer"}</pre>
+            </div>
           </div>
         </div>
       </div>
 
+      <!-- SearchResults: 卡片式 + 三档色阶 -->
+      <div class="segment">
+        <div class="card search">
+          <div class="search-hdr">
+            <span class="search-icon">🔍</span>
+            <span class="search-title">搜索结果</span>
+            <span class="search-count">3</span>
+            <span class="rerank-badge">✨ 精排</span>
+          </div>
+          <div class="search-list">
+            <div class="search-row">
+              <span class="search-idx">[1]</span>
+              <span class="search-path">Formatting/Headings.md</span>
+              <span class="search-score score-high">0.923</span>
+            </div>
+            <div class="search-row">
+              <span class="search-idx">[2]</span>
+              <span class="search-path">Guides/Link notes.md</span>
+              <span class="search-score score-mid">0.714</span>
+            </div>
+            <div class="search-row">
+              <span class="search-idx">[3]</span>
+              <span class="search-path">Adventurer/Day 1.md</span>
+              <span class="search-score score-low">0.431</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Text -->
       <div class="segment">
         <div class="text-segment">正在分析目录结构...</div>
       </div>
     </div>
   </div>
 
+  <!-- ==================== StatusLine ==================== -->
   <div class="status-line" id="statusLine" onclick="toggleDrawer()">
     <span class="dot processing"></span>
     <span class="status-text warn">思考中…</span>
     <div class="ctx-meter">
       <div class="ctx-bar"><div class="ctx-bar-fill" id="ctxBarFill" style="width:6%; background:var(--accent)"></div></div>
       <span class="ctx-pct" id="ctxPct">6%</span>
-      <span class="token-source streaming" title="数据来源:流式估算"></span>
+      <span class="source-pill streaming" id="sourcePill" title="数据来源:流式估算">
+        <span class="src-dot"></span>
+        <span class="src-label">流式</span>
+      </span>
     </div>
     <span class="expand-hint">▲</span>
   </div>
 
+  <!-- ==================== StatusDrawer ==================== -->
   <div class="status-drawer" id="statusDrawer">
     <div class="drawer-inner">
       <div class="drawer-section-title">向量化 / 索引</div>
@@ -802,20 +1079,26 @@
         <span class="label">运行模式</span>
         <span class="value"><span class="hint-pill">内联</span></span>
       </div>
-      <div class="degraded-row">
-        ⚠ 主线程内联模式。大库索引较慢，可在设置启用 Worker 线程。
-      </div>
+      <div class="degraded-row">⚠ 主线程内联模式。大库索引较慢，可在设置启用 Worker 线程。</div>
 
       <div class="drawer-section-title">上下文</div>
       <div class="drawer-row">
         <span class="label">已用 / 上限</span>
         <span class="value" id="tokenDisplay">12,420 / 64,000 tokens</span>
       </div>
+      <div class="token-meter">
+        <div class="meter-track">
+          <div class="meter-fill" id="drawerMeterFill" style="width:6%; background:var(--accent)"></div>
+        </div>
+        <span class="meter-pct" id="drawerMeterPct" style="color:var(--accent)">6%</span>
+      </div>
       <div class="drawer-row">
         <span class="label">数据来源</span>
         <span class="value">
-          <span class="token-source streaming" style="display:inline-block;vertical-align:middle"></span>
-          <span style="font-size:11px;color:var(--text-muted)">流式估算</span>
+          <span class="source-pill streaming" style="display:inline-flex">
+            <span class="src-dot"></span>
+            <span class="src-label" id="drawerSourceLabel">流式估算</span>
+          </span>
         </span>
       </div>
       <div class="drawer-row">
@@ -826,18 +1109,11 @@
         <button class="micro-btn" style="margin-left:auto" onclick="event.stopPropagation(); alert('将历史消息压缩为摘要并释放 token')">压缩上下文</button>
       </div>
 
-      <div class="drawer-section-title">模型配置</div>
-      <div class="drawer-row">
-        <span class="label">Context Length</span>
-        <span class="value" id="contextLengthDisplay">64,000</span>
-      </div>
-      <div class="drawer-row">
-        <button class="probe-btn" onclick="probeModel()">测试连接</button>
-      </div>
-      <div id="probeResult"></div>
+
     </div>
   </div>
 
+  <!-- ==================== Input Area ==================== -->
   <div class="input-area">
     <div class="slash-menu" id="slashMenu">
       <div class="slash-menu-header">命令</div>
@@ -866,7 +1142,7 @@
     </div>
     <div class="input-row">
       <button class="attach-btn">+</button>
-      <textarea id="chatInput" placeholder="输入 / 查看命令，或直接提问..."></textarea>
+      <textarea id="chatInput" placeholder="输入 / 查看命令，或直接提问…"></textarea>
     </div>
     <div class="input-footer">
       <button class="send-btn" onclick="simulateSend()">Send</button>
@@ -875,150 +1151,115 @@
 </div>
 
 <script>
-  // ==================== Drawer 展开/折叠 ====================
+  // ==================== 统一折叠卡片 ====================
+  function toggleCard(card) {
+    const body = card.querySelector('.card-body');
+    const arrow = card.querySelector('.card-arrow');
+    if (body) body.classList.toggle('open');
+    if (arrow) arrow.classList.toggle('open');
+  }
+
+  // ==================== Drawer ====================
   function toggleDrawer() {
-    const d = document.getElementById('statusDrawer');
-    d.classList.toggle('open');
+    document.getElementById('statusDrawer').classList.toggle('open');
   }
 
-  // ==================== ToolSegment 展开/折叠 ====================
-  function toggleToolDetails(toolCall) {
-    const details = toolCall.nextElementSibling;
-    const expand = toolCall.querySelector('.tool-expand');
-    details.classList.toggle('expanded');
-    expand.classList.toggle('expanded');
-  }
-
-  // ==================== ThinkSegment 展开/折叠 ====================
-  function toggleThink(header) {
-    const content = header.nextElementSibling;
-    const arrow = header.querySelector('.arrow');
-    content.classList.toggle('collapsed');
-    arrow.classList.toggle('collapsed');
-  }
-
-  // ==================== 模型长度探测 ====================
-  function probeModel() {
-    const resultEl = document.getElementById('probeResult');
-    resultEl.innerHTML = '<div class="probe-result" style="color:var(--text-muted)">探测中...</div>';
-
-    // 模拟 API 调用
-    setTimeout(() => {
-      const success = Math.random() > 0.3;
-      if (success) {
-        resultEl.innerHTML = '<div class="probe-result success">✓ 已探测: 64,000 tokens</div>';
-        document.getElementById('contextLengthDisplay').textContent = '64,000';
-        // 更新 token 显示
-        document.getElementById('tokenDisplay').textContent = '12,420 / 64,000 tokens';
-      } else {
-        resultEl.innerHTML = '<div class="probe-result error">✗ 无法自动探测，请手动填写</div>';
-      }
-    }, 800);
-  }
-
-  // ==================== 模拟 Send (演示 token 三层校准) ====================
+  // ==================== 模拟 Send ====================
   function simulateSend() {
     const input = document.getElementById('chatInput');
     const text = input.value.trim();
     if (!text) return;
-
-    // 添加用户消息
     const messagesEl = document.getElementById('messages');
     const userMsg = document.createElement('div');
     userMsg.className = 'message user';
     userMsg.textContent = text;
     messagesEl.appendChild(userMsg);
-
-    // 添加助手消息(空 segments)
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    input.value = '';
     const assistantMsg = document.createElement('div');
     assistantMsg.className = 'message assistant';
     messagesEl.appendChild(assistantMsg);
-
-    input.value = '';
-
-    // 模拟流式响应
     simulateStreaming(assistantMsg);
   }
 
   function simulateStreaming(msgEl) {
-    // 第 1 层:send 前估算(estimate)
     updateTokenSource('estimate');
 
-    // 模拟 think 段
     setTimeout(() => {
-      const thinkSeg = document.createElement('div');
-      thinkSeg.className = 'segment';
-      thinkSeg.innerHTML = `
-        <div class="think-block">
-          <div class="think-header" onclick="toggleThink(this)">
-            <span class="arrow">▼</span>
-            <span>思考过程</span>
+      const seg = document.createElement('div');
+      seg.className = 'segment';
+      seg.innerHTML = `
+        <div class="card think" onclick="toggleCard(this)">
+          <div class="card-hdr">
+            <span class="card-icon">💭</span>
+            <span class="card-title">思考过程…<span class="think-cursor">▋</span></span>
+            <span class="card-arrow open">▼</span>
           </div>
-          <div class="think-content">
-            用户问了一个问题，我需要先理解意图...
+          <div class="card-body open">
+            <div class="think-text">用户问了一个问题，我需要先理解意图...</div>
           </div>
-        </div>
-      `;
-      msgEl.appendChild(thinkSeg);
-
-      // 第 2 层:流式中(streaming)
+        </div>`;
+      msgEl.appendChild(seg);
       updateTokenSource('streaming');
       animateTokenUsage();
     }, 300);
 
-    // 模拟 text 段
     setTimeout(() => {
-      const textSeg = document.createElement('div');
-      textSeg.className = 'segment';
-      textSeg.innerHTML = '<div class="text-segment">好的，我来帮你分析...</div>';
-      msgEl.appendChild(textSeg);
+      const seg = document.createElement('div');
+      seg.className = 'segment';
+      seg.innerHTML = '<div class="text-segment">好的，我来帮你分析...</div>';
+      msgEl.appendChild(seg);
     }, 800);
 
-    // 模拟 tool.call
     setTimeout(() => {
-      const toolSeg = document.createElement('div');
-      toolSeg.className = 'segment';
-      toolSeg.innerHTML = `
-        <div class="tool-call" onclick="toggleToolDetails(this)">
-          <span class="tool-icon processing-dot"></span>
-          <span class="tool-name">search_vault 分析</span>
-          <span class="tool-expand">▼</span>
-        </div>
-        <div class="tool-details">
-          <div class="section">
-            <div class="label">参数</div>
-            <pre>{"query": "分析"}</pre>
+      const seg = document.createElement('div');
+      seg.className = 'segment';
+      seg.innerHTML = `
+        <div class="card tool" onclick="toggleCard(this)">
+          <div class="card-hdr">
+            <span class="card-icon"><span class="calling-dot" style="width:8px;height:8px;border-radius:50%;background:var(--warning);animation:pulse 1.2s infinite;display:inline-block"></span></span>
+            <span class="card-title">search_vault 分析</span>
+            <span class="card-arrow">▼</span>
           </div>
-          <div class="section">
-            <div class="label">结果</div>
-            <pre>等待返回...</pre>
+          <div class="card-body">
+            <div class="calling-row"><span class="calling-dot"></span><span>执行中…</span></div>
+            <div class="detail-section">
+              <div class="detail-label">参数</div>
+              <pre>{"query": "分析"}</pre>
+            </div>
           </div>
-        </div>
-      `;
-      msgEl.appendChild(toolSeg);
+        </div>`;
+      msgEl.appendChild(seg);
     }, 1200);
 
-    // 模拟 message.end(API 真值)
     setTimeout(() => {
       updateTokenSource('api');
-      document.getElementById('ctxBarFill').style.width = '19%';
-      document.getElementById('ctxPct').textContent = '19%';
+      const pct = 19;
+      document.getElementById('ctxBarFill').style.width = pct + '%';
+      document.getElementById('ctxPct').textContent = pct + '%';
       document.getElementById('tokenDisplay').textContent = '12,160 / 64,000 tokens';
+      // 同步 drawer 进度条
+      const mf = document.getElementById('drawerMeterFill');
+      const mp = document.getElementById('drawerMeterPct');
+      if (mf) mf.style.width = pct + '%';
+      if (mp) mp.textContent = pct + '%';
     }, 2000);
   }
 
   function updateTokenSource(source) {
-    const sources = document.querySelectorAll('.token-source');
-    sources.forEach(el => {
-      el.className = 'token-source ' + source;
-      const labels = { estimate: '本地估算', streaming: '流式估算', api: 'API 真值' };
-      el.title = '数据来源:' + labels[source];
-    });
-    // 更新 drawer 内的数据来源显示
-    const drawerSource = document.querySelector('#statusDrawer .drawer-row:nth-child(2) .value span:last-child');
-    if (drawerSource) {
-      const labels = { estimate: '本地估算', streaming: '流式估算', api: 'API 真值' };
-      drawerSource.textContent = labels[source];
+    const pill = document.getElementById('sourcePill');
+    pill.className = 'source-pill ' + source;
+    const labels = { estimate: '估算', streaming: '流式', api: 'API' };
+    pill.querySelector('.src-label').textContent = labels[source];
+    const titles = { estimate: '本地估算', streaming: '流式估算', api: 'API 真值' };
+    pill.title = '数据来源:' + titles[source];
+
+    const drawerPill = document.querySelector('#statusDrawer .source-pill');
+    if (drawerPill) {
+      drawerPill.className = 'source-pill ' + source;
+      drawerPill.style.display = 'inline-flex';
+      const drawerLabels = { estimate: '本地估算', streaming: '流式估算', api: 'API 真值' };
+      document.getElementById('drawerSourceLabel').textContent = drawerLabels[source];
     }
   }
 
@@ -1026,12 +1267,15 @@
     let current = 6;
     const interval = setInterval(() => {
       current += Math.random() * 2;
-      if (current > 18) {
-        clearInterval(interval);
-        return;
-      }
+      if (current > 18) { clearInterval(interval); return; }
+      const rounded = Math.round(current);
       document.getElementById('ctxBarFill').style.width = current + '%';
-      document.getElementById('ctxPct').textContent = Math.round(current) + '%';
+      document.getElementById('ctxPct').textContent = rounded + '%';
+      // 同步 drawer 进度条
+      const mf = document.getElementById('drawerMeterFill');
+      const mp = document.getElementById('drawerMeterPct');
+      if (mf) mf.style.width = current + '%';
+      if (mp) mp.textContent = rounded + '%';
     }, 200);
   }
 
@@ -1045,20 +1289,10 @@
     items.forEach((el, i) => el.classList.toggle('active', i === activeIdx));
   }
 
-  function openMenu() {
-    menu.classList.add('open');
-    activeIdx = 0;
-    updateActive();
-  }
-
-  function closeMenu() {
-    menu.classList.remove('open');
-  }
-
   input.addEventListener('input', () => {
     const val = input.value;
     if (val.startsWith('/') && !val.includes(' ')) {
-      openMenu();
+      menu.classList.add('open');
       const filter = val.slice(1).toLowerCase();
       let visibleIdx = [];
       items.forEach((el, i) => {
@@ -1067,68 +1301,48 @@
         el.style.display = visible ? '' : 'none';
         if (visible) visibleIdx.push(i);
       });
-      if (visibleIdx.length > 0) {
-        activeIdx = visibleIdx[0];
-        updateActive();
-      }
+      if (visibleIdx.length > 0) { activeIdx = visibleIdx[0]; updateActive(); }
     } else {
-      closeMenu();
+      menu.classList.remove('open');
     }
   });
 
   input.addEventListener('keydown', (e) => {
-    if (!menu.classList.contains('open')) return;
-
+    if (!menu.classList.contains('open')) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        simulateSend();
+      }
+      return;
+    }
     const visibleItems = Array.from(items).filter(el => el.style.display !== 'none');
-
     if (e.key === 'ArrowDown') {
       e.preventDefault();
       activeIdx = Math.min(activeIdx + 1, visibleItems.length - 1);
-      const target = visibleItems[activeIdx];
-      activeIdx = Array.from(items).indexOf(target);
+      activeIdx = Array.from(items).indexOf(visibleItems[activeIdx] || visibleItems[0]);
       updateActive();
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       activeIdx = Math.max(activeIdx - 1, 0);
-      const target = visibleItems[activeIdx];
-      activeIdx = Array.from(items).indexOf(target);
+      activeIdx = Array.from(items).indexOf(visibleItems[activeIdx] || visibleItems[0]);
       updateActive();
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      const active = items[activeIdx];
-      const cmd = active.querySelector('.cmd').textContent;
       input.value = '';
-      closeMenu();
-      alert('执行: ' + cmd);
+      menu.classList.remove('open');
     } else if (e.key === 'Escape') {
       e.preventDefault();
       input.value = '';
-      closeMenu();
+      menu.classList.remove('open');
     }
   });
 
   items.forEach((el) => {
     el.addEventListener('click', () => {
-      const cmd = el.querySelector('.cmd').textContent;
       input.value = '';
-      closeMenu();
-      alert('执行: ' + cmd);
+      menu.classList.remove('open');
     });
   });
-
-  // ==================== processing-dot 动画 ====================
-  const style = document.createElement('style');
-  style.textContent = `
-    .processing-dot {
-      display: inline-block;
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--warning);
-      animation: pulse 1.2s infinite;
-    }
-  `;
-  document.head.appendChild(style);
 </script>
 
 </body>

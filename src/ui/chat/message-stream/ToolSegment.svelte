@@ -38,21 +38,22 @@
 	}
 
 	function icon(): string {
-		if (toolCall.status === 'calling') return '';
+		// 关键路径:calling 状态返回占位符,Collapsible 的 CSS ::after 渲染 pulsing dot
+		if (toolCall.status === 'calling') return '\u00A0';
 		if (toolCall.status === 'failed') return '✗';
 		return '✓';
 	}
 
 	function iconClass(): string {
+		if (toolCall.status === 'calling') return 'calling';
+		if (toolCall.status === 'failed') return 'failed';
+		return 'done';
+	}
+
+	function titleClass(): string {
 		if (toolCall.status === 'failed') return 'failed';
 		if (toolCall.status === 'done') return 'done';
 		return '';
-	}
-
-	function accent(): string {
-		if (toolCall.status === 'failed') return 'var(--text-error)';
-		if (toolCall.status === 'done') return 'var(--text-success)';
-		return 'var(--text-warning)';
 	}
 
 	function title(): string {
@@ -86,7 +87,8 @@
 	title={title()}
 	icon={icon()}
 	iconClass={iconClass()}
-	accentColor={accent()}
+	titleClass={titleClass()}
+	variant="tool"
 	bind:expanded
 	onToggle={handleToggle}
 >

@@ -109,7 +109,7 @@
 			<span class="ratel-sl-src-label">{sourceInfo.label}</span>
 		</span>
 	</div>
-	<span class="ratel-sl-arrow">{expanded ? '▼' : '▲'}</span>
+	<span class="ratel-sl-arrow">▲</span>
 </div>
 
 <style>
@@ -296,7 +296,7 @@
 		font-size: 10px;
 		opacity: 0.6;
 		flex-shrink: 0;
-		transition: opacity 0.15s, transform 0.2s;
+		transition: opacity 0.15s;
 	}
 
 	.ratel-status-line:hover .ratel-sl-arrow {
