@@ -1,154 +1,105 @@
 # Ratel — Obsidian AI Agent
 
-> 🦡 **让您的 vault 真正变成"能思考的第二大脑"**
-
-**隐私优先，支持本地 Ollama。装插件就用，零服务，零终端。**
-
----
+> 让 Obsidian vault 变成可对话、可检索、可治理的第二大脑。
+> 隐私优先,支持本地 Ollama,零服务零终端。
 
 ## 它能做什么
 
-**问你的笔记** — 在侧边栏用自然语言提问，Ratel 从你的 vault 里找到答案，带引用、带来源。
+- **问答 vault** — 自然语言提问,带引用带来源
+- **多步闭环** — 自动检索多篇笔记,生成综述写入新笔记
+- **混合检索** — 向量召回 + BM25 + Backlinks 增强
+- **增量索引** — 文件变更毫秒级响应,后台 Worker 不阻塞主线程
 
-**自动建链** — 写完笔记，Ratel 自动建议语义相关的链接。不是关键词匹配，是真正理解内容后的推荐。
+## 演示
 
-**主动整理** — 每周报告：哪些笔记 90 天没碰过、哪些是孤儿、哪些该建新链接。不用你操心，它自己盯着。
+![chat-demo](docs/screenshots/chat-demo.gif)
 
-**多步闭环** — "帮我研究 RAG 的演进，写一份综述" → Ratel 自动检索多篇笔记 → 生成综述 → 写入新笔记。一步到位。
+## 安装
 
-**自动学经验** 🚧 — 每次对话结束自动总结经验，写入笔记库，下次自动复用。越用越懂你。
+1. Obsidian → 设置 → 社区插件 → 浏览 → 搜索 "Ratel"
+2. 安装并启用
+3. 设置 → Ratel → 配置模型(DeepSeek / Claude / 本地 Ollama,任选其一)
+4. 首次启动自动扫描 vault 生成索引
+5. 侧边栏 🦡 图标开始使用
 
-**主动提醒** 🚧 — "你 3 天前问过类似问题"、"这篇笔记 2 周没看了"、"发现新的可建链笔记"。不用你问，它主动说。
+> 商店未上架前,可用 [BRAT](https://github.com/TfTHacker/obsidian42-brat) 安装。
 
----
+## 隐私
 
-## 为什么选 Ratel
+- 数据全部本地存储
+- 模型 API 是唯一外发通道,使用 Ollama 则零外发
+- API Key 存储于 Obsidian 1.11.4+ SecretStorage,不出现在配置文件中
+- 无遥测、无数据收集
 
-| | Ratel | Smart Connections | Copilot | 外部工具 (Hermes 等) |
-|---|---|---|---|---|
-| **在 Obsidian 内用** | ✅ 侧边栏 | ✅ 侧边栏 | ✅ 侧边栏 | ❌ 切工具 |
-| **语义链接建议** | ✅ 带置信度 | ❌ | ❌ | ❌ |
-| **主动整理** | ✅ 每周报告 | ❌ | ❌ | ❌ |
-| **多步操作闭环** | ✅ Agent Loop | ❌ 单轮 | ❌ 单轮 | ⚠️ 部分 |
-| **自动学经验** | ✅ 🚧 | ❌ | ❌ | ✅ |
-| **主动提醒** | ✅ 🚧 | ❌ | ❌ | ❌ |
-| **本地 Ollama** | ✅ | ⚠️ 有限 | ❌ | ❌ |
-| **索引稳定性** | ✅ Worker 后台 | ⚠️ 常崩 | ⚠️ Orama 回归 | N/A |
+## 文档
 
-**核心区别**：Ratel 不是问答工具，是 Agent。能搜，更能组织、链接、整理。
+- [使用手册](docs/user-guide.md)
+- [架构设计](docs/ARCHITECTURE.md)(开发者向)
+- [更新日志](CHANGELOG.md)
 
----
+## 反馈
 
-## 快速开始
-
-```
-1. Obsidian → 设置 → 社区插件 → BRAT → 安装 Ratel
-2. 配置模型（DeepSeek API Key / Claude / 本地 Ollama，任选）
-3. 首次启动 → 自动扫描 vault → 生成索引
-4. 侧边栏看到 🦡 图标 → 开始用
-```
-
-**隐私说明**：数据全在本地。模型 API 是唯一外发通道。用 Ollama 则零外发。
-
----
-
-## 使用场景
-
-### 场景 1：问你的笔记
-
-`Cmd+P` → 「Rat: 问 vault」→ 「我之前提过 LangChain 的哪些坑？」
-→ 3 秒内回答 + 引用 4 篇笔记，点击引用直接跳转
-
-### 场景 2：写笔记时自动补链
-
-在 Obsidian 写笔记 → Ratel 实时监听
-→ 「这篇和 [[X]] 在语义上相关（相似度 0.87），要建链吗？」
-→ 确认 → 链接带类型「延伸」+ 自动生成摘要
-
-### 场景 3：研究一个新主题
-
-侧边栏输入：「我想研究 RAG 系统的演进，写一份综述」
-→ Ratel 多跳检索 → 找到 8 篇相关笔记 → 生成综述
-→ 写入新笔记 `RAG-演进综述.md`（带所有引文）
-
-### 场景 4：早晨的 vault 健康报告
-
-打开 Obsidian → 侧边栏 → 「今早的 vault 状态」
-→ 「本周新增 12 篇 / 5 篇 90 天未访问 / 3 处可建新链接 / 1 处孤儿笔记」
-
----
-
-## 能力一览
-
-### 问答
-
-- **基础问答**：问"X 是啥" → 召回相关笔记 → 流式回答（带引用）
-- **多跳问答**："A 和 B 的关系 + 历史演变" → 自动展开多步检索
-- **跨笔记综述**：问"我写过关于 X 的所有观点" → 聚合多篇笔记生成综述
-
-### 索引
-
-- **首扫索引**：首次启动自动扫描整个 vault
-- **增量索引**：监听 vault 变更，毫秒级响应
-- **混合检索**：向量召回 + BM25 全文匹配 + Backlinks 增强
-
-### 主动治理
-
-| 角色 | 做什么 | 什么时候 |
-|---|---|---|
-| **Indexer** | 维护向量索引 | 文件变更时自动 |
-| **Librarian** | 建议语义链接 | 写完笔记后自动 |
-| **Reviewer** | 发现孤儿/弱链 | 每周 / 手动 |
-| **Curator** | 生成主题综述 | 每周 / 手动 |
-| **Learner** 🚧 | 总结对话经验，写入笔记库 | 每次对话结束后 |
-
-### 知识治理 Hooks
-
-- **写前校验**：命名规范（中文一致性、长度、层级）
-- **写后补链**：自动嵌入 + 建议反向链接
-- **死链警告**：链接断裂时提醒修复
-- **久未访问提醒**：笔记超过 90 天未访问 → 建议归档或重新激活
-- **主动提醒** 🚧：基于时间和语义的智能提醒（"你 3 天前问过类似问题"）
-
----
-
-## 技术架构
-
-开源项目，技术细节见 [docs/ARCHITECTURE.md](file:///Users/golddream/code/git-public/Ratel-CLI/docs/ARCHITECTURE.md)。
-
----
+- [GitHub Issues](https://github.com/golddream-y/ratel-vault/issues):提交 bug 或 feature request
+- 使用前请先查阅[使用手册 FAQ](docs/user-guide.md#29-faq)
 
 ## 不做什么
 
-- ❌ 不做独立服务（纯插件，装了就用）
-- ❌ 不做云服务 SaaS（数据本地优先）
-- ❌ 不做协作 / 多用户 / 团队功能
-- ❌ 不做笔记编辑器（Obsidian 自带）
-- ❌ 不用 native 模块（零 ABI 兼容风险）
+- 不做独立服务(纯插件,装了就用)
+- 不做云服务 SaaS(数据本地优先)
+- 不做协作 / 多用户 / 团队功能
+- 不做笔记编辑器(Obsidian 自带)
+- 不用 native 模块(零 ABI 兼容风险)
 
 ---
 
-## 路线图
+# Ratel — Obsidian AI Agent (English)
 
-### V1 — 基础能力（8 周）
+> Turn your Obsidian vault into a queryable, searchable, curatable second brain.
+> Privacy-first, supports local Ollama, zero service, zero terminal.
 
-| 周 | 里程碑 | 能用上 |
-|---|---|---|
-| W1 | 最小 Agent Loop + read_note + Worker 骨架 | 侧边栏能问「X 是啥」 |
-| W2 | vectra 索引 + search_vault + 嵌入调用 | 搜 vault，召回可信 |
-| W3 | 混合检索 + 流式输出 + 引用标记 | 问答体验闭环 |
-| W4 | Subagent: Indexer 后台增量 | 写笔记自动重嵌 |
-| W5 | Hooks: pre-write + post-write | 命名规范、自动补链 |
-| W6 | Subagent: Librarian（语义链接） | 链接带类型 + 摘要 |
-| W7 | Subagent: Curator（主动整理） | 每周报告 |
-| W8 | 设置面板 + 索引健康面板 + 打磨 | 可日常使用 |
+## What It Does
 
-### V2 — 自我进化（规划中）
+- **Chat with vault** — Ask questions in natural language, with citations and sources
+- **Multi-step closure** — Auto-retrieves multiple notes, generates surveys, writes new notes
+- **Hybrid retrieval** — Vector recall + BM25 + Backlinks boost
+- **Incremental indexing** — Millisecond response to file changes, background Worker doesn't block main thread
 
-| 能力 | 说明 |
-|---|---|
-| **Learner Subagent** | 每次对话结束自动总结经验，写入 `vault/.ratel/skills/`，下次自动检索复用 |
-| **主动提醒** | "你 3 天前问过类似问题"、"这篇笔记 2 周没看了"、"发现新的可建链笔记" |
-| **经验笔记** | 对话中的洞察自动沉淀为可检索的笔记，越用越懂你 |
+## Demo
 
+![chat-demo](docs/screenshots/chat-demo.gif)
 
+## Installation
+
+1. Obsidian → Settings → Community plugins → Browse → search "Ratel"
+2. Install and enable
+3. Settings → Ratel → configure model (DeepSeek / Claude / local Ollama, pick one)
+4. First launch auto-scans vault and builds index
+5. Click 🦡 icon in sidebar to start
+
+> Before store listing, you can install via [BRAT](https://github.com/TfTHacker/obsidian42-brat).
+
+## Privacy
+
+- All data stored locally
+- Model API is the only outbound channel; Ollama mode has zero outbound
+- API keys stored in Obsidian 1.11.4+ SecretStorage, never in config files
+- No telemetry, no data collection
+
+## Documentation
+
+- [User Guide](docs/user-guide.md)
+- [Architecture](docs/ARCHITECTURE.md) (for developers)
+- [Changelog](CHANGELOG.md)
+
+## Feedback
+
+- [GitHub Issues](https://github.com/golddream-y/ratel-vault/issues): submit bugs or feature requests
+- Check the [User Guide FAQ](docs/user-guide.md#29-faq) first
+
+## What It Doesn't Do
+
+- No standalone service (pure plugin, install and use)
+- No cloud SaaS (local-first data)
+- No collaboration / multi-user / team features
+- No note editor (Obsidian has one)
+- No native modules (zero ABI compatibility risk)

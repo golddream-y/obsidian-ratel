@@ -9,11 +9,43 @@ description: Use when implementation is complete, all tests pass, and you need t
 
 Guide completion of development work by presenting clear options and handling chosen workflow.
 
-**Core principle:** Verify tests → Detect environment → Present options → Execute choice → Clean up.
+**Core principle:** 文档同步确认 → Verify tests → Detect environment → Present options → Execute choice → Clean up.
 
 **Announce at start:** "I'm using the finishing-a-development-branch skill to complete this work."
 
 ## The Process
+
+### Step 0: 文档同步确认(项目级硬约束)
+
+> 本步骤是项目 AGENTS.md「文档同步规则」的执行入口。该项目要求在 plan 完成后、present options 之前,主动评估是否需要同步文档。
+
+**读取本 plan 的 commit 范围:**
+
+```bash
+git log <plan-start-commit>..HEAD --oneline
+```
+
+`<plan-start-commit>` 通常是 plan 第一个 Task 之前的 commit SHA(STATUS.md plan 行标记 In Progress 时记录的起点)。
+
+**判断这些 commit 是否触发文档同步:**
+
+按 AGENTS.md「文档同步规则」的触发条件清单评估,若有任何 `feat` / `fix` / `perf` / `refactor` 触发下列文档,必须主动向用户确认:
+
+```
+本次变更涉及 X 个 feat/fix,是否需要同步:
+  [ ] README(功能清单 / 安装步骤 / 隐私说明)
+  [ ] user-guide(操作指引 / 斜杠命令 / secret ID / FAQ)
+  [ ] CHANGELOG(下次发版记录,通常由 release 工作流处理,此处仅标记待办)
+  [ ] ARCHITECTURE.md / adr/(架构文档 — ⚠️ 改前必须确认,通常不需要)
+```
+
+**用户响应处理:**
+
+- 用户勾选某项 → 要么加 Task 到当前 plan 补做,要么登记到 `STATUS.md` 待办区,然后继续 Step 1
+- 用户全部不勾 → 继续 Step 1
+- 无 feat/fix 触发 → 直接跳到 Step 1,无需询问
+
+**不允许跳过本步骤直接 present options。** 若本项目 AGENTS.md 无「文档同步规则」小节,则跳过本步骤(本步骤是项目特定约束,非通用)。
 
 ### Step 1: Verify Tests
 
