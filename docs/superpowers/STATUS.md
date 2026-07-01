@@ -36,7 +36,7 @@
 | P-MSG-STREAM | [2026-06-28-chat-message-stream-redesign-implementation.md](plans/2026-06-28-chat-message-stream-redesign-implementation.md) | ✅ Completed | S-MSG-STREAM | 分支 `feat/s-msg-stream`;20 个 Task 全部完成,453 测试通过(3 个 pre-existing 真实 API 401 失败),三产物构建成功 |
 | P-DOCS-V1 | [2026-06-28-docs-system-v1-implementation.md](plans/2026-06-28-docs-system-v1-implementation.md) | ✅ Completed | S-DOCS-V1 | 7 个 Task 完成,5 个 commit(screenshots/versions.json/CHANGELOG/user-guide/README),spec compliance 全通过 |
 | P-CONTEXT-WINDOW | [2026-06-28-model-context-window-registry-implementation.md](plans/2026-06-28-model-context-window-registry-implementation.md) | ✅ Completed | S-CONTEXT-WINDOW | 7 Task 完成;27 相关单测通过;build 成功 |
-| P-INDEX-STARTUP | [2026-06-28-index-startup-smart-reindex-implementation.md](plans/2026-06-28-index-startup-smart-reindex-implementation.md) | ⏳ Pending | S-INDEX-STARTUP | 8 Task — IndexManifest + deleteByPath + indexBatch + smartReindex + P3 解耦 + 集成测试 |
+| P-INDEX-STARTUP | [2026-06-28-index-startup-smart-reindex-implementation.md](plans/2026-06-28-index-startup-smart-reindex-implementation.md) | ✅ Completed | S-INDEX-STARTUP | 8 Task 完成,squash merge `79e694e` 到 main;472 测试通过(10 pre-existing 失败),tsc/build 验证通过;新增 40 条测试覆盖 manifest/diffing/smartReindex/集成场景 |
 
 ---
 
