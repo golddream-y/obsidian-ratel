@@ -137,13 +137,15 @@ sequenceDiagram
 
 ## 4. 状态机
 
-### 4.1 IndexStatus(9 态)
+### 4.1 IndexStatus(10 态)
 
 ```mermaid
 stateDiagram-v2
     [*] --> Idle
     Idle --> Init: onLayoutReady()
-    Init --> Scanning: 开始扫描
+    Init --> Diffing: smartReindex(hash diff)
+    Init --> Scanning: 全量扫描(无 smartReindex 回退)
+    Diffing --> Ready: hash diff 完成
     Scanning --> Queueing: 扫描完成
     Queueing --> Processing: 开始处理
     Processing --> Ready: 全部完成
@@ -161,6 +163,7 @@ stateDiagram-v2
 |---|---|---|
 | Idle | 初始状态,未启动 | 不显示 |
 | Init | 正在初始化 | Banner: "正在初始化..." |
+| Diffing | smartReindex hash diff 阶段 | Banner: "正在比对..." |
 | Scanning | 正在扫描 vault 文件 | Banner: "扫描中 23/100" |
 | Queueing | 文件已入队,等待处理 | Banner: "排队中 15 个" |
 | Processing | 正在处理索引 | Banner: "处理中 [file1, file2]" |
