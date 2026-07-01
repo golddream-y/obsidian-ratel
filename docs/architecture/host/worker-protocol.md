@@ -77,6 +77,7 @@ graph LR
 type WorkerRequest =
   | { type: 'index.full'; payload: { files: Array<{ path: string; content: string }> } }
   | { type: 'index.incremental'; payload: { file: { path: string; content: string } } }
+  | { type: 'index.batch'; payload: { files: Array<{ path: string; content: string }> } }
   | { type: 'index.delete'; payload: { filePath: string } }
   | { type: 'vector.search'; payload: { queryVector: number[]; topK: number; filter?: SearchFilter } }
   | { type: 'hybrid.search'; payload: { query: string; queryVector: number[]; topK: number } }
@@ -91,6 +92,7 @@ type WorkerRequest =
 type WorkerResponse =
   | { type: 'index.progress'; payload: { done: number; total: number } }
   | { type: 'index.done'; payload: { indexed: number; errors: number } }
+  | { type: 'index.batch.done'; payload: { indexed: number; errors: number; chunkCounts: Record<string, number> } }
   | { type: 'vector.search.result'; payload: VectorSearchResult[] }
   | { type: 'hybrid.search.result'; payload: VectorSearchResult[] }
   | { type: 'vector.upsert.done'; payload: { docId: string } }
@@ -107,6 +109,7 @@ type WorkerResponse =
 |---|---|---|---|
 | `index.full` | 全量索引 | `index.done` | 主线程已读取+分块,Worker 只做向量化+存储 |
 | `index.incremental` | 增量索引单文件 | `index.done` | 同上,单文件粒度 |
+| `index.batch` | 批量增量索引(smart reindex) | `index.batch.done` | 变更文件批处理,reembed 前 deleteByPath 清旧 chunk,返回每文件 chunkCount |
 | `index.delete` | 删除文件索引 | `vector.delete.done` | 按 filePath 删除 |
 | `vector.search` | 向量搜索(降级用) | `vector.search.result` | 主线程已向量化 query,Worker 只做余弦相似度 |
 | `hybrid.search` | 混合搜索(向量 + BM25) | `hybrid.search.result` | 传 query + queryVector,启用 vectra `isBm25` |

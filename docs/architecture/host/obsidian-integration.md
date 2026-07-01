@@ -63,6 +63,7 @@ graph TB
         V7["onFileModify(cb)"]
         V8["onFileDelete(cb)"]
         V9["onFileRename(cb)"]
+        V10["stat(path)"]
     end
 
     subgraph "底层 Obsidian API"
@@ -89,6 +90,7 @@ graph TB
     V7 --> AV
     V8 --> AV
     V9 --> AV
+    V10 --> AV
 ```
 
 **关键**:`getBacklinks` / `getMetadata` 走 `metadataCache`(同步),其余走 `app.vault`。`writeFile` 自动处理"文件存在则 modify,不存在则 create + 自动建父目录"。
