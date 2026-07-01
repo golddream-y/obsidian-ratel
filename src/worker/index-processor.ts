@@ -128,20 +128,86 @@ export class IndexProcessor {
     }
 
     /**
+     * 批量索引 — smart reindex 的 toAdd + toUpdate 路径。
+     *
+     * 关键路径:
+     * - 每个文件 reembed 前先 deleteByPath,防止文件变短时旧 chunk 残留
+     * - 返回每文件的 chunkCount,供 manifest 记录
+     * - 单文件失败不挂整批(记入 errors 继续)
+     *
+     * @param files - 待 embed 的文件列表(已由主线程读好 content)
+     * @param onProgress - 进度回调(每文件一次)
+     * @returns `{ indexed, errors, chunkCounts }` — 成功/失败文件数 + 每文件 chunk 数
+     */
+    async indexBatch(
+        files: IndexFile[],
+        onProgress?: (e: ProgressEvent) => void,
+    ): Promise<{ indexed: number; errors: number; chunkCounts: Record<string, number> }> {
+        let indexed = 0;
+        let errors = 0;
+        const chunkCounts: Record<string, number> = {};
+
+        for (const [i, file] of files.entries()) {
+            try {
+                const count = await this.reembedFile(file.path, file.content);
+                chunkCounts[file.path] = count;
+                indexed++; // 空文件也算处理成功
+            } catch (err) {
+                devLogger.error('index', `failed to indexBatch ${file.path}`, err);
+                errors++;
+            }
+            onProgress?.({ done: i + 1, total: files.length });
+        }
+
+        return { indexed, errors, chunkCounts };
+    }
+
+    /**
+     * 单文件 reembed — 先删旧 chunk 再重插。
+     *
+     * 关键路径:deleteByPath 是 chunk 残留修复的根治手段。
+     * 一个文件一个事务,失败时 cancelFileUpdate 回滚。
+     *
+     * @returns 该文件的 chunk 数(0 表示空文件)
+     */
+    private async reembedFile(filePath: string, content: string): Promise<number> {
+        // 关键路径:先删旧 chunk,防止文件变短时残留。
+        await this.store.deleteByPath(filePath);
+
+        const chunks = chunkMarkdown(content, 500, 100);
+        if (chunks.length === 0) return 0;
+
+        const chunkTexts = chunks.map((c) => c.text);
+        const vectors = await this.embeddings.embed(chunkTexts);
+
+        await this.store.beginFileUpdate();
+        try {
+            for (const [idx, chunk] of chunks.entries()) {
+                await this.store.upsertItem(
+                    `${filePath}#chunk-${idx}`,
+                    vectors[idx]!,
+                    { path: filePath, chunkIndex: idx, startOffset: chunk.startOffset },
+                );
+            }
+            await this.store.endFileUpdate();
+            return chunks.length;
+        } catch (err) {
+            try { await this.store.cancelFileUpdate(); } catch { /* 忽略回滚失败 */ }
+            throw err;
+        }
+    }
+
+    /**
      * 删除单个文件的所有 chunk。
      *
-     * @returns 实际删除的 docId 数(可能为 0,文件可能尚未索引)。
+     * @returns 实际删除的 chunk 数(可能为 0,文件可能尚未索引)。
      */
     async indexDelete(filePath: string): Promise<number> {
-        // 关键路径:vectra 没有"按 path 前缀删"的接口,先 search 拿到所有 docId 再 delete。
-        // 简化:对中等问题(1000 文档)用 status 拿所有 docId 不现实,
-        // 这里采用 chunk 索引上限 100 的启发式,覆盖绝大多数文档。
-        const dummyVector = Array(512).fill(0);
-        const all = await this.store.search(dummyVector, 100);
-        const matching = all.filter((r) => (r.metadata as { path?: string }).path === filePath);
-        const ids = matching.map((r) => r.docId);
-        if (ids.length === 0) return 0;
-        return this.store.delete(ids);
+        // 关键路径:修复 ghost chunk bug — store.delete 走 vectra deleteDocument(uri),
+        // 后者依赖 catalog(uriToId 映射);而 upsertItem 绕过 upsertDocument 不写 catalog,
+        // deleteDocument 因查不到 URI 提前返回,实际不删任何 chunk,导致文件删除后残留幽灵 chunk。
+        // 改用 deleteByPath:按 metadata.path 过滤后直接调 deleteItems(item.id),绕过 catalog 查找。
+        return this.store.deleteByPath(filePath);
     }
 
     /**

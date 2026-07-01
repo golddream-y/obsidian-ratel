@@ -5,7 +5,7 @@
  * @depends worker/index-processor, adapters/vector-vectra, ports/embedding
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { IndexProcessor } from '../../src/worker/index-processor';
 import { VectraStore } from '../../src/adapters/vector-vectra';
 import type { EmbeddingsModel, EmbeddingsResponse } from 'vectra';
@@ -122,5 +122,69 @@ describe('IndexProcessor', () => {
         const result = await failProcessor.indexIncremental({ path: 'fail.md', content: 'test content' });
         expect(result.errors).toBe(1);
         expect(result.indexed).toBe(0);
+    });
+
+    it('indexBatch - 多文件批量 embed 返回 chunkCounts', async () => {
+        // 关键路径:IndexProcessor 需要 store + embeddings。用真实 VectraStore 临时目录 + mock embeddings。
+        const testDir = path.join(__dirname, '../tmp/test-index-batch');
+        if (fs.existsSync(testDir)) fs.rmSync(testDir, { recursive: true });
+        fs.mkdirSync(testDir, { recursive: true });
+
+        const store = new VectraStore(testDir, { embeddings: stubEmbedder, autoInit: true });
+        await store.init();
+        const mockEmbed: EmbeddingPort = {
+            embed: vi.fn().mockImplementation(async (texts: string[]) => {
+                // 关键路径:返回 texts.length 个 512 维向量。
+                return texts.map(() => Array(512).fill(0).map(() => Math.random()));
+            }),
+            dimensions: 512,
+            modelId: 'test:batch',
+        };
+        const processor = new IndexProcessor(store, mockEmbed);
+
+        const files = [
+            { path: 'a.md', content: '# A\nfirst paragraph.' },
+            { path: 'b.md', content: '# B\nsecond paragraph with more text.' },
+        ];
+        const result = await processor.indexBatch(files);
+        expect(result.indexed).toBe(2);
+        expect(result.errors).toBe(0);
+        expect(result.chunkCounts['a.md']).toBeGreaterThan(0);
+        expect(result.chunkCounts['b.md']).toBeGreaterThan(0);
+
+        if (fs.existsSync(testDir)) fs.rmSync(testDir, { recursive: true });
+    });
+
+    it('indexBatch - reembed 前先 deleteByPath 防残留', async () => {
+        const testDir = path.join(__dirname, '../tmp/test-index-batch-residue');
+        if (fs.existsSync(testDir)) fs.rmSync(testDir, { recursive: true });
+        fs.mkdirSync(testDir, { recursive: true });
+
+        const store = new VectraStore(testDir, { embeddings: stubEmbedder, autoInit: true });
+        await store.init();
+        const mockEmbed: EmbeddingPort = {
+            embed: vi.fn().mockImplementation(async (texts: string[]) =>
+                texts.map(() => Array(512).fill(0).map(() => Math.random())),
+            ),
+            dimensions: 512,
+            modelId: 'test:batch',
+        };
+        const processor = new IndexProcessor(store, mockEmbed);
+
+        // 第一次:长内容 → 假设 5 chunks
+        await processor.indexBatch([{ path: 'foo.md', content: '# Title\n\n' + 'long content. '.repeat(200) }]);
+
+        // 第二次:短内容 → 假设 1 chunk
+        const result = await processor.indexBatch([{ path: 'foo.md', content: 'short' }]);
+        expect(result.chunkCounts['foo.md']).toBe(1);
+
+        // 关键路径:搜索不应命中旧的长内容 chunk(无幽灵片段)。
+        const queryVector = Array(512).fill(0).map(() => Math.random());
+        const results = await store.search(queryVector, 100);
+        const fooChunks = results.filter((r) => (r.metadata as { path?: string }).path === 'foo.md');
+        // chunk 数应等于第二次写入的 chunkCount,不是两次累加。
+        expect(fooChunks.length).toBe(result.chunkCounts['foo.md']!);
+
+        if (fs.existsSync(testDir)) fs.rmSync(testDir, { recursive: true });
     });
 });

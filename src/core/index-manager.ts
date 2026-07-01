@@ -14,10 +14,11 @@
 import { writable, get } from 'svelte/store';
 import { devLogger } from '../logging/dev-logger';
 
-/** 索引状态机(9 态)。 */
+/** 索引状态机(10 态)。Diffing = smartReindex hash diff 阶段。 */
 export type IndexStatus =
     | { state: 'Idle' }
     | { state: 'Init' }
+    | { state: 'Diffing' }
     | { state: 'Scanning'; scanned: number; total: number }
     | { state: 'Queueing'; pending: number }
     | { state: 'Processing'; currentBatch: string[] }
@@ -31,6 +32,10 @@ export interface IndexBackend {
     fullReindex(): Promise<{ indexed: number; errors: number }>;
     incrementalIndex(file: { path: string; content: string }): Promise<{ indexed: number; errors: number }>;
     deleteFile(filePath: string): Promise<number>;
+    // 关键路径:smartReindex 是可选方法,未实现时 onLayoutReady 回退到 fullReindex。
+    smartReindex?(): Promise<{ indexed: number; errors: number; skipped: number }>;
+    isIndexCreated?(): Promise<boolean>;
+    listMarkdownFiles?(): Promise<Array<{ path: string; content: string }>>;
 }
 
 interface QueueEntry {
@@ -47,10 +52,33 @@ export class IndexManager {
 
     constructor(private backend: IndexBackend) {}
 
-    /** 启动期调用 — 全量扫一遍 + 状态 Init → Ready。 */
+    /**
+     * 启动期调用 — 优先走 smartReindex(hash diff),backend 未实现 smartReindex 时回退全量。
+     *
+     * 关键路径:
+     * - smartReindex 内部处理所有情况:索引不存在 → 全量 + 写 manifest;存在 → hash diff(零 embed 热启动)
+     * - onLayoutReady 只检查方法存在性(Truthiness),始终委托给 smartReindex,不感知索引是否存在
+     * - backend 未提供 smartReindex → 回退 fullReindex(向后兼容,渐进迁移)
+     * - smart 执行前状态 Diffing,执行后 Ready / 失败 Failed
+     *
+     * @returns 成功返回 {indexed, errors};失败返回 null 且状态置 Failed
+     */
     async onLayoutReady(): Promise<{ indexed: number; errors: number } | null> {
         this.status$.set({ state: 'Init' });
         try {
+            // 关键路径:优先 smart,backend 渐进迁移。
+            // smartReindex 内部处理所有情况:索引不存在 → 全量 + 写 manifest;存在 → hash diff。
+            if (this.backend.smartReindex && this.backend.isIndexCreated) {
+                this.status$.set({ state: 'Diffing' });
+                const result = await this.backend.smartReindex();
+                this.status$.set({
+                    state: 'Ready',
+                    totalDocs: result.indexed + result.skipped,
+                    lastIndexTime: Date.now(),
+                });
+                return { indexed: result.indexed, errors: result.errors };
+            }
+            // 回退:全量路径(backend 未实现 smartReindex)。
             const result = await this.backend.fullReindex();
             this.status$.set({
                 state: 'Ready',
@@ -60,7 +88,7 @@ export class IndexManager {
             return result;
         } catch (err) {
             this.status$.set({ state: 'Failed', reason: String(err) });
-			devLogger.error('index', '全量索引失败', err);
+            devLogger.error('index', '启动索引失败', err);
             return null;
         }
     }

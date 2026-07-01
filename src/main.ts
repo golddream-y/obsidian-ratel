@@ -64,6 +64,8 @@ import { Indexer } from './subagents/indexer';
 import { ChatView, VIEW_TYPE_CHAT } from './ui/chat/ChatView';
 import { get } from 'svelte/store';
 import { ensurePluginGitignore } from './utils/gitignore-writer';
+import { sha256 } from './utils/hash';
+import { IndexManifest } from './core/index-manifest';
 import path from 'path';
 
 /**
@@ -95,6 +97,11 @@ export default class RatelVaultPlugin extends Plugin {
 	private indexDir!: string;
 	modelManager!: ModelManager;
 	indexController!: IndexController;
+	// 关键路径:索引 backend 引用 — smartReindex 直接调 this.indexBackend.fullReindex(),
+	// 避免 this.indexController['indexManager']['backend'] 反模式访问私有字段。
+	indexBackend!: IndexBackend;
+	// 关键路径:索引清单 — 记每文件 hash + 全局 embedding 参数,启动期 hash diff。
+	indexManifest!: IndexManifest;
 	// 关键路径:W4 — Indexer subagent 实例,供 Librarian 等子代理调用。
 	indexer!: Indexer;
 	toolSessionGrants = new ToolPermissionSessionGrants();
@@ -157,7 +164,7 @@ export default class RatelVaultPlugin extends Plugin {
 		const wasmPath = path.join(pluginDir, 'ort-wasm-simd-threaded.wasm');
 		this.modelManager = new ModelManager(path.join(pluginDir, 'models'), wasmPath);
 
-		const indexBackend: IndexBackend = {
+		this.indexBackend = {
 			fullReindex: async () => {
 				const files = this.vault.listMarkdownFiles();
 				const filtered: Array<{ path: string; content: string }> = [];
@@ -194,10 +201,30 @@ export default class RatelVaultPlugin extends Plugin {
 				}
 				return 0;
 			},
+			// 关键路径:smart reindex — hash diff 后仅对变更文件 batch embed。
+			isIndexCreated: async () => {
+				return this.vectraStore.isIndexCreated();
+			},
+			listMarkdownFiles: async () => {
+				const paths = this.vault.listMarkdownFiles();
+				const files: Array<{ path: string; content: string }> = [];
+				for (const p of paths) {
+					const content = await this.vault.readFile(p);
+					files.push({ path: p, content });
+				}
+				return files;
+			},
+			// 关键路径:箭头函数保留 this 绑定,委托给类方法 smartReindex。
+			smartReindex: async () => {
+				return this.smartReindex();
+			},
 		};
 
+		// 关键路径:manifest 与 .index/ 同目录同生命周期。
+		this.indexManifest = new IndexManifest(path.join(pluginDir, 'index-manifest.json'));
+
 		// 关键路径:ObsidianVault 已实现 VaultEventListener 接口,直接传入可保证所有 Obsidian API 访问都走外观层。
-		this.indexController = new IndexController(this.vault, indexBackend, vaultBase);
+		this.indexController = new IndexController(this.vault, this.indexBackend, vaultBase);
 
 		// 关键路径:W4 — Indexer subagent,供其他子代理通过统一接口触发索引。
 		this.indexer = new Indexer({ vault: this.vault, indexController: this.indexController });
@@ -344,63 +371,235 @@ export default class RatelVaultPlugin extends Plugin {
 	 * - ONNX 推理移入 EmbeddingWorkerProxy(Web Worker),主线程零 CPU 阻塞;proxy 注入 InlineWorker。
 	 */
 	async onLayoutReady(): Promise<void> {
-		// 关键路径:API embedding 模式不需要本地模型,也不触发自动索引;用户提示由 FeedbackController 处理。
-		if (this.settings.embedProvider !== 'local') {
-			return;
-		}
-
-		// 关键路径:全量索引进度由 Worker 回调驱动;FeedbackController 仅更新 statusBar,不弹 progress Notice。
+		// 关键路径:进度回调 handle 跨 local 块与索引块共用,需在外层声明,
+		// 索引完成后(成功或失败)统一 hide/clear,避免 toast 残留(P3 重构:模型下载与索引启动分离)。
 		const indexProgressRef: {
 			handle: ReturnType<UserNotice['toastProgress']> | null;
 		} = { handle: null };
-		this.workerManager.setProgressCallback((done, total) => {
-			const message = `Ratel: 正在索引... ${done}/${total} 个文件`;
-			if (!indexProgressRef.handle) {
-				indexProgressRef.handle = this.userNotice.toastProgress(message);
-			} else {
-				indexProgressRef.handle.update(message);
-			}
-		});
 
-		try {
-			await this.modelManager.download();
-
-			const embedding = this.modelManager.getEmbedding();
-			if (embedding) {
-				// 关键路径:把 ONNX 适配器注入占位器,search-vault 等工具透明可用。
-				if (this.embedding instanceof EmbeddingLocal) {
-					this.embedding.setEmbedding(embedding);
+		// 关键路径:模型下载仅 local 模式需要;API 模式无本地模型,但仍要启动索引(P3 修复)。
+		if (this.settings.embedProvider === 'local') {
+			// 关键路径:全量索引进度由 Worker 回调驱动;FeedbackController 仅更新 statusBar,不弹 progress Notice。
+			this.workerManager.setProgressCallback((done, total) => {
+				const message = `Ratel: 正在索引... ${done}/${total} 个文件`;
+				this.userStatus.patch({
+					index: 'scanning',
+					indexDetail: `${done}/${total}`,
+				});
+				if (!indexProgressRef.handle) {
+					indexProgressRef.handle = this.userNotice.toastProgress(message);
+				} else {
+					indexProgressRef.handle.update(message);
 				}
-				// 关键路径:ModelManager.download() 内 status$.set(Ready) 触发 FeedbackController
-				// 时 setEmbedding 尚未执行,isReady 仍为 false;注入后需显式通知状态推进到 ready。
-				this.feedbackController?.notifyEmbeddingReady();
-				// 关键路径:InlineWorker 在主线程运行,模型就绪后注入 VectraStore,embeddings 由 EmbeddingWorkerProxy 提供。
-			if (this.inlineWorker) {
-				// 关键路径:创建 EmbeddingWorkerProxy,把 ONNX 推理移入 Web Worker,主线程零 CPU 阻塞。
-				// Worker 创建/init 失败不降级,直接抛错提示用户接 API Embedding 端点。
-				// vectraStore 在 initEmbeddingWorkerProxy 内部用无 embeddings 版本创建(IndexProcessor 自己调 proxy.embed)。
-				await this.initEmbeddingWorkerProxy(embedding);
-			}
-			}
+			});
 
-			const indexResult = await this.indexController.onLayoutReady();
-			indexProgressRef.handle?.hide();
-			indexProgressRef.handle = null;
-			// 修复:全量索引完成后清除 progress callback,
-			// 避免后续增量索引的 index.progress 事件创建新 toast 却无人 hide。
-			this.workerManager.clearProgressCallback();
-			if (indexResult) {
-				this.feedbackController?.notifyFullIndexComplete(indexResult.indexed, indexResult.errors);
+			try {
+				await this.modelManager.download();
+
+				const embedding = this.modelManager.getEmbedding();
+				if (embedding) {
+					// 关键路径:把 ONNX 适配器注入占位器,search-vault 等工具透明可用。
+					if (this.embedding instanceof EmbeddingLocal) {
+						this.embedding.setEmbedding(embedding);
+					}
+					// 关键路径:ModelManager.download() 内 status$.set(Ready) 触发 FeedbackController
+					// 时 setEmbedding 尚未执行,isReady 仍为 false;注入后需显式通知状态推进到 ready。
+					this.feedbackController?.notifyEmbeddingReady();
+					// 关键路径:InlineWorker 在主线程运行,模型就绪后注入 VectraStore,embeddings 由 EmbeddingWorkerProxy 提供。
+					if (this.inlineWorker) {
+						// 关键路径:创建 EmbeddingWorkerProxy,把 ONNX 推理移入 Web Worker,主线程零 CPU 阻塞。
+						// Worker 创建/init 失败不降级,直接抛错提示用户接 API Embedding 端点。
+						// vectraStore 在 initEmbeddingWorkerProxy 内部用无 embeddings 版本创建(IndexProcessor 自己调 proxy.embed)。
+						await this.initEmbeddingWorkerProxy(embedding);
+					}
+				}
+			} catch (err) {
+				indexProgressRef.handle?.hide();
+				indexProgressRef.handle = null;
+				this.workerManager.clearProgressCallback();
+				const message = err instanceof Error ? err.message : String(err);
+				devLogger.error('main', 'onLayoutReady 模型下载失败', err);
+				this.userNotice.toastError(`Ratel 错误: ${message}`);
+				// 关键路径:模型下载失败仍继续启动索引(API 模式不依赖本地模型)。
 			}
-		} catch (err) {
+		}
+
+		// 关键路径:索引启动 — 两条 provider 都走(P3 修复)。
+		try {
+			const indexResult = await this.indexController.onLayoutReady();
+			// 关键路径:索引完成后隐藏进度 toast 并清除 callback(成功路径)。
 			indexProgressRef.handle?.hide();
 			indexProgressRef.handle = null;
-			// 修复:同上,异常路径也要清除 callback。
+			this.workerManager.clearProgressCallback();
+			this.feedbackController?.notifyFullIndexComplete(
+				indexResult?.indexed ?? 0,
+				indexResult?.errors ?? 0,
+			);
+		} catch (err) {
+			// 关键路径:索引失败也要清理进度 toast 与 callback。
+			indexProgressRef.handle?.hide();
+			indexProgressRef.handle = null;
 			this.workerManager.clearProgressCallback();
 			const message = err instanceof Error ? err.message : String(err);
-			devLogger.error('main', 'onLayoutReady 失败', err);
-			this.userNotice.toastError(`Ratel 错误: ${message}`);
+			devLogger.error('main', '索引启动失败', err);
+			this.userNotice.toastError(`Ratel 索引错误: ${message}`);
 		}
+	}
+
+	/**
+	 * smart reindex — 启动期 hash diff,仅对变更文件 batch embed。
+	 *
+	 * 关键路径:
+	 * 1. 索引不存在 → 委托 fullReindex(走 index.full)
+	 * 2. manifest 不存在/损坏 → 全量
+	 * 3. 全局参数(embedModelId/chunkSize)变 → 清 .index/ + manifest → 全量
+	 * 4. 否则 → hash diff,仅 toAdd+toUpdate 走 index.batch,toDelete 走 index.delete
+	 * 5. 失败时不清 manifest,下次启动重试
+	 *
+	 * @returns indexed 为本次实际写入的 chunk 所属文件数,errors 为失败计数,skipped 为未变更文件数。
+	 */
+	async smartReindex(): Promise<{ indexed: number; errors: number; skipped: number }> {
+		// 关键路径:先检查索引是否存在,不存在走全量。
+		const indexExists = await this.vectraStore.isIndexCreated();
+		if (!indexExists) {
+			const result = await this.indexBackend.fullReindex();
+			// 关键路径:全量后写新 manifest。
+			await this.writeManifestAfterFullReindex();
+			return { indexed: result.indexed, errors: result.errors, skipped: 0 };
+		}
+
+		// 关键路径:加载 manifest,损坏则全量。
+		const manifestData = await this.indexManifest.load();
+		if (!manifestData) {
+			const result = await this.indexBackend.fullReindex();
+			await this.writeManifestAfterFullReindex();
+			return { indexed: result.indexed, errors: result.errors, skipped: 0 };
+		}
+
+		// 关键路径:全局参数变化 → 清索引 + manifest → 全量。
+		const currentEmbedModelId = this.resolveCurrentEmbedModelId();
+		if (this.indexManifest.shouldFullRebuild(manifestData, currentEmbedModelId, this.settings.chunkSize, this.settings.chunkOverlap)) {
+			// 关键路径:清 .index/ 目录(vectra 没有清空 API,删目录重建)。
+			await this.vectraStore.dropIndex();
+			this.indexManifest.invalidate(manifestData);
+			manifestData.embedModelId = currentEmbedModelId;
+			manifestData.chunkSize = this.settings.chunkSize;
+			manifestData.chunkOverlap = this.settings.chunkOverlap;
+			const result = await this.indexBackend.fullReindex();
+			try {
+				await this.indexManifest.save(manifestData);
+			} catch (err) {
+				// 关键路径:manifest 写盘失败不阻塞索引(spec §9),下次启动重试。
+				devLogger.error('index', 'manifest 写盘失败(参数变更后)', err);
+			}
+			return { indexed: result.indexed, errors: result.errors, skipped: 0 };
+		}
+
+		// 关键路径:读所有 markdown 文件 + mtime(vault 事件源是 ObsidianVault)。
+		const paths = this.vault.listMarkdownFiles();
+		const files: Array<{ path: string; content: string; mtime: number }> = [];
+		for (const p of paths) {
+			const content = await this.vault.readFile(p);
+			// 关键路径:mtime 通过 vault.stat 获取,ObsidianVault 已封装。
+			const stat = this.vault.stat(p);
+			files.push({ path: p, content, mtime: stat?.mtime ?? Date.now() });
+		}
+
+		const fileHashes = await Promise.all(
+			files.map(async (f) => ({
+				path: f.path,
+				content: f.content,
+				hash: await sha256(f.content),
+				mtime: f.mtime,
+			})),
+		);
+
+		const diff = this.indexManifest.diff(manifestData, fileHashes);
+		const toEmbed = [...diff.toAdd, ...diff.toUpdate];
+
+		let indexed = 0;
+		let errors = 0;
+
+		// 关键路径:批量 embed toAdd + toUpdate。
+		if (toEmbed.length > 0) {
+			const response = await this.workerManager.request({
+				type: 'index.batch',
+				payload: { files: toEmbed.map((f) => ({ path: f.path, content: f.content })) },
+			});
+			if (response.type === 'index.batch.done') {
+				indexed = response.payload.indexed;
+				errors = response.payload.errors;
+				// 关键路径:批量记录 manifest(用返回的 chunkCount)。
+				for (const f of toEmbed) {
+					const chunkCount = response.payload.chunkCounts[f.path];
+					// 关键路径:失败文件 chunkCounts 无此 key(undefined),不 recordEntry,
+					// 保留旧 hash 供下次启动重试(spec §9)。空文件 chunkCount 为 0(已定义),照常记录。
+					if (chunkCount === undefined) continue;
+					const hash = fileHashes.find((h) => h.path === f.path)!.hash;
+					this.indexManifest.recordEntry(manifestData, f.path, hash, f.mtime, chunkCount);
+				}
+			} else {
+				errors += toEmbed.length;
+			}
+		}
+
+		// 关键路径:逐个 delete。
+		for (const delPath of diff.toDelete) {
+			try {
+				await this.workerManager.request({
+					type: 'index.delete',
+					payload: { filePath: delPath },
+				});
+				this.indexManifest.removeEntry(manifestData, delPath);
+			} catch {
+				// 删除失败不挂整批,下次启动重试。
+				errors++;
+			}
+		}
+
+		try {
+			manifestData.lastIndexTime = Date.now();
+			await this.indexManifest.save(manifestData);
+		} catch (err) {
+			// 关键路径:manifest 写盘失败不阻塞索引(spec §9),下次启动重试。
+			devLogger.error('index', 'manifest 写盘失败(增量后)', err);
+		}
+
+		return { indexed, errors, skipped: diff.unchanged.length };
+	}
+
+	/** 全量重建后写新 manifest(首次/重置场景)。 */
+	private async writeManifestAfterFullReindex(): Promise<void> {
+		const files = this.vault.listMarkdownFiles();
+		const entries: Record<string, import('./core/index-manifest').IndexManifestEntry> = {};
+		for (const p of files) {
+			const content = await this.vault.readFile(p);
+			const hash = await sha256(content);
+			// 关键路径:全量后 chunkCount 未知(未走 index.batch),填 0 占位,下次 incremental 时更新。
+			entries[p] = { path: p, hash, mtime: Date.now(), chunkCount: 0 };
+		}
+		const data: import('./core/index-manifest').IndexManifestData = {
+			version: 1,
+			embedModelId: this.resolveCurrentEmbedModelId(),
+			chunkSize: this.settings.chunkSize,
+			chunkOverlap: this.settings.chunkOverlap,
+			lastIndexTime: Date.now(),
+			entries,
+		};
+		try {
+			await this.indexManifest.save(data);
+		} catch (err) {
+			// 关键路径:manifest 写盘失败不阻塞索引(spec §9),下次启动重写。
+			devLogger.error('index', 'manifest 写盘失败(全量后)', err);
+		}
+	}
+
+	/** 解析当前 embedding 模型 ID(local 用 ModelManager id,api 用 apiBase::model)。 */
+	private resolveCurrentEmbedModelId(): string {
+		if (this.settings.embedProvider === 'local') {
+			return this.settings.embedLocalModel || 'local-default';
+		}
+		return `${this.settings.embedApiBase}::${this.settings.embedApiModel}`;
 	}
 
 	/**

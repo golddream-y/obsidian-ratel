@@ -88,6 +88,14 @@ export async function handleMessage(
                 return { type: 'index.done', payload: result };
             }
 
+            case 'index.batch': {
+                const req = msg as WorkerRequest & { payload: { files: Array<{ path: string; content: string }> } };
+                const result = await processor.indexBatch(req.payload.files, (progress) => {
+                    postEvent?.({ type: 'index.progress', payload: progress });
+                });
+                return { type: 'index.batch.done', payload: result };
+            }
+
             case 'index.delete': {
                 const req = msg as WorkerRequest & { payload: { filePath: string } };
                 const count = await processor.indexDelete(req.payload.filePath);

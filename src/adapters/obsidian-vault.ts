@@ -138,4 +138,17 @@ export class ObsidianVault implements VaultPort {
 	listMarkdownFiles(): string[] {
 		return this.app.vault.getMarkdownFiles().map((f) => f.path);
 	}
+
+	/**
+	 * 获取文件 stat(mtime/ctime/size)。
+	 *
+	 * 关键路径:smart reindex 用 mtime 作为文件变更的快速跳过信号;
+	 * 文件不存在或不是 TFile 时返回 null,由调用方降级处理。
+	 */
+	stat(path: string): { mtime: number; ctime: number; size: number } | null {
+		const abstractFile = this.app.vault.getAbstractFileByPath(path);
+		if (!abstractFile || !('stat' in abstractFile)) return null;
+		const stat = (abstractFile as { stat: { mtime: number; ctime: number; size: number } }).stat;
+		return stat;
+	}
 }

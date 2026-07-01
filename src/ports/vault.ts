@@ -58,6 +58,9 @@ export interface VaultPort {
 	 */
 	listMarkdownFiles(): string[];
 
+	/** 获取文件 stat(mtime/ctime/size)。不存在返回 null。 */
+	stat(path: string): { mtime: number; ctime: number; size: number } | null;
+
 	/**
 	 * 读取文件(优先 Obsidian 缓存,供 grep 等只读扫描)。
 	 */
