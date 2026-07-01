@@ -117,4 +117,87 @@ describe('IndexManager', () => {
         await vi.waitFor(() => expect(incrementalSpy).toHaveBeenCalledOnce());
         expect(incrementalSpy).toHaveBeenCalledWith({ path: 'note.md', content: 'file content here' });
     });
+
+    it('smartReindex - 索引不存在 - 仍调 smartReindex(内部转全量)', async () => {
+        // 关键路径:onLayoutReady 只检查方法存在性,始终调 smartReindex。
+        // 索引不存在时的全量逻辑由 smartReindex 内部处理(spec §5.2),IndexManager 不感知。
+        const fullSpy = vi.fn();
+        const smartSpy = vi.fn().mockResolvedValue({ indexed: 5, errors: 0, skipped: 0 });
+        const mgr = new IndexManager({
+            fullReindex: fullSpy,
+            incrementalIndex: vi.fn(),
+            deleteFile: vi.fn(),
+            smartReindex: smartSpy,
+            isIndexCreated: vi.fn().mockResolvedValue(false),
+            listMarkdownFiles: vi.fn(),
+        });
+        await mgr.onLayoutReady();
+        expect(smartSpy).toHaveBeenCalled();
+        expect(fullSpy).not.toHaveBeenCalled();
+        expect(get(mgr.status$)).toMatchObject({ state: 'Ready' });
+    });
+
+    it('smartReindex - 索引存在 - 走 smart 零 embed', async () => {
+        const fullSpy = vi.fn();
+        const smartSpy = vi.fn().mockResolvedValue({ indexed: 0, errors: 0, skipped: 5 });
+        const mgr = new IndexManager({
+            fullReindex: fullSpy,
+            incrementalIndex: vi.fn(),
+            deleteFile: vi.fn(),
+            smartReindex: smartSpy,
+            isIndexCreated: vi.fn().mockResolvedValue(true),
+            listMarkdownFiles: vi.fn(),
+        });
+        await mgr.onLayoutReady();
+        expect(smartSpy).toHaveBeenCalled();
+        expect(fullSpy).not.toHaveBeenCalled();
+        expect(get(mgr.status$)).toMatchObject({ state: 'Ready' });
+    });
+
+    it('smartReindex - 状态经过 Diffing', async () => {
+        const smartSpy = vi.fn().mockResolvedValue({ indexed: 0, errors: 0, skipped: 0 });
+        const states: string[] = [];
+        const mgr = new IndexManager({
+            fullReindex: vi.fn(),
+            incrementalIndex: vi.fn(),
+            deleteFile: vi.fn(),
+            smartReindex: smartSpy,
+            isIndexCreated: vi.fn().mockResolvedValue(true),
+            listMarkdownFiles: vi.fn(),
+        });
+        const unsub = mgr.status$.subscribe((s) => states.push(s.state));
+        await mgr.onLayoutReady();
+        unsub();
+        // 关键路径:热启动应经过 Diffing 状态。
+        expect(states).toContain('Diffing');
+        expect(states[states.length - 1]).toBe('Ready');
+    });
+
+    it('smartReindex - backend 无 smartReindex - 回退全量(向后兼容)', async () => {
+        // 关键路径:渐进式迁移,backend 未实现 smartReindex 时回退到 fullReindex。
+        const fullSpy = vi.fn().mockResolvedValue({ indexed: 3, errors: 0 });
+        const mgr = new IndexManager({
+            fullReindex: fullSpy,
+            incrementalIndex: vi.fn(),
+            deleteFile: vi.fn(),
+            // 不提供 smartReindex / isIndexCreated / listMarkdownFiles
+        });
+        await mgr.onLayoutReady();
+        expect(fullSpy).toHaveBeenCalled();
+        expect(get(mgr.status$)).toMatchObject({ state: 'Ready' });
+    });
+
+    it('smartReindex - smart 失败 - 状态 Failed', async () => {
+        const smartSpy = vi.fn().mockRejectedValue(new Error('embed failed'));
+        const mgr = new IndexManager({
+            fullReindex: vi.fn(),
+            incrementalIndex: vi.fn(),
+            deleteFile: vi.fn(),
+            smartReindex: smartSpy,
+            isIndexCreated: vi.fn().mockResolvedValue(true),
+            listMarkdownFiles: vi.fn(),
+        });
+        await mgr.onLayoutReady();
+        expect(get(mgr.status$)).toMatchObject({ state: 'Failed' });
+    });
 });

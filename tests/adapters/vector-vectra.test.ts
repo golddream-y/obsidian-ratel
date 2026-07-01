@@ -114,6 +114,126 @@ describe('VectraStore', () => {
 		const found = results.find((r) => r.docId === 'rollback-1');
 		expect(found).toBeUndefined();
 	});
+
+	it('deleteByPath - 删除指定文件所有 chunk', async () => {
+		// 关键路径:用一个独立的子目录,避免污染其他用例的索引。
+		const subDir = path.join(TEST_INDEX_DIR, 'delete-by-path-test');
+		if (fs.existsSync(subDir)) {
+			fs.rmSync(subDir, { recursive: true });
+		}
+		const subStore = new VectraStore(subDir, mockEmbeddings);
+
+		// 写入一个文件的多个 chunk(用 upsertItem 模拟 indexProcessor 的写入路径)
+		await subStore.beginFileUpdate();
+		const dummyVector = Array(512).fill(0).map(() => Math.random());
+		await subStore.upsertItem('notes/foo.md#chunk-0', dummyVector, { path: 'notes/foo.md', chunkIndex: 0 });
+		await subStore.upsertItem('notes/foo.md#chunk-1', dummyVector, { path: 'notes/foo.md', chunkIndex: 1 });
+		await subStore.upsertItem('notes/foo.md#chunk-2', dummyVector, { path: 'notes/foo.md', chunkIndex: 2 });
+		await subStore.endFileUpdate();
+
+		const deleted = await subStore.deleteByPath('notes/foo.md');
+		expect(deleted).toBe(3);
+
+		// 搜索应不再命中该文件
+		const queryVector = Array(512).fill(0).map(() => Math.random());
+		const results = await subStore.search(queryVector, 10);
+		const fooResults = results.filter((r) => (r.metadata as { path?: string }).path === 'notes/foo.md');
+		expect(fooResults).toHaveLength(0);
+
+		if (fs.existsSync(subDir)) {
+			fs.rmSync(subDir, { recursive: true });
+		}
+	});
+
+	it('deleteByPath - 文件不存在 - 返回 0 不抛错', async () => {
+		const subDir = path.join(TEST_INDEX_DIR, 'delete-by-path-empty');
+		if (fs.existsSync(subDir)) {
+			fs.rmSync(subDir, { recursive: true });
+		}
+		const subStore = new VectraStore(subDir, mockEmbeddings);
+		const deleted = await subStore.deleteByPath('nonexistent.md');
+		expect(deleted).toBe(0);
+		if (fs.existsSync(subDir)) {
+			fs.rmSync(subDir, { recursive: true });
+		}
+	});
+
+	it('deleteByPath - 多文件场景只删目标文件', async () => {
+		const subDir = path.join(TEST_INDEX_DIR, 'delete-by-path-multi');
+		if (fs.existsSync(subDir)) {
+			fs.rmSync(subDir, { recursive: true });
+		}
+		const subStore = new VectraStore(subDir, mockEmbeddings);
+		const dummyVector = Array(512).fill(0).map(() => Math.random());
+
+		await subStore.beginFileUpdate();
+		await subStore.upsertItem('a.md#chunk-0', dummyVector, { path: 'a.md', chunkIndex: 0 });
+		await subStore.upsertItem('b.md#chunk-0', dummyVector, { path: 'b.md', chunkIndex: 0 });
+		await subStore.upsertItem('b.md#chunk-1', dummyVector, { path: 'b.md', chunkIndex: 1 });
+		await subStore.endFileUpdate();
+
+		const deleted = await subStore.deleteByPath('b.md');
+		expect(deleted).toBe(2);
+
+		// a.md 应仍可被搜索命中
+		const queryVector = Array(512).fill(0).map(() => Math.random());
+		const results = await subStore.search(queryVector, 10);
+		const aResults = results.filter((r) => (r.metadata as { path?: string }).path === 'a.md');
+		expect(aResults.length).toBeGreaterThan(0);
+		const bResults = results.filter((r) => (r.metadata as { path?: string }).path === 'b.md');
+		expect(bResults).toHaveLength(0);
+
+		if (fs.existsSync(subDir)) {
+			fs.rmSync(subDir, { recursive: true });
+		}
+	});
+
+	it('dropIndex - 目录存在 - 删除并重建空索引', async () => {
+		// 关键路径:独立子目录,dropIndex 会清空整个索引,不能污染共享 store。
+		const subDir = path.join(TEST_INDEX_DIR, 'drop-index-test');
+		if (fs.existsSync(subDir)) {
+			fs.rmSync(subDir, { recursive: true });
+		}
+		const subStore = new VectraStore(subDir, mockEmbeddings);
+
+		// 关键路径:先建索引写入数据,再 drop,验证目录被清空且可重建。
+		const dummyVector = Array(512).fill(0.5);
+		await subStore.beginFileUpdate();
+		await subStore.upsertItem('test#0', dummyVector, { path: 'test.md', chunkIndex: 0 });
+		await subStore.endFileUpdate();
+		expect(fs.existsSync(subDir)).toBe(true);
+
+		await subStore.dropIndex();
+
+		// 关键路径:目录重建后应为空(或仅含 vectra 初始化文件),原数据消失。
+		const results = await subStore.search(dummyVector, 10);
+		expect(results).toHaveLength(0);
+
+		if (fs.existsSync(subDir)) {
+			fs.rmSync(subDir, { recursive: true });
+		}
+	});
+
+	it('dropIndex - 目录不存在 - 不抛错', async () => {
+		// 关键路径:force:true 应处理目录不存在的情况。
+		const subDir = path.join(TEST_INDEX_DIR, 'drop-index-empty');
+		if (fs.existsSync(subDir)) {
+			fs.rmSync(subDir, { recursive: true });
+		}
+		const subStore = new VectraStore(subDir, mockEmbeddings);
+		// 先 init 一次确保 store 就绪,再手动删目录模拟异常状态。
+		const dummyVector = Array(512).fill(0.5);
+		await subStore.beginFileUpdate();
+		await subStore.upsertItem('test#0', dummyVector, { path: 'test.md', chunkIndex: 0 });
+		await subStore.endFileUpdate();
+		fs.rmSync(subDir, { recursive: true, force: true });
+
+		await expect(subStore.dropIndex()).resolves.not.toThrow();
+
+		if (fs.existsSync(subDir)) {
+			fs.rmSync(subDir, { recursive: true });
+		}
+	});
 });
 
 describe('VectraStore.hybridSearch', () => {

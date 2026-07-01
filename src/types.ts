@@ -71,6 +71,7 @@ export type AgentEvent =
 export type WorkerRequest =
 	| { type: 'index.full'; payload: { files: Array<{ path: string; content: string }> } }
 	| { type: 'index.incremental'; payload: { file: { path: string; content: string } } }
+	| { type: 'index.batch'; payload: { files: Array<{ path: string; content: string }> } }
 	| { type: 'index.delete'; payload: { filePath: string } }
 	| { type: 'vector.search'; payload: { queryVector: number[]; topK: number; filter?: import('./ports/vector').SearchFilter } }
 	| { type: 'hybrid.search'; payload: { query: string; queryVector: number[]; topK: number } }
@@ -88,6 +89,7 @@ export type WorkerRequest =
 export type WorkerResponse =
 	| { type: 'index.progress'; payload: { done: number; total: number } }
 	| { type: 'index.done'; payload: { indexed: number; errors: number } }
+	| { type: 'index.batch.done'; payload: { indexed: number; errors: number; chunkCounts: Record<string, number> } }
 	| { type: 'vector.search.result'; payload: Array<import('./ports/vector').VectorSearchResult> }
 	| { type: 'hybrid.search.result'; payload: Array<import('./ports/vector').VectorSearchResult> }
 	| { type: 'vector.upsert.done'; payload: { docId: string } }

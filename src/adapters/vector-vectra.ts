@@ -9,6 +9,7 @@ import type { VectorStore, VectorSearchResult, IndexStatus, SearchFilter } from 
 import { devLogger } from '../logging/dev-logger';
 // 关键路径:通过 esbuild conditions 让 'vectra' 走 browser 入口,避免引入 index.js 里 re-export 的 server/grpc 依赖。
 import { LocalDocumentIndex, type EmbeddingsModel, type DocumentChunkMetadata, type MetadataTypes } from 'vectra';
+import fs from 'fs';
 
 /**
  * VectraStore 构造选项(M-1 扩展)。
@@ -84,6 +85,33 @@ export class VectraStore implements VectorStore {
 		await this._ready;
 		if (!this.index) throw new Error('VectraStore init failed');
 		return this.index;
+	}
+
+	/**
+	 * 判断索引是否已创建(磁盘上有 index 文件)。
+	 *
+	 * 关键路径:smart reindex 启动期判断首次(无索引走全量)还是热启动(有索引走 hash diff)。
+	 */
+	async isIndexCreated(): Promise<boolean> {
+		const index = await this.ensureIndex();
+		return index.isIndexCreated();
+	}
+
+	/**
+	 * 删除整个索引目录(模型切换/参数变更时全量重建用)。
+	 *
+	 * 关键路径:vectra 没有清空 API,删目录后下次 init 会重建。
+	 * 自包含重置流程:先清 this.index 和 _ready,再删目录,最后 init 重建空索引。
+	 */
+	async dropIndex(): Promise<void> {
+		// 关键路径:先清 this.index,下次 ensureIndex 会重建。
+		this.index = null;
+		this._ready = null;
+		if (fs.existsSync(this.indexDir)) {
+			// 关键路径:rmSync 递归删整个目录,包括 index.json + 索引文件。
+			fs.rmSync(this.indexDir, { recursive: true, force: true });
+		}
+		await this.init();
 	}
 
 	/**
@@ -247,6 +275,43 @@ export class VectraStore implements VectorStore {
 			}
 		}
 		return count;
+	}
+
+	/**
+	 * 删除指定文件路径下的所有 chunk。
+	 *
+	 * 关键路径:文件变短时,旧 chunk 残留会导致搜索命中幽灵片段。
+	 * 此方法在 reembed 前调用,确保旧 chunk 全部清除。
+	 *
+	 * 实现说明:vectra 没有"按 metadata.path 删"的接口,采用与 IndexProcessor.indexDelete
+	 * 相同的启发式 — 用零向量 queryItems topK=100 拿候选,按 metadata.path 过滤。
+	 * chunk 数上限 100 覆盖绝大多数文档;超长文档(>100 chunks)极少见,
+	 * 若后续成为问题可改用 listDocuments 遍历。
+	 *
+	 * 关键路径:不能复用 `this.delete(ids)` — `delete` 调 `deleteDocument(uri)`,
+	 * 后者依赖 catalog(vectra 内部 URI→documentId 映射);而 `upsertItem` 绕过
+	 * `upsertDocument`,不写 catalog,`deleteDocument` 会因 `getDocumentId` 返回
+	 * undefined 而提前返回,实际不删任何 chunk。故这里直接调底层
+	 * `LocalIndex.deleteItems(itemIds)`,按 item.id 删,绕过 catalog 查找。
+	 *
+	 * @param filePath - 文件相对路径(如 "notes/foo.md")
+	 * @returns 实际删除的 chunk 数
+	 */
+	async deleteByPath(filePath: string): Promise<number> {
+		const index = await this.ensureIndex();
+		// 关键路径:用零向量 search 拿候选,与 IndexProcessor.indexDelete 一致的启发式。
+		const dummyVector = Array(512).fill(0);
+		const all = await index.queryItems(dummyVector, '', 100);
+		const matching = all.filter((r) => {
+			const meta = r.item.metadata as { path?: string };
+			return meta.path === filePath;
+		});
+		// 关键路径:取 item.id(而非 metadata.documentId)作为删除键 —
+		// deleteItems 按 IndexItem.id 删,与 upsertItem 时写入的 id 字段对齐。
+		const ids = matching.map((r) => r.item.id);
+		if (ids.length === 0) return 0;
+		await index.deleteItems(ids);
+		return ids.length;
 	}
 
 	/**
