@@ -215,8 +215,12 @@ export default class RatelVaultPlugin extends Plugin {
 				return files;
 			},
 			// 关键路径:箭头函数保留 this 绑定,委托给类方法 smartReindex。
-			smartReindex: async () => {
-				return this.smartReindex();
+		smartReindex: async () => {
+			return this.smartReindex();
+		},
+			// 关键路径:reindex 命令需清 .index/(spec §4.4),委托给 vectraStore.dropIndex。
+			dropIndex: async () => {
+				await this.vectraStore.dropIndex();
 			},
 		};
 
@@ -225,6 +229,14 @@ export default class RatelVaultPlugin extends Plugin {
 
 		// 关键路径:ObsidianVault 已实现 VaultEventListener 接口,直接传入可保证所有 Obsidian API 访问都走外观层。
 		this.indexController = new IndexController(this.vault, this.indexBackend, vaultBase);
+		// 关键路径:注入 manifest 清理回调,供 IndexManager.reindex 调用(spec §4.4)。
+		// 清理逻辑:加载现有 manifest(若存在),invalidate 清空 entries 但保留全局参数待重新填充。
+		this.indexController.indexManager.setManifestResetCallback(async () => {
+			const data = await this.indexManifest.load();
+			if (data) {
+				this.indexManifest.invalidate(data);
+			}
+		});
 
 		// 关键路径:W4 — Indexer subagent,供其他子代理通过统一接口触发索引。
 		this.indexer = new Indexer({ vault: this.vault, indexController: this.indexController });
@@ -425,8 +437,9 @@ export default class RatelVaultPlugin extends Plugin {
 		}
 
 		// 关键路径:索引启动 — 两条 provider 都走(P3 修复)。
+		// autoIndex=false 时仅启动 FolderWatcher,不跑 smartReindex(spec §5.7)。
 		try {
-			const indexResult = await this.indexController.onLayoutReady();
+			const indexResult = await this.indexController.onLayoutReady(this.settings.autoIndex);
 			// 关键路径:索引完成后隐藏进度 toast 并清除 callback(成功路径)。
 			indexProgressRef.handle?.hide();
 			indexProgressRef.handle = null;
@@ -459,6 +472,43 @@ export default class RatelVaultPlugin extends Plugin {
 	 * @returns indexed 为本次实际写入的 chunk 所属文件数,errors 为失败计数,skipped 为未变更文件数。
 	 */
 	async smartReindex(): Promise<{ indexed: number; errors: number; skipped: number }> {
+		try {
+			return await this.doSmartReindex();
+		} catch (err) {
+			// 关键路径:.index/ 目录损坏(vectra 加载失败)或 smartReindex 任意步骤抛错时,
+			// 降级为清 .index/ + manifest 后全量重建(spec §9)。
+			// 失败时不清 manifest,保留旧 hash 表让下次启动重试(仅在索引损坏场景才清)。
+			devLogger.error('index', 'smartReindex 失败,降级全量重建', err);
+			try {
+				await this.vectraStore.dropIndex();
+				// 关键路径:索引损坏时 manifest 可能也指向损坏状态,一并清理。
+				// manifest 可能加载失败(null),只在存在时 invalidate。
+				const existingManifest = await this.indexManifest.load();
+				if (existingManifest) {
+					this.indexManifest.invalidate(existingManifest);
+				}
+			} catch (dropErr) {
+				devLogger.error('index', '降级清理失败,仍继续全量', dropErr);
+			}
+			const result = await this.indexBackend.fullReindex();
+			await this.writeManifestAfterFullReindex();
+			return { indexed: result.indexed, errors: result.errors, skipped: 0 };
+		}
+	}
+
+	/**
+	 * smartReindex 实际实现 — 由 smartReindex 包裹降级 try-catch。
+	 *
+	 * 关键路径:五分支决策:
+	 * 1. 索引不存在 → 全量 + 写 manifest
+	 * 2. manifest 损坏/不存在 → 全量 + 写 manifest
+	 * 3. 全局参数变 → 清 .index/ + manifest → 全量
+	 * 4. 否则 → hash diff,仅 toAdd+toUpdate 走 index.batch,toDelete 走 index.delete
+	 * 5. 失败时不清 manifest,下次启动重试
+	 *
+	 * @returns indexed 为本次实际写入的 chunk 所属文件数,errors 为失败计数,skipped 为未变更文件数。
+	 */
+	private async doSmartReindex(): Promise<{ indexed: number; errors: number; skipped: number }> {
 		// 关键路径:先检查索引是否存在,不存在走全量。
 		const indexExists = await this.vectraStore.isIndexCreated();
 		if (!indexExists) {
@@ -499,19 +549,35 @@ export default class RatelVaultPlugin extends Plugin {
 		const paths = this.vault.listMarkdownFiles();
 		const files: Array<{ path: string; content: string; mtime: number }> = [];
 		for (const p of paths) {
-			const content = await this.vault.readFile(p);
-			// 关键路径:mtime 通过 vault.stat 获取,ObsidianVault 已封装。
+			// 关键路径:mtime 快速跳过 — mtime 未变则不必读 content 与算 sha256(spec §4.2)。
+			// 大库热启动时省 N 次文件读 + N 次 hash,只做 stat 比较。
 			const stat = this.vault.stat(p);
-			files.push({ path: p, content, mtime: stat?.mtime ?? Date.now() });
+			const mtime = stat?.mtime ?? Date.now();
+			const existing = manifestData.entries[p];
+			if (existing && existing.mtime === mtime) {
+				// mtime 未变,直接复用旧 hash,不读 content。
+				files.push({ path: p, content: '', mtime });
+			} else {
+				const content = await this.vault.readFile(p);
+				files.push({ path: p, content, mtime });
+			}
 		}
 
 		const fileHashes = await Promise.all(
-			files.map(async (f) => ({
-				path: f.path,
-				content: f.content,
-				hash: await sha256(f.content),
-				mtime: f.mtime,
-			})),
+			files.map(async (f) => {
+				// 关键路径:mtime 未变的文件复用 manifest 旧 hash,跳过 sha256 计算。
+				// 提取局部变量,避免 TS 索引访问 possibly undefined 误报。
+				const existingEntry = manifestData.entries[f.path];
+				const hash = f.content === '' && existingEntry
+					? existingEntry.hash
+					: await sha256(f.content);
+				return {
+					path: f.path,
+					content: f.content,
+					hash,
+					mtime: f.mtime,
+				};
+			}),
 		);
 
 		const diff = this.indexManifest.diff(manifestData, fileHashes);

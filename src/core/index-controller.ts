@@ -38,8 +38,16 @@ export class IndexController {
         this.ratelignore = new Ratelignore(vaultRoot);
     }
 
-    /** 启动期调用 — 注册 vault 事件 + 全量索引。 */
-    async onLayoutReady(): Promise<{ indexed: number; errors: number } | null> {
+    /**
+     * 启动期调用 — 注册 vault 事件 + 索引启动。
+     *
+     * 关键路径:
+     * - FolderWatcher 始终启动(无论 autoIndex),用户手动改文件仍增量(spec §5.7)。
+     * - autoIndex=false 时跳过 smartReindex,但保留 FolderWatcher + 手动 /reindex。
+     *
+     * @param autoIndex - 是否启动自动索引。false 时仅启动 FolderWatcher,不跑 smartReindex。
+     */
+    async onLayoutReady(autoIndex = true): Promise<{ indexed: number; errors: number } | null> {
         this.watcher.start({
             // 关键路径:去抖触发后读取文件内容,随 op 一起入队。
             // 文件可能在去抖期间被删,readFile 失败时静默跳过。
@@ -67,6 +75,11 @@ export class IndexController {
             }),
         );
 
+        // 关键路径:autoIndex=false 时仅启动 FolderWatcher,不跑 smartReindex(spec §5.7)。
+        // 用户手动改文件仍增量,索引不会过期;手动 /reindex 仍可触发全量。
+        if (!autoIndex) {
+            return null;
+        }
         return this.indexManager.onLayoutReady();
     }
 
