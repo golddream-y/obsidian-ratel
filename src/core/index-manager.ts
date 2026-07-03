@@ -36,6 +36,9 @@ export interface IndexBackend {
     smartReindex?(): Promise<{ indexed: number; errors: number; skipped: number }>;
     isIndexCreated?(): Promise<boolean>;
     listMarkdownFiles?(): Promise<Array<{ path: string; content: string }>>;
+    // 关键路径:reindex 命令需清 .index/ + manifest 后全量(spec §4.4)。
+    // 可选 — backend 未实现时 reindex 退化为 onLayoutReady(走 smartReindex hash diff)。
+    dropIndex?(): Promise<void>;
 }
 
 interface QueueEntry {
@@ -49,8 +52,20 @@ export class IndexManager {
     private paused = false;
     private processing = false;
     private previousState: IndexStatus = { state: 'Idle' };
+    // 关键路径:reindex 时清 manifest 的回调,由 main.ts 注入(避免 core 层依赖 IndexManifest)。
+    private onManifestReset: (() => Promise<void>) | null = null;
 
     constructor(private backend: IndexBackend) {}
+
+    /**
+     * 注入 manifest 清理回调(reindex 时调用)。
+     *
+     * 关键路径:IndexManager 不直接依赖 IndexManifest(core 层 purity),
+     * 由 main.ts 注入清理逻辑:dropIndex + manifest.invalidate。
+     */
+    setManifestResetCallback(cb: () => Promise<void>): void {
+        this.onManifestReset = cb;
+    }
 
     /**
      * 启动期调用 — 优先走 smartReindex(hash diff),backend 未实现 smartReindex 时回退全量。
@@ -130,9 +145,30 @@ export class IndexManager {
         }
     }
 
-    /** 重新索引 — 清队列 + 走全量。 */
+    /**
+     * 重新索引 — 清队列 + 清 .index/ + 清 manifest + 走全量(spec §4.4)。
+     *
+     * 关键路径:用户手动 /reindex 想强制全量,必须绕过 smartReindex 的 hash diff。
+     * 若不清 manifest,smartReindex 会跳过未变更文件,违反用户预期。
+     * dropIndex 可选:backend 未实现时退化为 onLayoutReady(走 smartReindex)。
+     */
     async reindex(): Promise<void> {
         this.queue.clear();
+        // 关键路径:先清 .index/ 目录 + manifest,确保 onLayoutReady 走全量路径。
+        if (this.backend.dropIndex) {
+            try {
+                await this.backend.dropIndex();
+            } catch (err) {
+                devLogger.error('index', 'reindex: dropIndex 失败,仍继续走 onLayoutReady', err);
+            }
+        }
+        if (this.onManifestReset) {
+            try {
+                await this.onManifestReset();
+            } catch (err) {
+                devLogger.error('index', 'reindex: manifest 清理失败,仍继续', err);
+            }
+        }
         await this.onLayoutReady();
     }
 
