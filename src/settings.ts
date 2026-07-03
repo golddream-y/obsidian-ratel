@@ -297,7 +297,7 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Provider')
-			.setDesc('Local uses built-in ONNX model (zero-config). API uses OpenAI-compatible endpoint (Ollama/SiliconFlow/etc).')
+			.setDesc('Local uses built-in ONNX model (zero-config). API uses OpenAI-compatible endpoint (Ollama/SiliconFlow/etc). 更改此项需重启 Obsidian 生效(下次启动 smartReindex 检测模型变化自动全量重建)。')
 			.addDropdown((dropdown) =>
 				dropdown
 					.addOptions({ local: 'Local (built-in)', api: 'API (external)' })
@@ -404,7 +404,7 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Chunk size (tokens)')
-			.setDesc('Number of tokens per chunk')
+			.setDesc('Number of tokens per chunk. 更改此项需重启 Obsidian 生效(下次启动 smartReindex 检测参数变化自动全量重建)。')
 			.addSlider((slider) =>
 				slider
 					.setLimits(100, 1000, 50)
@@ -418,7 +418,7 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Chunk overlap (tokens)')
-			.setDesc('Overlap between chunks')
+			.setDesc('Overlap between chunks. 更改此项需重启 Obsidian 生效(下次启动 smartReindex 检测参数变化自动全量重建)。')
 			.addSlider((slider) =>
 				slider
 					.setLimits(0, 200, 10)

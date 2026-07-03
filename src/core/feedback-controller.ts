@@ -238,6 +238,9 @@ function mapIndexStatus(status: IndexStatus): Partial<UserStatusSnapshot> {
 			return { index: 'idle', indexDetail: undefined };
 		case 'Init':
 			return { index: 'init', indexDetail: undefined };
+		case 'Diffing':
+			// 关键路径:smartReindex hash diff 阶段,用户感知"正在检查变更"(spec §5.6)。
+			return { index: 'diffing', indexDetail: '正在检查 vault 变更...' };
 		case 'Scanning':
 			return { index: 'scanning', indexDetail: `${status.scanned}/${status.total}` };
 		case 'Queueing':
