@@ -35,6 +35,7 @@
 			case 'paused': return '已暂停';
 			case 'failed': return '失败';
 			case 'init': return '初始化';
+			case 'diffing': return '检查变更中';
 			case 'idle': return '空闲';
 			default: return '…';
 		}

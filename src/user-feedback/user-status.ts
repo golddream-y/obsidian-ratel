@@ -12,7 +12,7 @@ export interface UserStatusSnapshot {
 	model: 'idle' | 'checking' | 'downloading' | 'initializing' | 'ready' | 'failed';
 	modelDetail?: string;
 
-	index: 'idle' | 'init' | 'scanning' | 'queueing' | 'processing' | 'ready' | 'paused' | 'failed';
+	index: 'idle' | 'init' | 'diffing' | 'scanning' | 'queueing' | 'processing' | 'ready' | 'paused' | 'failed';
 	indexDetail?: string;
 	indexDocCount?: number;
 
