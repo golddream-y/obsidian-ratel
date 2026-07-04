@@ -19,6 +19,7 @@
 |---|---|---|---|---|
 | S-RAG-ARCH | [2026-06-14-ratel-rag-architecture.md](specs/2026-06-14-ratel-rag-architecture.md) | Active | 2026-06-14 | 最终 RAG 架构(取代 S-RAG-ROADMAP 中的初步想法) |
 | S-I18N | [2026-06-14-ratel-i18n-design.md](specs/2026-06-14-ratel-i18n-design.md) | Draft | 2026-06-14 | i18n 基础设施:中英文切换,settings.ts + ChatView + 命令 + Notice 全覆盖 |
+| S-CLEANUP-1 | [2026-07-04-ratel-cleanup-1-design.md](specs/2026-07-04-ratel-cleanup-1-design.md) | Active | 2026-07-04 | 杂项缺失修复与历史技术债清理(12 项:A 硬伤 + B 接线 + C 文档 + E lint + F 技术债) |
 
 ---
 
@@ -46,8 +47,7 @@
 ## Future execution queue(按顺序)
 
 1. **P-I18N-IMPL**(i18n 基础设施:中英文切换)
-2. 修 `svelte-eslint-parser` 配置,让 `npx eslint src/` 覆盖 `*.svelte` 文件
-3. 在 Obsidian 里手动 E2E 验证(M3 里程碑)
+2. 在 Obsidian 里手动 E2E 验证(M3 里程碑)
 
 ---
 
