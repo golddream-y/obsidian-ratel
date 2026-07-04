@@ -14,13 +14,19 @@
 	 *
 	 * @param messages - 消息数组
 	 * @param isRunning - Agent Loop 是否运行中(影响最后一条消息的流式标记)
+	 * @param containerRef - 可绑定,内层可滚动容器(.ratel-messages)的 DOM 引用,父组件据此控制滚动
+	 * @param onScroll - 滚动事件回调,父组件据此判断用户是否处于底部(sticky-to-bottom)
 	 */
 	let {
 		messages,
 		isRunning,
+		containerRef = $bindable(),
+		onScroll,
 	}: {
 		messages: Message[];
 		isRunning: boolean;
+		containerRef?: HTMLDivElement | null;
+		onScroll?: (el: HTMLDivElement) => void;
 	} = $props();
 
 	/*
@@ -47,7 +53,7 @@
 	}
 </script>
 
-<div class="ratel-messages">
+<div class="ratel-messages" bind:this={containerRef} onscroll={() => { if (containerRef) onScroll?.(containerRef); }}>
 	{#each messages as msg, i}
 		<MessageBubble {msg} isLast={i === messages.length - 1} {isRunning} />
 	{/each}
