@@ -20,10 +20,6 @@
 | S-RAG-ARCH | [2026-06-14-ratel-rag-architecture.md](specs/2026-06-14-ratel-rag-architecture.md) | Active | 2026-06-14 | 最终 RAG 架构(取代 S-RAG-ROADMAP 中的初步想法) |
 | S-I18N | [2026-06-14-ratel-i18n-design.md](specs/2026-06-14-ratel-i18n-design.md) | Draft | 2026-06-14 | i18n 基础设施:中英文切换,settings.ts + ChatView + 命令 + Notice 全覆盖 |
 | S-PROMPTS | [2026-06-26-ratel-prompts-design.md](specs/2026-06-26-ratel-prompts-design.md) | Active | 2026-06-26 | LLM 提示词中文统一 registry + Composer 动态注入 + section 级 promptOverrides;检索外框不可删 |
-| S-MSG-STREAM | [2026-06-28-chat-message-stream-redesign-design.md](specs/2026-06-28-chat-message-stream-redesign-design.md) | Active | 2026-06-28 | Chat 消息流重构(segments 判别联合)+ think 块 + token 三层校准 + 模型长度探测 + UI 目录归拢 + agent-loop 职责拆分;**§5.6 由 S-CONTEXT-WINDOW 取代** |
-| S-CONTEXT-WINDOW | [2026-06-28-model-context-window-registry-design.md](specs/2026-06-28-model-context-window-registry-design.md) | Active | 2026-06-28 | LiteLLM 映射表缓存 + Context Length 预设下拉(128k/200k/256k/1M/自定义);ADR-007 |
-| S-DOCS-V1 | [2026-06-28-docs-system-v1-design.md](specs/2026-06-28-docs-system-v1-design.md) | Active | 2026-06-28 | 文档体系 v1 — README 商店化重构 + 单文件双语用户手册 + CHANGELOG + AI 生成 release 工作流 |
-| S-INDEX-STARTUP | [2026-06-28-index-startup-smart-reindex-design.md](specs/2026-06-28-index-startup-smart-reindex-design.md) | Active | 2026-06-28 | 索引启动智能重算 — Smart Reindex + Manifest(P2 热启动 + P3 API 模式 + chunk 残留修复) |
 
 ---
 
@@ -33,10 +29,6 @@
 |---|---|---|---|---|
 | P-I18N-IMPL | [2026-06-14-ratel-i18n-implementation.md](plans/2026-06-14-ratel-i18n-implementation.md) | ⏳ Pending | S-I18N | — |
 | P-PROMPTS | [2026-06-26-ratel-prompts-implementation.md](plans/2026-06-26-ratel-prompts-implementation.md) | ⏳ Pending | S-PROMPTS | **下一步优先实施** |
-| P-MSG-STREAM | [2026-06-28-chat-message-stream-redesign-implementation.md](plans/2026-06-28-chat-message-stream-redesign-implementation.md) | ✅ Completed | S-MSG-STREAM | 分支 `feat/s-msg-stream`;20 个 Task 全部完成,453 测试通过(3 个 pre-existing 真实 API 401 失败),三产物构建成功 |
-| P-DOCS-V1 | [2026-06-28-docs-system-v1-implementation.md](plans/2026-06-28-docs-system-v1-implementation.md) | ✅ Completed | S-DOCS-V1 | 7 个 Task 完成,5 个 commit(screenshots/versions.json/CHANGELOG/user-guide/README),spec compliance 全通过 |
-| P-CONTEXT-WINDOW | [2026-06-28-model-context-window-registry-implementation.md](plans/2026-06-28-model-context-window-registry-implementation.md) | ✅ Completed | S-CONTEXT-WINDOW | 7 Task 完成;27 相关单测通过;build 成功 |
-| P-INDEX-STARTUP | [2026-06-28-index-startup-smart-reindex-implementation.md](plans/2026-06-28-index-startup-smart-reindex-implementation.md) | ✅ Completed | S-INDEX-STARTUP | 8 Task 完成,squash merge `79e694e` 到 main;472 测试通过(10 pre-existing 失败),tsc/build 验证通过;新增 40 条测试覆盖 manifest/diffing/smartReindex/集成场景 |
 
 ---
 
@@ -85,3 +77,7 @@
 | S-MD-MERMAID | [archive/S-MD-MERMAID/](archive/S-MD-MERMAID/) | 2026-06-27 | — |
 | S-INDEX-BLOCK | [archive/S-INDEX-BLOCK/](archive/S-INDEX-BLOCK/) | 2026-06-27 | — |
 | S-DEFENSIVE | [archive/S-DEFENSIVE/](archive/S-DEFENSIVE/) | 2026-06-27 | Abandoned,未实施;G3 svelte-check 串 build 已独立落地 |
+| S-MSG-STREAM | [archive/S-MSG-STREAM/](archive/S-MSG-STREAM/) | 2026-07-04 | Chat 消息流重构;17 commits 合并,453 tests |
+| S-DOCS-V1 | [archive/S-DOCS-V1/](archive/S-DOCS-V1/) | 2026-07-04 | 文档体系 v1;7 Task,中英双语 README |
+| S-CONTEXT-WINDOW | [archive/S-CONTEXT-WINDOW/](archive/S-CONTEXT-WINDOW/) | 2026-07-04 | LiteLLM 映射 + Context Length 预设;7 Task;⚠️ 实施代码仍在 `feat/s-context-window` 分支待合并 |
+| S-INDEX-STARTUP | [archive/S-INDEX-STARTUP/](archive/S-INDEX-STARTUP/) | 2026-07-04 | smart reindex 启动路径;8 Task + 6 缺口修复 |
