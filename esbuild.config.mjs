@@ -3,27 +3,36 @@ import process from 'process';
 import { builtinModules } from 'node:module';
 import esbuildSvelte from 'esbuild-svelte';
 import { sveltePreprocess } from 'svelte-preprocess';
-import { mkdirSync, copyFileSync } from 'node:fs';
+import { mkdirSync, existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// 关键路径:onnxruntime-web 的 WASM 文件路径,构建时复制到 dist/,与 main.js 同级。
-const ORT_WASM_SRC = path.resolve(__dirname, 'node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm');
-const ORT_WASM_DEST = path.resolve(__dirname, 'dist/ort-wasm-simd-threaded.wasm');
+
+const EMBEDDING_WORKER_OUT = path.resolve(__dirname, 'dist/embedding-worker.js');
 
 /**
- * 将 onnxruntime-web 所需的 WASM 文件复制到 dist 目录。
- *
- * 关键路径:每次构建(包括 watch 模式下的 rebuild)后都复制,确保 dist/ 中的 wasm 是最新的。
+ * 将 dist/embedding-worker.js 内容作为字符串常量注入 main.js(ADR-006)。
+ * 商店 release 只含 main.js,运行时通过 Blob URL 加载 Worker。
  */
-function copyOrtWasmPlugin() {
+function inlineEmbeddingWorkerPlugin() {
 	return {
-		name: 'copy-ort-wasm',
+		name: 'inline-embedding-worker',
 		setup(build) {
-			build.onEnd(() => {
-				copyFileSync(ORT_WASM_SRC, ORT_WASM_DEST);
+			build.onResolve({ filter: /^@ratel\/embedding-worker-code$/ }, () => ({
+				path: '@ratel/embedding-worker-code',
+				namespace: 'ratel-embedding-worker',
+			}));
+			build.onLoad({ filter: /.*/, namespace: 'ratel-embedding-worker' }, () => {
+				let code = '';
+				if (existsSync(EMBEDDING_WORKER_OUT)) {
+					code = readFileSync(EMBEDDING_WORKER_OUT, 'utf-8');
+				}
+				return {
+					contents: `export const EMBEDDING_WORKER_CODE = ${JSON.stringify(code)};\n`,
+					loader: 'js',
+				};
 			});
 		},
 	};
@@ -119,10 +128,7 @@ const mainContext = await esbuild.context({
 	// `exports"."` 的 default 指向 server 端(无 `mount`,只有 SSR 的 `render`)。
 	// Obsidian 是浏览器宿主,必须显式加 `browser` condition 才能命中 client runtime。
 	conditions: ['browser', 'default'],
-	// 关键路径:onnxruntime-web 的 `main` 指向 Node 版本(ort.node.min.js),
-	// 会引入 onnxruntime-node 原生模块;强制使用 wasm bundle 入口(ort.wasm.bundle.min.mjs),
-	// 该版本内联了 wasm JS wrapper,避免动态 import .mjs 文件;WASM 二进制本身由运行时
-	// 通过 ort.env.wasm.wasmBinary 直接传入(从 dist/ort-wasm-simd-threaded.wasm 读取)。
+	// 关键路径:onnxruntime-web 强制 wasm bundle 入口;WASM 二进制由 OrtRuntimeAssets 懒下载(ADR-006)。
 	mainFields: ['browser', 'module', 'main'],
 	alias: {
 		'onnxruntime-web': path.resolve(__dirname, 'node_modules/onnxruntime-web/dist/ort.wasm.bundle.min.mjs'),
@@ -169,7 +175,7 @@ const mainContext = await esbuild.context({
 			preprocess: sveltePreprocess(),
 		}),
 		externalOnnxruntimeNodePlugin(),
-		copyOrtWasmPlugin(),
+		inlineEmbeddingWorkerPlugin(),
 	],
 });
 
@@ -235,9 +241,9 @@ const embeddingWorkerContext = await esbuild.context({
 });
 
 if (prod) {
+	await embeddingWorkerContext.rebuild();
 	const mainResult = await mainContext.rebuild();
 	await workerContext.rebuild();
-	await embeddingWorkerContext.rebuild();
 	if (mainResult.metafile) {
 		await import('node:fs/promises').then(({ writeFile }) =>
 			writeFile(path.join(__dirname, 'dist', 'meta-main.json'), JSON.stringify(mainResult.metafile)),
@@ -245,6 +251,7 @@ if (prod) {
 	}
 	process.exit(0);
 } else {
+	await embeddingWorkerContext.rebuild();
 	await mainContext.watch();
 	await workerContext.watch();
 	await embeddingWorkerContext.watch();

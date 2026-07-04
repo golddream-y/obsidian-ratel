@@ -31,4 +31,7 @@ data.json
 # Git worktrees (per using-git-worktrees skill)
 .worktrees/
 
+# 临时 scratch / 会话结论(不进版本库)
+.temp/
+
 

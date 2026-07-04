@@ -5,9 +5,9 @@
  * @depends obsidian, settings, types, core/*, adapters/*, ports/*, worker/*, tools/*, ui/*
  */
 
-import fs from 'fs';
+import { EMBEDDING_WORKER_CODE } from '@ratel/embedding-worker-code';
 import { FileSystemAdapter, Plugin } from 'obsidian';
-import { type RatelVaultSettings, DEFAULT_SETTINGS, RatelVaultSettingTab } from './settings';
+import { type RatelVaultSettings, DEFAULT_SETTINGS, RatelVaultSettingTab, normalizeContextLengthSettings } from './settings';
 
 import type { AgentEvent } from './types';
 import { agentLoop } from './core/agent-loop';
@@ -44,6 +44,7 @@ import { showToolConfirmModal } from './ui/components/confirm-modal';
 import { validateVaultPath } from './utils/path-safety';
 import type { ToolCall } from './ports/llm';
 import { ModelManager } from './core/model-manager';
+import { OrtRuntimeAssets } from './core/ort-runtime-assets';
 import { IndexController } from './core/index-controller';
 import { FeedbackController } from './core/feedback-controller';
 import type { IndexBackend } from './core/index-manager';
@@ -62,10 +63,12 @@ import { rewriteQuery } from './core/query-rewriter';
 import { BailianReranker } from './adapters/reranker-bailian';
 import { Indexer } from './subagents/indexer';
 import { ChatView, VIEW_TYPE_CHAT } from './ui/chat/ChatView';
+import { applyBadgerEmojiToElement, patchAllChatLeafIcons } from './utils/badger-icon';
 import { get } from 'svelte/store';
 import { ensurePluginGitignore } from './utils/gitignore-writer';
 import { sha256 } from './utils/hash';
 import { IndexManifest } from './core/index-manifest';
+import { ModelContextRegistry } from './ui/tokens/model-context-registry';
 import path from 'path';
 
 /**
@@ -96,6 +99,7 @@ export default class RatelVaultPlugin extends Plugin {
 	// 关键路径:indexDir 在 onload 计算,onLayoutReady 初始化 InlineWorker 时需要复用。
 	private indexDir!: string;
 	modelManager!: ModelManager;
+	modelContextRegistry!: ModelContextRegistry;
 	indexController!: IndexController;
 	// 关键路径:索引 backend 引用 — smartReindex 直接调 this.indexBackend.fullReindex(),
 	// 避免 this.indexController['indexManager']['backend'] 反模式访问私有字段。
@@ -149,6 +153,7 @@ export default class RatelVaultPlugin extends Plugin {
 		// 因此只做目录占位;InlineWorker 场景下会在模型就绪后重新创建带 embeddings 的 store。
 		this.vectraStore = new VectraStore(this.indexDir);
 		ensurePluginGitignore(pluginDir);
+		this.modelContextRegistry = new ModelContextRegistry(pluginDir);
 
 		// ==================== Worker ====================
 		// 关键路径:优先尝试 Node.js Worker Threads;Obsidian 渲染进程不支持时降级到 InlineWorker。
@@ -157,12 +162,9 @@ export default class RatelVaultPlugin extends Plugin {
 
 		// ==================== 模型与索引 ====================
 		// 关键路径:本地模型缓存放到插件目录,与 index 同级,便于随插件清理。
-		// onnxruntime-web 使用 wasm bundle 入口(JS wrapper 内联),WASM 二进制文件
-		// (ort-wasm-simd-threaded.wasm)由 esbuild 复制到 dist/,部署时与 main.js 一起
-		// 放到插件目录(pluginDir)。用 pluginDir 定位而不是 __dirname,因为 Obsidian/Electron
-		// 环境中 __dirname 可能指向 electron.asar 内部,导致 readFile 报 Invalid package 错误。
-		const wasmPath = path.join(pluginDir, 'ort-wasm-simd-threaded.wasm');
-		this.modelManager = new ModelManager(path.join(pluginDir, 'models'), wasmPath);
+		// ORT WASM 首次使用时从 jsDelivr 下载并缓存到 pluginDir(ADR-006);商店 release 只含 main.js。
+		const ortAssets = new OrtRuntimeAssets(pluginDir);
+		this.modelManager = new ModelManager(path.join(pluginDir, 'models'), ortAssets);
 
 		this.indexBackend = {
 			fullReindex: async () => {
@@ -312,10 +314,17 @@ export default class RatelVaultPlugin extends Plugin {
 		const ribbonEl = this.addRibbonIcon('paw-print', 'Ratel', () => {
 			this.activateChatView();
 		});
-		const ribbonSvg = ribbonEl.querySelector('svg');
-		if (ribbonSvg) {
-			ribbonSvg.replaceWith(createSpan({ text: '🦡' }));
+		const ribbonSvg = ribbonEl?.querySelector('svg');
+		if (ribbonSvg?.parentElement) {
+			applyBadgerEmojiToElement(ribbonSvg.parentElement);
 		}
+
+		// 关键路径:右侧边栏 tab 图标来自 ItemView.getIcon()(Lucide),需在 layout 后替换为 emoji。
+		this.registerEvent(
+			this.app.workspace.on('layout-change', () => {
+				patchAllChatLeafIcons(this.app.workspace);
+			}),
+		);
 
 		// 命令:Ask vault — 唤起聊天侧栏。
 		this.addCommand({
@@ -760,6 +769,7 @@ export default class RatelVaultPlugin extends Plugin {
 		delete legacy.embedApiKey;
 		delete legacy.rerankerApiKey;
 		delete legacy.rerankerProvider;
+		normalizeContextLengthSettings(this.settings, loaded);
 	}
 
 	/** 持久化当前设置到 Obsidian data.json。 */
@@ -856,7 +866,7 @@ export default class RatelVaultPlugin extends Plugin {
 	 * 创建并初始化 EmbeddingWorkerProxy,把 ONNX 推理移入 Web Worker。
 	 *
 	 * 关键路径:
-	 * - Worker URL 用 Blob URL 模式:fs.readFileSync 读 worker 脚本 → Blob → createObjectURL,
+	 * - Worker URL 用 Blob URL 模式:构建期内联的 worker 脚本 → Blob → createObjectURL,
 	 *   生成同源 blob:app://obsidian.md/<uuid> URL,绕过 app://<hash> 与 app://obsidian.md 跨 origin 的 SecurityError。
 	 * - 模型依赖(modelBuffer / wasmBinary)从 ModelManager.getDeps() 重新读盘,返回全新 ArrayBuffer;
 	 *   transfer 给 Worker 后不影响主线程 EmbeddingOnnx 实例持有的 buffer。
@@ -867,16 +877,13 @@ export default class RatelVaultPlugin extends Plugin {
 	 * @throws Error Worker 创建或 init 失败,错误消息引导用户切换到 API Embedding。
 	 */
 	private async initEmbeddingWorkerProxy(embedding: EmbeddingPort): Promise<void> {
-		// 关键路径: getResourcePath 返回 app://<hash>/... 与页面 origin app://obsidian.md 跨 origin,
-		// Web Worker 同源策略拒绝。改用 Blob URL:读脚本内容 → Blob → createObjectURL,
-		// 生成同源 blob:app://obsidian.md/<uuid>,new Worker(blobUrl) 可正常加载。
-		// 修复: SecurityError Failed to construct 'Worker' — app://<hash> vs app://obsidian.md 跨 origin。
-		// 关键路径: manifest.dir 是相对 vault 的路径(如 ".obsidian/plugins/ratel-vault"),
-		// 插件产物直接放在该目录下(main.js / worker.js / embedding-worker.js),无 dist/ 子目录。
-		const adapter = this.app.vault.adapter as FileSystemAdapter;
-		const workerPath = adapter.getFullPath(this.manifest.dir + '/embedding-worker.js');
-		const workerCode = fs.readFileSync(workerPath, 'utf-8');
-		const blob = new Blob([workerCode], { type: 'application/javascript' });
+		// 关键路径: embedding worker 脚本在构建期内联进 main.js(ADR-006),不再读磁盘 embedding-worker.js。
+		if (!EMBEDDING_WORKER_CODE) {
+			throw new Error(
+				'本地 Embedding Worker 脚本未内联(构建产物异常)。请重新 npm run build 或切换到 API Embedding。',
+			);
+		}
+		const blob = new Blob([EMBEDDING_WORKER_CODE], { type: 'application/javascript' });
 		const workerUrl = URL.createObjectURL(blob);
 		this.embeddingWorkerUrl = workerUrl;
 
@@ -927,5 +934,6 @@ export default class RatelVaultPlugin extends Plugin {
 		} else {
 			workspace.revealLeaf(leaf);
 		}
+		requestAnimationFrame(() => patchAllChatLeafIcons(this.app.workspace));
 	}
 }

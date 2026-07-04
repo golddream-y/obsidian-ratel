@@ -24,7 +24,7 @@ vi.mock('../src/main', () => ({
     default: class RatelVaultPlugin {},
 }));
 
-import { DEFAULT_SETTINGS, type RatelVaultSettings } from '../src/settings';
+import { normalizeContextLengthSettings, DEFAULT_SETTINGS, type RatelVaultSettings } from '../src/settings';
 
 /**
  * 模拟 src/main.ts:loadSettings 的合并逻辑,验证旧字段兼容性。
@@ -37,7 +37,7 @@ function simulateLoadSettings(raw: Partial<RatelVaultSettings> | null): RatelVau
 		...DEFAULT_SETTINGS.toolPermissions,
 		...(loaded.toolPermissions ?? {}),
 	};
-	return settings;
+	return normalizeContextLengthSettings(settings, loaded);
 }
 
 describe('Settings 迁移', () => {
@@ -86,5 +86,22 @@ describe('Settings 迁移', () => {
 
         expect(merged.toolPermissions.read_note).toBe('allow');
         expect(merged.toolPermissions.write_note).toBe('ask');
+    });
+
+    it('chatModelMaxTokens=0 → 256k', () => {
+        const merged = simulateLoadSettings({ chatModelMaxTokens: 0 });
+        expect(merged.contextLengthPreset).toBe('256k');
+        expect(merged.chatModelMaxTokens).toBe(256_000);
+    });
+
+    it('64000 → custom', () => {
+        const merged = simulateLoadSettings({ chatModelMaxTokens: 64_000 });
+        expect(merged.contextLengthPreset).toBe('custom');
+        expect(merged.chatModelMaxTokens).toBe(64_000);
+    });
+
+    it('128000 → 128k', () => {
+        const merged = simulateLoadSettings({ chatModelMaxTokens: 128_000 });
+        expect(merged.contextLengthPreset).toBe('128k');
     });
 });

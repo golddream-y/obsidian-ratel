@@ -31,6 +31,7 @@
 	import { devLogger } from '../../logging/dev-logger';
 	import { formatToolDisplayName } from './format-tool-display';
 	import { estimateTokens } from '../tokens/token-estimator';
+	import { getEffectiveChatModelMaxTokens } from '../../utils/context-window';
 
 	let { plugin }: { plugin: RatelVaultPlugin } = $props();
 
@@ -64,6 +65,13 @@
 	});
 	const modelName = $derived(plugin.settings.chatModel);
 
+	// 关键路径:chatModelMaxTokens 由设置面板预设/自定义配置,见 ADR-007。
+	$effect(() => {
+		plugin.userStatus.patchContextUsage({
+			maxTokens: getEffectiveChatModelMaxTokens(plugin.settings),
+		});
+	});
+
 	// ==================== 工具函数 ====================
 	function refreshKeyState() {
 		plugin.rebuildLLM();
@@ -92,7 +100,11 @@
 			case '/new':
 				messages = [];
 				sessionId = 'session-' + Date.now();
-				plugin.userStatus.patchContextUsage({ usedTokens: 0, source: 'estimate' });
+				plugin.userStatus.patchContextUsage({
+					usedTokens: 0,
+					maxTokens: getEffectiveChatModelMaxTokens(plugin.settings),
+					source: 'estimate',
+				});
 				plugin.userStatus.clearAttachments();
 				break;
 			case '/compact':
@@ -156,9 +168,10 @@
 			0,
 		);
 		const attachmentTokens = get(attachmentStore).reduce((s, a) => s + a.estimatedTokens, 0);
+		const maxTokens = getEffectiveChatModelMaxTokens(plugin.settings);
 		plugin.userStatus.patchContextUsage({
 			usedTokens: baselineUsed,
-			maxTokens: plugin.settings.chatModelMaxTokens,
+			maxTokens,
 			attachmentTokens,
 			source: 'estimate',
 		});
@@ -190,6 +203,7 @@
 						// 第 2 层:流式中累计校准
 						plugin.userStatus.patchContextUsage({
 							usedTokens: baselineUsed + streamingUsed,
+							maxTokens,
 							source: 'streaming',
 						});
 						scrollToBottom();
@@ -223,6 +237,7 @@
 							};
 							plugin.userStatus.patchContextUsage({
 								usedTokens: event.payload.promptTokens + event.payload.completionTokens,
+								maxTokens,
 								source: 'api',
 							});
 						}
@@ -328,10 +343,7 @@
 <div class="ratel-chat">
 	<!-- Header — 标题 + 模型徽章(毛玻璃) -->
 	<div class="ratel-header">
-		<div class="ratel-header-left">
-			<span class="ratel-header-logo">R</span>
-			<span class="ratel-header-title">Ratel</span>
-		</div>
+		<span class="ratel-header-title">Ratel Agent</span>
 		<span class="ratel-header-badge">{modelName}</span>
 	</div>
 
@@ -436,27 +448,6 @@
 		background: color-mix(in srgb, var(--background-secondary) 65%, transparent);
 		backdrop-filter: blur(10px);
 		-webkit-backdrop-filter: blur(10px);
-	}
-
-	.ratel-header-left {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-	}
-
-	.ratel-header-logo {
-		width: 22px;
-		height: 22px;
-		border-radius: 6px;
-		background: color-mix(in srgb, var(--text-success) 20%, transparent);
-		color: var(--text-success);
-		font-size: 12px;
-		font-weight: 700;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		font-family: var(--font-monospace);
-		border: 1px solid color-mix(in srgb, var(--text-success) 30%, transparent);
 	}
 
 	.ratel-header-title {

@@ -8,6 +8,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { ModelManager } from '../../src/core/model-manager';
 import { ModelDownloader } from '../../src/core/model-downloader';
+import { createMockOrtAssets } from '../helpers/mock-ort-assets';
 import { get } from 'svelte/store';
 
 describe('ModelManager - cleanup', () => {
@@ -17,7 +18,7 @@ describe('ModelManager - cleanup', () => {
 			ensureModel: vi.fn().mockResolvedValue('/tmp/models/Xenova/bge-small-zh-v1.5'),
 			remove: removeMock,
 		} as unknown as ModelDownloader;
-		const manager = new ModelManager('/tmp/models', '', downloader, async () => ({
+		const manager = new ModelManager('/tmp/models', createMockOrtAssets(), downloader, async () => ({
 			modelId: 'local:bge-small-zh-v1.5',
 			dimensions: 512,
 			embed: vi.fn().mockResolvedValue([]),

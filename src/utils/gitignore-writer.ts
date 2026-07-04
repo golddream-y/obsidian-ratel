@@ -12,7 +12,12 @@ import fs from 'fs';
 import path from 'path';
 
 const RATEL_GITIGNORE_MARKER = '# Ratel Vault';
-const RATEL_GITIGNORE_LINES = ['.index/', 'cache/'];
+const RATEL_GITIGNORE_LINES = [
+	'.index/',
+	'cache/',
+	'model-context-registry.json',
+	'model-context-registry.meta.json',
+];
 
 /**
  * 确保插件目录下的 `.gitignore` 包含 Ratel Vault 索引相关行。

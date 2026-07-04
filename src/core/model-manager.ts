@@ -9,29 +9,29 @@ import { writable } from 'svelte/store';
 import { InsufficientDiskError, type ProgressInfo, ModelDownloader } from './model-downloader';
 import { EmbeddingOnnx, type EmbeddingOnnxDeps } from '../adapters/embedding-onnx';
 import type { EmbeddingPort } from '../ports/embedding';
+import { OrtRuntimeAssets } from './ort-runtime-assets';
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 
 /**
- * 创建默认的模型加载函数:从缓存目录读取 ONNX + vocab,从 wasmPath 读取 ORT WASM,
+ * 创建默认的模型加载函数:从缓存目录读取 ONNX + vocab,从 OrtRuntimeAssets 读取 ORT WASM,
  * 然后初始化 EmbeddingOnnx。
  *
- * 关键路径:用工厂模式接收 wasmPath,返回符合 (modelDir: string) => Promise<EmbeddingPort> 签名,
+ * 关键路径:用工厂模式接收 ortAssets,返回符合 (modelDir: string) => Promise<EmbeddingPort> 签名,
  * 避免在 ModelManager 构造时就读取 wasm 文件(延迟到 download() 调用时)。
  *
- * @param wasmPath - onnxruntime-web 的 WASM 文件绝对路径。
+ * @param ortAssets - ONNX Runtime WASM 懒下载与缓存。
  */
-export function createDefaultEmbeddingFactory(wasmPath: string) {
+export function createDefaultEmbeddingFactory(ortAssets: OrtRuntimeAssets) {
     return async (modelDir: string): Promise<EmbeddingPort> => {
-        const [onnxBuffer, wasmBuffer, vocabContent] = await Promise.all([
+        const [onnxBuffer, wasmBinary, vocabContent] = await Promise.all([
             readFile(path.join(modelDir, 'model_quantized.onnx')),
-            readFile(wasmPath),
+            ortAssets.readWasmBinary(),
             // 关键路径:vocab 用内容传递,与 Web Worker 路径一致(Worker 无 node:fs)。
             readFile(path.join(modelDir, 'vocab.txt'), 'utf-8'),
         ]);
         // 关键路径:readFile 返回的 Buffer 底层 ArrayBuffer 可能大于实际数据,复制为独立 Uint8Array 后再取 buffer。
         const modelBuffer = new Uint8Array(onnxBuffer).buffer;
-        const wasmBinary = new Uint8Array(wasmBuffer).buffer;
         const embedding = new EmbeddingOnnx({
             vocabContent,
             modelBuffer,
@@ -56,24 +56,24 @@ export class ModelManager {
     private downloader: ModelDownloader;
     private embedding: EmbeddingPort | null = null;
     private cacheDir: string;
-    // 关键路径:wasmPath 保留供 getDeps() 重新读盘,Web Worker 需要全新的 ArrayBuffer 副本 transfer。
-    private wasmPath: string;
+    // 关键路径:ortAssets 供 getDeps() 重新读盘,Web Worker 需要全新的 ArrayBuffer 副本 transfer。
+    private ortAssets: OrtRuntimeAssets;
     // 关键路径:modelDir 在 download() 成功后记录,getDeps() 据此重新读取模型文件。
     private modelDir: string | null = null;
     private createEmbedding: (modelDir: string) => Promise<EmbeddingPort>;
 
     constructor(
         cacheDir: string,
-        wasmPath: string,
+        ortAssets: OrtRuntimeAssets,
         downloader?: ModelDownloader,
         createEmbedding?: (modelDir: string) => Promise<EmbeddingPort>,
     ) {
         this.cacheDir = cacheDir;
-        this.wasmPath = wasmPath;
+        this.ortAssets = ortAssets;
         this.downloader = downloader ?? new ModelDownloader(cacheDir);
-        // 关键路径:createEmbedding 未传入时,用 wasmPath 构造默认工厂;
+        // 关键路径:createEmbedding 未传入时,用 ortAssets 构造默认工厂;
         // 测试场景下传入 mock 函数则跳过默认逻辑。
-        this.createEmbedding = createEmbedding ?? createDefaultEmbeddingFactory(wasmPath);
+        this.createEmbedding = createEmbedding ?? createDefaultEmbeddingFactory(ortAssets);
     }
 
     /**
@@ -90,17 +90,39 @@ export class ModelManager {
         try {
             this.status$.set({ state: 'Downloading', progress: 0, speed: 0, eta: 0 });
             const startTime = Date.now();
-            const modelDir = await this.downloader.ensureModel((p) => {
-                onProgress?.(p);
+            // 关键路径:WASM(~13MB) 与 ONNX 模型(~24MB) 并行下载,各自 0-1 进度需加权合并,避免竞态把 progress 顶到 >100%。
+            let wasmProgress = 0;
+            let modelProgress = 0;
+            const WASM_DOWNLOAD_WEIGHT = 0.35;
+            const MODEL_DOWNLOAD_WEIGHT = 0.65;
+            const emitCombinedProgress = () => {
+                const combined = Math.min(
+                    1,
+                    wasmProgress * WASM_DOWNLOAD_WEIGHT + modelProgress * MODEL_DOWNLOAD_WEIGHT,
+                );
+                onProgress?.({ file: 'download', progress: combined });
                 const elapsed = (Date.now() - startTime) / 1000;
-                const speed = p.progress > 0 ? p.progress / elapsed : 0;
+                const speed = combined > 0 ? combined / elapsed : 0;
                 this.status$.set({
                     state: 'Downloading',
-                    progress: p.progress,
+                    progress: combined,
                     speed,
-                    eta: speed > 0 ? (1 - p.progress) / speed : 0,
+                    eta: speed > 0 ? (1 - combined) / speed : 0,
                 });
-            });
+            };
+            const reportWasmProgress = (p: ProgressInfo) => {
+                wasmProgress = Math.min(1, p.progress);
+                emitCombinedProgress();
+            };
+            const reportModelProgress = (p: ProgressInfo) => {
+                modelProgress = Math.min(1, p.progress);
+                emitCombinedProgress();
+            };
+            // 关键路径:ORT WASM 与 ONNX 模型并行下载,首次初始化更快(ADR-006)。
+            const [modelDir] = await Promise.all([
+                this.downloader.ensureModel(reportModelProgress),
+                this.ortAssets.ensureWasm(reportWasmProgress),
+            ]);
             // 关键路径:记录 modelDir 供 getDeps() 重新读盘,Web Worker 需要全新 ArrayBuffer 副本。
             this.modelDir = modelDir;
 
@@ -146,9 +168,9 @@ export class ModelManager {
     async getDeps(): Promise<EmbeddingOnnxDeps | null> {
         if (!this.modelDir) return null;
         // 关键路径:并行读盘,与 createDefaultEmbeddingFactory 一致的路径结构。
-        const [onnxBuffer, wasmBuffer, vocabContent] = await Promise.all([
+        const [onnxBuffer, wasmBinary, vocabContent] = await Promise.all([
             readFile(path.join(this.modelDir, 'model_quantized.onnx')),
-            readFile(this.wasmPath),
+            this.ortAssets.readWasmBinary(),
             readFile(path.join(this.modelDir, 'vocab.txt'), 'utf-8'),
         ]);
         // 关键路径:readFile 返回的 Buffer 底层 ArrayBuffer 可能大于实际数据,
@@ -156,7 +178,7 @@ export class ModelManager {
         return {
             vocabContent,
             modelBuffer: new Uint8Array(onnxBuffer).buffer,
-            wasmBinary: new Uint8Array(wasmBuffer).buffer,
+            wasmBinary,
         };
     }
 

@@ -9,6 +9,7 @@ import { ItemView, type WorkspaceLeaf } from 'obsidian';
 import { mount, unmount } from 'svelte';
 import ChatViewComponent from './ChatView.svelte';
 import type RatelVaultPlugin from '../../main';
+import { patchChatLeafIcon } from '../../utils/badger-icon';
 
 /** Obsidian 工作区视图类型 — 唯一字符串,注册到 `registerView`。 */
 export const VIEW_TYPE_CHAT = 'ratel-chat';
@@ -39,12 +40,12 @@ export class ChatView extends ItemView {
 
 	/** 工作区标签上显示的标题。 */
 	getDisplayText(): string {
-		return 'Ratel Chat';
+		return 'Ratel Agent';
 	}
 
-	/** 工作区侧栏显示的图标 — 'brain' 是 lucide 内置图标。 */
+	/** 工作区侧栏占位图标 — 实际显示由 patchChatLeafIcon 替换为 🦡。 */
 	getIcon(): string {
-		return 'brain';
+		return 'paw-print';
 	}
 
 	/**
@@ -63,6 +64,8 @@ export class ChatView extends ItemView {
 				plugin: this.plugin,
 			},
 		});
+
+		requestAnimationFrame(() => patchChatLeafIcon(this.leaf));
 	}
 
 	/**

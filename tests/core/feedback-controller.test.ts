@@ -63,7 +63,7 @@ describe('FeedbackController', () => {
 		modelStatus$.set({ state: 'Downloading', progress: 0.5, speed: 0, eta: 0 });
 		expect(get(userStatus.statusBar$).model).toBe('downloading');
 		expect(get(userStatus.statusBar$).modelDetail).toBe('50%');
-		expect(toastProgress).toHaveBeenCalledWith('Ratel: 正在下载 bge-small-zh-v1.5 模型... 50%');
+		expect(toastProgress).toHaveBeenCalledWith('Ratel: 正在下载模型与运行时... 50%');
 		ctl.destroy();
 	});
 

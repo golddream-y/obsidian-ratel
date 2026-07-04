@@ -5,8 +5,10 @@
 - 目标平台:Obsidian 社区插件(TypeScript → 打包后 JavaScript)。
 - 主线程入口:`src/main.ts` 编译为 `dist/main.js`,由 Obsidian 加载。
 - Worker 入口:`src/worker/index.ts` 编译为 `dist/worker.js`(索引调度,InlineWorker 模拟)。
-- Embedding Worker 入口:`src/worker/embedding-worker.ts` 编译为 `dist/embedding-worker.js`(ONNX 推理,Web Worker)。
-- 发布产物:`dist/main.js`、`dist/worker.js`、`dist/embedding-worker.js`、`manifest.json`、可选 `styles.css`,从 `dist/` 取。
+- Embedding Worker 源码:`src/worker/embedding-worker.ts` → 构建为 `dist/embedding-worker.js`,**内联进** `dist/main.js`(ADR-006);商店 release 不上传该文件。
+- ORT WASM:首次 local embedding 时从 jsDelivr 下载到 `pluginDir`(ADR-006)。
+- **商店 release 产物**:`dist/main.js`、`manifest.json`、可选 `styles.css`(Obsidian / BRAT 三文件约束)。
+- **本地开发产物**另含 `dist/worker.js`(InlineWorker 索引);`npm run link:vault` 软链 main/worker/manifest。
 
 ## 架构
 
@@ -92,7 +94,8 @@ src/
 - **Embedding Web Worker 严禁使用 Node API**:不 `import 'obsidian'`、不用 `node:fs` / `node:path`、不发 HTTP 请求。只做纯 CPU WASM 推理。
 - **InlineWorker 不允许发 HTTP 请求**:Embedding 与 LLM 调用都在主线程(或 Embedding Web Worker)。
 - **所有 Obsidian API 访问必须走 ObsidianVault 外观**(`adapters/obsidian-vault.ts`)。
-- **三产物**:`main.js`(主线程)+ `worker.js`(InlineWorker 索引调度)+ `embedding-worker.js`(Web Worker ONNX 推理)。
+- **构建产物**:`main.js`(含内联 embedding worker)+ `worker.js`(InlineWorker 索引调度,仅本地开发)。
+- **商店 release**:仅 `main.js` + `manifest.json` + `styles.css`(ADR-006)。
 - **网络调用**:只能是模型 API(DeepSeek / Claude / Ollama),必须在 README 中写明。
 
 ## 性能
@@ -114,7 +117,7 @@ src/
 
 - 升级 `manifest.json` 的 `version`(SemVer),并同步 `versions.json`。
 - GitHub release 的 tag 必须严格匹配 `manifest.json` 的 `version`(不带 `v` 前缀)。
-- release 上传 `main.js`、`worker.js`、`embedding-worker.js`、`manifest.json`、`styles.css`。
+- release 上传 `main.js`、`manifest.json`、`styles.css`(Obsidian / BRAT 仅安装此三文件,见 ADR-006)。
 
 ## 文档同步规则(mandatory)
 
