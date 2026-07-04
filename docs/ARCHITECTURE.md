@@ -342,6 +342,15 @@ src/
     indexer.ts                     #   vectra 索引操作
     chunker.ts                     #   Markdown 分块 (500 token + 100 overlap)
 
+  prompts/                         # Prompt Registry(单一装配入口)
+    types.ts                       #   PromptSectionId 类型 + OverrideMap
+    sections.ts                    #   24 个 section 元数据注册表
+    defaults/zh.ts                 #   中文默认值(常量,不可变)
+    interpolate.ts                 #   {{var}} 占位符引擎 + 校验
+    tool-schemas.ts                #   9 个工具的 JSON schema 骨架
+    composer.ts                    #   Composer 装配 API(4 个出口函数)
+    index.ts                       #   模块 re-export 入口
+
   utils/                           # 工具函数
     hash.ts                        #   SHA-256 content hash
     debounce.ts                    #   防抖
@@ -398,10 +407,20 @@ graph TB
         WK3["chunker.ts"]
     end
 
+    subgraph "prompts/"
+        PMT["types.ts"]
+        PMS["sections.ts"]
+        PMD["defaults/zh.ts"]
+        PMC["composer.ts"]
+        PMI["interpolate.ts"]
+        PMK["tool-schemas.ts"]
+    end
+
     Main --> AL
     Main --> AOV
     Main --> UI2
     Main --> Settings
+    Main --> PMC
 
     AL --> CM
     AL --> HK
@@ -411,6 +430,7 @@ graph TB
 
     CM --> PP
     CM --> PL
+    CM --> PMC
 
     T1 --> PV
     T1 --> AOV
@@ -439,6 +459,20 @@ graph TB
 ```
 
 **核心铁律**：`core/` 永远是叶子，**任何模块都不反向依赖 core/**。
+
+### 3.3 Prompt Registry 子系统
+
+`src/prompts/` 是所有 LLM 可见文本(system prompt、工具 description、检索外框)的**单一装配入口**。
+
+**设计要点:**
+
+- **Section 为最小单元** — 提示词被切成 24 个 `PromptSectionId`(如 `agent.base`、`tool.read_note.description`),用户可逐段覆盖,未覆盖段用 `defaults/zh.ts` 默认值
+- **Composer 4 个出口函数** — `composeAgentSystem` / `composeInternalMessages` / `composeToolDefinitions` / `formatSearchResultsBlock`;`ContextManager`、`classifyIntent`、`rewriteQuery`、`main.ts` 4 个消费方都调这 4 个函数
+- **工具 description 单源** — RAG 引导(`formatToolGuideList`)与 function calling schema(`composeToolDefinitions`)都从 `tool-schemas.ts` + `defaults/zh.ts` 取描述,避免双源漂移
+- **检索外框硬编码不可覆盖** — `SEARCH_RESULTS_WRAPPER_PREFIX/SUFFIX` 是 prompt injection 防御基线,不在 `listEditableSections()` 中暴露
+- **热替换** — `ToolRegistry.updateDefinition(name, def)` + `main.ts syncToolDefinitions()` 让用户改完提示词无需重启即可生效
+
+详见 [ADR-008:Prompt Registry 设计决策](adr/2026-07-04-prompt-registry.md)。
 
 ---
 

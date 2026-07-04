@@ -5,7 +5,7 @@
  * @depends obsidian, ./main
  */
 
-import { App, Notice, PluginSettingTab, Setting } from 'obsidian';
+import { App, Modal, Notice, PluginSettingTab, Setting } from 'obsidian';
 import RatelVaultPlugin from './main';
 import { createTabBar } from './ui/diagnostics/tab-bar';
 import { renderEmbeddingTest } from './ui/diagnostics/embedding-test';
@@ -35,6 +35,10 @@ import {
 } from './ui/tokens/context-length-presets';
 import { DEFAULT_MODEL_REGISTRY_URL } from './ui/tokens/model-context-registry';
 import { probeChatConnection } from './ui/tokens/probe-model';
+import type { OverrideMap } from './prompts/types';
+import { listEditableSections, validatePlaceholders } from './prompts';
+import { composeAgentSystem } from './prompts/composer';
+import { ZH_DEFAULTS } from './prompts/defaults/zh';
 
 /**
  * 全部用户可配置项。
@@ -92,6 +96,8 @@ export interface RatelVaultSettings {
 
 	// Tool permissions (S-VAULT-TOOLS)
 	toolPermissions: Record<string, ToolPermission>;
+	// 关键路径:Prompt section 级覆盖(来自 Composer registry);空对象 = 全部用 zh.ts 默认。
+	promptOverrides: OverrideMap;
 	trustMode: boolean;
 }
 
@@ -150,6 +156,8 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 		edit_note: 'ask',
 		delete_note: 'ask',
 	},
+	// 关键路径:默认无任何 override,使用 zh.ts 内置中文模板。
+	promptOverrides: {},
 	trustMode: false,
 };
 
@@ -592,6 +600,9 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 		// ==================== Tool Permissions ====================
 		this.renderToolPermissions(containerEl);
 
+		// ==================== Prompt Overrides (Advanced) ====================
+		this.renderPromptOverrides(containerEl);
+
 		// ==================== Developer ====================
 		containerEl.createEl('h2', { text: '开发者' });
 
@@ -666,6 +677,122 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 					});
 				});
 		}
+	}
+
+	/**
+	 * 渲染「提示词(高级)」分组 — 按 section 编辑、textarea、占位符校验、预览。
+	 *
+	 * 关键路径:
+	 * - 每个 section 用 toggle 控制"使用自定义"还是"用默认"
+	 * - toggle 开启时,textarea 出现,初值取自现有 override 或 ZH_DEFAULTS
+	 * - textarea onchange:校验占位符 → 写入 settings → saveSettings → syncToolDefinitions
+	 * - 检索外框 wrapper 不在 listEditableSections 中(不可覆盖)
+	 *
+	 * @param container - 设置面板的容器元素
+	 */
+	private renderPromptOverrides(container: HTMLElement): void {
+		container.createEl('h2', { text: '提示词(高级)' });
+		container.createEl('p', {
+			text: '按段落自定义 LLM 系统提示词。检索结果安全外框不可编辑。',
+			cls: 'setting-item-description',
+		});
+
+		for (const meta of listEditableSections()) {
+			const useCustom = this.plugin.settings.promptOverrides[meta.id] !== undefined;
+
+			const row = container.createDiv({ cls: 'ratel-prompt-section-row' });
+			row.createEl('h3', { text: `${meta.label} (${meta.zone})` });
+			row.createEl('p', { text: meta.description, cls: 'setting-item-description' });
+
+			if (meta.placeholders.length > 0) {
+				row.createEl('p', {
+					text: `请勿删除占位符: ${meta.placeholders.map((p) => `{{${p}}}`).join(', ')}`,
+					cls: 'ratel-prompt-placeholder-hint',
+				});
+			}
+
+			new Setting(row)
+				.setName('使用自定义')
+				.addToggle((toggle) => {
+					toggle.setValue(useCustom);
+					toggle.onChange(async (on) => {
+						if (!on) {
+							delete this.plugin.settings.promptOverrides[meta.id];
+						} else {
+							// 关键路径:首次开启时用当前默认值填充,避免空 textarea 让用户从头写。
+							this.plugin.settings.promptOverrides[meta.id] =
+								this.plugin.settings.promptOverrides[meta.id] ?? ZH_DEFAULTS[meta.id];
+						}
+						await this.plugin.saveSettings();
+						this.plugin.syncToolDefinitions();
+						this.display();
+					});
+				});
+
+			if (useCustom) {
+				const ta = row.createEl('textarea', {
+				cls: 'ratel-prompt-override-textarea',
+			});
+				ta.value = this.plugin.settings.promptOverrides[meta.id] ?? ZH_DEFAULTS[meta.id] ?? '';
+				ta.rows = 8;
+				ta.onchange = async () => {
+					const value = ta.value;
+					const missing = validatePlaceholders(value, meta.placeholders);
+					// 关键路径:占位符缺失会让 Composer 拼出 broken prompt,需显式提示。
+					const warnEl = row.querySelector('.ratel-prompt-warn');
+					if (missing.length > 0) {
+						if (!warnEl) {
+							row.createEl('p', {
+							cls: 'ratel-prompt-warn',
+							text: `缺少占位符: ${missing.join(', ')}`,
+						});
+						} else {
+							(warnEl as HTMLElement).textContent = `缺少占位符: ${missing.join(', ')}`;
+						}
+						devLogger.warn('agent', `override ${meta.id} 缺少占位符`, missing);
+					} else if (warnEl) {
+						warnEl.remove();
+					}
+					this.plugin.settings.promptOverrides[meta.id] = value;
+				// 关键路径:saveSettings 内部已调 syncToolDefinitions,无需在此重复调用。
+				await this.plugin.saveSettings();
+			};
+
+			new Setting(row).setName('恢复本段默认').addButton((btn) =>
+				btn.setButtonText('恢复').onClick(async () => {
+					delete this.plugin.settings.promptOverrides[meta.id];
+					// 关键路径:saveSettings 内部已调 syncToolDefinitions,无需在此重复调用。
+					await this.plugin.saveSettings();
+					this.display();
+				}),
+			);
+			}
+		}
+
+		new Setting(container)
+		.setName('预览当前 RAG 系统提示词')
+		.setDesc('使用当前工具列表与 overrides 合成(点击后弹出模态框)')
+		.addButton((btn) =>
+			btn.setButtonText('预览').onClick(() => {
+				// 关键路径:用 Modal 弹出真模态,而非堆叠到面板下方。
+				const preview = composeAgentSystem(
+					'rag',
+					{ tools: this.plugin.tools.definitions() },
+					this.plugin.settings.promptOverrides,
+				);
+				const modal = new Modal(this.app);
+				modal.titleEl.setText('RAG 系统提示词预览');
+				const pre = modal.contentEl.createEl('pre', {
+					text: preview,
+				});
+				pre.style.whiteSpace = 'pre-wrap';
+				pre.style.wordBreak = 'break-word';
+				pre.style.fontFamily = 'var(--font-monospace)';
+				pre.style.fontSize = 'var(--font-smaller)';
+				pre.style.margin = '0';
+				modal.open();
+			}),
+		);
 	}
 
 	/**

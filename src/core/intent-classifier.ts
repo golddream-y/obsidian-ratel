@@ -2,10 +2,12 @@
  * @file src/core/intent-classifier.ts
  * @description 轻量意图分类器 — 一次 LLM 调用判断用户消息是否需要走 RAG 工作流
  * @module core/intent-classifier
- * @depends ports/llm
+ * @depends ports/llm, prompts/composer, prompts/types
  */
 
-import type { LLMClient, ChatMessage } from '../ports/llm';
+import type { LLMClient } from '../ports/llm';
+import { composeInternalMessages } from '../prompts/composer';
+import type { OverrideMap } from '../prompts/types';
 
 /**
  * 用户消息意图。
@@ -16,29 +18,9 @@ export type Intent = 'rag' | 'direct';
 
 export interface IntentClassifierDeps {
 	llm: LLMClient;
+	// 关键路径:可选的 section 覆盖,允许 settings 自定义内部 LLM 提示词
+	overrides?: OverrideMap;
 }
-
-/**
- * 意图分类提示词 — 中英文混合,因 LLM 可能用任一语言回答用户。
- * 关键路径:只要求回答一个词,降低 token 成本(maxTokens=5)。
- */
-const INTENT_PROMPT_TEMPLATE = (message: string): string =>
-	`判断以下用户消息是否需要搜索 Obsidian 知识库来回答。
-只回答一个词:'rag'(需要搜索)或 'direct'(不需要搜索)。
-
-需要搜索(rag)的例子:
-- 问知识库内容:"我的笔记里有什么关于 X 的内容?"
-- 问笔记关系:"X 和 Y 有什么联系?"
-- 查找信息:"我写过关于 X 的东西吗?"
-
-不需要搜索(direct)的例子:
-- 通用问题:"今天天气怎么样?"
-- 生成任务:"帮我写一个模板"
-- 统计任务:"库里有几个文件夹?"
-- 闲聊:"你好"
-
-用户消息:${message}
-回答:`;
 
 /**
  * 用一次快速 LLM 调用判断用户消息意图。
@@ -49,17 +31,18 @@ const INTENT_PROMPT_TEMPLATE = (message: string): string =>
  * - 解析失败或 LLM 异常时降级为 'rag'(宁可多搜一次,不漏知识库内容)
  *
  * @param message - 用户消息
- * @param deps - 依赖(LLM 客户端)
+ * @param deps - 依赖(LLM 客户端 + 可选 overrides)
  * @returns 'rag' = 需要搜索知识库;'direct' = 直接回答
  */
 export async function classifyIntent(
 	message: string,
 	deps: IntentClassifierDeps,
 ): Promise<Intent> {
-	const messages: ChatMessage[] = [
-		{ role: 'system', content: 'You are a helpful intent classifier. Reply with exactly one word: rag or direct.' },
-		{ role: 'user', content: INTENT_PROMPT_TEMPLATE(message) },
-	];
+	const messages = composeInternalMessages(
+		'intent',
+		{ tools: [], message },
+		deps.overrides ?? {},
+	);
 
 	try {
 		let output = '';

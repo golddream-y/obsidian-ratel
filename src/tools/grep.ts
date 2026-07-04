@@ -5,6 +5,7 @@
  */
 
 import type { Tool } from '../core/tool-registry';
+import type { ToolDefinition } from '../ports/llm';
 import type { VaultPort } from '../ports/vault';
 import { globToRegex, escapeRegExp } from '../utils/glob-to-regex';
 import { isExcludedVaultPath, isUnderDirectory } from '../utils/path-safety';
@@ -19,26 +20,9 @@ export interface GrepMatch {
 	after: string[];
 }
 
-export function createGrepTool(vault: VaultPort): Tool {
+export function createGrepTool(vault: VaultPort, definition: ToolDefinition): Tool {
 	return {
-		definition: {
-			name: 'grep',
-			description:
-				'在 vault 所有笔记中做精确文本或正则搜索。适用于查找特定汉字、代码片段、固定字符串;语义相关请用 search_vault。',
-			parameters: {
-				type: 'object',
-				properties: {
-					pattern: { type: 'string', description: '搜索模式(正则或字面量)' },
-					is_regex: { type: 'boolean', description: '默认 true;false 时按字面量匹配' },
-					include: { type: 'string', description: 'glob 过滤,默认 "**/*.md"' },
-					path: { type: 'string', description: '限定搜索目录(相对 vault 根)' },
-					ignore_case: { type: 'boolean', description: '默认 true' },
-					context_lines: { type: 'number', description: '上下文行数,默认 2' },
-					max_results: { type: 'number', description: '最大匹配数,默认 50' },
-				},
-				required: ['pattern'],
-			},
-		},
+		definition,
 		readOnly: true,
 		async execute(args) {
 			const pattern = requireString(args, 'pattern', 'pattern');

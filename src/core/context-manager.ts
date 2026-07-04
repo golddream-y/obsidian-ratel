@@ -6,57 +6,25 @@
  */
 
 import type { Persistence, Session, ChatMessage } from '../ports/persistence';
-import type { ToolCall } from '../ports/llm';
+import type { ToolCall, ToolDefinition } from '../ports/llm';
 // 关键路径:Intent 复用意图分类器定义,避免类型重复声明导致两端不同步
 import type { Intent } from './intent-classifier';
 // 关键路径:中英混合 token 估算,比 length/4 更准(中文 1.5 字符/token,英文 4 字符/token)
 import { estimateTokens } from '../ui/tokens/token-estimator';
+// 关键路径:系统提示词与检索结果外框统一由 Composer 组装,保证 prompt 注入防护(外框不可删)与 section 覆盖机制生效
+import { composeAgentSystem, formatSearchResultsBlock } from '../prompts/composer';
+import type { OverrideMap } from '../prompts/types';
 
 /**
- * 基础系统提示词 — direct 模式(闲聊、生成、统计等不需要搜索的场景)。
+ * ContextManager 依赖注入 — 解耦 settings/工具注册表。
  *
- * 关键路径:英文版,token 效率高于中文;`Always respond in the same language the user uses`
- * 强制 LLM 跟随用户语言,避免用户问中文时模型用英文回答。
+ * - `getOverrides`: 返回当前 prompt section 覆盖(来自 settings.promptOverrides)
+ * - `getTools`: 返回当前已注册的工具定义(来自 ToolRegistry,供 RAG toolGuide 拼接)
  */
-const BASE_PROMPT = `You are Ratel, an AI assistant that helps users explore and manage their Obsidian vault. You can read notes and answer questions about their content. Always respond in the same language the user uses.`;
-
-/**
- * RAG 系统提示词 — rag 模式(问知识库内容、查笔记关系等需要搜索的场景)。
- *
- * 关键路径:在 BASE_PROMPT 基础上追加 RAG 工作流指令,引导 LLM:
- * 1. 调 search_vault 找相关笔记(结果带 index 编号)
- * 2. 调 read_note 读全文
- * 3. 回答时用 [1][2] 引用 search_vault 返回的 index
- */
-const RAG_PROMPT = BASE_PROMPT + `
-
-When answering knowledge base questions, follow this workflow:
-1. Call search_vault to find relevant notes. Results include an index number for citation.
-2. Call read_note for promising results to read the full content.
-3. Answer the question and cite sources using [1], [2] format matching the index numbers from search results.
-4. If search returns no results, tell the user honestly.
-`;
-
-const VAULT_TOOLS_GUIDE_ZH = `
-
-你可使用以下 vault 工具:
-- search_vault: 语义搜索(向量+BM25),适合找概念相关的内容
-- grep: 全文精确/正则搜索,适合查找特定汉字、代码、固定字符串
-- glob: 按文件名模式查找笔记(如 "daily/*.md")
-- list_files: 列出目录内容
-- read_note: 读取笔记全文
-- write_note: 创建或覆盖笔记
-- append_note: 在笔记末尾追加内容
-- edit_note: 精确替换文本(old_string 必须唯一且完全匹配)
-- delete_note: 将笔记移到回收站(可恢复)
-
-何时用 grep 而非 search_vault:
-- 用户要找特定词语、精确字符串、正则模式,或「包含 X 的所有文件」→ 用 grep
-- 用户问主题、概念、语义相关内容 → 用 search_vault
-- 不确定时先试 search_vault;若结果未包含精确词,再用 grep 补充
-`;
-
-const RAG_PROMPT_WITH_TOOLS = RAG_PROMPT + VAULT_TOOLS_GUIDE_ZH;
+export interface ContextManagerDeps {
+	getOverrides: () => OverrideMap;
+	getTools: () => ToolDefinition[];
+}
 
 /**
  * 会话上下文管理器。
@@ -67,9 +35,10 @@ const RAG_PROMPT_WITH_TOOLS = RAG_PROMPT + VAULT_TOOLS_GUIDE_ZH;
  * - `toMessages()` 总是返回 `[system, ...searchResultsMessages, ...session.messages]`,保证 LLM 始终看到最新系统提示与当前检索上下文。
  * - `load()` 切换 session 时会清空 `searchResultsMessages`,避免旧 session 的检索结果泄漏到新 session。
  * - Layer 1 截断:历史消息超过 `maxHistoryTokens` 时从最旧开始裁剪,保护系统提示词 + 搜索结果 + 最近消息。
+ * - 系统提示词与检索结果外框通过 Composer 组装(direct / rag),解耦具体文案并支持 section 覆盖。
  *
  * @example
- *   const ctx = new ContextManager(persistence);
+ *   const ctx = new ContextManager(persistence, deps);
  *   await ctx.load('session-1');
  *   ctx.addUserMessage('hello');
  *   const messages = ctx.toMessages();
@@ -89,9 +58,17 @@ export class ContextManager {
 
 	/**
 	 * @param persistence - 持久化端口,用于加载/保存 session。
+	 * @param deps - 依赖注入(overrides 与 tools 来源);缺省返回空 overrides 与空工具列表。
 	 * @param maxHistoryTokens - 历史池 token 上限,默认 8000。
 	 */
-	constructor(private persistence: Persistence, maxHistoryTokens = 8000) {
+	constructor(
+		private persistence: Persistence,
+		private deps: ContextManagerDeps = {
+			getOverrides: () => ({}),
+			getTools: () => [],
+		},
+		maxHistoryTokens = 8000,
+	) {
 		this.maxHistoryTokens = maxHistoryTokens;
 	}
 
@@ -180,6 +157,7 @@ export class ContextManager {
 	 * - 插入位置固定:base system prompt 之后、历史消息之前。
 	 * - 多次调用追加,不覆盖,支持多轮检索。
 	 * - content 来自 read_note,不是 search_vault(工具只返回 metadata)。
+	 * - 外框(prefix/suffix)由 Composer 硬编码,关键路径:防 prompt 注入(检索结果不可被当作指令)。
 	 *
 	 * @param results - 搜索结果,每项包含文档路径与已读取的内容。
 	 */
@@ -187,13 +165,9 @@ export class ContextManager {
 		this.requireSession();
 		if (results.length === 0) return;
 
-		const formatted = results
-			.map((r, i) => `[${i + 1}] ${r.path}\n${r.content}`)
-			.join('\n\n');
-
 		this.searchResultsMessages.push({
 			role: 'system',
-			content: `--- 知识库检索结果 ---\n\n${formatted}`,
+			content: formatSearchResultsBlock(results, this.deps.getOverrides()),
 		});
 		// 修复:检索结果消息不应更新 session.updatedAt,它不属于会话历史;但保留对旧行为兼容,暂不影响功能。
 	}
@@ -202,7 +176,7 @@ export class ContextManager {
 	 * 拼接最终给 LLM 的消息列表(系统提示 + 检索结果 + 历史消息)。
 	 *
 	 * 关键路径:
-	 * - 按意图选择 BASE_PROMPT(direct)或 RAG_PROMPT(rag)
+	 * - 通过 Composer 组装系统提示词(direct / rag),支持 section 覆盖与工具指引注入
 	 * - 历史消息超出 `maxHistoryTokens` 时触发 Layer 1 截断
 	 * - 系统提示词和搜索结果不在裁剪范围
 	 *
@@ -210,7 +184,9 @@ export class ContextManager {
 	 * @returns 消息数组,首条为 system 角色
 	 */
 	toMessages(intent: Intent = 'direct'): ChatMessage[] {
-		const systemPrompt = intent === 'rag' ? RAG_PROMPT_WITH_TOOLS : BASE_PROMPT;
+		const overrides = this.deps.getOverrides();
+		const tools = this.deps.getTools();
+		const systemPrompt = composeAgentSystem(intent, { intent, tools }, overrides);
 		const history = this.session?.messages ?? [];
 		const trimmed = this.trimHistory(history);
 		return [

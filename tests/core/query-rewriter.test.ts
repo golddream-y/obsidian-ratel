@@ -89,4 +89,18 @@ describe('rewriteQuery', () => {
 		expect(result[1]!.text).toBe('使用什么技术栈');
 		expect(result[2]!.text).toBe('项目用了哪些框架');
 	});
+
+	it('rewriteQuery - system prompt 为中文', async () => {
+		// 关键路径:验证 system 来自 Composer 中文 section
+		const chatSpy = vi.fn();
+		const llm: LLMClient = {
+			async *chat(req: ChatRequest): AsyncIterable<ChatDelta> {
+				chatSpy(req);
+				yield { text: '变体1\n变体2\n' };
+			},
+			countTokens: () => 10,
+		};
+		await rewriteQuery('问题', { llm });
+		expect(chatSpy.mock.calls[0]![0].messages[0]!.content).toContain('查询改写助手');
+	});
 });
