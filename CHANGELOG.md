@@ -6,7 +6,18 @@
 ## [Unreleased]
 
 ### Added
-- (待发版时由 AI 填充)
+- **smart reindex 启动路径** — 启动期 hash diff 跳过未变更文件,热启动零 embed 调用
+- **IndexManifest 持久化** — `pluginDir/index-manifest.json` 记录每文件 sha256 + mtime + chunkCount + 全局 embedding 参数,原子写避免半写损坏
+- **mtime 快速跳过** — mtime 未变则不读 content 不算 sha256,直接复用旧 hash
+- **`index.batch` Worker 协议** — 批量索引消息类型,reembedFile 先 `deleteByPath` 清旧 chunk 防残留
+- **Diffing 状态** — IndexStatus 新增"检查变更中"状态,UI 状态条适配
+- **设置面板重启提示** — embedProvider / chunkSize / chunkOverlap 改动需重启 Obsidian 生效
+
+### Fixed
+- **`/reindex` 不清 manifest** — 手动重索引时未变更文件被跳过,违反用户预期;现先 dropIndex + manifest.invalidate 再全量
+- **`.index/` 损坏无降级** — smartReindex 任意步骤异常降级清 .index + 全量重建,不再卡在 Failed
+- **`autoIndex=false` 仍跑 smartReindex** — 关闭自动索引后仍被启动期索引,违反设置语义;现仅启动 FolderWatcher
+- **VectraStore catalog 旁路 bug** — `upsertItem` 不写 vectra 内部 catalog,`deleteDocument(uri)` 静默失败;`deleteByPath` 改用 `deleteItems(itemIds)` 按 metadata.path 过滤
 
 ## [0.1.0] - 2026-06-28
 

@@ -15,7 +15,7 @@
 
 ### 1.3 配置对话模型(三选一)
 
-- **DeepSeek**:Endpoint `https://api.deepseek.com` + 模型名 + Max Tokens(点"测试连接"自动探测)
+- **DeepSeek**:Endpoint `https://api.deepseek.com` + 模型名 + Context Length(默认 256k,可点「获取推荐」从公开模型库填入)
 - **Claude**:Endpoint `https://api.anthropic.com` + 模型名
 - **本地 Ollama**:Endpoint `http://localhost:11434` + 模型名(无需 API Key)
 - API Key 配置:Obsidian 设置 → Keychain → 用固定 secret ID 添加(详见 1.6)
@@ -81,7 +81,8 @@
 
 ### 2.6 状态条解读
 
-- **状态点**:就绪(绿)/ 思考中(黄脉冲)/ 索引中(黄脉冲)/ 错误(红)/ 未配置(空心)
+- **状态点**:就绪(绿)/ 思考中(黄脉冲)/ 检查变更中(黄)/ 索引中(黄脉冲)/ 错误(红)/ 未配置(空心)
+- **"检查变更中"**:启动期 smart reindex 正在 hash diff,检查哪些文件变更需要重新索引(通常秒级完成)
 - **上下文使用率**:0-79% 绿 / 80-94% 黄 / 95-100% 红
 - **数据源指示**:估算(灰)/ 流式(黄)/ API(绿)— 反映 token 统计可信度
 - 点击状态条展开详情抽屉
@@ -104,7 +105,11 @@
 |---|---|
 | 为什么必须 Obsidian 1.11.4+? | 用了 SecretStorage API 存密钥 |
 | API Key 存哪了? | Obsidian Keychain,不出现在 data.json |
-| 索引大 vault 很慢? | 首扫在 Worker 后台,可继续用 Obsidian |
+| 索引大 vault 很慢? | 首扫在 Worker 后台,可继续用 Obsidian;后续启动 smart reindex 跳过未变更文件,通常秒级完成 |
+| 每次启动都重新索引? | 否。smart reindex 通过 hash diff 跳过未变更文件,热启动零 embed 调用 |
+| 改了 embedding 模型没生效? | 改 embedProvider / chunkSize / chunkOverlap 需重启 Obsidian,下次启动 smart reindex 检测参数变化自动全量重建 |
+| `/reindex` 和自动索引区别? | `/reindex` 强制清索引 + manifest 全量重建;启动自动索引走 hash diff 仅更新变更文件 |
+| 索引损坏怎么办? | smartReindex 自动降级清 .index/ + 全量重建,无需手动删目录 |
 | 用 Ollama 需要联网吗? | 不需要,纯本地推理 |
 | 支持移动端吗? | 暂不支持(依赖 Node.js fs) |
 | 数据上传到哪? | 仅模型 API 端点,Ollama 模式零外发 |
@@ -129,7 +134,7 @@
 
 ### 1.3 Configure Chat Model (pick one)
 
-- **DeepSeek**: Endpoint `https://api.deepseek.com` + model name + Max Tokens (click "Test connection" to auto-detect)
+- **DeepSeek**: Endpoint `https://api.deepseek.com` + model name + Context Length (default 256k; use **Get recommendation** to fill from the public model registry)
 - **Claude**: Endpoint `https://api.anthropic.com` + model name
 - **Local Ollama**: Endpoint `http://localhost:11434` + model name (no API key needed)
 - API key setup: Obsidian Settings → Keychain → add with fixed secret ID (see 1.6)

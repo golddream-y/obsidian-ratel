@@ -133,6 +133,74 @@ sequenceDiagram
     WP-->>IM: 删除数量
 ```
 
+### 3.4 Smart Reindex(启动期增量)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Main as 主线程
+    participant IC as IndexController
+    participant IM as IndexManager
+    participant VS as VectraStore
+    participant MF as IndexManifest
+    participant WP as Worker
+
+    Note over Main,WP: 启动期 — smartReindex hash diff
+
+    Main->>IC: onLayoutReady(autoIndex)
+    IC->>IC: 启动 FolderWatcher(无论 autoIndex)
+    alt autoIndex = false
+        IC-->>Main: null(仅启动 watcher,不跑 smartReindex)
+    else autoIndex = true
+        IC->>IM: onLayoutReady()
+        IM->>IM: 状态 Init → Diffing
+        IM->>VS: isIndexCreated()?
+        alt 索引不存在
+            IM->>WP: index.full(全量)
+            IM->>MF: save(写新 manifest)
+        else 索引存在
+            IM->>MF: load()
+            alt manifest 损坏/不存在
+                IM->>WP: index.full(全量)
+                IM->>MF: save
+            else 全局参数变(embedModelId/chunkSize/chunkOverlap)
+                IM->>VS: dropIndex()
+                IM->>MF: invalidate
+                IM->>WP: index.full(全量)
+                IM->>MF: save
+            else hash diff
+                loop 每个 markdown 文件
+                    IM->>VS: stat(path)
+                    alt mtime 未变
+                        Note over IM: 复用旧 hash,跳过 sha256
+                    else mtime 变
+                        IM->>Main: readFile(path) + sha256(content)
+                    end
+                end
+                IM->>MF: diff(toAdd/toUpdate/toDelete/unchanged)
+                alt 有 toAdd/toUpdate
+                    IM->>WP: index.batch(files)
+                    WP->>WP: 每文件先 deleteByPath 再 chunk+embed+upsert
+                    WP-->>IM: index.batch.done(chunkCounts)
+                    IM->>MF: recordEntry(每个文件)
+                end
+                loop toDelete
+                    IM->>WP: index.delete(path)
+                    IM->>MF: removeEntry
+                end
+                IM->>MF: save
+            end
+        end
+        IM->>IM: 状态 Diffing → Ready
+    end
+```
+
+**关键决策**:
+- `autoIndex=false` 仍启动 FolderWatcher(用户手动改文件仍增量),仅跳过启动期 smartReindex
+- mtime 未变则不读 content 不算 sha256,直接复用 manifest 旧 hash(大库热启动零 IO)
+- smartReindex 任意步骤异常 → 降级 dropIndex + 全量重建(spec §9 鲁棒性)
+- `/reindex` 命令先 dropIndex + manifest.invalidate 再 onLayoutReady,强制绕过 hash diff 全量重建
+
 ---
 
 ## 4. 状态机
@@ -246,7 +314,8 @@ graph TD
 ├── main.js
 ├── worker.js
 ├── manifest.json
-├── data.json              ← settings(含 API Keys)
+├── data.json              ← settings(不含 API Keys,走 SecretStorage)
+├── index-manifest.json    ← smart reindex 清单(每文件 hash + 全局参数)
 ├── .gitignore             ← 自动生成,排除索引文件
 └── index/                 ← vectra 索引目录
     ├── index.json         ← 文档元数据
@@ -254,6 +323,8 @@ graph TD
         ├── doc1.json
         └── ...
 ```
+
+**index-manifest.json 与 data.json 分离**:manifest 记录每文件 sha256 + mtime + chunkCount + 全局 embedModelId/chunkSize/chunkOverlap,启动期 hash diff 跳过未变更文件。独立于 data.json,不走 Obsidian loadData/saveData,与 `.index/` 同目录同生命周期。原子写(.tmp + rename)避免半写损坏。
 
 ### 6.2 metadata 结构
 
@@ -267,9 +338,12 @@ graph TD
 
 ### 6.3 索引新鲜度
 
-- `_lastIndexTime`:记录最近一次写入时间戳,供 UI 展示
-- 文件变更时增量更新,无需全量重建
-- 模型切换时需全量重建(维度变化)
+- `index-manifest.json` 记录每文件 sha256 + mtime,启动期 hash diff 跳过未变更文件
+- `mtime` 快速跳过:mtime 未变则不读 content 不算 sha256,直接复用旧 hash
+- 文件变更时增量更新(FolderWatcher → enqueue → index.incremental / index.batch),无需全量重建
+- 模型切换 / chunkSize / chunkOverlap 变化时 `shouldFullRebuild` 返回 true,触发 dropIndex + 全量重建(维度不兼容)
+- 索引损坏时 smartReindex 降级:dropIndex + manifest.invalidate + 全量重建(spec §9)
+- `/reindex` 命令强制绕过 hash diff:先 dropIndex + manifest.invalidate 再全量
 
 ---
 
@@ -282,6 +356,7 @@ graph TB
         IM["IndexManager<br/>状态机 + 队列"]
         FW["FolderWatcher<br/>5s 去抖"]
         RI["Ratelignore<br/>排除过滤"]
+        MF["IndexManifest<br/>hash diff 清单"]
     end
 
     subgraph "Worker 线程"
@@ -294,6 +369,8 @@ graph TB
     IC --> FW
     IC --> RI
     FW --> IM
+    IM -->|"smartReindex 调用"| MF
+    MF -->|"diff/recordEntry/removeEntry"| MF
     IM -->|"postMessage"| IP
     IP --> CK
     IP --> VS
@@ -303,13 +380,14 @@ graph TB
 
 | 组件 | 职责 | 位置 |
 |---|---|---|
-| IndexController | 聚合 IndexManager + FolderWatcher + Vault 事件 + .ratelignore | 主线程 |
-| IndexManager | 状态机 + 队列 + 暂停/恢复/重索引 | 主线程 |
+| IndexController | 聚合 IndexManager + FolderWatcher + Vault 事件 + .ratelignore;autoIndex gate | 主线程 |
+| IndexManager | 状态机 + 队列 + 暂停/恢复/重索引;onLayoutReady 优先 smartReindex | 主线程 |
 | FolderWatcher | 5s 单文件去抖,delete 不去抖 | 主线程 |
 | Ratelignore | 解析 .ratelignore,过滤排除文件 | 主线程 |
-| IndexProcessor | 批量索引处理(分块 + upsert) | Worker |
+| IndexManifest | 每文件 sha256/mtime/chunkCount 清单;load/save/diff/shouldFullRebuild;原子写 | 主线程 |
+| IndexProcessor | 批量索引处理(分块 + upsert);reembedFile 先 deleteByPath 防残留 | Worker |
 | Chunker | Markdown 三级分块 | Worker |
-| VectraStore | 向量存储(upsert/search/delete) | Worker |
+| VectraStore | 向量存储(upsert/search/deleteByPath/dropIndex/isIndexCreated) | Worker |
 
 ---
 
