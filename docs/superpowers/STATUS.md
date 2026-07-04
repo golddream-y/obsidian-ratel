@@ -28,6 +28,7 @@
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
 | P-I18N-IMPL | [2026-06-14-ratel-i18n-implementation.md](plans/2026-06-14-ratel-i18n-implementation.md) | ⏳ Pending | S-I18N | — |
+| P-CLEANUP-1 | [2026-07-04-ratel-cleanup-1-implementation.md](plans/2026-07-04-ratel-cleanup-1-implementation.md) | ⏳ Pending | S-CLEANUP-1 | 24 Task,A 硬伤 + B 接线 + C 文档 + E lint + F 技术债 |
 
 ---
 
