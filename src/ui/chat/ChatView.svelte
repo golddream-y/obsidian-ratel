@@ -44,6 +44,23 @@
 	let fileInput = $state<HTMLInputElement | null>(null);
 	let slashMenuEl = $state<{ handleKeydown: (e: KeyboardEvent) => boolean } | null>(null);
 	let messagesEl = $state<HTMLDivElement | null>(null);
+	// 关键路径:sticky-to-bottom — 用户主动上滑时暂停自动滚动,流式输出不打断浏览历史
+	let isUserNearBottom = $state(true);
+	const SCROLL_NEAR_BOTTOM_THRESHOLD = 80;
+
+	// 关键路径:sticky-to-bottom — 用户主动上滑时尊重浏览历史,只在用户处于底部时自动滚动
+	const scrollToBottom = () => {
+		if (!isUserNearBottom) return;
+		requestAnimationFrame(() => {
+			if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight;
+		});
+	};
+
+	// 关键路径:onscroll 监听内层 .ratel-messages 的滚动,更新 isUserNearBottom
+	function handleScroll(el: HTMLDivElement) {
+		isUserNearBottom =
+			el.scrollHeight - el.scrollTop - el.clientHeight < SCROLL_NEAR_BOTTOM_THRESHOLD;
+	}
 
 	const statusStore = plugin.userStatus.statusBar$;
 	const contextStore = plugin.userStatus.contextUsage$;
@@ -179,11 +196,8 @@
 		// 第 2 层:流式中累计 delta token
 		let streamingUsed = 0;
 
-		const scrollToBottom = () => {
-			requestAnimationFrame(() => {
-				if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight;
-			});
-		};
+		// 关键路径:用户发新消息,强制滚到底(忽略之前的手动上滑)
+		isUserNearBottom = true;
 		scrollToBottom();
 
 		try {
@@ -347,9 +361,9 @@
 		<span class="ratel-header-badge">{modelName}</span>
 	</div>
 
-	<!-- 消息流(委托 MessageList) -->
-	<div class="ratel-messages-wrap" bind:this={messagesEl}>
-		<MessageList {messages} {isRunning} />
+	<!-- 消息流(委托 MessageList,容器 ref + onscroll 由子组件透传上来) -->
+	<div class="ratel-messages-wrap">
+		<MessageList {messages} {isRunning} bind:containerRef={messagesEl} onScroll={handleScroll} />
 	</div>
 
 	<!-- StatusLine(常驻底部) -->
