@@ -5,6 +5,7 @@
  */
 
 import type { Tool } from '../core/tool-registry';
+import type { ToolDefinition } from '../ports/llm';
 import type { VaultPort } from '../ports/vault';
 import { requireString } from './validate-args';
 
@@ -21,22 +22,9 @@ function countOccurrences(haystack: string, needle: string): number {
 	return count;
 }
 
-export function createEditNoteTool(vault: VaultPort): Tool {
+export function createEditNoteTool(vault: VaultPort, definition: ToolDefinition): Tool {
 	return {
-		definition: {
-			name: 'edit_note',
-			description:
-				'在笔记中精确替换一段文本。old_string 必须与文件内容完全一致(含缩进),且在文件中唯一;否则返回错误。',
-			parameters: {
-				type: 'object',
-				properties: {
-					path: { type: 'string', description: '目标笔记路径' },
-					old_string: { type: 'string', description: '要被替换的原文(唯一匹配)' },
-					new_string: { type: 'string', description: '替换后的文本' },
-				},
-				required: ['path', 'old_string', 'new_string'],
-			},
-		},
+		definition,
 		readOnly: false,
 		async execute(args) {
 			const path = requireString(args, 'path', 'path');

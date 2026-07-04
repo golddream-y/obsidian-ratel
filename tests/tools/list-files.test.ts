@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { createListFilesTool } from '../../src/tools/list-files';
 import { createMockVaultPort } from '../helpers/mock-vault-port';
+import { composeToolDefinitions } from '../../src/prompts/composer';
+import type { ToolDefinition } from '../../src/ports/llm';
+
+function makeToolDef(name: string): ToolDefinition {
+	return composeToolDefinitions({}, [name])[0]!;
+}
 
 describe('list_files tool', () => {
 	it('根目录列表 - 空参数返回 "." 作为路径标识', async () => {
@@ -8,7 +14,7 @@ describe('list_files tool', () => {
 			files: { 'a.md': '', 'notes/b.md': '' },
 			dirs: { '': { files: ['a.md'], folders: ['notes'] } },
 		});
-		const tool = createListFilesTool(vault);
+		const tool = createListFilesTool(vault, makeToolDef('list_files'));
 		const result = await tool.execute({}) as { path: string; files: string[]; folders: string[] };
 		expect(result.path).toBe('.');
 		expect(result.files).toContain('a.md');
@@ -20,7 +26,7 @@ describe('list_files tool', () => {
 			files: { 'a.md': '' },
 			dirs: { '': { files: ['a.md'], folders: ['notes', '.obsidian', '.trash'] } },
 		});
-		const tool = createListFilesTool(vault);
+		const tool = createListFilesTool(vault, makeToolDef('list_files'));
 		const result = await tool.execute({ path: '' }) as { path: string; files: string[]; folders: string[] };
 		expect(result.folders).toContain('notes');
 		expect(result.folders).not.toContain('.obsidian');
@@ -32,7 +38,7 @@ describe('list_files tool', () => {
 			files: { 'a.md': '' },
 			dirs: { '': { files: ['a.md'], folders: [] } },
 		});
-		const tool = createListFilesTool(vault);
+		const tool = createListFilesTool(vault, makeToolDef('list_files'));
 		const result = await tool.execute({ path: '.' }) as { path: string; files: string[]; folders: string[] };
 		expect(result.path).toBe('.');
 		expect(result.files).toContain('a.md');

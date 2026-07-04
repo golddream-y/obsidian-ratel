@@ -45,6 +45,22 @@ export class ToolRegistry {
 	}
 
 	/**
+	 * 更新已注册工具的 definition(LLM 看到的 schema)。
+	 *
+	 * 关键路径:供主线程在 settings.promptOverrides 变化后,
+	 * 重新生成 definition 并热替换,无需重新创建工具实例。
+	 *
+	 * @param toolName - 工具名(必须已注册)。
+	 * @param definition - 新的 ToolDefinition(由 Composer 生成)。
+	 * @throws 工具未注册时抛 `Tool not found: <name>`。
+	 */
+	updateDefinition(toolName: string, definition: ToolDefinition): void {
+		const tool = this.tools.get(toolName);
+		if (!tool) throw new Error(`Tool not found: ${toolName}`);
+		tool.definition = definition;
+	}
+
+	/**
 	 * 取出所有工具的 LLM schema,用于喂给 `llm.chat({ tools })`。
 	 *
 	 * @returns 工具 schema 数组。

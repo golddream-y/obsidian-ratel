@@ -1,1 +1,33 @@
 /* Ratel Vault styles */
+
+/* ==================== Prompt Overrides(高级) ==================== */
+
+.ratel-prompt-section-row {
+	padding: 0.75em 0;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.ratel-prompt-override-textarea {
+	width: 100%;
+	min-height: 12em;
+	font-family: var(--font-monospace);
+	font-size: var(--font-smaller);
+	padding: 0.5em;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	background: var(--background-secondary);
+	color: var(--text-normal);
+	resize: vertical;
+}
+
+.ratel-prompt-warn {
+	color: var(--text-error);
+	font-size: var(--font-smaller);
+	margin-top: 0.5em;
+}
+
+.ratel-prompt-placeholder-hint {
+	color: var(--text-warning);
+	font-size: var(--font-smaller);
+	margin-top: 0.25em;
+}

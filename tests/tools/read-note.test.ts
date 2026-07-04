@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { createReadNoteTool } from '../../src/tools/read-note';
 import type { ObsidianVault } from '../../src/adapters/obsidian-vault';
+import { composeToolDefinitions } from '../../src/prompts/composer';
+import type { ToolDefinition } from '../../src/ports/llm';
+
+function makeToolDef(name: string): ToolDefinition {
+	return composeToolDefinitions({}, [name])[0]!;
+}
 
 function createMockVault(files: Record<string, string> = {}): ObsidianVault {
 	return {
@@ -31,21 +37,22 @@ function createMockVault(files: Record<string, string> = {}): ObsidianVault {
 describe('read_note tool', () => {
 	it('has correct definition', () => {
 		const vault = createMockVault();
-		const tool = createReadNoteTool(vault);
+		const tool = createReadNoteTool(vault, makeToolDef('read_note'));
 		expect(tool.definition.name).toBe('read_note');
-		expect(tool.definition.description).toContain('note');
+		// 关键路径:description 已由 Composer 注入,断言改中文「笔记」
+		expect(tool.definition.description).toContain('笔记');
 	});
 
 	it('reads file content from vault', async () => {
 		const vault = createMockVault({ 'notes/test.md': '# Test\nHello world' });
-		const tool = createReadNoteTool(vault);
+		const tool = createReadNoteTool(vault, makeToolDef('read_note'));
 		const result = await tool.execute({ path: 'notes/test.md' }) as Record<string, unknown>;
 		expect(result.content).toContain('Hello world');
 	});
 
 	it('throws on missing file', async () => {
 		const vault = createMockVault();
-		const tool = createReadNoteTool(vault);
+		const tool = createReadNoteTool(vault, makeToolDef('read_note'));
 		await expect(tool.execute({ path: 'missing.md' })).rejects.toThrow();
 	});
 
@@ -59,7 +66,7 @@ describe('read_note tool', () => {
 				tags: [{ tag: '#test', position: { start: { line: 0, col: 0 }, end: { line: 0, col: 0 } } }],
 			}),
 		} as unknown as ObsidianVault;
-		const tool = createReadNoteTool(mockVault);
+		const tool = createReadNoteTool(mockVault, makeToolDef('read_note'));
 		const result = await tool.execute({ path: 'notes/test.md' }) as Record<string, unknown>;
 		expect(result.content).toContain('Content');
 		expect(result.metadata).toBeDefined();

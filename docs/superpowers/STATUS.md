@@ -28,7 +28,7 @@
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
 | P-I18N-IMPL | [2026-06-14-ratel-i18n-implementation.md](plans/2026-06-14-ratel-i18n-implementation.md) | ⏳ Pending | S-I18N | — |
-| P-PROMPTS | [2026-06-26-ratel-prompts-implementation.md](plans/2026-06-26-ratel-prompts-implementation.md) | ⏳ Pending | S-PROMPTS | **下一步优先实施** |
+| P-PROMPTS | [2026-06-26-ratel-prompts-implementation.md](plans/2026-06-26-ratel-prompts-implementation.md) | ✅ Completed | S-PROMPTS | 分支 `feat/s-prompts`;10 Task 全部完成;522 tests passed;无英文 prompt 残留 |
 
 ---
 
@@ -47,10 +47,9 @@
 
 ## Future execution queue(按顺序)
 
-1. **P-PROMPTS**(提示词 registry + 全中文迁移)— 下一步优先实施
-2. **P-I18N-IMPL**(i18n 基础设施:中英文切换)
-3. 修 `svelte-eslint-parser` 配置,让 `npx eslint src/` 覆盖 `*.svelte` 文件
-4. 在 Obsidian 里手动 E2E 验证(M3 里程碑)
+1. **P-I18N-IMPL**(i18n 基础设施:中英文切换)
+2. 修 `svelte-eslint-parser` 配置,让 `npx eslint src/` 覆盖 `*.svelte` 文件
+3. 在 Obsidian 里手动 E2E 验证(M3 里程碑)
 
 ---
 

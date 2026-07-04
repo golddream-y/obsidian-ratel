@@ -35,6 +35,9 @@ import { createWriteNoteTool } from './tools/write-note';
 import { createAppendNoteTool } from './tools/append-note';
 import { createEditNoteTool } from './tools/edit-note';
 import { createDeleteNoteTool } from './tools/delete-note';
+// 关键路径:工具 description 由 Composer 注入(Task 7),用 ALL_TOOL_NAMES 一次性生成所有 definition。
+import { composeToolDefinitions } from './prompts/composer';
+import { ALL_TOOL_NAMES } from './prompts/tool-schemas';
 import {
 	ToolPermissionSessionGrants,
 	resolveToolPermission,
@@ -245,7 +248,10 @@ export default class RatelVaultPlugin extends Plugin {
 
 		// ==================== 工具与钩子 ====================
 		this.tools = new ToolRegistry();
-		this.tools.register(createReadNoteTool(this.vault));
+		// 关键路径:用当前 settings.promptOverrides 生成 definition,让用户在设置面板的覆盖立即生效。
+		const toolDefs = composeToolDefinitions(this.settings.promptOverrides, ALL_TOOL_NAMES);
+		const toolDefMap = new Map(toolDefs.map((d) => [d.name, d]));
+		this.tools.register(createReadNoteTool(this.vault, toolDefMap.get('read_note')!));
 
 		// 关键路径:W4 — 构造 MultiQuerySearcher,编排改写 + 多查询 + RRF + 可选 Rerank。
 		// Reranker 仅在钥匙串有 ratel-rerank-bailian 密钥时注入;无密钥自动降级为仅 RRF。
@@ -262,7 +268,8 @@ export default class RatelVaultPlugin extends Plugin {
 		// 因此这里返回的 string[] 已含原始查询,MultiQuerySearcher 直接用,无需再前置 original。
 		const queryRewriter = {
 			rewrite: async (q: string) => {
-				const rewritten = await rewriteQuery(q, { llm: this.llm });
+				// 关键路径:把 overrides 透传给 query-rewriter,让改写 system 也走 Composer。
+				const rewritten = await rewriteQuery(q, { llm: this.llm, overrides: this.settings.promptOverrides });
 				return rewritten.map((r) => r.text);
 			},
 		};
@@ -276,17 +283,19 @@ export default class RatelVaultPlugin extends Plugin {
 		});
 
 		this.tools.register(
-			createSearchVaultTool(multiQuerySearcher, () =>
-				isSearchReady(get(this.userStatus.statusBar$)),
+			createSearchVaultTool(
+				multiQuerySearcher,
+				() => isSearchReady(get(this.userStatus.statusBar$)),
+				toolDefMap.get('search_vault')!,
 			),
 		);
-		this.tools.register(createGrepTool(this.vault));
-		this.tools.register(createGlobTool(this.vault));
-		this.tools.register(createListFilesTool(this.vault));
-		this.tools.register(createWriteNoteTool(this.vault));
-		this.tools.register(createAppendNoteTool(this.vault));
-		this.tools.register(createEditNoteTool(this.vault));
-		this.tools.register(createDeleteNoteTool(this.vault));
+		this.tools.register(createGrepTool(this.vault, toolDefMap.get('grep')!));
+		this.tools.register(createGlobTool(this.vault, toolDefMap.get('glob')!));
+		this.tools.register(createListFilesTool(this.vault, toolDefMap.get('list_files')!));
+		this.tools.register(createWriteNoteTool(this.vault, toolDefMap.get('write_note')!));
+		this.tools.register(createAppendNoteTool(this.vault, toolDefMap.get('append_note')!));
+		this.tools.register(createEditNoteTool(this.vault, toolDefMap.get('edit_note')!));
+		this.tools.register(createDeleteNoteTool(this.vault, toolDefMap.get('delete_note')!));
 		this.hooks = new HookRegistry();
 		this.hooks.register(
 			'pre-tool-use',
@@ -775,6 +784,27 @@ export default class RatelVaultPlugin extends Plugin {
 	/** 持久化当前设置到 Obsidian data.json。 */
 	async saveSettings() {
 		await this.saveData(this.settings);
+		// 关键路径:settings 变更后热替换工具 definition,让 LLM 立即看到新 description。
+		this.syncToolDefinitions();
+	}
+
+	/**
+	 * 重新生成所有工具 definition 并热替换到 ToolRegistry。
+	 *
+	 * 关键路径:settings.promptOverrides 变化后,settings 面板调用此方法,
+	 * 让 LLM 立即看到新的工具 description / param description,无需重启插件。
+	 *
+	 * 设计要点:
+	 * - 仅在 `this.tools` 已初始化后执行(避免 onload 早期调用)
+	 * - 用当前 settings.promptOverrides 重新走 Composer
+	 * - 调用 `toolRegistry.updateDefinition` 替换每个工具的 definition(execute 逻辑不变)
+	 */
+	syncToolDefinitions(): void {
+		if (!this.tools) return;
+		const defs = composeToolDefinitions(this.settings.promptOverrides, [...ALL_TOOL_NAMES]);
+		for (const def of defs) {
+			this.tools.updateDefinition(def.name, def);
+		}
 	}
 
 	/**
@@ -788,11 +818,17 @@ export default class RatelVaultPlugin extends Plugin {
 	 * @returns 异步迭代的 `AgentEvent` 流。
 	 */
 	async *ask(sessionId: string, message: string, signal?: AbortSignal): AsyncIterable<AgentEvent> {
-		const ctx = new ContextManager(this.persistence);
+		// 关键路径:注入 overrides + tools getter,让 ContextManager 调 Composer 拼系统提示词。
+		const ctx = new ContextManager(this.persistence, {
+			getOverrides: () => this.settings.promptOverrides,
+			getTools: () => this.tools.definitions(),
+		});
 
 		// 关键路径:注入意图分类器,让 agentLoop 在 addUserMessage 后判断意图。
 		// 闭包捕获 this.llm,与 agentLoop 解耦。
-		const intentClassifier = (msg: string) => classifyIntent(msg, { llm: this.llm });
+		// 关键路径:把 overrides 透传给 intent-classifier,让内部 LLM 也走 Composer + 用户自定义 section。
+		const intentClassifier = (msg: string) =>
+			classifyIntent(msg, { llm: this.llm, overrides: this.settings.promptOverrides });
 
 		const toolPermissionCheck = (tc: ToolCall) =>
 			resolveToolPermission(

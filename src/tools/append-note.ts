@@ -5,23 +5,13 @@
  */
 
 import type { Tool } from '../core/tool-registry';
+import type { ToolDefinition } from '../ports/llm';
 import type { VaultPort } from '../ports/vault';
 import { requireString } from './validate-args';
 
-export function createAppendNoteTool(vault: VaultPort): Tool {
+export function createAppendNoteTool(vault: VaultPort, definition: ToolDefinition): Tool {
 	return {
-		definition: {
-			name: 'append_note',
-			description: '在笔记末尾追加内容。',
-			parameters: {
-				type: 'object',
-				properties: {
-					path: { type: 'string', description: '目标笔记路径' },
-					content: { type: 'string', description: '要追加的内容(建议自带换行符)' },
-				},
-				required: ['path', 'content'],
-			},
-		},
+		definition,
 		readOnly: false,
 		async execute(args) {
 			const path = requireString(args, 'path', 'path');

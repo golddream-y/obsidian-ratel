@@ -5,22 +5,13 @@
  */
 
 import type { Tool } from '../core/tool-registry';
+import type { ToolDefinition } from '../ports/llm';
 import type { VaultPort } from '../ports/vault';
 import { requireString } from './validate-args';
 
-export function createDeleteNoteTool(vault: VaultPort): Tool {
+export function createDeleteNoteTool(vault: VaultPort, definition: ToolDefinition): Tool {
 	return {
-		definition: {
-			name: 'delete_note',
-			description: '将笔记移到回收站(可恢复)。',
-			parameters: {
-				type: 'object',
-				properties: {
-					path: { type: 'string', description: '要删除的文件路径' },
-				},
-				required: ['path'],
-			},
-		},
+		definition,
 		readOnly: false,
 		async execute(args) {
 			const path = requireString(args, 'path', 'path');

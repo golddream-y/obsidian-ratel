@@ -2,10 +2,12 @@
  * @file src/core/query-rewriter.ts
  * @description 查询改写器 — 用 LLM 把用户查询改写成 2 个语义变体,扩大检索召回
  * @module core/query-rewriter
- * @depends ports/llm
+ * @depends ports/llm, prompts/composer, prompts/types
  */
 
-import type { LLMClient, ChatMessage } from '../ports/llm';
+import type { LLMClient } from '../ports/llm';
+import { composeInternalMessages } from '../prompts/composer';
+import type { OverrideMap } from '../prompts/types';
 
 /**
  * 改写后的查询项。
@@ -22,26 +24,9 @@ export interface RewrittenQuery {
  */
 export interface QueryRewriterDeps {
 	llm: LLMClient;
+	// 关键路径:可选的 section 覆盖
+	overrides?: OverrideMap;
 }
-
-/**
- * 改写提示词模板 — 要求 LLM 生成 2 个语义变体。
- *
- * 关键路径:
- * - 中英文混合,因 LLM 可能用任一语言回答。
- * - 要求每行一个变体,不加编号,便于解析。
- * - maxTokens=100,2 个改写 * ~50 tokens 足够。
- */
-const REWRITE_PROMPT_TEMPLATE = (query: string): string =>
-	`把以下查询改写成 2 个语义变体,用于知识库检索扩大召回。
-要求:
-- 保持原意,不改变问题范围
-- 换用同义词或不同表述方式
-- 每行一个变体,不加编号
-
-原始查询:${query}
-
-改写变体:`;
 
 /**
  * 把用户查询改写成 2 个语义变体。
@@ -53,7 +38,7 @@ const REWRITE_PROMPT_TEMPLATE = (query: string): string =>
  * - maxTokens=100,降低 token 成本。
  *
  * @param query - 用户原始查询。
- * @param deps - 依赖(LLM 客户端)。
+ * @param deps - 依赖(LLM 客户端 + 可选 overrides)。
  * @returns 包含原始查询 + 改写变体的数组;LLM 失败时只含原始查询。
  */
 export async function rewriteQuery(
@@ -66,13 +51,11 @@ export async function rewriteQuery(
 	];
 
 	try {
-		const messages: ChatMessage[] = [
-			{
-				role: 'system',
-				content: 'You are a query rewriting assistant. Generate 2 semantic variants of the user query for knowledge base retrieval. One variant per line, no numbering.',
-			},
-			{ role: 'user', content: REWRITE_PROMPT_TEMPLATE(query) },
-		];
+		const messages = composeInternalMessages(
+			'rewrite',
+			{ tools: [], query },
+			deps.overrides ?? {},
+		);
 
 		let output = '';
 		// 关键路径:maxTokens=100,2 个改写 * ~50 tokens。

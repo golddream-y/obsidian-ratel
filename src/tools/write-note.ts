@@ -5,23 +5,13 @@
  */
 
 import type { Tool } from '../core/tool-registry';
+import type { ToolDefinition } from '../ports/llm';
 import type { VaultPort } from '../ports/vault';
 import { requireString } from './validate-args';
 
-export function createWriteNoteTool(vault: VaultPort): Tool {
+export function createWriteNoteTool(vault: VaultPort, definition: ToolDefinition): Tool {
 	return {
-		definition: {
-			name: 'write_note',
-			description: '创建新笔记或覆盖已有笔记全文。',
-			parameters: {
-				type: 'object',
-				properties: {
-					path: { type: 'string', description: '目标笔记路径' },
-					content: { type: 'string', description: '完整文件内容' },
-				},
-				required: ['path', 'content'],
-			},
-		},
+		definition,
 		readOnly: false,
 		async execute(args) {
 			const path = requireString(args, 'path', 'path');

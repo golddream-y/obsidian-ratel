@@ -41,6 +41,24 @@
 | `ratel-embed-openai-compatible` | API 嵌入 Key | 仅 provider=api 时必需 |
 | `ratel-rerank-bailian` | 百炼 Reranker Key | 可选 |
 
+### 1.7 (可选)自定义提示词(高级)
+
+设置面板底部「提示词(高级)」section 提供 24 个可覆盖的提示词段落,每段独立的开关 + textarea + 「恢复本段默认」按钮:
+
+- **agent 系统提示词**:基础身份(`agent.base`)、直接问答(`agent.direct`)、RAG 模式(`agent.rag`)
+- **内部 LLM 模板**:意图分类器(`internal.intent`)、查询改写器(`internal.rewrite`)
+- **工具描述**:9 个工具各自一段(如 `tool.read_note.description`),改动后立即热生效,无需重启
+- **检索结果外框**:不可覆盖(防注入)
+
+操作流程:
+
+1. 勾选「使用自定义」→ textarea 激活,placeholder 显示默认文本
+2. 编辑后自动保存;若遗漏必需占位符(如 `{{tools}}`),显示警告但不阻止保存
+3. 「恢复本段默认」清空该段覆盖,回到内置中文默认值
+4. 「预览当前 RAG 系统提示词」按钮弹模态框,展示当前 overrides + 默认值合成后的完整 system prompt
+
+> 修改工具描述后,LLM 下一次调用即可见,无需重启插件(`syncToolDefinitions` 热替换)。
+
 ## 二、日常使用 — 与 vault 对话
 
 ### 2.1 打开聊天

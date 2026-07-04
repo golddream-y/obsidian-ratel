@@ -78,4 +78,18 @@ describe('classifyIntent', () => {
 			options: expect.objectContaining({ maxTokens: 5 }),
 		}));
 	});
+
+	it('classifyIntent - system prompt 为中文', async () => {
+		// 关键路径:验证 system 来自 Composer 中文 section,而非旧英文常量
+		const chatSpy = vi.fn();
+		const llm: LLMClient = {
+			async *chat(req: ChatRequest): AsyncIterable<ChatDelta> {
+				chatSpy(req);
+				yield { text: 'rag' };
+			},
+			countTokens: () => 10,
+		};
+		await classifyIntent('问题', { llm });
+		expect(chatSpy.mock.calls[0]![0].messages[0]!.content).toContain('意图分类器');
+	});
 });

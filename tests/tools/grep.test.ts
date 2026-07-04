@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { createGrepTool } from '../../src/tools/grep';
 import { createMockVaultPort } from '../helpers/mock-vault-port';
+import { composeToolDefinitions } from '../../src/prompts/composer';
+import type { ToolDefinition } from '../../src/ports/llm';
+
+function makeToolDef(name: string): ToolDefinition {
+	return composeToolDefinitions({}, [name])[0]!;
+}
 
 describe('grep tool', () => {
 	it('字面量匹配 - 找到关键词', async () => {
@@ -10,7 +16,7 @@ describe('grep tool', () => {
 				'.obsidian/hidden.md': '死',
 			},
 		});
-		const tool = createGrepTool(vault);
+		const tool = createGrepTool(vault, makeToolDef('grep'));
 		const results = await tool.execute({
 			pattern: '死',
 			is_regex: false,
@@ -25,7 +31,7 @@ describe('grep tool', () => {
 		const vault = createMockVaultPort({
 			files: { 'a.md': 'x\nx\nx', 'b.md': 'x\nx' },
 		});
-		const tool = createGrepTool(vault);
+		const tool = createGrepTool(vault, makeToolDef('grep'));
 		const results = await tool.execute({ pattern: 'x', is_regex: false, max_results: 2 });
 		expect(results).toHaveLength(2);
 	});
@@ -34,7 +40,7 @@ describe('grep tool', () => {
 		const vault = createMockVaultPort({
 			files: { 'daily/a.md': 'hit', 'other/b.md': 'hit' },
 		});
-		const tool = createGrepTool(vault);
+		const tool = createGrepTool(vault, makeToolDef('grep'));
 		const results = await tool.execute({ pattern: 'hit', is_regex: false, path: 'daily' }) as Array<{ file: string }>;
 		expect(results.every((r) => r.file.startsWith('daily/'))).toBe(true);
 	});
