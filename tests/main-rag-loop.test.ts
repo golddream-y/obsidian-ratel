@@ -29,6 +29,7 @@ vi.mock('obsidian', () => ({
 		open() {}
 		close() {}
 	},
+	requestUrl: vi.fn().mockResolvedValue({ json: () => Promise.resolve({ models: [] }) }),
 }));
 vi.mock('worker_threads', () => ({
 	Worker: class {
@@ -71,10 +72,11 @@ describe('main rag loop integration', () => {
 				createFolder: vi.fn(),
 			},
 			workspace: {
-				getLeavesOfType: () => [],
-				getRightLeaf: () => null,
-				onLayoutReady: vi.fn(),
-			},
+			getLeavesOfType: () => [],
+			getRightLeaf: () => null,
+			onLayoutReady: vi.fn(),
+			on: vi.fn().mockReturnValue({}),
+		} as any,
 			metadataCache: {
 				resolvedLinks: {},
 				getFileCache: () => null,

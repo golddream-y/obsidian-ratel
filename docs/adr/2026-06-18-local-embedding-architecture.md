@@ -90,6 +90,8 @@ Ratel: Worker Threads 不可用,降级到 InlineWorker The V8 platform used by t
 
 ### WASM 分发策略(关键决策)
 
+> **2026-06-28 更新:** 发版资产分发已由 **ADR-006** 落地(Worker 内联 + WASM 懒下载到 pluginDir)。本节原「方案 B:wasm 内嵌到 main.js」的**实施表述**已被取代;ONNX 选型与 `ort.env.wasm.wasmBinary` 传入方式不变。
+
 采用 **方案 B:使用 `onnxruntime-web` 的 wasm bundle 入口,将 WASM 内联到 main.js**。
 
 | 方案 | 说明 | 选择原因 |

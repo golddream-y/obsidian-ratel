@@ -358,5 +358,7 @@ graph TB
 | 文档 | 位置 | 说明 |
 |---|---|---|
 | ADR-001 CORS | `docs/adr/2026-06-14-ratel-cors-strategy.md` | LLM 端点 CORS 处理策略 |
+| ADR-006 发版资产 | `docs/adr/2026-06-28-release-asset-distribution.md` | Worker 内联 + WASM 懒下载(商店三文件约束) |
+| ADR-007 Context Window | `docs/adr/2026-06-28-model-context-window-registry.md` | LiteLLM 映射表 + 预设下拉(128k/200k/256k/1M/自定义) |
 | STATUS.md | `docs/superpowers/STATUS.md` | spec / plan 状态追踪 |
 | 归档 | `docs/superpowers/archive/` | 已完成的 spec/plan 历史档案 |

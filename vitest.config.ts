@@ -8,6 +8,10 @@ export default defineConfig({
 	resolve: {
 		alias: {
 			'onnxruntime-web': path.resolve(__dirname, 'node_modules/onnxruntime-web/dist/ort.wasm.bundle.min.mjs'),
+			'@ratel/embedding-worker-code': path.resolve(
+				__dirname,
+				'tests/helpers/embedding-worker-code-stub.ts',
+			),
 		},
 	},
 	test: {

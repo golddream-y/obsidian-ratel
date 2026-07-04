@@ -22,7 +22,19 @@ import {
 	hasChatApiKey,
 	hasEmbedApiKey,
 	hasRerankApiKey,
+	requiresChatApiKey,
+	resolveChatApiKey,
 } from './secrets/ratel-secrets';
+import type { ContextLengthPresetId } from './ui/tokens/context-length-presets';
+import {
+	applyContextRecommendation,
+	CUSTOM_TOKEN_MAX,
+	CUSTOM_TOKEN_MIN,
+	inferPresetFromTokens,
+	presetToTokens,
+} from './ui/tokens/context-length-presets';
+import { DEFAULT_MODEL_REGISTRY_URL } from './ui/tokens/model-context-registry';
+import { probeChatConnection } from './ui/tokens/probe-model';
 
 /**
  * 全部用户可配置项。
@@ -37,8 +49,12 @@ export interface RatelVaultSettings {
 	// Chat
 	chatModel: string;
 	chatApiBase: string;
-	/** 模型上下文窗口上限(token) — 用于 StatusLine 上下文使用率计算,默认 32000 */
+	/** 模型上下文窗口上限(token) — StatusLine 上下文使用率计算 */
 	chatModelMaxTokens: number;
+	/** Context Length 下拉预设;custom 时以 chatModelMaxTokens 为准 */
+	contextLengthPreset: ContextLengthPresetId;
+	/** 空字符串 = LiteLLM 默认映射表 URL */
+	modelRegistryUrl: string;
 
 	// Embedding
 	embedProvider: 'local' | 'api';
@@ -88,8 +104,9 @@ export interface RatelVaultSettings {
 export const DEFAULT_SETTINGS: RatelVaultSettings = {
 	chatModel: 'deepseek-chat',
 	chatApiBase: 'https://api.deepseek.com',
-	// 关键路径:0 表示未探测,StatusLine 显示"未配置"引导用户去设置面板测试连接。
-	chatModelMaxTokens: 0,
+	contextLengthPreset: '256k',
+	chatModelMaxTokens: 256_000,
+	modelRegistryUrl: '',
 
 	embedProvider: 'local',
 	embedLocalModel: 'Xenova/bge-small-zh-v1.5',
@@ -134,6 +151,41 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 		delete_note: 'ask',
 	},
 	trustMode: false,
+};
+
+/**
+ * 规范化 Context Length 相关字段 — loadSettings 后调用(见 ADR-007)。
+ *
+ * @param settings - 合并 DEFAULT 后的设置对象
+ * @param raw - 磁盘原始片段;用于判断旧版 data.json 是否缺少 contextLengthPreset
+ */
+export function normalizeContextLengthSettings(
+	settings: RatelVaultSettings,
+	raw?: Partial<RatelVaultSettings>,
+): RatelVaultSettings {
+	if (settings.modelRegistryUrl == null) {
+		settings.modelRegistryUrl = '';
+	}
+	if (raw?.contextLengthPreset == null) {
+		const inferred = inferPresetFromTokens(settings.chatModelMaxTokens);
+		settings.contextLengthPreset = inferred.preset;
+		settings.chatModelMaxTokens = inferred.chatModelMaxTokens;
+	} else if (settings.contextLengthPreset !== 'custom') {
+		settings.chatModelMaxTokens = presetToTokens(settings.contextLengthPreset);
+	} else if (settings.chatModelMaxTokens <= 0) {
+		const inferred = inferPresetFromTokens(0);
+		settings.contextLengthPreset = inferred.preset;
+		settings.chatModelMaxTokens = inferred.chatModelMaxTokens;
+	}
+	return settings;
+}
+
+const CONTEXT_LENGTH_PRESET_OPTIONS: Record<ContextLengthPresetId, string> = {
+	'128k': '128k (128,000)',
+	'200k': '200k (200,000)',
+	'256k': '256k (256,000)',
+	'1M': '1M (1,048,576)',
+	custom: '自定义',
 };
 
 /**
@@ -234,49 +286,115 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 				}),
 		);
 
-	// ==================== Context Length 探测 ====================
-	new Setting(containerEl)
-		.setName('Context Length')
-		.setDesc('模型上下文窗口上限(token)。点击测试连接自动推断,或手动填写。')
-		.addText((text) =>
-			text
-				.setPlaceholder('未配置')
-				.setValue(
-					this.plugin.settings.chatModelMaxTokens > 0
-						? String(this.plugin.settings.chatModelMaxTokens)
-						: '',
-				)
-				.onChange(async (value) => {
-					const num = parseInt(value, 10);
-					this.plugin.settings.chatModelMaxTokens = isNaN(num) ? 0 : num;
-					await this.plugin.saveSettings();
-				}),
-		)
-		.addButton((btn) =>
-			btn
-				.setButtonText('测试连接')
-				.onClick(async () => {
-					btn.setButtonText('探测中…');
-					btn.setDisabled(true);
-					const { probeModelContextLength } = await import('./ui/tokens/probe-model');
-					const result = await probeModelContextLength({
-						apiBase: this.plugin.settings.chatApiBase,
-						apiKey: '', // 关键路径:apiKey 从 SecretStorage 读取,设置面板不持有明文
-						model: this.plugin.settings.chatModel,
-					});
-					btn.setButtonText('测试连接');
-					btn.setDisabled(false);
-					if (result.error) {
-						new Notice(`✗ ${result.error}`, 5000);
-					} else if (result.contextLength != null) {
-						this.plugin.settings.chatModelMaxTokens = result.contextLength;
-						await this.plugin.saveSettings();
-						new Notice(`✓ 已探测:${result.contextLength.toLocaleString()} tokens`, 4000);
-						this.display();
-					} else {
-						new Notice('连接成功,但无法自动推断 context length,请手动填写', 5000);
+	// ==================== Context Length ====================
+		new Setting(containerEl)
+			.setName('Context Length')
+			.setDesc('模型上下文窗口上限。点击「获取推荐」将验证配置并从公开模型库填入推荐值。')
+			.addDropdown((dropdown) => {
+				dropdown.addOptions(CONTEXT_LENGTH_PRESET_OPTIONS);
+				dropdown.setValue(this.plugin.settings.contextLengthPreset);
+				dropdown.onChange(async (value) => {
+					const preset = value as ContextLengthPresetId;
+					this.plugin.settings.contextLengthPreset = preset;
+					if (preset !== 'custom') {
+						this.plugin.settings.chatModelMaxTokens = presetToTokens(preset);
 					}
-				}),
+					await this.plugin.saveSettings();
+					this.display();
+				});
+			})
+			.addButton((btn) => {
+				btn.setButtonText('获取推荐');
+				btn.onClick(async () => {
+					if (
+						requiresChatApiKey(this.plugin.settings) &&
+						!hasChatApiKey(this.app, this.plugin.settings)
+					) {
+						new Notice('请先在钥匙串配置 Chat API 密钥', 5000);
+						return;
+					}
+					btn.setButtonText('获取中…');
+					btn.setDisabled(true);
+					const registryUrl =
+						this.plugin.settings.modelRegistryUrl || DEFAULT_MODEL_REGISTRY_URL;
+					const result = await probeChatConnection({
+						apiBase: this.plugin.settings.chatApiBase,
+						apiKey: resolveChatApiKey(this.app, this.plugin.settings) ?? '',
+						model: this.plugin.settings.chatModel,
+						registry: this.plugin.modelContextRegistry,
+						registryUrl,
+					});
+					btn.setButtonText('获取推荐');
+					btn.setDisabled(false);
+					if (!result.ok) {
+						new Notice(`✗ ${result.error}`, 5000);
+						return;
+					}
+					if (result.recommendedTokens != null) {
+						const applied = applyContextRecommendation(result.recommendedTokens);
+						this.plugin.settings.contextLengthPreset = applied.preset;
+						this.plugin.settings.chatModelMaxTokens = applied.chatModelMaxTokens;
+						await this.plugin.saveSettings();
+						new Notice(
+							`✓ 已获取推荐:${result.recommendedTokens.toLocaleString()} tokens`,
+							4000,
+						);
+					} else {
+						new Notice('✓ 配置有效,但模型库未命中推荐值,请手动选择或填写', 5000);
+					}
+					this.display();
+				});
+			});
+
+		if (this.plugin.settings.contextLengthPreset === 'custom') {
+			new Setting(containerEl)
+				.setName('自定义 token 数')
+				.setDesc(
+					`范围 ${CUSTOM_TOKEN_MIN.toLocaleString()} – ${CUSTOM_TOKEN_MAX.toLocaleString()}`,
+				)
+				.addText((text) => {
+					text
+						.setPlaceholder(String(CUSTOM_TOKEN_MIN))
+						.setValue(String(this.plugin.settings.chatModelMaxTokens))
+						.onChange(async (value) => {
+							const num = parseInt(value, 10);
+							if (isNaN(num) || num < CUSTOM_TOKEN_MIN || num > CUSTOM_TOKEN_MAX) {
+								new Notice(
+									`请输入 ${CUSTOM_TOKEN_MIN}–${CUSTOM_TOKEN_MAX} 之间的整数`,
+									4000,
+								);
+								return;
+							}
+							this.plugin.settings.chatModelMaxTokens = num;
+							await this.plugin.saveSettings();
+						});
+				});
+		}
+
+		containerEl.createEl('h3', { text: '高级' });
+
+		new Setting(containerEl)
+			.setName('模型映射表 URL')
+			.setDesc('留空使用 LiteLLM 默认源。可填企业镜像或 pin 版本地址。')
+			.addText((text) => {
+				text
+					.setPlaceholder(DEFAULT_MODEL_REGISTRY_URL)
+					.setValue(this.plugin.settings.modelRegistryUrl)
+					.onChange(async (value) => {
+						this.plugin.settings.modelRegistryUrl = value.trim();
+						await this.plugin.saveSettings();
+					});
+			})
+			.addButton((btn) => {
+				btn.setButtonText('恢复默认').onClick(async () => {
+					this.plugin.settings.modelRegistryUrl = '';
+					await this.plugin.saveSettings();
+					this.display();
+				});
+			});
+
+		void this.plugin.modelContextRegistry.ensureRegistry(
+			this.plugin.settings.modelRegistryUrl || DEFAULT_MODEL_REGISTRY_URL,
 		);
 
 	// 关键路径:API Key 从 Obsidian 钥匙串读取,设置页只展示密钥名与状态。
@@ -492,7 +610,7 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Agent 最大步数')
-			.setDesc('Agent Loop 工具调用循环上限,防止死循环(见 ADR-004)')
+			.setDesc('Agent Loop 工具调用循环上限,防止死循环')
 			.addSlider((slider) =>
 				slider
 					.setLimits(5, 200, 5)

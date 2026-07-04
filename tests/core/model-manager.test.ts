@@ -8,6 +8,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ModelManager } from '../../src/core/model-manager';
 import { ModelDownloader } from '../../src/core/model-downloader';
+import { createMockOrtAssets } from '../helpers/mock-ort-assets';
 import { get } from 'svelte/store';
 
 function createMockDownloader(): ModelDownloader {
@@ -31,7 +32,7 @@ describe('ModelManager', () => {
 
 	beforeEach(() => {
 		downloader = createMockDownloader();
-		manager = new ModelManager('/tmp/models', '', downloader, async () => createMockEmbedding());
+		manager = new ModelManager('/tmp/models', createMockOrtAssets(), downloader, async () => createMockEmbedding());
 	});
 
 	it('初始状态 - NotStarted', () => {
@@ -47,7 +48,7 @@ describe('ModelManager', () => {
 	it('download 失败 - 状态 Failed + 抛错', async () => {
 		const failDownloader = createMockDownloader();
 		(failDownloader.ensureModel as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('net error'));
-		const failManager = new ModelManager('/tmp/models', '', failDownloader);
+		const failManager = new ModelManager('/tmp/models', createMockOrtAssets(), failDownloader);
 		await expect(failManager.download()).rejects.toThrow('net error');
 		expect(get(failManager.status$)).toMatchObject({ state: 'Failed', reason: 'net error' });
 	});

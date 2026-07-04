@@ -222,14 +222,16 @@ type MessageSegment =
 
 **估算权重:** ASCII Latin ~4 字符/token,CJK 中文 ~1.5 字符/token,符号 ~3 字符/token。不引入第三方 tokenizer(`js-tiktoken` 对 DeepSeek/Claude 不准;`transformers.js` 包体积 ~2MB)。
 
-### 5.6 模型 context length 探测
+### 5.6 模型 context length 配置
 
-`settings.chatModelMaxTokens` 默认值 `0`(未探测)。`RatelVaultSettingTab` 加"测试连接"按钮:
-- 调 `probeModelContextLength` 发极短请求(max_tokens=1),从响应推断。
-- 推断失败查内置映射表(DeepSeek / Claude / Ollama / OpenAI 常见模型)。
-- 仍未命中返回 undefined,UI 提示手动填写。
+`settings.chatModelMaxTokens` 默认 **256000**(`contextLengthPreset: '256k'`)。设置面板提供预设下拉(128k / 200k / 256k / 1M / 自定义)。
 
-`StatusLine` 在 `chatModelMaxTokens === 0` 时显示"未配置"而非百分比,引导用户去设置面板探测。
+- **获取推荐** — 验证钥匙串 Key + 模型名;成功后从 LiteLLM 公开映射表(可配置 URL,`pluginDir` 缓存 7 天)填入 `max_input_tokens`,命中则写入预设或自定义。
+- **离线** — 预设与自定义始终可用;映射表不可达时不阻断聊天。
+
+详见 [ADR-007](../../adr/2026-06-28-model-context-window-registry.md) 与 `src/ui/tokens/model-context-registry.ts`。
+
+`StatusLine` 的「未配置」指 embedding 不可用,与 chat context length 无关。
 
 ### 5.7 Notice 迁移与 CSS 约束
 

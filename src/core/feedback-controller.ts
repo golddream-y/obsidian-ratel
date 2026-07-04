@@ -161,9 +161,9 @@ export class FeedbackController {
 				this.deps.userStatus.patch({ model: 'checking', modelDetail: undefined });
 				break;
 			case 'Downloading': {
-				const percent = Math.round(status.progress * 100);
+				const percent = Math.min(100, Math.round(status.progress * 100));
 				const detail = `${percent}%`;
-				const message = `Ratel: 正在下载 bge-small-zh-v1.5 模型... ${detail}`;
+				const message = `Ratel: 正在下载模型与运行时... ${detail}`;
 				this.deps.userStatus.patch({ model: 'downloading', modelDetail: detail });
 				if (!this.modelProgress) {
 					this.modelProgress = this.deps.userNotice.toastProgress(message);

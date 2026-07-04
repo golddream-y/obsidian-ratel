@@ -6,3 +6,7 @@ declare module '*.svelte' {
 	class Component extends SvelteComponent<SvelteComponentProps> {}
 	export default Component;
 }
+
+declare module '@ratel/embedding-worker-code' {
+	export const EMBEDDING_WORKER_CODE: string;
+}
