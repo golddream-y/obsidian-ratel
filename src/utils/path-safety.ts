@@ -4,6 +4,18 @@
  * @module utils/path-safety
  */
 
+// 关键路径:Obsidian 的配置目录名可由用户自定义(默认 '.obsidian'),
+// 启动期由 main.ts 调 setConfigDir 注入实际值,避免硬编码。
+let configDirName = '.obsidian';
+
+/**
+ * 启动期注入 Obsidian 实际 configDir(来自 app.vault.configDir)。
+ * 必须在插件 onload 阶段调用一次,之后 validateVaultPath / isExcludedVaultPath 才能正确拦截。
+ */
+export function setConfigDir(name: string): void {
+	configDirName = name || '.obsidian';
+}
+
 /**
  * Vault 相对路径归一化(对齐 Obsidian normalizePath 语义,避免测试环境依赖 obsidian 包)。
  */
@@ -50,11 +62,9 @@ export function validateVaultPath(path: string): string {
 		throw new Error(`路径越界:禁止使用 ".." 穿越 "${path}"`);
 	}
 
-	// 关键路径:此处 '.obsidian' 是安全检查(匹配路径片段以拒绝访问),非构造路径。
-	// configDir 可由用户自定义,但路径归一化后必然以 '.obsidian' 开头,故硬编码匹配是正确做法。
-	// eslint-disable-next-line obsidianmd/no-hardcoded-obsidian-config -- 安全检查非路径构造
-	if (normalized === '.obsidian' || normalized.startsWith('.obsidian/')) {
-		throw new Error(`路径越界:不允许访问 .obsidian 配置目录 "${path}"`);
+	// 关键路径:用启动期注入的 configDirName 拦截配置目录访问,兼容用户自定义 configDir。
+	if (normalized === configDirName || normalized.startsWith(`${configDirName}/`)) {
+		throw new Error(`路径越界:不允许访问配置目录 "${path}"`);
 	}
 
 	if (normalized === '.trash' || normalized.startsWith('.trash/')) {
@@ -66,11 +76,10 @@ export function validateVaultPath(path: string): string {
 
 /** grep/glob 用:排除插件配置与回收站目录下的文件 */
 export function isExcludedVaultPath(filePath: string): boolean {
-	// 关键路径:此处 '.obsidian' 是安全检查(匹配路径片段以排除),非构造路径。
-	// eslint-disable-next-line obsidianmd/no-hardcoded-obsidian-config -- 安全检查非路径构造
+	// 关键路径:用启动期注入的 configDirName 拦截配置目录,兼容用户自定义 configDir。
 	return (
-		filePath === '.obsidian' ||
-		filePath.startsWith('.obsidian/') ||
+		filePath === configDirName ||
+		filePath.startsWith(`${configDirName}/`) ||
 		filePath === '.trash' ||
 		filePath.startsWith('.trash/')
 	);

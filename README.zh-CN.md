@@ -3,7 +3,7 @@
 [English](README.md) | [简体中文](README.zh-CN.md)
 
 [![License](https://img.shields.io/github/license/golddream-y/obsidian-ratel?style=flat-square)](LICENSE)
-[![Obsidian](https://img.shields.io/badge/Obsidian-1.11.4%2B-7c3aed?style=flat-square)](https://obsidian.md)
+[![Obsidian](https://img.shields.io/badge/Obsidian-1.13.0%2B-7c3aed?style=flat-square)](https://obsidian.md)
 
 > **让你的 Obsidian vault 能对话、能办事。** 问它记过什么，让它帮你翻资料写综述，回答会标明出处，点一下就能打开原文。
 
@@ -18,7 +18,7 @@
 
 详细配置见 [使用手册](docs/user-guide.md)。
 
-> **要求：** Obsidian 1.11.4+，仅桌面端。默认本地嵌入首次需联网下载模型（~37 MB），之后缓存本地。
+> **要求：** Obsidian 1.13.0+，仅桌面端。默认本地嵌入首次需联网下载模型（~37 MB），之后缓存本地。
 
 ---
 

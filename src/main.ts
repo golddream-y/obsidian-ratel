@@ -45,7 +45,7 @@ import {
 } from './core/tool-permissions';
 import { showToolConfirmModal } from './ui/components/confirm-modal';
 import { showReindexConfirm, showDropIndexConfirm } from './ui/confirm-modal';
-import { validateVaultPath } from './utils/path-safety';
+import { validateVaultPath, setConfigDir } from './utils/path-safety';
 import { extractToolTargetPath, isDeleteTool } from './hooks/immediate-reindex';
 import type { ToolCall } from './ports/llm';
 import { ModelManager } from './core/model-manager';
@@ -155,6 +155,8 @@ export default class RatelVaultPlugin extends Plugin {
 		// 关键路径:configDir 返回的是相对路径名(通常 '.obsidian',可自定义),不是绝对路径。
 		// 必须用 vaultBase 拼前缀,否则 fs.writeFileSync/fs.existsSync 会以 cwd 解析,导致 ENOENT。
 		const pluginDir = path.join(vaultBase, this.app.vault.configDir, 'plugins', 'ratel-vault');
+		// 关键路径:注入实际 configDir 名,供 path-safety 拦截配置目录访问(兼容用户自定义 configDir)。
+		setConfigDir(this.app.vault.configDir);
 		this.indexDir = path.join(pluginDir, '.index');
 		// 关键路径:启动期 vectraStore 可能尚无 embeddings(本地模型在 onLayoutReady 才下载),
 		// 因此只做目录占位;InlineWorker 场景下会在模型就绪后重新创建带 embeddings 的 store。

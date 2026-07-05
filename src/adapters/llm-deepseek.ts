@@ -95,7 +95,7 @@ export class DeepSeekLLM implements LLMClient {
 				headers,
 				body: JSON.stringify(body),
 			}));
-		} catch (_err) {
+		} catch {
 			// 降级:若原生流式请求失败(如特殊代理/协议问题),回退到 requestUrl 一次性请求。
 			// 这种降级模式下无打字机效果,但保证功能可用。
 			yield* this.chatViaRequestUrl(req);

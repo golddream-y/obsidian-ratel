@@ -69,7 +69,7 @@ export class FolderWatcher {
     /** 停止 — 清空所有 pending。 */
     stop(): void {
         for (const entry of this.pending.values()) {
-            globalThis.clearTimeout(entry.timer);
+            window.clearTimeout(entry.timer);
         }
         this.pending.clear();
         this.started = false;
