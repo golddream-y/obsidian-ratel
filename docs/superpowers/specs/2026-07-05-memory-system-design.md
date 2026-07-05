@@ -36,7 +36,7 @@
 |---|------|------|
 | 1 | 混合记忆写入模式 | 用户显式说"记住 X"→ 立即写入；Agent 自行推断 → 标记 `source: model`，设置中可选择关闭自动推断 |
 | 2 | 存储位置 | `.ratel/memory/`，vault 内用户可见可编辑；**绝不修改原笔记** |
-| 3 | 记忆隔离 | vault 索引（`.index/`）与记忆索引（`.memory-index/`）物理隔离，`.ratelignore` 默认排除 `.ratel/memory/` |
+| 3 | 记忆隔离 | vault 索引（`.index/`）与记忆索引（`.memory-index/`）物理隔离，`.ratelignore` 默认排除整个 `.ratel/` |
 | 4 | 两层记忆 | 全局基础记忆（启动注入）+ 主题记忆（工具按需检索） |
 | 5 | 记忆创建 | Agent 自动创建 + 用户命令触发；主题文件按需生成 |
 | 6 | 独立索引 | 记忆用独立 vectra 索引，不走 Worker 管道（主线程直接操作） |
@@ -49,11 +49,11 @@
 ```
 ┌──────────────────────────────────────────────────────────┐
 │                      Agent Loop                          │
-│  ┌──────────┐  ┌──────────────┐  ┌───────────────────┐  │
-│  │ 启动注入  │  │ search_memory│  │    remember       │  │
-│  │ 全局记忆  │  │    工具       │  │     工具          │  │
-│  └────┬─────┘  └──────┬───────┘  └────────┬──────────┘  │
-│       │               │                   │              │
+│  ┌──────────┐  ┌──────────────┐  ┌──────────┐  ┌───────────────┐  │
+│  │ 启动注入  │  │ search_memory│  │ remember │  │ forget_memory │  │
+│  │ 全局记忆  │  │    工具       │  │   工具    │  │    工具        │  │
+│  └────┬─────┘  └──────┬───────┘  └────┬─────┘  └───────┬───────┘  │
+│       │               │               │                 │          │
 └───────┼───────────────┼───────────────────┼──────────────┘
         │               │                   │
         ▼               ▼                   ▼
@@ -139,7 +139,7 @@ updated: 2026-07-05T14:23:00
 
 ### 4.2 主题索引 — `index.md`
 
-启动时加载（极轻量），Agent 据此判断有哪些主题可用。
+启动时加载（极轻量），Agent 据此判断有哪些主题可用。**注意**：`global.md` 不写入记忆索引，避免 `search_memory` 与启动注入重复。`index.md` 本身也不入索引。
 
 ```markdown
 ---
@@ -188,7 +188,7 @@ updated: 2026-07-05T14:23:00
 
 ### 5.1 `search_memory`
 
-Agent 按需检索主题记忆。
+Agent 按需检索主题记忆。**仅检索 `topics/` 目录下文件**，不检索 `global.md` 和 `index.md`。
 
 | 属性 | 值 |
 |------|-----|
@@ -219,6 +219,11 @@ Agent 写入记忆。用户显式指令立即写入；Agent 推断需确认或�
 | 返回 | 确认消息 + 写入位置 |
 | 权限 | 默认需确认（写操作） |
 
+**分类指引**（写入工具描述，供 Agent 判断用哪个 type）：
+
+- 涉及用户身份、通用偏好、跨项目决策 → `type: "global"`
+- 涉及特定技术栈、领域、项目 → `type: "topic"`
+
 **内部流程**：
 
 ```
@@ -227,12 +232,47 @@ Agent 调 remember({type: "global", section: "关键决策", content: "API 地�
   → 定位到 `## 关键决策` 区块
   → 追加新条目（标注 source: user）
   → 写回文件
-  → memoryStore.upsert("global.md", 全文) ← 同步更新索引
+  → 不更新记忆索引（global.md 不入索引，避免与启动注入重复）
 
 Agent 调 remember({type: "topic", topic: "GraphQL", section: "关键事实", content: "...", source: "model"})
-  → 若 topics/GraphQL.md 不存在 → 创建文件 + 更新 index.md
-  → 若存在 → 读全文 → 定位区块 → 追加 → 写回
-  → memoryStore.upsert("topics/GraphQL.md", 全文)
+  → 若 topics/GraphQL.md 不存在：
+      → 创建文件（含 YAML frontmatter + 区块标题 + 条目）
+      → 在 index.md 的「主题列表」区追加一行 `[[topics/GraphQL]] — <自动摘要>`
+  → 若存在：
+      → 读全文 → 定位区块 → 追加 → 写回
+  → memoryStore.upsert("topics/GraphQL.md", 全文) ← 同步更新记忆索引
+```
+
+**索引更新要点**：
+- 主题文件创建或修改后，**必须同步** `memoryStore.upsert` 更新 `.memory-index/`，保证 `search_memory` 立即可检索
+- `index.md` 仅在新主题创建时追加一行，已存在主题修改时不更新 `index.md`
+- `global.md` 永远不写入记忆索引
+
+### 5.3 `forget_memory`
+
+Agent 删除记忆。
+
+| 属性 | 值 |
+|------|-----|
+| 名称 | `forget_memory` |
+| 参数 | `type: "global" | "topic"`, `topic?: string`, `match: string`（匹配要删除的条目文本） |
+| 返回 | 确认消息 + 删除的条目内容 |
+| 权限 | 默认需确认（写操作） |
+
+**内部流程**：
+
+```
+Agent 调 forget_memory({type: "global", match: "API 地址"})
+  → 读 global.md 全文
+  → 按行匹配 match 字符串 → 删除匹配行
+  → 写回文件
+
+Agent 调 forget_memory({type: "topic", topic: "GraphQL", match: "DataLoader"})
+  → 读 topics/GraphQL.md 全文
+  → 按行匹配 → 删除匹配行
+  → 写回文件
+  → memoryStore.upsert("topics/GraphQL.md", 全文) ← 同步更新索引
+  → 若文件变为空 → 删除文件 + 从 index.md 移除对应行
 ```
 
 ---
@@ -245,8 +285,21 @@ Agent 调 remember({type: "topic", topic: "GraphQL", section: "关键事实", co
 会话启动
   → ContextManager 加载 global.md 全文（≤ 20 KB）
   → ContextManager 加载 index.md 主题列表
-  → 注入系统提示："以下是关于用户的已知信息：\n{global.md}\n可用主题：{index.md 列表}"
-  → Agent 从一开始就"认识"用户
+  → 注入系统提示：
+
+    以下是关于用户的已知信息：
+    {global.md 全文}
+
+    用户已建立以下主题记忆，当对话涉及相关领域时，请先用 search_memory 查询：
+    {index.md 主题列表}
+
+    触发规则：
+    - 用户询问某技术栈/项目/领域的偏好、决策或历史 → 先调 search_memory 再回答
+    - 用户说"记住 X" → 调 remember（涉及个人/全局偏好用 type=global，涉及特定技术/领域用 type=topic）
+    - 用户说"忘掉 X" → 调 forget_memory
+    - 不确定是否需要记忆时 → 宁可多查一次
+
+  → Agent 从一开始就"认识"用户，并知道何时查记忆
 ```
 
 ### 6.2 对话中 — 记忆检索
@@ -259,18 +312,23 @@ Agent 调 remember({type: "topic", topic: "GraphQL", section: "关键事实", co
   → 基于记忆 + vault 搜索结果回答
 ```
 
-### 6.3 对话中 — 记忆写入
+### 6.3 对话中 — 记忆写入/删除
 
 ```
 用户："记住，我们的 API 地址改成了 https://api.example.com"
   → Agent 识别为显式记忆指令
   → 调 remember({type: "global", section: "关键决策", content: "API 地址: https://api.example.com", source: "user"})
-  → 写入 global.md + 更新索引
+  → 写入 global.md（不入记忆索引）
   → Agent 回复："已记录。"
 
 Agent 发现用户反复纠正同一行为
   → 调 remember({type: "topic", topic: "TypeScript", content: "偏好用 type 而非 interface", source: "model"})
   → 若设置中"自动记忆写入"关闭 → 跳过，仅在会话日志中记录
+
+用户："忘掉我之前说的 API 地址"
+  → Agent 调 forget_memory({type: "global", match: "API 地址"})
+  → 从 global.md 删除匹配行
+  → Agent 回复："已删除。"
 ```
 
 ### 6.4 会话结束（Phase 2）
@@ -358,9 +416,9 @@ Agent 发现用户反复纠正同一行为
 
 ### 9.1 vault 索引不索引记忆
 
-- `.ratelignore` 默认规则追加 `.ratel/memory/`
-- `IndexController` 的 `Ratelignore.ignores()` 自动过滤 `.ratel/memory/` 下文件
-- `search_vault` 工具永远不返回记忆内容
+- `.ratelignore` 默认规则追加 `.ratel/`
+- `IndexController` 的 `Ratelignore.ignores()` 自动过滤 `.ratel/` 下所有文件
+- `search_vault` 工具永远不返回 `.ratel/` 下的内容
 
 ### 9.2 记忆索引独立运行
 
@@ -388,11 +446,12 @@ Agent 发现用户反复纠正同一行为
 | 3 | 启动时记忆注入到 ContextManager | `ContextManager` 扩展 |
 | 4 | `search_memory` 工具 | `tools/search-memory.ts` |
 | 5 | `remember` 工具 | `tools/remember.ts` |
-| 6 | 独立 `.memory-index/` vectra 索引 | 第二个 `VectraStore` 实例 |
-| 7 | `.ratelignore` 排除 `.ratel/memory/` | 默认规则追加 |
-| 8 | 容量控制（4 个上限参数） | `MemoryStore` 内建 |
-| 9 | 记忆管理面板（侧边栏 View） | `ui/memory-panel/` (Svelte) |
-| 10 | 设置页配置项 | `settings.ts` 扩展 |
+| 6 | `forget_memory` 工具 | `tools/forget-memory.ts` |
+| 7 | 独立 `.memory-index/` vectra 索引 | 第二个 `VectraStore` 实例 |
+| 8 | `.ratelignore` 默认排除 `.ratel/` | `Ratelignore` 默认规则追加 |
+| 9 | 容量控制（4 个上限参数） | `MemoryStore` 内建 |
+| 10 | 记忆管理面板（侧边栏 View） | `ui/memory-panel/` (Svelte) |
+| 11 | 设置页配置项（6 个参数） | `settings.ts` 扩展 |
 
 **交付标准**：用户打开 Ratel 聊天 → Agent 知道用户偏好 → 用户说"记住 X"→ 下次会话 Agent 还记得 → 记忆面板可浏览/编辑/删除。
 
@@ -425,7 +484,7 @@ Agent 发现用户反复纠正同一行为
 | 主题记忆过多 | 检索精度下降 | 10 MB 磁盘上限 + index.md 只列活跃主题 |
 | 记忆索引与 vault 索引混淆 | 搜索结果污染 | 物理隔离（不同目录）+ `.ratelignore` 过滤 |
 | 多设备同步冲突 | 记忆文件冲突 | 依赖 Obsidian Sync / git 的合并能力，markdown 格式天然支持 |
-| Agent 不知道何时调 search_memory | 记忆白存 | 工具描述明确指引触发场景；系统提示暗示"有可用主题时可查" |
+| Agent 不知道何时调 search_memory | 记忆白存 | 系统提示显式列出触发规则（"涉及某技术栈/项目时先查记忆"）；工具描述明确触发场景 |
 
 ---
 
