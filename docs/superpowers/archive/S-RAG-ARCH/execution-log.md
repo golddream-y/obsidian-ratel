@@ -4,19 +4,10 @@
 
 ---
 
-## 2026-06-14 — S-RAG-ARCH(最终 RAG 架构)
+## 2026-07-05 — 归档
 
-S-RAG-ARCH 是最终 RAG 架构 spec,取代 S-RAG-ROADMAP 中的初步想法。
-其 W3/W4 切片分别由 S-W3-HYBRID 和 S-W4-RAG-ENHANCEMENT 衍生独立 plan 实施,
-执行日志见各自归档目录:
-- W3 切片 → [archive/S-W3-HYBRID/execution-log.md](../S-W3-HYBRID/execution-log.md)
-- W4 切片 → [archive/S-W4-RAG-ENHANCEMENT/execution-log.md](../S-W4-RAG-ENHANCEMENT/execution-log.md)
+S-RAG-ARCH 是最终 RAG 架构设计文档,取代了 S-RAG-ROADMAP 的初步想法。
+实施通过多个 plan 完成(见 archive/S-W3-HYBRID/、archive/S-W4-RAG-ENHANCEMENT/、archive/S-VAULT-TOOLS/ 等)。
+本 spec 作为设计参考保留,现归档。
 
-S-RAG-ARCH 本身无独立 plan,作为架构指导文档保留在 `specs/` 根目录(状态 Active)。
-
----
-
-## 2026-06-13 — S-RAG-ROADMAP(已 Superseded)
-
-> 初步 RAG 增强路线图,已被 S-RAG-ARCH + 架构文档取代。
-> 文件见 `2026-06-13-rag-enhancement-roadmap-design.md`。
+详细 commit 历史见 `git log`。
