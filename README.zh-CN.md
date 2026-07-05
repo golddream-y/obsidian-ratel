@@ -16,7 +16,7 @@
 3. **等索引** — 首次启动状态条显示索引进度；之后重启通常很快。
 4. **提问** — 侧边栏 🦡 或命令面板 → **Ratel: Ask vault**。
 
-详细配置见 [使用手册](docs/user-guide.md)。
+详细配置见 [使用手册](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/user-guide.md)。
 
 > **要求：** Obsidian 1.13.0+，仅桌面端。默认本地嵌入首次需联网下载模型（~37 MB），之后缓存本地。
 
@@ -72,7 +72,7 @@ Ratel 为 vault 构建**本地检索索引**，由**多步 Agent** 按需调度�
 ## 反馈
 
 - [GitHub Issues](https://github.com/golddream-y/obsidian-ratel/issues) — Bug 与建议
-- [使用手册 FAQ](docs/user-guide.md#29-faq)
+- [使用手册 FAQ](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/user-guide.md#29-faq)
 
 ---
 
