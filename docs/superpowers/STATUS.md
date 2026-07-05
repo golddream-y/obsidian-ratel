@@ -19,7 +19,6 @@
 |---|---|---|---|---|
 | S-RAG-ARCH | [2026-06-14-ratel-rag-architecture.md](specs/2026-06-14-ratel-rag-architecture.md) | Active | 2026-06-14 | 最终 RAG 架构(取代 S-RAG-ROADMAP 中的初步想法) |
 | S-I18N | [2026-06-14-ratel-i18n-design.md](specs/2026-06-14-ratel-i18n-design.md) | Draft | 2026-06-14 | i18n 基础设施:中英文切换,settings.ts + ChatView + 命令 + Notice 全覆盖 |
-| S-CLEANUP-1 | [2026-07-04-ratel-cleanup-1-design.md](specs/2026-07-04-ratel-cleanup-1-design.md) | Active | 2026-07-04 | 杂项缺失修复与历史技术债清理(12 项:A 硬伤 + B 接线 + C 文档 + E lint + F 技术债) |
 
 ---
 
@@ -28,7 +27,6 @@
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
 | P-I18N-IMPL | [2026-06-14-ratel-i18n-implementation.md](plans/2026-06-14-ratel-i18n-implementation.md) | ⏳ Pending | S-I18N | — |
-| P-CLEANUP-1 | [2026-07-04-ratel-cleanup-1-implementation.md](plans/2026-07-04-ratel-cleanup-1-implementation.md) | ⏳ Pending | S-CLEANUP-1 | 24 Task,A 硬伤 + B 接线 + C 文档 + E lint + F 技术债 |
 
 ---
 
@@ -80,3 +78,4 @@
 | S-CONTEXT-WINDOW | [archive/S-CONTEXT-WINDOW/](archive/S-CONTEXT-WINDOW/) | 2026-07-04 | LiteLLM 映射 + Context Length 预设;7 Task;⚠️ 实施代码仍在 `feat/s-context-window` 分支待合并 |
 | S-INDEX-STARTUP | [archive/S-INDEX-STARTUP/](archive/S-INDEX-STARTUP/) | 2026-07-04 | smart reindex 启动路径;8 Task + 6 缺口修复 |
 | S-PROMPTS | [archive/S-PROMPTS/](archive/S-PROMPTS/) | 2026-07-04 | Prompt Registry + 全中文默认值 + section 覆盖 + 热替换;10 Task;12 commits squash 为 1;ADR-008 |
+| S-CLEANUP-1 | [archive/S-CLEANUP-1/](archive/S-CLEANUP-1/) | 2026-07-05 | 杂项缺失修复与技术债清理;24 Task(1-16 前序会话,17-24 本会话);squash 合并 commit `3590b23` |
