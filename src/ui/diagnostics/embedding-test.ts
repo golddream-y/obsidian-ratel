@@ -39,7 +39,8 @@ export function renderEmbeddingTest(container: HTMLElement, plugin: RatelVaultPl
 	searchSection.createEl('h3', { text: '① 库内检索(从 vault 真实库)' });
 
 	// 索引状态禁用提示
-	const indexWarn = searchSection.createDiv({ attr: { style: 'font-size:12px;color:var(--text-warning);margin-bottom:8px;display:none;' } });
+	// 关键路径:样式走 ratel-index-warn class(见 styles.css),display 由 ratel-is-visible 切换。
+	const indexWarn = searchSection.createDiv({ cls: 'ratel-index-warn' });
 
 	searchSection.createEl('label', { cls: 'diag-label', text: 'Query' });
 	const searchQuery = searchSection.createEl('textarea', {
@@ -128,18 +129,18 @@ export function renderEmbeddingTest(container: HTMLElement, plugin: RatelVaultPl
 	indexStatusPromise.then((status) => {
 		if (status.totalDocs === 0) {
 			indexWarn.setText('⚠️ 索引中尚无块,无法检索。请先在主面板执行一次"重新构建索引"。');
-			indexWarn.style.display = 'block';
+			indexWarn.addClass('ratel-is-visible');
 			// 关键路径:索引为空时禁用输入区,避免空检索浪费 embedding 算力。
 			searchQuery.disabled = true;
 			topKInput.disabled = true;
-			(searchBtn as HTMLButtonElement).disabled = true;
+			searchBtn.disabled = true;
 		}
 	}).catch(() => {
 		indexWarn.setText('⚠️ 索引状态读取失败,检索功能不可用。');
-		indexWarn.style.display = 'block';
+		indexWarn.addClass('ratel-is-visible');
 		searchQuery.disabled = true;
 		topKInput.disabled = true;
-		(searchBtn as HTMLButtonElement).disabled = true;
+		searchBtn.disabled = true;
 	});
 
 	// ==================== 功能2: 两两相似度 ====================

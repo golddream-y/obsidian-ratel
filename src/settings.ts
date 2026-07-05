@@ -11,7 +11,6 @@ import { createTabBar } from './ui/diagnostics/tab-bar';
 import { renderEmbeddingTest } from './ui/diagnostics/embedding-test';
 import { renderLLMTest } from './ui/diagnostics/llm-test';
 import { renderRerankTest } from './ui/diagnostics/rerank-test';
-import { ensureDiagStyles } from './ui/diagnostics/diag-utils';
 import { devLogger } from './logging/dev-logger';
 import type { ToolPermission } from './core/tool-permissions';
 import { renderSecretHint, renderNoKeyNeeded } from './ui/components/secret-hint';
@@ -218,8 +217,6 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		ensureDiagStyles();
-
 		// 主 Tab 栏
 		const mainTabBar = containerEl.createDiv({ cls: 'diag-tabs' });
 		const mainContent = containerEl.createDiv();
@@ -254,7 +251,7 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 	 */
 	private renderSettings(containerEl: HTMLElement): void {
 		// ==================== Chat ====================
-		containerEl.createEl('h2', { text: 'Chat Model' });
+		new Setting(containerEl).setName('Chat Model').setHeading();
 
 		new Setting(containerEl)
 			.setName('Model')
@@ -371,7 +368,7 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 				});
 		}
 
-		containerEl.createEl('h3', { text: '高级' });
+		new Setting(containerEl).setName('高级').setHeading();
 
 		new Setting(containerEl)
 			.setName('模型映射表 URL')
@@ -411,7 +408,7 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 	}
 
 		// ==================== Embedding ====================
-		containerEl.createEl('h2', { text: 'Embedding Model' });
+		new Setting(containerEl).setName('Embedding Model').setHeading();
 
 		new Setting(containerEl)
 			.setName('Provider')
@@ -484,7 +481,7 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 		}
 
 		// ==================== Reranker ====================
-		containerEl.createEl('h2', { text: 'Reranker (百炼,可选)' });
+		new Setting(containerEl).setName('Reranker (百炼,可选)').setHeading();
 
 		new Setting(containerEl)
 			.setName('API Base URL')
@@ -518,7 +515,7 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 	});
 
 		// ==================== Indexing ====================
-		containerEl.createEl('h2', { text: 'Indexing' });
+		new Setting(containerEl).setName('Indexing').setHeading();
 
 		new Setting(containerEl)
 			.setName('Chunk size (tokens)')
@@ -527,7 +524,6 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 				slider
 					.setLimits(100, 1000, 50)
 					.setValue(this.plugin.settings.chunkSize)
-					.setDynamicTooltip()
 					.onChange(async (value) => {
 						this.plugin.settings.chunkSize = value;
 						await this.plugin.saveSettings();
@@ -541,7 +537,6 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 				slider
 					.setLimits(0, 200, 10)
 					.setValue(this.plugin.settings.chunkOverlap)
-					.setDynamicTooltip()
 					.onChange(async (value) => {
 						this.plugin.settings.chunkOverlap = value;
 						await this.plugin.saveSettings();
@@ -567,7 +562,7 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 		this.renderPromptOverrides(containerEl);
 
 		// ==================== Developer ====================
-		containerEl.createEl('h2', { text: '开发者' });
+		new Setting(containerEl).setName('开发者').setHeading();
 
 		new Setting(containerEl)
 			.setName('Debug 日志')
@@ -589,7 +584,6 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 				slider
 					.setLimits(5, 200, 5)
 					.setValue(this.plugin.settings.agentMaxSteps)
-					.setDynamicTooltip()
 					.onChange(async (value) => {
 						this.plugin.settings.agentMaxSteps = value;
 						await this.plugin.saveSettings();
@@ -598,7 +592,7 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 	}
 
 	private renderToolPermissions(container: HTMLElement): void {
-		container.createEl('h2', { text: '工具权限' });
+		new Setting(container).setName('工具权限').setHeading();
 
 		new Setting(container)
 			.setName('信任模式')
@@ -654,7 +648,7 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 	 * @param container - 设置面板的容器元素
 	 */
 	private renderPromptOverrides(container: HTMLElement): void {
-		container.createEl('h2', { text: '提示词(高级)' });
+		new Setting(container).setName('提示词(高级)').setHeading();
 		container.createEl('p', {
 			text: '按段落自定义 LLM 系统提示词。检索结果安全外框不可编辑。',
 			cls: 'setting-item-description',
@@ -664,7 +658,7 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			const useCustom = this.plugin.settings.promptOverrides[meta.id] !== undefined;
 
 			const row = container.createDiv({ cls: 'ratel-prompt-section-row' });
-			row.createEl('h3', { text: `${meta.label} (${meta.zone})` });
+			new Setting(row).setName(`${meta.label} (${meta.zone})`).setHeading();
 			row.createEl('p', { text: meta.description, cls: 'setting-item-description' });
 
 			if (meta.placeholders.length > 0) {
@@ -746,14 +740,17 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 				const modal = new Modal(this.app);
 				modal.titleEl.setText('RAG 系统提示词预览');
 				const pre = modal.contentEl.createEl('pre', {
-					text: preview,
-				});
-				pre.style.whiteSpace = 'pre-wrap';
-				pre.style.wordBreak = 'break-word';
-				pre.style.fontFamily = 'var(--font-monospace)';
-				pre.style.fontSize = 'var(--font-smaller)';
-				pre.style.margin = '0';
-				modal.open();
+				text: preview,
+			});
+			// 关键路径:用 CSS 变量而非硬编码值,适配主题切换。
+			pre.setCssProps({
+				whiteSpace: 'pre-wrap',
+				wordBreak: 'break-word',
+				fontFamily: 'var(--font-monospace)',
+				fontSize: 'var(--font-smaller)',
+				margin: '0',
+			});
+			modal.open();
 			}),
 		);
 	}

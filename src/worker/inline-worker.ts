@@ -59,7 +59,7 @@ export class InlineWorker implements WorkerLike {
 	postMessage(message: WorkerRequest & { _requestId?: string }): void {
 		if (this.terminated) return;
 
-		setTimeout(() => {
+		window.setTimeout(() => {
 			if (this.terminated) return;
 
 			void this.handle(message);
@@ -93,7 +93,7 @@ export class InlineWorker implements WorkerLike {
 	 * 派发事件消息给所有 message 监听器(异步,与 postMessage 语义一致)。
 	 */
 	private emitMessage(msg: WorkerResponse & { _requestId?: string }): void {
-		setTimeout(() => {
+		window.setTimeout(() => {
 			if (this.terminated) return;
 			for (const listener of this.messageListeners) {
 				listener(msg);
@@ -104,7 +104,7 @@ export class InlineWorker implements WorkerLike {
 	private async handle(msg: WorkerRequest & { _requestId?: string }): Promise<void> {
 		// 关键路径:postEvent 通过 emitMessage 异步派发,让进度事件在请求响应前到达主线程。
 		const postEvent = (eventMsg: WorkerResponse) => {
-			this.emitMessage(eventMsg as WorkerResponse & { _requestId?: string });
+			this.emitMessage(eventMsg);
 		};
 
 		try {
@@ -112,7 +112,7 @@ export class InlineWorker implements WorkerLike {
 			if (msg._requestId) {
 				(response as Record<string, unknown>)._requestId = msg._requestId;
 			}
-			this.emitMessage(response as WorkerResponse & { _requestId?: string });
+			this.emitMessage(response);
 		} catch (err) {
 			const error = err instanceof Error ? err : new Error(String(err));
 			for (const listener of this.errorListeners) {

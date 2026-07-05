@@ -61,8 +61,10 @@ describe('main rag loop integration', () => {
 		const plugin = new RatelVaultPlugin();
 		plugin.app = {
 			vault: {
-				adapter: { getBasePath: () => '/tmp/vault' },
-				on: vi.fn().mockReturnValue({}),
+			adapter: { getBasePath: () => '/tmp/vault' },
+			// 关键路径:configDir 提供 pluginDir 路径(main.ts:156),mock 一个临时路径。
+			configDir: '/tmp/vault/.obsidian',
+			on: vi.fn().mockReturnValue({}),
 				offref: vi.fn(),
 				getMarkdownFiles: () => [],
 				getAbstractFileByPath: () => null,

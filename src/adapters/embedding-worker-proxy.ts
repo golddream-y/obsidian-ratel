@@ -30,8 +30,6 @@ interface WorkerEmbedMessage {
 	requestId: string;
 }
 
-type WorkerRequest = WorkerInitMessage | WorkerEmbedMessage;
-
 /**
  * Web Worker 消息类型 — Worker → 主线程。
  */

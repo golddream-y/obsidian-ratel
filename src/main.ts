@@ -6,7 +6,7 @@
  */
 
 import { EMBEDDING_WORKER_CODE } from '@ratel/embedding-worker-code';
-import { FileSystemAdapter, Notice, Plugin } from 'obsidian';
+import { FileSystemAdapter, Plugin } from 'obsidian';
 import { type RatelVaultSettings, DEFAULT_SETTINGS, RatelVaultSettingTab, normalizeContextLengthSettings } from './settings';
 
 import type { AgentEvent } from './types';
@@ -152,7 +152,9 @@ export default class RatelVaultPlugin extends Plugin {
 		// `getBasePath()` 是 FileSystemAdapter 的方法,DataAdapter 基类不暴露,需要类型断言。
 		const adapter = this.app.vault.adapter as FileSystemAdapter;
 		const vaultBase = adapter.getBasePath();
-		const pluginDir = path.join(vaultBase, '.obsidian', 'plugins', 'ratel-vault');
+		// 关键路径:configDir 返回的是相对路径名(通常 '.obsidian',可自定义),不是绝对路径。
+		// 必须用 vaultBase 拼前缀,否则 fs.writeFileSync/fs.existsSync 会以 cwd 解析,导致 ENOENT。
+		const pluginDir = path.join(vaultBase, this.app.vault.configDir, 'plugins', 'ratel-vault');
 		this.indexDir = path.join(pluginDir, '.index');
 		// 关键路径:启动期 vectraStore 可能尚无 embeddings(本地模型在 onLayoutReady 才下载),
 		// 因此只做目录占位;InlineWorker 场景下会在模型就绪后重新创建带 embeddings 的 store。
@@ -357,7 +359,7 @@ export default class RatelVaultPlugin extends Plugin {
 		// Ribbon 图标:点击打开聊天侧栏。
 		// 关键路径:Lucide 图标集无獾,用 emoji 替换 SVG,贴合 Ratel 品牌形象。
 		const ribbonEl = this.addRibbonIcon('paw-print', 'Ratel', () => {
-			this.activateChatView();
+			void this.activateChatView();
 		});
 		const ribbonSvg = ribbonEl?.querySelector('svg');
 		if (ribbonSvg?.parentElement) {
@@ -376,7 +378,7 @@ export default class RatelVaultPlugin extends Plugin {
 			id: 'ask-vault',
 			name: 'Ask vault',
 			callback: () => {
-				this.activateChatView();
+				void this.activateChatView();
 			},
 		});
 
@@ -1053,8 +1055,9 @@ export default class RatelVaultPlugin extends Plugin {
 				await leaf.setViewState({ type: VIEW_TYPE_CHAT, active: true });
 			}
 		} else {
-			workspace.revealLeaf(leaf);
+			// 关键路径:revealLeaf 返回 Promise,显式 void 标记不等待,避免浮动 Promise。
+			void workspace.revealLeaf(leaf);
 		}
-		requestAnimationFrame(() => patchAllChatLeafIcons(this.app.workspace));
+		window.requestAnimationFrame(() => patchAllChatLeafIcons(this.app.workspace));
 	}
 }

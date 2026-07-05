@@ -20,7 +20,9 @@ export interface FolderWatcherOptions {
 
 interface PendingEntry {
     op: 'upsert' | 'delete';
-    timer: ReturnType<typeof setTimeout>;
+    // 关键路径:window.setTimeout 在 DOM lib 下返回 number;
+    // @types/node 全局 setTimeout 增强,ReturnType<typeof window.setTimeout> 可能解析为 NodeJS.Timeout,直接用 number 避免。
+    timer: number;
 }
 
 export class FolderWatcher {
@@ -57,7 +59,7 @@ export class FolderWatcher {
 
         // 关键路径:同 path 已有 timer,先清掉,后写覆盖先写。
         this.cancelPending(path);
-        const timer = setTimeout(() => {
+        const timer = window.setTimeout(() => {
             this.pending.delete(path);
             this.handlers?.onUpsert(path);
         }, this.debounceMs);
@@ -67,7 +69,7 @@ export class FolderWatcher {
     /** 停止 — 清空所有 pending。 */
     stop(): void {
         for (const entry of this.pending.values()) {
-            clearTimeout(entry.timer);
+            globalThis.clearTimeout(entry.timer);
         }
         this.pending.clear();
         this.started = false;
@@ -77,7 +79,7 @@ export class FolderWatcher {
     private cancelPending(path: string): void {
         const existing = this.pending.get(path);
         if (existing) {
-            clearTimeout(existing.timer);
+            window.clearTimeout(existing.timer);
             this.pending.delete(path);
         }
     }

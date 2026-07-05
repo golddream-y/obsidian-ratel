@@ -178,7 +178,9 @@ export function createActionButton(
     }
     const textSpan = btn.createSpan({ cls: 'diag-btn-text', text });
 
-    btn.addEventListener('click', async () => {
+    // 关键路径:用 void 包裹 async 回调,避免 addEventListener 的 async listener
+    // 产生浮动 Promise(若 onClick 抛错会变成未处理的 rejection)。
+    const handleClick = async (): Promise<void> => {
         if (btn.disabled) return;
         btn.disabled = true;
         btn.addClass('diag-btn-loading');
@@ -190,7 +192,8 @@ export function createActionButton(
             btn.removeClass('diag-btn-loading');
             textSpan.textContent = text;
         }
-    });
+    };
+    btn.addEventListener('click', () => void handleClick());
 
     return btn;
 }
@@ -236,73 +239,5 @@ export function cosineSimilarity(a: number[], b: number[]): number {
     return dot / denom;
 }
 
-/**
- * 注入诊断页面所需的 CSS 样式(只注入一次)。
- */
-let cssInjected = false;
-export function ensureDiagStyles(): void {
-    if (cssInjected) return;
-    cssInjected = true;
-
-    const style = document.createElement('style');
-    style.textContent = `
-        .diag-tabs { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid var(--background-modifier-border); padding-bottom: 0; }
-        .diag-tab { padding: 6px 14px; cursor: pointer; border: none; background: transparent; color: var(--text-muted); border-bottom: 2px solid transparent; font-size: 14px; }
-        .diag-tab:hover { color: var(--text-normal); }
-        .diag-tab-active { color: var(--text-accent); border-bottom-color: var(--interactive-accent); font-weight: 500; }
-
-        .diag-section { margin-bottom: 24px; }
-        .diag-section h3 { margin-top: 0; margin-bottom: 12px; }
-        .diag-section h4 { margin-top: 16px; margin-bottom: 8px; font-size: 13px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
-        .diag-label { display: block; margin-bottom: 4px; font-size: 13px; color: var(--text-muted); }
-        .diag-input, .diag-textarea, .diag-select { width: 100%; margin-bottom: 12px; }
-        .diag-textarea { min-height: 80px; resize: vertical; font-family: var(--font-monospace); font-size: 12px; }
-        .diag-row { display: flex; gap: 12px; margin-bottom: 12px; }
-        .diag-row > * { flex: 1; }
-        .diag-param-group { margin-bottom: 12px; }
-        .diag-param-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-        .diag-param-row label { width: 100px; font-size: 13px; color: var(--text-muted); }
-        .diag-param-row input { flex: 1; }
-
-        .diag-btn { padding: 6px 16px; cursor: pointer; background: var(--interactive-accent); color: var(--text-on-accent); border: none; border-radius: 4px; font-size: 14px; display: inline-flex; align-items: center; gap: 6px; }
-        .diag-btn:hover { background: var(--interactive-accent-hover); }
-        .diag-btn:disabled { opacity: 0.6; cursor: not-allowed; }
-        .diag-btn-secondary { background: var(--interactive-normal); color: var(--text-normal); }
-        .diag-btn-secondary:hover { background: var(--interactive-hover); }
-
-        .diag-result { margin-top: 16px; padding: 12px; background: var(--background-secondary); border-radius: 6px; border: 1px solid var(--background-modifier-border); }
-        .diag-result-content { font-size: 13px; }
-        .diag-result-empty { color: var(--text-muted); font-style: italic; }
-
-        .diag-error-block { margin-top: 12px; padding: 12px; border-radius: 6px; border-left: 4px solid var(--text-error); background: var(--background-secondary); }
-        .diag-error-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-        .diag-error-tag { padding: 2px 8px; border-radius: 3px; font-size: 11px; font-weight: 600; text-transform: uppercase; background: var(--text-error); color: var(--text-on-accent); }
-        .diag-error-msg { font-weight: 500; color: var(--text-error); }
-        .diag-error-row { font-size: 13px; margin-top: 4px; display: flex; gap: 6px; }
-        .diag-error-label { color: var(--text-muted); min-width: 70px; }
-        .diag-error-value { color: var(--text-normal); }
-        .diag-error-details { margin-top: 8px; }
-        .diag-error-details summary { cursor: pointer; font-size: 12px; color: var(--text-faint); display: flex; align-items: center; gap: 4px; }
-        .diag-error-details summary:hover { color: var(--text-muted); }
-        .diag-error-stack, .diag-error-raw { margin-top: 8px; padding: 8px; background: var(--background-primary); border-radius: 4px; font-size: 11px; overflow-x: auto; white-space: pre-wrap; word-break: break-all; max-height: 300px; overflow-y: auto; }
-
-        .diag-vector-preview { font-family: var(--font-monospace); font-size: 11px; word-break: break-all; background: var(--background-primary); padding: 8px; border-radius: 4px; margin-top: 8px; max-height: 100px; overflow-y: auto; }
-        .diag-similarity-item { padding: 8px 10px; margin-bottom: 6px; background: var(--background-primary); border-radius: 4px; border-left: 3px solid var(--interactive-accent); }
-        .diag-similarity-score { font-weight: 600; color: var(--text-accent); float: right; font-family: var(--font-monospace); }
-        .diag-similarity-text { color: var(--text-normal); font-size: 13px; }
-
-        .diag-placeholder { padding: 40px 20px; text-align: center; color: var(--text-muted); }
-        .diag-placeholder-icon { font-size: 48px; margin-bottom: 12px; opacity: 0.3; }
-        .diag-placeholder p { margin: 4px 0; }
-
-        .diag-status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
-        .diag-status-ok { background: var(--text-success); }
-        .diag-status-warn { background: var(--text-warning); }
-        .diag-status-err { background: var(--text-error); }
-
-        .diag-llm-stream { background: var(--background-primary); padding: 12px; border-radius: 4px; min-height: 60px; white-space: pre-wrap; font-size: 14px; line-height: 1.6; }
-        .diag-config-summary { padding: 10px; background: var(--background-primary); border-radius: 4px; font-size: 12px; font-family: var(--font-monospace); margin-bottom: 12px; }
-        .diag-config-summary code { background: var(--background-secondary); padding: 1px 4px; border-radius: 2px; }
-    `;
-    document.head.appendChild(style);
-}
+// 修复:诊断页面样式已迁移到 styles.css(由 Obsidian 自动加载插件 CSS),
+// 不再运行时创建 <style> 元素(Obsidian linter 禁止该模式)。

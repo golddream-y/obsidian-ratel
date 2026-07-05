@@ -70,7 +70,7 @@ export function reciprocalRankFusion(
 				// 关键路径:初始化 sourceScores,长度等于列表数,全部填 undefined。
 				entry = {
 					rrfScore: 0,
-					sourceScores: new Array(lists.length).fill(undefined),
+					sourceScores: Array.from({ length: lists.length }, (): undefined => undefined),
 				};
 				scoreMap.set(item.id, entry);
 				order.push(item.id);

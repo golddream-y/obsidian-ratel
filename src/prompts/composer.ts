@@ -138,7 +138,7 @@ export function composeToolDefinitions(
 		for (const [paramKey, paramSchema] of Object.entries(skeleton.parameters.properties ?? {})) {
 			const paramDesc = resolveToolSection(name, `param.${paramKey}`, overrides);
 			properties[paramKey] = {
-				...paramSchema,
+				...(paramSchema as { type: string; default?: number }),
 				description: paramDesc || undefined,
 			};
 		}

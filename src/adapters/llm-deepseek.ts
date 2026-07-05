@@ -6,6 +6,9 @@
  */
 
 import { requestUrl } from 'obsidian';
+import * as https from 'node:https';
+import * as http from 'node:http';
+import type { IncomingMessage } from 'node:http';
 import type { LLMClient, ChatRequest, ChatDelta, ToolCall } from '../ports/llm';
 
 /**
@@ -92,7 +95,7 @@ export class DeepSeekLLM implements LLMClient {
 				headers,
 				body: JSON.stringify(body),
 			}));
-		} catch (err) {
+		} catch (_err) {
 			// 降级:若原生流式请求失败(如特殊代理/协议问题),回退到 requestUrl 一次性请求。
 			// 这种降级模式下无打字机效果,但保证功能可用。
 			yield* this.chatViaRequestUrl(req);
@@ -272,11 +275,13 @@ export class DeepSeekLLM implements LLMClient {
 	): Promise<{ stream: NodeJS.ReadableStream; statusCode: number }> {
 		return new Promise((resolve, reject) => {
 			const isHttps = url.protocol === 'https:';
-			const lib = isHttps ? require('node:https') : require('node:http');
+			// 关键路径:静态选择 http/https 模块,避免 require() 动态导入(eslint 禁止)。
+			const lib = isHttps ? https : http;
 			const req = lib.request(
 				{
 					hostname: url.hostname,
-					port: url.port || (isHttps ? 443 : 80),
+					// 关键路径:RequestOptions.port 在 @types/node 中为 string,把数字默认值转字符串。
+					port: url.port || (isHttps ? '443' : '80'),
 					path: url.pathname + url.search,
 					method: options.method,
 					headers: {
@@ -284,9 +289,10 @@ export class DeepSeekLLM implements LLMClient {
 						'Content-Length': Buffer.byteLength(options.body),
 					},
 				},
-				(res: { statusCode: number; on: (ev: string, cb: (v: unknown) => void) => void }) => {
+				(res: IncomingMessage) => {
+					// 关键路径:IncomingMessage 实现 NodeJS.ReadableStream,无需双重断言。
 					resolve({
-						stream: res as unknown as NodeJS.ReadableStream,
+						stream: res,
 						statusCode: res.statusCode ?? 0,
 					});
 				},
@@ -339,12 +345,11 @@ export class DeepSeekLLM implements LLMClient {
 		// (支持 reasoning_content / usage,DRY)
 		const toolCallAccumulators = new Map<number, { id: string; name: string; arguments: string }>();
 		let finishReason: string | null = null;
-		let capturedUsage: { promptTokens: number; completionTokens: number } | undefined;
 
 		// 把整个响应文本作为一段 raw 传给 processSSEEvent(它内部按 \n split 行)
 		const result = this.processSSEEvent(text, toolCallAccumulators);
 		finishReason = result.finishReason;
-		capturedUsage = result.usage;
+		const capturedUsage = result.usage;
 		yield* result.deltas;
 
 		for (const [, tc] of toolCallAccumulators) {

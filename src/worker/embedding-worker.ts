@@ -24,7 +24,15 @@ import type { EmbeddingOnnxDeps } from '../adapters/embedding-onnx';
 let embeddingOnnx: EmbeddingOnnx | null = null;
 
 self.onmessage = async (e: MessageEvent): Promise<void> => {
-	const msg = e.data;
+	// 关键路径:e.data 是 unknown,断言为消息形状后访问字段,避免 no-unsafe-member-access。
+	const msg = e.data as {
+		type: string;
+		requestId?: string;
+		deps?: EmbeddingOnnxDeps;
+		dimensions?: number;
+		maxBatchSize?: number;
+		texts?: string[];
+	};
 
 	switch (msg.type) {
 		case 'init': {

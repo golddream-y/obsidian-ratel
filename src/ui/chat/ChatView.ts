@@ -65,7 +65,7 @@ export class ChatView extends ItemView {
 			},
 		});
 
-		requestAnimationFrame(() => patchChatLeafIcon(this.leaf));
+		window.requestAnimationFrame(() => patchChatLeafIcon(this.leaf));
 	}
 
 	/**
@@ -76,7 +76,8 @@ export class ChatView extends ItemView {
 	 */
 	async onClose(): Promise<void> {
 		if (this.component) {
-			unmount(this.component);
+			// 关键路径:unmount 返回 Promise,await 确保销毁完成再清空引用,避免浮动 Promise。
+			await unmount(this.component);
 			this.component = null;
 		}
 	}

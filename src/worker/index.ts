@@ -20,7 +20,9 @@ import { workerData } from 'worker_threads';
 // 当前 Obsidian 渲染进程不支持 Worker Threads,实际走 InlineWorker(主线程内运行),
 // 因此 Worker 入口不再自己构造 embeddings;真正的 Worker Threads 场景需主线程后续扩展协议传入。
 async function bootstrapWorker(): Promise<void> {
-	if (!workerData || typeof workerData.indexDir !== 'string') return;
+	// 关键路径:workerData 是 any(worker_threads),断言后访问避免 no-unsafe-member-access。
+	const data = workerData as { indexDir?: string } | null | undefined;
+	if (!data || typeof data.indexDir !== 'string') return;
 
 	// 关键路径:此分支为未来扩展预留,当前 Obsidian 渲染进程不支持 Worker Threads(见 ADR-002)。
 	// 所有 Worker 实际走 InlineWorker 模式(主线程模拟),不进入此分支。

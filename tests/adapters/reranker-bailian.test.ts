@@ -4,33 +4,37 @@
  * @module tests/adapters/reranker-bailian
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+// 关键路径:vi.hoisted 确保 mockRequestUrl 在 vi.mock 提升前完成初始化,
+// src/adapters/reranker-bailian.ts 现在通过 requestUrl 发请求,需 mock 'obsidian'。
+const { mockRequestUrl } = vi.hoisted(() => ({
+	mockRequestUrl: vi.fn(),
+}));
+
+vi.mock('obsidian', () => ({
+	requestUrl: mockRequestUrl,
+}));
+
 import { BailianReranker } from '../../src/adapters/reranker-bailian';
 
 describe('BailianReranker', () => {
-	const originalFetch = global.fetch;
-
 	beforeEach(() => {
-		// 关键路径:每个测试前重置 fetch mock,避免相互影响。
-		global.fetch = vi.fn();
-	});
-
-	afterEach(() => {
-		global.fetch = originalFetch;
+		mockRequestUrl.mockReset();
 	});
 
 	it('rerank - 正常响应 - 返回精排后的 id + score', async () => {
 		// 关键路径:百炼返回 { results: [{ index, relevance_score }] },
 		// index 对应请求 documents 数组的下标。
-		(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
-			ok: true,
-			json: async () => ({
+		mockRequestUrl.mockResolvedValueOnce({
+			status: 200,
+			json: {
 				results: [
 					{ index: 1, relevance_score: 0.95 },
 					{ index: 0, relevance_score: 0.72 },
 					{ index: 2, relevance_score: 0.61 },
 				],
-			}),
+			},
 		});
 
 		const reranker = new BailianReranker({
@@ -56,10 +60,9 @@ describe('BailianReranker', () => {
 	});
 
 	it('rerank - 请求体格式正确', async () => {
-		const fetchMock = global.fetch as ReturnType<typeof vi.fn>;
-		fetchMock.mockResolvedValue({
-			ok: true,
-			json: async () => ({ results: [] }),
+		mockRequestUrl.mockResolvedValueOnce({
+			status: 200,
+			json: { results: [] },
 		});
 
 		const reranker = new BailianReranker({
@@ -71,13 +74,18 @@ describe('BailianReranker', () => {
 		await reranker.rerank('查询', [{ id: 'a', text: '文本A' }], 5);
 
 		// 关键路径:验证请求 URL、method、headers、body 格式
-		expect(fetchMock).toHaveBeenCalledTimes(1);
-		const [url, options] = fetchMock.mock.calls[0]!;
-		expect(url).toBe('https://dashscope.aliyuncs.com/compatible-api/v1/rerank');
-		expect(options.method).toBe('POST');
-		expect(options.headers['Authorization']).toBe('Bearer sk-test-key');
-		expect(options.headers['Content-Type']).toBe('application/json');
-		const body = JSON.parse(options.body);
+		expect(mockRequestUrl).toHaveBeenCalledTimes(1);
+		const callArg = mockRequestUrl.mock.calls[0]![0] as {
+			url: string;
+			method: string;
+			headers: Record<string, string>;
+			body: string;
+		};
+		expect(callArg.url).toBe('https://dashscope.aliyuncs.com/compatible-api/v1/rerank');
+		expect(callArg.method).toBe('POST');
+		expect(callArg.headers.Authorization).toBe('Bearer sk-test-key');
+		expect(callArg.headers['Content-Type']).toBe('application/json');
+		const body = JSON.parse(callArg.body);
 		expect(body).toEqual({
 			model: 'qwen3-rerank',
 			query: '查询',
@@ -87,10 +95,9 @@ describe('BailianReranker', () => {
 	});
 
 	it('rerank - HTTP 错误 - 抛错', async () => {
-		(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
-			ok: false,
+		mockRequestUrl.mockResolvedValueOnce({
 			status: 401,
-			text: async () => 'Unauthorized',
+			text: 'Unauthorized',
 		});
 
 		const reranker = new BailianReranker({
@@ -101,11 +108,11 @@ describe('BailianReranker', () => {
 
 		await expect(
 			reranker.rerank('查询', [{ id: 'a', text: '文本' }], 3),
-		).rejects.toThrow('Bailian Rerank API error: 401');
+		).rejects.toThrow('Bailian Rerank API error: 401 Unauthorized');
 	});
 
 	it('rerank - 网络异常 - 抛错', async () => {
-		(global.fetch as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('Network error'));
+		mockRequestUrl.mockRejectedValueOnce(new Error('Network error'));
 
 		const reranker = new BailianReranker({
 			apiBase: 'https://dashscope.aliyuncs.com/compatible-api/v1',
@@ -119,8 +126,6 @@ describe('BailianReranker', () => {
 	});
 
 	it('rerank - 空文档列表 - 返回空数组(不发请求)', async () => {
-		const fetchMock = global.fetch as ReturnType<typeof vi.fn>;
-
 		const reranker = new BailianReranker({
 			apiBase: 'https://dashscope.aliyuncs.com/compatible-api/v1',
 			apiKey: 'sk-test',
@@ -130,7 +135,7 @@ describe('BailianReranker', () => {
 		const result = await reranker.rerank('查询', [], 3);
 
 		expect(result).toEqual([]);
-		// 关键路径:空列表不调 fetch,节省 API 调用
-		expect(fetchMock).not.toHaveBeenCalled();
+		// 关键路径:空列表不调 requestUrl,节省 API 调用
+		expect(mockRequestUrl).not.toHaveBeenCalled();
 	});
 });

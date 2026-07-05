@@ -31,7 +31,10 @@ export interface WorkerLike {
 interface PendingRequest {
 	resolve: (response: WorkerResponse) => void;
 	reject: (error: Error) => void;
-	timer: ReturnType<typeof setTimeout>;
+	// 关键路径:window.setTimeout 在 DOM lib 下返回 number;
+	// Obsidian linter 要求 window.setTimeout 以兼容 popout 窗口;
+	// 测试环境通过 setupFiles 把 window 指向 globalThis 保证兼容。
+	timer: number;
 }
 
 /** Worker 请求默认超时 — 10 分钟;WASM 推理 + 全量索引在主线程可能很慢。 */
@@ -86,18 +89,18 @@ export class WorkerManager {
 
 			const pending = this.pending.get(data._requestId);
 			if (pending) {
-				clearTimeout(pending.timer);
+				window.clearTimeout(pending.timer);
 				this.pending.delete(data._requestId);
 				const { _requestId, ...response } = data;
 				void _requestId;
-				pending.resolve(response as WorkerResponse);
+				pending.resolve(response);
 			}
 		});
 
 		this.worker.on('error', (err: Error) => {
 			// 关键路径:Worker 整个挂掉时,所有挂起的请求一并拒绝,避免永久悬挂。
 			for (const [id, pending] of this.pending) {
-				clearTimeout(pending.timer);
+				window.clearTimeout(pending.timer);
 				this.pending.delete(id);
 				pending.reject(new Error(`Worker error: ${err.message}`));
 			}
@@ -107,7 +110,7 @@ export class WorkerManager {
 			// 关键路径:Worker 进程异常退出(如崩溃或 process.exit)时不一定先触发 'error',
 			// 必须拒绝所有挂起请求,避免调用方永远等待。
 			for (const [id, pending] of this.pending) {
-				clearTimeout(pending.timer);
+				window.clearTimeout(pending.timer);
 				this.pending.delete(id);
 				pending.reject(new Error(`Worker exited with code ${code}`));
 			}
@@ -124,7 +127,7 @@ export class WorkerManager {
 	request(req: WorkerRequest): Promise<WorkerResponse> {
 		return new Promise<WorkerResponse>((resolve, reject) => {
 			const requestId = `req_${++this.requestCounter}_${Date.now()}`;
-			const timer = setTimeout(() => {
+			const timer = window.setTimeout(() => {
 				// 关键路径:超时仅 reject 当前请求,不 terminate Worker。
 				// 原因:InlineWorker 在主线程执行 ONNX 推理,无法真正中断;
 				// terminate 会清空监听器导致后续所有请求永久失败。
@@ -159,7 +162,7 @@ export class WorkerManager {
 	destroy(): void {
 		this.worker.terminate();
 		for (const [, pending] of this.pending) {
-			clearTimeout(pending.timer);
+			window.clearTimeout(pending.timer);
 			pending.reject(new Error('Worker destroyed'));
 		}
 		this.pending.clear();

@@ -69,11 +69,9 @@ export class ObsidianVault implements VaultPort {
 
 	async trashFile(path: string): Promise<void> {
 		const file = this.resolveFile(path);
-		try {
-			await this.app.vault.trash(file, true);
-		} catch {
-			await this.app.vault.trash(file, false);
-		}
+		// 关键路径:用 fileManager.trashFile 替代 vault.trash,
+		// 自动尊重用户的删除偏好设置(系统回收站 / Obsidian .trash)。
+		await this.app.fileManager.trashFile(file);
 	}
 
 	async listFiles(dir: string = ''): Promise<{ files: string[]; folders: string[] }> {
@@ -106,10 +104,15 @@ export class ObsidianVault implements VaultPort {
 	getMetadata(path: string): VaultMetadata | null {
 		const file = this.app.vault.getAbstractFileByPath(path);
 		if (!file) return null;
-		const cache = this.app.metadataCache.getFileCache(file as TFile);
+		// 关键路径:用 instanceof 替代 `as TFile` 强制转换 — getAbstractFileByPath 可能返回 TFolder,
+		// getFileCache 只接受 TFile,故先做类型收窄,非 TFile 直接返回 null。
+		if (!(file instanceof TFile)) return null;
+		const cache = this.app.metadataCache.getFileCache(file);
 		if (!cache) return null;
 		return {
-			frontmatter: cache.frontmatter as Record<string, unknown> | undefined,
+			// 关键路径:cache.frontmatter 类型为 Record<string, any> | undefined,
+			// 与 VaultMetadata.frontmatter(Record<string, unknown> | undefined)兼容,无需显式断言。
+			frontmatter: cache.frontmatter,
 			tags: cache.tags?.map((t) => ({ tag: t.tag })),
 			links: cache.links?.map((l) => ({ link: l.link })),
 		};
