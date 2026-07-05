@@ -16,7 +16,7 @@
 3. **Wait for index** — status bar shows progress on first launch; later restarts are usually quick.
 4. **Ask** — sidebar 🦡 or command palette → **Ratel: Ask vault**.
 
-Full setup guide: [User Guide](docs/user-guide.md).
+Full setup guide: [User Guide](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/user-guide.md).
 
 > **Requirements:** Obsidian 1.13.0+, desktop only. Default local embedding downloads models on first run (~37 MB), then cached locally.
 
@@ -65,14 +65,14 @@ Ratel builds a **local search index** over your vault and runs a **multi-step ag
 | Agent | Context management + vault tools + permissions + read/write hooks; configurable multi-step loop |
 | Distribution | Obsidian 3-file release model; worker inlined, WASM lazy-downloaded |
 
-See [ARCHITECTURE.md](docs/ARCHITECTURE.md) and [CHANGELOG](CHANGELOG.md).
+See [ARCHITECTURE.md](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/ARCHITECTURE.md) and [CHANGELOG](https://github.com/golddream-y/obsidian-ratel/blob/main/CHANGELOG.md).
 
 ---
 
 ## Feedback
 
 - [GitHub Issues](https://github.com/golddream-y/obsidian-ratel/issues) — Bugs & feature requests
-- [User Guide FAQ](docs/user-guide.md#29-faq)
+- [User Guide FAQ](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/user-guide.md#29-faq)
 
 ---
 
