@@ -5,7 +5,7 @@
  * @depends obsidian, ./main
  */
 
-import { App, Modal, Notice, PluginSettingTab, Setting } from 'obsidian';
+import { App, Modal, Notice, PluginSettingTab, Setting, type SettingDefinitionItem } from 'obsidian';
 import RatelVaultPlugin from './main';
 import { createTabBar } from './ui/diagnostics/tab-bar';
 import { renderEmbeddingTest } from './ui/diagnostics/embedding-test';
@@ -213,6 +213,16 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 	 * - 「常规设置」:所有配置项(原有内容)
 	 * - 「诊断测试」:Embedding / LLM / Rerank 调试工具
 	 */
+	/**
+	 * 1.13.0 起官方推荐用 {@link getSettingDefinitions} 替代 display,但本插件设置面板含
+	 * Tab 切换、动态按钮(获取推荐 / 测试连接)、条件渲染等复杂交互,声明式 API 无法表达,
+	 * 仍需命令式渲染。`getSettingDefinitions` 返回空数组以满足 1.13.0 契约。
+	 */
+	getSettingDefinitions(): SettingDefinitionItem[] {
+		return [];
+	}
+
+	// eslint-disable-next-line obsidianmd/no-deprecated-display -- 复杂交互无法用声明式表达,见 getSettingDefinitions
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
