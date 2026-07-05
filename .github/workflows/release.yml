@@ -25,26 +25,19 @@ jobs:
               run: |
                   npm ci
                   npm run build
+                  test -f dist/main.js
 
             - name: Check for optional styles
               id: styles
               run: |
                   [ -f styles.css ] && echo "exists=true" >> "$GITHUB_OUTPUT" || echo "exists=false" >> "$GITHUB_OUTPUT"
 
-            - name: Collect ONNX runtime assets
-              id: onnx
-              run: |
-                  assets=$(ls dist/*.wasm dist/*.mjs 2>/dev/null | tr '\n' ' ')
-                  echo "assets=$assets" >> "$GITHUB_OUTPUT"
-
             - name: Attest build provenance
               uses: actions/attest@v4
               with:
                   subject-path: |
-                      main.js
-                      worker.js
-                      dist/*.wasm
-                      dist/*.mjs
+                      dist/main.js
+                      manifest.json
                       ${{ steps.styles.outputs.exists == 'true' && 'styles.css' || '' }}
 
             - name: Create release
@@ -53,7 +46,11 @@ jobs:
               run: |
                   tag="${GITHUB_REF#refs/tags/}"
 
+                  # Obsidian / BRAT 只安装 main.js + manifest.json + styles.css(可选)。
+                  # dist/main.js 上传时 basename 为 main.js(ADR-006: embedding worker 已内联)。
                   gh release create "$tag" \
                     --title="$tag" \
                     --draft \
-                    main.js worker.js manifest.json ${{ steps.styles.outputs.exists == 'true' && 'styles.css' || '' }} ${{ steps.onnx.outputs.assets }}
+                    dist/main.js \
+                    manifest.json \
+                    ${{ steps.styles.outputs.exists == 'true' && 'styles.css' || '' }}
