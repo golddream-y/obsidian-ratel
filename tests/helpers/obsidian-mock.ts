@@ -116,6 +116,37 @@ export class Setting {
 	}
 }
 
+/**
+ * PluginSettingTab 桩 — 提供 1.13.0 声明式 API 的默认实现。
+ *
+ * 关键路径:默认 getControlValue / setControlValue 直接读写 settings[key](字面量 key),
+ * 嵌套 key(如 "toolPermissions.search_vault")会读到 undefined / 写到错误位置,
+ * 由子类 override 处理嵌套分发。
+ */
+export class PluginSettingTab {
+	app: unknown;
+	// 关键路径:plugin 类型用 unknown,子类会以更具体的 RatelVaultPlugin 覆盖。
+	plugin: unknown;
+	containerEl: unknown = {};
+	constructor(app: unknown, plugin: unknown) {
+		this.app = app;
+		this.plugin = plugin;
+	}
+	display(): void {}
+	getSettingDefinitions(): unknown[] {
+		return [];
+	}
+	getControlValue(key: string): unknown {
+		const settings = (this.plugin as { settings?: Record<string, unknown> })?.settings;
+		return settings?.[key];
+	}
+	async setControlValue(key: string, value: unknown): Promise<void> {
+		const settings = (this.plugin as { settings: Record<string, unknown> }).settings;
+		settings[key] = value;
+	}
+	update(): void {}
+}
+
 /** Modal 桩 */
 export class Modal {
 	app: unknown;

@@ -6,7 +6,9 @@
  */
 
 import { App, Modal, Notice, PluginSettingTab, Setting, type SettingDefinitionItem } from 'obsidian';
-import RatelVaultPlugin from './main';
+// 关键路径:RatelVaultPlugin 仅作类型标注使用,用 import type 避免运行时拉起 main.ts
+// (main.ts 会载入 ChatView.svelte,在 vitest 环境无 svelte 插件无法解析)
+import type RatelVaultPlugin from './main';
 import { createTabBar } from './ui/diagnostics/tab-bar';
 import { renderEmbeddingTest } from './ui/diagnostics/embedding-test';
 import { renderLLMTest } from './ui/diagnostics/llm-test';
@@ -220,6 +222,67 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 	 */
 	getSettingDefinitions(): SettingDefinitionItem[] {
 		return [];
+	}
+
+	/**
+	 * 读取 control 值 — override 处理嵌套 key。
+	 *
+	 * 关键路径:`toolPermissions.<name>` 与 `promptOverrides.<sectionId>` 不是直接字段,
+	 * 默认实现 `this.plugin.settings[key]` 会读到 undefined,必须手动分发。
+	 *
+	 * @param key - control key,可能是 "chatModel" 或 "toolPermissions.search_vault"
+	 * @returns 当前值
+	 */
+	getControlValue(key: string): unknown {
+		if (key.startsWith('toolPermissions.')) {
+			const toolName = key.slice('toolPermissions.'.length);
+			return this.plugin.settings.toolPermissions[toolName];
+		}
+		if (key.startsWith('promptOverrides.')) {
+			const sectionId = key.slice('promptOverrides.'.length);
+			return this.plugin.settings.promptOverrides[sectionId];
+		}
+		return (this.plugin.settings as Record<string, unknown>)[key];
+	}
+
+	/**
+	 * 写入 control 值并触发副作用 — override 处理嵌套 key + rebuild/sync。
+	 *
+	 * 关键路径:
+	 * - 嵌套 key 必须分发到嵌套对象,否则会写入字面量字段 `settings["toolPermissions.xxx"]`
+	 * - chatModel / chatApiBase 变更需 rebuildLLM
+	 * - embed* 变更(除 embedLocalModel)需 rebuildEmbeddingAdapter
+	 * - promptOverrides.* 变更需 syncToolDefinitions
+	 * - debugLog 变更需 setDebugEnabled
+	 * - 替代原 onChange 回调里散落的 this.display(),改用 this.update()
+	 *
+	 * @param key - control key
+	 * @param value - 新值
+	 */
+	async setControlValue(key: string, value: unknown): Promise<void> {
+		if (key.startsWith('toolPermissions.')) {
+			const toolName = key.slice('toolPermissions.'.length);
+			this.plugin.settings.toolPermissions[toolName] = value as ToolPermission;
+		} else if (key.startsWith('promptOverrides.')) {
+			const sectionId = key.slice('promptOverrides.'.length);
+			this.plugin.settings.promptOverrides[sectionId] = value as string;
+			this.plugin.syncToolDefinitions();
+		} else {
+			(this.plugin.settings as Record<string, unknown>)[key] = value;
+		}
+
+		if (key === 'chatModel' || key === 'chatApiBase') {
+			this.plugin.rebuildLLM();
+		}
+		if (key.startsWith('embed') && key !== 'embedLocalModel') {
+			this.plugin.rebuildEmbeddingAdapter();
+		}
+		if (key === 'debugLog') {
+			devLogger.setDebugEnabled(value as boolean);
+		}
+
+		await this.plugin.saveSettings();
+		this.update();
 	}
 
 	// eslint-disable-next-line obsidianmd/no-deprecated-display -- 复杂交互无法用声明式表达,见 getSettingDefinitions
