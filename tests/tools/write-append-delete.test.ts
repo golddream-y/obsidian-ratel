@@ -3,12 +3,7 @@ import { createWriteNoteTool } from '../../src/tools/write-note';
 import { createAppendNoteTool } from '../../src/tools/append-note';
 import { createDeleteNoteTool } from '../../src/tools/delete-note';
 import { createMockVaultPort } from '../helpers/mock-vault-port';
-import { composeToolDefinitions } from '../../src/prompts/composer';
-import type { ToolDefinition } from '../../src/ports/llm';
-
-function makeToolDef(name: string): ToolDefinition {
-	return composeToolDefinitions({}, [name])[0]!;
-}
+import { makeToolDef } from '../helpers/make-tool-def';
 
 describe('write/append/delete tools', () => {
 	it('write_note - 新建', async () => {

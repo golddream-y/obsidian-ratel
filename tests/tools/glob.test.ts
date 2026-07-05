@@ -1,12 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createGlobTool } from '../../src/tools/glob';
 import { createMockVaultPort } from '../helpers/mock-vault-port';
-import { composeToolDefinitions } from '../../src/prompts/composer';
-import type { ToolDefinition } from '../../src/ports/llm';
-
-function makeToolDef(name: string): ToolDefinition {
-	return composeToolDefinitions({}, [name])[0]!;
-}
+import { makeToolDef } from '../helpers/make-tool-def';
 
 describe('glob tool', () => {
 	it('匹配 daily 目录下 md', async () => {

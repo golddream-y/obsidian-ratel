@@ -87,13 +87,13 @@ export function renderEmbeddingTest(container: HTMLElement, plugin: RatelVaultPl
 			if (results.length === 0) {
 				const info = searchResult.createDiv();
 				info.createSpan({ cls: 'diag-status-dot diag-status-warn' });
-				info.createSpan({ text: `耗时 ${(t1 - t0).toFixed(0)}ms | 索引中有 0 个匹配文档。可能原因:索引为空、Query 与所有文档语义无关。` });
+				info.createSpan({ text: `耗时 ${(t1 - t0).toFixed(0)}ms | 索引中有 0 个匹配块。可能原因:索引为空、Query 与所有块语义无关。` });
 				return;
 			}
 
 			const info = searchResult.createDiv();
 			info.createSpan({ cls: 'diag-status-dot diag-status-ok' });
-			info.createSpan({ text: `命中 ${results.length} / ${topK} 个文档 | 总耗时 ${(t1 - t0).toFixed(0)}ms(embedding ${(tEmb - t0).toFixed(0)}ms + 检索 ${(t1 - tEmb).toFixed(0)}ms)` });
+			info.createSpan({ text: `命中 ${results.length} / ${topK} 个块 | 总耗时 ${(t1 - t0).toFixed(0)}ms(embedding ${(tEmb - t0).toFixed(0)}ms + 检索 ${(t1 - tEmb).toFixed(0)}ms)` });
 
 			const list = searchResult.createDiv({ cls: 'diag-similarity-list', attr: { style: 'margin-top: 10px;' } });
 			for (const [idx, r] of results.entries()) {
@@ -127,7 +127,7 @@ export function renderEmbeddingTest(container: HTMLElement, plugin: RatelVaultPl
 
 	indexStatusPromise.then((status) => {
 		if (status.totalDocs === 0) {
-			indexWarn.setText('⚠️ 索引中尚无文档,无法检索。请先在主面板执行一次"重新构建索引"。');
+			indexWarn.setText('⚠️ 索引中尚无块,无法检索。请先在主面板执行一次"重新构建索引"。');
 			indexWarn.style.display = 'block';
 			// 关键路径:索引为空时禁用输入区,避免空检索浪费 embedding 算力。
 			searchQuery.disabled = true;
@@ -246,7 +246,7 @@ function renderEmbeddingStatus(container: HTMLElement, plugin: RatelVaultPlugin)
 	// 关键路径:索引状态异步加载,先显示加载中,加载完更新 DOM。
 	const idxSpan = container.createSpan({ text: '索引: 加载中...' });
 	void plugin.vectraStore?.status().then((status) => {
-		idxSpan.setText(`索引: ${status.totalDocs} 个文档${status.lastIndexTime > 0 ? `,最近 ${new Date(status.lastIndexTime).toLocaleTimeString()}` : ''}`);
+		idxSpan.setText(`索引: ${status.totalDocs} 个块${status.lastIndexTime > 0 ? `,最近 ${new Date(status.lastIndexTime).toLocaleTimeString()}` : ''}`);
 	}).catch(() => {
 		idxSpan.setText('索引: 读取失败');
 	});

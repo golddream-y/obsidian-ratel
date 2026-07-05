@@ -92,14 +92,17 @@ export class IndexProcessor {
     async indexIncremental(
         file: IndexFile,
         onProgress?: (e: ProgressEvent) => void,
-    ): Promise<{ indexed: number; errors: number }> {
+    ): Promise<{ indexed: number; errors: number; chunkCount: number }> {
         let indexed = 0;
         let errors = 0;
+        // 关键路径:chunkCount 在 try 外声明,catch 路径也能返回(此时为 0)。
+        let chunkCount = 0;
         try {
             const chunks = chunkMarkdown(file.content, 500, 100);
+            chunkCount = chunks.length;
             if (chunks.length === 0) {
                 onProgress?.({ done: 1, total: 1 });
-                return { indexed: 0, errors: 0 };
+                return { indexed: 0, errors: 0, chunkCount: 0 };
             }
 
             // 关键路径:一次性批量 embed 所有 chunk 文本,ONNX 调用从 N 降到 N/16。
@@ -124,7 +127,7 @@ export class IndexProcessor {
             errors = 1;
         }
         onProgress?.({ done: 1, total: 1 });
-        return { indexed, errors };
+        return { indexed, errors, chunkCount };
     }
 
     /**

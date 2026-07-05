@@ -15,6 +15,7 @@
 	import AttachmentStrip from './input/AttachmentStrip.svelte';
 	import MessageList from './message-stream/MessageList.svelte';
 	import type { Message } from './message-stream/types';
+	import { preservedChatMessagesToUi } from './message-stream/chat-message-to-ui';
 	import {
 		appendText,
 		appendThink,
@@ -28,6 +29,9 @@
 	import { hasChatApiKey } from '../../secrets/ratel-secrets';
 	import { formatChatError } from './chat-error';
 	import { showCompactConfirm } from './compact-confirm';
+	import { compactSession } from './compact-session';
+	import { ModelInfoModal } from './model-info-modal';
+	import { Notice } from 'obsidian';
 	import { devLogger } from '../../logging/dev-logger';
 	import { formatToolDisplayName } from './format-tool-display';
 	import { estimateTokens } from '../tokens/token-estimator';
@@ -47,6 +51,8 @@
 	// 关键路径:sticky-to-bottom — 用户主动上滑时暂停自动滚动,流式输出不打断浏览历史
 	let isUserNearBottom = $state(true);
 	const SCROLL_NEAR_BOTTOM_THRESHOLD = 80;
+	// 关键路径:/compact 压缩进行中标志,控制 loading hint 显示
+	let isCompacting = $state(false);
 
 	// 关键路径:sticky-to-bottom — 用户主动上滑时尊重浏览历史,只在用户处于底部时自动滚动
 	const scrollToBottom = () => {
@@ -128,7 +134,7 @@
 				handleCompact();
 				break;
 			case '/model':
-				(plugin.app as unknown as { setting: { open: () => void } }).setting.open();
+				new ModelInfoModal(plugin.app, plugin).open();
 				break;
 			case '/reindex':
 				plugin.indexController.reindex().catch((err) => devLogger.error('index', '/reindex 失败', err));
@@ -137,16 +143,39 @@
 	}
 
 	async function handleCompact() {
+		// 关键路径:防止用户从 slash 命令 + StatusDrawer 按钮双重触发,避免并发 resetSession
+		if (isCompacting) return;
 		const confirmed = await showCompactConfirm(plugin.app);
 		if (!confirmed) return;
-		messages = messages.slice(-2);
+
+		// 关键路径:显示压缩中 loading
+		isCompacting = true;
+
+		try {
+			// 关键路径:每次 /compact 创建独立 ctx,与 agent-loop 解耦
+			const ctx = plugin.createContext();
+			const result = await compactSession(
+				ctx,
+				plugin.llm,
+				sessionId,
+				plugin.settings.promptOverrides,
+			);
+			// 更新 Svelte state — ChatMessage[] 转回 UI Message[]
+			messages = preservedChatMessagesToUi(result.preservedMessages);
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			// 关键路径:压缩失败,session 未重置(LLM 抛错时 resetSession 不会被调)
+			new Notice(`压缩失败:${message}`, 5000);
+		} finally {
+			isCompacting = false;
+		}
 	}
 
 	// ==================== 发送消息(含 token 三层校准) ====================
 	async function sendMessage() {
 		refreshKeyState();
 		const text = input.trim();
-		if (!text || isRunning) return;
+		if (!text || isRunning || isCompacting) return;
 
 		const currentGate = evaluateChatSendGate(plugin.settings, get(statusStore), {
 			hasChatApiKey: hasChatApiKey(plugin.app, plugin.settings),
@@ -391,6 +420,10 @@
 			<div class="ratel-gate">ⓘ {gate.softHint}</div>
 		{/if}
 
+		{#if isCompacting}
+			<div class="ratel-compacting-hint">压缩中...</div>
+		{/if}
+
 		<!-- 附件预览条 -->
 		<AttachmentStrip
 			pendingAttachments$={attachmentStore}
@@ -417,7 +450,7 @@
 				onkeydown={handleKeydown}
 				onfocus={refreshKeyState}
 				placeholder="输入 / 查看命令,或直接提问…"
-				disabled={isRunning || !gate.canSend}
+				disabled={isRunning || isCompacting || !gate.canSend}
 				rows={1}
 			></textarea>
 		</div>

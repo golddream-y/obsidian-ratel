@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { ContextManager } from '../../src/core/context-manager';
-import type { Persistence, Session } from '../../src/ports/persistence';
+import type { Persistence, Session, ChatMessage } from '../../src/ports/persistence';
 import type { ToolCall } from '../../src/ports/llm';
 
 // 测试用工具样本 — 模拟 ToolRegistry 已注册的 read_note / search_vault
@@ -299,5 +299,85 @@ describe('ContextManager', () => {
 		ctx.addUserMessage('hi');
 		const msgs = ctx.toMessages();
 		expect(msgs[0]!.content).not.toContain('search_vault');
+	});
+});
+
+// ==================== resetSession(/compact 用) ====================
+
+describe('resetSession', () => {
+	it('正常调用 - 删旧 session + 注入摘要 + preserved', async () => {
+		const sessions = new Map<string, Session>();
+		sessions.set('s1', {
+			id: 's1',
+			title: 'old',
+			messages: [{ role: 'user', content: 'old' }],
+			createdAt: 0,
+			updatedAt: 0,
+		});
+		const persistence = createMockPersistence(sessions);
+		const ctx = createCtx(persistence);
+		await ctx.load('s1');
+		// 关键路径:load 后旧消息存在,system + 1 条历史
+		expect(ctx.toMessages().length).toBeGreaterThan(0);
+
+		const preserved: ChatMessage[] = [
+			{ role: 'user', content: 'last question' },
+			{ role: 'assistant', content: 'last answer' },
+		];
+		await ctx.resetSession('s1', '摘要内容', preserved);
+
+		const messages = ctx.toMessages();
+		// system(base) + 摘要 system + preserved 2 条
+		expect(messages.some((m) => m.role === 'system' && m.content.includes('摘要内容'))).toBe(true);
+		expect(messages.some((m) => m.role === 'user' && m.content === 'last question')).toBe(true);
+		expect(messages.some((m) => m.role === 'assistant' && m.content === 'last answer')).toBe(true);
+		// 关键路径:旧 session 历史应被完全丢弃
+		expect(messages.some((m) => m.content === 'old')).toBe(false);
+	});
+
+	it('persistence.sessions.delete 失败 - 抛错', async () => {
+		// 关键路径:delete 抛错时,resetSession 应原样抛出,不吞错
+		const failingPersistence = {
+			sessions: {
+				get: async () => null,
+				upsert: async () => {},
+				list: async () => [],
+				delete: async () => {
+					throw new Error('disk error');
+				},
+			},
+			notes: { get: async () => null, upsert: async () => {}, listByPath: async () => [], delete: async () => {} },
+			hooks: { append: async () => {}, list: async () => [] },
+		};
+		const ctx = new ContextManager(failingPersistence as unknown as Persistence);
+		await ctx.load('s1');
+	await expect(ctx.resetSession('s1', '摘要', [])).rejects.toThrow('disk error');
+});
+
+	it('resetSession 后 reload - 持久化里能拿到摘要 + preserved', async () => {
+		const sessions = new Map<string, Session>();
+		sessions.set('s1', {
+			id: 's1', title: 'old',
+			messages: [{ role: 'user', content: 'old' }],
+			createdAt: 0, updatedAt: 0,
+		});
+		const persistence = createMockPersistence(sessions);
+		const ctx = createCtx(persistence);
+		await ctx.load('s1');
+
+		const preserved: ChatMessage[] = [
+			{ role: 'user', content: 'last q' },
+			{ role: 'assistant', content: 'last a' },
+		];
+		await ctx.resetSession('s1', '摘要文本', preserved);
+
+		// 重新 load 验证持久化(不是 in-memory)
+		const ctx2 = createCtx(persistence);
+		await ctx2.load('s1');
+		const messages = ctx2.toMessages();
+		expect(messages.some((m) => m.role === 'system' && m.content.includes('摘要文本'))).toBe(true);
+		expect(messages.some((m) => m.content === 'last q')).toBe(true);
+		expect(messages.some((m) => m.content === 'last a')).toBe(true);
+		expect(messages.some((m) => m.content === 'old')).toBe(false);
 	});
 });

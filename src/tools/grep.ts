@@ -20,6 +20,16 @@ export interface GrepMatch {
 	after: string[];
 }
 
+/**
+ * 创建 grep 工具实例 — 正则搜索笔记内容,返回匹配行 + 文件路径。
+ *
+ * @param vault - VaultPort 外观,提供文件系统访问
+ * @param definition - 工具定义(name/description/parameters),由 composer 从 prompt section 组装
+ * @returns ToolRegistry 注册项(definition + execute + readOnly)
+ * @example
+ *   const tool = createGrepTool(vault, toolDef);
+ *   tools.register(tool);
+ */
 export function createGrepTool(vault: VaultPort, definition: ToolDefinition): Tool {
 	return {
 		definition,

@@ -173,6 +173,58 @@ export class ContextManager {
 	}
 
 	/**
+	 * 追加自定义 system 消息到当前 session(用于 /compact 摘要注入等场景)。
+	 *
+	 * 关键路径:写入 session.messages(而非 searchResultsMessages),会被持久化保存。
+	 *
+	 * @param content - system 消息内容。
+	 * @throws 在 `load()` 之前调用会抛 'Session not loaded'。
+	 */
+	addSystemMessage(content: string): void {
+		const session = this.requireSession();
+		session.messages.push({ role: 'system', content });
+		session.updatedAt = Date.now();
+	}
+
+	/**
+	 * 重置 session — 删除当前持久化,新建空 session,注入摘要 system 消息 + preserved 消息。
+	 *
+	 * 关键路径:供 /compact 使用。原 session 历史被完全丢弃,只保留摘要 + 最近 N 条原文。
+	 *
+	 * 设计要点:
+	 * - 先 `delete` 持久化,失败则抛原错误,此时 `this.session` 仍是旧的(未破坏当前状态)
+	 * - 删除成功后 `load` 会重建空 session(因为持久化里已无此 id)
+	 * - 摘要以 `[compact 摘要]` 前缀包装为 system 消息,便于后续识别
+	 * - preserved 原文按原 role 直接 push,保留 tool 消息等非 user/assistant 角色
+	 *
+	 * @param sessionId - 会话 ID(同名)
+	 * @param summary - 摘要文本(已由 LLM 生成)
+	 * @param preservedMessages - 保留的最近原文消息(通常是最后 3 条)
+	 * @throws 若 persistence.sessions.delete 失败,抛原错误。
+	 */
+	async resetSession(
+		sessionId: string,
+		summary: string,
+		preservedMessages: ChatMessage[],
+	): Promise<void> {
+		// 关键路径:先删持久化,失败则抛错,不破坏当前 session 状态(此时 this.session 仍是旧的)
+		await this.persistence.sessions.delete(sessionId);
+		// 重新 load 创建空 session(持久化里已无此 id)
+		await this.load(sessionId);
+		// 注入摘要 system 消息
+		this.addSystemMessage(`[compact 摘要]\n${summary}`);
+		// 关键路径:复用 requireSession 拿局部变量,避免 this.session! 非空断言
+		const session = this.requireSession();
+		// 注入保留的原文(按原 role 直接 push,保留 tool 消息等)
+		session.messages.push(...preservedMessages);
+		// 关键路径:整体 reset 操作完成时间,覆盖 preservedMessages push 的时间戳
+		session.updatedAt = Date.now();
+		// 关键路径:resetSession 已 delete 持久化,必须 save 重建,
+		// 否则调用方 reload 后拿到空 session(数据丢失风险)
+		await this.save();
+	}
+
+	/**
 	 * 拼接最终给 LLM 的消息列表(系统提示 + 检索结果 + 历史消息)。
 	 *
 	 * 关键路径:

@@ -31,3 +31,41 @@
 	font-size: var(--font-smaller);
 	margin-top: 0.25em;
 }
+
+/* ==================== /compact 压缩中提示 ==================== */
+
+.ratel-compacting-hint {
+	padding: 4px 8px;
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+/* ==================== Rerank 诊断测试面板 ==================== */
+
+.ratel-rerank-warn {
+	color: var(--text-warning);
+	padding: 8px;
+}
+
+.ratel-rerank-summary {
+	padding: 8px 0;
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.ratel-rerank-candidates {
+	width: 100%;
+	margin: 8px 0;
+	padding: 8px;
+}
+
+.ratel-rerank-result {
+	margin-top: 12px;
+}
+
+.ratel-rerank-item {
+	display: flex;
+	gap: 8px;
+	padding: 4px 0;
+	border-bottom: 1px solid var(--background-modifier-border);
+}

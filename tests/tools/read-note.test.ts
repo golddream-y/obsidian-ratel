@@ -1,12 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createReadNoteTool } from '../../src/tools/read-note';
 import type { ObsidianVault } from '../../src/adapters/obsidian-vault';
-import { composeToolDefinitions } from '../../src/prompts/composer';
-import type { ToolDefinition } from '../../src/ports/llm';
-
-function makeToolDef(name: string): ToolDefinition {
-	return composeToolDefinitions({}, [name])[0]!;
-}
+import { makeToolDef } from '../helpers/make-tool-def';
 
 function createMockVault(files: Record<string, string> = {}): ObsidianVault {
 	return {
@@ -34,8 +29,8 @@ function createMockVault(files: Record<string, string> = {}): ObsidianVault {
 	} as unknown as ObsidianVault;
 }
 
-describe('read_note tool', () => {
-	it('has correct definition', () => {
+describe('read_note 工具', () => {
+	it('read_note - 工具定义 - name 为 read_note 且 description 含笔记', () => {
 		const vault = createMockVault();
 		const tool = createReadNoteTool(vault, makeToolDef('read_note'));
 		expect(tool.definition.name).toBe('read_note');
@@ -43,20 +38,20 @@ describe('read_note tool', () => {
 		expect(tool.definition.description).toContain('笔记');
 	});
 
-	it('reads file content from vault', async () => {
+	it('read_note - 文件存在 - 返回内容', async () => {
 		const vault = createMockVault({ 'notes/test.md': '# Test\nHello world' });
 		const tool = createReadNoteTool(vault, makeToolDef('read_note'));
 		const result = await tool.execute({ path: 'notes/test.md' }) as Record<string, unknown>;
 		expect(result.content).toContain('Hello world');
 	});
 
-	it('throws on missing file', async () => {
+	it('read_note - 文件不存在 - 抛错', async () => {
 		const vault = createMockVault();
 		const tool = createReadNoteTool(vault, makeToolDef('read_note'));
 		await expect(tool.execute({ path: 'missing.md' })).rejects.toThrow();
 	});
 
-	it('includes metadata in result when available', async () => {
+	it('read_note - metadata 可用 - 结果含 frontmatter', async () => {
 		const vault = createMockVault({ 'notes/test.md': '# Test\nContent' });
 		// Override getMetadata to return frontmatter
 		const mockVault = {
@@ -70,5 +65,11 @@ describe('read_note tool', () => {
 		const result = await tool.execute({ path: 'notes/test.md' }) as Record<string, unknown>;
 		expect(result.content).toContain('Content');
 		expect(result.metadata).toBeDefined();
+	});
+
+	it('read_note - path 缺失 - 抛错带字段名', async () => {
+		const vault = createMockVault();
+		const tool = createReadNoteTool(vault, makeToolDef('read_note'));
+		await expect(tool.execute({})).rejects.toThrow(/path/);
 	});
 });

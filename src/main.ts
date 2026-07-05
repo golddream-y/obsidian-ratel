@@ -6,7 +6,7 @@
  */
 
 import { EMBEDDING_WORKER_CODE } from '@ratel/embedding-worker-code';
-import { FileSystemAdapter, Plugin } from 'obsidian';
+import { FileSystemAdapter, Notice, Plugin } from 'obsidian';
 import { type RatelVaultSettings, DEFAULT_SETTINGS, RatelVaultSettingTab, normalizeContextLengthSettings } from './settings';
 
 import type { AgentEvent } from './types';
@@ -44,7 +44,9 @@ import {
 	extractToolPath,
 } from './core/tool-permissions';
 import { showToolConfirmModal } from './ui/components/confirm-modal';
+import { showReindexConfirm, showDropIndexConfirm } from './ui/confirm-modal';
 import { validateVaultPath } from './utils/path-safety';
+import { extractToolTargetPath, isDeleteTool } from './hooks/immediate-reindex';
 import type { ToolCall } from './ports/llm';
 import { ModelManager } from './core/model-manager';
 import { OrtRuntimeAssets } from './core/ort-runtime-assets';
@@ -192,6 +194,25 @@ export default class RatelVaultPlugin extends Plugin {
 					payload: { file },
 				});
 				if (response.type === 'index.done') {
+					// 关键路径:incremental 后更新 manifest.chunkCount,修复 0 占位问题。
+					// Worker index.done 协议未在 types.ts 扩展 chunkCount(避免影响 index.full),
+					// 此处用类型断言安全访问可选字段。
+					const chunkCount = (response.payload as { chunkCount?: number }).chunkCount;
+					// 关键路径:errors>0 时索引失败,不写 manifest,避免污染 chunkCount(与 index.batch 路径 line 672 跳过 undefined 一致)
+					if (chunkCount !== undefined && response.payload.errors === 0) {
+						const manifestData = await this.indexManifest.load();
+						if (manifestData) {
+							const hash = await sha256(file.content);
+							this.indexManifest.recordEntry(
+								manifestData,
+								file.path,
+								hash,
+								Date.now(),
+								chunkCount,
+							);
+							await this.indexManifest.save(manifestData);
+						}
+					}
 					return { indexed: response.payload.indexed, errors: response.payload.errors };
 				}
 				return { indexed: 0, errors: 1 };
@@ -314,6 +335,21 @@ export default class RatelVaultPlugin extends Plugin {
 			},
 			'path-safety',
 		);
+		// 关键路径:写工具执行后立即触发索引刷新,绕过 FolderWatcher 5s 去抖
+		this.hooks.register(
+			'post-tool-use',
+			async (tc) => {
+				const targetPath = extractToolTargetPath(tc);
+				if (targetPath) {
+					await this.indexController.enqueue(
+						targetPath,
+						isDeleteTool(tc.name) ? 'delete' : 'upsert',
+					);
+				}
+				return;
+			},
+			'immediate-reindex',
+		);
 
 		// ==================== 视图与命令 ====================
 		this.registerView(VIEW_TYPE_CHAT, (leaf) => new ChatView(leaf, this));
@@ -364,6 +400,40 @@ export default class RatelVaultPlugin extends Plugin {
 					this.userNotice.toast('Index not available yet');
 				}
 			},
+		});
+
+		// 命令:重建索引(危险操作 — 走二次确认 Modal,避免误触全量重建)
+		this.addCommand({
+			id: 'reindex',
+			name: '重建索引(全量)',
+			callback: () => showReindexConfirm(this.app, () => this.indexController.reindex()),
+		});
+
+		// 命令:暂停索引(文件事件不再触发增量索引)
+		this.addCommand({
+			id: 'pause-index',
+			name: '暂停索引',
+			callback: () => {
+				this.indexController.pause();
+				this.userNotice.toast('索引已暂停');
+			},
+		});
+
+		// 命令:恢复索引(继续处理文件事件)
+		this.addCommand({
+			id: 'resume-index',
+			name: '恢复索引',
+			callback: () => {
+				this.indexController.resume();
+				this.userNotice.toast('索引已恢复');
+			},
+		});
+
+		// 命令:清空索引(危险操作 — 强制输入 DELETE 确认,防止误删向量数据)
+		this.addCommand({
+			id: 'drop-index',
+			name: '清空索引(危险)',
+			callback: () => showDropIndexConfirm(this.app, () => this.vectraStore.dropIndex()),
 		});
 
 		// 设置面板
@@ -852,6 +922,21 @@ export default class RatelVaultPlugin extends Plugin {
 			toolPermissionCheck,
 			this.settings.agentMaxSteps,
 		);
+	}
+
+	/**
+	 * 构造一个独立 ContextManager,供 /compact 等非 agent-loop 流程复用。
+	 *
+	 * 关键路径:与 ask() 内部构造完全一致,避免重复初始化逻辑。
+	 * 调用方拿到 ctx 后可独立 load/save session,不与 agent-loop 共享状态。
+	 *
+	 * @returns 新的 ContextManager 实例(已注入 overrides + tools)
+	 */
+	createContext(): ContextManager {
+		return new ContextManager(this.persistence, {
+			getOverrides: () => this.settings.promptOverrides,
+			getTools: () => this.tools.definitions(),
+		});
 	}
 
 	/**

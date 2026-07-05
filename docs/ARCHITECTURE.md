@@ -314,18 +314,16 @@ src/
     llm-deepseek.ts                #   DeepSeek (OpenAI 兼容 SDK)
     llm-anthropic.ts               #   Claude (Anthropic SDK)
 
-  tools/                           # Vault 工具集 (11 个)
-    search-vault.ts                #   全文 + 向量搜索
-    read-note.ts                   #   读取笔记 (frontmatter/链接/反链)
-    follow-backlinks.ts            #   双向链接展开
-    create-note.ts                 #   新建笔记 (带 frontmatter 模板)
-    update-note.ts                 #   增量更新
-    tag-note.ts                    #   打标签 / 自动标签
-    suggest-links.ts               #   建议 3-5 个语义链接 (带置信度)
-    summarize-note.ts              #   生成单篇摘要
-    index-status.ts                #   索引健康报告
-    find-orphans.ts                #   查找无入链笔记
-    weekly-digest.ts               #   每周主题综述
+  tools/                           # Vault 工具集 (9 个)
+    read-note.ts                   #   读取笔记全文
+    search-vault.ts                #   向量+BM25 混合检索
+    grep.ts                        #   正则搜索
+    glob.ts                        #   文件名匹配
+    list-files.ts                  #   列出文件
+    write-note.ts                  #   创建/覆盖笔记
+    append-note.ts                 #   追加内容
+    edit-note.ts                   #   编辑指定行
+    delete-note.ts                 #   删除笔记
 
   subagents/                       # 4 个 Subagent
     indexer.ts                     #   维护向量索引 (文件变更 + 定时重检)

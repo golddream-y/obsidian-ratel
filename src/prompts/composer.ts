@@ -155,6 +155,33 @@ export function composeToolDefinitions(
 }
 
 /**
+ * 组装会话压缩(/compact)用的 LLM messages。
+ *
+ * system 消息为 `internal.compact` section(支持 override),注入 `{{history}}` 占位符;
+ * user 消息为原始对话历史,供压缩 LLM 引用原文。
+ *
+ * 设计要点:
+ * - system + user 双消息:system 给压缩指令,user 给待压缩的对话历史原文。
+ * - 历史 history 同时注入到 system 模板(`{{history}}`)与作为 user 消息,
+ *   兼容两种 LLM 习惯(指令内联 / 对话轮次)。
+ *
+ * @param params.history - 待压缩的对话历史文本
+ * @param overrides - section 级覆盖
+ * @returns ChatMessage[] — [system, user]
+ */
+export function composeCompactMessages(
+	params: { history: string },
+	overrides: OverrideMap,
+): ChatMessage[] {
+	const template = resolveSection('internal.compact', overrides);
+	const systemContent = interpolate(template, { history: params.history });
+	return [
+		{ role: 'system', content: systemContent },
+		{ role: 'user', content: params.history },
+	];
+}
+
+/**
  * 格式化检索结果块(含硬编码外框)。
  *
  * 外框(prefix/suffix)由 Composer 硬编码,**不可被 override 删除** —

@@ -1,12 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createListFilesTool } from '../../src/tools/list-files';
 import { createMockVaultPort } from '../helpers/mock-vault-port';
-import { composeToolDefinitions } from '../../src/prompts/composer';
-import type { ToolDefinition } from '../../src/ports/llm';
-
-function makeToolDef(name: string): ToolDefinition {
-	return composeToolDefinitions({}, [name])[0]!;
-}
+import { makeToolDef } from '../helpers/make-tool-def';
 
 describe('list_files tool', () => {
 	it('根目录列表 - 空参数返回 "." 作为路径标识', async () => {

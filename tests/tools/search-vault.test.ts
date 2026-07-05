@@ -7,12 +7,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createSearchVaultTool } from '../../src/tools/search-vault';
 import type { VectorSearchResult } from '../../src/ports/vector';
-import { composeToolDefinitions } from '../../src/prompts/composer';
-import type { ToolDefinition } from '../../src/ports/llm';
-
-function makeToolDef(name: string): ToolDefinition {
-	return composeToolDefinitions({}, [name])[0]!;
-}
+import { makeToolDef } from '../helpers/make-tool-def';
 
 function createMockSearcher(results: VectorSearchResult[]) {
 	return {

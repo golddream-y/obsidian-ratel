@@ -16,6 +16,7 @@ export type PromptSectionId =
 	| 'agent.rag.workflow'
 	| 'agent.rag.toolGuide'
 	| 'injection.searchResults.body'
+	| 'internal.compact'
 	| 'internal.intent.system'
 	| 'internal.intent.user'
 	| 'internal.rewrite.system'

@@ -8,6 +8,7 @@
 import type { Tool } from '../core/tool-registry';
 import type { ToolDefinition } from '../ports/llm';
 import type { VaultPort } from '../ports/vault';
+import { requireString } from './validate-args';
 
 /**
  * 构造 `read_note` 工具实例。
@@ -31,7 +32,7 @@ export function createReadNoteTool(vault: VaultPort, definition: ToolDefinition)
 		definition,
 		readOnly: true,
 		async execute(args: Record<string, unknown>) {
-			const path = args.path as string;
+			const path = requireString(args, 'path', 'path');
 			// 关键路径:正文 + 元数据 + 反链 一次性取齐,避免模型多轮往返。
 			const content = await vault.readFile(path);
 			const metadata = vault.getMetadata(path);

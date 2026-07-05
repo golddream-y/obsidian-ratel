@@ -564,13 +564,13 @@ adapters/                 ← 具体实现
 | 4 | Worker 初始化 | ✅ 组件就绪,❌ main.ts 未接入 | S-RAG-LOOP | WorkerManager + handler 6 case 已实现 |
 | 5 | 文档分块 | ✅ 已实现 | S-INIT-INDEX | chunker.ts |
 | 6 | 向量存储 | ✅ 已实现 | S-INIT-INDEX | VectraStore upsert/search/delete |
-| 7 | search_vault 工具 | ❌ 未实现 | S-RAG-LOOP | 需新建 |
+| 7 | search_vault 工具 | ✅ 已实现 | S-RAG-LOOP / S-W3-HYBRID | src/tools/search-vault.ts |
 | 8 | 查询向量化 | ✅ 接口就绪 | S-RAG-LOOP | EmbeddingPort.embed(),search_vault 调用 |
-| 9 | BM25 检索 | ❌ 未实现 | P-W3-IMPL | Worker handler 无 bm25.search case |
-| 10 | RRF 融合 | ❌ 未实现 | P-W3-IMPL | src/core/rrf.ts 不存在 |
-| 11 | 上下文注入 | ❌ 未实现 | S-RAG-LOOP | ContextManager.addSearchResults() |
-| 12 | RAG 系统提示词 | ❌ 未实现 | S-RAG-LOOP | 现有提示词不含 RAG 指令 |
-| 13 | 引用标记 [1][2] | ❌ 未实现 | P-W3-IMPL | |
+| 9 | BM25 检索 | ✅ 已实现 | S-W3-HYBRID | vectra 内置 isBm25(vector-vectra.ts:199) |
+| 10 | RRF 融合 | ✅ 已实现 | S-W3-HYBRID | src/core/rrf.ts |
+| 11 | 上下文注入 | ✅ 已实现 | S-RAG-LOOP | ContextManager.addSearchResults() |
+| 12 | RAG 系统提示词 | ✅ 已实现 | S-PROMPTS | src/prompts/defaults/zh.ts('agent.rag.workflow') |
+| 13 | 引用标记 [1][2] | ✅ 已实现 | S-W3-HYBRID | search-vault.ts:53 + zh.ts:17 |
 | 14 | LLM 调用 | ✅ 已实现 | — | DeepSeekLLM + agentLoop |
 | 15 | 流式输出 | ✅ 已实现 | — | ChatView + agentLoop yield |
 

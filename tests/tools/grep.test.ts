@@ -1,12 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createGrepTool } from '../../src/tools/grep';
 import { createMockVaultPort } from '../helpers/mock-vault-port';
-import { composeToolDefinitions } from '../../src/prompts/composer';
-import type { ToolDefinition } from '../../src/ports/llm';
-
-function makeToolDef(name: string): ToolDefinition {
-	return composeToolDefinitions({}, [name])[0]!;
-}
+import { makeToolDef } from '../helpers/make-tool-def';
 
 describe('grep tool', () => {
 	it('字面量匹配 - 找到关键词', async () => {
