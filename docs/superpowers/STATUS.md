@@ -20,6 +20,8 @@
 | S-RAG-ARCH | [2026-06-14-ratel-rag-architecture.md](specs/2026-06-14-ratel-rag-architecture.md) | Active | 2026-06-14 | 最终 RAG 架构(取代 S-RAG-ROADMAP 中的初步想法) |
 | S-I18N | [2026-06-14-ratel-i18n-design.md](specs/2026-06-14-ratel-i18n-design.md) | Draft | 2026-06-14 | i18n 基础设施:中英文切换,settings.ts + ChatView + 命令 + Notice 全覆盖 |
 | S-MEMORY | [2026-07-05-memory-system-design.md](specs/2026-07-05-memory-system-design.md) | Active | 2026-07-05 | 用户记忆系统:两层架构(全局 + 主题),独立索引,工具驱动,容量可控 |
+| S-SETTINGS-DECLARATIVE | [2026-07-05-settings-declarative-migration-design.md](specs/2026-07-05-settings-declarative-migration-design.md) | Active | 2026-07-05 | 设置面板声明式迁移:删除 display(),改用 getSettingDefinitions();解除 0.1.1 发版阻塞 |
+| P-SETTINGS-DECLARATIVE | [2026-07-05-settings-declarative-migration.md](plans/2026-07-05-settings-declarative-migration.md) | Pending | 2026-07-05 | S-SETTINGS-DECLARATIVE 的实现 plan,7 个 task:TDD 测试 → override → 子页面 → render wrapper → 重写 getSettingDefinitions → 验证 → 发版 0.1.2 |
 
 ---
 
@@ -27,9 +29,9 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
-| P-I18N-IMPL | [2026-06-14-ratel-i18n-implementation.md](plans/2026-06-14-ratel-i18n-implementation.md) | ⏳ Pending | S-I18N | — |
+| P-I18N-IMPL | [2026-06-14-ratel-i18n-implementation.md](plans/2026-06-14-ratel-i18n-implementation.md) | ⏳ Pending | S-I18N | ⚠️ Task 7 假设 `display()` 存在,P-SETTINGS-DECLARATIVE 完成后需重写(改为改 `getSettingDefinitions()`) |
 | P-MEMORY-LOGIC | [2026-07-05-memory-system-logic.md](plans/2026-07-05-memory-system-logic.md) | ⏳ Pending | S-MEMORY | 核心逻辑:MemoryStore + 3 个工具 + ContextManager 注入（先于 P-MEMORY-UI） |
-| P-MEMORY-UI | [2026-07-05-memory-system-ui.md](plans/2026-07-05-memory-system-ui.md) | ⏳ Pending | S-MEMORY | UI+设置:记忆面板 + 6 个设置项（依赖 P-MEMORY-LOGIC） |
+| P-MEMORY-UI | [2026-07-05-memory-system-ui.md](plans/2026-07-05-memory-system-ui.md) | ⏳ Pending | S-MEMORY | UI+设置:记忆面板 + 6 个设置项（依赖 P-MEMORY-LOGIC);⚠️ Task 1 假设 `display()` 存在,P-SETTINGS-DECLARATIVE 完成后需重写 |
 
 ---
 
