@@ -50,7 +50,7 @@ class CompactConfirmModal extends Modal {
 		const { contentEl, titleEl } = this;
 		titleEl.setText('压缩上下文');
 		contentEl.createEl('p', {
-			text: '将清空历史消息,仅保留最近 2 条。此操作不可撤销,是否继续?',
+			text: '将清空历史消息,保留最近 3 条原文 + 摘要。此操作不可撤销,是否继续?',
 		});
 		const btnRow = contentEl.createDiv({ cls: 'modal-button-container' });
 		btnRow.createEl('button', { text: '压缩' }).onclick = () => {

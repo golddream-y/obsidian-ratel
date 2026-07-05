@@ -22,10 +22,12 @@ import { workerData } from 'worker_threads';
 async function bootstrapWorker(): Promise<void> {
 	if (!workerData || typeof workerData.indexDir !== 'string') return;
 
-	// 关键路径:若未来 Worker Threads 可用,需要主线程传入 modelDir + vocabContent 才能构造 EmbeddingOnnx。
-	// 目前直接抛出明确错误,避免静默失败。
+	// 关键路径:此分支为未来扩展预留,当前 Obsidian 渲染进程不支持 Worker Threads(见 ADR-002)。
+	// 所有 Worker 实际走 InlineWorker 模式(主线程模拟),不进入此分支。
+	// 若未来 Obsidian 支持 Worker Threads,需在此实现 embeddings 注入:
+	//   主线程需传入 modelDir + vocabContent,Worker 内部构造 EmbeddingOnnx。
 	throw new Error(
-		'Worker Threads 场景下暂未实现 embeddings 注入,请使用 InlineWorker 模式',
+		'Worker Threads 路径不可达:当前 Obsidian 不支持 Worker Threads,请使用 InlineWorker 模式',
 	);
 }
 

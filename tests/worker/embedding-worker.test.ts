@@ -93,4 +93,92 @@ describe('embedding-worker', () => {
 			}),
 		);
 	});
+
+	it('onmessage - embed 成功 - 返回向量', async () => {
+		// 关键路径:覆盖 embed 成功路径 — init 后发 embed,验证 postMessage 返回 embed:result
+		await import('../../src/worker/embedding-worker');
+
+		// 步骤 1:先发 init 让 Worker 就绪
+		const initEvent = {
+			data: {
+				type: 'init',
+				deps: {
+					vocabContent: '',
+					modelBuffer: new ArrayBuffer(0),
+					wasmBinary: new ArrayBuffer(0),
+				},
+				dimensions: 512,
+				maxBatchSize: 16,
+			},
+		} as MessageEvent;
+		const onmessageInit = (self as any).onmessage;
+		if (typeof onmessageInit === 'function') {
+			await onmessageInit(initEvent);
+		}
+		// 关键路径:init 后应回复 ready
+		expect(postMessageSpy).toHaveBeenCalledWith({ type: 'ready' });
+
+		// 步骤 2:发 embed 请求
+		const embedEvent = {
+			data: { type: 'embed', texts: ['hello world'], requestId: 'req_embed_ok' },
+		} as MessageEvent;
+		const onmessageEmbed = (self as any).onmessage;
+		if (typeof onmessageEmbed === 'function') {
+			await onmessageEmbed(embedEvent);
+		}
+
+		// 关键路径:应回复 embed:result,带 requestId + vectors(mock 默认返回 [[0.1, 0.2]])
+		expect(postMessageSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				type: 'embed:result',
+				requestId: 'req_embed_ok',
+				vectors: [[0.1, 0.2]],
+			}),
+		);
+	});
+
+	it('onmessage - init 失败 - 返回错误', async () => {
+		// 关键路径:覆盖 init 失败路径 — mock EmbeddingOnnx.init 抛错,验证 postMessage 返回 error(无 requestId)
+		// 重新 mock EmbeddingOnnx,让 init 抛错
+		vi.doMock('../../src/adapters/embedding-onnx', () => ({
+			EmbeddingOnnx: class FailInitEmbeddingOnnx {
+				init = vi.fn().mockRejectedValue(new Error('ONNX 模型文件损坏'));
+				embed = vi.fn();
+			},
+		}));
+		vi.resetModules();
+
+		await import('../../src/worker/embedding-worker');
+
+		const initEvent = {
+			data: {
+				type: 'init',
+				deps: {
+					vocabContent: '',
+					modelBuffer: new ArrayBuffer(0),
+					wasmBinary: new ArrayBuffer(0),
+				},
+				dimensions: 512,
+				maxBatchSize: 16,
+			},
+		} as MessageEvent;
+		const onmessage = (self as any).onmessage;
+		if (typeof onmessage === 'function') {
+			await onmessage(initEvent);
+		}
+
+		// 关键路径:init 失败应回复 error(无 requestId),error 含"初始化失败"
+		expect(postMessageSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				type: 'error',
+				error: expect.stringContaining('初始化失败'),
+			}),
+		);
+		// 关键路径:error 消息不带 requestId(广播式,主线程 ready reject)
+		const errorCall = postMessageSpy.mock.calls.find(
+			(call: unknown[]) => (call[0] as { type: string }).type === 'error',
+		);
+		expect(errorCall).toBeDefined();
+		expect((errorCall![0] as { requestId?: string }).requestId).toBeUndefined();
+	});
 });

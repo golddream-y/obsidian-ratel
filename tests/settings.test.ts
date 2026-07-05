@@ -34,7 +34,6 @@ describe('DEFAULT_SETTINGS', () => {
             'embedApiBase', 'embedApiModel', 'embedApiDimensions',
             'rerankerApiBase', 'rerankerModel',
             'chunkSize', 'chunkOverlap', 'autoIndex',
-            'autoSuggestLinks', 'linkConfidenceThreshold',
         ];
         for (const key of required) {
             expect(DEFAULT_SETTINGS).toHaveProperty(key);
@@ -47,7 +46,6 @@ describe('DEFAULT_SETTINGS', () => {
         expect(typeof DEFAULT_SETTINGS.embedLocalDimensions).toBe('number');
         expect(typeof DEFAULT_SETTINGS.chunkSize).toBe('number');
         expect(typeof DEFAULT_SETTINGS.autoIndex).toBe('boolean');
-        expect(typeof DEFAULT_SETTINGS.linkConfidenceThreshold).toBe('number');
     });
 
     it('DEFAULT_SETTINGS - 不含已移除的明文 Key 字段', () => {
@@ -67,8 +65,6 @@ describe('DEFAULT_SETTINGS', () => {
     expect(DEFAULT_SETTINGS.chunkSize).toBeGreaterThan(0);
     expect(DEFAULT_SETTINGS.chunkOverlap).toBeGreaterThanOrEqual(0);
     expect(DEFAULT_SETTINGS.chunkOverlap).toBeLessThan(DEFAULT_SETTINGS.chunkSize);
-    expect(DEFAULT_SETTINGS.linkConfidenceThreshold).toBeGreaterThanOrEqual(0);
-    expect(DEFAULT_SETTINGS.linkConfidenceThreshold).toBeLessThanOrEqual(1);
 });
 
 it('DEFAULT_SETTINGS - 包含 indexPaused 默认 false', () => {

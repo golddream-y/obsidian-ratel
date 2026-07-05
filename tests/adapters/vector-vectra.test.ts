@@ -301,3 +301,82 @@ describe('VectraStore.hybridSearch', () => {
 		expect(results[0]!.index).toBeUndefined();
 	});
 });
+
+describe('upsertItem 事务回滚', () => {
+	it('cancelFileUpdate - 事务中写入的 chunk 不被持久化', async () => {
+		// 关键路径:独立子目录,避免污染共享 store。
+		const subDir = path.join(TEST_INDEX_DIR, 'rollback-cancel-test');
+		if (fs.existsSync(subDir)) {
+			fs.rmSync(subDir, { recursive: true });
+		}
+		const subStore = new VectraStore(subDir, mockEmbeddings);
+
+		// 开启事务后写入 2 个 chunk,然后 cancel(模拟 embed 中途失败)
+		await subStore.beginFileUpdate();
+		const dummyVector = Array(512).fill(0).map(() => Math.random());
+		await subStore.upsertItem('notes/foo.md#chunk-0', dummyVector, { path: 'notes/foo.md', chunkIndex: 0 });
+		await subStore.upsertItem('notes/foo.md#chunk-1', dummyVector, { path: 'notes/foo.md', chunkIndex: 1 });
+		await subStore.cancelFileUpdate();
+
+		// 关键路径:cancel 后搜索不应命中这些 chunk(vectra 事务回滚)
+		const results = await subStore.search(dummyVector, 10);
+		expect(results).toHaveLength(0);
+
+		if (fs.existsSync(subDir)) {
+			fs.rmSync(subDir, { recursive: true });
+		}
+	});
+
+	it('endFileUpdate 后 cancelFileUpdate - 已提交事务不回滚', async () => {
+		// 关键路径:已 endUpdate 的事务,cancel 不应影响已持久化数据
+		const subDir = path.join(TEST_INDEX_DIR, 'rollback-after-commit');
+		if (fs.existsSync(subDir)) {
+			fs.rmSync(subDir, { recursive: true });
+		}
+		const subStore = new VectraStore(subDir, mockEmbeddings);
+
+		const dummyVector = Array(512).fill(0).map(() => Math.random());
+		await subStore.beginFileUpdate();
+		await subStore.upsertItem('notes/foo.md#chunk-0', dummyVector, { path: 'notes/foo.md', chunkIndex: 0 });
+		await subStore.endFileUpdate();
+
+		// 关键路径:已提交后 cancel,不应影响已写入数据
+		await expect(subStore.cancelFileUpdate()).resolves.not.toThrow();
+		const results = await subStore.search(dummyVector, 10);
+		expect(results.length).toBeGreaterThan(0);
+
+		if (fs.existsSync(subDir)) {
+			fs.rmSync(subDir, { recursive: true });
+		}
+	});
+});
+
+describe('deleteByPath 失败保护', () => {
+	it('deleteByPath - 文件不存在 - 返回 0 不破坏索引状态', async () => {
+		// 关键路径:删除不存在的文件不应抛错,索引仍可查询
+		const subDir = path.join(TEST_INDEX_DIR, 'delete-fail-protect');
+		if (fs.existsSync(subDir)) {
+			fs.rmSync(subDir, { recursive: true });
+		}
+		const subStore = new VectraStore(subDir, mockEmbeddings);
+
+		// 先写入一个文件
+		const dummyVector = Array(512).fill(0).map(() => Math.random());
+		await subStore.beginFileUpdate();
+		await subStore.upsertItem('a.md#chunk-0', dummyVector, { path: 'a.md', chunkIndex: 0 });
+		await subStore.endFileUpdate();
+
+		// 删除不存在的文件
+		const deleted = await subStore.deleteByPath('nonexistent.md');
+		expect(deleted).toBe(0);
+
+		// 关键路径:索引仍可查询,a.md 数据未受影响
+		const results = await subStore.search(dummyVector, 10);
+		const aResults = results.filter((r) => (r.metadata as { path?: string }).path === 'a.md');
+		expect(aResults.length).toBeGreaterThan(0);
+
+		if (fs.existsSync(subDir)) {
+			fs.rmSync(subDir, { recursive: true });
+		}
+	});
+});

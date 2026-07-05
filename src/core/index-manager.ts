@@ -30,7 +30,7 @@ export type IndexStatus =
 /** Worker 调用抽象,便于单测注入 mock。 */
 export interface IndexBackend {
     fullReindex(): Promise<{ indexed: number; errors: number }>;
-    incrementalIndex(file: { path: string; content: string }): Promise<{ indexed: number; errors: number }>;
+    incrementalIndex(file: { path: string; content: string }): Promise<{ indexed: number; errors: number; chunkCount?: number }>;
     deleteFile(filePath: string): Promise<number>;
     // 关键路径:smartReindex 是可选方法,未实现时 onLayoutReady 回退到 fullReindex。
     smartReindex?(): Promise<{ indexed: number; errors: number; skipped: number }>;

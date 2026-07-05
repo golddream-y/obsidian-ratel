@@ -139,9 +139,9 @@ describe('Settings 变更传播', () => {
 		expect(plugin.embedding).toBeInstanceOf(EmbeddingLocal);
 	});
 
-	it('reranker / indexing / link 字段改动只走 save 路径,不重建 adapter', () => {
+	it('reranker / indexing 字段改动只走 save 路径,不重建 adapter', () => {
 		// 关键路径:这些字段没有对应 adapter 重建需求。
-		// 关键路径:rerankerApiKey 已移至钥匙串,本用例改用 chunkSize / linkConfidenceThreshold。
+		// 关键路径:rerankerApiKey 已移至钥匙串,本用例改用 chunkSize。
 		const plugin = createPlugin({});
 		plugin.rebuildLLM();
 		plugin.rebuildEmbeddingAdapter();
@@ -152,8 +152,6 @@ describe('Settings 变更传播', () => {
 		plugin.settings.rerankerApiBase = 'https://example.com';
 		// 改 chunkSize
 		plugin.settings.chunkSize = 800;
-		// 改 linkConfidenceThreshold
-		plugin.settings.linkConfidenceThreshold = 0.8;
 
 		// 不调 rebuild,引用应保持不变
 		expect(plugin.llm).toBe(oldLlm);

@@ -13,6 +13,7 @@
 import { IndexManager, type IndexBackend } from './index-manager';
 import { FolderWatcher } from './folder-watcher';
 import { Ratelignore } from '../utils/ratelignore-parser';
+import { devLogger } from '../logging/dev-logger';
 
 /**
  * Vault 事件订阅接口(从 VaultPort 抽离,避免在 IndexController 强依赖全 VaultPort)。
@@ -86,6 +87,29 @@ export class IndexController {
     pause(): void { this.indexManager.pause(); }
     resume(): void { this.indexManager.resume(); }
     async reindex(): Promise<void> { await this.indexManager.reindex(); }
+
+    /**
+     * 立即触发单文件索引刷新,绕过 FolderWatcher 5s 去抖。
+     *
+     * 关键路径:供 post-tool-use hook 调用,写工具执行后立即更新索引。
+     * IndexManager.enqueue 已做 Map 去重(同 path 多次调用保留最后 op),无需额外去抖。
+     *
+     * @param path - 文件路径(vault 相对路径)
+     * @param op - 'upsert' 或 'delete'
+     */
+    async enqueue(path: string, op: 'upsert' | 'delete'): Promise<void> {
+        if (op === 'delete') {
+            this.indexManager.enqueue(path, 'delete');
+            return;
+        }
+        // 关键路径:upsert 需读文件内容,文件可能在写工具执行后被删/移动,失败时静默跳过
+        try {
+            const content = await this.vault.readFile(path);
+            this.indexManager.enqueue(path, 'upsert', content);
+        } catch (err) {
+            devLogger.warn('index', `immediate-reindex 读文件失败: ${path}`, err);
+        }
+    }
 
     /** 卸载 — 清 watcher + 退订 vault 事件。 */
     destroy(): void {

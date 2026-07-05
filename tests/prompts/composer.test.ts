@@ -3,6 +3,7 @@ import {
 	composeAgentSystem,
 	composeInternalMessages,
 	composeToolDefinitions,
+	composeCompactMessages,
 	formatSearchResultsBlock,
 	formatToolGuideList,
 	SEARCH_RESULTS_WRAPPER_PREFIX,
@@ -91,5 +92,28 @@ describe('formatToolGuideList', () => {
 			'tool.read_note.description': '自定义读笔记',
 		});
 		expect(list).toContain('自定义读笔记');
+	});
+});
+
+describe('composeCompactMessages', () => {
+	it('正常输入 - 返回 system + user 消息 - system 包含 4 段结构化字段', () => {
+		const history = 'user: 帮我建一个 a.md\nassistant: 已创建 a.md';
+		const messages = composeCompactMessages({ history }, {});
+
+		expect(messages).toHaveLength(2);
+		expect(messages[0]!.role).toBe('system');
+		expect(messages[0]!.content).toContain('对话历程');
+		expect(messages[0]!.content).toContain('已确认事实');
+		expect(messages[0]!.content).toContain('当前任务目标');
+		expect(messages[0]!.content).toContain('未解决问题');
+		expect(messages[1]!.role).toBe('user');
+		expect(messages[1]!.content).toContain(history);
+	});
+
+	it('overrides 覆盖 internal.compact - 使用自定义摘要指令', () => {
+		const messages = composeCompactMessages({ history: '对话' }, {
+			'internal.compact': '自定义摘要指令:{{history}}',
+		});
+		expect(messages[0]!.content).toBe('自定义摘要指令:对话');
 	});
 });

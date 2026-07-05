@@ -94,8 +94,11 @@
 |---|---|
 | `/new` | 开始新对话,清空当前上下文 |
 | `/compact` | 压缩上下文,将历史总结为摘要 |
-| `/model` | 切换模型 |
+| `/model` | 查看当前模型配置(临时方案,后续完善为切换) |
 | `/reindex` | 重新索引 vault |
+| `/pause` | 暂停自动索引(FolderWatcher 仍在,仅停止队列消费) |
+| `/resume` | 恢复自动索引 |
+| `/dropIndex` | 清空索引并重建(危险操作,需确认) |
 
 ### 2.6 状态条解读
 
@@ -213,8 +216,11 @@ Type `/` to trigger menu:
 |---|---|
 | `/new` | Start new conversation, clear current context |
 | `/compact` | Compress context, summarize history |
-| `/model` | Switch model |
+| `/model` | View current model config (temporary, switching to be added later) |
 | `/reindex` | Re-index vault |
+| `/pause` | Pause auto-indexing (FolderWatcher still active, only stops queue consumption) |
+| `/resume` | Resume auto-indexing |
+| `/dropIndex` | Drop index and rebuild (dangerous, requires confirmation) |
 
 ### 2.6 Status Bar Reading
 

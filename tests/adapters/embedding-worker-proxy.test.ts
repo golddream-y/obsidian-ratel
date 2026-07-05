@@ -131,4 +131,106 @@ describe('EmbeddingWorkerProxy', () => {
 
 		await expect(embedPromise).rejects.toThrow('WASM crash');
 	});
+
+	it('init - Worker 初始化失败 - 抛 explicit error', async () => {
+		// 关键路径:覆盖 init 失败路径 — Worker 返回 error(无 requestId)时 readyPromise 应 reject
+		// 用自定义 mock Worker,init 时返回 error 而非 ready
+		const failMockWorker = new MockWorker();
+		failMockWorker.postMessage = vi.fn((data: unknown) => {
+			setTimeout(() => {
+				if (failMockWorker.onmessage === null) return;
+				const msg = data as { type: string };
+				if (msg.type === 'init') {
+					// 关键路径:init 失败 — 返回 error 且不带 requestId(触发 ready reject)
+					failMockWorker.onmessage({
+						data: { type: 'error', error: 'ONNX 初始化失败:模型文件损坏' },
+					} as MessageEvent);
+				}
+			}, 0);
+		});
+		(global as any).Worker = vi.fn(function (this: unknown) {
+			return failMockWorker;
+		});
+
+		const proxy = new EmbeddingWorkerProxy(
+			'mock-url',
+			{ vocabContent: '', modelBuffer: new ArrayBuffer(0), wasmBinary: new ArrayBuffer(0) },
+			512,
+		);
+
+		// 关键路径:ready 应 reject,不静默降级(AGENTS.md 关键约束)
+		await expect(proxy.ready).rejects.toThrow('ONNX 初始化失败:模型文件损坏');
+
+		// embed 也应失败(因 ready 已 reject)
+		await expect(proxy.embed(['test'])).rejects.toThrow();
+	});
+
+	it('embed - Worker 业务错误 - 抛 explicit error 不静默降级', async () => {
+		// 关键路径:覆盖 embed 业务错误路径 — Worker 返回 error 带 requestId 时对应请求应 reject
+		const proxy = new EmbeddingWorkerProxy(
+			'mock-url',
+			{ vocabContent: '', modelBuffer: new ArrayBuffer(0), wasmBinary: new ArrayBuffer(0) },
+			512,
+		);
+		await new Promise((r) => setTimeout(r, 10)); // 等 init ready
+
+		const embedPromise = proxy.embed(['hello']);
+		await new Promise((r) => setTimeout(r, 10)); // 等 postMessage
+
+		// 找到 embed 请求的 requestId
+		const embedCall = mockWorker.postMessage.mock.calls.find(
+			(call: unknown[]) => (call[0] as { type: string }).type === 'embed',
+		);
+		expect(embedCall).toBeDefined();
+		const requestId = (embedCall![0] as { requestId: string }).requestId;
+
+		// 关键路径:模拟 Worker 推理失败,返回 error 带 requestId
+		mockWorker.onmessage?.({
+			data: { type: 'error', requestId, error: 'ONNX session.run 失败:输入维度不匹配' },
+		} as MessageEvent);
+
+		// 关键路径:不应静默降级,应显式抛错(AGENTS.md:Web Worker 失败必须抛 explicit errors)
+		await expect(embedPromise).rejects.toThrow('ONNX session.run 失败:输入维度不匹配');
+	});
+
+	it('embed - 并发调用 - 多请求 ID 不串扰', async () => {
+		// 关键路径:覆盖并发场景 — 3 个并发 embed 请求,requestId 自增,响应按 requestId 路由不串扰
+		const proxy = new EmbeddingWorkerProxy(
+			'mock-url',
+			{ vocabContent: '', modelBuffer: new ArrayBuffer(0), wasmBinary: new ArrayBuffer(0) },
+			512,
+		);
+		await new Promise((r) => setTimeout(r, 10)); // 等 init ready
+
+		// 关键路径:并发发起 3 个 embed 请求
+		const p1 = proxy.embed(['text1']);
+		const p2 = proxy.embed(['text2']);
+		const p3 = proxy.embed(['text3']);
+		await new Promise((r) => setTimeout(r, 10)); // 等 3 个 postMessage
+
+		// 找到 3 个 embed 请求的 requestId(应自增 embed_1, embed_2, embed_3)
+		const embedCalls = mockWorker.postMessage.mock.calls.filter(
+			(call: unknown[]) => (call[0] as { type: string }).type === 'embed',
+		);
+		expect(embedCalls).toHaveLength(3);
+		const requestIds = embedCalls.map((c) => (c[0] as { requestId: string }).requestId);
+		// 关键路径:requestId 唯一且自增
+		expect(new Set(requestIds).size).toBe(3);
+
+		// 关键路径:乱序返回响应(p3 先回,p1 后回),验证结果不串扰
+		mockWorker.onmessage?.({
+			data: { type: 'embed:result', requestId: requestIds[2]!, vectors: [[0.3]] },
+		} as MessageEvent);
+		mockWorker.onmessage?.({
+			data: { type: 'embed:result', requestId: requestIds[1]!, vectors: [[0.2]] },
+		} as MessageEvent);
+		mockWorker.onmessage?.({
+			data: { type: 'embed:result', requestId: requestIds[0]!, vectors: [[0.1]] },
+		} as MessageEvent);
+
+		const [v1, v2, v3] = await Promise.all([p1, p2, p3]);
+		expect(v1).toEqual([[0.1]]);
+		expect(v2).toEqual([[0.2]]);
+		expect(v3).toEqual([[0.3]]);
+	});
 });

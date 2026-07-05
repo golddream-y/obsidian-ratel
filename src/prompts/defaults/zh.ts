@@ -28,6 +28,27 @@ export const ZH_DEFAULTS: Record<PromptSectionId, string> = {
 	'injection.searchResults.body': `[{{index}}] {{path}}
 {{content}}`,
 
+	'internal.compact': `你是会话压缩器。把下面的对话历史压成结构化摘要,不限制字数,用尽量精炼的语言。
+
+输出格式(严格 4 段,每段用 markdown 标题):
+
+## 对话历程
+<用户问了什么、助手答了什么,简述>
+
+## 已确认事实
+<讨论中确定的结论、约束、决策>
+
+## 当前任务目标
+<下一步要做什么>
+
+## 未解决问题
+<还待确认的点,若无写"无">
+
+要求:
+- 不丢失关键决策、约束、未解决问题
+- 不保留原文细节,只提炼要点
+- 若历史为空,直接返回"无历史"`,
+
 	'internal.intent.system': `你是意图分类器。只回答一个词:rag 或 direct。rag 表示需要搜索 Obsidian 知识库;direct 表示不需要。`,
 
 	'internal.intent.user': `判断以下用户消息是否需要搜索 Obsidian 知识库来回答。

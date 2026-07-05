@@ -10,7 +10,7 @@ import RatelVaultPlugin from './main';
 import { createTabBar } from './ui/diagnostics/tab-bar';
 import { renderEmbeddingTest } from './ui/diagnostics/embedding-test';
 import { renderLLMTest } from './ui/diagnostics/llm-test';
-import { renderRerankPlaceholder } from './ui/diagnostics/rerank-placeholder';
+import { renderRerankTest } from './ui/diagnostics/rerank-test';
 import { ensureDiagStyles } from './ui/diagnostics/diag-utils';
 import { devLogger } from './logging/dev-logger';
 import type { ToolPermission } from './core/tool-permissions';
@@ -47,7 +47,6 @@ import { ZH_DEFAULTS } from './prompts/defaults/zh';
  * - Embedding:本地 ONNX(`local`)或远端 OpenAI 兼容端点(`api`)。
  * - Reranker:可选,API Key 留空即视为关闭。
  * - Indexing:分块大小 / 重叠 / 是否自动重建。
- * - Link Suggestions:写笔记后是否自动建议链接 + 阈值。
  */
 export interface RatelVaultSettings {
 	// Chat
@@ -84,10 +83,6 @@ export interface RatelVaultSettings {
 	embedAvailableModels: Array<{ id: string; sizeBytes: number; dimensions: number; recommended: boolean }>;
 	// 关键路径:embedDownloadedModels 记录用户已下载到本地的模型 id,切换/清理用。
 	embedDownloadedModels: string[];
-
-	// Link Suggestions
-	autoSuggestLinks: boolean;
-	linkConfidenceThreshold: number;
 
 	// Developer
 	debugLog: boolean;
@@ -137,9 +132,6 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 		{ id: 'Xenova/bge-small-zh-v1.5', sizeBytes: 24 * 1024 * 1024, dimensions: 512, recommended: true },
 	],
 	embedDownloadedModels: [],
-
-	autoSuggestLinks: true,
-	linkConfidenceThreshold: 0.75,
 
 	debugLog: false,
 	// 关键路径:50 步覆盖知识库场景(1 glob + N read + 分析 + write),见 ADR-004。
@@ -566,36 +558,7 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 						this.plugin.settings.autoIndex = value;
 						await this.plugin.saveSettings();
 					}),
-			);
-
-		// ==================== Link Suggestions ====================
-		containerEl.createEl('h2', { text: 'Link Suggestions' });
-
-		new Setting(containerEl)
-			.setName('Auto suggest links')
-			.setDesc('Automatically suggest links after writing')
-			.addToggle((toggle) =>
-				toggle
-					.setValue(this.plugin.settings.autoSuggestLinks)
-					.onChange(async (value) => {
-						this.plugin.settings.autoSuggestLinks = value;
-						await this.plugin.saveSettings();
-					}),
-			);
-
-		new Setting(containerEl)
-			.setName('Confidence threshold')
-			.setDesc('Minimum similarity to suggest a link')
-			.addSlider((slider) =>
-				slider
-					.setLimits(0.5, 1.0, 0.05)
-					.setValue(this.plugin.settings.linkConfidenceThreshold)
-					.setDynamicTooltip()
-					.onChange(async (value) => {
-						this.plugin.settings.linkConfidenceThreshold = value;
-						await this.plugin.saveSettings();
-					}),
-			);
+		);
 
 		// ==================== Tool Permissions ====================
 		this.renderToolPermissions(containerEl);
@@ -818,7 +781,7 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			{
 				id: 'rerank',
 				label: 'Rerank',
-				render: (el) => renderRerankPlaceholder(el, this.plugin),
+				render: (el) => renderRerankTest(el, this.plugin),
 			},
 		], 'embedding');
 	}
