@@ -28,6 +28,8 @@
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
 | P-I18N-IMPL | [2026-06-14-ratel-i18n-implementation.md](plans/2026-06-14-ratel-i18n-implementation.md) | ⏳ Pending | S-I18N | — |
+| P-MEMORY-LOGIC | [2026-07-05-memory-system-logic.md](plans/2026-07-05-memory-system-logic.md) | ⏳ Pending | S-MEMORY | 核心逻辑:MemoryStore + 3 个工具 + ContextManager 注入（先于 P-MEMORY-UI） |
+| P-MEMORY-UI | [2026-07-05-memory-system-ui.md](plans/2026-07-05-memory-system-ui.md) | ⏳ Pending | S-MEMORY | UI+设置:记忆面板 + 6 个设置项（依赖 P-MEMORY-LOGIC） |
 
 ---
 
