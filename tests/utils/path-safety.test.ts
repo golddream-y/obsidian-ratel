@@ -28,7 +28,7 @@ describe('validateVaultPath', () => {
 	});
 
 	it('.obsidian 目录 - 抛错', () => {
-		expect(() => validateVaultPath('.obsidian/config')).toThrow('不允许访问 .obsidian');
+		expect(() => validateVaultPath('.obsidian/config')).toThrow('不允许访问配置目录');
 	});
 
 	it('.trash 目录 - 抛错', () => {

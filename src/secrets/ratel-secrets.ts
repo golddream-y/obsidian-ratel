@@ -122,7 +122,7 @@ export function requiresEmbedApiKey(settings: EmbedSecretSettings): boolean {
  * 从 Obsidian secretStorage 读取密钥并 trim。
  *
  * 关键路径:
- * - SecretStorage API 缺失时兜底日志(minAppVersion 1.11.4 已阻止老版,理论上不可达)。
+ * - SecretStorage API 缺失时兜底日志(minAppVersion 1.13.0 已阻止老版,理论上不可达)。
  * - OS 钥匙串异常(如 macOS Keychain 拒绝访问)不冒泡,视为未配置,避免阻断 rebuild。
  *
  * @param app - Obsidian App 实例
@@ -131,13 +131,13 @@ export function requiresEmbedApiKey(settings: EmbedSecretSettings): boolean {
  */
 function getSecret(app: App, id: string): string | null {
 	try {
-		const fn = app.secretStorage?.getSecret;
-		if (!fn) {
+		if (!app.secretStorage?.getSecret) {
 			// 修复:SecretStorage API 缺失,理论上 minAppVersion 已阻止,兜底日志。
-			devLogger.error('secrets', 'SecretStorage API 不可用,需 Obsidian ≥ 1.11.4');
+			devLogger.error('secrets', 'SecretStorage API 不可用,需 Obsidian ≥ 1.13.0');
 			return null;
 		}
-		const value = fn.call(app.secretStorage, id);
+		// 关键路径:直接在 secretStorage 上调用,避免提取方法导致 this 丢失。
+		const value = app.secretStorage.getSecret(id);
 		return value && value.trim() ? value.trim() : null;
 	} catch (err) {
 		// 修复:OS 钥匙串异常(权限拒绝 / Keychain 锁定)不冒泡,视为未配置。

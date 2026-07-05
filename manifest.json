@@ -2,7 +2,7 @@
 	"id": "ratel-vault",
 	"name": "Ratel",
 	"version": "0.1.0",
-	"minAppVersion": "1.11.4",
+	"minAppVersion": "1.13.0",
 	"description": "Chat with your vault. Ask questions with cited answers, and auto-research across notes to write summaries.",
 	"author": "golddream-y",
 	"authorUrl": "https://github.com/golddream-y",

@@ -18,7 +18,7 @@
 
 Full setup guide: [User Guide](docs/user-guide.md).
 
-> **Requirements:** Obsidian 1.11.4+, desktop only. Default local embedding downloads models on first run (~37 MB), then cached locally.
+> **Requirements:** Obsidian 1.13.0+, desktop only. Default local embedding downloads models on first run (~37 MB), then cached locally.
 
 ---
 
