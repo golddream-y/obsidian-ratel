@@ -4,16 +4,18 @@
  * @module utils/path-safety
  */
 
-// 关键路径:Obsidian 的配置目录名可由用户自定义(默认 '.obsidian'),
-// 启动期由 main.ts 调 setConfigDir 注入实际值,避免硬编码。
-let configDirName = '.obsidian';
+// 关键路径:Obsidian 配置目录名可由用户自定义,启动期由 main.ts 调 setConfigDir
+// 注入 app.vault.configDir 的实际值,此模块不硬编码任何目录名。
+let configDirName = '';
 
 /**
  * 启动期注入 Obsidian 实际 configDir(来自 app.vault.configDir)。
  * 必须在插件 onload 阶段调用一次,之后 validateVaultPath / isExcludedVaultPath 才能正确拦截。
+ *
+ * @param name - app.vault.configDir 返回的配置目录名(可能为非默认值)
  */
 export function setConfigDir(name: string): void {
-	configDirName = name || '.obsidian';
+	configDirName = name;
 }
 
 /**
