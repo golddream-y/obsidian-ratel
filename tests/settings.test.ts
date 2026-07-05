@@ -14,6 +14,7 @@ vi.mock('obsidian', () => ({
     App: class {},
     Plugin: class {},
     PluginSettingTab: class {},
+    SettingPage: class {},
     Setting: class {},
     Notice: class {},
 }));
