@@ -182,7 +182,8 @@ export function renderLLMTest(container: HTMLElement, plugin: RatelVaultPlugin):
 
         try {
             updateMeta();
-            const metaTimer = setInterval(updateMeta, 200);
+            // 关键路径:用 window.setInterval 兼容 popout 窗口(Obsidian linter 规则)。
+            const metaTimer = window.setInterval(updateMeta, 200);
 
             try {
                 for await (const delta of llm.chat({ messages, options })) {
@@ -199,7 +200,7 @@ export function renderLLMTest(container: HTMLElement, plugin: RatelVaultPlugin):
                     }
                 }
             } finally {
-                clearInterval(metaTimer);
+                window.clearInterval(metaTimer);
             }
 
             if (!stopped) {

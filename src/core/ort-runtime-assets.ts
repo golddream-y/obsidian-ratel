@@ -2,13 +2,14 @@
  * @file src/core/ort-runtime-assets.ts
  * @description ONNX Runtime Web WASM 运行时资产 — 懒下载并缓存到插件目录
  * @module core/ort-runtime-assets
- * @depends node:fs/promises
+ * @depends obsidian(requestUrl), node:fs/promises
  *
  * 关键路径:Obsidian / BRAT 商店 release 只分发 main.js + manifest.json + styles.css,
  * WASM 不能随 release 附件安装;首次 local embedding 时从 jsDelivr 下载并缓存到 pluginDir。
  * 见 ADR-006。
  */
 
+import { requestUrl } from 'obsidian';
 import { access, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { ProgressInfo } from './model-downloader';
@@ -30,15 +31,34 @@ export function getOrtWasmDownloadUrl(version: string = ORT_RUNTIME_VERSION): st
 	return `https://cdn.jsdelivr.net/npm/onnxruntime-web@${version}/dist/${ORT_WASM_FILENAME}`;
 }
 
-/** 可注入的 fetch 类型(测试 mock 用)。 */
-export type FetchFn = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+/**
+ * 可注入的下载函数返回值 — 与 fetch Response 解耦,只暴露本模块实际用到的字段。
+ *
+ * 关键路径:不再依赖 fetch 的 Response 类型(裸 fetch 在 Obsidian CSP 下不稳定);
+ * 改用 requestUrl 后,实际使用的字段只有 status 与 arrayBuffer,故独立定义此接口。
+ */
+export interface DownloadResponse {
+	status: number;
+	arrayBuffer: ArrayBuffer;
+}
+
+/** 可注入的下载函数类型(测试 mock 用)。 */
+export type FetchFn = (url: string) => Promise<DownloadResponse>;
 
 /**
- * 浏览器/Electron 中 fetch 是 Window 方法,不能 `const f = fetch; f(url)` 否则会 Illegal invocation。
- * 必须用闭包或 bind 保持调用上下文。
+ * 构造默认下载函数 — 用 Obsidian 内置 requestUrl 替代裸 fetch,处理 CORS/CSP 更稳。
+ *
+ * 关键路径:requestUrl 默认 throw 非 2xx,这里设 throw:false 以手动解析状态码;
+ * 下载二进制用 .arrayBuffer。
  */
 function createDefaultFetch(): FetchFn {
-	return (input, init) => fetch(input, init);
+	return async (url) => {
+		const response = await requestUrl({ url, method: 'GET', throw: false });
+		return {
+			status: response.status,
+			arrayBuffer: response.arrayBuffer,
+		};
+	};
 }
 
 export class OrtRuntimeAssets {
@@ -67,32 +87,12 @@ export class OrtRuntimeAssets {
 
 		const url = getOrtWasmDownloadUrl(this.version);
 		const response = await this.fetchFn(url);
-		if (!response.ok) {
-			throw new Error(`下载 ONNX Runtime WASM 失败: ${response.status} ${response.statusText}`);
+		if (response.status < 200 || response.status >= 300) {
+			throw new Error(`下载 ONNX Runtime WASM 失败: ${response.status}`);
 		}
 
-		const total = Number(response.headers.get('content-length')) || 0;
-		const reader = response.body?.getReader();
-		if (!reader) {
-			throw new Error('下载 ONNX Runtime WASM 失败: response.body 为空');
-		}
-
-		const chunks: Uint8Array[] = [];
-		let received = 0;
-		while (true) {
-			const { done, value } = await reader.read();
-			if (done) break;
-			chunks.push(value);
-			received += value.length;
-			if (total > 0) {
-				onProgress?.({
-					file: ORT_WASM_FILENAME,
-					progress: Math.min(1, received / total),
-				});
-			}
-		}
-
-		const buffer = Buffer.concat(chunks);
+		// 关键路径:requestUrl 不支持流式进度,只能下载完成后 emit 一次 1.0。
+		const buffer = Buffer.from(response.arrayBuffer);
 		if (buffer.byteLength < ORT_WASM_MIN_BYTES) {
 			throw new Error(
 				`下载 ONNX Runtime WASM 失败: 文件过小(${buffer.byteLength} bytes),可能已损坏`,

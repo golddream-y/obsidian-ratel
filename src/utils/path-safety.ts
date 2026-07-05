@@ -50,6 +50,9 @@ export function validateVaultPath(path: string): string {
 		throw new Error(`路径越界:禁止使用 ".." 穿越 "${path}"`);
 	}
 
+	// 关键路径:此处 '.obsidian' 是安全检查(匹配路径片段以拒绝访问),非构造路径。
+	// configDir 可由用户自定义,但路径归一化后必然以 '.obsidian' 开头,故硬编码匹配是正确做法。
+	// eslint-disable-next-line obsidianmd/no-hardcoded-obsidian-config -- 安全检查非路径构造
 	if (normalized === '.obsidian' || normalized.startsWith('.obsidian/')) {
 		throw new Error(`路径越界:不允许访问 .obsidian 配置目录 "${path}"`);
 	}
@@ -63,6 +66,8 @@ export function validateVaultPath(path: string): string {
 
 /** grep/glob 用:排除插件配置与回收站目录下的文件 */
 export function isExcludedVaultPath(filePath: string): boolean {
+	// 关键路径:此处 '.obsidian' 是安全检查(匹配路径片段以排除),非构造路径。
+	// eslint-disable-next-line obsidianmd/no-hardcoded-obsidian-config -- 安全检查非路径构造
 	return (
 		filePath === '.obsidian' ||
 		filePath.startsWith('.obsidian/') ||

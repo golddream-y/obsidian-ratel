@@ -42,6 +42,11 @@ const { mockTFile, mockApp } = vi.hoisted(() => {
 				eventListeners.get(event)?.forEach((cb) => cb(file, oldPath));
 			},
 		},
+		// 关键路径:trashFile 改用 fileManager.trashFile(尊重用户删除偏好),
+		// 不再走 vault.trash 的 try/catch 降级路径。
+		fileManager: {
+			trashFile: vi.fn(),
+		},
 		metadataCache: {
 			resolvedLinks: {} as Record<string, Record<string, number>>,
 			getFileCache: vi.fn(),
@@ -288,24 +293,25 @@ describe('ObsidianVault', () => {
 		expect(result).toBe('foo baz');
 	});
 
-	it('trashFile - 优先系统回收站', async () => {
+	it('trashFile - 委托 fileManager.trashFile 尊重用户删除偏好', async () => {
 		const file = mockFile('del.md');
 		mockApp.vault.getAbstractFileByPath.mockReturnValue(file);
-		mockApp.vault.trash.mockResolvedValue(undefined);
+		mockApp.fileManager.trashFile.mockResolvedValue(undefined);
 
 		await vault.trashFile('del.md');
 
-		expect(mockApp.vault.trash).toHaveBeenCalledWith(file, true);
+		// 关键路径:fileManager.trashFile 自动按用户设置选择系统回收站 / Obsidian .trash,
+		// 不再由本适配器做 try/catch 降级。
+		expect(mockApp.fileManager.trashFile).toHaveBeenCalledWith(file);
+		expect(mockApp.vault.trash).not.toHaveBeenCalled();
 	});
 
-	it('trashFile - 系统回收站失败时降级本地 .trash', async () => {
+	it('trashFile - fileManager.trashFile 抛错时透传', async () => {
 		const file = mockFile('del.md');
 		mockApp.vault.getAbstractFileByPath.mockReturnValue(file);
-		mockApp.vault.trash.mockRejectedValueOnce(new Error('no system trash')).mockResolvedValueOnce(undefined);
+		mockApp.fileManager.trashFile.mockRejectedValue(new Error('trash failed'));
 
-		await vault.trashFile('del.md');
-
-		expect(mockApp.vault.trash).toHaveBeenNthCalledWith(1, file, true);
-		expect(mockApp.vault.trash).toHaveBeenNthCalledWith(2, file, false);
+		await expect(vault.trashFile('del.md')).rejects.toThrow('trash failed');
+		expect(mockApp.fileManager.trashFile).toHaveBeenCalledWith(file);
 	});
 });

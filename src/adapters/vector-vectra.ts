@@ -154,7 +154,7 @@ export class VectraStore implements VectorStore {
 		// 关键路径:先收集所有命中的内部 documentId,再去批量查 URI。
 		const internalIds = new Set<string>();
 		for (const r of results) {
-			const chunkMeta = r.item.metadata as DocumentChunkMetadata;
+			const chunkMeta = r.item.metadata;
 			if (chunkMeta.documentId) {
 				internalIds.add(chunkMeta.documentId);
 			}
@@ -170,7 +170,7 @@ export class VectraStore implements VectorStore {
 		// 关键路径:chunk 级别分数聚合成 document 级别,取每个文档的最高分。
 		const docMap = new Map<string, { docId: string; score: number; metadata: Record<string, unknown> }>();
 		for (const r of results) {
-			const chunkMeta = r.item.metadata as DocumentChunkMetadata;
+			const chunkMeta = r.item.metadata;
 			const internalDocId = chunkMeta.documentId;
 			if (!internalDocId) continue;
 
@@ -180,7 +180,7 @@ export class VectraStore implements VectorStore {
 				docMap.set(docId, {
 					docId,
 					score: r.score,
-					metadata: chunkMeta as unknown as Record<string, unknown>,
+					metadata: chunkMeta,
 				});
 			}
 		}
@@ -221,7 +221,7 @@ export class VectraStore implements VectorStore {
 		// --- chunk → document 聚合(与 search() 同逻辑) ---
 		const internalIds = new Set<string>();
 		for (const r of results) {
-			const chunkMeta = r.item.metadata as DocumentChunkMetadata;
+			const chunkMeta = r.item.metadata;
 			if (chunkMeta.documentId) {
 				internalIds.add(chunkMeta.documentId);
 			}
@@ -235,7 +235,7 @@ export class VectraStore implements VectorStore {
 
 		const docMap = new Map<string, { docId: string; score: number; metadata: Record<string, unknown> }>();
 		for (const r of results) {
-			const chunkMeta = r.item.metadata as DocumentChunkMetadata;
+			const chunkMeta = r.item.metadata;
 			const internalDocId = chunkMeta.documentId;
 			if (!internalDocId) continue;
 
@@ -245,7 +245,7 @@ export class VectraStore implements VectorStore {
 				docMap.set(docId, {
 					docId,
 					score: r.score,
-					metadata: chunkMeta as unknown as Record<string, unknown>,
+					metadata: chunkMeta,
 				});
 			}
 		}
@@ -300,7 +300,8 @@ export class VectraStore implements VectorStore {
 	async deleteByPath(filePath: string): Promise<number> {
 		const index = await this.ensureIndex();
 		// 关键路径:用零向量 search 拿候选,与 IndexProcessor.indexDelete 一致的启发式。
-		const dummyVector = Array(512).fill(0);
+		// 显式标注 number[] 避免 any[] 触发 no-unsafe-argument(Array.fill 推断为 any[])。
+		const dummyVector: number[] = new Array<number>(512).fill(0);
 		const all = await index.queryItems(dummyVector, '', 100);
 		const matching = all.filter((r) => {
 			const meta = r.item.metadata as { path?: string };

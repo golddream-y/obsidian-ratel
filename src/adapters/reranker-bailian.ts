@@ -2,9 +2,10 @@
  * @file src/adapters/reranker-bailian.ts
  * @description 百炼 DashScope Reranker 适配器 — 调用 compatible-api/v1/rerank 端点
  * @module adapters/reranker-bailian
- * @depends ports/reranker
+ * @depends obsidian(requestUrl), ports/reranker
  */
 
+import { requestUrl } from 'obsidian';
 import type { RerankerPort } from '../ports/reranker';
 
 /**
@@ -70,22 +71,28 @@ export class BailianReranker implements RerankerPort {
 			top_n: topK,
 		});
 
-		const response = await fetch(url, {
+		// 关键路径:用 Obsidian 内置 requestUrl 替代裸 fetch,处理 CORS/CSP 更稳。
+		// 设 throw:false 以手动解析状态码,与 embedding-api.ts 对齐。
+		const response = await requestUrl({
+			url,
 			method: 'POST',
 			headers: {
 				'Authorization': `Bearer ${this.options.apiKey}`,
 				'Content-Type': 'application/json',
 			},
 			body,
+			throw: false,
 		});
 
-		if (!response.ok) {
+		if (response.status < 200 || response.status >= 300) {
 			// 关键路径:读取响应体辅助排障(配额超限 / Key 失效 / 模型名错误等),与 embedding-api.ts 对齐。
-			const errorBody = await response.text().catch(() => '');
+			// requestUrl.text 是字符串,无网络层异常时不为空。
+			const errorBody = response.text ?? '';
 			throw new Error(`Bailian Rerank API error: ${response.status}${errorBody ? ' ' + errorBody : ''}`);
 		}
 
-		const data = (await response.json()) as {
+		// 关键路径:requestUrl.json 已是解析后的对象,不需要 await .json()。
+		const data = response.json as {
 			results: Array<{ index: number; relevance_score: number }>;
 		};
 

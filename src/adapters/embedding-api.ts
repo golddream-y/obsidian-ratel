@@ -2,9 +2,10 @@
  * @file src/adapters/embedding-api.ts
  * @description 远端 Embedding 适配器 — OpenAI 兼容 `/embeddings` 端点
  * @module adapters/embedding-api
- * @depends fetch, ports/embedding
+ * @depends obsidian(requestUrl), ports/embedding
  */
 
+import { requestUrl } from 'obsidian';
 import type { EmbeddingPort } from '../ports/embedding';
 
 /**
@@ -57,20 +58,25 @@ export class EmbeddingApi implements EmbeddingPort {
 			headers['Authorization'] = `Bearer ${this.config.apiKey}`;
 		}
 
-		const response = await fetch(`${this.config.apiBase}/embeddings`, {
+		// 关键路径:用 Obsidian 内置 requestUrl 替代裸 fetch,处理 CORS/CSP 更稳。
+		// requestUrl 默认 throw 非 2xx,这里设 throw:false 以手动解析状态码与错误体。
+		const response = await requestUrl({
+			url: `${this.config.apiBase}/embeddings`,
 			method: 'POST',
 			headers,
 			body: JSON.stringify({
 				model: this.config.model,
 				input: texts,
 			}),
+			throw: false,
 		});
 
-		if (!response.ok) {
-			throw new Error(`Embedding API error: ${response.status} ${response.statusText}`);
+		if (response.status < 200 || response.status >= 300) {
+			throw new Error(`Embedding API error: ${response.status}`);
 		}
 
-		const data = await response.json() as {
+		// 关键路径:requestUrl.json 已是解析后的对象,不需要 await .json()。
+		const data = response.json as {
 			data: Array<{ embedding: number[]; index: number }>;
 		};
 

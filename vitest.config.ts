@@ -12,6 +12,9 @@ export default defineConfig({
 				__dirname,
 				'tests/helpers/embedding-worker-code-stub.ts',
 			),
+			// 关键路径:obsidian 包在 Node 测试环境无法解析(package.json 无 main/exports),
+			// 指向最小桩模块,具体行为由各测试用 vi.mock 或 spy 覆盖。
+			obsidian: path.resolve(__dirname, 'tests/helpers/obsidian-mock.ts'),
 		},
 	},
 	test: {
@@ -21,5 +24,8 @@ export default defineConfig({
 		exclude: ['tests/integration/**'],
 		environment: 'node',
 		passWithNoTests: true,
+		// 关键路径:源码为兼容 Obsidian popout 窗口统一用 `window.setTimeout` / `activeDocument`,
+		// Node 测试环境无这些全局,setupFiles 阶段补齐指向 globalThis。
+		setupFiles: ['./tests/helpers/global-polyfill.ts'],
 	},
 });

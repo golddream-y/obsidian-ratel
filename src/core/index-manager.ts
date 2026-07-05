@@ -176,7 +176,7 @@ export class IndexManager {
     async processNext(): Promise<void> {
         const iter = this.queue.entries().next();
         if (iter.done) return;
-        const [path, entry] = iter.value as [string, QueueEntry];
+        const [path, entry] = iter.value;
         this.queue.delete(path);
         this.status$.set({ state: 'Processing', currentBatch: [path] });
         try {

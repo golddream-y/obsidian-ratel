@@ -2,7 +2,7 @@
  * @file src/core/model-downloader.ts
  * @description 本地 Embedding 模型下载器 — 从 ModelScope 下载 ONNX 模型 + vocab.txt
  * @module core/model-downloader
- * @depends node:fs/promises, node:path, utils/disk-checker
+ * @depends obsidian(requestUrl), node:fs/promises, node:path, utils/disk-checker
  *
  * 设计要点:
  * - 固定模型:bge-small-zh-v1.5(Xenova 导出的 ONNX 版本)。
@@ -11,6 +11,7 @@
  * - 磁盘检测在下载前(1.2 倍缓冲)。
  */
 
+import { requestUrl } from 'obsidian';
 import { hasEnoughDiskSpace } from '../utils/disk-checker';
 import path from 'node:path';
 import { mkdir, writeFile, access, rm } from 'node:fs/promises';
@@ -74,41 +75,22 @@ export class ModelDownloader {
         onProgress?: (p: ProgressInfo) => void,
     ): Promise<void> {
         const url = `${MODELSCOPE_BASE}/${remoteName}`;
-        const response = await fetch(url);
-        if (!response.ok) {
-            throw new Error(`下载 ${remoteName} 失败: ${response.status} ${response.statusText}`);
+        // 关键路径:用 Obsidian 内置 requestUrl 替代裸 fetch,处理 CORS/CSP 更稳。
+        // 设 throw:false 以手动解析状态码;下载二进制用 .arrayBuffer。
+        // 注意:requestUrl 不支持流式进度,只能下载完成后 emit 一次 1.0。
+        const response = await requestUrl({
+            url,
+            method: 'GET',
+            throw: false,
+        });
+        if (response.status < 200 || response.status >= 300) {
+            throw new Error(`下载 ${remoteName} 失败: ${response.status}`);
         }
 
-        const total = Number(response.headers.get('content-length')) || 0;
-        const reader = response.body?.getReader();
-        if (!reader) {
-            throw new Error(`下载 ${remoteName} 失败: response.body 为空`);
-        }
+        const buffer = response.arrayBuffer;
+        onProgress?.({ file: remoteName, progress: 1 });
 
-        const chunks: Uint8Array[] = [];
-        let received = 0;
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            chunks.push(value);
-            received += value.length;
-            if (total > 0) {
-                onProgress?.({
-                    file: remoteName,
-                    progress: received / total,
-                });
-            }
-        }
-
-        // 关键路径:浏览器/Node fetch 返回的 chunks 合并成完整 ArrayBuffer 后写入磁盘。
-        const all = new Uint8Array(received);
-        let offset = 0;
-        for (const chunk of chunks) {
-            all.set(chunk, offset);
-            offset += chunk.length;
-        }
-
-        await writeFile(localPath, all);
+        await writeFile(localPath, Buffer.from(buffer));
     }
 
     /**

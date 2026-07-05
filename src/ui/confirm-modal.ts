@@ -79,7 +79,7 @@ export function showDropIndexConfirm(app: App, onConfirm: () => void | Promise<v
 		})
 		.addButton((btn) => {
 			btn.setButtonText('清空索引')
-				.setWarning()
+				.setDestructive()
 				.setDisabled(true)
 				.onClick(async () => {
 					// 关键路径:双保险 — 按钮 disabled 已防住,这里再校验一次

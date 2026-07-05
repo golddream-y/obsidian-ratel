@@ -129,10 +129,10 @@ export function createTokenizer(vocab: ReadonlyMap<string, number>): BertTokeniz
 				inputIds.push(padId);
 			}
 
-			const attentionMask = new Array(maxLength).fill(0);
+			const attentionMask = Array.from({ length: maxLength }, (): number => 0);
 			attentionMask.fill(1, 0, seqLength);
 
-			const tokenTypeIds = new Array(maxLength).fill(0);
+			const tokenTypeIds = Array.from({ length: maxLength }, (): number => 0);
 
 			return { inputIds, attentionMask, tokenTypeIds };
 		},

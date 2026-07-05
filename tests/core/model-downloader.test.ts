@@ -6,6 +6,13 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
+
+// 关键路径:src/core/model-downloader.ts 现在通过 requestUrl 下载文件,需 mock 'obsidian'。
+// 本测试只覆盖磁盘不足路径,不会真正触发下载,因此 requestUrl 用空实现即可。
+vi.mock('obsidian', () => ({
+    requestUrl: vi.fn(),
+}));
+
 import { ModelDownloader, InsufficientDiskError } from '../../src/core/model-downloader';
 
 vi.mock('../../src/utils/disk-checker', () => ({

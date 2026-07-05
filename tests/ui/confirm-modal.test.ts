@@ -34,15 +34,15 @@ vi.mock('obsidian', () => ({
 			return this;
 		}
 		addButton(cb: any) {
-			// 关键路径:setButtonText/setCta/setWarning/setDisabled/onClick 链式返回 btn 自身
-			const btn: any = {
-				setButtonText: () => btn,
-				setCta: () => btn,
-				setWarning: () => btn,
-				setDisabled: () => btn,
-				onClick: () => btn,
-				buttonEl: {},
-			};
+			// 关键路径:setButtonText/setCta/setDestructive/setDisabled/onClick 链式返回 btn 自身
+		const btn: any = {
+			setButtonText: () => btn,
+			setCta: () => btn,
+			setDestructive: () => btn,
+			setDisabled: () => btn,
+			onClick: () => btn,
+			buttonEl: {},
+		};
 			cb(btn);
 			return this;
 		}

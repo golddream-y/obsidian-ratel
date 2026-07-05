@@ -215,7 +215,8 @@ export class EmbeddingOnnx implements EmbeddingPort {
 			}
 			norm = Math.sqrt(norm);
 
-			const normalized = new Array(hiddenSize);
+			// 关键路径:显式标注 number[] 避免 any[] 推断触发 no-unsafe-argument。
+			const normalized: number[] = new Array<number>(hiddenSize);
 			for (let h = 0; h < hiddenSize; h++) {
 				normalized[h] = norm > 0 ? pooled[h]! / norm : 0;
 			}

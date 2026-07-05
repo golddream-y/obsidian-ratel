@@ -2,10 +2,11 @@
  * @file src/utils/mermaid-renderer.ts
  * @description Mermaid 图表初始化与异步渲染
  * @module utils/mermaid-renderer
- * @depends mermaid
+ * @depends mermaid, dompurify
  */
 
 import mermaid from 'mermaid';
+import DOMPurify from 'dompurify';
 
 /**
  * mermaid 初始化配置。
@@ -20,6 +21,28 @@ mermaid.initialize({
 	theme: 'dark',
 	securityLevel: 'strict',
 });
+
+/**
+ * DOMPurify 白名单配置 — 允许 mermaid 生成的 SVG 标签和属性通过 sanitize。
+ *
+ * 关键路径:mermaid.render() 输出 SVG 字符串,包含 <svg>/<path>/<g>/<rect> 等标签
+ * 和 viewBox/d/fill/stroke 等属性。直接 innerHTML 赋值会被 Obsidian linter 拦截
+ * (@microsoft/sdl/no-inner-html),必须经 DOMPurify 清洗后再注入,既满足安全约束
+ * 又保证渲染效果不变。
+ */
+const MERMAID_SANITIZE_CONFIG = {
+	ADD_TAGS: [
+		'svg', 'path', 'g', 'rect', 'circle', 'line', 'text',
+		'tspan', 'polyline', 'polygon', 'defs', 'marker',
+		'foreignObject', 'span', 'use', 'style', 'title',
+	],
+	ADD_ATTR: [
+		'viewBox', 'd', 'fill', 'stroke', 'stroke-width', 'x', 'y',
+		'x1', 'y1', 'x2', 'y2', 'cx', 'cy', 'r', 'rx', 'ry',
+		'width', 'height', 'transform', 'class', 'id',
+		'marker-end', 'marker-start', 'href', 'target',
+	],
+};
 
 let renderCounter = 0;
 
@@ -89,9 +112,13 @@ async function renderSingleMermaidBlock(codeEl: HTMLElement): Promise<void> {
 	try {
 		const { svg } = await mermaid.render(id, code);
 		// 关键路径:替换 <pre><code> 结构为 mermaid SVG 容器
-		const wrapper = document.createElement('div');
+		// 关键路径:用 DOMParser + replaceChildren 替代 innerHTML=,避免触发 no-inner-html 规则;
+		// 即便经 DOMPurify 清洗,linter 仍会拦截 innerHTML 赋值,改用 DOM 解析后插入子节点更安全。
+		const wrapper = activeDocument.createElement('div');
 		wrapper.className = 'ratel-mermaid';
-		wrapper.innerHTML = svg;
+		const sanitized = DOMPurify.sanitize(svg, MERMAID_SANITIZE_CONFIG);
+		const parsed = new DOMParser().parseFromString(sanitized, 'image/svg+xml');
+		wrapper.replaceChildren(parsed.documentElement);
 		const pre = codeEl.parentElement; // <pre> 标签
 		if (pre && pre.tagName === 'PRE') {
 			pre.replaceWith(wrapper);
@@ -100,7 +127,7 @@ async function renderSingleMermaidBlock(codeEl: HTMLElement): Promise<void> {
 		}
 	} catch (err) {
 		// 修复:mermaid 渲染失败时显示原始代码 + 错误提示,不影响其他内容
-		const errorDiv = document.createElement('div');
+		const errorDiv = activeDocument.createElement('div');
 		errorDiv.className = 'ratel-mermaid-error';
 		errorDiv.textContent = `Mermaid 渲染失败: ${err instanceof Error ? err.message : String(err)}`;
 		const pre = codeEl.parentElement;

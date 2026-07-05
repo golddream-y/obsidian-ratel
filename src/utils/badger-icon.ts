@@ -11,7 +11,8 @@ export const BADGER_EMOJI = '🦡';
 const VIEW_TYPE_CHAT = 'ratel-chat';
 
 function createEmojiSpan(text: string): HTMLSpanElement {
-	const span = document.createElement('span');
+	// 关键路径:用 activeDocument 兼容 popout 窗口
+	const span = activeDocument.createElement('span');
 	span.textContent = text;
 	return span;
 }
@@ -34,7 +35,8 @@ export function applyBadgerEmojiToElement(iconContainer: HTMLElement): void {
 
 function patchTabHeaderElement(tabHeader: HTMLElement): void {
 	const icon = tabHeader.querySelector('.workspace-tab-header-inner-icon');
-	if (icon instanceof HTMLElement) {
+	// 关键路径:用 .instanceOf() 替代 instanceof 做 cross-window 安全类型检查
+	if (icon?.instanceOf(HTMLElement)) {
 		applyBadgerEmojiToElement(icon);
 	}
 }
@@ -50,7 +52,8 @@ function getTabHeaderForLeaf(leaf: WorkspaceLeaf): HTMLElement | null {
 		return null;
 	}
 
-	const headers = document.querySelectorAll(
+	// 关键路径:用 activeDocument 兼容 popout 窗口
+	const headers = activeDocument.querySelectorAll(
 		`.workspace-tab-header[data-type="${VIEW_TYPE_CHAT}"]`,
 	);
 	for (const header of Array.from(headers)) {
@@ -84,7 +87,8 @@ export function patchChatLeafIcon(leaf: WorkspaceLeaf): void {
 		return;
 	}
 	const viewHeaderIcon = containerEl.querySelector('.view-header-icon');
-	if (viewHeaderIcon instanceof HTMLElement) {
+	// 关键路径:用 .instanceOf() 替代 instanceof 做 cross-window 安全类型检查
+	if (viewHeaderIcon?.instanceOf(HTMLElement)) {
 		applyBadgerEmojiToElement(viewHeaderIcon);
 	}
 }
@@ -96,22 +100,24 @@ export function patchChatLeafIcon(leaf: WorkspaceLeaf): void {
  * 必须按 `data-type="ratel-chat"` 单独查询。
  */
 export function patchAllChatLeafIcons(workspace?: Workspace): void {
-	document
+	// 关键路径:用 activeDocument 兼容 popout 窗口;
+	// 用 .instanceOf() 替代 instanceof 做 cross-window 安全类型检查
+	activeDocument
 		.querySelectorAll(
 			`.workspace-tab-header[data-type="${VIEW_TYPE_CHAT}"] .workspace-tab-header-inner-icon`,
 		)
 		.forEach((el: Element) => {
-			if (el instanceof HTMLElement) {
+			if (el.instanceOf(HTMLElement)) {
 				applyBadgerEmojiToElement(el);
 			}
 		});
 
-	document
+	activeDocument
 		.querySelectorAll(
 			`.workspace-leaf[data-type="${VIEW_TYPE_CHAT}"] .view-header-icon`,
 		)
 		.forEach((el: Element) => {
-			if (el instanceof HTMLElement) {
+			if (el.instanceOf(HTMLElement)) {
 				applyBadgerEmojiToElement(el);
 			}
 		});

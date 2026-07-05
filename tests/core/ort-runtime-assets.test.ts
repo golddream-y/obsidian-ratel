@@ -8,6 +8,13 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
+
+// 关键路径:src/core/ort-runtime-assets.ts 改用 requestUrl 后,需要在测试中 mock 'obsidian'。
+// 测试通过注入 fetchFn 走自定义路径,createDefaultFetch 不会被调用,故 requestUrl 用空实现即可。
+vi.mock('obsidian', () => ({
+	requestUrl: vi.fn(),
+}));
+
 import {
 	OrtRuntimeAssets,
 	ORT_WASM_FILENAME,
@@ -39,12 +46,11 @@ describe('OrtRuntimeAssets', () => {
 
 	it('ensureWasm - 从 CDN 下载并缓存', async () => {
 		const wasmBytes = createWasmBytes();
-		const fetchFn = vi.fn().mockResolvedValue(
-			new Response(wasmBytes, {
-				status: 200,
-				headers: { 'content-length': String(wasmBytes.byteLength) },
-			}),
-		);
+		// 关键路径:FetchFn 现返回 { status, arrayBuffer },与 requestUrl 返回字段对齐。
+		const fetchFn = vi.fn().mockResolvedValue({
+			status: 200,
+			arrayBuffer: wasmBytes.buffer as ArrayBuffer,
+		});
 		const assets = new OrtRuntimeAssets(tmpDir, '1.27.0', fetchFn);
 
 		await assets.ensureWasm();
@@ -72,12 +78,11 @@ describe('OrtRuntimeAssets', () => {
 		await writeFile(path.join(tmpDir, ORT_WASM_FILENAME), Buffer.from([1, 2, 3]));
 
 		const wasmBytes = createWasmBytes();
-		const fetchFn = vi.fn().mockResolvedValue(
-			new Response(wasmBytes, {
-				status: 200,
-				headers: { 'content-length': String(wasmBytes.byteLength) },
-			}),
-		);
+		// 关键路径:FetchFn 现返回 { status, arrayBuffer },与 requestUrl 返回字段对齐。
+		const fetchFn = vi.fn().mockResolvedValue({
+			status: 200,
+			arrayBuffer: wasmBytes.buffer as ArrayBuffer,
+		});
 		const assets = new OrtRuntimeAssets(tmpDir, '1.27.0', fetchFn);
 		await assets.ensureWasm();
 		expect(fetchFn).toHaveBeenCalledOnce();
@@ -85,12 +90,11 @@ describe('OrtRuntimeAssets', () => {
 
 	it('readWasmBinary - 返回 ArrayBuffer', async () => {
 		const wasmBytes = createWasmBytes();
-		const fetchFn = vi.fn().mockResolvedValue(
-			new Response(wasmBytes, {
-				status: 200,
-				headers: { 'content-length': String(wasmBytes.byteLength) },
-			}),
-		);
+		// 关键路径:FetchFn 现返回 { status, arrayBuffer },与 requestUrl 返回字段对齐。
+		const fetchFn = vi.fn().mockResolvedValue({
+			status: 200,
+			arrayBuffer: wasmBytes.buffer as ArrayBuffer,
+		});
 		const assets = new OrtRuntimeAssets(tmpDir, '1.27.0', fetchFn);
 		const binary = await assets.readWasmBinary();
 		expect(binary).toBeInstanceOf(ArrayBuffer);
