@@ -16,5 +16,5 @@
 		"verbatimModuleSyntax": true,
 		"lib": ["ES2021", "DOM"]
 	},
-	"include": ["src/**/*.ts", "src/**/*.svelte"]
+	"include": ["src/**/*.ts", "src/**/*.svelte", "tests/**/*.ts"]
 }
