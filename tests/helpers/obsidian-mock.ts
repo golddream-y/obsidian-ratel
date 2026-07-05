@@ -147,6 +147,22 @@ export class PluginSettingTab {
 	update(): void {}
 }
 
+/**
+ * SettingPage 桩 — 1.13.0 声明式 settings 子页面基类。
+ *
+ * 关键路径:settings.ts 导入 DiagnosticsSettingPage(extends SettingPage),
+ * 测试环境需提供可构造的基类。display() 在测试中不被调用,留空实现即可。
+ */
+export class SettingPage {
+	rootEl: unknown = {};
+	titlebarEl: unknown = {};
+	containerEl: unknown = {};
+	title = '';
+	constructor() {}
+	display(): void {}
+	hide(): void {}
+}
+
 /** Modal 桩 */
 export class Modal {
 	app: unknown;
