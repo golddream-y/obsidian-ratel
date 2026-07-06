@@ -13,25 +13,35 @@
 - 状态条显示"索引中" + 进度,期间可正常用 Obsidian(索引在后台 Worker 执行)
 - 索引完成 → 状态条变"就绪"
 
-### 1.3 配置对话模型(三选一)
+### 1.3 界面语言(可选)
+
+设置 → Ratel → 顶部 General 分组 → Language 下拉:
+
+- **auto**(默认):跟随系统语言,zh 开头用中文,其余用英文
+- **中文**:强制中文界面
+- **English**:强制英文界面
+
+切换即时生效,设置面板 / Chat 侧栏 / 状态条 / 诊断页面全部跟随刷新。**已知限制**:命令面板中的命令名在 Obsidian 启动时一次性注册,切换语言后需 toggle 插件或重启 Obsidian 才刷新。
+
+### 1.4 配置对话模型(三选一)
 
 - **DeepSeek**:Endpoint `https://api.deepseek.com` + 模型名 + Context Length(默认 256k,可点「获取推荐」从公开模型库填入)
 - **Claude**:Endpoint `https://api.anthropic.com` + 模型名
 - **本地 Ollama**:Endpoint `http://localhost:11434` + 模型名(无需 API Key)
-- API Key 配置:Obsidian 设置 → Keychain → 用固定 secret ID 添加(详见 1.6)
+- API Key 配置:Obsidian 设置 → Keychain → 用固定 secret ID 添加(详见 1.7)
 
-### 1.4 配置嵌入模型
+### 1.5 配置嵌入模型
 
 - **默认本地 ONNX**(零配置,首次自动下载模型,Web Worker 子线程推理)
 - 可选 API 嵌入:设置 → Embedding → 切 provider 为 `api` + 配置端点
 - 模型管理:设置面板可查看 / 切换 / 删除已下载的本地模型
 
-### 1.5 (可选)配置 Reranker
+### 1.6 (可选)配置 Reranker
 
 - 仅百炼 API 可选,提升搜索精度
 - Keychain 添加 `ratel-rerank-bailian` 即自动启用,不配则纯向量 + BM25 检索
 
-### 1.6 API Key 清单
+### 1.7 API Key 清单
 
 用户在 Obsidian 设置 → Keychain 中按以下固定 secret ID 录入密钥:
 
@@ -41,7 +51,7 @@
 | `ratel-embed-openai-compatible` | API 嵌入 Key | 仅 provider=api 时必需 |
 | `ratel-rerank-bailian` | 百炼 Reranker Key | 可选 |
 
-### 1.7 (可选)自定义提示词(高级)
+### 1.8 (可选)自定义提示词(高级)
 
 设置面板底部「提示词(高级)」section 提供 24 个可覆盖的提示词段落,每段独立的开关 + textarea + 「恢复本段默认」按钮:
 
@@ -124,7 +134,7 @@
 
 | 问题 | 回答 |
 |---|---|
-| 为什么必须 Obsidian 1.11.4+? | 用了 SecretStorage API 存密钥 |
+| 为什么必须 Obsidian 1.13.0+? | 用了 SecretStorage API 存密钥 + 声明式 settings API(getSettingDefinitions) |
 | API Key 存哪了? | Obsidian Keychain,不出现在 data.json |
 | 索引大 vault 很慢? | 首扫在 Worker 后台,可继续用 Obsidian;后续启动 smart reindex 跳过未变更文件,通常秒级完成 |
 | 每次启动都重新索引? | 否。smart reindex 通过 hash diff 跳过未变更文件,热启动零 embed 调用 |
@@ -135,6 +145,7 @@
 | 支持移动端吗? | 暂不支持(依赖 Node.js fs) |
 | 数据上传到哪? | 仅模型 API 端点,Ollama 模式零外发 |
 | 思考段只有 DeepSeek 有? | 当前已接入 DeepSeek,其他 reasoning 模型视 adapter 实现支持 |
+| 切换语言后命令名没更新? | 命令名在 Obsidian 启动时一次性注册,切换语言后需 toggle 插件或重启 Obsidian 才刷新命令名。UI 文案(设置/聊天/状态)即时生效 |
 
 ---
 
@@ -153,25 +164,35 @@
 - Status bar shows "Indexing" + progress; you can keep using Obsidian (indexing runs in background Worker)
 - Index complete → status bar shows "Ready"
 
-### 1.3 Configure Chat Model (pick one)
+### 1.3 Interface Language (Optional)
+
+Settings → Ratel → top General group → Language dropdown:
+
+- **auto** (default): follow system language; zh prefix uses Chinese, others use English
+- **中文**: force Chinese interface
+- **English**: force English interface
+
+Switch takes effect instantly — settings panel / chat sidebar / status bar / diagnostics all refresh. **Known limitation**: command names in the command palette are registered once at Obsidian startup; toggle the plugin or restart Obsidian to refresh after switching.
+
+### 1.4 Configure Chat Model (pick one)
 
 - **DeepSeek**: Endpoint `https://api.deepseek.com` + model name + Context Length (default 256k; use **Get recommendation** to fill from the public model registry)
 - **Claude**: Endpoint `https://api.anthropic.com` + model name
 - **Local Ollama**: Endpoint `http://localhost:11434` + model name (no API key needed)
-- API key setup: Obsidian Settings → Keychain → add with fixed secret ID (see 1.6)
+- API key setup: Obsidian Settings → Keychain → add with fixed secret ID (see 1.7)
 
-### 1.4 Configure Embedding Model
+### 1.5 Configure Embedding Model
 
 - **Default local ONNX** (zero config, auto-downloads model on first use, runs in Web Worker thread)
 - Optional API embedding: Settings → Embedding → switch provider to `api` + configure endpoint
 - Model management: settings panel lets you view / switch / delete downloaded local models
 
-### 1.5 (Optional) Configure Reranker
+### 1.6 (Optional) Configure Reranker
 
 - Optional Bailian API only, improves search precision
 - Add `ratel-rerank-bailian` in Keychain to auto-enable; without it, pure vector + BM25 retrieval
 
-### 1.6 API Key List
+### 1.7 API Key List
 
 Users add keys in Obsidian Settings → Keychain using these fixed secret IDs:
 
@@ -245,10 +266,11 @@ Type `/` to trigger menu:
 
 | question | answer |
 |---|---|
-| Why requires Obsidian 1.11.4+? | Uses SecretStorage API for key storage |
+| Why requires Obsidian 1.13.0+? | Uses SecretStorage API for key storage + declarative settings API (getSettingDefinitions) |
 | Where is API key stored? | Obsidian Keychain, not in data.json |
 | Indexing large vault is slow? | First scan runs in background Worker; you can keep using Obsidian |
 | Does Ollama need internet? | No, fully local inference |
 | Mobile support? | Not yet (depends on Node.js fs) |
 | Where does data go? | Only to model API endpoint; Ollama mode has zero outbound |
 | Is thinking block DeepSeek-only? | Currently DeepSeek is integrated; other reasoning models depend on adapter implementation |
+| Command names not updated after language switch? | Command names are registered once at Obsidian startup; toggle the plugin or restart Obsidian to refresh. UI text (settings/chat/status) updates instantly |

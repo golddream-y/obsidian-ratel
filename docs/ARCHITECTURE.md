@@ -302,6 +302,12 @@ src/
     context-manager.ts             #   Context Manager (组装上下文)
     hooks.ts                       #   Hooks 注册表 + 执行
 
+  i18n/                            # 国际化 (自建 svelte/store 方案)
+    types.ts                       #   12 个 namespace 接口 + Strings 合并
+    zh.ts                          #   中文翻译表
+    en.ts                          #   英文翻译表 (编译期键集校验)
+    index.ts                       #   langStore + t(derived) + tNow(sync) + detectLang/applyLangPreference
+
   ports/                           # Port 接口 (零实现, 只定义契约)
     persistence.ts                 #   Persistence 接口
     vector.ts                      #   VectorStore 接口

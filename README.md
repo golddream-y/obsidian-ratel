@@ -40,6 +40,10 @@ Indexes your vault automatically on first install. The indexer runs in a backgro
 
 Chat via DeepSeek, Claude, or local Ollama. With Ollama, prompts never leave your machine. Keys are stored in the Obsidian Keychain, not in config files. Context length presets (128k / 200k / 256k / 1M) plus a one-click recommendation from a public model registry.
 
+**Bilingual interface (Chinese / English)**
+
+Interface language follows your system by default, or force Chinese / English in Settings → Ratel → General → Language. Switch takes effect instantly across the settings panel, chat sidebar, status bar, and diagnostics.
+
 **Permissions you control, status you can see**
 
 Vault tools for read, search, write, edit, delete, and more — each can be set to ask, allow, or deny. The status bar shows index readiness, context usage, and whether token data comes from the model API. Built-in diagnostics tell you what's wrong when the model or index isn't healthy.

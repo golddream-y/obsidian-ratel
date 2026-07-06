@@ -29,7 +29,7 @@
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
 | P-I18N-IMPL | [2026-06-14-ratel-i18n-implementation.md](plans/2026-06-14-ratel-i18n-implementation.md) | 🚫 Superseded | S-I18N | 已被 P-I18N-V2-IMPL 取代 |
-| P-I18N-V2-IMPL | [2026-07-06-i18n-v2-implementation.md](plans/2026-07-06-i18n-v2-implementation.md) | ⏳ Pending | S-I18N-V2 | 10 Task:基础设施(types/zh/en/index+测试)+ 8 消费者迁移(settings/diagnostics/chat/status/modals/core/tools/prompts)+ 验证 |
+| P-I18N-V2-IMPL | [2026-07-06-i18n-v2-implementation.md](plans/2026-07-06-i18n-v2-implementation.md) | ✅ Completed | S-I18N-V2 | 9 commit(371afa3→b988ec4);i18n 基础设施 + 全量 ~340 key 迁移;14 i18n 测试通过,575 现有测试通过(7 pre-existing 失败);待归档 |
 | P-MEMORY-LOGIC | [2026-07-05-memory-system-logic.md](plans/2026-07-05-memory-system-logic.md) | ⏳ Pending | S-MEMORY | 核心逻辑:MemoryStore + 3 个工具 + ContextManager 注入（先于 P-MEMORY-UI） |
 | P-MEMORY-UI | [2026-07-05-memory-system-ui.md](plans/2026-07-05-memory-system-ui.md) | ⏳ Pending | S-MEMORY | UI+设置:记忆面板 + 6 个设置项（依赖 P-MEMORY-LOGIC);⚠️ Task 1 假设 `display()` 存在,P-SETTINGS-DECLARATIVE 完成后需重写 |
 | P-SKILL-1-CORE | — | ⏳ Pending | S-SKILL | 基础+激活:loader/registry/activator+activate_skill/deactivate_skill 工具+slash 命令;plan 待写 |
@@ -53,12 +53,11 @@
 
 ## Future execution queue(按顺序)
 
-1. **P-MEMORY-LOGIC**(S-MEMORY 核心)— 无 i18n 依赖
-2. **P-I18N-V2-IMPL**(i18n v2 基础设施 + 全量迁移)— 10 Task 已就绪,可执行
-3. **P-MEMORY-UI**(S-MEMORY UI)— 依赖 P-MEMORY-LOGIC;Task 1 已重写为声明式
-4. **P-SKILL-1-CORE**(S-SKILL 基础)— 无 i18n 强依赖(基础 SkillStrings key 自带);plan 待写
-5. **P-SKILL-2-EXECUTION**(S-SKILL 执行)— 依赖 P-SKILL-1-CORE;沙箱安全风险高
-6. **P-SKILL-3-UI**(S-SKILL UI)— 依赖 P-SKILL-1-CORE;可与 P-SKILL-2 并行;依赖 P-I18N-V2-IMPL(UI 文案)
+1. **P-MEMORY-LOGIC**(S-MEMORY 核心)— 无 i18n 依赖,可直接执行
+2. **P-MEMORY-UI**(S-MEMORY UI)— 依赖 P-MEMORY-LOGIC;Task 1 已重写为声明式;i18n 基础设施已就绪
+3. **P-SKILL-1-CORE**(S-SKILL 基础)— 无 i18n 强依赖(基础 SkillStrings key 自带);plan 待写
+4. **P-SKILL-2-EXECUTION**(S-SKILL 执行)— 依赖 P-SKILL-1-CORE;沙箱安全风险高
+5. **P-SKILL-3-UI**(S-SKILL UI)— 依赖 P-SKILL-1-CORE;可与 P-SKILL-2 并行;i18n 基础设施已就绪
 
 ---
 
