@@ -1,9 +1,12 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { createGrepTool } from '../../src/tools/grep';
+import { setConfigDir } from '../../src/utils/path-safety';
 import { createMockVaultPort } from '../helpers/mock-vault-port';
 import { makeToolDef } from '../helpers/make-tool-def';
 
 describe('grep tool', () => {
+	// 关键路径:模拟生产环境 configDir,否则 isExcludedVaultPath 无法识别 .obsidian
+	beforeEach(() => setConfigDir('.obsidian'));
 	it('字面量匹配 - 找到关键词', async () => {
 		const vault = createMockVaultPort({
 			files: {

@@ -1,9 +1,12 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { createListFilesTool } from '../../src/tools/list-files';
+import { setConfigDir } from '../../src/utils/path-safety';
 import { createMockVaultPort } from '../helpers/mock-vault-port';
 import { makeToolDef } from '../helpers/make-tool-def';
 
 describe('list_files tool', () => {
+	// 关键路径:模拟生产环境 configDir,否则 isExcludedVaultPath 无法识别 .obsidian
+	beforeEach(() => setConfigDir('.obsidian'));
 	it('根目录列表 - 空参数返回 "." 作为路径标识', async () => {
 		const vault = createMockVaultPort({
 			files: { 'a.md': '', 'notes/b.md': '' },

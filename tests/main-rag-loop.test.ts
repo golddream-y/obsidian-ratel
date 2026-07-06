@@ -21,8 +21,11 @@ vi.mock('obsidian', () => ({
 		addSettingTab = vi.fn();
 	},
 	PluginSettingTab: class {},
+	SettingPage: class {},
 	Setting: class {},
 	Notice: class {},
+	WorkspaceLeaf: class {},
+	ItemView: class {},
 	FileSystemAdapter: class {},
 	TFile: class {},
 	Modal: class {
@@ -54,6 +57,12 @@ vi.mock('../src/utils/gitignore-writer', () => ({
 vi.mock('../src/ui/chat/ChatView', () => ({
 	ChatView: class {},
 	VIEW_TYPE_CHAT: 'ratel-chat',
+}));
+
+// 关键路径:MemoryPanelView import MemoryPanel.svelte,vitest 没配 svelte 解析器,需 stub
+vi.mock('../src/ui/memory-panel/MemoryPanelView', () => ({
+	MemoryPanelView: class {},
+	VIEW_TYPE_MEMORY: 'ratel-memory',
 }));
 
 describe('main rag loop integration', () => {

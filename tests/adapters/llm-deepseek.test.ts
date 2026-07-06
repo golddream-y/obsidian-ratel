@@ -16,6 +16,40 @@ vi.mock('obsidian', () => ({
 	requestUrl: mockRequestUrl,
 }));
 
+// 关键路径:mock node:http 和 node:https,让 requestStream 总是触发 error,
+// 降级到 chatViaRequestUrl(走 mockRequestUrl),让测试不依赖真实网络。
+vi.mock('node:https', () => ({
+	default: { request: createMockHttpRequest },
+	request: createMockHttpRequest,
+}));
+vi.mock('node:http', () => ({
+	default: { request: createMockHttpRequest },
+	request: createMockHttpRequest,
+}));
+
+// 关键路径:模拟 node http/https request — 返回 mock req,在 end() 时触发 error 降级
+function createMockHttpRequest(_options: unknown, callback: (res: unknown) => void) {
+	const handlers: Record<string, Array<(arg?: unknown) => void>> = {};
+	const req = {
+		write: () => {},
+		end: () => {
+			// 关键路径:0ms 后触发 error,让 requestStream 的 Promise reject,降级到 requestUrl
+			setTimeout(() => {
+				const errorHandler = handlers.error?.[0];
+				if (errorHandler) errorHandler(new Error('mock: forced fallback to requestUrl'));
+			}, 0);
+		},
+		on: (event: string, handler: (arg?: unknown) => void) => {
+			if (!handlers[event]) handlers[event] = [];
+			handlers[event].push(handler);
+		},
+	};
+	// 关键路径:callback 不会被调用(因为 end() 触发 error 而非 response),
+	// 但保留参数签名兼容 lib.request(options, callback) 调用
+	void callback;
+	return req;
+}
+
 import { DeepSeekLLM } from '../../src/adapters/llm-deepseek';
 import type { ChatRequest } from '../../src/ports/llm';
 
