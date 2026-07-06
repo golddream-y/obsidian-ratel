@@ -83,6 +83,10 @@ export interface SettingsStrings {
   'settings.toolPermissions.append_note': string;
   'settings.toolPermissions.edit_note': string;
   'settings.toolPermissions.delete_note': string;
+  // 关键路径:3 个 memory 工具的权限面板友好名
+  'settings.toolPermissions.search_memory': string;
+  'settings.toolPermissions.remember': string;
+  'settings.toolPermissions.forget_memory': string;
   'settings.toolPermissions.allow': string;
   'settings.toolPermissions.ask': string;
   'settings.toolPermissions.deny': string;
@@ -166,6 +170,9 @@ export interface ToolNameStrings {
   'tool.name.append_note': string;
   'tool.name.grep': string;
   'tool.name.glob': string;
+  'tool.name.search_memory': string;
+  'tool.name.remember': string;
+  'tool.name.forget_memory': string;
 }
 
 // ==================== Slash commands ====================
@@ -198,6 +205,12 @@ export interface NoticeStrings {
   'notice.toolRejected': string;
   'notice.toolRejectedDisabled': string;
   'notice.operationFailed': string;
+  // 关键路径:记忆系统操作反馈(用户可见 Toast)
+  'notice.memory.saved': string;
+  'notice.memory.forgotten': string;
+  'notice.memory.topicCreated': string;
+  'notice.memory.topicRemoved': string;
+  'notice.memory.truncated': string;
 }
 
 // ==================== Modals(确认/信息模态框) ====================
@@ -432,6 +445,19 @@ export interface ErrorStrings {
   'error.model.downloadFailed': string;
   'error.ort.downloadFailed': string;
   'error.ort.fileCorrupted': string;
+  // 关键路径:记忆系统错误(用户可见)
+  'error.memory.storeNotInit': string;
+  'error.memory.topicRequired': string;
+  'error.memory.sectionNotFound': string;
+  'error.memory.topicNotFound': string;
+  'error.memory.noMatch': string;
+  // 关键路径:topic 名校验失败(LLM 输出可能含 ../ 等穿越片段)
+  'error.memory.invalidTopic': string;
+  // 关键路径:embeddingPort 未注入或返回空向量
+  'error.memory.embeddingNotInit': string;
+  'error.memory.embeddingFailed': string;
+  // 关键路径:写入超 10MB 存储上限
+  'error.memory.storageFull': string;
 }
 
 // ==================== Prompt section labels(设置面板展示用) ====================
@@ -445,6 +471,9 @@ export interface PromptLabelStrings {
   'promptLabel.agent.rag.toolGuide.desc': string;
   'promptLabel.injection.searchResults.body': string;
   'promptLabel.injection.searchResults.body.desc': string;
+  // 关键路径:记忆系统注入提示 section(用户可在 Prompt overrides 面板覆盖默认中文模板)
+  'promptLabel.memory.systemPrompt': string;
+  'promptLabel.memory.systemPrompt.desc': string;
   'promptLabel.internal.intent.system': string;
   'promptLabel.internal.intent.system.desc': string;
   'promptLabel.internal.intent.user': string;

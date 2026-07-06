@@ -108,3 +108,37 @@ export interface UserChatRequest {
 	sessionId: string;
 	message: string;
 }
+
+// ==================== 用户记忆系统(Phase 1)====================
+
+/**
+ * 主题索引条目 — index.md 中每行 `[[topics/X]] — Y` 的解析结果。
+ */
+export interface TopicIndexEntry {
+	/** 主题名(不含 .md 后缀),如 "GraphQL" */
+	name: string;
+	/** 主题摘要,如 "性能优化、DataLoader、Schema 设计" */
+	summary: string;
+}
+
+/**
+ * 记忆 frontmatter 元数据 — global.md / topics/*.md 的 YAML 头。
+ */
+export interface MemoryFrontmatter {
+	/** 记忆类型:global / index / topic */
+	memory_type: 'global' | 'index' | 'topic';
+	/** 主题名(仅 topic 类型) */
+	topic?: string;
+	/** 最后更新时间(ISO 8601) */
+	updated: string;
+}
+
+/**
+ * 记忆条目 — 单条记忆(如"代码风格: TypeScript strict mode")。
+ */
+export interface MemoryEntry {
+	/** 条目文本(一行) */
+	text: string;
+	/** 来源:user(用户要求记录)或 model(模型推断) */
+	source: 'user' | 'model';
+}

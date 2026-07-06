@@ -112,6 +112,47 @@ export const TOOL_SCHEMA_SKELETONS: Record<string, SchemaSkeleton> = {
 			required: ['path'],
 		},
 	},
+	search_memory: {
+		name: 'search_memory',
+		parameters: {
+			type: 'object',
+			properties: {
+				query: { type: 'string' },
+				topK: { type: 'number', default: DEFAULT_TOP_K },
+			},
+			required: ['query'],
+		},
+	},
+	remember: {
+		name: 'remember',
+		parameters: {
+			type: 'object',
+			properties: {
+				type: { type: 'string', enum: ['global', 'topic'] },
+				topic: { type: 'string' },
+				section: { type: 'string' },
+				content: { type: 'string' },
+				source: { type: 'string', enum: ['user', 'model'] },
+			},
+			required: ['type', 'content', 'source'],
+		},
+	},
+	forget_memory: {
+		name: 'forget_memory',
+		parameters: {
+			type: 'object',
+			properties: {
+				type: { type: 'string', enum: ['global', 'topic'] },
+				topic: { type: 'string' },
+				match: { type: 'string' },
+			},
+			required: ['type', 'match'],
+		},
+	},
 };
 
-export const ALL_TOOL_NAMES = Object.keys(TOOL_SCHEMA_SKELETONS);
+export const ALL_TOOL_NAMES = [
+	'read_note', 'search_vault', 'grep', 'glob', 'list_files',
+	'write_note', 'append_note', 'edit_note', 'delete_note',
+	'search_memory', 'remember', 'forget_memory',
+];

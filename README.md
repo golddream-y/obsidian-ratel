@@ -48,6 +48,10 @@ Interface language follows your system by default, or force Chinese / English in
 
 Vault tools for read, search, write, edit, delete, and more — each can be set to ask, allow, or deny. The status bar shows index readiness, context usage, and whether token data comes from the model API. Built-in diagnostics tell you what's wrong when the model or index isn't healthy.
 
+**Remembers what you told it**
+
+Say "remember I prefer Tailwind over styled-components" or "remember the project uses Postgres 16" — Ratel stores it in `.ratel/memory/` under your vault and injects relevant context into future chats. Two layers: global preferences (always on) and topic-scoped memory (pulled in when relevant). Memory files are plain Markdown — open, edit, or delete them anytime. Say "forget X" to remove a specific entry.
+
 ---
 
 ## Installation

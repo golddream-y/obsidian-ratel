@@ -12,8 +12,10 @@ import type { Intent } from './intent-classifier';
 // 关键路径:中英混合 token 估算,比 length/4 更准(中文 1.5 字符/token,英文 4 字符/token)
 import { estimateTokens } from '../ui/tokens/token-estimator';
 // 关键路径:系统提示词与检索结果外框统一由 Composer 组装,保证 prompt 注入防护(外框不可删)与 section 覆盖机制生效
-import { composeAgentSystem, formatSearchResultsBlock } from '../prompts/composer';
+import { composeAgentSystem, composeMemorySystemPrompt, formatSearchResultsBlock } from '../prompts/composer';
 import type { OverrideMap } from '../prompts/types';
+// 关键路径:TopicIndexEntry 用于 setMemoryContext 接收记忆索引主题列表的类型契约
+import type { TopicIndexEntry } from '../types';
 
 /**
  * ContextManager 依赖注入 — 解耦 settings/工具注册表。
@@ -50,6 +52,12 @@ export class ContextManager {
 	 * 便于在切换 session 时整体丢弃,避免旧 session 的检索结果泄漏。
 	 */
 	private searchResultsMessages: ChatMessage[] = [];
+	/**
+	 * 记忆系统注入提示 — 启动时由 setMemoryContext() 设置,
+	 * 注入位置在 system prompt 与 searchResults 之间。
+	 * 空串表示不注入(未加载记忆或 global.md 为空)。
+	 */
+	private memorySystemPrompt: string = '';
 	/**
 	 * 历史池 token 预算上限。超出时触发 Layer 1 截断(从最旧消息裁剪)。
 	 * 默认 8000 tokens(~32K 字符),适配 32K 窗口模型的历史池占比。
@@ -225,12 +233,29 @@ export class ContextManager {
 	}
 
 	/**
-	 * 拼接最终给 LLM 的消息列表(系统提示 + 检索结果 + 历史消息)。
+	 * 设置记忆上下文 — 在会话启动时调用,注入 global.md 全文 + index.md 主题列表。
+	 *
+	 * 关键路径:
+	 * - 通过 deps.getOverrides() 拿当前 prompt section 覆盖,传给 composeMemorySystemPrompt。
+	 * - composeMemorySystemPrompt 内部会做 20KB 截断(I3)+ retrieval wrapper 包装(I4)。
+	 * - 生成的提示存入 this.memorySystemPrompt,toMessages() 时插入到 system 与 searchResults 之间。
+	 *
+	 * @param globalContent - global.md 全文
+	 * @param indexEntries - index.md 解析出的主题列表
+	 */
+	setMemoryContext(globalContent: string, indexEntries: TopicIndexEntry[]): void {
+		const overrides = this.deps.getOverrides();
+		this.memorySystemPrompt = composeMemorySystemPrompt(globalContent, indexEntries, overrides);
+	}
+
+	/**
+	 * 拼接最终给 LLM 的消息列表(系统提示 + 记忆注入 + 检索结果 + 历史消息)。
 	 *
 	 * 关键路径:
 	 * - 通过 Composer 组装系统提示词(direct / rag),支持 section 覆盖与工具指引注入
+	 * - 记忆注入位置在 system prompt 之后、检索结果之前,让 Agent 先"认识"用户再看检索上下文
 	 * - 历史消息超出 `maxHistoryTokens` 时触发 Layer 1 截断
-	 * - 系统提示词和搜索结果不在裁剪范围
+	 * - 系统提示词、记忆注入和搜索结果不在裁剪范围
 	 *
 	 * @param intent - 意图分类结果,默认 'direct'(向后兼容)
 	 * @returns 消息数组,首条为 system 角色
@@ -241,11 +266,15 @@ export class ContextManager {
 		const systemPrompt = composeAgentSystem(intent, { intent, tools }, overrides);
 		const history = this.session?.messages ?? [];
 		const trimmed = this.trimHistory(history);
-		return [
-			{ role: 'system', content: systemPrompt },
-			...this.searchResultsMessages,
-			...trimmed,
-		];
+
+		// 关键路径:记忆注入位置在 system prompt 之后、检索结果之前,
+		// 让 Agent 在看到检索结果和历史之前先"认识"用户。
+		const messages: ChatMessage[] = [{ role: 'system', content: systemPrompt }];
+		if (this.memorySystemPrompt) {
+			messages.push({ role: 'system', content: this.memorySystemPrompt });
+		}
+		messages.push(...this.searchResultsMessages, ...trimmed);
+		return messages;
 	}
 
 	/**

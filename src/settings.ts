@@ -159,6 +159,10 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 		append_note: 'ask',
 		edit_note: 'ask',
 		delete_note: 'ask',
+		// 关键路径:3 个 memory 工具 — search_memory 只读放行;remember / forget_memory 写操作需确认。
+		search_memory: 'allow',
+		remember: 'ask',
+		forget_memory: 'ask',
 	},
 	// 关键路径:默认无任何 override,使用 zh.ts 内置中文模板。
 	promptOverrides: {},
@@ -488,20 +492,24 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 		// 关键路径:工具名 → i18n key 映射,tNow 运行时读取当前语言
 		const labelByKey = (toolName: string): string => {
 			const map: Record<string, StringKey> = {
-				search_vault: 'settings.toolPermissions.search_vault',
-				read_note: 'settings.toolPermissions.read_note',
-				grep: 'settings.toolPermissions.grep',
-				glob: 'settings.toolPermissions.glob',
-				list_files: 'settings.toolPermissions.list_files',
-				write_note: 'settings.toolPermissions.write_note',
-				append_note: 'settings.toolPermissions.append_note',
-				edit_note: 'settings.toolPermissions.edit_note',
-				delete_note: 'settings.toolPermissions.delete_note',
-			};
-			const key = map[toolName];
-			return key ? tNow(key) : toolName;
+			search_vault: 'settings.toolPermissions.search_vault',
+			read_note: 'settings.toolPermissions.read_note',
+			grep: 'settings.toolPermissions.grep',
+			glob: 'settings.toolPermissions.glob',
+			list_files: 'settings.toolPermissions.list_files',
+			write_note: 'settings.toolPermissions.write_note',
+			append_note: 'settings.toolPermissions.append_note',
+			edit_note: 'settings.toolPermissions.edit_note',
+			delete_note: 'settings.toolPermissions.delete_note',
+			// 关键路径:3 个 memory 工具友好名(与 ui.tool_name.* 区分,这是设置面板的权限标签)
+			search_memory: 'settings.toolPermissions.search_memory',
+			remember: 'settings.toolPermissions.remember',
+			forget_memory: 'settings.toolPermissions.forget_memory',
 		};
-		const allTools = ['search_vault', 'read_note', 'grep', 'glob', 'list_files', 'write_note', 'append_note', 'edit_note', 'delete_note'];
+		const key = map[toolName];
+		return key ? tNow(key) : toolName;
+	};
+		const allTools = ['search_vault', 'read_note', 'grep', 'glob', 'list_files', 'write_note', 'append_note', 'edit_note', 'delete_note', 'search_memory', 'remember', 'forget_memory'];
 
 		const items: SettingGroupItem[] = [
 			{

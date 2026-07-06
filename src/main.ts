@@ -35,6 +35,12 @@ import { createWriteNoteTool } from './tools/write-note';
 import { createAppendNoteTool } from './tools/append-note';
 import { createEditNoteTool } from './tools/edit-note';
 import { createDeleteNoteTool } from './tools/delete-note';
+// 关键路径:用户记忆系统 — MemoryStore 管理 .ratel/memory/ 文件 + .memory-index/ vectra 索引,
+// 3 个工具(search_memory / remember / forget_memory)复用 memoryStore 与 embeddingPort。
+import { MemoryStore } from './core/memory-store';
+import { createSearchMemoryTool } from './tools/search-memory';
+import { createRememberTool } from './tools/remember';
+import { createForgetMemoryTool } from './tools/forget-memory';
 // 关键路径:工具 description 由 Composer 注入(Task 7),用 ALL_TOOL_NAMES 一次性生成所有 definition。
 import { composeToolDefinitions } from './prompts/composer';
 import { ALL_TOOL_NAMES } from './prompts/tool-schemas';
@@ -104,6 +110,8 @@ export default class RatelVaultPlugin extends Plugin {
 	private embeddingWorkerUrl?: string;
 	// 关键路径:indexDir 在 onload 计算,onLayoutReady 初始化 InlineWorker 时需要复用。
 	private indexDir!: string;
+	// 关键路径:用户记忆存储,管理 .ratel/memory/ 下的 markdown 文件与 .memory-index/ vectra 索引
+	private memoryStore!: MemoryStore;
 	modelManager!: ModelManager;
 	modelContextRegistry!: ModelContextRegistry;
 	indexController!: IndexController;
@@ -167,6 +175,20 @@ export default class RatelVaultPlugin extends Plugin {
 		this.vectraStore = new VectraStore(this.indexDir);
 		ensurePluginGitignore(pluginDir);
 		this.modelContextRegistry = new ModelContextRegistry(pluginDir);
+
+		// ==================== 用户记忆系统 ====================
+		// 关键路径:记忆目录在 vault 内的 .ratel/memory/,用户可见可编辑;
+		// 记忆索引在 pluginDir/.memory-index/,与 vault 索引物理隔离,避免记忆写入触发 vault 重建。
+		const memoryDir = path.join(vaultBase, '.ratel', 'memory');
+		const memoryIndexDir = path.join(pluginDir, '.memory-index');
+		// 关键路径:记忆索引 VectraStore 用 autoInit: false — 等模型就绪后再 init,避免 onload 阶段阻塞。
+		// 关键路径(C2 修复):不向 VectraStore 注入 embeddings 模型 — upsertToIndex 改用
+		// embeddingPort.embed + upsertItem 预计算向量路径,绕过 vectra 内部 embeddings 调用。
+		// embeddingPort(this.embedding)在上方 rebuildEmbeddingAdapter 已构造,与记忆索引共享同一份
+		// ONNX FeatureExtractor,确保记忆向量化与 vault 索引向量化维度一致。
+		const memoryVectraStore = new VectraStore(memoryIndexDir, { autoInit: false });
+		this.memoryStore = new MemoryStore(memoryDir, memoryVectraStore, this.embedding);
+		this.memoryStore.ensureDir();
 
 		// ==================== Worker ====================
 		// 关键路径:优先尝试 Node.js Worker Threads;Obsidian 渲染进程不支持时降级到 InlineWorker。
@@ -325,6 +347,13 @@ export default class RatelVaultPlugin extends Plugin {
 		this.tools.register(createAppendNoteTool(this.vault, toolDefMap.get('append_note')!));
 		this.tools.register(createEditNoteTool(this.vault, toolDefMap.get('edit_note')!));
 		this.tools.register(createDeleteNoteTool(this.vault, toolDefMap.get('delete_note')!));
+		// 关键路径:记忆工具 — 3 个新工具,复用 memoryStore 与主线程 embeddingPort。
+		// search_memory 是只读工具(查询记忆);remember / forget_memory 是写工具(触发 pre/post write hook)。
+		this.tools.register(
+			createSearchMemoryTool(this.memoryStore, this.embedding, toolDefMap.get('search_memory')!),
+		);
+		this.tools.register(createRememberTool(this.memoryStore, toolDefMap.get('remember')!));
+		this.tools.register(createForgetMemoryTool(this.memoryStore, toolDefMap.get('forget_memory')!));
 		this.hooks = new HookRegistry();
 		this.hooks.register(
 			'pre-tool-use',
@@ -904,6 +933,19 @@ export default class RatelVaultPlugin extends Plugin {
 			getOverrides: () => this.settings.promptOverrides,
 			getTools: () => this.tools.definitions(),
 		});
+
+		// 关键路径:会话启动时加载记忆并注入到 ContextManager,
+		// 让 Agent 从一开始就"认识"用户,并知道何时调 search_memory。
+		// 记忆加载失败不阻塞会话,仅记录日志 — 用户仍可正常对话(只是无记忆注入)。
+		try {
+			const globalContent = this.memoryStore.readGlobal();
+			const indexEntries = this.memoryStore.readIndex();
+			if (globalContent.trim()) {
+				ctx.setMemoryContext(globalContent, indexEntries);
+			}
+		} catch (err) {
+			devLogger.error('memory', '记忆加载失败,会话继续无记忆注入', err);
+		}
 
 		// 关键路径:注入意图分类器,让 agentLoop 在 addUserMessage 后判断意图。
 		// 闭包捕获 this.llm,与 agentLoop 解耦。

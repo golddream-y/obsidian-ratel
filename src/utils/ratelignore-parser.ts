@@ -20,6 +20,7 @@ const DEFAULT_RATELIGNORE = `.obsidian/
 .augmented-canvas/
 .obsidian-canvas/
 .obsidian-snippets/
+.ratel/
 `;
 
 /**

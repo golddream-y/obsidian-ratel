@@ -146,6 +146,11 @@
 | 数据上传到哪? | 仅模型 API 端点,Ollama 模式零外发 |
 | 思考段只有 DeepSeek 有? | 当前已接入 DeepSeek,其他 reasoning 模型视 adapter 实现支持 |
 | 切换语言后命令名没更新? | 命令名在 Obsidian 启动时一次性注册,切换语言后需 toggle 插件或重启 Obsidian 才刷新命令名。UI 文案(设置/聊天/状态)即时生效 |
+| 怎么让 Ratel 记住我的偏好? | 直接说"记住我偏好 X"或"记住这个项目用 Y"。Ratel 会写进 vault 的 `.ratel/memory/` 目录,后续对话自动注入。两层结构:全局偏好(global.md,始终注入)+ 主题记忆(topics/<name>.md,相关时才调用) |
+| 记忆文件存哪了? | vault 根目录的 `.ratel/memory/` 下:`global.md`(全局)+ `topics/`(主题文件夹)+ `index.md`(主题索引)。都是普通 Markdown,可直接打开编辑 |
+| 怎么删除一条记忆? | 跟 Ratel 说"忘掉 X",它会按 match 字符串匹配删除。也可直接在文件管理器删 `.ratel/memory/` 下对应文件 |
+| 记忆会无限增长吗? | 不会。单条 global.md 注入前截断到 20KB;总存储上限 10MB,超出会拒绝写入并提示 |
+| 记忆会发到云端吗? | 不会。记忆文件纯本地,只在你与模型对话时作为上下文注入(发往你配置的模型 API 端点),不会被上传到任何第三方 |
 
 ---
 
@@ -274,3 +279,8 @@ Type `/` to trigger menu:
 | Where does data go? | Only to model API endpoint; Ollama mode has zero outbound |
 | Is thinking block DeepSeek-only? | Currently DeepSeek is integrated; other reasoning models depend on adapter implementation |
 | Command names not updated after language switch? | Command names are registered once at Obsidian startup; toggle the plugin or restart Obsidian to refresh. UI text (settings/chat/status) updates instantly |
+| How to make Ratel remember my preferences? | Just say "remember I prefer X" or "remember this project uses Y". Ratel writes it to `.ratel/memory/` in your vault and injects it into future chats. Two layers: global preferences (global.md, always injected) + topic memory (topics/<name>.md, pulled in when relevant) |
+| Where are memory files stored? | Under `.ratel/memory/` in your vault root: `global.md` (global) + `topics/` (topic folder) + `index.md` (topic index). All plain Markdown — open and edit directly |
+| How to delete a memory entry? | Tell Ratel "forget X" — it matches by string and removes the entry. You can also delete files under `.ratel/memory/` directly in the file manager |
+| Does memory grow unbounded? | No. Single global.md is truncated to 20KB before injection; total storage cap is 10MB — writes are rejected with a notice when exceeded |
+| Is memory uploaded to the cloud? | No. Memory files are purely local. They are only injected as context when you chat with your configured model API endpoint — never uploaded to any third party |

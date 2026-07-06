@@ -86,6 +86,9 @@ const settingsZh: SettingsStrings = {
   'settings.toolPermissions.append_note': '追加笔记',
   'settings.toolPermissions.edit_note': '编辑笔记',
   'settings.toolPermissions.delete_note': '删除笔记',
+  'settings.toolPermissions.search_memory': '搜索记忆',
+  'settings.toolPermissions.remember': '记住',
+  'settings.toolPermissions.forget_memory': '忘掉记忆',
   'settings.toolPermissions.allow': '允许',
   'settings.toolPermissions.ask': '询问',
   'settings.toolPermissions.deny': '拒绝',
@@ -167,6 +170,9 @@ const toolNameZh: ToolNameStrings = {
   'tool.name.append_note': '追加 {path}',
   'tool.name.grep': '搜索 {pattern}',
   'tool.name.glob': '匹配 {pattern}',
+  'tool.name.search_memory': '搜索记忆',
+  'tool.name.remember': '记住',
+  'tool.name.forget_memory': '忘记记忆',
 };
 
 const slashZh: SlashStrings = {
@@ -197,6 +203,11 @@ const noticeZh: NoticeStrings = {
   'notice.toolRejected': '工具调用被拒绝',
   'notice.toolRejectedDisabled': '工具调用被拒绝(已禁用)',
   'notice.operationFailed': '操作失败: {message}',
+  'notice.memory.saved': '已记录记忆',
+  'notice.memory.forgotten': '已删除记忆',
+  'notice.memory.topicCreated': '已创建主题: {topic}',
+  'notice.memory.topicRemoved': '已删除主题: {topic}',
+  'notice.memory.truncated': '记忆已截断(超出注入上限)',
 };
 
 const modalZh: ModalStrings = {
@@ -426,6 +437,16 @@ const errorZh: ErrorStrings = {
   'error.model.downloadFailed': '下载 {name} 失败: {status}',
   'error.ort.downloadFailed': '下载 ONNX Runtime WASM 失败: {status}',
   'error.ort.fileCorrupted': '下载 ONNX Runtime WASM 失败: 文件过小({bytes} bytes),可能已损坏',
+  'error.memory.storeNotInit': 'MemoryStore 未初始化',
+  'error.memory.topicRequired': 'type=topic 时必须提供 topic 参数',
+  'error.memory.sectionNotFound': '未找到区块: {section}',
+  'error.memory.topicNotFound': '主题不存在: {topic}',
+  'error.memory.noMatch': '未找到匹配 "{match}" 的记忆条目',
+  // 关键路径:topic 名含路径分隔符或 .. 穿越片段,拦截 LLM 注入攻击
+  'error.memory.invalidTopic': '主题名非法(含路径分隔符或穿越片段): {name}',
+  'error.memory.embeddingNotInit': 'EmbeddingPort 未注入,无法写入记忆索引',
+  'error.memory.embeddingFailed': 'Embedding 返回空向量,无法写入记忆索引',
+  'error.memory.storageFull': '记忆存储已超 10MB 上限,无法继续写入',
 };
 
 const promptLabelZh: PromptLabelStrings = {
@@ -437,6 +458,9 @@ const promptLabelZh: PromptLabelStrings = {
   'promptLabel.agent.rag.toolGuide.desc': '何时用何种工具;末尾注入 {{toolList}}',
   'promptLabel.injection.searchResults.body': '检索结果排版',
   'promptLabel.injection.searchResults.body.desc': '单条检索结果模板;外框由 Composer 硬编码',
+  // 关键路径:记忆系统注入提示 section(用户可在 Prompt overrides 面板覆盖默认中文模板)
+  'promptLabel.memory.systemPrompt': '记忆系统注入提示',
+  'promptLabel.memory.systemPrompt.desc': '启动时注入到 system 与检索结果之间;占位符 {{globalContent}} + {{topicList}}',
   'promptLabel.internal.intent.system': '意图分类 System',
   'promptLabel.internal.intent.system.desc': '内部 LLM:只回答 rag 或 direct',
   'promptLabel.internal.intent.user': '意图分类 User',
