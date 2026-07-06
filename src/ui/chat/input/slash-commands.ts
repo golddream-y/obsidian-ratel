@@ -46,6 +46,21 @@ export function getSlashCommands(): readonly SlashCommand[] {
 			description: tNow('slash.reindex.description'),
 			icon: '🔄',
 		},
+		{
+			name: '/skill',
+			description: tNow('skill.cmd.skill'),
+			icon: '🦡',
+		},
+		{
+			name: '/skills',
+			description: tNow('skill.cmd.skills'),
+			icon: '📋',
+		},
+		{
+			name: '/skill off',
+			description: tNow('skill.cmd.skill'),
+			icon: '🦡',
+		},
 	];
 }
 

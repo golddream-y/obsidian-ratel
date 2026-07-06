@@ -52,6 +52,10 @@ Vault tools for read, search, write, edit, delete, and more — each can be set 
 
 Say "remember I prefer Tailwind over styled-components" or "remember the project uses Postgres 16" — Ratel stores it in `.ratel/memory/` under your vault and injects relevant context into future chats. Two layers: global preferences (always on) and topic-scoped memory (pulled in when relevant). Memory files are plain Markdown — open, edit, or delete them anytime. Say "forget X" to remove a specific entry.
 
+**Skills — extend what Ratel can do**
+
+Drop a `SKILL.md` (frontmatter + instructions) into `.ratel/skills/` in your vault, `~/.ratel/skills/` globally, or use the built-in ones — Ratel scans all three on load. Each skill is a reusable prompt package. The agent sees a discovery list and can activate a skill on its own when relevant, or you trigger one with `/skill <name>` in chat. Disable any skill in Settings, or run `/skills` to list what's loaded.
+
 ---
 
 ## Installation

@@ -86,7 +86,7 @@ graph TB
         L2A["Agent Loop"]
         L2B["Context Manager"]
         L2C["Hooks 注册表"]
-        L2D["Tools (11 个)"]
+        L2D["Tools (14 个)"]
         L2E["Subagents (4 个)"]
         L2F["LLM 调用<br/>(HTTP 流式)"]
         L2G["Embedding 调用<br/>(HTTP)"]
@@ -313,6 +313,7 @@ src/
     persistence.ts                 #   Persistence 接口
     vector.ts                      #   VectorStore 接口
     llm.ts                         #   LLMClient 接口
+    skill-port.ts                  #   SkillPort 接口 (三源抽象, skill-fs/skill-vault 实现)
 
   adapters/                        # Adapter 实现
     obsidian-vault.ts              #   Obsidian API 薄封装 (TS, ~8 方法)
@@ -320,8 +321,16 @@ src/
     vector-vectra.ts               #   vectra LocalDocumentIndex 封装
     llm-deepseek.ts                #   DeepSeek (OpenAI 兼容 SDK)
     llm-anthropic.ts               #   Claude (Anthropic SDK)
+    skill-fs.ts                    #   SkillFsAdapter (node:fs 读 builtin/global skills)
+    skill-vault.ts                 #   SkillVaultAdapter (走 VaultPort 读 vault 内 skills)
 
-  tools/                           # Vault 工具集 (12 个)
+  skills/                          # Skill 机制核心层 (P-SKILL-1-CORE)
+    types.ts                       #   Skill/SkillManifest/SkillSource/SkillActivation
+    skill-loader.ts                #   三源扫描 + gray-matter frontmatter 解析 + 合并
+    skill-registry.ts              #   enabled/disabled/active 三态管理 (会话级 active)
+    skill-activator.ts             #   产出 Discovery 段 (skillList) + Active 段 (拼接 instructions)
+
+  tools/                           # Vault 工具集 (14 个)
     read-note.ts                   #   读取笔记全文
     search-vault.ts                #   向量+BM25 混合检索
     grep.ts                        #   正则搜索
@@ -334,6 +343,8 @@ src/
     search-memory.ts               #   搜索用户记忆 (向量检索 topics/)
     remember.ts                    #   写入记忆 (global 或 topic)
     forget-memory.ts               #   删除记忆条目
+    activate-skill.ts              #   激活指定 skill (LLM 工具)
+    deactivate-skill.ts            #   反激活指定 skill (LLM 工具)
 
   subagents/                       # 4 个 Subagent
     indexer.ts                     #   维护向量索引 (文件变更 + 定时重检)
@@ -352,10 +363,10 @@ src/
 
   prompts/                         # Prompt Registry(单一装配入口)
     types.ts                       #   PromptSectionId 类型 + OverrideMap
-    sections.ts                    #   25 个 section 元数据注册表
+    sections.ts                    #   28 个 section 元数据注册表 (含 agent.skills + 4 个 skill 工具 section)
     defaults/zh.ts                 #   中文默认值(常量,不可变)
     interpolate.ts                 #   {{var}} 占位符引擎 + 校验
-    tool-schemas.ts                #   12 个工具的 JSON schema 骨架
+    tool-schemas.ts                #   14 个工具的 JSON schema 骨架
     composer.ts                    #   Composer 装配 API(5 个出口函数,含 composeMemorySystemPrompt)
     index.ts                       #   模块 re-export 入口
 
@@ -474,7 +485,7 @@ graph TB
 
 **设计要点:**
 
-- **Section 为最小单元** — 提示词被切成 24 个 `PromptSectionId`(如 `agent.base`、`tool.read_note.description`),用户可逐段覆盖,未覆盖段用 `defaults/zh.ts` 默认值
+- **Section 为最小单元** — 提示词被切成 28 个 `PromptSectionId`(如 `agent.base`、`agent.skills`、`tool.read_note.description`),用户可逐段覆盖,未覆盖段用 `defaults/zh.ts` 默认值
 - **Composer 4 个出口函数** — `composeAgentSystem` / `composeInternalMessages` / `composeToolDefinitions` / `formatSearchResultsBlock`;`ContextManager`、`classifyIntent`、`rewriteQuery`、`main.ts` 4 个消费方都调这 4 个函数
 - **工具 description 单源** — RAG 引导(`formatToolGuideList`)与 function calling schema(`composeToolDefinitions`)都从 `tool-schemas.ts` + `defaults/zh.ts` 取描述,避免双源漂移
 - **检索外框硬编码不可覆盖** — `SEARCH_RESULTS_WRAPPER_PREFIX/SUFFIX` 是 prompt injection 防御基线,不在 `listEditableSections()` 中暴露
@@ -1092,6 +1103,74 @@ interface MemoryEntry {
 | `search_memory` | 向量检索 `topics/` 下主题记忆 | allow |
 | `remember` | 写入记忆(global 或 topic) | ask |
 | `forget_memory` | 删除记忆条目 | ask |
+
+### 8.5 Skill 子系统
+
+Skill 机制(S-SKILL spec)—— 让用户用 Markdown 文件扩展 Agent 行为,无需改代码。三源合并加载,Discovery 段告诉 LLM 有哪些 skill 可用,Active 段在激活后注入完整指令。
+
+**三源存储(优先级从低到高)**
+
+| 源 | 路径 | 适配器 | 用途 |
+|---|---|---|---|
+| builtin | `<pluginDir>/skills/` | `SkillFsAdapter` (node:fs) | 插件出厂自带,只读 |
+| global | `~/.ratel/skills/` | `SkillFsAdapter` (node:fs) | 跨 vault 通用,用户手动管理 |
+| vault | `<vaultRoot>/.ratel/skills/` | `SkillVaultAdapter` (VaultPort) | 跟随 vault 同步,优先级最高 |
+
+同名 skill 后者覆盖前者(vault > global > builtin)。`SkillLoader.loadAll()` 用 Map by name 合并,扫描结果传给 `SkillRegistry.reload()`。
+
+**核心模块(`src/skills/`)**
+
+| 模块 | 职责 |
+|---|---|
+| `types.ts` | `Skill` / `SkillManifest` / `SkillSource` / `SkillActivation` / `SkillLoadWarning` 类型 |
+| `skill-loader.ts` | 三源扫描 + gray-matter frontmatter 解析 + 合并;name 正则校验 `^[a-z][a-z0-9-]{0,63}$`;非法值降级(`activation` → `auto`,`enabled` → `true`)并记 warning |
+| `skill-registry.ts` | 内存注册表,4 个私有字段:`skills` Map / `warnings` / `activeSkills` Set / `enabledOverrides` Map;reload 时 always 类型自动激活;`setEnabled(false)` 同步清除 active |
+| `skill-activator.ts` | `composeDiscovery(overrides)` 拼 `agent.skills` section(`{{skillList}}` 占位符);`composeActive()` 拼激活 skills 的 instructions |
+
+**端口契约(`src/ports/skill-port.ts`)**
+
+```typescript
+export interface SkillPort {
+  readonly source: SkillSource;
+  readonly rootDir: string;
+  listSkillFolders(): Promise<string[]>;
+  readSkillManifest(skillName: string): Promise<string>;
+}
+```
+
+`SkillFsAdapter` 用 `fs.readdirSync` + `fs.readFileSync`,内部做 path traversal 校验(`path.resolve` + `startsWith(rootDir + path.sep)`)。`SkillVaultAdapter` 走 `VaultPort` 接口(非 ObsidianVault 具体类),便于单测 mock。
+
+**三态管理**
+
+| 状态 | 字段 | 作用域 | 改变方式 |
+|---|---|---|---|
+| `enabled` | `manifest.enabled` | 持久 | Settings 面板 toggle / `setEnabled()` |
+| `active` | `activeSkills` Set | 会话级 | `activate_skill` 工具 / `/skill` 命令 / reload 时 always 自动激活 |
+| `always` | `manifest.activation === 'always'` | 持久 | frontmatter 字段,reload 时自动激活 |
+
+**Discovery + Active 段注入**
+
+`ContextManager.toMessages()` 在 `memory.systemPrompt` 之后、`searchResults` 之前插入 skills 段:
+
+```typescript
+const skillsSegment = [skillsDiscovery, skillsActive]
+  .filter(s => s.length > 0)
+  .join('\n\n');
+```
+
+- **Discovery 段**:`agent.skills` section,注入 `{{skillList}}`(已启用且非 manual 的 skill 列表)
+- **Active 段**:激活 skills 的 `instructions` 用 `\n\n` 拼接
+
+`agent-loop` 在 `activate_skill` / `deactivate_skill` 工具执行成功后,调 `ctx.setSkillsContext(skillActivator.composeDiscovery(ctx.getOverrides()), skillActivator.composeActive())` 重组 skills 段,让 LLM 下一次调用即可见。
+
+**2 个 LLM 工具**
+
+| 工具 | 作用 | 权限 |
+|---|---|---|
+| `activate_skill` | LLM 主动激活一个 skill(幂等,已激活返回 alreadyActive) | allow |
+| `deactivate_skill` | LLM 反激活一个 skill | allow |
+
+详见 [ADR-009:Skill 机制三源加载与端口设计](adr/2026-07-06-skill-mechanism.md)。
 
 ---
 

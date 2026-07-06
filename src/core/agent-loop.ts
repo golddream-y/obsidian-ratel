@@ -11,6 +11,9 @@ import type { ContextManager } from './context-manager';
 import type { ToolRegistry } from './tool-registry';
 import type { HookRegistry } from './hooks';
 import type { Intent } from './intent-classifier';
+// 关键路径:Skill 激活/反激活后需重组 system prompt 的 skills 段 — 注入 Activator + Registry 类型。
+import type { SkillActivator } from '../skills/skill-activator';
+import type { SkillRegistry } from '../skills/skill-registry';
 import { devLogger } from '../logging/dev-logger';
 import { mapSearchResults } from './search-result-mapper';
 
@@ -54,6 +57,8 @@ const TRUNCATION_NOTICE = '\n\n---\n⚠️ **回复因长度限制被截断。**
  * @param intentClassifier - 可选的意图分类函数,判断用户消息是否需要 RAG 工作流。未传时默认 'direct'(向后兼容)
  * @param toolPermissionCheck - 可选的工具权限检查回调
  * @param maxSteps - 可选的最大步数上限,默认 50(见 ADR-004)
+ * @param skillActivator - 可选的 Skill 激活器,用于 activate_skill / deactivate_skill 执行后重组 system prompt 的 skills 段
+ * @param skillRegistry - 可选的 Skill 注册表,与 skillActivator 配对传入(同时传或同时不传)
  * @returns AgentEvent 异步可迭代流
  * @throws 不会向上抛错 — 内部错误一律转 `error` 事件
  * @example
@@ -72,6 +77,9 @@ export async function* agentLoop(
 	intentClassifier?: (message: string) => Promise<Intent>,
 	toolPermissionCheck?: (toolCall: ToolCall) => Promise<void>,
 	maxSteps?: number,
+	// 关键路径:Skill 激活/反激活后需重组 system prompt — 注入 Activator + Registry(两者必须同时传或同时不传)。
+	skillActivator?: SkillActivator,
+	skillRegistry?: SkillRegistry,
 ): AsyncIterable<AgentEvent> {
 	// 关键路径:maxSteps 可配置(见 ADR-004),未传时降级默认值 50。
 	const effectiveMaxSteps = maxSteps ?? DEFAULT_MAX_STEPS;
@@ -238,6 +246,23 @@ export async function* agentLoop(
 				}
 
 				yield { type: 'tool.result', payload: { name: tc.name, result } };
+
+				// 关键路径:activate_skill / deactivate_skill 执行后,重组 system prompt 的 skills 段。
+				// 不重组则 LLM 下一轮看到的 system prompt 仍是旧的(不含新激活的 instructions / 仍含已关闭的)。
+				// 仅在工具未失败时重组(失败时 registry 状态可能未变更,避免无谓重算)。
+				if (
+					skillActivator &&
+					skillRegistry &&
+					(tc.name === 'activate_skill' || tc.name === 'deactivate_skill') &&
+					!toolFailed
+				) {
+					// 关键路径:用当前 settings.promptOverrides 重新产出 Discovery + Active 段,注入 ctx。
+					// skillRegistry 在条件中参与判断,确保 activator/registry 配对使用(避免 activator 拿到不匹配的 registry 状态)。
+					const overrides = ctx.getOverrides();
+					const discovery = skillActivator.composeDiscovery(overrides);
+					const active = skillActivator.composeActive();
+					ctx.setSkillsContext(discovery, active);
+				}
 
 				// 关键路径:search_vault 返回后用 mapSearchResults 扁平化(逻辑外迁到 search-result-mapper)
 				if (tc.name === 'search_vault') {

@@ -55,6 +55,7 @@
 	},
 	"dependencies": {
 		"dompurify": "^3.4.11",
+		"gray-matter": "^4.0.3",
 		"highlight.js": "^11.11.1",
 		"ignore": "^7.0.5",
 		"marked": "^18.0.5",

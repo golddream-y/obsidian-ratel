@@ -15,7 +15,7 @@ import type { PromptSectionId, SectionMeta } from './types';
  * 改为函数后,每次调用(getSectionMeta / listEditableSections)都读当前 langStore,
  * 保证设置面板在语言切换后能拿到正确文案。
  *
- * @returns 22 个 section 的完整元数据(含 i18n 后的 label/description)
+ * @returns 28 个 section 的完整元数据(含 i18n 后的 label/description)
  */
 function buildSections(): SectionMeta[] {
 	return [
@@ -59,6 +59,16 @@ function buildSections(): SectionMeta[] {
 			zone: 'dynamic',
 			placeholders: ['globalContent', 'topicList'],
 			allowOverride: true,
+		},
+		// 关键路径:Skill 机制 Discovery 段 — 注入已加载 skill 的 name+description 列表。
+		// zone: 'dynamic',allowOverride: false(spec §4.4 — 不可被用户覆盖删除,防 LLM 失去 skill 感知)。
+		{
+			id: 'agent.skills',
+			label: tNow('promptLabel.agent.skills'),
+			description: tNow('promptLabel.agent.skills.desc'),
+			zone: 'dynamic',
+			placeholders: ['skillList'],
+			allowOverride: false,
 		},
 		{
 			id: 'internal.intent.system',
@@ -207,6 +217,40 @@ function buildSections(): SectionMeta[] {
 			placeholders: [],
 			allowOverride: true,
 		},
+		// --- tool.activate_skill ---
+		{
+			id: 'tool.activate_skill.description',
+			label: tNow('promptLabel.tool.activate_skill.description'),
+			description: tNow('promptLabel.tool.activate_skill.description.desc'),
+			zone: 'tool',
+			placeholders: [],
+			allowOverride: true,
+		},
+		{
+			id: 'tool.activate_skill.param.name',
+			label: tNow('promptLabel.tool.activate_skill.param.name'),
+			description: tNow('promptLabel.tool.activate_skill.param.name.desc'),
+			zone: 'tool',
+			placeholders: [],
+			allowOverride: true,
+		},
+		// --- tool.deactivate_skill ---
+		{
+			id: 'tool.deactivate_skill.description',
+			label: tNow('promptLabel.tool.deactivate_skill.description'),
+			description: tNow('promptLabel.tool.deactivate_skill.description.desc'),
+			zone: 'tool',
+			placeholders: [],
+			allowOverride: true,
+		},
+		{
+			id: 'tool.deactivate_skill.param.name',
+			label: tNow('promptLabel.tool.deactivate_skill.param.name'),
+			description: tNow('promptLabel.tool.deactivate_skill.param.name.desc'),
+			zone: 'tool',
+			placeholders: [],
+			allowOverride: true,
+		},
 	];
 }
 
@@ -215,7 +259,7 @@ function buildSections(): SectionMeta[] {
  *
  * 关键路径:对外暴露为函数而非常量,确保语言切换后调用方能拿到最新文案。
  *
- * @returns 22 个 section 的完整元数据
+ * @returns 28 个 section 的完整元数据
  */
 export function getSections(): SectionMeta[] {
 	return buildSections();
