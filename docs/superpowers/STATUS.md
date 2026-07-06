@@ -18,7 +18,6 @@
 | ID | 文件 | 状态 | 创建日期 | 备注 |
 |---|---|---|---|---|
 | S-I18N | [2026-06-14-ratel-i18n-design.md](specs/2026-06-14-ratel-i18n-design.md) | 🚫 Superseded | 2026-06-14 | 已被 S-I18N-V2 取代;估算 key 数严重不足(50 vs 300),覆盖类别不全(3 vs 10) |
-| S-I18N-V2 | [2026-07-05-i18n-v2-design.md](specs/2026-07-05-i18n-v2-design.md) | Active | 2026-07-05 | i18n v2:10 类 ~320 key + 扩展性约束(所有新功能必须走 i18n);开放式 Strings interface,namespace 扩展 |
 | S-MEMORY | [2026-07-05-memory-system-design.md](specs/2026-07-05-memory-system-design.md) | Active | 2026-07-05 | 用户记忆系统:两层架构(全局 + 主题),独立索引,工具驱动,容量可控 |
 | S-SKILL | [2026-07-06-skill-mechanism-design.md](specs/2026-07-06-skill-mechanism-design.md) | Active | 2026-07-06 | Skill 机制(agentskills.io 兼容):三源合并存储 + progressive disclosure + 4 个新工具 + 沙箱脚本执行 |
 
@@ -29,7 +28,6 @@
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
 | P-I18N-IMPL | [2026-06-14-ratel-i18n-implementation.md](plans/2026-06-14-ratel-i18n-implementation.md) | 🚫 Superseded | S-I18N | 已被 P-I18N-V2-IMPL 取代 |
-| P-I18N-V2-IMPL | [2026-07-06-i18n-v2-implementation.md](plans/2026-07-06-i18n-v2-implementation.md) | ✅ Completed | S-I18N-V2 | 9 commit(371afa3→b988ec4);i18n 基础设施 + 全量 ~340 key 迁移;14 i18n 测试通过,575 现有测试通过(7 pre-existing 失败);待归档 |
 | P-MEMORY-LOGIC | [2026-07-05-memory-system-logic.md](plans/2026-07-05-memory-system-logic.md) | ⏳ Pending | S-MEMORY | 核心逻辑:MemoryStore + 3 个工具 + ContextManager 注入（先于 P-MEMORY-UI） |
 | P-MEMORY-UI | [2026-07-05-memory-system-ui.md](plans/2026-07-05-memory-system-ui.md) | ⏳ Pending | S-MEMORY | UI+设置:记忆面板 + 6 个设置项（依赖 P-MEMORY-LOGIC);⚠️ Task 1 假设 `display()` 存在,P-SETTINGS-DECLARATIVE 完成后需重写 |
 | P-SKILL-1-CORE | — | ⏳ Pending | S-SKILL | 基础+激活:loader/registry/activator+activate_skill/deactivate_skill 工具+slash 命令;plan 待写 |
@@ -53,7 +51,7 @@
 
 ## Future execution queue(按顺序)
 
-1. **P-MEMORY-LOGIC**(S-MEMORY 核心)— 无 i18n 依赖,可直接执行
+1. **P-MEMORY-LOGIC**(S-MEMORY 核心)— 无依赖,可直接执行;i18n 基础设施已就绪
 2. **P-MEMORY-UI**(S-MEMORY UI)— 依赖 P-MEMORY-LOGIC;Task 1 已重写为声明式;i18n 基础设施已就绪
 3. **P-SKILL-1-CORE**(S-SKILL 基础)— 无 i18n 强依赖(基础 SkillStrings key 自带);plan 待写
 4. **P-SKILL-2-EXECUTION**(S-SKILL 执行)— 依赖 P-SKILL-1-CORE;沙箱安全风险高
@@ -92,3 +90,4 @@
 | S-CLEANUP-1 | [archive/S-CLEANUP-1/](archive/S-CLEANUP-1/) | 2026-07-05 | 杂项缺失修复与技术债清理;24 Task(1-16 前序会话,17-24 本会话);squash 合并 commit `3590b23` |
 | S-SETTINGS-DECLARATIVE | [archive/S-SETTINGS-DECLARATIVE/](archive/S-SETTINGS-DECLARATIVE/) | 2026-07-05 | 设置面板声明式迁移;4 commits;release 0.1.2 已上架 |
 | S-RAG-ARCH | [archive/S-RAG-ARCH/](archive/S-RAG-ARCH/) | 2026-07-05 | 最终 RAG 架构设计文档;实施通过 W3/W4 等多个 plan 完成 |
+| S-I18N-V2 | [archive/S-I18N-V2/](archive/S-I18N-V2/) | 2026-07-06 | i18n V2 全量实现;14 namespace ~340 key;12 commit squash 为 2 |
