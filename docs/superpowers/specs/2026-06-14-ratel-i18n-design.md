@@ -1,3 +1,5 @@
+> ⚠️ **SUPERSEDED** — 本 spec 已被 [S-I18N-V2](2026-07-05-i18n-v2-design.md) 取代。原因:估算 key 数严重不足(50 vs 300),覆盖类别不全(3 vs 10),且假设的 display() API 已被声明式 getSettingDefinitions() 取代。
+
 # i18n 设计 — 中英文界面切换
 
 > 日期: 2026-06-14
