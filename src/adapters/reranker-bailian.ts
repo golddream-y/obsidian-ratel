@@ -7,6 +7,7 @@
 
 import { requestUrl } from 'obsidian';
 import type { RerankerPort } from '../ports/reranker';
+import { tNow } from '../i18n';
 
 /**
  * 百炼 Reranker 构造选项。
@@ -88,7 +89,9 @@ export class BailianReranker implements RerankerPort {
 			// 关键路径:读取响应体辅助排障(配额超限 / Key 失效 / 模型名错误等),与 embedding-api.ts 对齐。
 			// requestUrl.text 是字符串,无网络层异常时不为空。
 			const errorBody = response.text ?? '';
-			throw new Error(`Bailian Rerank API error: ${response.status}${errorBody ? ' ' + errorBody : ''}`);
+			// 关键路径:detail 包含前导空格 + errorBody(若非空),与原硬编码格式一致
+			const detail = errorBody ? ' ' + errorBody : '';
+			throw new Error(tNow('error.api.rerankFailed', { status: response.status, detail }));
 		}
 
 		// 关键路径:requestUrl.json 已是解析后的对象,不需要 await .json()。

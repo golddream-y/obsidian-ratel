@@ -6,6 +6,8 @@
  */
 
 import { setIcon } from 'obsidian';
+import { tNow } from '../../i18n';
+import type { StringKey } from '../../i18n/types';
 
 /**
  * 诊断错误分类 — 用于区分错误来源,给出针对性排查建议。
@@ -35,7 +37,7 @@ export interface DiagError {
 export function formatError(err: unknown, context?: string): DiagError {
     const base: DiagError = {
         type: 'unknown',
-        message: '未知错误',
+        message: tNow('diag.errorUnknown'),
     };
 
     if (context) {
@@ -53,32 +55,32 @@ export function formatError(err: unknown, context?: string): DiagError {
 
         if (err.name === 'IndexNotReadyError' || errWithCode.code === 'INDEX_NOT_READY' || msg.includes('尚未加载') || msg.includes('未就绪')) {
             base.type = 'model';
-            base.cause = '本地 Embedding 模型尚未加载完成';
-            base.suggestion = '请等待 Obsidian 启动后的模型下载/初始化完成(Notice 提示消失后再试),或检查下载是否失败';
+            base.cause = tNow('diag.errorCause.modelNotLoaded');
+            base.suggestion = tNow('diag.errorSuggestion.modelNotLoaded');
         } else if (errWithCode.status === 401 || msg.includes('apikey') || msg.includes('api key') || msg.includes('unauthorized') || msg.includes('401')) {
             base.type = 'config';
-            base.cause = 'API Key 无效或未配置';
-            base.suggestion = '请检查设置页中对应服务的 API Key 是否正确填写,若使用 Ollama 等本地服务可留空 Key';
+            base.cause = tNow('diag.errorCause.invalidKey');
+            base.suggestion = tNow('diag.errorSuggestion.invalidKey');
         } else if (errWithCode.status === 404 || msg.includes('404') || (msg.includes('model') && msg.includes('not found'))) {
             base.type = 'config';
-            base.cause = '模型名称或 API 路径错误(404)';
-            base.suggestion = '请检查模型名称是否正确、API Base URL 是否正确且包含 /v1 后缀(如需要)';
+            base.cause = tNow('diag.errorCause.modelNotFound');
+            base.suggestion = tNow('diag.errorSuggestion.modelNotFound');
         } else if (msg.includes('network') || msg.includes('fetch') || msg.includes('econnrefused') || msg.includes('enotfound') || msg.includes('timeout') || msg.includes('failed to fetch')) {
             base.type = 'network';
-            base.cause = '网络连接失败,无法访问 API 端点';
-            base.suggestion = '请检查:1)网络连接是否正常;2)API Base URL 是否正确;3)本地服务(如 Ollama)是否已启动;4)是否需要代理';
+            base.cause = tNow('diag.errorCause.networkFailed');
+            base.suggestion = tNow('diag.errorSuggestion.networkFailed');
         } else if (msg.includes('embedding') || msg.includes('tokenizer') || msg.includes('onnx') || msg.includes('wasm') || msg.includes('模型')) {
             base.type = 'model';
-            base.cause = '本地模型加载或推理失败';
-            base.suggestion = '请尝试:1)重新加载插件;2)删除插件目录下的 models 文件夹重新下载;3)切换到 API 模式';
+            base.cause = tNow('diag.errorCause.localModelFailed');
+            base.suggestion = tNow('diag.errorSuggestion.localModelFailed');
         } else if (errWithCode.status === 400 || msg.includes('invalid') || msg.includes('bad request') || msg.includes('400')) {
             base.type = 'runtime';
-            base.cause = '请求参数错误';
-            base.suggestion = '请检查输入内容、参数设置(temperature/top_p 等)是否合法';
+            base.cause = tNow('diag.errorCause.badRequest');
+            base.suggestion = tNow('diag.errorSuggestion.badRequest');
         } else if (errWithCode.status === 429 || msg.includes('rate limit') || msg.includes('429')) {
             base.type = 'network';
-            base.cause = 'API 调用频率超限';
-            base.suggestion = '请稍等片刻后重试,或检查 API 套餐额度';
+            base.cause = tNow('diag.errorCause.rateLimit');
+            base.suggestion = tNow('diag.errorSuggestion.rateLimit');
         }
     } else if (typeof err === 'string') {
         base.message = context ? `${context}: ${err}` : err;
@@ -87,7 +89,8 @@ export function formatError(err: unknown, context?: string): DiagError {
         try {
             base.message = context ? `${context}: ${JSON.stringify(err)}` : JSON.stringify(err);
         } catch {
-            base.message = context ? `${context}: [无法序列化的错误对象]` : '[无法序列化的错误对象]';
+            // 修复:不可序列化的错误对象用占位文案,避免 JSON.stringify 抛错二次崩溃
+            base.message = context ? `${context}: ${tNow('diag.errorUnserializable')}` : tNow('diag.errorUnserializable');
         }
     }
 
@@ -95,15 +98,35 @@ export function formatError(err: unknown, context?: string): DiagError {
 }
 
 /**
- * 错误类型对应的中文标签与颜色类名。
+ * 错误类型对应的颜色类名 — label 走 i18n 动态查询以跟随当前语言。
+ *
+ * 关键路径:不在常量里固化 label,改在 renderError 里用 tNow('diag.errorType.{type}') 取,
+ * 否则用户切换语言后旧标签不会刷新。
  */
-const ERROR_TYPE_META: Record<DiagErrorType, { label: string; cls: string }> = {
-    config: { label: '配置错误', cls: 'diag-error-config' },
-    network: { label: '网络错误', cls: 'diag-error-network' },
-    model: { label: '模型错误', cls: 'diag-error-model' },
-    runtime: { label: '运行时错误', cls: 'diag-error-runtime' },
-    unknown: { label: '未知错误', cls: 'diag-error-unknown' },
+const ERROR_TYPE_META: Record<DiagErrorType, { cls: string }> = {
+    config: { cls: 'diag-error-config' },
+    network: { cls: 'diag-error-network' },
+    model: { cls: 'diag-error-model' },
+    runtime: { cls: 'diag-error-runtime' },
+    unknown: { cls: 'diag-error-unknown' },
 };
+
+/**
+ * 取错误类型对应的本地化标签。
+ *
+ * @param type - 错误分类
+ * @returns 当前语言下的标签文案(如 zh 下 '配置错误',en 下 'Configuration error')
+ */
+function errorTypeLabel(type: DiagErrorType): string {
+    const keyMap: Record<DiagErrorType, StringKey> = {
+        config: 'diag.errorType.config',
+        network: 'diag.errorType.network',
+        model: 'diag.errorType.model',
+        runtime: 'diag.errorType.runtime',
+        unknown: 'diag.errorType.unknown',
+    };
+    return tNow(keyMap[type]);
+}
 
 /**
  * 在容器中渲染一个结构化错误展示块。
@@ -121,25 +144,25 @@ export function renderError(container: HTMLElement, error: DiagError): void {
 
     // 头部:类型标签 + 消息
     const header = block.createDiv({ cls: 'diag-error-header' });
-    header.createSpan({ cls: 'diag-error-tag', text: meta.label });
+    header.createSpan({ cls: 'diag-error-tag', text: errorTypeLabel(error.type) });
     header.createSpan({ cls: 'diag-error-msg', text: error.message });
 
     // 原因与建议
     if (error.cause) {
         const causeRow = block.createDiv({ cls: 'diag-error-row' });
-        causeRow.createSpan({ cls: 'diag-error-label', text: '可能原因:' });
+        causeRow.createSpan({ cls: 'diag-error-label', text: tNow('diag.errorMeta.possibleCauses') });
         causeRow.createSpan({ cls: 'diag-error-value', text: error.cause });
     }
     if (error.suggestion) {
         const sugRow = block.createDiv({ cls: 'diag-error-row' });
-        sugRow.createSpan({ cls: 'diag-error-label', text: '排查建议:' });
+        sugRow.createSpan({ cls: 'diag-error-label', text: tNow('diag.errorMeta.troubleshoot') });
         sugRow.createSpan({ cls: 'diag-error-value', text: error.suggestion });
     }
 
     // 详情折叠
     if (error.stack || error.raw !== undefined) {
         const details = block.createEl('details', { cls: 'diag-error-details' });
-        const summary = details.createEl('summary', { text: '详细信息 (调试用)' });
+        const summary = details.createEl('summary', { text: tNow('diag.errorMeta.details') });
         setIcon(summary.createSpan(), 'chevron-down');
 
         if (error.stack) {
@@ -184,7 +207,7 @@ export function createActionButton(
         if (btn.disabled) return;
         btn.disabled = true;
         btn.addClass('diag-btn-loading');
-        textSpan.textContent = '执行中...';
+        textSpan.textContent = tNow('diag.executing');
         try {
             await onClick();
         } finally {
@@ -222,7 +245,7 @@ export function clearContainer(el: HTMLElement): void {
  */
 export function cosineSimilarity(a: number[], b: number[]): number {
     if (a.length !== b.length) {
-        throw new Error(`向量维度不匹配:${a.length} vs ${b.length}`);
+        throw new Error(tNow('error.embedding.dimMismatch', { expected: a.length, actual: b.length }));
     }
     let dot = 0;
     let normA = 0;

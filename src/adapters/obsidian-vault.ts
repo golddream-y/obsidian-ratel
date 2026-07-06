@@ -8,6 +8,7 @@
 import { type App, TFile } from 'obsidian';
 import type { VaultPort, VaultMetadata } from '../ports/vault';
 import { validateVaultPath } from '../utils/path-safety';
+import { tNow } from '../i18n';
 
 /**
  * Obsidian Vault 外观。
@@ -23,7 +24,7 @@ export class ObsidianVault implements VaultPort {
 	private resolveFile(path: string): TFile {
 		const normalized = validateVaultPath(path);
 		const file = this.app.vault.getAbstractFileByPath(normalized);
-		if (!file || !(file instanceof TFile)) throw new Error(`File not found: ${normalized}`);
+		if (!file || !(file instanceof TFile)) throw new Error(tNow('error.tool.fileNotFound', { path: normalized }));
 		return file;
 	}
 

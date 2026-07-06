@@ -8,6 +8,7 @@ import type { Tool } from '../core/tool-registry';
 import type { ToolDefinition } from '../ports/llm';
 import type { VaultPort } from '../ports/vault';
 import { requireString } from './validate-args';
+import { tNow } from '../i18n';
 
 function countOccurrences(haystack: string, needle: string): number {
 	if (!needle) return 0;
@@ -39,27 +40,25 @@ export function createEditNoteTool(vault: VaultPort, definition: ToolDefinition)
 		async execute(args) {
 			const path = requireString(args, 'path', 'path');
 			if (typeof args.old_string !== 'string') {
-				throw new Error('old_string 必须是字符串');
+				throw new Error(tNow('error.tool.invalidArg', { label: 'old_string', type: typeof args.old_string }));
 			}
 			if (typeof args.new_string !== 'string') {
-				throw new Error('new_string 必须是字符串');
+				throw new Error(tNow('error.tool.invalidArg', { label: 'new_string', type: typeof args.new_string }));
 			}
 			const oldString = args.old_string;
 			const newString = args.new_string;
 
 			if (!(await vault.fileExists(path))) {
-				throw new Error(`文件不存在: ${path}`);
+				throw new Error(tNow('error.tool.fileNotFound', { path }));
 			}
 
 			const content = await vault.readFile(path);
 			const n = countOccurrences(content, oldString);
 			if (n === 0) {
-				throw new Error('未找到要替换的文本,请确认 old_string 精确匹配(含空白缩进)');
+				throw new Error(tNow('error.tool.oldStringNotFound'));
 			}
 			if (n > 1) {
-				throw new Error(
-					`old_string 在文件中出现多次(共 ${n} 次),请提供更多上下文(前后各 3-5 行)以唯一确定`,
-				);
+				throw new Error(tNow('error.tool.oldStringMultipleMatches', { count: n }));
 			}
 
 			await vault.processFile(path, (c) => c.replace(oldString, newString));

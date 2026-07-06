@@ -6,6 +6,7 @@
 
 import { requestUrl } from 'obsidian';
 import type { ModelContextRegistry } from './model-context-registry';
+import { tNow } from '../../i18n';
 
 export type ProbeModelResult =
 	| { ok: true; recommendedTokens?: number; registryHit: boolean }
@@ -38,7 +39,7 @@ export async function probeChatConnection(deps: {
 		});
 
 		if (response.status < 200 || response.status >= 300) {
-			return { ok: false, error: `API 返回 ${response.status}:连接失败或模型名无效` };
+			return { ok: false, error: tNow('error.probe.connectionFailed', { status: response.status }) };
 		}
 
 		const map = await deps.registry.ensureRegistry(deps.registryUrl);
@@ -52,6 +53,6 @@ export async function probeChatConnection(deps: {
 		};
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
-		return { ok: false, error: `请求失败:${message}` };
+		return { ok: false, error: tNow('error.probe.requestFailed', { message }) };
 	}
 }

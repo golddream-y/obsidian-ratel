@@ -8,6 +8,7 @@
 <script lang="ts">
 	import Collapsible from '../../components/Collapsible.svelte';
 	import type { ToolCallEntry } from './types';
+	import { t } from '../../../i18n';
 
 	let { toolCall }: { toolCall: ToolCallEntry } = $props();
 
@@ -28,7 +29,7 @@
 	}
 
 	function formatResult(result: unknown): string {
-		if (Array.isArray(result)) return `找到 ${result.length} 项`;
+		if (Array.isArray(result)) return $t('chat.tool.found', { count: result.length });
 		if (typeof result === 'string') return result.length > 60 ? result.slice(0, 60) + '…' : result;
 		if (result && typeof result === 'object') {
 			const json = JSON.stringify(result);
@@ -58,7 +59,7 @@
 
 	function title(): string {
 		const summary = toolCall.status === 'failed'
-			? toolCall.errorMessage ?? '失败'
+			? toolCall.errorMessage ?? $t('chat.tool.failed')
 			: toolCall.status === 'done' && toolCall.result != null
 				? `— ${formatResult(toolCall.result)}`
 				: '';
@@ -74,7 +75,7 @@
 	}
 
 	function prettyResult(): string {
-		if (toolCall.result == null) return '(无结果)';
+		if (toolCall.result == null) return $t('chat.tool.noResult');
 		try {
 			return JSON.stringify(toolCall.result, null, 2);
 		} catch {
@@ -95,16 +96,16 @@
 	{#if toolCall.status === 'calling'}
 		<div class="ratel-tool-calling">
 			<span class="ratel-tool-dot"></span>
-			<span>执行中…</span>
+			<span>{$t('chat.tool.executing')}</span>
 		</div>
 	{/if}
 	<div class="ratel-tool-section">
-		<div class="ratel-tool-label">参数</div>
+		<div class="ratel-tool-label">{$t('chat.tool.params')}</div>
 		<pre class="ratel-tool-pre">{prettyArgs()}</pre>
 	</div>
 	{#if toolCall.result != null}
 		<div class="ratel-tool-section">
-			<div class="ratel-tool-label">结果</div>
+			<div class="ratel-tool-label">{$t('chat.tool.result')}</div>
 			<pre class="ratel-tool-pre">{prettyResult()}</pre>
 		</div>
 	{/if}

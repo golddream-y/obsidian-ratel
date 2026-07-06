@@ -52,7 +52,7 @@ describe('createSearchVaultTool', () => {
 	it('search_vault - query 非字符串 - 抛错', async () => {
 		const searcher = createMockSearcher([]);
 		const tool = createSearchVaultTool(searcher as never, () => true, makeToolDef('search_vault'));
-		await expect(tool.execute({ query: 123 })).rejects.toThrow('search_vault 参数 query 必须是有效字符串');
+		await expect(tool.execute({ query: 123 })).rejects.toThrow('query 必须是有效字符串');
 	});
 
 	it('search_vault - 检索未就绪 - 抛 INDEX_NOT_READY', async () => {

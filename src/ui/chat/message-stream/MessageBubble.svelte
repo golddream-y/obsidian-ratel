@@ -11,6 +11,7 @@
 	import ThinkSegment from './ThinkSegment.svelte';
 	import ToolSegment from './ToolSegment.svelte';
 	import SearchResults from './SearchResults.svelte';
+	import { t } from '../../../i18n';
 
 	/**
 	 * MessageBubble props。
@@ -84,7 +85,7 @@
 	{#if msg.cancelled}
 		<div class="ratel-cancelled">
 			<span class="ratel-cancelled-dot"></span>
-			已停止生成
+			{$t('chat.error.stopped')}
 		</div>
 	{/if}
 </div>

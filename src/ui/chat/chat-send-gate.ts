@@ -2,11 +2,12 @@
  * @file src/ui/chat-send-gate.ts
  * @description Chat 发送硬拦/软拦判定 — 端点感知 Key 硬拦,检索未就绪软拦
  * @module ui/chat-send-gate
- * @depends user-feedback/user-status, secrets/ratel-secrets
+ * @depends user-feedback/user-status, secrets/ratel-secrets, i18n
  */
 
 import type { UserStatusSnapshot } from '../../user-feedback/user-status';
 import { requiresChatApiKey, type ChatSecretSettings } from '../../secrets/ratel-secrets';
+import { tNow } from '../../i18n';
 
 /** evaluateChatSendGate 的返回结构 */
 export interface ChatSendGateResult {
@@ -34,7 +35,7 @@ export function evaluateChatSendGate(
 ): ChatSendGateResult {
 	// 关键路径:仅 openai-compatible 端点需要钥匙串密钥;本地 Ollama 直接放行。
 	if (requiresChatApiKey(settings) && !opts.hasChatApiKey) {
-		return { canSend: false, hardBlockReason: '请先在 Obsidian 钥匙串配置 Chat API 密钥' };
+		return { canSend: false, hardBlockReason: tNow('chat.gate.noChatKey') };
 	}
 	const searchDegraded =
 		status.embedding !== 'ready' ||
@@ -43,7 +44,7 @@ export function evaluateChatSendGate(
 	if (searchDegraded) {
 		return {
 			canSend: true,
-			softHint: '检索暂不可用,纯对话仍可继续;涉及 vault 搜索时工具会提示失败',
+			softHint: tNow('chat.gate.searchUnavailable'),
 		};
 	}
 	return { canSend: true };

@@ -1,7 +1,9 @@
+import { tNow } from '../i18n';
+
 export function requireString(args: Record<string, unknown>, key: string, label: string): string {
 	const v = args[key];
 	if (typeof v !== 'string' || v.length === 0) {
-		throw new Error(`${label} 必须是非空字符串,收到: ${typeof v}`);
+		throw new Error(tNow('error.tool.invalidArg', { label, type: typeof v }));
 	}
 	return v;
 }

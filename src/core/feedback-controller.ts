@@ -12,6 +12,7 @@ import type { IndexStatus } from './index-manager';
 import { devLogger } from '../logging/dev-logger';
 import type { UserNotice } from '../user-feedback/user-notice';
 import { UserStatus, type UserStatusSnapshot } from '../user-feedback/user-status';
+import { tNow } from '../i18n';
 
 /** FeedbackController 构造依赖 — 注入 status$ 与快照读取函数,便于单测 */
 export interface FeedbackControllerDeps {
@@ -131,7 +132,7 @@ export class FeedbackController {
 				this.inlineWorkerNotified = true;
 				this.deps.userStatus.patch({
 					worker: 'inline',
-					degraded: '主线程内联模式,大库索引较慢,可在设置启用 Worker 线程',
+					degraded: tNow('status.degraded.inline'),
 				});
 			}
 
@@ -140,7 +141,7 @@ export class FeedbackController {
 			if (settings.embedProvider === 'api' && !this.apiModeNotified) {
 				this.apiModeNotified = true;
 				this.deps.userStatus.patch({
-					degraded: 'API Embedding 模式暂不支持自动索引,请切换到本地模型',
+					degraded: tNow('status.degraded.apiEmbedding'),
 				});
 			}
 		});
@@ -163,7 +164,7 @@ export class FeedbackController {
 			case 'Downloading': {
 				const percent = Math.min(100, Math.round(status.progress * 100));
 				const detail = `${percent}%`;
-				const message = `Ratel: 正在下载模型与运行时... ${detail}`;
+				const message = tNow('notice.modelDownloading', { detail });
 				this.deps.userStatus.patch({ model: 'downloading', modelDetail: detail });
 				if (!this.modelProgress) {
 					this.modelProgress = this.deps.userNotice.toastProgress(message);
@@ -175,10 +176,10 @@ export class FeedbackController {
 			case 'Initializing':
 				this.deps.userStatus.patch({ model: 'initializing', modelDetail: undefined });
 				if (this.modelProgress) {
-					this.modelProgress.update('Ratel: 正在初始化本地推理模型(首次较慢,请稍候)...');
+					this.modelProgress.update(tNow('notice.modelInit'));
 				} else {
 					this.modelProgress = this.deps.userNotice.toastProgress(
-						'Ratel: 正在初始化本地推理模型(首次较慢,请稍候)...',
+						tNow('notice.modelInit'),
 					);
 				}
 				break;
@@ -190,7 +191,7 @@ export class FeedbackController {
 			case 'Failed':
 				this.hideModelProgress();
 				this.deps.userStatus.patch({ model: 'failed', modelDetail: status.reason });
-				this.deps.userNotice.toastError(`Ratel: 模型加载失败 — ${status.reason}`);
+				this.deps.userNotice.toastError(tNow('notice.modelLoadFailed', { reason: status.reason }));
 				break;
 			case 'Switching':
 				this.deps.userStatus.patch({
@@ -208,7 +209,7 @@ export class FeedbackController {
 		}
 
 		if (status.state === 'Failed') {
-			this.deps.userNotice.toastError(`Ratel: 索引失败 — ${status.reason}`);
+			this.deps.userNotice.toastError(tNow('notice.indexFailed', { reason: status.reason }));
 		}
 	}
 
@@ -240,11 +241,11 @@ function mapIndexStatus(status: IndexStatus): Partial<UserStatusSnapshot> {
 			return { index: 'init', indexDetail: undefined };
 		case 'Diffing':
 			// 关键路径:smartReindex hash diff 阶段,用户感知"正在检查变更"(spec §5.6)。
-			return { index: 'diffing', indexDetail: '正在检查 vault 变更...' };
+			return { index: 'diffing', indexDetail: tNow('status.detail.checkingChanges') };
 		case 'Scanning':
 			return { index: 'scanning', indexDetail: `${status.scanned}/${status.total}` };
 		case 'Queueing':
-			return { index: 'queueing', indexDetail: `${status.pending} 待索引` };
+			return { index: 'queueing', indexDetail: tNow('status.detail.pending', { count: status.pending }) };
 		case 'Processing':
 			return {
 				index: 'processing',
@@ -253,7 +254,8 @@ function mapIndexStatus(status: IndexStatus): Partial<UserStatusSnapshot> {
 		case 'Ready':
 			return { index: 'ready', indexDocCount: status.totalDocs, indexDetail: undefined };
 		case 'Paused':
-			return { index: 'paused', indexDetail: `${status.pending} 待处理` };
+			// 关键路径:Paused 与 Queueing 都用 pending 计数,但语义不同(待处理 vs 待索引),复用同一 key
+			return { index: 'paused', indexDetail: tNow('status.detail.pending', { count: status.pending }) };
 		case 'Failed':
 			return { index: 'failed', indexDetail: status.reason };
 		case 'Unloaded':

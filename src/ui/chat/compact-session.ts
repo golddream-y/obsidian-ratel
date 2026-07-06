@@ -10,6 +10,7 @@ import type { LLMClient, ChatDelta } from '../../ports/llm';
 import type { ChatMessage } from '../../ports/persistence';
 import { composeCompactMessages } from '../../prompts/composer';
 import type { OverrideMap } from '../../prompts/types';
+import { tNow } from '../../i18n';
 
 /**
  * 保留最近 N 条原文(混合 user/assistant),保证压缩后上下文连续性。
@@ -74,7 +75,7 @@ export async function compactSession(
 
 	// 关键路径:LLM 返回空摘要视为异常,避免注入空 system 消息
 	if (!summary.trim()) {
-		throw new Error('LLM 返回空摘要,可能网络异常,session 未重置');
+		throw new Error(tNow('error.compact.emptySummary'));
 	}
 
 	// 关键路径:LLM 成功后才重置 session。resetSession 内部先 delete 再 load,

@@ -57,6 +57,7 @@ import { devLogger } from './logging/dev-logger';
 import { UserNotice } from './user-feedback/user-notice';
 import { UserStatus } from './user-feedback/user-status';
 import { isSearchReady } from './ui/chat/chat-send-gate';
+import { applyLangPreference, tNow } from './i18n';
 import {
 	hasRerankApiKey,
 	resolveChatApiKey,
@@ -129,6 +130,9 @@ export default class RatelVaultPlugin extends Plugin {
 	 */
 	async onload() {
 		await this.loadSettings();
+		// 关键路径:启动时根据 settings.language 解析界面语言并写入 langStore,
+		// 必须在所有 tNow 调用之前执行(命令注册、Notice、错误消息都依赖 langStore)。
+		applyLangPreference(this.settings.language);
 
 		// ==================== 适配器装配 ====================
 		this.vault = new ObsidianVault(this.app);
@@ -376,69 +380,72 @@ export default class RatelVaultPlugin extends Plugin {
 		);
 
 		// 命令:Ask vault — 唤起聊天侧栏。
-		this.addCommand({
-			id: 'ask-vault',
-			name: 'Ask vault',
-			callback: () => {
-				void this.activateChatView();
-			},
-		});
+	this.addCommand({
+		id: 'ask-vault',
+		name: tNow('cmd.askVault'),
+		callback: () => {
+			void this.activateChatView();
+		},
+	});
 
-		// 命令:索引状态 — 通过 Worker 拉取,UI 通过 Notice 提示。
-		// 关键路径:这是用户**主动命令**触发的反馈,Toast 是合理的"命令结果通知",
-		// 与"系统事件提示"(模型下载/索引完成)语义不同,保留 userNotice.toast 形式。
-		// 实时索引状态由 FeedbackController 持续推送到 StatusBar,无需在此命令中重复同步。
-		this.addCommand({
-			id: 'index-status',
-			name: 'Show index status',
-			callback: async () => {
-				const response = await this.workerManager.request({
-					type: 'index.status',
-					payload: {},
-				});
-				if (response.type === 'index.status.result') {
-					this.userNotice.toast(
-						`Index: ${response.payload.totalDocs} docs, last: ${new Date(response.payload.lastIndexTime).toLocaleString()}`,
-					);
-				} else {
-					this.userNotice.toast('Index not available yet');
-				}
-			},
-		});
+	// 命令:索引状态 — 通过 Worker 拉取,UI 通过 Notice 提示。
+	// 关键路径:这是用户**主动命令**触发的反馈,Toast 是合理的"命令结果通知",
+	// 与"系统事件提示"(模型下载/索引完成)语义不同,保留 userNotice.toast 形式。
+	// 实时索引状态由 FeedbackController 持续推送到 StatusBar,无需在此命令中重复同步。
+	this.addCommand({
+		id: 'index-status',
+		name: tNow('cmd.showIndexStatus'),
+		callback: async () => {
+			const response = await this.workerManager.request({
+				type: 'index.status',
+				payload: {},
+			});
+			if (response.type === 'index.status.result') {
+				this.userNotice.toast(
+					tNow('notice.indexStatus', {
+						count: response.payload.totalDocs,
+						time: new Date(response.payload.lastIndexTime).toLocaleString(),
+					}),
+				);
+			} else {
+				this.userNotice.toast(tNow('notice.indexNotReady'));
+			}
+		},
+	});
 
-		// 命令:重建索引(危险操作 — 走二次确认 Modal,避免误触全量重建)
-		this.addCommand({
-			id: 'reindex',
-			name: '重建索引(全量)',
-			callback: () => showReindexConfirm(this.app, () => this.indexController.reindex()),
-		});
+	// 命令:重建索引(危险操作 — 走二次确认 Modal,避免误触全量重建)
+	this.addCommand({
+		id: 'reindex',
+		name: tNow('cmd.rebuildIndex'),
+		callback: () => showReindexConfirm(this.app, () => this.indexController.reindex()),
+	});
 
-		// 命令:暂停索引(文件事件不再触发增量索引)
-		this.addCommand({
-			id: 'pause-index',
-			name: '暂停索引',
-			callback: () => {
-				this.indexController.pause();
-				this.userNotice.toast('索引已暂停');
-			},
-		});
+	// 命令:暂停索引(文件事件不再触发增量索引)
+	this.addCommand({
+		id: 'pause-index',
+		name: tNow('cmd.pauseIndex'),
+		callback: () => {
+			this.indexController.pause();
+			this.userNotice.toast(tNow('notice.indexPaused'));
+		},
+	});
 
-		// 命令:恢复索引(继续处理文件事件)
-		this.addCommand({
-			id: 'resume-index',
-			name: '恢复索引',
-			callback: () => {
-				this.indexController.resume();
-				this.userNotice.toast('索引已恢复');
-			},
-		});
+	// 命令:恢复索引(继续处理文件事件)
+	this.addCommand({
+		id: 'resume-index',
+		name: tNow('cmd.resumeIndex'),
+		callback: () => {
+			this.indexController.resume();
+			this.userNotice.toast(tNow('notice.indexResumed'));
+		},
+	});
 
-		// 命令:清空索引(危险操作 — 强制输入 DELETE 确认,防止误删向量数据)
-		this.addCommand({
-			id: 'drop-index',
-			name: '清空索引(危险)',
-			callback: () => showDropIndexConfirm(this.app, () => this.vectraStore.dropIndex()),
-		});
+	// 命令:清空索引(危险操作 — 强制输入 DELETE 确认,防止误删向量数据)
+	this.addCommand({
+		id: 'drop-index',
+		name: tNow('cmd.dropIndex'),
+		callback: () => showDropIndexConfirm(this.app, () => this.vectraStore.dropIndex()),
+	});
 
 		// 设置面板
 		this.addSettingTab(new RatelVaultSettingTab(this.app, this));
@@ -484,18 +491,18 @@ export default class RatelVaultPlugin extends Plugin {
 		// 关键路径:模型下载仅 local 模式需要;API 模式无本地模型,但仍要启动索引(P3 修复)。
 		if (this.settings.embedProvider === 'local') {
 			// 关键路径:全量索引进度由 Worker 回调驱动;FeedbackController 仅更新 statusBar,不弹 progress Notice。
-			this.workerManager.setProgressCallback((done, total) => {
-				const message = `Ratel: 正在索引... ${done}/${total} 个文件`;
-				this.userStatus.patch({
-					index: 'scanning',
-					indexDetail: `${done}/${total}`,
-				});
-				if (!indexProgressRef.handle) {
-					indexProgressRef.handle = this.userNotice.toastProgress(message);
-				} else {
-					indexProgressRef.handle.update(message);
-				}
+		this.workerManager.setProgressCallback((done, total) => {
+			const message = tNow('notice.indexProgress', { done, total });
+			this.userStatus.patch({
+				index: 'scanning',
+				indexDetail: `${done}/${total}`,
 			});
+			if (!indexProgressRef.handle) {
+				indexProgressRef.handle = this.userNotice.toastProgress(message);
+			} else {
+				indexProgressRef.handle.update(message);
+			}
+		});
 
 			try {
 				await this.modelManager.download();
@@ -518,14 +525,14 @@ export default class RatelVaultPlugin extends Plugin {
 					}
 				}
 			} catch (err) {
-				indexProgressRef.handle?.hide();
-				indexProgressRef.handle = null;
-				this.workerManager.clearProgressCallback();
-				const message = err instanceof Error ? err.message : String(err);
-				devLogger.error('main', 'onLayoutReady 模型下载失败', err);
-				this.userNotice.toastError(`Ratel 错误: ${message}`);
-				// 关键路径:模型下载失败仍继续启动索引(API 模式不依赖本地模型)。
-			}
+			indexProgressRef.handle?.hide();
+			indexProgressRef.handle = null;
+			this.workerManager.clearProgressCallback();
+			const message = err instanceof Error ? err.message : String(err);
+			devLogger.error('main', 'onLayoutReady 模型下载失败', err);
+			this.userNotice.toastError(tNow('notice.ratelError', { message }));
+			// 关键路径:模型下载失败仍继续启动索引(API 模式不依赖本地模型)。
+		}
 		}
 
 		// 关键路径:索引启动 — 两条 provider 都走(P3 修复)。
@@ -547,7 +554,7 @@ export default class RatelVaultPlugin extends Plugin {
 			this.workerManager.clearProgressCallback();
 			const message = err instanceof Error ? err.message : String(err);
 			devLogger.error('main', '索引启动失败', err);
-			this.userNotice.toastError(`Ratel 索引错误: ${message}`);
+			this.userNotice.toastError(tNow('notice.indexError', { message }));
 		}
 	}
 
@@ -1004,9 +1011,7 @@ export default class RatelVaultPlugin extends Plugin {
 	private async initEmbeddingWorkerProxy(embedding: EmbeddingPort): Promise<void> {
 		// 关键路径: embedding worker 脚本在构建期内联进 main.js(ADR-006),不再读磁盘 embedding-worker.js。
 		if (!EMBEDDING_WORKER_CODE) {
-			throw new Error(
-				'本地 Embedding Worker 脚本未内联(构建产物异常)。请重新 npm run build 或切换到 API Embedding。',
-			);
+			throw new Error(tNow('error.worker.notInlined'));
 		}
 		const blob = new Blob([EMBEDDING_WORKER_CODE], { type: 'application/javascript' });
 		const workerUrl = URL.createObjectURL(blob);
@@ -1015,9 +1020,8 @@ export default class RatelVaultPlugin extends Plugin {
 		// 关键路径:getDeps 重新读盘,返回全新 ArrayBuffer 副本;transfer 给 Worker 后主线程实例不受影响。
 		const deps = await this.modelManager.getDeps();
 		if (!deps) {
-			throw new Error(
-				'本地 Embedding Worker 初始化失败: 模型依赖不可用。请在设置中配置 API Embedding 端点(如 Ollama)后重启插件。',
-			);
+			// 关键路径:模型依赖未就绪,复用 error.embedding.notInit 引导用户检查 Embedding 初始化
+			throw new Error(tNow('error.embedding.notInit'));
 		}
 
 		const proxy = new EmbeddingWorkerProxy(workerUrl, deps, embedding.dimensions);
@@ -1032,9 +1036,8 @@ export default class RatelVaultPlugin extends Plugin {
 			proxy.terminate();
 			this.embeddingWorkerProxy = undefined;
 			const message = err instanceof Error ? err.message : String(err);
-			throw new Error(
-				`本地 Embedding Worker 初始化失败: ${message}。请在设置中配置 API Embedding 端点(如 Ollama)后重启插件。`,
-			);
+			// 复用 error.probe.requestFailed:消息含 {message} 占位,语义为"请求失败"
+			throw new Error(tNow('error.probe.requestFailed', { message }));
 		}
 
 		// 关键路径:用不带 embeddings 的 store 覆盖,因为 IndexProcessor 自己调 proxy.embed 批量推理,

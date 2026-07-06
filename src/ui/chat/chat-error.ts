@@ -2,10 +2,11 @@
  * @file src/ui/chat-error.ts
  * @description Chat 会话内结构化错误 — 复用 formatError 分类,独立 DOM 样式
  * @module ui/chat-error
- * @depends ui/diagnostics/diag-utils
+ * @depends ui/diagnostics/diag-utils, i18n
  */
 
 import { formatError, type DiagError } from '../diagnostics/diag-utils';
+import { tNow } from '../../i18n';
 
 export type { DiagError };
 
@@ -18,7 +19,7 @@ export type { DiagError };
  */
 export function formatChatError(code: string, message: string): DiagError {
 	if (code === 'CANCELLED') {
-		return { type: 'runtime', message: '已停止生成' };
+		return { type: 'runtime', message: tNow('chat.error.stopped') };
 	}
 	// 关键路径:code 是内部英文标识符(LLM_ERROR/TOOL_ERROR/INDEX_NOT_READY),
 	// 不直接拼到用户可见消息里;仅传 message 让 formatError 做启发式分类。
@@ -51,5 +52,5 @@ export function renderChatErrorBlock(parent: HTMLElement, error: DiagError): HTM
  * @returns 提示根元素
  */
 export function renderCancelledHint(parent: HTMLElement): HTMLElement {
-	return parent.createDiv({ cls: 'ratel-chat-cancelled', text: '已停止生成' });
+	return parent.createDiv({ cls: 'ratel-chat-cancelled', text: tNow('chat.error.stopped') });
 }

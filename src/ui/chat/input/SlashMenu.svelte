@@ -6,6 +6,7 @@
 	 * @depends ui/slash-commands
 	 */
 	import { filterCommands, type SlashCommand } from './slash-commands';
+	import { t } from '../../../i18n';
 
 	let {
 		input,
@@ -17,7 +18,13 @@
 		onClose: () => void;
 	} = $props();
 
-	const commands = $derived(filterCommands(input));
+	const commands = $derived.by(() => {
+		// 关键路径:引用 $t 让 derived 追踪 langStore 变化,
+		// 语言切换时 filterCommands 内部调用的 getSlashCommands() 用新语言重求值,
+		// 斜杠菜单 description 即时刷新(与设置面板 / 状态条 / 聊天 UI 一致)
+		void $t;
+		return filterCommands(input);
+	});
 	let selectedIndex = $state(0);
 
 	$effect(() => {
@@ -59,7 +66,7 @@
 
 {#if commands.length > 0}
 	<div class="ratel-sm" role="listbox">
-		<div class="ratel-sm-header">命令</div>
+		<div class="ratel-sm-header">{$t('chat.slashMenu.header')}</div>
 		{#each commands as cmd, i}
 			<div
 				class="ratel-sm-item"

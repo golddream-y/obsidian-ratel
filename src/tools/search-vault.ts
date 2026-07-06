@@ -8,6 +8,7 @@
 import type { Tool } from '../core/tool-registry';
 import type { ToolDefinition } from '../ports/llm';
 import type { MultiQuerySearcher } from '../core/multi-query-searcher';
+import { tNow } from '../i18n';
 
 // 默认返回结果数,与 JSON schema 中的 default 保持一致。
 const DEFAULT_TOP_K = 5;
@@ -36,12 +37,12 @@ export function createSearchVaultTool(
 		readOnly: true,
 		async execute(args: Record<string, unknown>) {
 			if (!getSearchReady()) {
-				const err = new Error('索引或 Embedding 尚未就绪,请稍候或在设置 → 诊断测试中检查');
+				const err = new Error(tNow('error.search.notReady'));
 				(err as Error & { code?: string }).code = 'INDEX_NOT_READY';
 				throw err;
 			}
 			if (typeof args.query !== 'string' || args.query.length === 0) {
-				throw new Error('search_vault 参数 query 必须是有效字符串');
+				throw new Error(tNow('error.tool.invalidQuery', { label: 'query' }));
 			}
 			const query = args.query;
 			const topK = typeof args.topK === 'number' ? args.topK : DEFAULT_TOP_K;

@@ -8,6 +8,7 @@ import type { Tool } from '../core/tool-registry';
 import type { ToolDefinition } from '../ports/llm';
 import type { VaultPort } from '../ports/vault';
 import { requireString } from './validate-args';
+import { tNow } from '../i18n';
 
 /**
  * 创建 append_note 工具实例 — 追加内容到已有笔记末尾。
@@ -26,7 +27,7 @@ export function createAppendNoteTool(vault: VaultPort, definition: ToolDefinitio
 		async execute(args) {
 			const path = requireString(args, 'path', 'path');
 			if (typeof args.content !== 'string') {
-				throw new Error('content 必须是字符串');
+				throw new Error(tNow('error.tool.invalidContent'));
 			}
 			const existed = await vault.fileExists(path);
 			await vault.appendFile(path, args.content);

@@ -141,7 +141,7 @@ describe('EmbeddingApi', () => {
 			dimensions: 1024,
 		});
 
-		await expect(adapter.embed(['test'])).rejects.toThrow(/dimension/i);
+		await expect(adapter.embed(['test'])).rejects.toThrow(/维度/i);
 	});
 
 	it('accepts vectors with matching dimensions', async () => {

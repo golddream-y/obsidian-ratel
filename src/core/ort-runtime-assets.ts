@@ -12,6 +12,7 @@
 import { requestUrl } from 'obsidian';
 import { access, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { tNow } from '../i18n';
 import type { ProgressInfo } from './model-downloader';
 
 /** 与 package.json `dependencies.onnxruntime-web` 版本保持同步。 */
@@ -88,14 +89,14 @@ export class OrtRuntimeAssets {
 		const url = getOrtWasmDownloadUrl(this.version);
 		const response = await this.fetchFn(url);
 		if (response.status < 200 || response.status >= 300) {
-			throw new Error(`下载 ONNX Runtime WASM 失败: ${response.status}`);
+			throw new Error(tNow('error.ort.downloadFailed', { status: response.status }));
 		}
 
 		// 关键路径:requestUrl 不支持流式进度,只能下载完成后 emit 一次 1.0。
 		const buffer = Buffer.from(response.arrayBuffer);
 		if (buffer.byteLength < ORT_WASM_MIN_BYTES) {
 			throw new Error(
-				`下载 ONNX Runtime WASM 失败: 文件过小(${buffer.byteLength} bytes),可能已损坏`,
+				tNow('error.ort.fileCorrupted', { bytes: buffer.byteLength }),
 			);
 		}
 

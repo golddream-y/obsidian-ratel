@@ -36,6 +36,7 @@
 	import { formatToolDisplayName } from './format-tool-display';
 	import { estimateTokens } from '../tokens/token-estimator';
 	import { getEffectiveChatModelMaxTokens } from '../../utils/context-window';
+	import { t, tNow } from '../../i18n';
 
 	let { plugin }: { plugin: RatelVaultPlugin } = $props();
 
@@ -165,7 +166,7 @@
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
 			// 关键路径:压缩失败,session 未重置(LLM 抛错时 resetSession 不会被调)
-			new Notice(`压缩失败:${message}`, 5000);
+			new Notice(tNow('chat.error.compactFailed', { message }), 5000);
 		} finally {
 			isCompacting = false;
 		}
@@ -340,7 +341,7 @@
 		const currentCount = get(attachmentStore).length;
 		const vr = validateAttachment(file, currentCount);
 		if (!vr.ok) {
-			input = `[附件错误] ${vr.reason}`;
+			input = tNow('chat.error.attachmentInvalid', { reason: vr.reason });
 			return;
 		}
 		const { width, height } = await readImageDimensions(file);
@@ -386,7 +387,7 @@
 <div class="ratel-chat">
 	<!-- Header — 标题 + 模型徽章(毛玻璃) -->
 	<div class="ratel-header">
-		<span class="ratel-header-title">Ratel Agent</span>
+		<span class="ratel-header-title">{$t('chat.header.title')}</span>
 		<span class="ratel-header-badge">{modelName}</span>
 	</div>
 
@@ -421,7 +422,7 @@
 		{/if}
 
 		{#if isCompacting}
-			<div class="ratel-compacting-hint">压缩中...</div>
+			<div class="ratel-compacting-hint">{$t('chat.compacting')}</div>
 		{/if}
 
 		<!-- 附件预览条 -->
@@ -443,22 +444,22 @@
 		{/if}
 
 		<div class="ratel-input-row">
-			<button class="ratel-plus-btn" type="button" onclick={triggerFileInput} aria-label="添加图片" disabled={isRunning}>+</button>
+			<button class="ratel-plus-btn" type="button" onclick={triggerFileInput} aria-label={$t('chat.input.addImage')} disabled={isRunning}>+</button>
 			<input bind:this={fileInput} type="file" accept="image/png,image/jpeg,image/webp,image/gif" onchange={handleFileSelect} style="display:none;" />
 			<textarea
 				bind:value={input}
 				onkeydown={handleKeydown}
 				onfocus={refreshKeyState}
-				placeholder="输入 / 查看命令,或直接提问…"
+				placeholder={$t('chat.input.placeholder')}
 				disabled={isRunning || isCompacting || !gate.canSend}
 				rows={1}
 			></textarea>
 		</div>
 		<div class="ratel-input-footer">
 			{#if isRunning}
-				<button class="ratel-send ratel-stop" onclick={stopGeneration} type="button">Stop</button>
+				<button class="ratel-send ratel-stop" onclick={stopGeneration} type="button">{$t('chat.input.stop')}</button>
 			{:else}
-				<button class="ratel-send" onclick={sendMessage} disabled={!input.trim() || !gate.canSend} type="button">Send</button>
+				<button class="ratel-send" onclick={sendMessage} disabled={!input.trim() || !gate.canSend} type="button">{$t('chat.input.send')}</button>
 			{/if}
 		</div>
 	</div>

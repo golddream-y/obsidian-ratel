@@ -10,6 +10,7 @@ import { BailianReranker } from '../../adapters/reranker-bailian';
 import { hasRerankApiKey, resolveRerankApiKey, getRerankSecretId } from '../../secrets/ratel-secrets';
 import type RatelVaultPlugin from '../../main';
 import { createActionButton } from './diag-utils';
+import { tNow } from '../../i18n';
 
 /**
  * 渲染 Rerank 测试面板。
@@ -28,7 +29,7 @@ export function renderRerankTest(container: HTMLElement, plugin: RatelVaultPlugi
 	// ==================== 配置状态 + 未配置引导 ====================
 	if (!hasRerankApiKey(plugin.app)) {
 		container.createEl('p', {
-			text: '未配置百炼 rerank。请在 Obsidian 设置 → Keychain 中添加 ratel-rerank-bailian secret。',
+			text: tNow('diag.rerank.notConfigured'),
 			cls: 'ratel-rerank-warn',
 		});
 		return;
@@ -37,14 +38,18 @@ export function renderRerankTest(container: HTMLElement, plugin: RatelVaultPlugi
 	// 已配置 — 显示状态摘要
 	const summary = container.createDiv({ cls: 'ratel-rerank-summary' });
 	const s = plugin.settings;
-	summary.createSpan({ text: `百炼 | Base: ${s.rerankerApiBase} | 模型: ${s.rerankerModel} | 密钥: ${getRerankSecretId()} | 状态: 已配置` });
+	summary.createSpan({ text: tNow('diag.rerank.statusConfigured', {
+		base: s.rerankerApiBase,
+		model: s.rerankerModel,
+		key: getRerankSecretId(),
+	}) });
 
 	// ==================== 输入区 ====================
 	let query = '';
 
 	new Setting(container)
-		.setName('Query')
-		.setDesc('测试查询文本')
+		.setName(tNow('diag.rerank.queryLabel'))
+		.setDesc(tNow('diag.rerank.queryDesc'))
 		.addText((text) => {
 			text.setValue('').onChange((v) => {
 				query = v;
@@ -53,20 +58,20 @@ export function renderRerankTest(container: HTMLElement, plugin: RatelVaultPlugi
 
 	const candidatesEl = container.createEl('textarea', {
 		cls: 'ratel-rerank-candidates',
-		attr: { placeholder: '一行一个候选文本', rows: '6' },
+		attr: { placeholder: tNow('diag.rerank.candidatesPh'), rows: '6' },
 	});
 
 	// ==================== 结果区 ====================
 	const resultEl = container.createEl('div', { cls: 'ratel-rerank-result' });
 
-	createActionButton(container, '测试 Rerank', async () => {
+	createActionButton(container, tNow('diag.rerank.testButton'), async () => {
 		resultEl.empty();
-		resultEl.createEl('p', { text: '测试中...' });
+		resultEl.createEl('p', { text: tNow('diag.rerank.testing') });
 
 		// 关键路径:空 query 前置校验,避免无意义 API 调用浪费配额(对齐 embedding-test.ts)
 		if (!query.trim()) {
 			resultEl.empty();
-			resultEl.createEl('p', { text: '请输入 Query', cls: 'ratel-rerank-warn' });
+			resultEl.createEl('p', { text: tNow('diag.rerank.errorEmptyQuery'), cls: 'ratel-rerank-warn' });
 			return;
 		}
 
@@ -75,7 +80,7 @@ export function renderRerankTest(container: HTMLElement, plugin: RatelVaultPlugi
 			const apiKey = resolveRerankApiKey(plugin.app);
 			if (!apiKey) {
 				resultEl.empty();
-				resultEl.createEl('p', { text: '无法读取 rerank API key', cls: 'ratel-rerank-warn' });
+				resultEl.createEl('p', { text: tNow('diag.rerank.errorNoKey'), cls: 'ratel-rerank-warn' });
 				return;
 			}
 			const reranker = new BailianReranker({
@@ -92,7 +97,7 @@ export function renderRerankTest(container: HTMLElement, plugin: RatelVaultPlugi
 
 			resultEl.empty();
 			if (ranked.length === 0) {
-				resultEl.createEl('p', { text: '(无结果 — 候选为空或 API 返回空)' });
+				resultEl.createEl('p', { text: tNow('diag.rerank.noResult') });
 				return;
 			}
 			// 关键路径:ranked 返回 {id, score},需回查原 text 展示
@@ -105,7 +110,7 @@ export function renderRerankTest(container: HTMLElement, plugin: RatelVaultPlugi
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
 			resultEl.empty();
-			resultEl.createEl('p', { text: `测试失败:${message}`, cls: 'ratel-rerank-warn' });
+			resultEl.createEl('p', { text: tNow('diag.rerank.testFailed', { message }), cls: 'ratel-rerank-warn' });
 		}
 	}, 'list-ordered');
 }

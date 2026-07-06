@@ -7,6 +7,7 @@
 	 */
 	import type { Readable } from 'svelte/store';
 	import type { UserStatusSnapshot, ContextUsage, PendingAttachment } from '../../user-feedback/user-status';
+	import { t } from '../../i18n';
 
 	let {
 		expanded,
@@ -28,25 +29,25 @@
 
 	function labelIndex(index: UserStatusSnapshot['index']): string {
 		switch (index) {
-			case 'ready': return '就绪';
-			case 'scanning': return '扫描中';
-			case 'queueing': return '排队中';
-			case 'processing': return '处理中';
-			case 'paused': return '已暂停';
-			case 'failed': return '失败';
-			case 'init': return '初始化';
-			case 'diffing': return '检查变更中';
-			case 'idle': return '空闲';
-			default: return '…';
+			case 'ready': return $t('status.indexLabel.ready');
+			case 'scanning': return $t('status.indexLabel.scanning');
+			case 'queueing': return $t('status.indexLabel.queued');
+			case 'processing': return $t('status.indexLabel.processing');
+			case 'paused': return $t('status.indexLabel.paused');
+			case 'failed': return $t('status.indexLabel.failed');
+			case 'init': return $t('status.indexLabel.initializing');
+			case 'diffing': return $t('status.indexLabel.checkingChanges');
+			case 'idle': return $t('status.indexLabel.idle');
+			default: return $t('status.indexLabel.unknown');
 		}
 	}
 
 	function labelEmbedding(embedding: UserStatusSnapshot['embedding']): string {
 		switch (embedding) {
-			case 'ready': return '就绪';
-			case 'loading': return '加载中';
-			case 'unavailable': return '未配置';
-			default: return '…';
+			case 'ready': return $t('status.embedding.ready');
+			case 'loading': return $t('status.embedding.loading');
+			case 'unavailable': return $t('status.embedding.notConfigured');
+			default: return $t('status.embedding.unknown');
 		}
 	}
 
@@ -68,7 +69,7 @@
 	const indexValue = $derived.by(() => {
 		let lbl = labelIndex(snap.index);
 		if (snap.indexDocCount != null && snap.index === 'ready') {
-			lbl += ` (${snap.indexDocCount} 篇)`;
+			lbl += ' ' + $t('status.drawer.docCount', { count: snap.indexDocCount });
 		} else if (snap.indexDetail && /^\d+\/\d+$/.test(snap.indexDetail)) {
 			lbl += ` ${snap.indexDetail}`;
 		}
@@ -89,16 +90,18 @@
 	// source 指示器 — 与 StatusLine 同步
 	const sourceInfo = $derived.by(() => {
 		const src = usage.source ?? 'estimate';
-		if (src === 'api') return { label: 'API 真值', dotClass: 'ratel-drawer-src-api' };
-		if (src === 'streaming') return { label: '流式估算', dotClass: 'ratel-drawer-src-streaming' };
-		return { label: '本地估算', dotClass: 'ratel-drawer-src-estimate' };
+		if (src === 'api') return { label: $t('status.drawer.sourceApi'), dotClass: 'ratel-drawer-src-api' };
+		if (src === 'streaming') return { label: $t('status.drawer.sourceStreaming'), dotClass: 'ratel-drawer-src-streaming' };
+		return { label: $t('status.drawer.sourceEstimate'), dotClass: 'ratel-drawer-src-estimate' };
 	});
 
 	const currentFile = $derived.by(() => {
 		if (snap.index === 'processing' && snap.indexDetail) {
-			if (!/^\d+\/\d+$/.test(snap.indexDetail) && !snap.indexDetail.includes('待')) {
-				return snap.indexDetail;
-			}
+			// 关键路径:排除进度格式("数字/数字")和 pending 消息("数字 + 空格 + 文字"),
+			// 剩余的视为当前文件名。文件名通常不以数字开头。不依赖具体语言匹配。
+			if (/^\d+\/\d+$/.test(snap.indexDetail)) return null;
+			if (/^\d+\s/.test(snap.indexDetail)) return null;
+			return snap.indexDetail;
 		}
 		return null;
 	});
@@ -106,9 +109,9 @@
 
 <div class="ratel-drawer" class:ratel-drawer-open={expanded}>
 	<div class="ratel-drawer-inner">
-		<div class="ratel-drawer-section-title">向量化 / 索引</div>
+		<div class="ratel-drawer-section-title">{$t('status.drawer.section.index')}</div>
 		<div class="ratel-drawer-row">
-			<span class="ratel-drawer-label">索引</span>
+			<span class="ratel-drawer-label">{$t('status.drawer.label.index')}</span>
 			<span class="ratel-drawer-value">{indexValue}</span>
 		</div>
 		{#if snap.index === 'scanning' || snap.index === 'processing' || snap.index === 'queueing'}
@@ -118,17 +121,17 @@
 		{/if}
 		{#if currentFile}
 			<div class="ratel-drawer-row">
-				<span class="ratel-drawer-label">当前文件</span>
+				<span class="ratel-drawer-label">{$t('status.drawer.label.currentFile')}</span>
 				<span class="ratel-drawer-value ratel-drawer-mono">{currentFile}</span>
 			</div>
 		{/if}
 		<div class="ratel-drawer-row">
-			<span class="ratel-drawer-label">Embedding</span>
+			<span class="ratel-drawer-label">{$t('status.drawer.label.embedding')}</span>
 			<span class="ratel-drawer-value">{labelEmbedding(snap.embedding)}</span>
 		</div>
 		<div class="ratel-drawer-row">
-			<span class="ratel-drawer-label">运行模式</span>
-			<span class="ratel-drawer-pill ratel-drawer-pill-warn">{snap.worker === 'inline' ? '内联' : 'Worker'}</span>
+			<span class="ratel-drawer-label">{$t('status.drawer.label.workerMode')}</span>
+			<span class="ratel-drawer-pill ratel-drawer-pill-warn">{snap.worker === 'inline' ? $t('status.drawer.workerMode.inline') : $t('status.drawer.workerMode.worker')}</span>
 		</div>
 		{#if snap.degraded}
 			<div class="ratel-drawer-degraded">
@@ -137,9 +140,9 @@
 			</div>
 		{/if}
 
-		<div class="ratel-drawer-section-title">上下文</div>
+		<div class="ratel-drawer-section-title">{$t('status.drawer.section.context')}</div>
 		<div class="ratel-drawer-row">
-			<span class="ratel-drawer-label">已用 / 上限</span>
+			<span class="ratel-drawer-label">{$t('status.drawer.label.usedMax')}</span>
 			<span class="ratel-drawer-value ratel-drawer-mono">{usage.usedTokens.toLocaleString()} / {usage.maxTokens.toLocaleString()} tokens</span>
 		</div>
 		<!-- 关键路径:token-meter 进度条,与 StatusLine ctx-bar 同步但更大更详细 -->
@@ -153,7 +156,7 @@
 			</span>
 		</div>
 		<div class="ratel-drawer-row">
-			<span class="ratel-drawer-label">数据来源</span>
+			<span class="ratel-drawer-label">{$t('status.drawer.label.dataSource')}</span>
 			<span class="ratel-drawer-value">
 				<span class="ratel-drawer-src {sourceInfo.dotClass}">
 					<span class="ratel-drawer-src-dot"></span>
@@ -163,12 +166,12 @@
 		</div>
 		{#if attachments.length > 0}
 			<div class="ratel-drawer-row">
-				<span class="ratel-drawer-label">附件</span>
-				<span class="ratel-drawer-value">{attachments.length} 张图片 (估 {attachmentTokens} tokens)</span>
+				<span class="ratel-drawer-label">{$t('status.drawer.label.attachments')}</span>
+				<span class="ratel-drawer-value">{$t('status.drawer.attachmentsCount', { count: attachments.length, tokens: attachmentTokens })}</span>
 			</div>
 		{/if}
 		<div class="ratel-drawer-row ratel-drawer-row-end">
-			<button class="ratel-drawer-micro-btn" type="button" onclick={onCompact}>压缩上下文</button>
+			<button class="ratel-drawer-micro-btn" type="button" onclick={onCompact}>{$t('status.drawer.compactButton')}</button>
 		</div>
 	</div>
 </div>

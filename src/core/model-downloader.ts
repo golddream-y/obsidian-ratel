@@ -13,6 +13,7 @@
 
 import { requestUrl } from 'obsidian';
 import { hasEnoughDiskSpace } from '../utils/disk-checker';
+import { tNow } from '../i18n';
 import path from 'node:path';
 import { mkdir, writeFile, access, rm } from 'node:fs/promises';
 
@@ -84,7 +85,7 @@ export class ModelDownloader {
             throw: false,
         });
         if (response.status < 200 || response.status >= 300) {
-            throw new Error(`下载 ${remoteName} 失败: ${response.status}`);
+            throw new Error(tNow('error.model.downloadFailed', { name: remoteName, status: response.status }));
         }
 
         const buffer = response.arrayBuffer;
