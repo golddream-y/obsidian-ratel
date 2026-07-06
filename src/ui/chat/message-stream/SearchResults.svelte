@@ -65,7 +65,6 @@
 		-webkit-backdrop-filter: blur(8px);
 		border: 1px solid color-mix(in srgb, var(--text-accent) 10%, var(--background-modifier-border));
 		font-size: 12px;
-		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
 	}
 
 	.ratel-search-hdr {

@@ -29,70 +29,70 @@ export function renderLLMTest(container: HTMLElement, plugin: RatelVaultPlugin):
     container.empty();
 
     // ==================== 配置状态 ====================
-    const statusArea = container.createDiv({ cls: 'diag-config-summary' });
+    const statusArea = container.createDiv({ cls: 'ratel-diag-config-summary' });
     renderLLMStatus(statusArea, plugin);
 
     // ==================== 输入区 ====================
-    const inputSection = container.createDiv({ cls: 'diag-section' });
+    const inputSection = container.createDiv({ cls: 'ratel-diag-section' });
 
     // System Prompt(可选)
-    inputSection.createEl('label', { cls: 'diag-label', text: tNow('diag.llm.systemPromptLabel') });
+    inputSection.createEl('label', { cls: 'ratel-diag-label', text: tNow('diag.llm.systemPromptLabel') });
     const systemInput = inputSection.createEl('textarea', {
-        cls: 'diag-textarea',
+        cls: 'ratel-diag-textarea',
         attr: { placeholder: tNow('diag.llm.systemPromptPh'), rows: '2' },
     });
 
     // User Message
-    inputSection.createEl('label', { cls: 'diag-label', text: tNow('diag.llm.userMessageLabel') });
+    inputSection.createEl('label', { cls: 'ratel-diag-label', text: tNow('diag.llm.userMessageLabel') });
     const userInput = inputSection.createEl('textarea', {
-        cls: 'diag-textarea',
+        cls: 'ratel-diag-textarea',
         attr: { placeholder: tNow('diag.llm.userMessagePh'), rows: '4' },
     });
 
     // 参数调优
     inputSection.createEl('h4', { text: tNow('diag.llm.paramsLabel') });
-    const paramGroup = inputSection.createDiv({ cls: 'diag-param-group' });
+    const paramGroup = inputSection.createDiv({ cls: 'ratel-diag-param-group' });
 
     // Temperature
-    const tempRow = paramGroup.createDiv({ cls: 'diag-param-row' });
+    const tempRow = paramGroup.createDiv({ cls: 'ratel-diag-param-row' });
     tempRow.createEl('label', { text: 'Temperature' });
     const tempInput = tempRow.createEl('input', {
-        cls: 'diag-input',
+        cls: 'ratel-diag-input',
         type: 'number',
         attr: { min: '0', max: '2', step: '0.1', value: '1.0' },
     });
     tempRow.createSpan({ attr: { style: 'font-size:11px;color:var(--text-faint);width:60px;' }, text: tNow('diag.llm.tempHint') });
 
     // Top P
-    const topPRow = paramGroup.createDiv({ cls: 'diag-param-row' });
+    const topPRow = paramGroup.createDiv({ cls: 'ratel-diag-param-row' });
     topPRow.createEl('label', { text: 'Top P' });
     const topPInput = topPRow.createEl('input', {
-        cls: 'diag-input',
+        cls: 'ratel-diag-input',
         type: 'number',
         attr: { min: '0', max: '1', step: '0.05', value: '1.0' },
     });
 
     // Max Tokens
-    const maxTokensRow = paramGroup.createDiv({ cls: 'diag-param-row' });
+    const maxTokensRow = paramGroup.createDiv({ cls: 'ratel-diag-param-row' });
     maxTokensRow.createEl('label', { text: 'Max Tokens' });
     const maxTokensInput = maxTokensRow.createEl('input', {
-        cls: 'diag-input',
+        cls: 'ratel-diag-input',
         type: 'number',
         attr: { min: '1', max: '8192', step: '10', placeholder: tNow('diag.llm.maxTokensPlaceholder') },
     });
 
     // 按钮行
-    const btnRow = inputSection.createDiv({ cls: 'diag-row' });
-    const sendBtn = btnRow.createEl('button', { cls: 'diag-btn', text: tNow('diag.llm.send') });
-    const stopBtn = btnRow.createEl('button', { cls: 'diag-btn diag-btn-secondary', text: tNow('diag.llm.stop') });
+    const btnRow = inputSection.createDiv({ cls: 'ratel-diag-row' });
+    const sendBtn = btnRow.createEl('button', { cls: 'ratel-diag-btn', text: tNow('diag.llm.send') });
+    const stopBtn = btnRow.createEl('button', { cls: 'ratel-diag-btn ratel-diag-btn-secondary', text: tNow('diag.llm.stop') });
     stopBtn.disabled = true;
-    const clearBtn = btnRow.createEl('button', { cls: 'diag-btn diag-btn-secondary', text: tNow('diag.llm.clear') });
+    const clearBtn = btnRow.createEl('button', { cls: 'ratel-diag-btn ratel-diag-btn-secondary', text: tNow('diag.llm.clear') });
 
     // ==================== 输出区 ====================
-    const outputSection = container.createDiv({ cls: 'diag-section' });
+    const outputSection = container.createDiv({ cls: 'ratel-diag-section' });
     const metaInfo = outputSection.createDiv({ attr: { style: 'font-size:12px;color:var(--text-faint);margin-bottom:8px;min-height:16px;' } });
-    const streamArea = outputSection.createDiv({ cls: 'diag-llm-stream' });
-    streamArea.createDiv({ cls: 'diag-result-empty', text: tNow('diag.llm.sendHint') });
+    const streamArea = outputSection.createDiv({ cls: 'ratel-diag-llm-stream' });
+    streamArea.createDiv({ cls: 'ratel-diag-result-empty', text: tNow('diag.llm.sendHint') });
     const errorArea = outputSection.createDiv();
 
     // 内部状态
@@ -147,9 +147,9 @@ export function renderLLMTest(container: HTMLElement, plugin: RatelVaultPlugin):
         // 关键路径:仅 openai-compatible 端点缺钥匙串密钥时提示;本地 Ollama 免 Key。
         if (requiresChatApiKey(plugin.settings) && !hasChatApiKey(plugin.app, plugin.settings)) {
             errorArea.empty();
-            const warn = errorArea.createDiv({ cls: 'diag-error-block', attr: { style: 'border-left-color: var(--text-warning);' } });
-            warn.createDiv({ cls: 'diag-error-header' })
-                .createSpan({ cls: 'diag-error-tag', attr: { style: 'background: var(--text-warning);' }, text: tNow('diag.llm.warn') });
+            const warn = errorArea.createDiv({ cls: 'ratel-diag-error-block', attr: { style: 'border-left-color: var(--text-warning);' } });
+            warn.createDiv({ cls: 'ratel-diag-error-header' })
+                .createSpan({ cls: 'ratel-diag-error-tag', attr: { style: 'background: var(--text-warning);' }, text: tNow('diag.llm.warn') });
             warn.createDiv({ text: tNow('diag.llm.errorNoKeyWarn') });
         }
 
@@ -196,7 +196,7 @@ export function renderLLMTest(container: HTMLElement, plugin: RatelVaultPlugin):
                         fullResponse += delta.text;
                         chunkCount++;
                         // 流式追加到 DOM
-                        if (streamArea.querySelector('.diag-result-empty')) {
+                        if (streamArea.querySelector('.ratel-diag-result-empty')) {
                             streamArea.empty();
                         }
                         streamArea.appendText(delta.text);
@@ -230,7 +230,7 @@ export function renderLLMTest(container: HTMLElement, plugin: RatelVaultPlugin):
     stopBtn.addEventListener('click', stop);
     clearBtn.addEventListener('click', () => {
         resetOutput();
-        streamArea.createDiv({ cls: 'diag-result-empty', text: tNow('diag.llm.sendHint') });
+        streamArea.createDiv({ cls: 'ratel-diag-result-empty', text: tNow('diag.llm.sendHint') });
     });
 
     // 支持 Ctrl/Cmd+Enter 发送
@@ -254,7 +254,7 @@ function renderLLMStatus(container: HTMLElement, plugin: RatelVaultPlugin): void
     const hasKey = hasChatApiKey(plugin.app, s);
 
     container.empty();
-    container.createSpan({ cls: `diag-status-dot ${hasKey ? 'diag-status-ok' : 'diag-status-warn'}` });
+    container.createSpan({ cls: `ratel-diag-status-dot ${hasKey ? 'ratel-diag-status-ok' : 'ratel-diag-status-warn'}` });
     container.createSpan({ text: tNow('diag.llm.configSummary') });
     container.createEl('code', { text: 'LLM / Chat' });
     container.createSpan({ text: ' | ' });

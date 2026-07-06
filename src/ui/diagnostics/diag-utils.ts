@@ -104,11 +104,11 @@ export function formatError(err: unknown, context?: string): DiagError {
  * 否则用户切换语言后旧标签不会刷新。
  */
 const ERROR_TYPE_META: Record<DiagErrorType, { cls: string }> = {
-    config: { cls: 'diag-error-config' },
-    network: { cls: 'diag-error-network' },
-    model: { cls: 'diag-error-model' },
-    runtime: { cls: 'diag-error-runtime' },
-    unknown: { cls: 'diag-error-unknown' },
+    config: { cls: 'ratel-diag-error-config' },
+    network: { cls: 'ratel-diag-error-network' },
+    model: { cls: 'ratel-diag-error-model' },
+    runtime: { cls: 'ratel-diag-error-runtime' },
+    unknown: { cls: 'ratel-diag-error-unknown' },
 };
 
 /**
@@ -140,33 +140,33 @@ function errorTypeLabel(type: DiagErrorType): string {
 export function renderError(container: HTMLElement, error: DiagError): void {
     const meta = ERROR_TYPE_META[error.type];
 
-    const block = container.createDiv({ cls: `diag-error-block ${meta.cls}` });
+    const block = container.createDiv({ cls: `ratel-diag-error-block ${meta.cls}` });
 
     // 头部:类型标签 + 消息
-    const header = block.createDiv({ cls: 'diag-error-header' });
-    header.createSpan({ cls: 'diag-error-tag', text: errorTypeLabel(error.type) });
-    header.createSpan({ cls: 'diag-error-msg', text: error.message });
+    const header = block.createDiv({ cls: 'ratel-diag-error-header' });
+    header.createSpan({ cls: 'ratel-diag-error-tag', text: errorTypeLabel(error.type) });
+    header.createSpan({ cls: 'ratel-diag-error-msg', text: error.message });
 
     // 原因与建议
     if (error.cause) {
-        const causeRow = block.createDiv({ cls: 'diag-error-row' });
-        causeRow.createSpan({ cls: 'diag-error-label', text: tNow('diag.errorMeta.possibleCauses') });
-        causeRow.createSpan({ cls: 'diag-error-value', text: error.cause });
+        const causeRow = block.createDiv({ cls: 'ratel-diag-error-row' });
+        causeRow.createSpan({ cls: 'ratel-diag-error-label', text: tNow('diag.errorMeta.possibleCauses') });
+        causeRow.createSpan({ cls: 'ratel-diag-error-value', text: error.cause });
     }
     if (error.suggestion) {
-        const sugRow = block.createDiv({ cls: 'diag-error-row' });
-        sugRow.createSpan({ cls: 'diag-error-label', text: tNow('diag.errorMeta.troubleshoot') });
-        sugRow.createSpan({ cls: 'diag-error-value', text: error.suggestion });
+        const sugRow = block.createDiv({ cls: 'ratel-diag-error-row' });
+        sugRow.createSpan({ cls: 'ratel-diag-error-label', text: tNow('diag.errorMeta.troubleshoot') });
+        sugRow.createSpan({ cls: 'ratel-diag-error-value', text: error.suggestion });
     }
 
     // 详情折叠
     if (error.stack || error.raw !== undefined) {
-        const details = block.createEl('details', { cls: 'diag-error-details' });
+        const details = block.createEl('details', { cls: 'ratel-diag-error-details' });
         const summary = details.createEl('summary', { text: tNow('diag.errorMeta.details') });
         setIcon(summary.createSpan(), 'chevron-down');
 
         if (error.stack) {
-            details.createEl('pre', { cls: 'diag-error-stack', text: error.stack });
+            details.createEl('pre', { cls: 'ratel-diag-error-stack', text: error.stack });
         }
         if (error.raw !== undefined) {
             let rawText: string;
@@ -175,7 +175,7 @@ export function renderError(container: HTMLElement, error: DiagError): void {
             } catch {
                 rawText = String(error.raw);
             }
-            details.createEl('pre', { cls: 'diag-error-raw', text: rawText });
+            details.createEl('pre', { cls: 'ratel-diag-error-raw', text: rawText });
         }
     }
 }
@@ -192,27 +192,27 @@ export function createActionButton(
     onClick: () => Promise<void>,
     icon?: string,
 ): HTMLButtonElement {
-    const btn = container.createEl('button', { cls: 'diag-btn' });
+    const btn = container.createEl('button', { cls: 'ratel-diag-btn' });
     // 关键路径:图标 span 与文本 span 分开,避免重置 textContent 时把 SVG 抹掉。
     let iconSpan: HTMLSpanElement | null = null;
     if (icon) {
-        iconSpan = btn.createSpan({ cls: 'diag-btn-icon' });
+        iconSpan = btn.createSpan({ cls: 'ratel-diag-btn-icon' });
         setIcon(iconSpan, icon);
     }
-    const textSpan = btn.createSpan({ cls: 'diag-btn-text', text });
+    const textSpan = btn.createSpan({ cls: 'ratel-diag-btn-text', text });
 
     // 关键路径:用 void 包裹 async 回调,避免 addEventListener 的 async listener
     // 产生浮动 Promise(若 onClick 抛错会变成未处理的 rejection)。
     const handleClick = async (): Promise<void> => {
         if (btn.disabled) return;
         btn.disabled = true;
-        btn.addClass('diag-btn-loading');
+        btn.addClass('ratel-diag-btn-loading');
         textSpan.textContent = tNow('diag.executing');
         try {
             await onClick();
         } finally {
             btn.disabled = false;
-            btn.removeClass('diag-btn-loading');
+            btn.removeClass('ratel-diag-btn-loading');
             textSpan.textContent = text;
         }
     };
@@ -225,9 +225,9 @@ export function createActionButton(
  * 创建结果区域容器 — 统一的留白与边框。
  */
 export function createResultArea(container: HTMLElement, title: string): HTMLElement {
-    const wrapper = container.createDiv({ cls: 'diag-result' });
+    const wrapper = container.createDiv({ cls: 'ratel-diag-result' });
     wrapper.createEl('h4', { text: title });
-    const content = wrapper.createDiv({ cls: 'diag-result-content' });
+    const content = wrapper.createDiv({ cls: 'ratel-diag-result-content' });
     return content;
 }
 

@@ -10,6 +10,7 @@
 	import type RatelVaultPlugin from '../../main';
 	import { get } from 'svelte/store';
 	import StatusLine from '../status/StatusLine.svelte';
+	import { deriveTone } from '../status/tone';
 	import StatusDrawer from '../status/StatusDrawer.svelte';
 	import SlashMenu from './input/SlashMenu.svelte';
 	import AttachmentStrip from './input/AttachmentStrip.svelte';
@@ -88,6 +89,48 @@
 		return filterCommands(input).length > 0;
 	});
 	const modelName = $derived(plugin.settings.chatModel);
+	// 关键路径:Header badge tone 与 StatusLine 同源,保证视觉同步
+	const statusSnap = $derived($statusStore);
+	const headerTone = $derived(deriveTone(statusSnap).tone);
+	// 关键路径:Header 百分比胶囊按使用率阈值变色,与原 StatusLine 阈值一致
+	const headerCtxColor = $derived.by(() => {
+		const p = $contextStore.percentage;
+		if (p >= 95) return 'var(--text-error)';
+		if (p >= 80) return 'var(--text-warning)';
+		return 'var(--text-success)';
+	});
+	const headerPct = $derived(Math.min($contextStore.percentage, 100));
+
+	// 关键路径:work-bar 显示状态 — 优先级从上到下,同时满足只显示第一个
+	// 关键路径:indexing 分支不解析 indexDetail(progressing 状态是文件名,queueing 是 i18n 文字,
+	// 格式不统一)。进度数字由 StatusDrawer 进度条承担,work-bar 只显示笼统的"索引中..."
+	const workBar = $derived.by(() => {
+		const s = $statusStore;
+		// 阻塞提示优先单独显示
+		if (gate.hardBlockReason) return { type: 'hard' as const, text: gate.hardBlockReason };
+		// 索引中(processing/scanning/queueing/diffing 四种状态,统一显示"索引中...")
+		if (s.index === 'processing' || s.index === 'scanning' || s.index === 'queueing' || s.index === 'diffing') {
+			return { type: 'indexing' as const, text: $t('chat.workbar.indexing') };
+		}
+		// 模型下载中
+		if (s.model === 'downloading') {
+			return { type: 'downloading' as const, text: $t('chat.workbar.downloading') };
+		}
+		// 模型初始化中
+		if (s.model === 'checking' || s.model === 'initializing') {
+			return { type: 'preparing' as const, text: $t('chat.workbar.preparing') };
+		}
+		// 压缩中
+		if (isCompacting) {
+			return { type: 'compacting' as const, text: $t('chat.workbar.compacting') };
+		}
+		// 搜索中(isRunning 且 gate 不阻塞)
+		if (isRunning) {
+			return { type: 'searching' as const, text: $t('chat.workbar.searching') };
+		}
+		// 空闲
+		return null;
+	});
 
 	// 关键路径:chatModelMaxTokens 由设置面板预设/自定义配置,见 ADR-007。
 	$effect(() => {
@@ -385,10 +428,16 @@
 </script>
 
 <div class="ratel-chat">
-	<!-- Header — 标题 + 模型徽章(毛玻璃) -->
+	<!-- Header — logo + 标题 + 上下文百分比胶囊 + 模型徽章(tone 变色) -->
 	<div class="ratel-header">
-		<span class="ratel-header-title">{$t('chat.header.title')}</span>
-		<span class="ratel-header-badge">{modelName}</span>
+		<div class="ratel-header-left">
+			<span class="ratel-header-logo">R</span>
+			<span class="ratel-header-title">{$t('chat.header.title')}</span>
+		</div>
+		<div class="ratel-header-right">
+			<span class="ratel-header-ctx" style={`color: ${headerCtxColor}; border-color: color-mix(in srgb, ${headerCtxColor} 20%, transparent); background: color-mix(in srgb, ${headerCtxColor} 12%, transparent);`}>{headerPct}%</span>
+			<span class="ratel-header-badge ratel-header-badge--{headerTone}">{modelName}</span>
+		</div>
 	</div>
 
 	<!-- 消息流(委托 MessageList,容器 ref + onscroll 由子组件透传上来) -->
@@ -399,7 +448,6 @@
 	<!-- StatusLine(常驻底部) -->
 	<StatusLine
 		status$={statusStore}
-		contextUsage$={contextStore}
 		expanded={drawerExpanded}
 		onToggle={() => (drawerExpanded = !drawerExpanded)}
 	/>
@@ -409,22 +457,11 @@
 		expanded={drawerExpanded}
 		status$={statusStore}
 		contextUsage$={contextStore}
-		pendingAttachments$={attachmentStore}
 		onCompact={handleCompact}
 	/>
 
 	<!-- 输入区(毛玻璃) -->
 	<div class="ratel-input">
-		{#if gate.hardBlockReason}
-			<div class="ratel-gate ratel-gate-hard">⚠ {gate.hardBlockReason}</div>
-		{:else if gate.softHint}
-			<div class="ratel-gate">ⓘ {gate.softHint}</div>
-		{/if}
-
-		{#if isCompacting}
-			<div class="ratel-compacting-hint">{$t('chat.compacting')}</div>
-		{/if}
-
 		<!-- 附件预览条 -->
 		<AttachmentStrip
 			pendingAttachments$={attachmentStore}
@@ -462,15 +499,32 @@
 				<button class="ratel-send" onclick={sendMessage} disabled={!input.trim() || !gate.canSend} type="button">{$t('chat.input.send')}</button>
 			{/if}
 		</div>
+
+		<!-- work 条 — 显示"正在做的事"或 gate 提示,空闲时隐藏 -->
+		{#if workBar}
+			<div class="ratel-work-bar">
+				{#if workBar.type === 'hard'}
+					<span class="ratel-work-hint ratel-work-hint-hard">⚠ {workBar.text}</span>
+				{:else}
+					<span class="ratel-work-item ratel-work-item--{workBar.type}">
+						<span class="ratel-work-dot"></span>
+						<span>{workBar.text}</span>
+					</span>
+					{#if gate.softHint}
+						<span class="ratel-work-hint">ⓘ {gate.softHint}</span>
+					{/if}
+				{/if}
+			</div>
+		{/if}
 	</div>
 </div>
 
 <style>
 	/*
 	 * 设计 Token 映射:
-	 * - 圆角 6-8px(符合设计系统上限)
+	 * - 圆角 6-8px(符合设计系统上限,严禁超过 8px)
 	 * - 毛玻璃 backdrop-filter blur(8-10px)
-	 * - 微阴影增强层次感(用户明确要求阴影)
+	 * - 视觉层次靠 border + background 对比度,不使用 box-shadow(项目硬约束禁止)
 	 * - 半透明背景 color-mix 适配亮/暗主题
 	 */
 	* { box-sizing: border-box; }
@@ -485,7 +539,7 @@
 		font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 	}
 
-	/* ==================== Header(毛玻璃 + 微阴影) ==================== */
+	/* ==================== Header(毛玻璃,无 box-shadow) ==================== */
 	.ratel-header {
 		flex-shrink: 0;
 		padding: 10px 14px;
@@ -498,6 +552,35 @@
 		-webkit-backdrop-filter: blur(10px);
 	}
 
+	.ratel-header-left {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.ratel-header-right {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+
+	/* R logo — 22×22 圆角 6px,半透明绿底 */
+	.ratel-header-logo {
+		width: 22px;
+		height: 22px;
+		border-radius: 6px;
+		background: color-mix(in srgb, var(--text-success) 20%, transparent);
+		color: var(--text-success);
+		font-size: 12px;
+		font-weight: 700;
+		font-family: var(--font-monospace);
+		border: 1px solid color-mix(in srgb, var(--text-success) 30%, transparent);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+	}
+
 	.ratel-header-title {
 		font-size: 13px;
 		font-weight: 600;
@@ -505,19 +588,73 @@
 		letter-spacing: 0.3px;
 	}
 
+	/* 上下文百分比胶囊 — 只显示数字,按阈值变色 */
+	.ratel-header-ctx {
+		font-size: 11px;
+		font-family: var(--font-monospace);
+		padding: 2px 9px;
+		border-radius: 8px;
+		border: 1px solid;
+		font-weight: 600;
+		min-width: 36px;
+		text-align: center;
+	}
+
+	/* model badge — 随 tone 变色 */
 	.ratel-header-badge {
 		font-size: 11px;
 		font-family: var(--font-monospace);
 		padding: 2px 9px;
-		border-radius: 12px;
-		background: color-mix(in srgb, var(--text-success) 15%, transparent);
-		color: var(--text-success);
-		border: 1px solid color-mix(in srgb, var(--text-success) 20%, transparent);
+		border-radius: 8px;
 		font-weight: 500;
 		max-width: 180px;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+		border: 1px solid;
+		/* 关键路径:默认 ready 绿底,其他 tone 由修饰类覆盖 */
+		background: color-mix(in srgb, var(--text-success) 12%, transparent);
+		color: var(--text-success);
+		border-color: color-mix(in srgb, var(--text-success) 20%, transparent);
+	}
+
+	.ratel-header-badge--ready {
+		background: color-mix(in srgb, var(--text-success) 12%, transparent);
+		color: var(--text-success);
+		border-color: color-mix(in srgb, var(--text-success) 20%, transparent);
+	}
+
+	.ratel-header-badge--thinking,
+	.ratel-header-badge--indexing {
+		background: color-mix(in srgb, var(--text-warning) 12%, transparent);
+		color: var(--text-warning);
+		border-color: color-mix(in srgb, var(--text-warning) 20%, transparent);
+		animation: ratel-header-pulse 1.2s infinite;
+	}
+
+	.ratel-header-badge--error {
+		background: color-mix(in srgb, var(--text-error) 12%, transparent);
+		color: var(--text-error);
+		border-color: color-mix(in srgb, var(--text-error) 20%, transparent);
+	}
+
+	.ratel-header-badge--unconfigured {
+		background: color-mix(in srgb, var(--text-muted) 10%, transparent);
+		color: var(--text-muted);
+		border-color: color-mix(in srgb, var(--text-muted) 20%, transparent);
+		border-style: dashed;
+	}
+
+	@keyframes ratel-header-pulse {
+		0%, 100% { opacity: 1; }
+		50% { opacity: 0.6; }
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.ratel-header-badge--thinking,
+		.ratel-header-badge--indexing {
+			animation: none;
+		}
 	}
 
 	/* ==================== 消息流容器 ==================== */
@@ -528,21 +665,59 @@
 		flex-direction: column;
 	}
 
-	/* ==================== 门禁提示 ==================== */
-	.ratel-gate {
-		font-size: 11px;
-		color: var(--text-warning);
-		margin-bottom: 8px;
+	/* ==================== work 条(底部,显示正在做的事) ==================== */
+	.ratel-work-bar {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
 		padding: 6px 10px;
 		border-radius: 6px;
-		background: color-mix(in srgb, var(--text-warning) 8%, transparent);
-		border: 1px solid color-mix(in srgb, var(--text-warning) 15%, transparent);
+		background: color-mix(in srgb, var(--background-secondary) 50%, transparent);
+		backdrop-filter: blur(6px);
+		-webkit-backdrop-filter: blur(6px);
+		font-size: 11.5px;
+		margin-top: 4px;
 	}
 
-	.ratel-gate-hard {
+	.ratel-work-item {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		color: var(--text-warning);
+		font-family: var(--font-monospace);
+		font-size: 11px;
+	}
+
+	.ratel-work-dot {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: var(--text-warning);
+		animation: ratel-work-pulse 1.2s infinite;
+		flex-shrink: 0;
+	}
+
+	@keyframes ratel-work-pulse {
+		0%, 100% { opacity: 1; }
+		50% { opacity: 0.4; }
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.ratel-work-dot {
+			animation: none;
+		}
+	}
+
+	.ratel-work-hint {
+		color: var(--text-muted);
+		font-size: 11px;
+	}
+
+	.ratel-work-hint-hard {
 		color: var(--text-error);
-		background: color-mix(in srgb, var(--text-error) 8%, transparent);
-		border-color: color-mix(in srgb, var(--text-error) 15%, transparent);
+		font-weight: 500;
+		width: 100%;
 	}
 
 	/* ==================== 输入区(毛玻璃) ==================== */
@@ -574,7 +749,7 @@
 		gap: 8px;
 	}
 
-	/* + 按钮(毛玻璃 + 微阴影) */
+	/* + 按钮(毛玻璃) */
 	.ratel-plus-btn {
 		width: 32px;
 		height: 32px;
@@ -593,7 +768,6 @@
 		justify-content: center;
 		padding: 0;
 		transition: color 0.15s, border-color 0.15s, background 0.15s;
-		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 		-webkit-appearance: none;
 		appearance: none;
 		font-family: inherit;
@@ -624,15 +798,14 @@
 		line-height: 1.5;
 		resize: none;
 		outline: none;
-		transition: border-color 0.15s, box-shadow 0.15s;
+		transition: border-color 0.15s;
 		overflow-y: auto;
-		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) inset;
 	}
 
 	.ratel-input-row textarea:focus {
 		border-color: var(--interactive-accent);
-		box-shadow: 0 0 0 2px color-mix(in srgb, var(--interactive-accent) 15%, transparent),
-					0 1px 2px rgba(0, 0, 0, 0.04) inset;
+		outline: 2px solid color-mix(in srgb, var(--interactive-accent) 30%, transparent);
+		outline-offset: -1px;
 	}
 
 	.ratel-input-row textarea::placeholder {
@@ -645,7 +818,7 @@
 		margin-top: 4px;
 	}
 
-	/* Send 按钮(产品绿背景 + 微阴影 + 悬停增强) */
+	/* Send 按钮(产品绿背景) */
 	.ratel-send {
 		padding: 7px 18px;
 		border-radius: 8px;
@@ -656,17 +829,10 @@
 		font-weight: 600;
 		font-family: inherit;
 		cursor: pointer;
-		transition: opacity 0.15s, box-shadow 0.15s, transform 0.1s;
-		box-shadow: 0 1px 3px color-mix(in srgb, var(--text-success) 30%, transparent),
-					0 1px 2px rgba(0, 0, 0, 0.08);
+		transition: opacity 0.15s, transform 0.1s;
 		-webkit-appearance: none;
 		appearance: none;
 		letter-spacing: 0.3px;
-	}
-
-	.ratel-send:hover:not(:disabled) {
-		box-shadow: 0 2px 6px color-mix(in srgb, var(--text-success) 40%, transparent),
-					0 1px 3px rgba(0, 0, 0, 0.1);
 	}
 
 	.ratel-send:active:not(:disabled) {
@@ -681,13 +847,6 @@
 	.ratel-stop {
 		background: var(--text-error) !important;
 		color: #fff !important;
-		box-shadow: 0 1px 3px color-mix(in srgb, var(--text-error) 30%, transparent),
-					0 1px 2px rgba(0, 0, 0, 0.08) !important;
-	}
-
-	.ratel-stop:hover:not(:disabled) {
-		box-shadow: 0 2px 6px color-mix(in srgb, var(--text-error) 40%, transparent),
-					0 1px 3px rgba(0, 0, 0, 0.1) !important;
 	}
 
 	@media (prefers-reduced-motion: reduce) {

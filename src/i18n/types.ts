@@ -118,11 +118,15 @@ export interface SettingsStrings {
 // ==================== Chat UI ====================
 export interface ChatStrings {
   'chat.header.title': string;
+  'chat.workbar.indexing': string;
+  'chat.workbar.downloading': string;
+  'chat.workbar.preparing': string;
+  'chat.workbar.searching': string;
+  'chat.workbar.compacting': string;
   'chat.input.placeholder': string;
   'chat.input.send': string;
   'chat.input.stop': string;
   'chat.input.addImage': string;
-  'chat.compacting': string;
   'chat.gate.noChatKey': string;
   'chat.gate.searchUnavailable': string;
   'chat.error.stopped': string;
@@ -243,13 +247,6 @@ export interface StatusStrings {
   'status.index.notConfigured': string;
   'status.index.thinking': string;
   'status.index.ready': string;
-  'status.tokenSource.api': string;
-  'status.tokenSource.streaming': string;
-  'status.tokenSource.estimate': string;
-  'status.tokenSource.apiTitle': string;
-  'status.tokenSource.streamingTitle': string;
-  'status.tokenSource.estimateTitle': string;
-  'status.line.ctxTooltip': string;
   'status.drawer.expand': string;
   'status.drawer.collapse': string;
   'status.drawer.tooltip': string;
@@ -262,13 +259,7 @@ export interface StatusStrings {
   'status.drawer.workerMode.worker': string;
   'status.drawer.section.context': string;
   'status.drawer.label.usedMax': string;
-  'status.drawer.label.dataSource': string;
-  'status.drawer.label.attachments': string;
-  'status.drawer.attachmentsCount': string;
   'status.drawer.compactButton': string;
-  'status.drawer.sourceApi': string;
-  'status.drawer.sourceStreaming': string;
-  'status.drawer.sourceEstimate': string;
   'status.drawer.docCount': string;
   'status.indexLabel.ready': string;
   'status.indexLabel.scanning': string;

@@ -110,7 +110,6 @@
 		backdrop-filter: blur(10px);
 		-webkit-backdrop-filter: blur(10px);
 		border: 1px solid color-mix(in srgb, var(--background-modifier-border) 70%, transparent);
-		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 	}
 
 	.ratel-msg-assistant {
@@ -134,7 +133,6 @@
 		object-fit: cover;
 		border-radius: 6px;
 		border: 1px solid var(--background-modifier-border);
-		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 		transition: transform 0.15s ease;
 	}
 

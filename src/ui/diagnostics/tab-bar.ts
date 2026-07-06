@@ -29,18 +29,18 @@ export function createTabBar(
 ): void {
     parent.empty();
 
-    const tabBar = parent.createDiv({ cls: 'diag-tabs' });
-    const contentArea = parent.createDiv({ cls: 'diag-tab-content' });
+    const tabBar = parent.createDiv({ cls: 'ratel-diag-tabs' });
+    const contentArea = parent.createDiv({ cls: 'ratel-diag-tab-content' });
 
     let activeId = defaultId ?? tabs[0]?.id;
 
     const activateTab = (id: string) => {
         activeId = id;
-        tabBar.querySelectorAll('.diag-tab').forEach((el) => {
+        tabBar.querySelectorAll('.ratel-diag-tab').forEach((el) => {
             if ((el as HTMLElement).dataset.tabId === id) {
-                el.addClass('diag-tab-active');
+                el.addClass('ratel-diag-tab-active');
             } else {
-                el.removeClass('diag-tab-active');
+                el.removeClass('ratel-diag-tab-active');
             }
         });
         contentArea.empty();
@@ -52,7 +52,7 @@ export function createTabBar(
 
     for (const tab of tabs) {
         const btn = tabBar.createEl('button', {
-            cls: 'diag-tab' + (tab.id === activeId ? ' diag-tab-active' : ''),
+            cls: 'ratel-diag-tab' + (tab.id === activeId ? ' ratel-diag-tab-active' : ''),
             text: tab.label,
         });
         btn.dataset.tabId = tab.id;
