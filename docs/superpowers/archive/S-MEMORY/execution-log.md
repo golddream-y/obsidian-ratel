@@ -4,6 +4,34 @@
 
 ---
 
+## 2026-07-06 — P-MEMORY-UI(记忆管理面板 + 设置)
+
+| Task / Group | 文件 | 状态 | Commit | 备注 |
+|---|---|---|---|---|
+| T1 设置页记忆参数 | `src/settings.ts` | ✅ | 5a78b57 | 6 字段 + DEFAULT + Memory group(声明式) |
+| T2 MemoryPanelView | `src/ui/memory-panel/MemoryPanelView.ts` | ✅ | 5a78b57 | ItemView + Svelte mount,brain 图标 |
+| T3 MemoryPanel.svelte | `src/ui/memory-panel/MemoryPanel.svelte` | ✅ | 5a78b57 | 搜索/筛选/行内编辑/清理,i18n 全覆盖 |
+| T4 main.ts 注册 | `src/main.ts` | ✅ | 5a78b57 | registerView + ribbon + activateMemoryView |
+| T5 联调验证 | — | ✅ | — | tsc 0 新增错误 / esbuild 成功 / vitest 604 passed 7 pre-existing failed |
+
+**代码审查修复(Critical + Important):**
+
+| 级别 | 问题 | 修复 |
+|---|---|---|
+| C1 | 主题手风琴级联 toggle bug(open={expr}+ontoggle 导致 expandedTopic 被覆盖) | 删除 open 绑定 + ontoggle,details 非受控(允许多主题同时展开) |
+| I1 | replaceEntryLine/removeEntryBlock 静默失败(indexOf===-1 返回原文) | idx===-1 时抛错,catch 块 Notice 提示 |
+| I2 | 3 个 i18n key 未消费(sourceUser/sourceModel/storageLimit) | emoji 加 title + aria-label 消费 sourceUser/sourceModel |
+| M1 | removeModelEntries 正则 ` {2}` 与解析 `\s+` 宽松度不一致 | 正则改用 `\s+` |
+
+**测试总数:** vitest 604 passed / 7 failed(全部 pre-existing:DeepSeek 401 / path-safety configDir / grep / list-files .obsidian)
+**分支:** main
+**Plan 偏差:** 3 处合理 deviation(Modal 替代 Notice 做交互确认 / 按钮替代双击触发编辑 / if-else 替代非空断言)
+**Commit:** `5a78b57 feat(memory-ui): 记忆管理面板 + 6 个设置项(声明式 i18n)`(含 review fix amend)
+**i18n:** 新增 33 key(memory.settings.* 14 + memory.panel.* 19),zh/en 完整翻译
+**文档同步:** CHANGELOG 加"记忆管理面板"条目;README/user-guide/ARCHITECTURE.md 不需要(功能已描述/FAQ 已覆盖/8.4 已有说明)
+
+---
+
 ## 2026-07-06 — P-MEMORY-LOGIC(用户记忆系统核心逻辑)
 
 | Task / Group | 文件 | 状态 | Commit | 备注 |

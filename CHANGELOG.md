@@ -7,6 +7,7 @@
 
 ### Added
 - **用户记忆系统** — 两层架构(global + topic),Agent 跨会话记住用户偏好与决策;3 个工具 `search_memory`/`remember`/`forget_memory`;记忆存于 vault 的 `.ratel/memory/`,纯 Markdown 可直接编辑;`MemoryStore` 注入 `EmbeddingPort` 预计算向量,独立索引;启动时 global.md + index.md 注入 system prompt(20KB 截断 + retrieval wrapper 防注入);总存储上限 10MB
+- **记忆管理面板** — Svelte 5 侧边栏面板(brain 图标),查看/搜索/筛选/行内编辑/删除记忆条目;设置面板新增「记忆」group(6 个参数:启用/自动写入/存储上限/注入上限/动态上限/上下文总上限)
 - **i18n V2 基础设施** — `src/i18n/` 模块(svelte/store-based),12 namespace ~340 key,开放式 Strings interface 扩展;中英文界面切换,Settings → Ratel → Language 下拉(auto 跟随系统 / 中文 / English),UI 文案即时生效
 - **tool.name.* 友好名** — 工具调用展示从英文工具名改为本地化友好名(如"查看 xxx.md"、"语义搜索")
 - **smart reindex 启动路径** — 启动期 hash diff 跳过未变更文件,热启动零 embed 调用
