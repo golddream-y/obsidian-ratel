@@ -104,6 +104,20 @@ export interface RatelVaultSettings {
 	// 关键路径:Prompt section 级覆盖(来自 Composer registry);空对象 = 全部用 zh.ts 默认。
 	promptOverrides: OverrideMap;
 	trustMode: boolean;
+
+	// Memory(P-MEMORY-UI — 用户记忆系统 6 个配置项,见 spec §8.3)
+	// 关键路径:memoryEnabled=false 时 Agent 不读写记忆,记忆面板仍可查看(只读模式)。
+	memoryEnabled: boolean;
+	// 关键路径:memoryAutoWrite=false 时 Agent 仅在用户显式"记住"指令下写入,不主动推断。
+	memoryAutoWrite: boolean;
+	// 关键路径:memoryStorageLimitMB 是所有记忆文件磁盘占用上限(MB),remember 工具写入前校验。
+	memoryStorageLimitMB: number;
+	// 关键路径:memoryInjectLimitKB 是 global.md 注入系统提示的硬限制(KB),composer 截断用。
+	memoryInjectLimitKB: number;
+	// 关键路径:memoryDynamicLimitKB 是单次 search_memory 返回内容硬限制(KB)。
+	memoryDynamicLimitKB: number;
+	// 关键路径:memoryContextTotalLimitKB 是基础 + 动态记忆在上下文中的合计硬限制(KB)。
+	memoryContextTotalLimitKB: number;
 }
 
 /**
@@ -167,6 +181,19 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 	// 关键路径:默认无任何 override,使用 zh.ts 内置中文模板。
 	promptOverrides: {},
 	trustMode: false,
+
+	// Memory — 6 个配置项默认值(spec §8.3)
+	// 关键路径:默认启用记忆 + 自动写入,让用户零感知 Agent 学习偏好。
+	memoryEnabled: true,
+	memoryAutoWrite: true,
+	// 关键路径:10MB 上限与 MemoryStore 内部 MEMORY_STORAGE_MAX_BYTES 常量对齐(spec §7)。
+	memoryStorageLimitMB: 10,
+	// 关键路径:20KB 基础注入 ≈ 5k tokens,占 200k 上下文的 2.5%。
+	memoryInjectLimitKB: 20,
+	// 关键路径:30KB 动态注入 ≈ 7.5k tokens,留余地给工具结果与回复。
+	memoryDynamicLimitKB: 30,
+	// 关键路径:50KB 总记忆上限 ≈ 12.5k tokens,平衡记忆 vs 检索/回复空间。
+	memoryContextTotalLimitKB: 50,
 };
 
 /**
@@ -450,14 +477,61 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			},
 
 			// ==================== Diagnostics (sub-page) ====================
-			{
-				type: 'page',
-				name: tNow('settings.diagnostics.page.name'),
-				desc: tNow('settings.diagnostics.page.desc'),
-				page: () => new DiagnosticsSettingPage(this.app, this.plugin),
-			},
+		{
+			type: 'page',
+			name: tNow('settings.diagnostics.page.name'),
+			desc: tNow('settings.diagnostics.page.desc'),
+			page: () => new DiagnosticsSettingPage(this.app, this.plugin),
+		},
 
-			// ==================== Developer ====================
+		// ==================== Memory(P-MEMORY-UI — 6 个设置项 + viewMemory action) ====================
+		// 关键路径:声明式 control: { type: 'toggle' / 'number' },框架自动处理 parseInt 与边界校验。
+		// 副作用(无需重建适配器)由 setControlValue 默认路径处理 — saveSettings + update。
+		{
+			type: 'group',
+			heading: tNow('memory.settings.heading'),
+			items: [
+				{
+					name: tNow('memory.settings.enabled.name'),
+					desc: tNow('memory.settings.enabled.desc'),
+					control: { type: 'toggle', key: 'memoryEnabled' },
+				},
+				{
+					name: tNow('memory.settings.autoWrite.name'),
+					desc: tNow('memory.settings.autoWrite.desc'),
+					control: { type: 'toggle', key: 'memoryAutoWrite' },
+				},
+				{
+					name: tNow('memory.settings.storageLimit.name'),
+					desc: tNow('memory.settings.storageLimit.desc'),
+					control: { type: 'number', key: 'memoryStorageLimitMB', min: 1, max: 1000 },
+				},
+				{
+					name: tNow('memory.settings.injectLimit.name'),
+					desc: tNow('memory.settings.injectLimit.desc'),
+					control: { type: 'number', key: 'memoryInjectLimitKB', min: 1, max: 500 },
+				},
+				{
+					name: tNow('memory.settings.dynamicLimit.name'),
+					desc: tNow('memory.settings.dynamicLimit.desc'),
+					control: { type: 'number', key: 'memoryDynamicLimitKB', min: 1, max: 500 },
+				},
+				{
+					name: tNow('memory.settings.contextTotalLimit.name'),
+					desc: tNow('memory.settings.contextTotalLimit.desc'),
+					control: { type: 'number', key: 'memoryContextTotalLimitKB', min: 1, max: 500 },
+				},
+				// 关键路径:viewMemory action 调 plugin.activateMemoryView()(Task 4 在 main.ts 实现)。
+				// 用 () => void 形式标记不等待,避免阻塞设置面板交互。
+				{
+					name: tNow('memory.settings.viewMemory.name'),
+					desc: tNow('memory.settings.viewMemory.desc'),
+					action: () => void this.plugin.activateMemoryView(),
+				},
+			],
+		},
+
+		// ==================== Developer ====================
 			{
 				type: 'group',
 				heading: tNow('settings.developer.heading'),

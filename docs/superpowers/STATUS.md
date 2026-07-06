@@ -28,7 +28,7 @@
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
 | P-I18N-IMPL | [2026-06-14-ratel-i18n-implementation.md](plans/2026-06-14-ratel-i18n-implementation.md) | 🚫 Superseded | S-I18N | 已被 P-I18N-V2-IMPL 取代 |
-| P-MEMORY-UI | [2026-07-05-memory-system-ui.md](plans/2026-07-05-memory-system-ui.md) | ⏳ Pending | S-MEMORY | UI+设置:记忆面板 + 6 个设置项（依赖 P-MEMORY-LOGIC ✅ 已归档);⚠️ Task 1 已重写为声明式 |
+| P-MEMORY-UI | [2026-07-05-memory-system-ui.md](plans/2026-07-05-memory-system-ui.md) | 🔄 In Progress | S-MEMORY | UI+设置:记忆面板 + 6 个设置项（依赖 P-MEMORY-LOGIC ✅ 已归档);Task 1 已重写为声明式;branch: main |
 | P-SKILL-1-CORE | — | ⏳ Pending | S-SKILL | 基础+激活:loader/registry/activator+activate_skill/deactivate_skill 工具+slash 命令;plan 待写 |
 | P-SKILL-2-EXECUTION | — | ⏳ Pending | S-SKILL | references+scripts:沙箱+权限+read_skill_reference/run_skill_script 工具;依赖 P-SKILL-1-CORE;plan 待写 |
 | P-SKILL-3-UI | — | ⏳ Pending | S-SKILL | settings 面板+chat 状态显示+预置示例 skills;依赖 P-SKILL-1-CORE;plan 待写 |
