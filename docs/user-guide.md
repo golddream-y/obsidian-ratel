@@ -109,6 +109,9 @@
 | `/pause` | 暂停自动索引(FolderWatcher 仍在,仅停止队列消费) |
 | `/resume` | 恢复自动索引 |
 | `/dropIndex` | 清空索引并重建(危险操作,需确认) |
+| `/skill <name>` | 激活指定 skill |
+| `/skills` | 列出已加载的 skills |
+| `/skill off <name>` | 反激活指定 skill |
 
 ### 2.6 状态条解读
 
@@ -151,6 +154,8 @@
 | 怎么删除一条记忆? | 跟 Ratel 说"忘掉 X",它会按 match 字符串匹配删除。也可直接在文件管理器删 `.ratel/memory/` 下对应文件 |
 | 记忆会无限增长吗? | 不会。单条 global.md 注入前截断到 20KB;总存储上限 10MB,超出会拒绝写入并提示 |
 | 记忆会发到云端吗? | 不会。记忆文件纯本地,只在你与模型对话时作为上下文注入(发往你配置的模型 API 端点),不会被上传到任何第三方 |
+| 怎么扩展 Ratel 的能力? | 用 Skill 机制。在 vault 的 `.ratel/skills/`、`~/.ratel/skills/` 或预置目录下放一个文件夹,内含 `SKILL.md`(frontmatter + 正文)。Ratel 启动时三源合并扫描,LLM 看到发现列表后自主激活,或用 `/skill <name>` 手动激活 |
+| skill 文件夹结构是什么? | 一个文件夹代表一个 skill,必须包含 `SKILL.md`(frontmatter 含 name/description/activation 等字段 + 正文即激活后注入 system prompt 的指令)。文件夹名需匹配 `^[a-z][a-z0-9-]{0,63}$`。后续版本会支持 references / scripts 子目录 |
 
 ---
 
@@ -247,6 +252,9 @@ Type `/` to trigger menu:
 | `/pause` | Pause auto-indexing (FolderWatcher still active, only stops queue consumption) |
 | `/resume` | Resume auto-indexing |
 | `/dropIndex` | Drop index and rebuild (dangerous, requires confirmation) |
+| `/skill <name>` | Activate a skill |
+| `/skills` | List loaded skills |
+| `/skill off <name>` | Deactivate a skill |
 
 ### 2.6 Status Bar Reading
 
@@ -284,3 +292,5 @@ Type `/` to trigger menu:
 | How to delete a memory entry? | Tell Ratel "forget X" — it matches by string and removes the entry. You can also delete files under `.ratel/memory/` directly in the file manager |
 | Does memory grow unbounded? | No. Single global.md is truncated to 20KB before injection; total storage cap is 10MB — writes are rejected with a notice when exceeded |
 | Is memory uploaded to the cloud? | No. Memory files are purely local. They are only injected as context when you chat with your configured model API endpoint — never uploaded to any third party |
+| How to extend Ratel's capabilities? | Use the Skill mechanism. Drop a folder containing `SKILL.md` (frontmatter + instructions) into `.ratel/skills/` in your vault, `~/.ratel/skills/` globally, or use built-in ones. Ratel scans all three on load; the LLM sees a discovery list and activates on its own, or use `/skill <name>` to activate manually |
+| What's the skill folder structure? | One folder = one skill, must contain `SKILL.md` (frontmatter with name/description/activation etc. + body instructions injected into system prompt when activated). Folder name must match `^[a-z][a-z0-9-]{0,63}$`. Later versions will support references / scripts subdirectories |

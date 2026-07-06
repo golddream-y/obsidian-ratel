@@ -40,8 +40,10 @@ export function getSearchResultsWrapperSuffix(): string {
 
 /**
  * 解析 section 正文:override 优先,其次默认中文,最后空串。
+ *
+ * 关键路径:导出供 SkillActivator 复用 — Discovery 段也走相同的 override + ZH_DEFAULTS 解析链。
  */
-function resolveSection(id: PromptSectionId, overrides: OverrideMap): string {
+export function resolveSection(id: PromptSectionId, overrides: OverrideMap): string {
 	return overrides[id] ?? ZH_DEFAULTS[id] ?? '';
 }
 
@@ -279,4 +281,31 @@ function truncateForInjection(content: string): string {
 	if (byteLength <= MAX_BYTES) return content;
 	const buffer = Buffer.from(content, 'utf-8');
 	return buffer.subarray(0, MAX_BYTES).toString('utf-8');
+}
+
+/**
+ * 组装 Skill Discovery 段 — 注入到 system prompt 的 memorySystemPrompt 之后。
+ *
+ * 关键路径:
+ * - 接收 SkillActivator 已产出的文本,原样返回(v1 恒等包装 — Activator 侧已组合模板 + skillList)
+ * - 不做 retrieval wrapper 包裹(Discovery 段是指令,不是检索结果)
+ * - enableSkills=false 或无 enabled skill 时上层传入空串(不注入)
+ *
+ * @param discoveryText - SkillActivator 产出的 Discovery 段文本(已含模板)
+ * @returns 传入非空则原样返回,空串则返回空串
+ */
+export function composeSkillsDiscovery(discoveryText: string): string {
+	return discoveryText;
+}
+
+/**
+ * 组装 Skill Active 段 — 注入到 Discovery 段之后。
+ *
+ * 关键路径:Active 段是激活 skill 的 instructions 正文,不做 wrapper 包裹(是指令)。
+ *
+ * @param activeText - SkillActivator 产出的 Active 段文本
+ * @returns 传入非空则原样返回,空串则返回空串
+ */
+export function composeActiveSkills(activeText: string): string {
+	return activeText;
 }

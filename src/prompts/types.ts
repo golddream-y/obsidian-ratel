@@ -18,6 +18,9 @@ export type PromptSectionId =
 	| 'injection.searchResults.body'
 	// 关键路径:记忆系统注入提示 — 支持用户在 Prompt overrides 面板覆盖默认中文模板。
 	| 'memory.systemPrompt'
+	// 关键路径:Skill 机制 Discovery 段 — 注入已加载 skill 的 name+description 列表,
+	// 供 LLM 自主判断是否调 activate_skill。zone: 'dynamic',allowOverride: false。
+	| 'agent.skills'
 	| 'internal.compact'
 	| 'internal.intent.system'
 	| 'internal.intent.user'

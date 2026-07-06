@@ -83,7 +83,16 @@ import { ensurePluginGitignore } from './utils/gitignore-writer';
 import { sha256 } from './utils/hash';
 import { IndexManifest } from './core/index-manifest';
 import { ModelContextRegistry } from './ui/tokens/model-context-registry';
+import os from 'os';
 import path from 'path';
+// 关键路径:P-SKILL-1-CORE — Skill 机制(三源加载 + 注册表 + 激活器 + 2 工具)。
+import { SkillLoader } from './skills/skill-loader';
+import { SkillRegistry } from './skills/skill-registry';
+import { SkillActivator } from './skills/skill-activator';
+import { SkillFsAdapter } from './adapters/skill-fs';
+import { SkillVaultAdapter } from './adapters/skill-vault';
+import { createActivateSkillTool } from './tools/activate-skill';
+import { createDeactivateSkillTool } from './tools/deactivate-skill';
 
 /**
  * Ratel Vault 插件主类。
@@ -114,6 +123,10 @@ export default class RatelVaultPlugin extends Plugin {
 	private indexDir!: string;
 	// 关键路径:用户记忆存储,管理 .ratel/memory/ 下的 markdown 文件与 .memory-index/ vectra 索引
 	private memoryStore!: MemoryStore;
+	// 关键路径:P-SKILL-1-CORE — Skill 三源加载器、注册表、激活器。
+	private skillLoader!: SkillLoader;
+	private skillRegistry!: SkillRegistry;
+	private skillActivator!: SkillActivator;
 	modelManager!: ModelManager;
 	modelContextRegistry!: ModelContextRegistry;
 	indexController!: IndexController;
@@ -191,6 +204,24 @@ export default class RatelVaultPlugin extends Plugin {
 		const memoryVectraStore = new VectraStore(memoryIndexDir, { autoInit: false });
 		this.memoryStore = new MemoryStore(memoryDir, memoryVectraStore, this.embedding);
 		this.memoryStore.ensureDir();
+
+		// ==================== Skills(P-SKILL-1-CORE) ====================
+		// 关键路径:三源路径 — builtin(pluginDir/skills 只读)/ global(~/.ratel/skills)/ vault(vaultBase/.ratel/skills)。
+		// 加载顺序 builtin → global → vault,后者覆盖前者同名(spec §4.3)。
+		const builtinSkillsDir = path.join(pluginDir, 'skills');
+		const globalSkillsDir = path.join(os.homedir(), '.ratel', 'skills');
+		const vaultSkillsDir = path.join(vaultBase, '.ratel', 'skills');
+		const builtinPort = new SkillFsAdapter('builtin', builtinSkillsDir);
+		const globalPort = new SkillFsAdapter('global', globalSkillsDir);
+		const vaultPort = new SkillVaultAdapter(this.vault, vaultSkillsDir);
+		this.skillLoader = new SkillLoader([builtinPort, globalPort, vaultPort]);
+		this.skillRegistry = new SkillRegistry();
+		this.skillActivator = new SkillActivator(this.skillRegistry);
+		// 关键路径:onload 异步加载 skills,不阻塞 Obsidian 启动(spec §6.6)。
+		// enableSkills=false 时跳过加载(空 registry,Discovery/Active 段都不注入)。
+		if (this.settings.enableSkills) {
+			void this.reloadSkills();
+		}
 
 		// ==================== Worker ====================
 		// 关键路径:优先尝试 Node.js Worker Threads;Obsidian 渲染进程不支持时降级到 InlineWorker。
@@ -356,6 +387,10 @@ export default class RatelVaultPlugin extends Plugin {
 		);
 		this.tools.register(createRememberTool(this.memoryStore, toolDefMap.get('remember')!));
 		this.tools.register(createForgetMemoryTool(this.memoryStore, toolDefMap.get('forget_memory')!));
+		// 关键路径:P-SKILL-1-CORE — 2 个 skill 工具,复用 skillRegistry。
+		// definition 由 composeToolDefinitions 生成(ALL_TOOL_NAMES 已含 activate_skill/deactivate_skill)。
+		this.tools.register(createActivateSkillTool(this.skillRegistry, toolDefMap.get('activate_skill')!));
+		this.tools.register(createDeactivateSkillTool(this.skillRegistry, toolDefMap.get('deactivate_skill')!));
 		this.hooks = new HookRegistry();
 		this.hooks.register(
 			'pre-tool-use',
@@ -484,6 +519,21 @@ export default class RatelVaultPlugin extends Plugin {
 		id: 'drop-index',
 		name: tNow('cmd.dropIndex'),
 		callback: () => showDropIndexConfirm(this.app, () => this.vectraStore.dropIndex()),
+	});
+
+	// 命令:重新加载 Skills(手动刷新三源)
+	this.addCommand({
+		id: 'reload-skills',
+		name: tNow('cmd.reloadSkills'),
+		callback: async () => {
+			try {
+				const count = await this.reloadSkills();
+				this.userNotice.toast(tNow('skill.notice.reloadDone', { count }));
+			} catch (err) {
+				const message = err instanceof Error ? err.message : String(err);
+				this.userNotice.toastError(tNow('skill.notice.reloadFailed', { message }));
+			}
+		},
 	});
 
 		// 设置面板
@@ -938,11 +988,27 @@ export default class RatelVaultPlugin extends Plugin {
 	 * @returns 异步迭代的 `AgentEvent` 流。
 	 */
 	async *ask(sessionId: string, message: string, signal?: AbortSignal): AsyncIterable<AgentEvent> {
-		// 关键路径:注入 overrides + tools getter,让 ContextManager 调 Composer 拼系统提示词。
+		// 关键路径:注入 overrides + tools + skills getter,让 ContextManager 调 Composer 拼系统提示词。
 		const ctx = new ContextManager(this.persistence, {
 			getOverrides: () => this.settings.promptOverrides,
 			getTools: () => this.tools.definitions(),
+			// 关键路径:注入 skills 段 getter,让 toMessages 时能拿到 Discovery + Active 文本。
+			// enableSkills=false 或无 skill 时返回空串(不注入)。
+			getSkillsDiscovery: () =>
+				this.settings.enableSkills
+					? this.skillActivator.composeDiscovery(this.settings.promptOverrides)
+					: '',
+			getSkillsActive: () =>
+				this.settings.enableSkills ? this.skillActivator.composeActive() : '',
 		});
+
+		// 关键路径:会话启动时设置初始 skills 段(Discovery + Active,后者含 always 激活的 skill)。
+		if (this.settings.enableSkills) {
+			ctx.setSkillsContext(
+				this.skillActivator.composeDiscovery(this.settings.promptOverrides),
+				this.skillActivator.composeActive(),
+			);
+		}
 
 		// 关键路径:会话启动时加载记忆并注入到 ContextManager,
 		// 让 Agent 从一开始就"认识"用户,并知道何时调 search_memory。
@@ -984,6 +1050,9 @@ export default class RatelVaultPlugin extends Plugin {
 			intentClassifier,
 			toolPermissionCheck,
 			this.settings.agentMaxSteps,
+			// 关键路径:注入 skillActivator + skillRegistry,让 activate/deactivate 工具执行后能重组 skills 段。
+			this.skillActivator,
+			this.skillRegistry,
 		);
 	}
 
@@ -1142,5 +1211,28 @@ export default class RatelVaultPlugin extends Plugin {
 			// 关键路径:已存在的 leaf 仅 reveal,不重新 setViewState 避免重置 Svelte 状态。
 			void workspace.revealLeaf(leaf);
 		}
+	}
+
+	/**
+	 * 重新加载 skills — 扫描三源 + 解析 frontmatter + 合并 + 写入 registry。
+	 *
+	 * 关键路径:
+	 * - enableSkills=false 时直接返回 0(不加载)
+	 * - 加载 warnings 通过 devLogger 输出(非阻塞)
+	 * - 加载完成后 registry 状态全量替换
+	 *
+	 * @returns 加载到的 skill 数量
+	 */
+	async reloadSkills(): Promise<number> {
+		if (!this.settings.enableSkills) return 0;
+		const { skills, warnings } = await this.skillLoader.loadAll();
+		this.skillRegistry.reload(skills, warnings);
+		if (warnings.length > 0) {
+			for (const w of warnings) {
+				devLogger.warn('skill', `${w.path}: ${w.message}`);
+			}
+		}
+		devLogger.info('skill', `已加载 ${skills.length} 个 skill`);
+		return skills.length;
 	}
 }

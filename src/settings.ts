@@ -118,6 +118,8 @@ export interface RatelVaultSettings {
 	memoryDynamicLimitKB: number;
 	// 关键路径:memoryContextTotalLimitKB 是基础 + 动态记忆在上下文中的合计硬限制(KB)。
 	memoryContextTotalLimitKB: number;
+	// 关键路径(P-SKILL-1-CORE):Skill 机制总开关,false 时 Agent 不加载 skill。
+	enableSkills: boolean;
 }
 
 /**
@@ -177,6 +179,9 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 		search_memory: 'allow',
 		remember: 'ask',
 		forget_memory: 'ask',
+		// 关键路径:2 个 skill 工具只读放行(不写文件,只改 system prompt)。
+		activate_skill: 'allow',
+		deactivate_skill: 'allow',
 	},
 	// 关键路径:默认无任何 override,使用 zh.ts 内置中文模板。
 	promptOverrides: {},
@@ -194,6 +199,8 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 	memoryDynamicLimitKB: 30,
 	// 关键路径:50KB 总记忆上限 ≈ 12.5k tokens,平衡记忆 vs 检索/回复空间。
 	memoryContextTotalLimitKB: 50,
+	// 关键路径:默认启用 skill 机制,让用户零感知 Discovery 注入。
+	enableSkills: true,
 };
 
 /**
@@ -531,6 +538,20 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			],
 		},
 
+		// ==================== Skills(P-SKILL-1-CORE) ====================
+		// 关键路径:声明式 toggle,saveSettings 后 main.ts 监听 enableSkills 变化触发 reload。
+		{
+			type: 'group',
+			heading: tNow('skill.settings.heading'),
+			items: [
+				{
+					name: tNow('skill.settings.enableSkills.name'),
+					desc: tNow('skill.settings.enableSkills.desc'),
+					control: { type: 'toggle', key: 'enableSkills' },
+				},
+			],
+		},
+
 		// ==================== Developer ====================
 			{
 				type: 'group',
@@ -579,11 +600,13 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			search_memory: 'settings.toolPermissions.search_memory',
 			remember: 'settings.toolPermissions.remember',
 			forget_memory: 'settings.toolPermissions.forget_memory',
+			activate_skill: 'settings.toolPermissions.activate_skill',
+			deactivate_skill: 'settings.toolPermissions.deactivate_skill',
 		};
 		const key = map[toolName];
 		return key ? tNow(key) : toolName;
 	};
-		const allTools = ['search_vault', 'read_note', 'grep', 'glob', 'list_files', 'write_note', 'append_note', 'edit_note', 'delete_note', 'search_memory', 'remember', 'forget_memory'];
+		const allTools = ['search_vault', 'read_note', 'grep', 'glob', 'list_files', 'write_note', 'append_note', 'edit_note', 'delete_note', 'search_memory', 'remember', 'forget_memory', 'activate_skill', 'deactivate_skill'];
 
 		const items: SettingGroupItem[] = [
 			{

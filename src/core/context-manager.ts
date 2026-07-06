@@ -26,6 +26,16 @@ import type { TopicIndexEntry } from '../types';
 export interface ContextManagerDeps {
 	getOverrides: () => OverrideMap;
 	getTools: () => ToolDefinition[];
+	/**
+	 * 关键路径:返回当前 Skill Discovery 段文本(由 Activator 产出)。
+	 * 空串表示不注入(无 enabled skill 或 enableSkills=false)。
+	 */
+	getSkillsDiscovery?: () => string;
+	/**
+	 * 关键路径:返回当前 Skill Active 段文本(由 Activator 产出)。
+	 * 空串表示无激活 skill。
+	 */
+	getSkillsActive?: () => string;
 }
 
 /**
@@ -58,6 +68,16 @@ export class ContextManager {
 	 * 空串表示不注入(未加载记忆或 global.md 为空)。
 	 */
 	private memorySystemPrompt: string = '';
+	/**
+	 * Skill Discovery 段 — 启动时由 setSkillsContext() 设置,
+	 * 注入位置在 memorySystemPrompt 之后、searchResults 之前。
+	 */
+	private skillsDiscovery = '';
+	/**
+	 * Skill Active 段 — 激活/反激活时由 setSkillsContext() 更新,
+	 * 注入位置在 skillsDiscovery 之后。
+	 */
+	private skillsActive = '';
 	/**
 	 * 历史池 token 预算上限。超出时触发 Layer 1 截断(从最旧消息裁剪)。
 	 * 默认 8000 tokens(~32K 字符),适配 32K 窗口模型的历史池占比。
@@ -249,6 +269,34 @@ export class ContextManager {
 	}
 
 	/**
+	 * 返回当前 prompt overrides(供 agent-loop 在 activate_skill / deactivate_skill
+	 * 工具执行后重组 skills 段时使用)。
+	 *
+	 * 关键路径:替代调用方对 private deps 字段做类型断言,提供受控的读取入口。
+	 *
+	 * @returns 当前 OverrideMap(来自 settings.promptOverrides)
+	 */
+	getOverrides(): OverrideMap {
+		return this.deps.getOverrides();
+	}
+
+	/**
+	 * 设置 Skill 上下文 — 在会话启动时与 activate/deactivate 工具执行后调用。
+	 *
+	 * 关键路径:
+	 * - discovery 与 active 文本由 SkillActivator 产出(在调用方)
+	 * - toMessages 时注入到 memorySystemPrompt 之后、searchResultsMessages 之前
+	 * - 空串表示对应段不注入
+	 *
+	 * @param discovery - Discovery 段文本(空串则不注入)
+	 * @param active - Active 段文本(空串则不注入)
+	 */
+	setSkillsContext(discovery: string, active: string): void {
+		this.skillsDiscovery = discovery;
+		this.skillsActive = active;
+	}
+
+	/**
 	 * 拼接最终给 LLM 的消息列表(系统提示 + 记忆注入 + 检索结果 + 历史消息)。
 	 *
 	 * 关键路径:
@@ -272,6 +320,14 @@ export class ContextManager {
 		const messages: ChatMessage[] = [{ role: 'system', content: systemPrompt }];
 		if (this.memorySystemPrompt) {
 			messages.push({ role: 'system', content: this.memorySystemPrompt });
+		}
+		// 关键路径:Skill 段注入 — Discovery 在前,Active 在后,均位于 memory 与 searchResults 之间。
+		// 两段合并为一条 system 消息(避免消息数膨胀)。
+		const skillsText = [this.skillsDiscovery, this.skillsActive]
+			.filter((s) => s.length > 0)
+			.join('\n\n');
+		if (skillsText) {
+			messages.push({ role: 'system', content: skillsText });
 		}
 		messages.push(...this.searchResultsMessages, ...trimmed);
 		return messages;

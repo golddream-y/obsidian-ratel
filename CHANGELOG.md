@@ -6,6 +6,7 @@
 ## [Unreleased]
 
 ### Added
+- **Skill 机制基础层** — 三源加载(builtin `<pluginDir>/skills/` + global `~/.ratel/skills/` + vault `.ratel/skills/`),gray-matter frontmatter 解析;`SkillRegistry` enabled/disabled/active 三态管理;`SkillPort` 端口 + `skill-fs`/`skill-vault` 双适配器(node:fs 与 VaultPort);2 个工具 `activate_skill`/`deactivate_skill`;3 个斜杠命令 `/skill`/`/skills`/`/skill off`;`agent.skills` prompt section(zone: 'dynamic')注入 Discovery + Active 段;Settings 面板新增「Skills」group(enableSkills 开关)
 - **用户记忆系统** — 两层架构(global + topic),Agent 跨会话记住用户偏好与决策;3 个工具 `search_memory`/`remember`/`forget_memory`;记忆存于 vault 的 `.ratel/memory/`,纯 Markdown 可直接编辑;`MemoryStore` 注入 `EmbeddingPort` 预计算向量,独立索引;启动时 global.md + index.md 注入 system prompt(20KB 截断 + retrieval wrapper 防注入);总存储上限 10MB
 - **记忆管理面板** — Svelte 5 侧边栏面板(brain 图标),查看/搜索/筛选/行内编辑/删除记忆条目;设置面板新增「记忆」group(6 个参数:启用/自动写入/存储上限/注入上限/动态上限/上下文总上限)
 - **i18n V2 基础设施** — `src/i18n/` 模块(svelte/store-based),12 namespace ~340 key,开放式 Strings interface 扩展;中英文界面切换,Settings → Ratel → Language 下拉(auto 跟随系统 / 中文 / English),UI 文案即时生效

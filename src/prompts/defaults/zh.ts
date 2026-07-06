@@ -42,6 +42,14 @@ export const ZH_DEFAULTS: Record<PromptSectionId, string> = {
 - 用户说"忘掉 X" → 调 forget_memory
 - 不确定是否需要记忆时 → 宁可多查一次`,
 
+	// 关键路径:Skill Discovery 段 — 注入已加载 skill 的 name+description 列表。
+	// 占位符:{{skillList}} = skill 列表行("- name: description" 格式)。
+	'agent.skills': `## 可用 Skills
+
+以下 skill 已加载,你可在任务需要时调用 \`activate_skill(name)\` 激活对应指令集。激活后该 skill 的完整指令会注入上下文,直到任务完成或你主动 deactivate。
+
+{{skillList}}`,
+
 	'internal.compact': `你是会话压缩器。把下面的对话历史压成结构化摘要,不限制字数,用尽量精炼的语言。
 
 输出格式(严格 4 段,每段用 markdown 标题):
@@ -121,4 +129,9 @@ export const ZH_DEFAULTS: Record<PromptSectionId, string> = {
 	'tool.forget_memory.param.type': '记忆类型,"global" 或 "topic"',
 	'tool.forget_memory.param.topic': '主题名,type=topic 时必填',
 	'tool.forget_memory.param.match': '匹配要删除的条目文本',
+
+	'tool.activate_skill.description': '激活一个已加载的 Skill。激活后该 skill 的指令会注入到上下文,直到任务完成或你主动 deactivate。',
+	'tool.activate_skill.param.name': 'Skill 名称(kebab-case)',
+	'tool.deactivate_skill.description': '关闭一个已激活的 Skill,从上下文移除其指令。',
+	'tool.deactivate_skill.param.name': 'Skill 名称',
 };

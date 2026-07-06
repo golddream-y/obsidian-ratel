@@ -87,6 +87,8 @@ export interface SettingsStrings {
   'settings.toolPermissions.search_memory': string;
   'settings.toolPermissions.remember': string;
   'settings.toolPermissions.forget_memory': string;
+  'settings.toolPermissions.activate_skill': string;
+  'settings.toolPermissions.deactivate_skill': string;
   'settings.toolPermissions.allow': string;
   'settings.toolPermissions.ask': string;
   'settings.toolPermissions.deny': string;
@@ -474,6 +476,9 @@ export interface PromptLabelStrings {
   // 关键路径:记忆系统注入提示 section(用户可在 Prompt overrides 面板覆盖默认中文模板)
   'promptLabel.memory.systemPrompt': string;
   'promptLabel.memory.systemPrompt.desc': string;
+  // 关键路径:Skill 机制 Discovery 段 section(allowOverride: false,不出现在 Prompt overrides 面板)
+  'promptLabel.agent.skills': string;
+  'promptLabel.agent.skills.desc': string;
   'promptLabel.internal.intent.system': string;
   'promptLabel.internal.intent.system.desc': string;
   'promptLabel.internal.intent.user': string;
@@ -510,6 +515,15 @@ export interface PromptLabelStrings {
   'promptLabel.tool.edit_note.description.desc': string;
   'promptLabel.tool.delete_note.description': string;
   'promptLabel.tool.delete_note.description.desc': string;
+  // 关键路径:2 个 skill 工具 section 元数据
+  'promptLabel.tool.activate_skill.description': string;
+  'promptLabel.tool.activate_skill.description.desc': string;
+  'promptLabel.tool.activate_skill.param.name': string;
+  'promptLabel.tool.activate_skill.param.name.desc': string;
+  'promptLabel.tool.deactivate_skill.description': string;
+  'promptLabel.tool.deactivate_skill.description.desc': string;
+  'promptLabel.tool.deactivate_skill.param.name': string;
+  'promptLabel.tool.deactivate_skill.param.name.desc': string;
   'promptLabel.retrieval.wrapperPrefix': string;
   'promptLabel.retrieval.wrapperSuffix': string;
 }
@@ -577,12 +591,52 @@ export interface MemoryStrings {
   'memory.panel.cleared': string;
 }
 
+// ==================== Skill(Skill 机制 — P-SKILL-1-CORE 消费) ====================
+// 关键路径:SkillStrings 覆盖 settings 面板 / Notice / slash 命令 / 来源标签 / 激活态标签
+export interface SkillStrings {
+  // Settings 面板 — Skills group
+  'skill.settings.heading': string;
+  'skill.settings.enableSkills.name': string;
+  'skill.settings.enableSkills.desc': string;
+  // Notice(Toast)
+  'skill.notice.activating': string;
+  'skill.notice.activated': string;
+  'skill.notice.deactivated': string;
+  'skill.notice.notFound': string;
+  'skill.notice.alreadyActive': string;
+  'skill.notice.notActive': string;
+  'skill.notice.reloadDone': string;
+  'skill.notice.reloadFailed': string;
+  // Slash 命令描述
+  'skill.cmd.skill': string;
+  'skill.cmd.skills': string;
+  'skill.cmd.reloadSkills': string;
+  // addCommand name(命令面板)
+  'cmd.reloadSkills': string;
+  // 来源标签
+  'skill.source.builtin': string;
+  'skill.source.global': string;
+  'skill.source.vault': string;
+  // 激活模式标签
+  'skill.activation.auto': string;
+  'skill.activation.manual': string;
+  'skill.activation.always': string;
+  // Discovery / Active 段文案(PromptLabelStrings 已覆盖 promptLabel.skill.*)
+  'skill.discovery.title': string;
+  'skill.discovery.empty': string;
+  'skill.active.title': string;
+  // 错误
+  'error.skill.invalidName': string;
+  'error.skill.notEnabled': string;
+  'error.skill.loadFailed': string;
+}
+
 // ==================== 合并 ====================
 export interface Strings extends
   BaseStrings, SettingsStrings, ChatStrings, ToolNameStrings,
   SlashStrings, NoticeStrings, ModalStrings, StatusStrings,
   DiagnosticsStrings, ErrorStrings, PromptLabelStrings, MemoryStrings,
-  CmdStrings, ToolPermStrings {
+  CmdStrings, ToolPermStrings, SkillStrings {
   // 后续新功能按 namespace 追加 extends
 }
 

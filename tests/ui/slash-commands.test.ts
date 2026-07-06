@@ -9,9 +9,9 @@ import { describe, it, expect } from 'vitest';
 import { getSlashCommands, filterCommands, type SlashCommand } from '../../src/ui/chat/input/slash-commands';
 
 describe('slash-commands', () => {
-	it('getSlashCommands - 含 4 个命令(new/compact/model/reindex)', () => {
+	it('getSlashCommands - 含 7 个命令(new/compact/model/reindex/skill/skills/skill off)', () => {
 		const names = getSlashCommands().map((c) => c.name);
-		expect(names).toEqual(['/new', '/compact', '/model', '/reindex']);
+		expect(names).toEqual(['/new', '/compact', '/model', '/reindex', '/skill', '/skills', '/skill off']);
 	});
 
 	it('getSlashCommands - 每个命令含 name/description/icon', () => {
@@ -23,7 +23,7 @@ describe('slash-commands', () => {
 	});
 
 	it('filterCommands - 空串(仅 /) - 返回全部命令', () => {
-		expect(filterCommands('/')).toHaveLength(4);
+		expect(filterCommands('/')).toHaveLength(7);
 	});
 
 	it('filterCommands - /n - 只返回 /new', () => {

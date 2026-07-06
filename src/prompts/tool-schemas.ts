@@ -149,10 +149,31 @@ export const TOOL_SCHEMA_SKELETONS: Record<string, SchemaSkeleton> = {
 			required: ['type', 'match'],
 		},
 	},
+	activate_skill: {
+		name: 'activate_skill',
+		parameters: {
+			type: 'object',
+			properties: {
+				name: { type: 'string' },
+			},
+			required: ['name'],
+		},
+	},
+	deactivate_skill: {
+		name: 'deactivate_skill',
+		parameters: {
+			type: 'object',
+			properties: {
+				name: { type: 'string' },
+			},
+			required: ['name'],
+		},
+	},
 };
 
 export const ALL_TOOL_NAMES = [
 	'read_note', 'search_vault', 'grep', 'glob', 'list_files',
 	'write_note', 'append_note', 'edit_note', 'delete_note',
 	'search_memory', 'remember', 'forget_memory',
+	'activate_skill', 'deactivate_skill',
 ];

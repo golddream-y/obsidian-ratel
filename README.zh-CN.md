@@ -48,6 +48,10 @@
 
 跟它说"记住我偏好 Tailwind 而不是 styled-components"，或者"记住这个项目用 Postgres 16"——Ratel 会把内容写进 vault 的 `.ratel/memory/` 目录，后续对话里自动把相关记忆注入上下文。两层结构：全局偏好（始终注入）+ 主题记忆（相关时才调用）。记忆文件就是普通 Markdown，随时可打开编辑或删除。说"忘掉 X"即可删除某条记忆。
 
+**Skill 机制 — 让 Ratel 学会新本事**
+
+把一个 `SKILL.md`（frontmatter + 正文）放进 vault 的 `.ratel/skills/`、`~/.ratel/skills/`，或用预置的——Ratel 启动时三源合并扫描。每个 skill 是一份可复用的 prompt 包。Agent 看到发现列表后自主判断是否激活，也可以在对话里用 `/skill <name>` 手动激活。在设置面板可禁用某个 skill，或用 `/skills` 查看已加载列表。
+
 ---
 
 ## 安装
