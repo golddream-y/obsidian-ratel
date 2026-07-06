@@ -10,6 +10,7 @@ import { devLogger } from '../logging/dev-logger';
 // 关键路径:通过 esbuild conditions 让 'vectra' 走 browser 入口,避免引入 index.js 里 re-export 的 server/grpc 依赖。
 import { LocalDocumentIndex, type EmbeddingsModel, type DocumentChunkMetadata, type MetadataTypes } from 'vectra';
 import fs from 'fs';
+import { tNow } from '../i18n';
 
 /**
  * VectraStore 构造选项(M-1 扩展)。
@@ -83,7 +84,7 @@ export class VectraStore implements VectorStore {
 	private async ensureIndex(): Promise<LocalDocumentIndex> {
 		if (!this._ready) this._ready = this.init();
 		await this._ready;
-		if (!this.index) throw new Error('VectraStore init failed');
+		if (!this.index) throw new Error(tNow('error.vector.initFailed'));
 		return this.index;
 	}
 

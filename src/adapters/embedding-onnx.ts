@@ -14,6 +14,7 @@
 import * as ort from 'onnxruntime-web';
 import type { EmbeddingPort } from '../ports/embedding';
 import { createTokenizer, parseVocab, type BertTokenizer } from './bert-tokenizer';
+import { tNow } from '../i18n';
 
 // 关键路径:Tensor 构造函数在 embed 中复用,避免每次重复动态 import。
 type TensorConstructor = typeof ort.Tensor;
@@ -121,7 +122,7 @@ export class EmbeddingOnnx implements EmbeddingPort {
 	 */
 	async embed(texts: string[]): Promise<number[][]> {
 		if (!this.ready || !this.session) {
-			throw new Error('EmbeddingOnnx 未初始化,请先调用 init()');
+			throw new Error(tNow('error.embedding.notInit'));
 		}
 		if (texts.length === 0) {
 			return [];
@@ -173,7 +174,7 @@ export class EmbeddingOnnx implements EmbeddingPort {
 		const lastHiddenState = results.last_hidden_state as ort.Tensor;
 		const dimsArr = lastHiddenState.dims;
 		if (dimsArr.length !== 3) {
-			throw new Error(`ONNX 输出维度异常: 期望 3 维,得到 ${dimsArr.length} 维`);
+			throw new Error(tNow('error.embedding.dimMismatch', { expected: 3, actual: dimsArr.length }));
 		}
 		const seqLen = dimsArr[1]!;
 		const hiddenSize = dimsArr[2]!;

@@ -11,6 +11,8 @@ import { createTabBar } from '../diagnostics/tab-bar';
 import { renderEmbeddingTest } from '../diagnostics/embedding-test';
 import { renderLLMTest } from '../diagnostics/llm-test';
 import { renderRerankTest } from '../diagnostics/rerank-test';
+// 关键路径:SettingPage.display() 每次进入子页面时调用,tNow 即可
+import { tNow } from '../../i18n';
 
 /**
  * 诊断测试子页面 — 在声明式 settings 中作为 `SettingDefinitionPage` 的 imperative 兜底。
@@ -41,24 +43,24 @@ export class DiagnosticsSettingPage extends SettingPage {
 		containerEl.empty();
 
 		containerEl.createEl('p', {
-			text: '调试工具:用于验证 Embedding、LLM、Rerank 适配器是否正常工作。所有参数仅临时生效,不会修改插件配置。',
+			text: tNow('settings.diagnostics.intro'),
 			attr: { style: 'color: var(--text-muted); margin-bottom: 16px; font-size: 13px;' },
 		});
 
 		createTabBar(containerEl, [
 			{
 				id: 'embedding',
-				label: 'Embedding',
+				label: tNow('settings.diagnostics.tab.embedding'),
 				render: (el) => renderEmbeddingTest(el, this.plugin),
 			},
 			{
 				id: 'llm',
-				label: 'LLM',
+				label: tNow('settings.diagnostics.tab.llm'),
 				render: (el) => renderLLMTest(el, this.plugin),
 			},
 			{
 				id: 'rerank',
-				label: 'Rerank',
+				label: tNow('settings.diagnostics.tab.rerank'),
 				render: (el) => renderRerankTest(el, this.plugin),
 			},
 		], 'embedding');

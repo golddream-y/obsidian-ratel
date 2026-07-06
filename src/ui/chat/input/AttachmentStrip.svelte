@@ -7,6 +7,7 @@
 	 */
 	import type { Readable } from 'svelte/store';
 	import type { PendingAttachment } from '../../../user-feedback/user-status';
+	import { t } from '../../../i18n';
 
 	let {
 		pendingAttachments$,
@@ -28,7 +29,7 @@
 					class="ratel-as-remove"
 					type="button"
 					onclick={() => onRemove(att.id)}
-					aria-label="删除附件 {att.fileName}"
+					aria-label={$t('chat.attachments.deleteAria', { fileName: att.fileName })}
 				>×</button>
 				<span class="ratel-as-tokens">~{att.estimatedTokens}t</span>
 			</div>

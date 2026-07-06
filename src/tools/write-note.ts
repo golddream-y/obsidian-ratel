@@ -8,6 +8,7 @@ import type { Tool } from '../core/tool-registry';
 import type { ToolDefinition } from '../ports/llm';
 import type { VaultPort } from '../ports/vault';
 import { requireString } from './validate-args';
+import { tNow } from '../i18n';
 
 /**
  * 创建 write_note 工具实例 — 创建或覆盖笔记(带 frontmatter 模板)。
@@ -26,7 +27,7 @@ export function createWriteNoteTool(vault: VaultPort, definition: ToolDefinition
 		async execute(args) {
 			const path = requireString(args, 'path', 'path');
 			if (typeof args.content !== 'string') {
-				throw new Error('content 必须是字符串');
+				throw new Error(tNow('error.tool.invalidContent'));
 			}
 			const content = args.content;
 			const existed = await vault.fileExists(path);

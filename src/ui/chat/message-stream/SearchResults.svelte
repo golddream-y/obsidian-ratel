@@ -5,6 +5,8 @@
 	设计:毛玻璃卡片 + 精排徽章 + 等宽路径 + 分数色阶
 -->
 <script lang="ts">
+	import { t } from '../../../i18n';
+
 	/**
 	 * 搜索结果列表 props。
 	 *
@@ -31,10 +33,10 @@
 	<div class="ratel-search">
 		<div class="ratel-search-hdr">
 			<span class="ratel-search-icon">🔍</span>
-			<span class="ratel-search-title">搜索结果</span>
+			<span class="ratel-search-title">{$t('chat.search.title')}</span>
 			<span class="ratel-search-count">{results.length}</span>
 			{#if reranked}
-				<span class="ratel-search-badge">✨ 精排</span>
+				<span class="ratel-search-badge">{$t('chat.search.rerankBadge')}</span>
 			{/if}
 		</div>
 		<div class="ratel-search-list">

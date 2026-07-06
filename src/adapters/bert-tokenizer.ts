@@ -13,6 +13,10 @@
  *   loadVocab 仅供主线程使用,动态 import node:fs/promises,避免顶层依赖污染浏览器产物。
  */
 
+// 关键路径:parseVocab 在 Web Worker 中也会执行,导入 i18n 不会引入 Node API(svelte/store 是纯 JS)。
+// Worker 的 langStore 独立于主线程,默认 'zh',错误消息会以中文返回。
+import { tNow } from '../i18n';
+
 /**
  * encode 输出结构。
  */
@@ -67,7 +71,7 @@ export function parseVocab(content: string): ReadonlyMap<string, number> {
 		index++;
 	}
 	if (vocab.size === 0) {
-		throw new Error('vocab.txt 为空或解析失败');
+		throw new Error(tNow('error.tokenizer.vocabFailed'));
 	}
 	return vocab;
 }

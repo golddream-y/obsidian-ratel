@@ -20,7 +20,7 @@ export default defineConfig({
 	test: {
 		// 关键路径:tests/integration 会真实下载模型并跑 ONNX 推理,依赖网络与 wasm,
 		// 默认 npm test 不运行,避免 CI 不稳定;本地手动验证时用 --config 或显式指定路径。
-		include: ['tests/**/*.test.ts'],
+		include: ['tests/**/*.test.ts', 'src/i18n/**/*.test.ts'],
 		exclude: ['tests/integration/**'],
 		environment: 'node',
 		passWithNoTests: true,

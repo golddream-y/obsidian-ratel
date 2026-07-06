@@ -13,6 +13,8 @@ import { ZH_DEFAULTS } from '../../prompts/defaults/zh';
 import { validatePlaceholders } from '../../prompts/interpolate';
 import { composeAgentSystem } from '../../prompts/composer';
 import { devLogger } from '../../logging/dev-logger';
+// 关键路径:声明式 render 每次调用时重新求值 tNow,语言切换后立即生效
+import { tNow } from '../../i18n';
 
 /**
  * 渲染单个 prompt override section(声明式 render 回调)。
@@ -44,14 +46,16 @@ export function renderPromptOverrideSection(
 
 		if (meta.placeholders.length > 0) {
 			heading.createEl('p', {
-				text: `请勿删除占位符: ${meta.placeholders.map((p) => `{{${p}}}`).join(', ')}`,
+				text: tNow('settings.promptOverrides.placeholderHint', {
+					placeholders: meta.placeholders.map((p) => `{{${p}}}`).join(', '),
+				}),
 				cls: 'ratel-prompt-placeholder-hint',
 			});
 		}
 
 		// 使用自定义 toggle
 		new Setting(container)
-			.setName('使用自定义')
+			.setName(tNow('settings.promptOverrides.useCustom'))
 			.addToggle((toggle: ToggleComponent) => {
 				toggle.setValue(useCustom);
 				toggle.onChange(async (on) => {
@@ -79,13 +83,16 @@ export function renderPromptOverrideSection(
 				const missing = validatePlaceholders(value, meta.placeholders);
 				const warnEl = container.querySelector('.ratel-prompt-warn');
 				if (missing.length > 0) {
+					const warnText = tNow('settings.promptOverrides.missingPlaceholder', {
+						placeholders: missing.join(', '),
+					});
 					if (!warnEl) {
 						container.createEl('p', {
 							cls: 'ratel-prompt-warn',
-							text: `缺少占位符: ${missing.join(', ')}`,
+							text: warnText,
 						});
 					} else {
-						(warnEl as HTMLElement).textContent = `缺少占位符: ${missing.join(', ')}`;
+						(warnEl as HTMLElement).textContent = warnText;
 					}
 					devLogger.warn('agent', `override ${meta.id} 缺少占位符`, missing);
 				} else if (warnEl) {
@@ -95,8 +102,8 @@ export function renderPromptOverrideSection(
 				await plugin.saveSettings();
 			};
 
-			new Setting(container).setName('恢复本段默认').addButton((btn) =>
-				btn.setButtonText('恢复').onClick(async () => {
+			new Setting(container).setName(tNow('settings.promptOverrides.resetButton')).addButton((btn) =>
+				btn.setButtonText(tNow('settings.promptOverrides.resetButton')).onClick(async () => {
 					delete plugin.settings.promptOverrides[meta.id];
 					await plugin.saveSettings();
 					tab.update();
@@ -116,17 +123,17 @@ export function renderPromptPreviewButton(
 ): (setting: Setting, group: SettingGroup) => void {
 	return (setting) => {
 		new Setting(setting.settingEl)
-			.setName('预览当前 RAG 系统提示词')
-			.setDesc('使用当前工具列表与 overrides 合成(点击后弹出模态框)')
+			.setName(tNow('settings.promptOverrides.previewButton'))
+			.setDesc(tNow('settings.promptOverrides.previewDesc'))
 			.addButton((btn) =>
-				btn.setButtonText('预览').onClick(() => {
+				btn.setButtonText(tNow('settings.promptOverrides.previewButton')).onClick(() => {
 					const preview = composeAgentSystem(
 						'rag',
 						{ tools: plugin.tools.definitions() },
 						plugin.settings.promptOverrides,
 					);
 					const modal = new Modal(plugin.app);
-					modal.titleEl.setText('RAG 系统提示词预览');
+					modal.titleEl.setText(tNow('settings.promptOverrides.previewModal.title'));
 					const pre = modal.contentEl.createEl('pre', { text: preview });
 					pre.setCssProps({
 						whiteSpace: 'pre-wrap',

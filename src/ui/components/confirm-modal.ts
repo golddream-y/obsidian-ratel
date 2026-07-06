@@ -2,11 +2,14 @@
  * @file src/ui/confirm-modal.ts
  * @description 工具执行确认对话框
  * @module ui/confirm-modal
+ * @depends obsidian, ../../ports/llm, ../../core/tool-permissions, ../../i18n
  */
 
 import { Modal, type App } from 'obsidian';
 import type { ToolCall } from '../../ports/llm';
 import { summarizeToolCall, type ToolConfirmResult } from '../../core/tool-permissions';
+// 关键路径:Modal 在工具调用时创建,tNow 同步读即可
+import { tNow } from '../../i18n';
 
 export function showToolConfirmModal(app: App, toolCall: ToolCall): Promise<ToolConfirmResult> {
 	return new Promise((resolve) => {
@@ -34,18 +37,18 @@ class ToolConfirmModal extends Modal {
 
 	onOpen(): void {
 		const { contentEl, titleEl } = this;
-		titleEl.setText(`确认工具调用: ${this.toolCall.name}`);
+		titleEl.setText(tNow('modal.toolConfirm.title', { name: this.toolCall.name }));
 		contentEl.createEl('p', { text: summarizeToolCall(this.toolCall) });
 		const btnRow = contentEl.createDiv({ cls: 'modal-button-container' });
-		btnRow.createEl('button', { text: '允许' }).onclick = () => {
+		btnRow.createEl('button', { text: tNow('modal.toolConfirm.allow') }).onclick = () => {
 			this.settle('allow');
 			this.close();
 		};
-		btnRow.createEl('button', { text: '允许(本次会话不再询问)' }).onclick = () => {
+		btnRow.createEl('button', { text: tNow('modal.toolConfirm.allowSession') }).onclick = () => {
 			this.settle('session');
 			this.close();
 		};
-		btnRow.createEl('button', { text: '拒绝' }).onclick = () => {
+		btnRow.createEl('button', { text: tNow('modal.toolConfirm.deny') }).onclick = () => {
 			this.settle('deny');
 			this.close();
 		};

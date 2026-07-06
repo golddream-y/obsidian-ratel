@@ -16,6 +16,8 @@ import {
 // (main.ts 会载入 ChatView.svelte,在 vitest 环境无 svelte 插件无法解析)
 import type RatelVaultPlugin from './main';
 import { devLogger } from './logging/dev-logger';
+// 关键路径:声明式 settings 每次渲染重新调用 tNow,无需 store 订阅;applyLangPreference 用于 Language 下拉切换
+import { tNow, applyLangPreference, type LangPreference, type StringKey } from './i18n';
 import type { ToolPermission } from './core/tool-permissions';
 import {
 	hasChatApiKey,
@@ -55,6 +57,8 @@ import {
  * - Indexing:分块大小 / 重叠 / 是否自动重建。
  */
 export interface RatelVaultSettings {
+	// 关键路径:界面语言偏好,'auto' 跟随 navigator.language,显式 'zh'/'en' 覆盖
+	language: LangPreference;
 	// Chat
 	chatModel: string;
 	chatApiBase: string;
@@ -109,6 +113,8 @@ export interface RatelVaultSettings {
  * 用户无需任何配置就能跑通端到端检索。
  */
 export const DEFAULT_SETTINGS: RatelVaultSettings = {
+	// 关键路径:默认 auto,跟随系统语言(zh* → zh,其余 → en)
+	language: 'auto',
 	chatModel: 'deepseek-chat',
 	chatApiBase: 'https://api.deepseek.com',
 	contextLengthPreset: '256k',
@@ -186,13 +192,16 @@ export function normalizeContextLengthSettings(
 	return settings;
 }
 
-const CONTEXT_LENGTH_PRESET_OPTIONS: Record<ContextLengthPresetId, string> = {
-	'128k': '128k (128,000)',
-	'200k': '200k (200,000)',
-	'256k': '256k (256,000)',
-	'1M': '1M (1,048,576)',
-	custom: '自定义',
-};
+// 关键路径:封装为函数,每次 getSettingDefinitions 调用时重新求值 tNow,语言切换后立即生效
+function contextLengthPresetOptions(): Record<ContextLengthPresetId, string> {
+	return {
+		'128k': '128k (128,000)',
+		'200k': '200k (200,000)',
+		'256k': '256k (256,000)',
+		'1M': '1M (1,048,576)',
+		custom: tNow('settings.contextLength.preset.custom'),
+	};
+}
 
 /**
  * Obsidian 设置面板 — 把 `RatelVaultSettings` 渲染为分组表单。
@@ -220,19 +229,36 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 		const settings = this.plugin.settings;
 
 		return [
+			// ==================== General(语言) ====================
+			{
+				type: 'group',
+				heading: tNow('settings.language.heading'),
+				items: [
+					{
+						name: tNow('settings.language.name'),
+						desc: tNow('settings.language.desc'),
+						control: {
+							type: 'dropdown',
+							key: 'language',
+							options: { auto: 'auto', zh: '中文', en: 'English' },
+						},
+					},
+				],
+			},
+
 			// ==================== Chat ====================
 			{
 				type: 'group',
-				heading: 'Chat model',
+				heading: tNow('settings.chatModel.heading'),
 				items: [
 					{
-						name: 'Model',
-						desc: 'Chat model identifier',
+						name: tNow('settings.chatModel.model.name'),
+						desc: tNow('settings.chatModel.model.desc'),
 						control: { type: 'text', key: 'chatModel', placeholder: 'deepseek-chat' },
 					},
 					{
-						name: 'API base URL',
-						desc: 'Chat model API base URL',
+						name: tNow('settings.chatModel.apiBase.name'),
+						desc: tNow('settings.chatModel.apiBase.desc'),
 						control: {
 							type: 'text',
 							key: 'chatApiBase',
@@ -245,24 +271,24 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			// ==================== Context length ====================
 			{
 				type: 'group',
-				heading: 'Context length',
+				heading: tNow('settings.contextLength.heading'),
 				items: [
 					{
-						name: 'Context length',
-						desc: '模型上下文窗口上限。点击「获取推荐」将验证配置并从公开模型库填入推荐值。',
+						name: tNow('settings.contextLength.dropdown.name'),
+						desc: tNow('settings.contextLength.dropdown.desc'),
 						control: {
 							type: 'dropdown',
 							key: 'contextLengthPreset',
-							options: CONTEXT_LENGTH_PRESET_OPTIONS,
+							options: contextLengthPresetOptions(),
 						},
 					},
 					{
-						name: '获取推荐',
+						name: tNow('settings.contextLength.probeButton'),
 						action: (el) => void this.handleProbeContext(el),
 					},
 					{
-						name: '自定义 token 数',
-						desc: `范围 ${CUSTOM_TOKEN_MIN.toLocaleString()} – ${CUSTOM_TOKEN_MAX.toLocaleString()}`,
+						name: tNow('settings.contextLength.customTokens.name'),
+						desc: tNow('settings.contextLength.customTokens.desc'),
 						control: {
 							type: 'number',
 							key: 'chatModelMaxTokens',
@@ -277,11 +303,11 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			// ==================== Advanced ====================
 			{
 				type: 'group',
-				heading: 'Advanced',
+				heading: tNow('settings.advanced.heading'),
 				items: [
 					{
-						name: '模型映射表 URL',
-						desc: '留空使用 LiteLLM 默认源。可填企业镜像或 pin 版本地址。',
+						name: tNow('settings.advanced.registryUrl.name'),
+						desc: tNow('settings.advanced.registryUrl.desc'),
 						control: {
 							type: 'text',
 							key: 'modelRegistryUrl',
@@ -289,14 +315,14 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 						},
 					},
 					{
-						name: '恢复默认',
+						name: tNow('settings.advanced.resetButton'),
 						action: () => {
 							this.plugin.settings.modelRegistryUrl = '';
 							void this.plugin.saveSettings().then(() => this.update());
 						},
 					},
 					{
-						name: 'Chat API Key',
+						name: tNow('settings.advanced.secretHint.title'),
 						render: renderChatSecretHint(this.app, this.plugin),
 					},
 				],
@@ -305,11 +331,11 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			// ==================== Embedding ====================
 			{
 				type: 'group',
-				heading: 'Embedding model',
+				heading: tNow('settings.embedding.heading'),
 				items: [
 					{
-						name: 'Provider',
-						desc: 'Local uses built-in ONNX model (zero-config). API uses OpenAI-compatible endpoint (Ollama/SiliconFlow/etc). 更改此项需重启 Obsidian 生效(下次启动 smartReindex 检测模型变化自动全量重建)。',
+						name: tNow('settings.embedding.provider.name'),
+						desc: tNow('settings.embedding.provider.desc'),
 						control: {
 							type: 'dropdown',
 							key: 'embedProvider',
@@ -317,8 +343,8 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 						},
 					},
 					{
-						name: 'Model',
-						desc: '本地默认模型为 bge-small-zh-v1.5,首次启用时自动从 ModelScope 下载 ONNX 权重与词表。',
+						name: tNow('settings.embedding.localModel.name'),
+						desc: tNow('settings.embedding.localModel.desc'),
 						control: {
 							type: 'text',
 							key: 'embedLocalModel',
@@ -327,8 +353,7 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 						visible: () => settings.embedProvider === 'local',
 					},
 					{
-						name: 'API base URL',
-						desc: 'Embedding API base URL (Ollama: http://localhost:11434/v1)',
+						name: tNow('settings.embedding.apiBase.name'),
 						control: {
 							type: 'text',
 							key: 'embedApiBase',
@@ -337,13 +362,12 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 						visible: () => settings.embedProvider === 'api',
 					},
 					{
-						name: 'Embedding API Key',
+						name: tNow('settings.advanced.secretHint.title'),
 						render: renderEmbedSecretHint(this.app, this.plugin),
 						visible: () => settings.embedProvider === 'api',
 					},
 					{
-						name: 'Model',
-						desc: 'Embedding model identifier',
+						name: tNow('settings.embedding.apiModel.name'),
 						control: {
 							type: 'text',
 							key: 'embedApiModel',
@@ -357,20 +381,18 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			// ==================== Reranker ====================
 			{
 				type: 'group',
-				heading: 'Reranker (百炼,可选)',
+				heading: tNow('settings.reranker.heading'),
 				items: [
 					{
-						name: 'API base URL',
-						desc: 'Reranker API base URL(百炼 DashScope compatible-api)',
+						name: tNow('settings.reranker.apiBase.name'),
 						control: { type: 'text', key: 'rerankerApiBase' },
 					},
 					{
-						name: 'Model',
-						desc: 'Reranker model identifier',
+						name: tNow('settings.reranker.model.name'),
 						control: { type: 'text', key: 'rerankerModel' },
 					},
 					{
-						name: 'Rerank API Key',
+						name: tNow('settings.advanced.secretHint.title'),
 						render: renderRerankSecretHint(this.app, this.plugin),
 					},
 				],
@@ -379,11 +401,10 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			// ==================== Indexing ====================
 			{
 				type: 'group',
-				heading: 'Indexing',
+				heading: tNow('settings.indexing.heading'),
 				items: [
 					{
-						name: 'Chunk size (tokens)',
-						desc: 'Number of tokens per chunk. 更改此项需重启 Obsidian 生效(下次启动 smartReindex 检测参数变化自动全量重建)。',
+						name: tNow('settings.indexing.chunkSize.name'),
 						control: {
 							type: 'slider',
 							key: 'chunkSize',
@@ -393,8 +414,7 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 						},
 					},
 					{
-						name: 'Chunk overlap (tokens)',
-						desc: 'Overlap between chunks. 更改此项需重启 Obsidian 生效(下次启动 smartReindex 检测参数变化自动全量重建)。',
+						name: tNow('settings.indexing.chunkOverlap.name'),
 						control: {
 							type: 'slider',
 							key: 'chunkOverlap',
@@ -404,8 +424,8 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 						},
 					},
 					{
-						name: 'Auto index',
-						desc: 'Automatically re-index on file changes',
+						name: tNow('settings.indexing.autoIndex.name'),
+						desc: tNow('settings.indexing.autoIndex.desc'),
 						control: { type: 'toggle', key: 'autoIndex' },
 					},
 				],
@@ -414,38 +434,37 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			// ==================== Tool permissions ====================
 			{
 				type: 'group',
-				heading: 'Tool permissions',
+				heading: tNow('settings.toolPermissions.heading'),
 				items: this.buildToolPermissionItems(),
 			},
 
 			// ==================== Prompt overrides (advanced) ====================
 			{
 				type: 'group',
-				heading: 'Prompt overrides (advanced)',
+				heading: tNow('settings.promptOverrides.heading'),
 				items: this.buildPromptOverrideItems(),
 			},
 
 			// ==================== Diagnostics (sub-page) ====================
 			{
 				type: 'page',
-				name: 'Diagnostics',
-				desc: '调试工具:验证 Embedding、LLM、Rerank 适配器是否正常工作',
+				name: tNow('settings.diagnostics.page.name'),
+				desc: tNow('settings.diagnostics.page.desc'),
 				page: () => new DiagnosticsSettingPage(this.app, this.plugin),
 			},
 
 			// ==================== Developer ====================
 			{
 				type: 'group',
-				heading: 'Developer',
+				heading: tNow('settings.developer.heading'),
 				items: [
 					{
-						name: 'Debug 日志',
-						desc: '在控制台输出 [Ratel:*] debug 级日志',
+						name: tNow('settings.developer.debugLog.name'),
 						control: { type: 'toggle', key: 'debugLog' },
 					},
 					{
-						name: 'Agent 最大步数',
-						desc: 'Agent Loop 工具调用循环上限,防止死循环',
+						name: tNow('settings.developer.agentMaxSteps.name'),
+						desc: tNow('settings.developer.agentMaxSteps.desc'),
 						control: {
 							type: 'slider',
 							key: 'agentMaxSteps',
@@ -466,35 +485,44 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 	 * key 用 `toolPermissions.<name>` 嵌套格式,getControlValue/setControlValue 会分发。
 	 */
 	private buildToolPermissionItems(): SettingGroupItem[] {
-		const labels: Record<string, string> = {
-			search_vault: '语义搜索',
-			read_note: '读取笔记',
-			grep: '精确搜索',
-			glob: '文件名匹配',
-			list_files: '列目录',
-			write_note: '创建/覆盖',
-			append_note: '追加内容',
-			edit_note: '精确替换',
-			delete_note: '移到回收站',
+		// 关键路径:工具名 → i18n key 映射,tNow 运行时读取当前语言
+		const labelByKey = (toolName: string): string => {
+			const map: Record<string, StringKey> = {
+				search_vault: 'settings.toolPermissions.search_vault',
+				read_note: 'settings.toolPermissions.read_note',
+				grep: 'settings.toolPermissions.grep',
+				glob: 'settings.toolPermissions.glob',
+				list_files: 'settings.toolPermissions.list_files',
+				write_note: 'settings.toolPermissions.write_note',
+				append_note: 'settings.toolPermissions.append_note',
+				edit_note: 'settings.toolPermissions.edit_note',
+				delete_note: 'settings.toolPermissions.delete_note',
+			};
+			const key = map[toolName];
+			return key ? tNow(key) : toolName;
 		};
 		const allTools = ['search_vault', 'read_note', 'grep', 'glob', 'list_files', 'write_note', 'append_note', 'edit_note', 'delete_note'];
 
 		const items: SettingGroupItem[] = [
 			{
-				name: '信任模式',
-				desc: '开启后所有工具直接执行,不再弹出确认对话框',
+				name: tNow('settings.developer.trustMode.name'),
+				desc: tNow('settings.developer.trustMode.desc'),
 				control: { type: 'toggle', key: 'trustMode' },
 			},
 		];
 
 		for (const name of allTools) {
 			items.push({
-				name: labels[name] ?? name,
+				name: labelByKey(name),
 				desc: name,
 				control: {
 					type: 'dropdown',
 					key: `toolPermissions.${name}`,
-					options: { allow: '允许', ask: '询问', deny: '拒绝' },
+					options: {
+						allow: tNow('settings.toolPermissions.allow'),
+						ask: tNow('settings.toolPermissions.ask'),
+						deny: tNow('settings.toolPermissions.deny'),
+					},
 				},
 			});
 		}
@@ -513,8 +541,8 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 	private buildPromptOverrideItems(): SettingGroupItem[] {
 		const items: SettingGroupItem[] = [
 			{
-				name: '说明',
-				desc: '按段落自定义 LLM 系统提示词。检索结果安全外框不可编辑。',
+				name: tNow('settings.promptOverrides.instructions'),
+				desc: tNow('settings.promptOverrides.instructionsDesc'),
 			},
 		];
 
@@ -527,8 +555,8 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 		}
 
 		items.push({
-			name: '预览',
-			desc: '使用当前工具列表与 overrides 合成(点击后弹出模态框)',
+			name: tNow('settings.promptOverrides.previewButton'),
+			desc: tNow('settings.promptOverrides.previewDesc'),
 			render: renderPromptPreviewButton(this.plugin),
 		});
 
@@ -547,11 +575,11 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			requiresChatApiKey(this.plugin.settings) &&
 			!hasChatApiKey(this.app, this.plugin.settings)
 		) {
-			new Notice('请先在钥匙串配置 Chat API 密钥', 5000);
+			new Notice(tNow('settings.notice.noChatKey'), 5000);
 			return;
 		}
-		const originalText = btnEl.textContent ?? '获取推荐';
-		btnEl.textContent = '获取中…';
+		const originalText = btnEl.textContent ?? tNow('settings.contextLength.probeButton');
+		btnEl.textContent = tNow('settings.contextLength.probeLoading');
 		btnEl.setAttribute('disabled', 'true');
 
 		const registryUrl = this.plugin.settings.modelRegistryUrl || DEFAULT_MODEL_REGISTRY_URL;
@@ -567,7 +595,7 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 		btnEl.removeAttribute('disabled');
 
 		if (!result.ok) {
-			new Notice(`✗ ${result.error}`, 5000);
+			new Notice(tNow('settings.notice.probeFailed', { message: result.error }), 5000);
 			return;
 		}
 
@@ -576,11 +604,11 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			await this.setControlValue('contextLengthPreset', applied.preset);
 			await this.setControlValue('chatModelMaxTokens', applied.chatModelMaxTokens);
 			new Notice(
-				`✓ 已获取推荐:${result.recommendedTokens.toLocaleString()} tokens`,
+				tNow('settings.notice.probeSuccess', { value: `${result.recommendedTokens.toLocaleString()} tokens` }),
 				4000,
 			);
 		} else {
-			new Notice('✓ 配置有效,但模型库未命中推荐值,请手动选择或填写', 5000);
+			new Notice(tNow('settings.notice.probeNoRecommendation'), 5000);
 		}
 	}
 
@@ -647,6 +675,10 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 		}
 		if (key === 'debugLog') {
 			devLogger.setDebugEnabled(value as boolean);
+		}
+		// 关键路径:language 切换后立即应用,触发 langStore 更新,Svelte 组件自动重渲染
+		if (key === 'language') {
+			applyLangPreference(value as LangPreference);
 		}
 
 		await this.plugin.saveSettings();

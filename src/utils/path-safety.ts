@@ -4,6 +4,8 @@
  * @module utils/path-safety
  */
 
+import { tNow } from '../i18n';
+
 // 关键路径:Obsidian 配置目录名可由用户自定义,启动期由 main.ts 调 setConfigDir
 // 注入 app.vault.configDir 的实际值,此模块不硬编码任何目录名。
 let configDirName = '';
@@ -45,32 +47,32 @@ function normalizeVaultPath(path: string): string {
  */
 export function validateVaultPath(path: string): string {
 	if (!path || typeof path !== 'string') {
-		throw new Error('路径不能为空');
+		throw new Error(tNow('error.path.empty'));
 	}
 
 	if (/(^|[/\\])\.\.([/\\]|$)/.test(path)) {
-		throw new Error(`路径越界:禁止使用 ".." 穿越 "${path}"`);
+		throw new Error(tNow('error.path.traversal', { path }));
 	}
 
 	// 关键路径:Windows 盘符绝对路径(C:\、D:\)是真正的系统绝对路径,拒绝。
 	// 单个前导 `/` 视为 vault 根的相对路径写法,归一化时去掉,不抛错。
 	if (/^[A-Za-z]:[/\\]/.test(path)) {
-		throw new Error(`路径越界:不允许绝对路径 "${path}"`);
+		throw new Error(tNow('error.path.absolute', { path }));
 	}
 
 	const normalized = normalizeVaultPath(path);
 
 	if (normalized.includes('..')) {
-		throw new Error(`路径越界:禁止使用 ".." 穿越 "${path}"`);
+		throw new Error(tNow('error.path.traversal', { path }));
 	}
 
 	// 关键路径:用启动期注入的 configDirName 拦截配置目录访问,兼容用户自定义 configDir。
 	if (normalized === configDirName || normalized.startsWith(`${configDirName}/`)) {
-		throw new Error(`路径越界:不允许访问配置目录 "${path}"`);
+		throw new Error(tNow('error.path.configDir', { path }));
 	}
 
 	if (normalized === '.trash' || normalized.startsWith('.trash/')) {
-		throw new Error(`路径越界:不允许访问 .trash 回收站 "${path}"`);
+		throw new Error(tNow('error.path.trash', { path }));
 	}
 
 	return normalized;

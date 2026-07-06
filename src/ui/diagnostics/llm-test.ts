@@ -10,6 +10,7 @@ import type { ChatMessage } from '../../ports/llm';
 import { formatError, renderError } from './diag-utils';
 import { devLogger } from '../../logging/dev-logger';
 import { hasChatApiKey, requiresChatApiKey } from '../../secrets/ratel-secrets';
+import { tNow } from '../../i18n';
 
 /**
  * 渲染 LLM 测试区。
@@ -35,21 +36,21 @@ export function renderLLMTest(container: HTMLElement, plugin: RatelVaultPlugin):
     const inputSection = container.createDiv({ cls: 'diag-section' });
 
     // System Prompt(可选)
-    inputSection.createEl('label', { cls: 'diag-label', text: 'System Prompt (可选)' });
+    inputSection.createEl('label', { cls: 'diag-label', text: tNow('diag.llm.systemPromptLabel') });
     const systemInput = inputSection.createEl('textarea', {
         cls: 'diag-textarea',
-        attr: { placeholder: '例如:你是一个有用的助手。用中文回答,简洁明了。', rows: '2' },
+        attr: { placeholder: tNow('diag.llm.systemPromptPh'), rows: '2' },
     });
 
     // User Message
-    inputSection.createEl('label', { cls: 'diag-label', text: '用户消息' });
+    inputSection.createEl('label', { cls: 'diag-label', text: tNow('diag.llm.userMessageLabel') });
     const userInput = inputSection.createEl('textarea', {
         cls: 'diag-textarea',
-        attr: { placeholder: '输入你的问题...', rows: '4' },
+        attr: { placeholder: tNow('diag.llm.userMessagePh'), rows: '4' },
     });
 
     // 参数调优
-    inputSection.createEl('h4', { text: '生成参数(临时覆盖,不保存)' });
+    inputSection.createEl('h4', { text: tNow('diag.llm.paramsLabel') });
     const paramGroup = inputSection.createDiv({ cls: 'diag-param-group' });
 
     // Temperature
@@ -60,7 +61,7 @@ export function renderLLMTest(container: HTMLElement, plugin: RatelVaultPlugin):
         type: 'number',
         attr: { min: '0', max: '2', step: '0.1', value: '1.0' },
     });
-    tempRow.createSpan({ attr: { style: 'font-size:11px;color:var(--text-faint);width:60px;' }, text: '0=确定' });
+    tempRow.createSpan({ attr: { style: 'font-size:11px;color:var(--text-faint);width:60px;' }, text: tNow('diag.llm.tempHint') });
 
     // Top P
     const topPRow = paramGroup.createDiv({ cls: 'diag-param-row' });
@@ -77,21 +78,21 @@ export function renderLLMTest(container: HTMLElement, plugin: RatelVaultPlugin):
     const maxTokensInput = maxTokensRow.createEl('input', {
         cls: 'diag-input',
         type: 'number',
-        attr: { min: '1', max: '8192', step: '10', placeholder: '默认(模型上限)' },
+        attr: { min: '1', max: '8192', step: '10', placeholder: tNow('diag.llm.maxTokensPlaceholder') },
     });
 
     // 按钮行
     const btnRow = inputSection.createDiv({ cls: 'diag-row' });
-    const sendBtn = btnRow.createEl('button', { cls: 'diag-btn', text: '发送' });
-    const stopBtn = btnRow.createEl('button', { cls: 'diag-btn diag-btn-secondary', text: '停止' });
+    const sendBtn = btnRow.createEl('button', { cls: 'diag-btn', text: tNow('diag.llm.send') });
+    const stopBtn = btnRow.createEl('button', { cls: 'diag-btn diag-btn-secondary', text: tNow('diag.llm.stop') });
     stopBtn.disabled = true;
-    const clearBtn = btnRow.createEl('button', { cls: 'diag-btn diag-btn-secondary', text: '清空输出' });
+    const clearBtn = btnRow.createEl('button', { cls: 'diag-btn diag-btn-secondary', text: tNow('diag.llm.clear') });
 
     // ==================== 输出区 ====================
     const outputSection = container.createDiv({ cls: 'diag-section' });
     const metaInfo = outputSection.createDiv({ attr: { style: 'font-size:12px;color:var(--text-faint);margin-bottom:8px;min-height:16px;' } });
     const streamArea = outputSection.createDiv({ cls: 'diag-llm-stream' });
-    streamArea.createDiv({ cls: 'diag-result-empty', text: '点击"发送"开始测试' });
+    streamArea.createDiv({ cls: 'diag-result-empty', text: tNow('diag.llm.sendHint') });
     const errorArea = outputSection.createDiv();
 
     // 内部状态
@@ -115,7 +116,10 @@ export function renderLLMTest(container: HTMLElement, plugin: RatelVaultPlugin):
         const elapsed = performance.now() - t0;
         const tokens = plugin.llm.countTokens(fullResponse);
         metaInfo.empty();
-        metaInfo.createSpan({ text: `状态: ${running ? '生成中...' : '完成'} | 耗时: ${elapsed.toFixed(0)}ms | 块数: ${chunkCount} | 估算 token: ~${tokens}` });
+        const params = { ms: elapsed.toFixed(0), chunks: chunkCount, tokens };
+        metaInfo.createSpan({ text: running
+            ? tNow('diag.llm.statusRunning', params)
+            : tNow('diag.llm.statusDone', params) });
     };
 
     /** 停止生成 */
@@ -124,11 +128,11 @@ export function renderLLMTest(container: HTMLElement, plugin: RatelVaultPlugin):
         stopped = true;
         running = false;
         sendBtn.disabled = false;
-        sendBtn.textContent = '发送';
+        sendBtn.textContent = tNow('diag.llm.send');
         stopBtn.disabled = true;
         metaInfo.empty();
         const elapsed = performance.now() - t0;
-        metaInfo.createSpan({ text: `已停止 | 耗时: ${elapsed.toFixed(0)}ms | 已输出 ${fullResponse.length} 字符` });
+        metaInfo.createSpan({ text: tNow('diag.llm.statusStopped', { ms: elapsed.toFixed(0), chars: fullResponse.length }) });
     };
 
     /** 发送请求 */
@@ -136,7 +140,7 @@ export function renderLLMTest(container: HTMLElement, plugin: RatelVaultPlugin):
         const userMsg = userInput.value.trim();
         if (!userMsg) {
             errorArea.empty();
-            renderError(errorArea, formatError('请输入用户消息', '输入校验失败'));
+            renderError(errorArea, formatError(tNow('diag.llm.errorEmptyMessage'), tNow('diag.errorInputValidation')));
             return;
         }
 
@@ -145,8 +149,8 @@ export function renderLLMTest(container: HTMLElement, plugin: RatelVaultPlugin):
             errorArea.empty();
             const warn = errorArea.createDiv({ cls: 'diag-error-block', attr: { style: 'border-left-color: var(--text-warning);' } });
             warn.createDiv({ cls: 'diag-error-header' })
-                .createSpan({ cls: 'diag-error-tag', attr: { style: 'background: var(--text-warning);' }, text: '注意' });
-            warn.createDiv({ text: '钥匙串未配置 Chat API 密钥(ratel-chat-openai-compatible),请求将失败。' });
+                .createSpan({ cls: 'diag-error-tag', attr: { style: 'background: var(--text-warning);' }, text: tNow('diag.llm.warn') });
+            warn.createDiv({ text: tNow('diag.llm.errorNoKeyWarn') });
         }
 
         resetOutput();
@@ -154,7 +158,7 @@ export function renderLLMTest(container: HTMLElement, plugin: RatelVaultPlugin):
         stopped = false;
         t0 = performance.now();
         sendBtn.disabled = true;
-        sendBtn.textContent = '生成中...';
+        sendBtn.textContent = tNow('diag.llm.generating');
         stopBtn.disabled = false;
 
         // 构造消息
@@ -206,7 +210,7 @@ export function renderLLMTest(container: HTMLElement, plugin: RatelVaultPlugin):
             if (!stopped) {
                 running = false;
                 sendBtn.disabled = false;
-                sendBtn.textContent = '发送';
+                sendBtn.textContent = tNow('diag.llm.send');
                 stopBtn.disabled = true;
                 updateMeta();
             }
@@ -214,11 +218,11 @@ export function renderLLMTest(container: HTMLElement, plugin: RatelVaultPlugin):
             running = false;
             stopped = false;
             sendBtn.disabled = false;
-            sendBtn.textContent = '发送';
+            sendBtn.textContent = tNow('diag.llm.send');
             stopBtn.disabled = true;
             // 关键路径:LLM 异常属调试事件,仅写开发者 console,不弹 Notice(诊断页用户已看到错误块)。
             devLogger.error('main', 'LLM test failed', err);
-            renderError(errorArea, formatError(err, 'LLM 请求失败'));
+            renderError(errorArea, formatError(err, tNow('diag.llm.requestFailed')));
         }
     };
 
@@ -226,7 +230,7 @@ export function renderLLMTest(container: HTMLElement, plugin: RatelVaultPlugin):
     stopBtn.addEventListener('click', stop);
     clearBtn.addEventListener('click', () => {
         resetOutput();
-        streamArea.createDiv({ cls: 'diag-result-empty', text: '点击"发送"开始测试' });
+        streamArea.createDiv({ cls: 'diag-result-empty', text: tNow('diag.llm.sendHint') });
     });
 
     // 支持 Ctrl/Cmd+Enter 发送
@@ -251,10 +255,10 @@ function renderLLMStatus(container: HTMLElement, plugin: RatelVaultPlugin): void
 
     container.empty();
     container.createSpan({ cls: `diag-status-dot ${hasKey ? 'diag-status-ok' : 'diag-status-warn'}` });
-    container.createSpan({ text: '当前配置: ' });
+    container.createSpan({ text: tNow('diag.llm.configSummary') });
     container.createEl('code', { text: 'LLM / Chat' });
     container.createSpan({ text: ' | ' });
     // 关键路径:不展示 Key 前缀,避免泄露;按端点类型显示密钥状态。
-    const keyLabel = !needsKey ? '本地服务(无 Key)' : hasKey ? '已配置' : '未配置';
-    container.createSpan({ text: `Base: ${s.chatApiBase} | 模型: ${s.chatModel} | Key: ${keyLabel}` });
+    const keyLabel = !needsKey ? tNow('diag.localServiceNoKey') : hasKey ? tNow('diag.configured') : tNow('diag.notConfiguredKey');
+    container.createSpan({ text: tNow('diag.llm.configDetail', { base: s.chatApiBase, model: s.chatModel, key: keyLabel }) });
 }

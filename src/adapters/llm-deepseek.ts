@@ -10,6 +10,7 @@ import * as https from 'node:https';
 import * as http from 'node:http';
 import type { IncomingMessage } from 'node:http';
 import type { LLMClient, ChatRequest, ChatDelta, ToolCall } from '../ports/llm';
+import { tNow } from '../i18n';
 
 /**
  * DeepSeek 客户端配置。
@@ -105,7 +106,7 @@ export class DeepSeekLLM implements LLMClient {
 		if (statusCode < 200 || statusCode >= 300) {
 			// 消费掉错误体以便连接干净关闭
 			const errText = await this.readAll(stream);
-			throw new Error(`LLM API error: ${statusCode} ${errText.slice(0, 200)}`);
+			throw new Error(tNow('error.api.llmFailed', { status: statusCode, detail: errText.slice(0, 200) }));
 		}
 
 		// 工具调用增量缓冲:key = tool_call.index,value = {id, name, arguments 字符串拼接}
@@ -335,11 +336,11 @@ export class DeepSeekLLM implements LLMClient {
 		});
 
 		if (response.status < 200 || response.status >= 300) {
-			throw new Error(`LLM API error: ${response.status}`);
+			throw new Error(tNow('error.api.llmFailed', { status: response.status, detail: '' }));
 		}
 
 		const text = response.text;
-		if (!text) throw new Error('LLM API returned empty body');
+		if (!text) throw new Error(tNow('error.api.llmEmptyBody'));
 
 		// 关键路径:复用 processSSEEvent 解析,保证降级路径与主路径行为一致
 		// (支持 reasoning_content / usage,DRY)

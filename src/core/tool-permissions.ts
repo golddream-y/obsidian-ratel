@@ -5,6 +5,7 @@
  */
 
 import type { ToolCall } from '../ports/llm';
+import { tNow } from '../i18n';
 
 export type ToolPermission = 'allow' | 'ask' | 'deny';
 
@@ -40,13 +41,14 @@ export function summarizeToolCall(toolCall: ToolCall): string {
 	const path = extractToolPath(toolCall);
 	switch (toolCall.name) {
 		case 'write_note':
-			return path ? `创建或覆盖笔记 ${path}` : '写入笔记';
+			// 关键路径:path 存在时显示具体路径,否则显示通用动作名(用于 Notice / Modal 标题)
+			return path ? tNow('toolPerm.writeNote', { path }) : tNow('settings.toolPermissions.write_note');
 		case 'append_note':
-			return path ? `追加内容到 ${path}` : '追加笔记';
+			return path ? tNow('toolPerm.appendNote', { path }) : tNow('settings.toolPermissions.append_note');
 		case 'edit_note':
-			return path ? `精确替换 ${path} 中的文本` : '编辑笔记';
+			return path ? tNow('toolPerm.editNote', { path }) : tNow('settings.toolPermissions.edit_note');
 		case 'delete_note':
-			return path ? `将 ${path} 移到回收站` : '删除笔记';
+			return path ? tNow('toolPerm.deleteNote', { path }) : tNow('settings.toolPermissions.delete_note');
 		default:
 			return path ? `${toolCall.name} → ${path}` : toolCall.name;
 	}
@@ -66,12 +68,12 @@ export async function resolveToolPermission(
 	const perm: ToolPermission = settings.toolPermissions[toolCall.name] ?? 'ask';
 	if (perm === 'allow') return;
 	if (perm === 'deny') {
-		throw new Error(`工具调用被拒绝: ${toolCall.name} 已被禁用`);
+		throw new Error(tNow('error.tool.rejectedDisabled', { toolName: toolCall.name }));
 	}
 
 	const decision = await confirm(toolCall);
 	if (decision === 'deny') {
-		throw new Error('用户拒绝了工具调用');
+		throw new Error(tNow('error.tool.rejected'));
 	}
 	if (decision === 'session') {
 		grants.grant(toolCall.name, path);

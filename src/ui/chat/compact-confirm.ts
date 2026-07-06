@@ -2,10 +2,11 @@
  * @file src/ui/compact-confirm.ts
  * @description 压缩上下文确认弹窗 — 直接基于 Obsidian Modal,settle-then-close 模式
  * @module ui/compact-confirm
- * @depends obsidian
+ * @depends obsidian, i18n
  */
 
 import { Modal, type App } from 'obsidian';
+import { tNow } from '../../i18n';
 
 /**
  * 弹出压缩上下文确认框 — 用户选"压缩"返回 true,否则 false。
@@ -48,17 +49,17 @@ class CompactConfirmModal extends Modal {
 
 	onOpen(): void {
 		const { contentEl, titleEl } = this;
-		titleEl.setText('压缩上下文');
+		titleEl.setText(tNow('chat.compactConfirm.title'));
 		contentEl.createEl('p', {
-			text: '将清空历史消息,保留最近 3 条原文 + 摘要。此操作不可撤销,是否继续?',
+			text: tNow('chat.compactConfirm.body'),
 		});
 		const btnRow = contentEl.createDiv({ cls: 'modal-button-container' });
-		btnRow.createEl('button', { text: '压缩' }).onclick = () => {
+		btnRow.createEl('button', { text: tNow('chat.compactConfirm.confirm') }).onclick = () => {
 			// 关键路径:先 settle 再 close,避免 onClose 抢先 resolve(false)
 			this.settle(true);
 			this.close();
 		};
-		btnRow.createEl('button', { text: '取消' }).onclick = () => {
+		btnRow.createEl('button', { text: tNow('chat.compactConfirm.cancel') }).onclick = () => {
 			this.settle(false);
 			this.close();
 		};

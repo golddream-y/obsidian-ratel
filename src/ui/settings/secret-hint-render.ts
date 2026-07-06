@@ -16,6 +16,8 @@ import {
 	hasEmbedApiKey,
 	hasRerankApiKey,
 } from '../../secrets/ratel-secrets';
+// 关键路径:声明式 render 每次调用时重新求值 tNow,语言切换后立即生效
+import { tNow } from '../../i18n';
 
 /**
  * 渲染 Chat API Key hint(声明式 render 回调)。
@@ -36,7 +38,7 @@ export function renderChatSecretHint(
 				hasKey: hasChatApiKey(app, plugin.settings),
 			});
 		} else {
-			renderNoKeyNeeded(setting.settingEl, '当前为本地 Ollama,无需 API Key。');
+			renderNoKeyNeeded(setting.settingEl, tNow('settings.advanced.secretHint.localOllama'));
 		}
 	};
 }
@@ -56,7 +58,7 @@ export function renderEmbedSecretHint(
 				hasKey: hasEmbedApiKey(app, plugin.settings),
 			});
 		} else {
-			renderNoKeyNeeded(setting.settingEl, '当前为本地 Ollama Embedding,无需 API Key。');
+			renderNoKeyNeeded(setting.settingEl, tNow('settings.embedding.localOllama'));
 		}
 	};
 }
@@ -75,7 +77,7 @@ export function renderRerankSecretHint(
 		renderSecretHint(setting.settingEl, {
 			secretId: getRerankSecretId(),
 			hasKey: hasRerankApiKey(app),
-			note: '未配置密钥时 Rerank 自动关闭。',
+			note: tNow('settings.reranker.secretHint.note'),
 		});
 	};
 }

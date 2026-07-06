@@ -8,6 +8,7 @@
 	 */
 	import type { Readable } from 'svelte/store';
 	import type { UserStatusSnapshot, ContextUsage } from '../../user-feedback/user-status';
+	import { t } from '../../i18n';
 
 	let {
 		status$,
@@ -31,18 +32,18 @@
 		const s = snap;
 		// 关键路径:索引中优先于思考中
 		if (s.index === 'processing' || s.index === 'scanning' || s.index === 'queueing') {
-			return { tone: 'indexing' as Tone, label: '索引中' };
+			return { tone: 'indexing' as Tone, label: $t('status.index.indexing') };
 		}
 		if (s.model === 'failed' || s.index === 'failed') {
-			return { tone: 'error' as Tone, label: '请求失败' };
+			return { tone: 'error' as Tone, label: $t('status.index.requestFailed') };
 		}
 		if (s.model === 'idle' && s.embedding === 'unavailable') {
-			return { tone: 'unconfigured' as Tone, label: '未配置' };
+			return { tone: 'unconfigured' as Tone, label: $t('status.index.notConfigured') };
 		}
 		if (s.model !== 'ready' && s.model !== 'idle') {
-			return { tone: 'thinking' as Tone, label: '思考中…' };
+			return { tone: 'thinking' as Tone, label: $t('status.index.thinking') };
 		}
-		return { tone: 'ready' as Tone, label: '就绪' };
+		return { tone: 'ready' as Tone, label: $t('status.index.ready') };
 	});
 
 	// ctx 进度条颜色阈值:0-79% 绿,80-94% 黄,95-100% 红
@@ -65,12 +66,12 @@
 	const sourceInfo = $derived.by(() => {
 		const src = usage.source ?? 'estimate';
 		if (src === 'api') {
-			return { label: 'API', dotClass: 'ratel-sl-src-api', title: 'API 真值校准' };
+			return { label: $t('status.tokenSource.api'), dotClass: 'ratel-sl-src-api', title: $t('status.tokenSource.apiTitle') };
 		}
 		if (src === 'streaming') {
-			return { label: '流式', dotClass: 'ratel-sl-src-streaming', title: '流式累计估算' };
+			return { label: $t('status.tokenSource.streaming'), dotClass: 'ratel-sl-src-streaming', title: $t('status.tokenSource.streamingTitle') };
 		}
-		return { label: '估算', dotClass: 'ratel-sl-src-estimate', title: '本地估算' };
+		return { label: $t('status.tokenSource.estimate'), dotClass: 'ratel-sl-src-estimate', title: $t('status.tokenSource.estimateTitle') };
 	});
 </script>
 
@@ -80,7 +81,7 @@
 	onclick={onToggle}
 	role="button"
 	aria-expanded={expanded}
-	aria-label={expanded ? '收起详情' : '展开详情'}
+	aria-label={expanded ? $t('status.drawer.collapse') : $t('status.drawer.expand')}
 >
 	<span
 		class="ratel-sl-dot"
@@ -97,7 +98,11 @@
 	>{state.label}</span>
 	<div
 		class="ratel-sl-ctx"
-		title={`${sourceInfo.title} · 已用 ${usage.usedTokens.toLocaleString()} / ${usage.maxTokens.toLocaleString()} tokens`}
+		title={$t('status.line.ctxTooltip', {
+			source: sourceInfo.title,
+			used: usage.usedTokens.toLocaleString(),
+			max: usage.maxTokens.toLocaleString(),
+		})}
 	>
 		<div class="ratel-sl-ctx-bar">
 			<div class="ratel-sl-ctx-fill" style={`width: ${pct}%; background: ${ctxColor};`}></div>

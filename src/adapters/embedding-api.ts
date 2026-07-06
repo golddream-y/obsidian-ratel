@@ -7,6 +7,7 @@
 
 import { requestUrl } from 'obsidian';
 import type { EmbeddingPort } from '../ports/embedding';
+import { tNow } from '../i18n';
 
 /**
  * 远端 Embedding 客户端配置。
@@ -72,7 +73,7 @@ export class EmbeddingApi implements EmbeddingPort {
 		});
 
 		if (response.status < 200 || response.status >= 300) {
-			throw new Error(`Embedding API error: ${response.status}`);
+			throw new Error(tNow('error.api.embeddingFailed', { status: response.status }));
 		}
 
 		// 关键路径:requestUrl.json 已是解析后的对象,不需要 await .json()。
@@ -91,9 +92,7 @@ export class EmbeddingApi implements EmbeddingPort {
 			const vec = vectors[i];
 			if (!vec) continue;
 			if (vec.length !== this.dimensions) {
-				throw new Error(
-					`Embedding dimension mismatch: expected ${this.dimensions}, got ${vec.length} for text index ${i}`,
-				);
+				throw new Error(tNow('error.embedding.dimMismatch', { expected: this.dimensions, actual: vec.length }));
 			}
 		}
 

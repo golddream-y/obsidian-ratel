@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SECTIONS, getSectionMeta } from '../../src/prompts/sections';
+import { getSections, getSectionMeta } from '../../src/prompts/sections';
 import { PROMPTS_VERSION } from '../../src/prompts/types';
 
 describe('prompt sections metadata', () => {
@@ -25,12 +25,12 @@ describe('prompt sections metadata', () => {
 	});
 
 	it('wrapper section 不在 SECTIONS 列表(不可覆盖)', () => {
-		const ids = SECTIONS.map((s) => s.id);
+		const ids = getSections().map((s) => s.id);
 		expect(ids).not.toContain('injection.searchResults.wrapper');
 	});
 
 	it('每个 tool section 有对应 tool-schemas 工具名', () => {
-		const toolDescIds = SECTIONS.filter((s) => s.id.endsWith('.description')).map((s) => s.id);
+		const toolDescIds = getSections().filter((s) => s.id.endsWith('.description')).map((s) => s.id);
 		expect(toolDescIds).toContain('tool.read_note.description');
 		expect(toolDescIds).toContain('tool.search_vault.description');
 	});

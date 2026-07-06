@@ -7,6 +7,7 @@
 -->
 <script lang="ts">
 	import Collapsible from '../../components/Collapsible.svelte';
+	import { t } from '../../../i18n';
 
 	/**
 	 * think 段 props。
@@ -41,7 +42,7 @@
 
 <div class="ratel-think-wrap" class:ratel-think-streaming={streaming}>
 	<Collapsible
-		title={streaming ? '思考过程…' : '思考过程'}
+		title={streaming ? $t('chat.thinking') : $t('chat.thinking.done')}
 		icon="💭"
 		iconClass="think"
 		variant="think"

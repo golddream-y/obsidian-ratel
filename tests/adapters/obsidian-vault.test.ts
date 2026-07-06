@@ -90,14 +90,14 @@ describe('ObsidianVault', () => {
 	it('readFile - 文件不存在 - 抛错', async () => {
 		mockApp.vault.getAbstractFileByPath.mockReturnValue(null);
 
-		await expect(vault.readFile('missing.md')).rejects.toThrow('File not found: missing.md');
+		await expect(vault.readFile('missing.md')).rejects.toThrow('文件不存在: missing.md');
 		expect(mockApp.vault.read).not.toHaveBeenCalled();
 	});
 
 	it('readFile - 路径指向文件夹(非 TFile)- 抛错', async () => {
 		mockApp.vault.getAbstractFileByPath.mockReturnValue({ path: 'folder' });
 
-		await expect(vault.readFile('folder')).rejects.toThrow('File not found: folder');
+		await expect(vault.readFile('folder')).rejects.toThrow('文件不存在: folder');
 	});
 
 	it('readFile - 入口调用 validateVaultPath 拒绝 .obsidian', async () => {

@@ -6,16 +6,16 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { SLASH_COMMANDS, filterCommands, type SlashCommand } from '../../src/ui/chat/input/slash-commands';
+import { getSlashCommands, filterCommands, type SlashCommand } from '../../src/ui/chat/input/slash-commands';
 
 describe('slash-commands', () => {
-	it('SLASH_COMMANDS - 含 4 个命令(new/compact/model/reindex)', () => {
-		const names = SLASH_COMMANDS.map((c) => c.name);
+	it('getSlashCommands - 含 4 个命令(new/compact/model/reindex)', () => {
+		const names = getSlashCommands().map((c) => c.name);
 		expect(names).toEqual(['/new', '/compact', '/model', '/reindex']);
 	});
 
-	it('SLASH_COMMANDS - 每个命令含 name/description/icon', () => {
-		for (const cmd of SLASH_COMMANDS) {
+	it('getSlashCommands - 每个命令含 name/description/icon', () => {
+		for (const cmd of getSlashCommands()) {
 			expect(cmd.name).toMatch(/^\//);
 			expect(cmd.description.length).toBeGreaterThan(0);
 			expect(cmd.icon.length).toBeGreaterThan(0);

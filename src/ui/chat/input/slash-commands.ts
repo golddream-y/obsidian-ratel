@@ -2,7 +2,10 @@
  * @file src/ui/slash-commands.ts
  * @description 斜杠命令注册表 + 过滤纯函数 — 供 SlashMenu 调用,不含副作用
  * @module ui/slash-commands
+ * @depends i18n
  */
+
+import { tNow } from '../../../i18n';
 
 /** 斜杠命令定义 — name 用于匹配,description 用于菜单展示,icon 是 emoji 或 lucide 名 */
 export interface SlashCommand {
@@ -14,29 +17,37 @@ export interface SlashCommand {
 	icon: string;
 }
 
-/** 全部斜杠命令 — 顺序即菜单显示顺序 */
-export const SLASH_COMMANDS: readonly SlashCommand[] = [
-	{
-		name: '/new',
-		description: '开始新对话,清空当前上下文',
-		icon: '✨',
-	},
-	{
-		name: '/compact',
-		description: '压缩上下文,将历史总结为摘要',
-		icon: '📦',
-	},
-	{
-		name: '/model',
-		description: '切换模型',
-		icon: '🤖',
-	},
-	{
-		name: '/reindex',
-		description: '重新索引 vault',
-		icon: '🔄',
-	},
-] as const;
+/**
+ * 全部斜杠命令 — 顺序即菜单显示顺序。
+ *
+ * 关键路径:返回函数而非模块级常量,因为 description 走 tNow,在模块 import 时
+ * 会冻结当时的语言。改为函数后,每次调用都按当前 langStore 求值,
+ * 配合 SlashMenu.svelte 的 $derived 响应式实现语言切换即时刷新。
+ */
+export function getSlashCommands(): readonly SlashCommand[] {
+	return [
+		{
+			name: '/new',
+			description: tNow('slash.new.description'),
+			icon: '✨',
+		},
+		{
+			name: '/compact',
+			description: tNow('slash.compact.description'),
+			icon: '📦',
+		},
+		{
+			name: '/model',
+			description: tNow('slash.model.description'),
+			icon: '🤖',
+		},
+		{
+			name: '/reindex',
+			description: tNow('slash.reindex.description'),
+			icon: '🔄',
+		},
+	];
+}
 
 /**
  * 根据输入框内容过滤斜杠命令 — 纯函数,无副作用。
@@ -56,5 +67,5 @@ export function filterCommands(input: string): SlashCommand[] {
 		return [];
 	}
 	const lower = input.toLowerCase();
-	return SLASH_COMMANDS.filter((cmd) => cmd.name.toLowerCase().startsWith(lower));
+	return getSlashCommands().filter((cmd) => cmd.name.toLowerCase().startsWith(lower));
 }
