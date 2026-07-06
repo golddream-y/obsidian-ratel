@@ -534,23 +534,47 @@ export interface ToolPermStrings {
   'toolPerm.deleteNote': string;
 }
 
-// ==================== Memory(S-MEMORY 预留,本 plan 不消费) ====================
+// ==================== Memory(记忆系统 — P-MEMORY-UI 消费) ====================
+// 关键路径:6 个设置项 + heading + viewMemory action + Svelte 面板用 key
 export interface MemoryStrings {
+  // Settings 面板 — Memory group
   'memory.settings.heading': string;
   'memory.settings.enabled.name': string;
   'memory.settings.enabled.desc': string;
+  'memory.settings.autoWrite.name': string;
+  'memory.settings.autoWrite.desc': string;
   'memory.settings.storageLimit.name': string;
   'memory.settings.storageLimit.desc': string;
-  'memory.settings.autoConsolidate.name': string;
-  'memory.settings.autoConsolidate.desc': string;
-  'memory.settings.consolidateThreshold.name': string;
-  'memory.settings.consolidateThreshold.desc': string;
-  'memory.settings.recallTopK.name': string;
-  'memory.settings.recallTopK.desc': string;
+  'memory.settings.injectLimit.name': string;
+  'memory.settings.injectLimit.desc': string;
+  'memory.settings.dynamicLimit.name': string;
+  'memory.settings.dynamicLimit.desc': string;
+  'memory.settings.contextTotalLimit.name': string;
+  'memory.settings.contextTotalLimit.desc': string;
   'memory.settings.viewMemory.name': string;
-  'memory.tool.saveMemory': string;
-  'memory.tool.recallMemory': string;
-  'memory.tool.deleteMemory': string;
+  'memory.settings.viewMemory.desc': string;
+  // Memory 面板(Svelte)
+  'memory.panel.title': string;
+  'memory.panel.searchPlaceholder': string;
+  'memory.panel.globalSection': string;
+  'memory.panel.topicSection': string;
+  'memory.panel.sourceUser': string;
+  'memory.panel.sourceModel': string;
+  'memory.panel.filterAll': string;
+  'memory.panel.filterUser': string;
+  'memory.panel.filterModel': string;
+  'memory.panel.clearModelMemories': string;
+  'memory.panel.totalSize': string;
+  'memory.panel.storageLimit': string;
+  'memory.panel.empty': string;
+  'memory.panel.topicEmpty': string;
+  'memory.panel.confirmClear': string;
+  'memory.panel.editPlaceholder': string;
+  'memory.panel.save': string;
+  'memory.panel.cancel': string;
+  'memory.panel.delete': string;
+  'memory.panel.noModelMemories': string;
+  'memory.panel.cleared': string;
 }
 
 // ==================== 合并 ====================

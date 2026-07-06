@@ -75,6 +75,8 @@ import { rewriteQuery } from './core/query-rewriter';
 import { BailianReranker } from './adapters/reranker-bailian';
 import { Indexer } from './subagents/indexer';
 import { ChatView, VIEW_TYPE_CHAT } from './ui/chat/ChatView';
+// 关键路径:P-MEMORY-UI — 记忆管理面板视图(ItemView 包装 Svelte 组件)。
+import { MemoryPanelView, VIEW_TYPE_MEMORY } from './ui/memory-panel/MemoryPanelView';
 import { applyBadgerEmojiToElement, patchAllChatLeafIcons } from './utils/badger-icon';
 import { get } from 'svelte/store';
 import { ensurePluginGitignore } from './utils/gitignore-writer';
@@ -390,6 +392,8 @@ export default class RatelVaultPlugin extends Plugin {
 
 		// ==================== 视图与命令 ====================
 		this.registerView(VIEW_TYPE_CHAT, (leaf) => new ChatView(leaf, this));
+		// 关键路径:P-MEMORY-UI — 注册记忆管理面板视图,与 ChatView 同模式(ItemView + Svelte mount)。
+		this.registerView(VIEW_TYPE_MEMORY, (leaf) => new MemoryPanelView(leaf, this));
 
 		// Ribbon 图标:点击打开聊天侧栏。
 		// 关键路径:Lucide 图标集无獾,用 emoji 替换 SVG,贴合 Ratel 品牌形象。
@@ -400,6 +404,12 @@ export default class RatelVaultPlugin extends Plugin {
 		if (ribbonSvg?.parentElement) {
 			applyBadgerEmojiToElement(ribbonSvg.parentElement);
 		}
+
+		// 关键路径:P-MEMORY-UI — 记忆面板 ribbon 图标,用 Lucide brain(记忆系统语义)。
+		// 与聊天侧栏 paw-print 区分,不替换 emoji;点击调 activateMemoryView 在右侧栏打开。
+		this.addRibbonIcon('brain', tNow('memory.panel.title'), () => {
+			void this.activateMemoryView();
+		});
 
 		// 关键路径:右侧边栏 tab 图标来自 ItemView.getIcon()(Lucide),需在 layout 后替换为 emoji。
 		this.registerEvent(
@@ -1106,5 +1116,31 @@ export default class RatelVaultPlugin extends Plugin {
 			void workspace.revealLeaf(leaf);
 		}
 		window.requestAnimationFrame(() => patchAllChatLeafIcons(this.app.workspace));
+	}
+
+	/**
+	 * 唤起或聚焦记忆管理面板 — 幂等,已存在则 reveal,否则在右侧栏创建。
+	 *
+	 * 关键路径:
+	 * - 与 activateChatView 同模式 — getLeavesOfType 检查已存在,否则在右侧栏 setViewState。
+	 * - 不调 patchAllChatLeafIcons — 记忆面板用 Lucide brain 图标,不做 emoji 替换。
+	 * - 设为 public,供 settings 面板 viewMemory action 调用(Plan Task 1 Step 3 action)。
+	 *
+	 * 设计要点:revealLeaf 必须在 leaf 已存在时调用;新建 leaf 已通过 setViewState 自动激活,
+	 * 但仍调 revealLeaf 确保面板可见(用户可能在其他 tab)。
+	 */
+	async activateMemoryView() {
+		const { workspace } = this.app;
+		let leaf = workspace.getLeavesOfType(VIEW_TYPE_MEMORY)[0];
+		if (!leaf) {
+			const rightLeaf = workspace.getRightLeaf(false);
+			if (rightLeaf) {
+				leaf = rightLeaf;
+				await leaf.setViewState({ type: VIEW_TYPE_MEMORY, active: true });
+			}
+		} else {
+			// 关键路径:已存在的 leaf 仅 reveal,不重新 setViewState 避免重置 Svelte 状态。
+			void workspace.revealLeaf(leaf);
+		}
 	}
 }
