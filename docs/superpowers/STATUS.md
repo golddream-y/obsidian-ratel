@@ -28,8 +28,7 @@
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
 | P-I18N-IMPL | [2026-06-14-ratel-i18n-implementation.md](plans/2026-06-14-ratel-i18n-implementation.md) | 🚫 Superseded | S-I18N | 已被 P-I18N-V2-IMPL 取代 |
-| P-MEMORY-LOGIC | [2026-07-05-memory-system-logic.md](plans/2026-07-05-memory-system-logic.md) | 🔄 In Progress | S-MEMORY | 核心逻辑:MemoryStore + 3 个工具 + ContextManager 注入（先于 P-MEMORY-UI）;branch: main |
-| P-MEMORY-UI | [2026-07-05-memory-system-ui.md](plans/2026-07-05-memory-system-ui.md) | ⏳ Pending | S-MEMORY | UI+设置:记忆面板 + 6 个设置项（依赖 P-MEMORY-LOGIC);⚠️ Task 1 假设 `display()` 存在,P-SETTINGS-DECLARATIVE 完成后需重写 |
+| P-MEMORY-UI | [2026-07-05-memory-system-ui.md](plans/2026-07-05-memory-system-ui.md) | ⏳ Pending | S-MEMORY | UI+设置:记忆面板 + 6 个设置项（依赖 P-MEMORY-LOGIC ✅ 已归档);⚠️ Task 1 已重写为声明式 |
 | P-SKILL-1-CORE | — | ⏳ Pending | S-SKILL | 基础+激活:loader/registry/activator+activate_skill/deactivate_skill 工具+slash 命令;plan 待写 |
 | P-SKILL-2-EXECUTION | — | ⏳ Pending | S-SKILL | references+scripts:沙箱+权限+read_skill_reference/run_skill_script 工具;依赖 P-SKILL-1-CORE;plan 待写 |
 | P-SKILL-3-UI | — | ⏳ Pending | S-SKILL | settings 面板+chat 状态显示+预置示例 skills;依赖 P-SKILL-1-CORE;plan 待写 |
@@ -51,11 +50,10 @@
 
 ## Future execution queue(按顺序)
 
-1. **P-MEMORY-LOGIC**(S-MEMORY 核心)— 无依赖,可直接执行;i18n 基础设施已就绪
-2. **P-MEMORY-UI**(S-MEMORY UI)— 依赖 P-MEMORY-LOGIC;Task 1 已重写为声明式;i18n 基础设施已就绪
-3. **P-SKILL-1-CORE**(S-SKILL 基础)— 无 i18n 强依赖(基础 SkillStrings key 自带);plan 待写
-4. **P-SKILL-2-EXECUTION**(S-SKILL 执行)— 依赖 P-SKILL-1-CORE;沙箱安全风险高
-5. **P-SKILL-3-UI**(S-SKILL UI)— 依赖 P-SKILL-1-CORE;可与 P-SKILL-2 并行;i18n 基础设施已就绪
+1. **P-MEMORY-UI**(S-MEMORY UI)— 依赖 P-MEMORY-LOGIC ✅ 已归档;Task 1 已重写为声明式;i18n 基础设施已就绪
+2. **P-SKILL-1-CORE**(S-SKILL 基础)— 无 i18n 强依赖(基础 SkillStrings key 自带);plan 待写
+3. **P-SKILL-2-EXECUTION**(S-SKILL 执行)— 依赖 P-SKILL-1-CORE;沙箱安全风险高
+4. **P-SKILL-3-UI**(S-SKILL UI)— 依赖 P-SKILL-1-CORE;可与 P-SKILL-2 并行;i18n 基础设施已就绪
 
 ---
 
@@ -91,3 +89,4 @@
 | S-SETTINGS-DECLARATIVE | [archive/S-SETTINGS-DECLARATIVE/](archive/S-SETTINGS-DECLARATIVE/) | 2026-07-05 | 设置面板声明式迁移;4 commits;release 0.1.2 已上架 |
 | S-RAG-ARCH | [archive/S-RAG-ARCH/](archive/S-RAG-ARCH/) | 2026-07-05 | 最终 RAG 架构设计文档;实施通过 W3/W4 等多个 plan 完成 |
 | S-I18N-V2 | [archive/S-I18N-V2/](archive/S-I18N-V2/) | 2026-07-06 | i18n V2 全量实现;14 namespace ~340 key;12 commit squash 为 2 |
+| S-MEMORY (P-MEMORY-LOGIC) | [archive/S-MEMORY/](archive/S-MEMORY/) | 2026-07-06 | 用户记忆核心逻辑;8 Task + 2 Critical/4 Important 修复;spec 仍 Active(P-MEMORY-UI pending) |
