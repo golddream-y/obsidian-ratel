@@ -17,8 +17,10 @@
 
 | ID | 文件 | 状态 | 创建日期 | 备注 |
 |---|---|---|---|---|
-| S-I18N | [2026-06-14-ratel-i18n-design.md](specs/2026-06-14-ratel-i18n-design.md) | Draft | 2026-06-14 | i18n 基础设施:中英文切换,settings.ts + ChatView + 命令 + Notice + 工具 name 全覆盖 |
+| S-I18N | [2026-06-14-ratel-i18n-design.md](specs/2026-06-14-ratel-i18n-design.md) | 🚫 Superseded | 2026-06-14 | 已被 S-I18N-V2 取代;估算 key 数严重不足(50 vs 300),覆盖类别不全(3 vs 10) |
+| S-I18N-V2 | [2026-07-05-i18n-v2-design.md](specs/2026-07-05-i18n-v2-design.md) | Active | 2026-07-05 | i18n v2:10 类 ~320 key + 扩展性约束(所有新功能必须走 i18n);开放式 Strings interface,namespace 扩展 |
 | S-MEMORY | [2026-07-05-memory-system-design.md](specs/2026-07-05-memory-system-design.md) | Active | 2026-07-05 | 用户记忆系统:两层架构(全局 + 主题),独立索引,工具驱动,容量可控 |
+| S-SKILL | [2026-07-06-skill-mechanism-design.md](specs/2026-07-06-skill-mechanism-design.md) | Active | 2026-07-06 | Skill 机制(agentskills.io 兼容):三源合并存储 + progressive disclosure + 4 个新工具 + 沙箱脚本执行 |
 
 ---
 
@@ -26,9 +28,13 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
-| P-I18N-IMPL | [2026-06-14-ratel-i18n-implementation.md](plans/2026-06-14-ratel-i18n-implementation.md) | ⏳ Pending | S-I18N | ⚠️ Task 7 假设 `display()` 存在,P-SETTINGS-DECLARATIVE 完成后需重写(改为改 `getSettingDefinitions()`) |
+| P-I18N-IMPL | [2026-06-14-ratel-i18n-implementation.md](plans/2026-06-14-ratel-i18n-implementation.md) | 🚫 Superseded | S-I18N | 已被 P-I18N-V2-IMPL 取代 |
+| P-I18N-V2-IMPL | [2026-07-06-i18n-v2-implementation.md](plans/2026-07-06-i18n-v2-implementation.md) | ⏳ Pending | S-I18N-V2 | 10 Task:基础设施(types/zh/en/index+测试)+ 8 消费者迁移(settings/diagnostics/chat/status/modals/core/tools/prompts)+ 验证 |
 | P-MEMORY-LOGIC | [2026-07-05-memory-system-logic.md](plans/2026-07-05-memory-system-logic.md) | ⏳ Pending | S-MEMORY | 核心逻辑:MemoryStore + 3 个工具 + ContextManager 注入（先于 P-MEMORY-UI） |
 | P-MEMORY-UI | [2026-07-05-memory-system-ui.md](plans/2026-07-05-memory-system-ui.md) | ⏳ Pending | S-MEMORY | UI+设置:记忆面板 + 6 个设置项（依赖 P-MEMORY-LOGIC);⚠️ Task 1 假设 `display()` 存在,P-SETTINGS-DECLARATIVE 完成后需重写 |
+| P-SKILL-1-CORE | — | ⏳ Pending | S-SKILL | 基础+激活:loader/registry/activator+activate_skill/deactivate_skill 工具+slash 命令;plan 待写 |
+| P-SKILL-2-EXECUTION | — | ⏳ Pending | S-SKILL | references+scripts:沙箱+权限+read_skill_reference/run_skill_script 工具;依赖 P-SKILL-1-CORE;plan 待写 |
+| P-SKILL-3-UI | — | ⏳ Pending | S-SKILL | settings 面板+chat 状态显示+预置示例 skills;依赖 P-SKILL-1-CORE;plan 待写 |
 
 ---
 
@@ -47,8 +53,12 @@
 
 ## Future execution queue(按顺序)
 
-1. **P-I18N-IMPL**(i18n 基础设施:中英文切换)
-2. 在 Obsidian 里手动 E2E 验证(M3 里程碑)
+1. **P-MEMORY-LOGIC**(S-MEMORY 核心)— 无 i18n 依赖
+2. **P-I18N-V2-IMPL**(i18n v2 基础设施 + 全量迁移)— 10 Task 已就绪,可执行
+3. **P-MEMORY-UI**(S-MEMORY UI)— 依赖 P-MEMORY-LOGIC;Task 1 已重写为声明式
+4. **P-SKILL-1-CORE**(S-SKILL 基础)— 无 i18n 强依赖(基础 SkillStrings key 自带);plan 待写
+5. **P-SKILL-2-EXECUTION**(S-SKILL 执行)— 依赖 P-SKILL-1-CORE;沙箱安全风险高
+6. **P-SKILL-3-UI**(S-SKILL UI)— 依赖 P-SKILL-1-CORE;可与 P-SKILL-2 并行;依赖 P-I18N-V2-IMPL(UI 文案)
 
 ---
 

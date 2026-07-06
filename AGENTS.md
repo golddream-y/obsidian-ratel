@@ -183,6 +183,45 @@ AI 读 `git log <plan-start-commit>..HEAD`,判断这些 commit 是否改变用�
 
 本规则靠 AGENTS.md 硬约束 + `finishing-a-development-branch` 技能 Step 0 执行。不引入工具依赖,符合项目"对话驱动 + 开发者确认"风格。
 
+## i18n 强制规则(mandatory)
+
+> 所有新增功能的用户可见字符串必须走 i18n 机制,禁止硬编码。这是硬规矩 — 不协商。
+
+### 触发时机
+
+**任何 `feat` / `fix` commit 含新用户可见字符串时**:
+- 实现者必须在 `src/i18n/zh.ts` + `en.ts` 加对应 key
+- 代码里调 `t('key')` / `tNow('key')`,不允许字面量
+
+### 用户可见字符串定义
+
+下列场景**必须** i18n:
+- Settings 面板的 `name` / `desc` / `heading` / `action` 文案
+- Chat UI 的 placeholder / button / aria-label / 标题
+- Notice / Modal 文案
+- Status bar / Drawer 标签
+- Slash command description
+- Tool display name(format-tool-display 友好名,如"查看 xxx.md")
+- 用户路径上的 throw new Error 消息(如路径校验、工具校验)
+
+### 例外(不需 i18n)
+
+- 面向开发者的 `console.*` / `devLogger.*`(用中文)
+- LLM 收到的 prompt 正文(`prompts/defaults/zh.ts`)
+- LLM 收到的 tool schema description
+- 代码注释
+- 错误堆栈(stack trace)
+
+### 审查机制
+
+- **subagent-driven-development spec 审查阶段**:检查硬编码字符串
+- **requesting-code-review 技能**:检查 i18n 合规
+- **翻译表开放式设计**:新功能在 `src/i18n/types.ts` 加 namespace interface,`zh.ts` / `en.ts` 用对象 spread 合并
+
+### 落地形式
+
+本规则靠 AGENTS.md 硬约束 + subagent 审查执行。不引入额外工具依赖,符合项目"对话驱动 + 开发者确认"风格。详细设计见 [S-I18N-V2](docs/superpowers/specs/2026-07-05-i18n-v2-design.md)。
+
 ## 编码约定
 
 - TypeScript 启用 `"strict": true`。
