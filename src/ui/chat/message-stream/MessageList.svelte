@@ -97,7 +97,6 @@
 		background: var(--text-warning);
 		animation: ratel-pulse 1.2s infinite;
 		flex-shrink: 0;
-		box-shadow: 0 0 6px color-mix(in srgb, var(--text-warning) 50%, transparent);
 	}
 
 	.ratel-typing-text {

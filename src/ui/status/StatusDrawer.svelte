@@ -6,26 +6,23 @@
 	 * @depends svelte/store, user-feedback/user-status
 	 */
 	import type { Readable } from 'svelte/store';
-	import type { UserStatusSnapshot, ContextUsage, PendingAttachment } from '../../user-feedback/user-status';
+	import type { UserStatusSnapshot, ContextUsage } from '../../user-feedback/user-status';
 	import { t } from '../../i18n';
 
 	let {
 		expanded,
 		status$,
 		contextUsage$,
-		pendingAttachments$,
 		onCompact,
 	}: {
 		expanded: boolean;
 		status$: Readable<UserStatusSnapshot>;
 		contextUsage$: Readable<ContextUsage>;
-		pendingAttachments$: Readable<PendingAttachment[]>;
 		onCompact: () => void;
 	} = $props();
 
 	const snap = $derived($status$);
 	const usage = $derived($contextUsage$);
-	const attachments = $derived($pendingAttachments$);
 
 	function labelIndex(index: UserStatusSnapshot['index']): string {
 		switch (index) {
@@ -76,24 +73,9 @@
 		return lbl;
 	});
 
-	const attachmentTokens = $derived(attachments.reduce((sum, a) => sum + a.estimatedTokens, 0));
-
-	// ctx 进度条颜色阈值:0-79% 绿,80-94% 黄,95-100% 红
-	const pct = $derived(Math.min(usage.percentage, 100));
-	const ctxColor = $derived.by(() => {
-		const p = usage.percentage;
-		if (p >= 95) return 'var(--text-error)';
-		if (p >= 80) return 'var(--text-warning)';
-		return 'var(--text-success)';
-	});
-
-	// source 指示器 — 与 StatusLine 同步
-	const sourceInfo = $derived.by(() => {
-		const src = usage.source ?? 'estimate';
-		if (src === 'api') return { label: $t('status.drawer.sourceApi'), dotClass: 'ratel-drawer-src-api' };
-		if (src === 'streaming') return { label: $t('status.drawer.sourceStreaming'), dotClass: 'ratel-drawer-src-streaming' };
-		return { label: $t('status.drawer.sourceEstimate'), dotClass: 'ratel-drawer-src-estimate' };
-	});
+	// 关键路径:sourceInfo / attachmentTokens / pct / ctxColor 已删除
+	// (token-meter / source-pill / 附件统计行从 template 移除后,这些变量变为死代码)
+	// currentFile 保留(仍在 template L122-126 使用)
 
 	const currentFile = $derived.by(() => {
 		if (snap.index === 'processing' && snap.indexDetail) {
@@ -145,31 +127,6 @@
 			<span class="ratel-drawer-label">{$t('status.drawer.label.usedMax')}</span>
 			<span class="ratel-drawer-value ratel-drawer-mono">{usage.usedTokens.toLocaleString()} / {usage.maxTokens.toLocaleString()} tokens</span>
 		</div>
-		<!-- 关键路径:token-meter 进度条,与 StatusLine ctx-bar 同步但更大更详细 -->
-		<div class="ratel-drawer-token-meter">
-			<div class="ratel-drawer-meter-track">
-				<div class="ratel-drawer-meter-fill"
-					 style={`width: ${pct}%; background: ${ctxColor};`}></div>
-			</div>
-			<span class="ratel-drawer-meter-pct" style={`color: ${ctxColor};`}>
-				{usage.percentage}%
-			</span>
-		</div>
-		<div class="ratel-drawer-row">
-			<span class="ratel-drawer-label">{$t('status.drawer.label.dataSource')}</span>
-			<span class="ratel-drawer-value">
-				<span class="ratel-drawer-src {sourceInfo.dotClass}">
-					<span class="ratel-drawer-src-dot"></span>
-					<span class="ratel-drawer-src-label">{sourceInfo.label}</span>
-				</span>
-			</span>
-		</div>
-		{#if attachments.length > 0}
-			<div class="ratel-drawer-row">
-				<span class="ratel-drawer-label">{$t('status.drawer.label.attachments')}</span>
-				<span class="ratel-drawer-value">{$t('status.drawer.attachmentsCount', { count: attachments.length, tokens: attachmentTokens })}</span>
-			</div>
-		{/if}
 		<div class="ratel-drawer-row ratel-drawer-row-end">
 			<button class="ratel-drawer-micro-btn" type="button" onclick={onCompact}>{$t('status.drawer.compactButton')}</button>
 		</div>
@@ -268,7 +225,7 @@
 		align-items: center;
 		gap: 4px;
 		padding: 1px 8px;
-		border-radius: 10px;
+		border-radius: 8px;
 		font-size: 11px;
 		font-weight: 500;
 	}
@@ -317,93 +274,5 @@
 	.ratel-drawer-micro-btn:hover {
 		color: var(--text-normal);
 		border-color: var(--text-success);
-	}
-
-	/* ==================== Token 进度条(drawer 内) ==================== */
-	.ratel-drawer-token-meter {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		margin: 2px 0 4px;
-	}
-
-	.ratel-drawer-meter-track {
-		flex: 1;
-		height: 6px;
-		border-radius: 3px;
-		background: var(--background-modifier-form-field, var(--background-primary));
-		overflow: hidden;
-		min-width: 0;
-		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08) inset;
-	}
-
-	.ratel-drawer-meter-fill {
-		height: 100%;
-		border-radius: 3px;
-		transition: width 0.4s ease, background 0.3s;
-	}
-
-	.ratel-drawer-meter-pct {
-		font-size: 10px;
-		font-family: var(--font-monospace);
-		font-weight: 600;
-		min-width: 32px;
-		text-align: right;
-	}
-
-	/* ==================== Source 指示器(drawer 内) ==================== */
-	.ratel-drawer-src {
-		display: inline-flex;
-		align-items: center;
-		gap: 3px;
-		padding: 1px 6px 1px 5px;
-		border-radius: 8px;
-		font-size: 9.5px;
-		font-family: var(--font-monospace);
-		font-weight: 500;
-		letter-spacing: 0.2px;
-	}
-
-	.ratel-drawer-src-dot {
-		width: 5px;
-		height: 5px;
-		border-radius: 50%;
-		flex-shrink: 0;
-	}
-
-	.ratel-drawer-src-estimate {
-		background: color-mix(in srgb, var(--text-muted) 12%, transparent);
-		color: var(--text-muted);
-	}
-	.ratel-drawer-src-estimate .ratel-drawer-src-dot {
-		background: var(--text-muted);
-	}
-
-	.ratel-drawer-src-streaming {
-		background: color-mix(in srgb, var(--text-warning) 12%, transparent);
-		color: var(--text-warning);
-	}
-	.ratel-drawer-src-streaming .ratel-drawer-src-dot {
-		background: var(--text-warning);
-		animation: ratel-drawer-src-pulse 1.2s infinite;
-	}
-
-	.ratel-drawer-src-api {
-		background: color-mix(in srgb, var(--text-success) 12%, transparent);
-		color: var(--text-success);
-	}
-	.ratel-drawer-src-api .ratel-drawer-src-dot {
-		background: var(--text-success);
-		box-shadow: 0 0 4px color-mix(in srgb, var(--text-success) 50%, transparent);
-	}
-
-	@keyframes ratel-drawer-src-pulse {
-		0%, 100% { opacity: 1; }
-		50% { opacity: 0.4; }
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.ratel-drawer-src-streaming .ratel-drawer-src-dot { animation: none; }
-		.ratel-drawer-meter-fill { transition: none; }
 	}
 </style>
