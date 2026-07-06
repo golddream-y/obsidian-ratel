@@ -1,7 +1,9 @@
-import { describe, it, expect } from 'vitest';
-import { validateVaultPath } from '../../src/utils/path-safety';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { validateVaultPath, setConfigDir } from '../../src/utils/path-safety';
 
 describe('validateVaultPath', () => {
+	// 关键路径:模拟生产环境,configDirName 必须设置,否则 configDir 检查失效
+	beforeEach(() => setConfigDir('.obsidian'));
 	it('正常相对路径 - 返回归一化结果', () => {
 		expect(validateVaultPath('notes/foo.md')).toBe('notes/foo.md');
 		expect(validateVaultPath('notes//bar.md')).toBe('notes/bar.md');

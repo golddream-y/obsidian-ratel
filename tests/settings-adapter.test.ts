@@ -43,6 +43,12 @@ vi.mock('../src/ui/chat/ChatView', () => ({
 	VIEW_TYPE_CHAT: 'ratel-chat',
 }));
 
+// 关键路径:MemoryPanelView import MemoryPanel.svelte,vitest 没配 svelte 解析器,需 stub
+vi.mock('../src/ui/memory-panel/MemoryPanelView', () => ({
+	MemoryPanelView: class {},
+	VIEW_TYPE_MEMORY: 'ratel-memory',
+}));
+
 import RatelVaultPlugin from '../src/main';
 import { DEFAULT_SETTINGS } from '../src/settings';
 import { EmbeddingLocal } from '../src/adapters/embedding-local';
