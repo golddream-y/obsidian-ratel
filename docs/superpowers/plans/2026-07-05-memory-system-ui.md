@@ -1,10 +1,12 @@
 # 用户记忆系统 — Plan B：UI + 设置
 
+> ⚠️ **本 plan 已适配声明式 settings API**(S-SETTINGS-DECLARATIVE 完成后重写)。Task 1 原 `display()` + `new Setting(containerEl)` 已改为 `getSettingDefinitions()` 声明式 group。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** 实现记忆管理侧边栏面板（Svelte 5）+ 设置页 6 个记忆参数。
 
-**Architecture:** 新增 `MemoryPanelView`（Obsidian ItemView 包装）挂载 `MemoryPanel.svelte` 组件，通过 `plugin.memoryStore` 读写记忆。设置页在 `RatelVaultSettingTab.display()` 中追加「记忆」区域。
+**Architecture:** 新增 `MemoryPanelView`（Obsidian ItemView 包装）挂载 `MemoryPanel.svelte` 组件，通过 `plugin.memoryStore` 读写记忆。设置页在 `RatelVaultSettingTab.getSettingDefinitions()` 中追加「记忆」group(声明式 API)。
 
 **前置依赖:** Plan A 完成。`MemoryStore` 类、`memoryStore` 实例、三个工具均已就绪。
 
@@ -64,84 +66,61 @@
 	memoryContextTotalLimitKB: 50,
 ```
 
-- [ ] Step 3: 在 `RatelVaultSettingTab.display()` 方法末尾（`containerEl.empty()` 重渲染的最后），追加「记忆」设置区域。在现有最后一个 `new Setting(containerEl)` 之后追加：
+- [ ] Step 3: 在 `getSettingDefinitions()` 返回数组中追加 Memory group,插入到 Diagnostics page 与 Developer group 之间。用声明式 `control: { type: 'toggle' / 'number' }` 表达 6 个设置项 + 1 个 action 按钮(打开记忆面板)。
+
+代码示例:
 
 ```typescript
-		// --- 记忆 ---
-		containerEl.createEl('h2', { text: '记忆' });
-
-		new Setting(containerEl)
-			.setName('启用记忆功能')
-			.setDesc('关闭后 Agent 不读写记忆')
-			.addToggle((toggle) =>
-				toggle.setValue(this.plugin.settings.memoryEnabled).onChange(async (value) => {
-					this.plugin.settings.memoryEnabled = value;
-					await this.plugin.saveSettings();
-				}),
-			);
-
-		new Setting(containerEl)
-			.setName('自动记忆写入')
-			.setDesc('关闭后 Agent 仅响应显式"记住"指令，不主动推断写入')
-			.addToggle((toggle) =>
-				toggle.setValue(this.plugin.settings.memoryAutoWrite).onChange(async (value) => {
-					this.plugin.settings.memoryAutoWrite = value;
-					await this.plugin.saveSettings();
-				}),
-			);
-
-		new Setting(containerEl)
-			.setName('存储总上限（MB）')
-			.setDesc('所有记忆文件磁盘占用上限，默认 10 MB')
-			.addText((text) =>
-				text.setValue(String(this.plugin.settings.memoryStorageLimitMB)).onChange(async (value) => {
-					const num = parseInt(value, 10);
-					if (!isNaN(num) && num > 0) {
-						this.plugin.settings.memoryStorageLimitMB = num;
-						await this.plugin.saveSettings();
-					}
-				}),
-			);
-
-		new Setting(containerEl)
-			.setName('基础记忆注入上限（KB）')
-			.setDesc('global.md 注入系统提示的硬限制，默认 20 KB')
-			.addText((text) =>
-				text.setValue(String(this.plugin.settings.memoryInjectLimitKB)).onChange(async (value) => {
-					const num = parseInt(value, 10);
-					if (!isNaN(num) && num > 0) {
-						this.plugin.settings.memoryInjectLimitKB = num;
-						await this.plugin.saveSettings();
-					}
-				}),
-			);
-
-		new Setting(containerEl)
-			.setName('动态记忆注入上限（KB）')
-			.setDesc('单次 search_memory 返回内容硬限制，默认 30 KB')
-			.addText((text) =>
-				text.setValue(String(this.plugin.settings.memoryDynamicLimitKB)).onChange(async (value) => {
-					const num = parseInt(value, 10);
-					if (!isNaN(num) && num > 0) {
-						this.plugin.settings.memoryDynamicLimitKB = num;
-						await this.plugin.saveSettings();
-					}
-				}),
-			);
-
-		new Setting(containerEl)
-			.setName('上下文总记忆上限（KB）')
-			.setDesc('基础 + 动态记忆在上下文中的合计硬限制，默认 50 KB')
-			.addText((text) =>
-				text.setValue(String(this.plugin.settings.memoryContextTotalLimitKB)).onChange(async (value) => {
-					const num = parseInt(value, 10);
-					if (!isNaN(num) && num > 0) {
-						this.plugin.settings.memoryContextTotalLimitKB = num;
-						await this.plugin.saveSettings();
-					}
-				}),
-			);
+			// ==================== Memory ====================
+			{
+				type: 'group',
+				heading: '记忆',
+				items: [
+					{
+						name: '启用记忆功能',
+						desc: '关闭后 Agent 不读写记忆',
+						control: { type: 'toggle', key: 'memoryEnabled' },
+					},
+					{
+						name: '自动记忆写入',
+						desc: '关闭后 Agent 仅响应显式"记住"指令,不主动推断写入',
+						control: { type: 'toggle', key: 'memoryAutoWrite' },
+					},
+					{
+						name: '存储总上限(MB)',
+						desc: '所有记忆文件磁盘占用上限,默认 10 MB',
+						control: { type: 'number', key: 'memoryStorageLimitMB', min: 1, max: 1000 },
+					},
+					{
+						name: '基础记忆注入上限(KB)',
+						desc: 'global.md 注入系统提示的硬限制,默认 20 KB',
+						control: { type: 'number', key: 'memoryInjectLimitKB', min: 1, max: 500 },
+					},
+					{
+						name: '动态记忆注入上限(KB)',
+						desc: '单次 search_memory 返回内容硬限制,默认 30 KB',
+						control: { type: 'number', key: 'memoryDynamicLimitKB', min: 1, max: 500 },
+					},
+					{
+						name: '上下文总记忆上限(KB)',
+						desc: '基础 + 动态记忆在上下文中的合计硬限制,默认 50 KB',
+						control: { type: 'number', key: 'memoryContextTotalLimitKB', min: 1, max: 500 },
+					},
+					{
+						name: '查看记忆',
+						desc: '打开记忆管理面板',
+						action: () => void this.plugin.activateMemoryView(),
+					},
+				],
+			},
 ```
+
+**关键决策:**
+- 用声明式 `control: { type: 'toggle' / 'number' }`,不再用 `new Setting(containerEl)`(S-SETTINGS-DECLARATIVE 已删除 `display()`)
+- 数值字段用 `control: { type: 'number', min, max }`,框架自动处理 parseInt 与边界校验,无需手动 `parseInt(value, 10)` + `isNaN` 判断
+- "查看记忆"按钮用 `action`,调 `this.plugin.activateMemoryView()`(Task 4 在 `main.ts` 中实现该方法);若 Task 4 方法名调整,以此处调用为准
+- 副作用(重建索引 / 通知 MemoryStore)由 `setControlValue` override 处理(已在 S-SETTINGS-DECLARATIVE 实现),无需手动 `await this.plugin.saveSettings()` + `this.display()`
+- field 名与 Step 1/Step 2 一致(`memoryEnabled` / `memoryAutoWrite` / `memoryStorageLimitMB` / `memoryInjectLimitKB` / `memoryDynamicLimitKB` / `memoryContextTotalLimitKB`),对应 spec §8.3 六个配置项
 
 - [ ] Step 4: `npx tsc --noEmit` → 无新增错误
 - [ ] Step 5: 提交
