@@ -6,6 +6,8 @@
 ## [Unreleased]
 
 ### Added
+- **i18n V2 基础设施** — `src/i18n/` 模块(svelte/store-based),12 namespace ~340 key,开放式 Strings interface 扩展;中英文界面切换,Settings → Ratel → Language 下拉(auto 跟随系统 / 中文 / English),UI 文案即时生效
+- **tool.name.* 友好名** — 工具调用展示从英文工具名改为本地化友好名(如"查看 xxx.md"、"语义搜索")
 - **smart reindex 启动路径** — 启动期 hash diff 跳过未变更文件,热启动零 embed 调用
 - **IndexManifest 持久化** — `pluginDir/index-manifest.json` 记录每文件 sha256 + mtime + chunkCount + 全局 embedding 参数,原子写避免半写损坏
 - **mtime 快速跳过** — mtime 未变则不读 content 不算 sha256,直接复用旧 hash
