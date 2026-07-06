@@ -16,6 +16,8 @@ export type PromptSectionId =
 	| 'agent.rag.workflow'
 	| 'agent.rag.toolGuide'
 	| 'injection.searchResults.body'
+	// 关键路径:记忆系统注入提示 — 支持用户在 Prompt overrides 面板覆盖默认中文模板。
+	| 'memory.systemPrompt'
 	| 'internal.compact'
 	| 'internal.intent.system'
 	| 'internal.intent.user'

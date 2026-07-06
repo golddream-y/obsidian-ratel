@@ -44,11 +44,20 @@ function buildSections(): SectionMeta[] {
 			allowOverride: true,
 		},
 		{
-			id: 'injection.searchResults.body',
+		id: 'injection.searchResults.body',
 			label: tNow('promptLabel.injection.searchResults.body'),
 			description: tNow('promptLabel.injection.searchResults.body.desc'),
 			zone: 'dynamic',
 			placeholders: ['index', 'path', 'content'],
+			allowOverride: true,
+		},
+		// 关键路径:记忆系统注入提示 — 启动时注入到 system 与检索结果之间,用户可覆盖默认模板。
+		{
+			id: 'memory.systemPrompt',
+			label: tNow('promptLabel.memory.systemPrompt'),
+			description: tNow('promptLabel.memory.systemPrompt.desc'),
+			zone: 'dynamic',
+			placeholders: ['globalContent', 'topicList'],
 			allowOverride: true,
 		},
 		{

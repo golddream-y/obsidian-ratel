@@ -85,6 +85,9 @@ export const en: Strings = {
   'settings.toolPermissions.append_note': 'Append note',
   'settings.toolPermissions.edit_note': 'Edit note',
   'settings.toolPermissions.delete_note': 'Delete note',
+  'settings.toolPermissions.search_memory': 'Search memory',
+  'settings.toolPermissions.remember': 'Remember',
+  'settings.toolPermissions.forget_memory': 'Forget memory',
   'settings.toolPermissions.allow': 'Allow',
   'settings.toolPermissions.ask': 'Ask',
   'settings.toolPermissions.deny': 'Deny',
@@ -164,6 +167,9 @@ export const en: Strings = {
   'tool.name.append_note': 'Append {path}',
   'tool.name.grep': 'Search {pattern}',
   'tool.name.glob': 'Match {pattern}',
+  'tool.name.search_memory': 'Search memory',
+  'tool.name.remember': 'Remember',
+  'tool.name.forget_memory': 'Forget memory',
 
   // ==================== SlashStrings ====================
   'slash.new.description': 'Start a new conversation and clear the current context',
@@ -192,6 +198,11 @@ export const en: Strings = {
   'notice.toolRejected': 'Tool call rejected',
   'notice.toolRejectedDisabled': 'Tool call rejected (disabled)',
   'notice.operationFailed': 'Operation failed: {message}',
+  'notice.memory.saved': 'Memory saved',
+  'notice.memory.forgotten': 'Memory forgotten',
+  'notice.memory.topicCreated': 'Topic created: {topic}',
+  'notice.memory.topicRemoved': 'Topic removed: {topic}',
+  'notice.memory.truncated': 'Memory truncated (exceeds injection limit)',
 
   // ==================== ModalStrings ====================
   'modal.rebuildIndex.title': 'Rebuild index (full)',
@@ -417,6 +428,15 @@ export const en: Strings = {
   'error.model.downloadFailed': 'Failed to download {name}: {status}',
   'error.ort.downloadFailed': 'Failed to download ONNX Runtime WASM: {status}',
   'error.ort.fileCorrupted': 'Failed to download ONNX Runtime WASM: file too small ({bytes} bytes), possibly corrupted',
+  'error.memory.storeNotInit': 'MemoryStore is not initialized',
+  'error.memory.topicRequired': 'topic parameter is required when type=topic',
+  'error.memory.sectionNotFound': 'Section not found: {section}',
+  'error.memory.topicNotFound': 'Topic not found: {topic}',
+  'error.memory.noMatch': 'No memory entry matching "{match}"',
+  'error.memory.invalidTopic': 'Invalid topic name (contains path separators or traversal segments): {name}',
+  'error.memory.embeddingNotInit': 'EmbeddingPort not injected, cannot write to memory index',
+  'error.memory.embeddingFailed': 'Embedding returned empty vector, cannot write to memory index',
+  'error.memory.storageFull': 'Memory storage exceeds 10MB limit, cannot write',
 
   // ==================== PromptLabelStrings ====================
   'promptLabel.agent.base': 'Agent identity',
@@ -427,6 +447,8 @@ export const en: Strings = {
   'promptLabel.agent.rag.toolGuide.desc': 'When to use which tool; injects {{toolList}} at the end',
   'promptLabel.injection.searchResults.body': 'Search result layout',
   'promptLabel.injection.searchResults.body.desc': 'Per-result template; the wrapper is hardcoded by Composer',
+  'promptLabel.memory.systemPrompt': 'Memory system prompt',
+  'promptLabel.memory.systemPrompt.desc': 'Injected between system and search results at startup; placeholders {{globalContent}} + {{topicList}}',
   'promptLabel.internal.intent.system': 'Intent classification System',
   'promptLabel.internal.intent.system.desc': 'Internal LLM: only answers rag or direct',
   'promptLabel.internal.intent.user': 'Intent classification User',

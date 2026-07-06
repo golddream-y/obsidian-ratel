@@ -301,6 +301,7 @@ src/
     agent-loop.ts                  #   Agent Loop (编排 tool call)
     context-manager.ts             #   Context Manager (组装上下文)
     hooks.ts                       #   Hooks 注册表 + 执行
+    memory-store.ts                #   MemoryStore (用户记忆读写 + 向量索引 upsert)
 
   i18n/                            # 国际化 (自建 svelte/store 方案)
     types.ts                       #   12 个 namespace 接口 + Strings 合并
@@ -320,7 +321,7 @@ src/
     llm-deepseek.ts                #   DeepSeek (OpenAI 兼容 SDK)
     llm-anthropic.ts               #   Claude (Anthropic SDK)
 
-  tools/                           # Vault 工具集 (9 个)
+  tools/                           # Vault 工具集 (12 个)
     read-note.ts                   #   读取笔记全文
     search-vault.ts                #   向量+BM25 混合检索
     grep.ts                        #   正则搜索
@@ -330,6 +331,9 @@ src/
     append-note.ts                 #   追加内容
     edit-note.ts                   #   编辑指定行
     delete-note.ts                 #   删除笔记
+    search-memory.ts               #   搜索用户记忆 (向量检索 topics/)
+    remember.ts                    #   写入记忆 (global 或 topic)
+    forget-memory.ts               #   删除记忆条目
 
   subagents/                       # 4 个 Subagent
     indexer.ts                     #   维护向量索引 (文件变更 + 定时重检)
@@ -348,11 +352,11 @@ src/
 
   prompts/                         # Prompt Registry(单一装配入口)
     types.ts                       #   PromptSectionId 类型 + OverrideMap
-    sections.ts                    #   24 个 section 元数据注册表
+    sections.ts                    #   25 个 section 元数据注册表
     defaults/zh.ts                 #   中文默认值(常量,不可变)
     interpolate.ts                 #   {{var}} 占位符引擎 + 校验
-    tool-schemas.ts                #   9 个工具的 JSON schema 骨架
-    composer.ts                    #   Composer 装配 API(4 个出口函数)
+    tool-schemas.ts                #   12 个工具的 JSON schema 骨架
+    composer.ts                    #   Composer 装配 API(5 个出口函数,含 composeMemorySystemPrompt)
     index.ts                       #   模块 re-export 入口
 
   utils/                           # 工具函数
@@ -1028,11 +1032,66 @@ export class HookRegistry {
   async run(phase: string, toolCall: ToolCall): Promise<void> {
     const list = this.handlers.get(phase) ?? [];
     for (const handler of list) {
-      await handler(toolCall);
+      await handler(handler);
     }
   }
 }
 ```
+
+### 8.4 Memory 子系统
+
+用户记忆系统(S-MEMORY spec)—— 让 Agent 跨会话记住用户偏好、决策、技术栈历史。两层结构:
+
+| 层 | 文件 | 注入策略 |
+|---|---|---|
+| Global | `.ratel/memory/global.md` | 启动时全文注入(截断到 20KB) |
+| Topic | `.ratel/memory/topics/<name>.md` | Agent 按相关性主动调 `search_memory` 检索 |
+| Index | `.ratel/memory/index.md` | 主题名 + summary 列表,启动时随 global 一并注入提示 |
+
+**核心模块:`core/memory-store.ts`**
+
+`MemoryStore` 负责读写记忆文件 + 维护独立向量索引(`.ratel/memory/.vector/`)。关键设计:
+
+- **依赖注入 `EmbeddingPort`**:`upsertToIndex` 不走 vectra 内部 embeddings(避免 vectra 对 embedding 模型的隐式依赖),而是用主线程注入的 `embeddingPort.embed([text])` 预计算向量后调 `vectraStore.upsertItem(docId, vector, metadata)`。与 `IndexProcessor` 同源模式。
+- **路径安全**:`validateTopicName()` 拒绝路径分隔符(`/`、`\`)、`.`/`..`、Windows 保留名(CON/NUL/AUX/COM1-9/LPT1-9)、控制字符。所有 `readTopic`/`writeTopic`/`deleteTopic` 入口强制校验。
+- **容量上限**:单条 `global.md` 注入前截断到 20KB(防淹没 LLM 上下文);总存储上限 10MB,`isWithinStorageLimit()` 在 `remember` 工具写入前校验。
+
+**数据模型(types.ts)**
+
+```typescript
+interface MemoryFrontmatter {
+  type: 'global' | 'topic';
+  topic?: string;        // type=topic 时必填
+  updatedAt: number;     // epoch ms
+}
+
+interface TopicIndexEntry {
+  name: string;          // 主题名(文件夹名)
+  summary: string;       // 一句话摘要
+  updatedAt: number;
+}
+
+interface MemoryEntry {
+  section: string;       // 区块标题,如"关键决策"
+  content: string;       // 条目正文
+  source: 'user' | 'model';
+}
+```
+
+**注入流程(`prompts/composer.ts#composeMemorySystemPrompt`)**
+
+1. `main.ts` 启动时读 `global.md` + `index.md` → 调 `contextManager.setMemoryContext(globalContent, indexEntries)`
+2. `ContextManager` 拿 `deps.getOverrides()` 传给 `composeMemorySystemPrompt`
+3. Composer 解析 `memory.systemPrompt` section(支持 override),注入 `{{globalContent}}`(已截断)+ `{{topicList}}` 占位符
+4. 整段提示用 retrieval wrapper 前后缀包裹(与检索结果同源 prompt injection 防护),插入到 system prompt 与检索结果之间
+
+**3 个工具(`tools/`)**
+
+| 工具 | 作用 | 默认权限 |
+|---|---|---|
+| `search_memory` | 向量检索 `topics/` 下主题记忆 | allow |
+| `remember` | 写入记忆(global 或 topic) | ask |
+| `forget_memory` | 删除记忆条目 | ask |
 
 ---
 

@@ -28,6 +28,20 @@ export const ZH_DEFAULTS: Record<PromptSectionId, string> = {
 	'injection.searchResults.body': `[{{index}}] {{path}}
 {{content}}`,
 
+	// 关键路径:记忆系统注入提示 — 启动时注入到 system 与检索结果之间。
+	// 占位符:{{globalContent}} = global.md 全文(已截断到 20KB),{{topicList}} = 主题列表行。
+	'memory.systemPrompt': `以下是关于用户的已知信息:
+{{globalContent}}
+
+用户已建立以下主题记忆,当对话涉及相关领域时,请先用 search_memory 查询:
+{{topicList}}
+
+触发规则:
+- 用户询问某技术栈/项目/领域的偏好、决策或历史 → 先调 search_memory 再回答
+- 用户说"记住 X" → 调 remember(涉及个人/全局偏好用 type=global,涉及特定技术/领域用 type=topic)
+- 用户说"忘掉 X" → 调 forget_memory
+- 不确定是否需要记忆时 → 宁可多查一次`,
+
 	'internal.compact': `你是会话压缩器。把下面的对话历史压成结构化摘要,不限制字数,用尽量精炼的语言。
 
 输出格式(严格 4 段,每段用 markdown 标题):
@@ -91,4 +105,20 @@ export const ZH_DEFAULTS: Record<PromptSectionId, string> = {
 	'tool.edit_note.description':
 		'在笔记中精确替换一段文本。old_string 必须与文件内容完全一致(含缩进),且在文件中唯一。',
 	'tool.delete_note.description': '将笔记移到回收站(可恢复)。',
+
+	'tool.search_memory.description': '搜索用户已建立的记忆(偏好、决策、技术栈相关历史)。仅检索 topics/ 下的主题记忆文件,不检索全局基础记忆。当对话涉及特定技术栈、项目或领域时,先调用此工具查询相关记忆再回答。',
+	'tool.search_memory.param.query': '搜索查询文本',
+	'tool.search_memory.param.topK': '返回结果数(默认 5)',
+
+	'tool.remember.description': '写入一条记忆。type 选 global(全局偏好/身份/跨项目决策)或 topic(特定技术栈/领域/项目)。source 选 user(用户显式要求记录)或 model(Agent 推断)。涉及用户身份、通用偏好、跨项目决策用 type=global;涉及特定技术栈、领域、项目用 type=topic。',
+	'tool.remember.param.type': '记忆类型,"global" 或 "topic"',
+	'tool.remember.param.topic': '主题名,type=topic 时必填',
+	'tool.remember.param.section': '区块标题,如"关键决策"、"偏好"',
+	'tool.remember.param.content': '要记录的内容',
+	'tool.remember.param.source': '来源,"user"(用户要求记录)或"model"(模型推断)',
+
+	'tool.forget_memory.description': '删除一条记忆。按 match 字符串匹配要删除的条目文本。type 选 global 或 topic;type=topic 时需提供 topic 参数。',
+	'tool.forget_memory.param.type': '记忆类型,"global" 或 "topic"',
+	'tool.forget_memory.param.topic': '主题名,type=topic 时必填',
+	'tool.forget_memory.param.match': '匹配要删除的条目文本',
 };
