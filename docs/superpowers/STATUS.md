@@ -19,7 +19,6 @@
 |---|---|---|---|---|
 | S-I18N | [2026-06-14-ratel-i18n-design.md](specs/2026-06-14-ratel-i18n-design.md) | 🚫 Superseded | 2026-06-14 | 已被 S-I18N-V2 取代;估算 key 数严重不足(50 vs 300),覆盖类别不全(3 vs 10) |
 | S-SKILL | [2026-07-06-skill-mechanism-design.md](specs/2026-07-06-skill-mechanism-design.md) | Active | 2026-07-06 | Skill 机制(agentskills.io 兼容):三源合并存储 + progressive disclosure + 4 个新工具 + 沙箱脚本执行 |
-| S-CHAT-UI-V2 | [2026-07-06-chat-ui-refinement-design.md](specs/2026-07-06-chat-ui-refinement-design.md) | Active | 2026-07-06 | Chat UI 打磨与交互体验优化:Header 重构(badge 变色+百分比胶囊)+ StatusLine 简化 + Input 下方 work 条 + 抽屉精简 + 样式合规化(圆角/box-shadow/class 前缀) |
 
 ---
 
@@ -28,7 +27,6 @@
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
 | P-I18N-IMPL | [2026-06-14-ratel-i18n-implementation.md](plans/2026-06-14-ratel-i18n-implementation.md) | 🚫 Superseded | S-I18N | 已被 P-I18N-V2-IMPL 取代 |
-| P-CHAT-UI-1 | [2026-07-06-chat-ui-refinement.md](plans/2026-07-06-chat-ui-refinement.md) | ⏳ Pending | S-CHAT-UI-V2 | 9 Task:tone.ts 共享 + Header 重构 + StatusLine 简化 + work 条 + 抽屉精简 + box-shadow 清理 + diag- 前缀替换 + i18n 死 key 清理 |
 | P-SKILL-2-EXECUTION | — | ⏳ Pending | S-SKILL | references+scripts:沙箱+权限+read_skill_reference/run_skill_script 工具;依赖 P-SKILL-1-CORE(已归档);plan 待写 |
 | P-SKILL-3-UI | — | ⏳ Pending | S-SKILL | settings 面板+chat 状态显示+预置示例 skills;依赖 P-SKILL-1-CORE(已归档);plan 待写 |
 
@@ -49,9 +47,8 @@
 
 ## Future execution queue(按顺序)
 
-1. **P-CHAT-UI-1**(S-CHAT-UI-V2 执行)— Chat UI 打磨与交互体验优化;9 Task;spec 已审通过;无依赖
-2. **P-SKILL-2-EXECUTION**(S-SKILL 执行)— 沙箱安全风险高;依赖 P-SKILL-1-CORE(已归档);plan 待写
-3. **P-SKILL-3-UI**(S-SKILL UI)— 可与 P-SKILL-2 并行;i18n 基础设施已就绪;plan 待写
+1. **P-SKILL-2-EXECUTION**(S-SKILL 执行)— 沙箱安全风险高;依赖 P-SKILL-1-CORE(已归档);plan 待写
+2. **P-SKILL-3-UI**(S-SKILL UI)— 可与 P-SKILL-2 并行;i18n 基础设施已就绪;plan 待写
 
 ---
 
@@ -90,3 +87,4 @@
 | S-MEMORY (P-MEMORY-LOGIC) | [archive/S-MEMORY/](archive/S-MEMORY/) | 2026-07-06 | 用户记忆核心逻辑;8 Task + 2 Critical/4 Important 修复;spec 已归档(P-MEMORY-UI 也完成) |
 | S-MEMORY (P-MEMORY-UI) | [archive/S-MEMORY/](archive/S-MEMORY/) | 2026-07-06 | 记忆管理面板 + 6 设置项;5 Task + 1 Critical/2 Important/1 Minor 修复;33 i18n key |
 | S-SKILL (P-SKILL-1-CORE) | [archive/S-SKILL/](archive/S-SKILL/) | 2026-07-06 | Skill 机制基础层;7 Task + 31 测试;7 commits squash 为 1 (`d9dc98d`);ADR-009;spec 仍 Active(P-SKILL-2/3 未实施) |
+| S-CHAT-UI-V2 (P-CHAT-UI-1) | [archive/S-CHAT-UI-V2/](archive/S-CHAT-UI-V2/) | 2026-07-07 | Chat UI 打磨;9 Task + user-guide 同步;10 commit squash 为 1 (`d93328d`);662 tests |
