@@ -135,7 +135,7 @@ export interface RatelVaultSettings {
 export const DEFAULT_SETTINGS: RatelVaultSettings = {
 	// 关键路径:默认 auto,跟随系统语言(zh* → zh,其余 → en)
 	language: 'auto',
-	chatModel: 'deepseek-chat',
+	chatModel: 'deepseek-v4-flash',
 	chatApiBase: 'https://api.deepseek.com',
 	contextLengthPreset: '256k',
 	chatModelMaxTokens: 256_000,
@@ -305,7 +305,7 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 					{
 						name: tNow('settings.chatModel.model.name'),
 						desc: tNow('settings.chatModel.model.desc'),
-						control: { type: 'text', key: 'chatModel', placeholder: 'deepseek-chat' },
+						control: { type: 'text', key: 'chatModel', placeholder: 'deepseek-v4-flash' },
 					},
 					{
 						name: tNow('settings.chatModel.apiBase.name'),

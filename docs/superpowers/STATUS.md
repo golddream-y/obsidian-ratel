@@ -18,8 +18,9 @@
 | ID | 文件 | 状态 | 创建日期 | 备注 |
 |---|---|---|---|---|
 | S-I18N | [2026-06-14-ratel-i18n-design.md](specs/2026-06-14-ratel-i18n-design.md) | 🚫 Superseded | 2026-06-14 | 已被 S-I18N-V2 取代;估算 key 数严重不足(50 vs 300),覆盖类别不全(3 vs 10) |
-| S-SKILL | [2026-07-06-skill-mechanism-design.md](specs/2026-07-06-skill-mechanism-design.md) | Active | 2026-07-06 | Skill 机制(agentskills.io 兼容):三源合并存储 + progressive disclosure + 4 个新工具 + 沙箱脚本执行 |
+| S-SKILL | [2026-07-06-skill-mechanism-design.md](specs/2026-07-06-skill-mechanism-design.md) | Active | 2026-07-06 | Skill 机制(agentskills.io 兼容):三源加载 + Discovery/Active + 2 工具(执行层 P-SKILL-2/3 仍 pending) |
 | S-BASIC-ENV | [2026-07-14-agent-basic-env-design.md](specs/2026-07-14-agent-basic-env-design.md) | Active | 2026-07-14 | Agent 基础环境感知:时间注入 + active note + daily/recent/outline |
+| S-SETTINGS-TAB | [2026-07-15-settings-tab-readme-design.md](specs/2026-07-15-settings-tab-readme-design.md) | Active | 2026-07-15 | 设置四 Tab 改版 + README 场景/特性；默认模型 deepseek-v4-flash |
 
 ---
 
@@ -49,8 +50,9 @@
 
 ## Future execution queue(按顺序)
 
-1. **P-SKILL-2-EXECUTION**(S-SKILL 执行)— 沙箱安全风险高;依赖 P-SKILL-1-CORE(已归档);plan 待写
-2. **P-SKILL-3-UI**(S-SKILL UI)— 可与 P-SKILL-2 并行;i18n 基础设施已就绪;plan 待写
+1. **P-SETTINGS-TAB**(S-SETTINGS-TAB)— 设置四 Tab + README 场景/特性；spec 已 Active，待审后写 plan
+2. **P-SKILL-2-EXECUTION**(S-SKILL 执行)— 沙箱安全风险高;依赖 P-SKILL-1-CORE(已归档);plan 待写
+3. **P-SKILL-3-UI**(S-SKILL UI)— 可与 P-SKILL-2 并行;i18n 基础设施已就绪;plan 待写
 
 ---
 
