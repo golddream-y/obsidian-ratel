@@ -1,8 +1,8 @@
 # Ratel
 
-[English](README.md) | [简体中文](README.zh-CN.md)
+[English](https://github.com/golddream-y/obsidian-ratel/blob/main/README.md) | [简体中文](https://github.com/golddream-y/obsidian-ratel/blob/main/README.zh-CN.md)
 
-[![License](https://img.shields.io/github/license/golddream-y/obsidian-ratel?style=flat-square)](LICENSE)
+[![License](https://img.shields.io/github/license/golddream-y/obsidian-ratel?style=flat-square)](https://github.com/golddream-y/obsidian-ratel/blob/main/LICENSE)
 [![Obsidian](https://img.shields.io/badge/Obsidian-1.13.0%2B-7c3aed?style=flat-square)](https://obsidian.md)
 [![仅桌面](https://img.shields.io/badge/平台-桌面端-0ea5e9?style=flat-square)](https://obsidian.md)
 
@@ -20,7 +20,7 @@ Obsidian → **设置** → **社区插件** → **浏览** → 搜索 **Ratel**
 
 然后：配置对话模型（或本机 Ollama）→ 等首次索引完成 → 点侧栏 🦡（或命令面板 **Ratel: Ask vault**）。
 
-完整说明见 [使用手册](docs/user-guide.md)。
+完整说明见 [使用手册](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/user-guide.md)。
 
 ---
 
@@ -58,9 +58,9 @@ DeepSeek / Claude / Ollama。密钥在 Obsidian 钥匙串，不进配置文件�
 
 | | |
 |---|---|
-| [使用手册](docs/user-guide.md) | 上手、场景、斜杠命令、FAQ |
-| [架构](docs/ARCHITECTURE.md) | 端口、Agent Loop、工具、Worker |
-| [更新日志](CHANGELOG.md) | 发版说明 |
+| [使用手册](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/user-guide.md) | 上手、场景、斜杠命令、FAQ |
+| [架构](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/ARCHITECTURE.md) | 端口、Agent Loop、工具、Worker |
+| [更新日志](https://github.com/golddream-y/obsidian-ratel/blob/main/CHANGELOG.md) | 发版说明 |
 
 问题与建议：[GitHub Issues](https://github.com/golddream-y/obsidian-ratel/issues)。
 
@@ -68,4 +68,4 @@ DeepSeek / Claude / Ollama。密钥在 Obsidian 钥匙串，不进配置文件�
 
 ## License
 
-[Apache-2.0](LICENSE)
+[Apache-2.0](https://github.com/golddream-y/obsidian-ratel/blob/main/LICENSE)

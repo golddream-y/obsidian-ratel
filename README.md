@@ -1,8 +1,8 @@
 # Ratel
 
-[English](README.md) | [简体中文](README.zh-CN.md)
+[English](https://github.com/golddream-y/obsidian-ratel/blob/main/README.md) | [简体中文](https://github.com/golddream-y/obsidian-ratel/blob/main/README.zh-CN.md)
 
-[![License](https://img.shields.io/github/license/golddream-y/obsidian-ratel?style=flat-square)](LICENSE)
+[![License](https://img.shields.io/github/license/golddream-y/obsidian-ratel?style=flat-square)](https://github.com/golddream-y/obsidian-ratel/blob/main/LICENSE)
 [![Obsidian](https://img.shields.io/badge/Obsidian-1.13.0%2B-7c3aed?style=flat-square)](https://obsidian.md)
 [![Desktop only](https://img.shields.io/badge/platform-desktop-0ea5e9?style=flat-square)](https://obsidian.md)
 
@@ -20,7 +20,7 @@ Requires **Obsidian 1.13.0+**, **desktop only**.
 
 Then: configure a chat model (or local Ollama) → wait for the first index → click the 🦡 ribbon (or run **Ratel: Ask vault**).
 
-Full walkthrough: [User Guide](docs/user-guide.md).
+Full walkthrough: [User Guide](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/user-guide.md).
 
 ---
 
@@ -58,9 +58,9 @@ Per-tool allow / ask / deny. Status bar + diagnostics when something’s wrong. 
 
 | | |
 |---|---|
-| [User Guide](docs/user-guide.md) | Setup, scenarios, slash commands, FAQ |
-| [Architecture](docs/ARCHITECTURE.md) | Ports, agent loop, tools, workers |
-| [Changelog](CHANGELOG.md) | Release notes |
+| [User Guide](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/user-guide.md) | Setup, scenarios, slash commands, FAQ |
+| [Architecture](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/ARCHITECTURE.md) | Ports, agent loop, tools, workers |
+| [Changelog](https://github.com/golddream-y/obsidian-ratel/blob/main/CHANGELOG.md) | Release notes |
 
 Issues & ideas: [GitHub Issues](https://github.com/golddream-y/obsidian-ratel/issues).
 
@@ -68,4 +68,4 @@ Issues & ideas: [GitHub Issues](https://github.com/golddream-y/obsidian-ratel/is
 
 ## License
 
-[Apache-2.0](LICENSE)
+[Apache-2.0](https://github.com/golddream-y/obsidian-ratel/blob/main/LICENSE)
