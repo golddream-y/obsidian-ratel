@@ -16,6 +16,11 @@ export interface VaultMetadata {
 	tags?: Array<{ tag: string }>;
 	/** WikiLink `[[target]]` 列表。 */
 	links?: Array<{ link: string }>;
+	/**
+	 * Markdown 标题大纲(来自 Obsidian `CachedMetadata.headings`)。
+	 * 关键路径:供 get_note_outline 使用,禁止工具层全文正则扫标题。
+	 */
+	headings?: Array<{ level: number; heading: string; line?: number }>;
 }
 
 /**

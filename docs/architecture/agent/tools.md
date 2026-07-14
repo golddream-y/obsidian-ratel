@@ -77,6 +77,14 @@ graph TB
         LF["list_files<br/>列目录<br/>readOnly: true"]
     end
 
+    subgraph "环境感知(只读)"
+        GD["get_datetime<br/>本地时间<br/>readOnly: true"]
+        GA["get_active_note<br/>活动笔记<br/>readOnly: true"]
+        GDN["get_daily_note<br/>日记路径<br/>readOnly: true"]
+        LR["list_recent_notes<br/>最近修改<br/>readOnly: true"]
+        GO["get_note_outline<br/>标题大纲<br/>readOnly: true"]
+    end
+
     subgraph "写入类"
         WN["write_note<br/>创建/覆盖<br/>readOnly: false"]
         AN["append_note<br/>追加内容<br/>readOnly: false"]
@@ -87,15 +95,27 @@ graph TB
         DN["delete_note<br/>移到回收站<br/>readOnly: false"]
     end
 
+    subgraph "记忆 / Skill"
+        SM["search_memory / remember / forget_memory"]
+        SK["activate_skill / deactivate_skill"]
+    end
+
     SV --> REG
     RN --> REG
     GR --> REG
     GL --> REG
     LF --> REG
+    GD --> REG
+    GA --> REG
+    GDN --> REG
+    LR --> REG
+    GO --> REG
     WN --> REG
     AN --> REG
     EN --> REG
     DN --> REG
+    SM --> REG
+    SK --> REG
 ```
 
 **ToolDefinition**:
@@ -230,6 +250,18 @@ sequenceDiagram
 
 **安全设计**:使用 `vault.trash()` 而非 `vault.delete()`,优先系统回收站,失败降级到 Obsidian `.trash` 目录。
 
+### 4.10 环境感知工具(S-BASIC-ENV)
+
+| 工具 | 作用 | 关键约束 |
+|---|---|---|
+| `get_datetime` | 当前本地时间 / 相对加减日 | 无 vault 依赖;`ask()` 已注入时间行,精确场景再调 |
+| `get_active_note` | 活动 md 路径 + 选区 + frontmatter | 走 `WorkspacePort`;无活动文件返回 `path: null` 不抛 |
+| `get_daily_note` | 按设置探测日记路径是否存在 | **不自动创建**;`dailyNoteFolder` / `dailyNoteFormat` |
+| `list_recent_notes` | 按 mtime 列最近笔记 | 过滤 configDir / `.trash` / `.ratel/`;limit 硬顶 50 |
+| `get_note_outline` | 标题大纲 | **只用** `VaultMetadata.headings`(metadataCache),禁止全文正则 |
+
+反链 / tags / frontmatter 正文仍走已有 `read_note`,不另造工具。
+
 ---
 
 ## 5. 工具调用流程
@@ -285,6 +317,9 @@ sequenceDiagram
 | **检索类** | search_vault | ✅ | ✅(权限 + 路径) | ❌ |
 | **读取类** | read_note | ✅ | ✅(权限 + 路径) | ❌ |
 | **发现类** | grep, glob, list_files | ✅ | ✅(权限 + 路径) | ❌ |
+| **环境感知** | get_datetime, get_active_note, get_daily_note, list_recent_notes, get_note_outline | ✅ | ✅(权限;有 path 时校验) | ❌ |
+| **记忆类** | search_memory, remember, forget_memory | 读写混合 | ✅ | ❌ |
+| **Skill** | activate_skill, deactivate_skill | ✅ | ✅ | ❌ |
 | **写入类** | write_note, append_note, edit_note | ❌ | ✅(权限 + 路径 + 治理) | ✅(自动标签、索引刷新) |
 | **管理类** | delete_note | ❌ | ✅(权限 + 路径 + 治理) | ✅(索引刷新) |
 
@@ -296,4 +331,4 @@ sequenceDiagram
 |---|---|---|
 | [agent-loop](agent-loop.md) | 被调用 | Agent Loop 决定何时调哪个工具 |
 | [rag/retriever](../rag/retriever.md) | 依赖 | search_vault 调用检索器;多查询时触发 query 改写(见 prompt-management §8.4) |
-| [host/obsidian-integration](../host/obsidian-integration.md) | 依赖 | read_note / create_note 调用 Vault API |
+| [host/obsidian-integration](../host/obsidian-integration.md) | 依赖 | VaultPort + WorkspacePort;大纲走 metadataCache.headings |

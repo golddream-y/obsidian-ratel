@@ -93,6 +93,14 @@ import { SkillFsAdapter } from './adapters/skill-fs';
 import { SkillVaultAdapter } from './adapters/skill-vault';
 import { createActivateSkillTool } from './tools/activate-skill';
 import { createDeactivateSkillTool } from './tools/deactivate-skill';
+import { createGetDatetimeTool } from './tools/get-datetime';
+import { createGetActiveNoteTool } from './tools/get-active-note';
+import { createGetDailyNoteTool } from './tools/get-daily-note';
+import { createListRecentNotesTool } from './tools/list-recent-notes';
+import { createGetNoteOutlineTool } from './tools/get-note-outline';
+import { ObsidianWorkspace } from './adapters/obsidian-workspace';
+import type { WorkspacePort } from './ports/workspace';
+import { formatEnvContextLine } from './utils/local-datetime';
 
 /**
  * Ratel Vault 插件主类。
@@ -105,6 +113,7 @@ import { createDeactivateSkillTool } from './tools/deactivate-skill';
 export default class RatelVaultPlugin extends Plugin {
 	settings!: RatelVaultSettings;
 	vault!: ObsidianVault;
+	workspacePort!: WorkspacePort;
 	persistence!: PersistenceJson;
 	llm!: DeepSeekLLM;
 	embedding!: EmbeddingPort;
@@ -159,6 +168,7 @@ export default class RatelVaultPlugin extends Plugin {
 
 		// ==================== 适配器装配 ====================
 		this.vault = new ObsidianVault(this.app);
+		this.workspacePort = new ObsidianWorkspace(this.app);
 		this.persistence = new PersistenceJson(
 			() => this.loadData(),
 			(data) => this.saveData(data),
@@ -391,6 +401,23 @@ export default class RatelVaultPlugin extends Plugin {
 		// definition 由 composeToolDefinitions 生成(ALL_TOOL_NAMES 已含 activate_skill/deactivate_skill)。
 		this.tools.register(createActivateSkillTool(this.skillRegistry, toolDefMap.get('activate_skill')!));
 		this.tools.register(createDeactivateSkillTool(this.skillRegistry, toolDefMap.get('deactivate_skill')!));
+		// 关键路径(P-BASIC-ENV):环境感知工具 — 时间 / 活动笔记 / 日记 / 最近修改 / 大纲。
+		this.tools.register(createGetDatetimeTool(toolDefMap.get('get_datetime')!));
+		this.tools.register(
+			createGetActiveNoteTool(this.workspacePort, this.vault, toolDefMap.get('get_active_note')!),
+		);
+		this.tools.register(
+			createGetDailyNoteTool(
+				this.vault,
+				() => ({
+					folder: this.settings.dailyNoteFolder,
+					format: this.settings.dailyNoteFormat,
+				}),
+				toolDefMap.get('get_daily_note')!,
+			),
+		);
+		this.tools.register(createListRecentNotesTool(this.vault, toolDefMap.get('list_recent_notes')!));
+		this.tools.register(createGetNoteOutlineTool(this.vault, toolDefMap.get('get_note_outline')!));
 		this.hooks = new HookRegistry();
 		this.hooks.register(
 			'pre-tool-use',
@@ -1009,6 +1036,9 @@ export default class RatelVaultPlugin extends Plugin {
 			getSkillsActive: () =>
 				this.settings.enableSkills ? this.skillActivator.composeActive() : '',
 		});
+
+		// 关键路径(P-BASIC-ENV):每次 ask 注入当前本地时间,零工具成本回答「今天几号」。
+		ctx.setEnvContext(formatEnvContextLine(new Date()));
 
 		// 关键路径:会话启动时设置初始 skills 段(Discovery + Active,后者含 always 激活的 skill)。
 		if (this.settings.enableSkills) {

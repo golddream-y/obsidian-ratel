@@ -169,6 +169,58 @@ export const TOOL_SCHEMA_SKELETONS: Record<string, SchemaSkeleton> = {
 			required: ['name'],
 		},
 	},
+	get_datetime: {
+		name: 'get_datetime',
+		parameters: {
+			type: 'object',
+			properties: {
+				format: { type: 'string', enum: ['iso', 'local', 'full'] },
+				offsetDays: { type: 'number' },
+			},
+			required: [],
+		},
+	},
+	get_active_note: {
+		name: 'get_active_note',
+		parameters: {
+			type: 'object',
+			properties: {
+				includeSelection: { type: 'boolean' },
+				includeFrontmatter: { type: 'boolean' },
+			},
+			required: [],
+		},
+	},
+	get_daily_note: {
+		name: 'get_daily_note',
+		parameters: {
+			type: 'object',
+			properties: {
+				date: { type: 'string' },
+			},
+			required: [],
+		},
+	},
+	list_recent_notes: {
+		name: 'list_recent_notes',
+		parameters: {
+			type: 'object',
+			properties: {
+				limit: { type: 'number' },
+			},
+			required: [],
+		},
+	},
+	get_note_outline: {
+		name: 'get_note_outline',
+		parameters: {
+			type: 'object',
+			properties: {
+				path: { type: 'string' },
+			},
+			required: ['path'],
+		},
+	},
 };
 
 export const ALL_TOOL_NAMES = [
@@ -176,4 +228,5 @@ export const ALL_TOOL_NAMES = [
 	'write_note', 'append_note', 'edit_note', 'delete_note',
 	'search_memory', 'remember', 'forget_memory',
 	'activate_skill', 'deactivate_skill',
+	'get_datetime', 'get_active_note', 'get_daily_note', 'list_recent_notes', 'get_note_outline',
 ];

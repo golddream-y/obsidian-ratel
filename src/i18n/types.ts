@@ -73,6 +73,11 @@ export interface SettingsStrings {
   'settings.developer.agentMaxSteps.desc': string;
   'settings.developer.trustMode.name': string;
   'settings.developer.trustMode.desc': string;
+  'settings.daily.heading': string;
+  'settings.daily.folder.name': string;
+  'settings.daily.folder.desc': string;
+  'settings.daily.format.name': string;
+  'settings.daily.format.desc': string;
   'settings.toolPermissions.heading': string;
   'settings.toolPermissions.search_vault': string;
   'settings.toolPermissions.read_note': string;
@@ -89,6 +94,11 @@ export interface SettingsStrings {
   'settings.toolPermissions.forget_memory': string;
   'settings.toolPermissions.activate_skill': string;
   'settings.toolPermissions.deactivate_skill': string;
+  'settings.toolPermissions.get_datetime': string;
+  'settings.toolPermissions.get_active_note': string;
+  'settings.toolPermissions.get_daily_note': string;
+  'settings.toolPermissions.list_recent_notes': string;
+  'settings.toolPermissions.get_note_outline': string;
   'settings.toolPermissions.allow': string;
   'settings.toolPermissions.ask': string;
   'settings.toolPermissions.deny': string;
@@ -179,6 +189,11 @@ export interface ToolNameStrings {
   'tool.name.search_memory': string;
   'tool.name.remember': string;
   'tool.name.forget_memory': string;
+  'tool.name.get_datetime': string;
+  'tool.name.get_active_note': string;
+  'tool.name.get_daily_note': string;
+  'tool.name.list_recent_notes': string;
+  'tool.name.get_note_outline': string;
 }
 
 // ==================== Slash commands ====================
@@ -515,6 +530,30 @@ export interface PromptLabelStrings {
   'promptLabel.tool.deactivate_skill.description.desc': string;
   'promptLabel.tool.deactivate_skill.param.name': string;
   'promptLabel.tool.deactivate_skill.param.name.desc': string;
+  'promptLabel.tool.get_datetime.description': string;
+  'promptLabel.tool.get_datetime.description.desc': string;
+  'promptLabel.tool.get_datetime.param.format': string;
+  'promptLabel.tool.get_datetime.param.format.desc': string;
+  'promptLabel.tool.get_datetime.param.offsetDays': string;
+  'promptLabel.tool.get_datetime.param.offsetDays.desc': string;
+  'promptLabel.tool.get_active_note.description': string;
+  'promptLabel.tool.get_active_note.description.desc': string;
+  'promptLabel.tool.get_active_note.param.includeSelection': string;
+  'promptLabel.tool.get_active_note.param.includeSelection.desc': string;
+  'promptLabel.tool.get_active_note.param.includeFrontmatter': string;
+  'promptLabel.tool.get_active_note.param.includeFrontmatter.desc': string;
+  'promptLabel.tool.get_daily_note.description': string;
+  'promptLabel.tool.get_daily_note.description.desc': string;
+  'promptLabel.tool.get_daily_note.param.date': string;
+  'promptLabel.tool.get_daily_note.param.date.desc': string;
+  'promptLabel.tool.list_recent_notes.description': string;
+  'promptLabel.tool.list_recent_notes.description.desc': string;
+  'promptLabel.tool.list_recent_notes.param.limit': string;
+  'promptLabel.tool.list_recent_notes.param.limit.desc': string;
+  'promptLabel.tool.get_note_outline.description': string;
+  'promptLabel.tool.get_note_outline.description.desc': string;
+  'promptLabel.tool.get_note_outline.param.path': string;
+  'promptLabel.tool.get_note_outline.param.path.desc': string;
   'promptLabel.retrieval.wrapperPrefix': string;
   'promptLabel.retrieval.wrapperSuffix': string;
 }

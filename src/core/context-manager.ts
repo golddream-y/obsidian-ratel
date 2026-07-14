@@ -79,6 +79,11 @@ export class ContextManager {
 	 */
 	private skillsActive = '';
 	/**
+	 * 环境时间注入行 — 每次 ask() 由 setEnvContext() 设置,
+	 * 注入位置在 system prompt 之后、memory 之前;空串不注入。
+	 */
+	private envContextLine = '';
+	/**
 	 * 历史池 token 预算上限。超出时触发 Layer 1 截断(从最旧消息裁剪)。
 	 * 默认 8000 tokens(~32K 字符),适配 32K 窗口模型的历史池占比。
 	 */
@@ -281,6 +286,18 @@ export class ContextManager {
 	}
 
 	/**
+	 * 设置环境时间上下文 — 每次 ask() 启动时调用。
+	 *
+	 * 关键路径:注入到 system prompt 之后、memory / skills 之前,
+	 * 让「今天几号」无需工具调用即可回答。
+	 *
+	 * @param line - 单行环境时间文案(空串则不注入)
+	 */
+	setEnvContext(line: string): void {
+		this.envContextLine = line;
+	}
+
+	/**
 	 * 设置 Skill 上下文 — 在会话启动时与 activate/deactivate 工具执行后调用。
 	 *
 	 * 关键路径:
@@ -318,6 +335,10 @@ export class ContextManager {
 		// 关键路径:记忆注入位置在 system prompt 之后、检索结果之前,
 		// 让 Agent 在看到检索结果和历史之前先"认识"用户。
 		const messages: ChatMessage[] = [{ role: 'system', content: systemPrompt }];
+		// 关键路径:环境时间紧跟主 system,零工具成本回答「今天几号」。
+		if (this.envContextLine) {
+			messages.push({ role: 'system', content: this.envContextLine });
+		}
 		if (this.memorySystemPrompt) {
 			messages.push({ role: 'system', content: this.memorySystemPrompt });
 		}

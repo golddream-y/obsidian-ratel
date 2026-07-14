@@ -1,86 +1,68 @@
-# Ratel — Obsidian AI Agent
+# Ratel
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
 [![License](https://img.shields.io/github/license/golddream-y/obsidian-ratel?style=flat-square)](LICENSE)
 [![Obsidian](https://img.shields.io/badge/Obsidian-1.13.0%2B-7c3aed?style=flat-square)](https://obsidian.md)
+[![仅桌面](https://img.shields.io/badge/平台-桌面端-0ea5e9?style=flat-square)](https://obsidian.md)
 
-> **让你的 Obsidian vault 能对话、能办事。** 问它记过什么，让它帮你翻资料写综述，回答会标明出处，点一下就能打开原文。
+**让你的 Obsidian 知识库能对话、能办事。**
 
----
-
-## 快速开始
-
-1. **安装** — 从 [GitHub Release](https://github.com/golddream-y/obsidian-ratel/releases) 下载 `main.js`、`manifest.json`、`styles.css`，放入 `.obsidian/plugins/ratel-vault/`，启用插件。也可用 [BRAT](https://github.com/TfTHacker/obsidian42-brat) 安装，后续升级更省事。
-2. **配对话** — 设置 → Ratel → 选端点与模型。钥匙串添加 `ratel-chat-openai-compatible`，或用本机 Ollama 免 Key。
-3. **等索引** — 首次启动状态条显示索引进度；之后重启通常很快。
-4. **提问** — 侧边栏 🦡 或命令面板 → **Ratel: Ask vault**。
-
-详细配置见 [使用手册](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/user-guide.md)。
-
-> **要求：** Obsidian 1.13.0+，仅桌面端。默认本地嵌入首次需联网下载模型（~37 MB），之后缓存本地。
-
----
-
-## 功能
-
-**问答，带出处**
-
-问它 vault 里记过什么——"我上次关于性能优化的笔记写了什么？"回答会列出要点，并标上 `[1][2]` 编号，点一下跳到那篇笔记的对应位置。回答边生成边显示，不会等半天才出结果。
-
-**派活，多步搞定**
-
-不是简单的一问一答。你可以说"把 vault 里跟产品规划相关的笔记整理成一份项目背景文档"——它会自己去搜多篇笔记、阅读理解、归纳，最后把结果写成新笔记。需要改或删笔记时会先问你，不会擅自操作。
-
-**自带索引，不卡主界面**
-
-安装后自动为全库笔记建索引。索引在后台线程跑，不影响你用 Obsidian 做其他事。以后改了笔记会自动更新索引，重启也不会重头扫。
-
-**用什么模型你定**
-
-对话模型支持 DeepSeek、Claude 或本地 Ollama。Ollama 模式下 Prompt 完全不出本机。密钥存 Obsidian 钥匙串，不会写进配置文件。上下文长度提供 128k / 200k / 256k / 1M 预设，也可以从公开模型库一键获取推荐值。
-
-**权限可控，状态可见**
-
-读、搜、写、改、删等一系列 vault 工具，每个都能单独设成"每次都问""直接允许"或"禁止"。状态条实时显示索引是否就绪、上下文用了多少、Token 数据是否来自模型 API。内置诊断面板，模型连不通或索引异常时能看到具体原因。
-
-**记得你说过什么**
-
-跟它说"记住我偏好 Tailwind 而不是 styled-components"，或者"记住这个项目用 Postgres 16"——Ratel 会把内容写进 vault 的 `.ratel/memory/` 目录，后续对话里自动把相关记忆注入上下文。两层结构：全局偏好（始终注入）+ 主题记忆（相关时才调用）。记忆文件就是普通 Markdown，随时可打开编辑或删除。说"忘掉 X"即可删除某条记忆。
-
-**Skill 机制 — 让 Ratel 学会新本事**
-
-把一个 `SKILL.md`（frontmatter + 正文）放进 vault 的 `.ratel/skills/`、`~/.ratel/skills/`，或用预置的——Ratel 启动时三源合并扫描。每个 skill 是一份可复用的 prompt 包。Agent 看到发现列表后自主判断是否激活，也可以在对话里用 `/skill <name>` 手动激活。在设置面板可禁用某个 skill，或用 `/skills` 查看已加载列表。
+问它记过什么，让它翻资料写综述；回答带来源编号，点一下打开原文。
 
 ---
 
 ## 安装
 
-从 [GitHub Release](https://github.com/golddream-y/obsidian-ratel/releases) 下载 `main.js`、`manifest.json`、`styles.css`，放入 vault 的 `.obsidian/plugins/ratel-vault/` 目录，重启 Obsidian 后启用插件。
+Obsidian → **设置** → **社区插件** → **浏览** → 搜索 **Ratel** → **安装** → **启用**。
 
-也可用 [BRAT](https://github.com/TfTHacker/obsidian42-brat)（社区插件可搜到）添加 `golddream-y/obsidian-ratel`，后续发新版会自动提示升级。
+需要 **Obsidian 1.13.0+**，**仅桌面端**。
 
----
+然后：配置对话模型（或本机 Ollama）→ 等首次索引完成 → 点侧栏 🦡（或命令面板 **Ratel: Ask vault**）。
 
-## 技术架构
-
-Ratel 为 vault 构建**本地检索索引**，由**多步 Agent** 按需调度读写，而非把笔记全文塞进 prompt：
-
-| 层 | 做法 |
-|------|------|
-| 索引 | ONNX 向量（Web Worker）+ BM25 关键词 + 反向链接；首次全量后 hash diff 增量 |
-| 检索 | 多查询改写 → 混合召回 → RRF 融合 → 可选 Rerank 精排 |
-| Agent | 上下文管理 + vault 工具 + 工具权限 + 读写钩子；多步闭环可配置 |
-| 发布 | 符合 Obsidian 三文件约束；Worker 内联、WASM 懒下载 |
-
-详见 [ARCHITECTURE.md](docs/ARCHITECTURE.md) 与 [CHANGELOG](CHANGELOG.md)。
+完整说明见 [使用手册](docs/user-guide.md)。
 
 ---
 
-## 反馈
+## 能做什么
 
-- [GitHub Issues](https://github.com/golddream-y/obsidian-ratel/issues) — Bug 与建议
-- [使用手册 FAQ](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/user-guide.md#29-faq)
+**问答带出处**  
+「性能优化相关笔记写了什么？」—— `[1][2]` 引用，一点跳转。
+
+**多步派活**  
+「把产品规划相关笔记整理成背景文档」—— 检索、阅读、归纳、写入（改删前会按权限确认）。
+
+**懂当前环境**  
+每轮对话注入本地时间。「概括当前这篇」走活动笔记；日记路径、最近修改、标题大纲都有专用工具；反链 / 标签仍用已有 `read_note`。
+
+**记得住，可扩展**  
+说「记住我偏好 Tailwind…」→ 写入 `.ratel/memory/`。把 `SKILL.md` 放进 `.ratel/skills/` 就能教会新流程。
+
+**模型与密钥你做主**  
+DeepSeek / Claude / Ollama。密钥在 Obsidian 钥匙串，不进配置文件。默认本地 ONNX 嵌入。
+
+**权限与状态可控**  
+每个工具可设允许 / 询问 / 禁止。状态条 + 诊断面板。无遥测；网络只打你配置的端点。
+
+---
+
+## 隐私
+
+- 索引与默认嵌入在本地  
+- 远端对话 / 嵌入 / 重排仅在你主动配置时发生  
+- 无统计、无回传  
+
+---
+
+## 文档
+
+| | |
+|---|---|
+| [使用手册](docs/user-guide.md) | 上手、场景、斜杠命令、FAQ |
+| [架构](docs/ARCHITECTURE.md) | 端口、Agent Loop、工具、Worker |
+| [更新日志](CHANGELOG.md) | 发版说明 |
+
+问题与建议：[GitHub Issues](https://github.com/golddream-y/obsidian-ratel/issues)。
 
 ---
 

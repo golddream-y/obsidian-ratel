@@ -28,14 +28,23 @@
 - 长对话 + 多次工具调用会快速膨胀
 - 裁剪策略直接影响回答质量
 
-### 2.2 搜索结果注入位置固定
+### 2.2 搜索结果与旁路注入位置固定
 
-**决策**:搜索结果注入在系统提示词之后、用户消息之前,格式统一。
+**决策**:`toMessages()` 固定顺序组装,旁路段(环境时间 / 记忆 / Skill)与检索结果都不进历史截断池。
+
+**顺序**(role 均为 system,除历史外):
+
+1. 主 system(`composeAgentSystem`)
+2. 环境时间行(`setEnvContext` → `formatEnvContextLine`,每次 `ask()` 注入)
+3. 记忆段(`setMemoryContext`)
+4. Skill Discovery + Active(`setSkillsContext`)
+5. 检索结果块(`addSearchResults`)
+6. 裁剪后的对话历史
 
 **原因**:
-- LLM 对上下文开头的信息权重更高
+- LLM 对上下文开头的信息权重更高;「今天几号」零工具成本即可答对
 - 固定位置便于测试和调试
-- 统一格式便于 LLM 理解
+- 环境时间与记忆/Skill 同为旁路注入,不污染 session.messages 持久化
 
 ### 2.3 系统提示词可组合
 
@@ -143,7 +152,7 @@ graph LR
 
 用户可在设置中按 section 覆盖默认中文模板;检索结果外框不可覆盖。不再使用 `settings.customPrompt` 单字段。
 
-**toMessages(intent)** 返回顺序:`[主 system, …检索 system 块, …trimmed 历史]`。指令池(主 system + 检索块)在 Layer1 截断中**不裁剪**。
+**toMessages(intent)** 返回顺序:`[主 system, 环境时间?, 记忆?, skills?, …检索 system 块, …trimmed 历史]`。指令池与旁路段在 Layer1 截断中**不裁剪**。
 
 ---
 

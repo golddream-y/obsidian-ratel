@@ -1,90 +1,68 @@
-# Ratel — Obsidian AI Agent
+# Ratel
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
 [![License](https://img.shields.io/github/license/golddream-y/obsidian-ratel?style=flat-square)](LICENSE)
 [![Obsidian](https://img.shields.io/badge/Obsidian-1.13.0%2B-7c3aed?style=flat-square)](https://obsidian.md)
+[![Desktop only](https://img.shields.io/badge/platform-desktop-0ea5e9?style=flat-square)](https://obsidian.md)
 
-> **Chat with your vault and get things done.** Ask what you wrote about a topic, have it research across notes and draft a summary—answers cite sources you can open with one click.
+**Chat with your vault. Get things done.**
 
----
-
-## Quick Start
-
-1. **Install** — Download `main.js`, `manifest.json`, `styles.css` from [GitHub Releases](https://github.com/golddream-y/obsidian-ratel/releases), place in `.obsidian/plugins/ratel-vault/`, enable the plugin. Or use [BRAT](https://github.com/TfTHacker/obsidian42-brat) for easier updates.
-2. **Configure chat** — Settings → Ratel → pick endpoint and model. Add Keychain secret `ratel-chat-openai-compatible`, or use local Ollama without a key.
-3. **Wait for index** — status bar shows progress on first launch; later restarts are usually quick.
-4. **Ask** — sidebar 🦡 or command palette → **Ratel: Ask vault**.
-
-Full setup guide: [User Guide](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/user-guide.md).
-
-> **Requirements:** Obsidian 1.13.0+, desktop only. Default local embedding downloads models on first run (~37 MB), then cached locally.
+Ask what you wrote about a topic. Have Ratel research across notes and draft a summary. Answers cite sources you can open in one click.
 
 ---
 
-## Features
+## Install
 
-**Q&A with citations**
+Obsidian → **Settings** → **Community plugins** → **Browse** → search **Ratel** → **Install** → **Enable**.
 
-Ask what's in your vault — *"What did I write about performance tuning?"* The answer lists key points with numbered `[1][2]` markers. Click one to jump to that note at the right paragraph. Responses stream in as they're generated, no blank waiting screen.
+Requires **Obsidian 1.13.0+**, **desktop only**.
 
-**Multi-step tasks, not just Q&A**
+Then: configure a chat model (or local Ollama) → wait for the first index → click the 🦡 ribbon (or run **Ratel: Ask vault**).
 
-Go beyond single-turn chat. Say *"Pull together everything on product planning into a background doc"* — it searches across notes, reads the relevant ones, synthesizes, and writes a new note with the result. Before editing or deleting anything, it asks for your confirmation.
-
-**Auto-indexed, non-blocking**
-
-Indexes your vault automatically on first install. The indexer runs in a background thread so Obsidian stays responsive while it works. Edits are picked up automatically; restarts are quick after the first scan.
-
-**Pick your own model**
-
-Chat via DeepSeek, Claude, or local Ollama. With Ollama, prompts never leave your machine. Keys are stored in the Obsidian Keychain, not in config files. Context length presets (128k / 200k / 256k / 1M) plus a one-click recommendation from a public model registry.
-
-**Bilingual interface (Chinese / English)**
-
-Interface language follows your system by default, or force Chinese / English in Settings → Ratel → General → Language. Switch takes effect instantly across the settings panel, chat sidebar, status bar, and diagnostics.
-
-**Permissions you control, status you can see**
-
-Vault tools for read, search, write, edit, delete, and more — each can be set to ask, allow, or deny. The status bar shows index readiness, context usage, and whether token data comes from the model API. Built-in diagnostics tell you what's wrong when the model or index isn't healthy.
-
-**Remembers what you told it**
-
-Say "remember I prefer Tailwind over styled-components" or "remember the project uses Postgres 16" — Ratel stores it in `.ratel/memory/` under your vault and injects relevant context into future chats. Two layers: global preferences (always on) and topic-scoped memory (pulled in when relevant). Memory files are plain Markdown — open, edit, or delete them anytime. Say "forget X" to remove a specific entry.
-
-**Skills — extend what Ratel can do**
-
-Drop a `SKILL.md` (frontmatter + instructions) into `.ratel/skills/` in your vault, `~/.ratel/skills/` globally, or use the built-in ones — Ratel scans all three on load. Each skill is a reusable prompt package. The agent sees a discovery list and can activate a skill on its own when relevant, or you trigger one with `/skill <name>` in chat. Disable any skill in Settings, or run `/skills` to list what's loaded.
+Full walkthrough: [User Guide](docs/user-guide.md).
 
 ---
 
-## Installation
+## What you can do
 
-Download `main.js`, `manifest.json`, `styles.css` from [GitHub Releases](https://github.com/golddream-y/obsidian-ratel/releases), place in your vault's `.obsidian/plugins/ratel-vault/`, restart Obsidian, enable the plugin.
+**Ask with citations**  
+“What did I write about performance tuning?” — numbered `[1][2]` sources, click to jump.
 
-Alternatively, use [BRAT](https://github.com/TfTHacker/obsidian42-brat) (available in the Community Plugin directory) — add `golddream-y/obsidian-ratel` and it will handle installation and updates for you.
+**Multi-step work**  
+“Pull product-planning notes into a background doc” — search, read, synthesize, write (with confirmation before edits).
+
+**Know the room**  
+Every turn injects local time. “Summarize this note” uses the active file. Daily note path, recent edits, and outlines are first-class tools — without inventing separate backlink gadgets (`read_note` already returns them).
+
+**Remember & extend**  
+Say “remember I prefer Tailwind…” — stored as Markdown under `.ratel/memory/`. Drop a `SKILL.md` into `.ratel/skills/` to teach new workflows.
+
+**Your model, your keys**  
+DeepSeek, Claude, or Ollama. Keys live in Obsidian Keychain — not in `data.json`. Local ONNX embedding by default.
+
+**Stay in control**  
+Per-tool allow / ask / deny. Status bar + diagnostics when something’s wrong. No telemetry; network only to endpoints you configure.
 
 ---
 
-## Architecture
+## Privacy
 
-Ratel builds a **local search index** over your vault and runs a **multi-step agent** that reads and writes only when needed—not by stuffing everything into one prompt:
-
-| Layer | Approach |
-|------|------|
-| Index | ONNX vectors (Web Worker) + BM25 keywords + backlinks; hash-diff incremental after first full scan |
-| Retrieval | Multi-query rewrite → hybrid recall → RRF fusion → optional rerank |
-| Agent | Context management + vault tools + permissions + read/write hooks; configurable multi-step loop |
-| Distribution | Obsidian 3-file release model; worker inlined, WASM lazy-downloaded |
-
-See [ARCHITECTURE.md](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/ARCHITECTURE.md) and [CHANGELOG](https://github.com/golddream-y/obsidian-ratel/blob/main/CHANGELOG.md).
+- Index and default embeddings stay on your machine  
+- Optional remote chat / embed / rerank only if you set them up  
+- No analytics, no phone-home  
 
 ---
 
-## Feedback
+## Docs
 
-- [GitHub Issues](https://github.com/golddream-y/obsidian-ratel/issues) — Bugs & feature requests
-- [User Guide FAQ](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/user-guide.md#29-faq)
+| | |
+|---|---|
+| [User Guide](docs/user-guide.md) | Setup, scenarios, slash commands, FAQ |
+| [Architecture](docs/ARCHITECTURE.md) | Ports, agent loop, tools, workers |
+| [Changelog](CHANGELOG.md) | Release notes |
+
+Issues & ideas: [GitHub Issues](https://github.com/golddream-y/obsidian-ratel/issues).
 
 ---
 
