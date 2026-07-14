@@ -31,7 +31,8 @@ import { normalizeContextLengthSettings, DEFAULT_SETTINGS, type RatelVaultSettin
  * 模拟 src/main.ts:loadSettings 的合并逻辑,验证旧字段兼容性。
  * 关键路径:Object.assign 后,新字段用 DEFAULT 兜底,旧字段被 raw 覆盖但不影响新字段。
  */
-function simulateLoadSettings(raw: Partial<RatelVaultSettings> | null): RatelVaultSettings {
+function simulateLoadSettings(raw: Partial<RatelVaultSettings> | null | undefined): RatelVaultSettings {
+	// 关键路径:与 main.ts loadSettings 对齐 — loadData() 返回 null 时先归一成 {}。
 	const loaded = raw ?? {};
 	const settings = Object.assign({}, DEFAULT_SETTINGS, loaded);
 	settings.toolPermissions = {
@@ -58,8 +59,11 @@ describe('Settings 迁移', () => {
     });
 
     it('缺省 raw(null)时所有字段用 DEFAULT', () => {
+        // 回归:商店首次安装无 data.json → loadData()=null;
+        // 旧代码 `loaded.toolPermissions` 在 ?? 前抛 TypeError 导致「加载失败」。
         const merged = simulateLoadSettings(null);
         expect(merged).toEqual(DEFAULT_SETTINGS);
+        expect(merged.toolPermissions.read_note).toBe('allow');
     });
 
     it('缺省 raw(undefined)时所有字段用 DEFAULT', () => {

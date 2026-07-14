@@ -903,10 +903,12 @@ export default class RatelVaultPlugin extends Plugin {
 	 * 否则下次 onload 会创建第二个 Worker 进程,最终 OOM。
 	 */
 	onunload() {
+		// 关键路径:onload 中途失败时(如 loadSettings 抛错)部分字段未初始化,
+		// 全部用可选链,避免卸载时二次 TypeError 掩盖根因。
 		this.feedbackController?.destroy();
-		this.userStatus.reset();
+		this.userStatus?.reset();
 		// 关键路径:先停 IndexController 释放 vault 事件订阅与 watcher,再终止 Worker。
-		this.indexController.destroy();
+		this.indexController?.destroy();
 		// 关键路径:terminate EmbeddingWorkerProxy 释放 Web Worker 线程,避免热重载后残留进程 OOM。
 		this.embeddingWorkerProxy?.terminate();
 		// 关键路径:revoke Blob URL 释放内存,避免热重载后泄漏 worker 脚本字符串。
@@ -914,7 +916,7 @@ export default class RatelVaultPlugin extends Plugin {
 			URL.revokeObjectURL(this.embeddingWorkerUrl);
 			this.embeddingWorkerUrl = undefined;
 		}
-		this.workerManager.destroy();
+		this.workerManager?.destroy();
 		// 修复:VectraStore 无显式 close,JS 垃圾回收会释放文件句柄;
 		// 之前的 `void this.vectraStore;` 是空操作,已移除。
 		devLogger.info('main', 'Ratel unloaded');
@@ -929,14 +931,20 @@ export default class RatelVaultPlugin extends Plugin {
 	 * `chatApiKey` / `embedApiKey` / `rerankerApiKey` / `rerankerProvider` 明文字段。
 	 * 这里在合并后一次性清理内存对象,避免老字段污染 settings;下次 `saveSettings`
 	 * 会用清理后的对象自然覆盖 data.json,完成一次性迁移。
+	 *
+	 * 修复:首次安装或 data.json 缺失时 `loadData()` 返回 `null`。
+	 * `loaded.toolPermissions` 会在 `??` 求值前抛 TypeError 导致插件「加载失败」;
+	 * 必须先把 null 归一成 `{}`。
 	 */
 	async loadSettings() {
-		const loaded = (await this.loadData()) as Partial<RatelVaultSettings> & {
+		type LegacySettings = Partial<RatelVaultSettings> & {
 			chatApiKey?: string;
 			embedApiKey?: string;
 			rerankerApiKey?: string;
 			rerankerProvider?: string;
 		};
+		// 修复:loadData() 无文件时返回 null,不能直接读属性。
+		const loaded = ((await this.loadData()) ?? {}) as LegacySettings;
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, loaded);
 		this.settings.toolPermissions = {
 			...DEFAULT_SETTINGS.toolPermissions,
