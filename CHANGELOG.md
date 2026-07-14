@@ -5,6 +5,11 @@
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-07-14
+
+### Fixed
+- **首次安装加载失败** — `loadData()` 返回 `null` 时读 `loaded.toolPermissions` 抛 TypeError;归一成 `{}` 后再合并。`onunload` 对未初始化字段改用可选链,避免卸载二次报错
+
 ## [0.1.3] - 2026-07-14
 
 ### Fixed
