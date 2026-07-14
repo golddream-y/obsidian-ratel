@@ -380,4 +380,15 @@ describe('resetSession', () => {
 		expect(messages.some((m) => m.content === 'last a')).toBe(true);
 		expect(messages.some((m) => m.content === 'old')).toBe(false);
 	});
+
+	it('setEnvContext - 注入后 toMessages 含时间行', async () => {
+		const persistence = createMockPersistence();
+		const ctx = createCtx(persistence);
+		await ctx.load('session-env');
+		ctx.setEnvContext('当前本地时间: 2026-07-14 20:25 (Asia/Shanghai, 星期二)');
+		const msgs = ctx.toMessages();
+		expect(msgs.length).toBeGreaterThanOrEqual(2);
+		expect(msgs[1]!.role).toBe('system');
+		expect(msgs[1]!.content).toContain('当前本地时间');
+	});
 });

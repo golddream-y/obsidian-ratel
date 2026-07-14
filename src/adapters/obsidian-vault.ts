@@ -116,6 +116,12 @@ export class ObsidianVault implements VaultPort {
 			frontmatter: cache.frontmatter,
 			tags: cache.tags?.map((t) => ({ tag: t.tag })),
 			links: cache.links?.map((l) => ({ link: l.link })),
+			// 关键路径:大纲走 metadataCache.headings,禁止工具层 cachedRead + 正则扫全文。
+			headings: cache.headings?.map((h) => ({
+				level: h.level,
+				heading: h.heading,
+				line: h.position.start.line,
+			})),
 		};
 	}
 

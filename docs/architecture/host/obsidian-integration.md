@@ -18,10 +18,11 @@
 
 ### 2.1 Facade 模式隔离 Obsidian API
 
-**决策**:所有 Obsidian API 访问必须走 `ObsidianVault` facade,不直接调 `app.vault.*`。
+**决策**:文件 IO / 元数据走 `ObsidianVault`;活动文件 / 选区走独立的 `ObsidianWorkspace`(`WorkspacePort`)。工具层不直接 `import 'obsidian'`。
 
 **原因**:
 - Obsidian API 版本可能变化,facade 集中适配
+- 工作区状态(活动 tab)与 vault 磁盘契约不同,拆成两个端口更清晰
 - 测试时 mock facade 即可,不需要 mock 整个 Obsidian
 - 明确哪些 API 被使用,哪些是禁区
 
@@ -93,7 +94,25 @@ graph TB
     V10 --> AV
 ```
 
-**关键**:`getBacklinks` / `getMetadata` 走 `metadataCache`(同步),其余走 `app.vault`。`writeFile` 自动处理"文件存在则 modify,不存在则 create + 自动建父目录"。
+**关键**:`getBacklinks` / `getMetadata` 走 `metadataCache`(同步);`getMetadata` 另暴露 `headings`(来自 `CachedMetadata.headings`),供 `get_note_outline` 使用,**禁止**工具层全文正则扫标题。`writeFile` 自动处理"文件存在则 modify,不存在则 create + 自动建父目录"。
+
+---
+
+## 3.1 WorkspacePort(活动文件 / 选区)
+
+```typescript
+// ports/workspace.ts
+export interface WorkspacePort {
+  /** 当前活动 Markdown 文件的 vault 相对路径;无则 null */
+  getActiveFilePath(): string | null;
+  /** 编辑器选中文本;无选区返回 null */
+  getActiveSelection(): string | null;
+}
+```
+
+实现:`adapters/obsidian-workspace.ts` — `app.workspace.getActiveFile()` + `MarkdownView.editor.getSelection()`。非 `.md` 活动文件返回 null。
+
+消费方:`get_active_note` 工具。装配点:`main.ts` onload 创建 `ObsidianWorkspace(this.app)`。
 
 ---
 

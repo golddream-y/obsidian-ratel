@@ -184,6 +184,9 @@ describe('ObsidianVault', () => {
 			frontmatter: { title: 'Test', tags: ['foo'] },
 			tags: [{ tag: '#bar' }, { tag: '#baz' }],
 			links: [{ link: '[[target]]' }],
+			headings: [
+				{ level: 1, heading: 'Intro', position: { start: { line: 2 } } },
+			],
 		});
 
 		const meta = vault.getMetadata('notes/foo.md');
@@ -192,6 +195,7 @@ describe('ObsidianVault', () => {
 		expect(meta!.frontmatter).toEqual({ title: 'Test', tags: ['foo'] });
 		expect(meta!.tags).toEqual([{ tag: '#bar' }, { tag: '#baz' }]);
 		expect(meta!.links).toEqual([{ link: '[[target]]' }]);
+		expect(meta!.headings).toEqual([{ level: 1, heading: 'Intro', line: 2 }]);
 	});
 
 	it('getMetadata - 文件不存在 - 返回 null', () => {

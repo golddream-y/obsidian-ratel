@@ -1,297 +1,195 @@
-# Ratel 使用手册 / User Guide
+# Ratel 使用手册
 
-## 一、配置 — 让 Ratel 跑起来
-
-### 1.1 安装
-
-- **商店安装**(上架后):Obsidian → 设置 → 社区插件 → 浏览 → 搜索 "Ratel" → 安装并启用
-- **BRAT 安装**(上架前):安装 BRAT 插件 → BRAT 设置 → Add → 填入仓库地址
-
-### 1.2 首次启动
-
-- 启用插件后自动扫描 vault → 生成索引
-- 状态条显示"索引中" + 进度,期间可正常用 Obsidian(索引在后台 Worker 执行)
-- 索引完成 → 状态条变"就绪"
-
-### 1.3 界面语言(可选)
-
-设置 → Ratel → 顶部 General 分组 → Language 下拉:
-
-- **auto**(默认):跟随系统语言,zh 开头用中文,其余用英文
-- **中文**:强制中文界面
-- **English**:强制英文界面
-
-切换即时生效,设置面板 / Chat 侧栏 / 状态条 / 诊断页面全部跟随刷新。**已知限制**:命令面板中的命令名在 Obsidian 启动时一次性注册,切换语言后需 toggle 插件或重启 Obsidian 才刷新。
-
-### 1.4 配置对话模型(三选一)
-
-- **DeepSeek**:Endpoint `https://api.deepseek.com` + 模型名 + Context Length(默认 256k,可点「获取推荐」从公开模型库填入)
-- **Claude**:Endpoint `https://api.anthropic.com` + 模型名
-- **本地 Ollama**:Endpoint `http://localhost:11434` + 模型名(无需 API Key)
-- API Key 配置:Obsidian 设置 → Keychain → 用固定 secret ID 添加(详见 1.7)
-
-### 1.5 配置嵌入模型
-
-- **默认本地 ONNX**(零配置,首次自动下载模型,Web Worker 子线程推理)
-- 可选 API 嵌入:设置 → Embedding → 切 provider 为 `api` + 配置端点
-- 模型管理:设置面板可查看 / 切换 / 删除已下载的本地模型
-
-### 1.6 (可选)配置 Reranker
-
-- 仅百炼 API 可选,提升搜索精度
-- Keychain 添加 `ratel-rerank-bailian` 即自动启用,不配则纯向量 + BM25 检索
-
-### 1.7 API Key 清单
-
-用户在 Obsidian 设置 → Keychain 中按以下固定 secret ID 录入密钥:
-
-| secret ID | 用途 | 必需? |
-|---|---|---|
-| `ratel-chat-openai-compatible` | 对话模型 API Key(DeepSeek / OpenAI / 硅基流动等) | 远端模型必需,Ollama 不需要 |
-| `ratel-embed-openai-compatible` | API 嵌入 Key | 仅 provider=api 时必需 |
-| `ratel-rerank-bailian` | 百炼 Reranker Key | 可选 |
-
-### 1.8 (可选)自定义提示词(高级)
-
-设置面板底部「提示词(高级)」section 提供 24 个可覆盖的提示词段落,每段独立的开关 + textarea + 「恢复本段默认」按钮:
-
-- **agent 系统提示词**:基础身份(`agent.base`)、直接问答(`agent.direct`)、RAG 模式(`agent.rag`)
-- **内部 LLM 模板**:意图分类器(`internal.intent`)、查询改写器(`internal.rewrite`)
-- **工具描述**:9 个工具各自一段(如 `tool.read_note.description`),改动后立即热生效,无需重启
-- **检索结果外框**:不可覆盖(防注入)
-
-操作流程:
-
-1. 勾选「使用自定义」→ textarea 激活,placeholder 显示默认文本
-2. 编辑后自动保存;若遗漏必需占位符(如 `{{tools}}`),显示警告但不阻止保存
-3. 「恢复本段默认」清空该段覆盖,回到内置中文默认值
-4. 「预览当前 RAG 系统提示词」按钮弹模态框,展示当前 overrides + 默认值合成后的完整 system prompt
-
-> 修改工具描述后,LLM 下一次调用即可见,无需重启插件(`syncToolDefinitions` 热替换)。
-
-## 二、日常使用 — 与 vault 对话
-
-### 2.1 打开聊天
-
-- 侧边栏 🦡 图标
-- 或命令面板 `Cmd+P`(macOS)/ `Ctrl+P`(Windows)→ 输入 "Ratel: Ask vault"
-- 命令面板还能触发 "Ratel: Show index status" 查看索引状态
-
-### 2.2 基础问答
-
-- 输入问题 → 流式回答
-- 引用标记可点击跳转源笔记
-- 上下文使用率在 Chat 顶部 Header 实时显示(百分比胶囊,按阈值变色)
-
-### 2.3 多步任务
-
-- 描述复杂任务:"帮我研究 X 主题,写一份综述"
-- Ratel 自动多步检索 → 工具调用 → 生成 → 写入新笔记
-- 工具调用过程可视化(可展开看 args / result)
-- MAX_STEPS 默认 50,超出会提示任务过长
-
-### 2.4 思考过程
-
-- 支持 reasoning 能力的模型(如 DeepSeek-R1)会展示思考过程
-- 以可折叠"思考"块呈现,流式中默认展开,完成后自动折叠
-- 点击可手动展开查看完整推理
-
-### 2.5 斜杠命令
-
-输入 `/` 触发菜单:
-
-| 命令 | 作用 |
-|---|---|
-| `/new` | 开始新对话,清空当前上下文 |
-| `/compact` | 压缩上下文,将历史总结为摘要 |
-| `/model` | 查看当前模型配置(临时方案,后续完善为切换) |
-| `/reindex` | 重新索引 vault |
-| `/pause` | 暂停自动索引(FolderWatcher 仍在,仅停止队列消费) |
-| `/resume` | 恢复自动索引 |
-| `/dropIndex` | 清空索引并重建(危险操作,需确认) |
-| `/skill <name>` | 激活指定 skill |
-| `/skills` | 列出已加载的 skills |
-| `/skill off <name>` | 反激活指定 skill |
-
-### 2.6 状态条与 Header
-
-- **状态点**(Obsidian 底部状态条):就绪(绿)/ 思考中(黄脉冲)/ 检查变更中(黄)/ 索引中(黄脉冲)/ 错误(红)/ 未配置(空心)
-- **"检查变更中"**:启动期 smart reindex 正在 hash diff,检查哪些文件变更需要重新索引(通常秒级完成)
-- **上下文使用率**:已移至 Chat 顶部 Header 的百分比胶囊 — 0-79% 绿 / 80-94% 黄 / 95-100% 红
-- **模型徽章**(Header):随状态色调变色 — 就绪(绿)/ 思考中(黄)/ 索引中(黄脉冲)/ 错误(红)/ 未配置(灰)
-- **work 条**(输入框下方):显示当前正在做的事 — 索引中 / 下载模型中 / 准备中 / 搜索中 / 压缩中;硬阻塞(如未配置 API Key)时显示 gate 提示
-- 点击状态条展开详情抽屉(抽屉上下文区已精简,只保留 usedMax 行与 compact 按钮)
-
-### 2.7 工具权限与确认
-
-- Ratel 读写笔记前会询问(默认 ask 模式)
-- 可在设置 → Tool permissions 改为 allow / ask / deny
-- trustMode 开启后跳过询问(谨慎使用)
-
-### 2.8 诊断与故障排查
-
-- 命令面板 → "Ratel: Show index status" 或设置面板入口
-- 三项自查:模型连接 / 嵌入健康 / 索引状态
-- 出错时查看诊断面板的具体错误信息
-
-### 2.9 FAQ
-
-| 问题 | 回答 |
-|---|---|
-| 为什么必须 Obsidian 1.13.0+? | 用了 SecretStorage API 存密钥 + 声明式 settings API(getSettingDefinitions) |
-| API Key 存哪了? | Obsidian Keychain,不出现在 data.json |
-| 索引大 vault 很慢? | 首扫在 Worker 后台,可继续用 Obsidian;后续启动 smart reindex 跳过未变更文件,通常秒级完成 |
-| 每次启动都重新索引? | 否。smart reindex 通过 hash diff 跳过未变更文件,热启动零 embed 调用 |
-| 改了 embedding 模型没生效? | 改 embedProvider / chunkSize / chunkOverlap 需重启 Obsidian,下次启动 smart reindex 检测参数变化自动全量重建 |
-| `/reindex` 和自动索引区别? | `/reindex` 强制清索引 + manifest 全量重建;启动自动索引走 hash diff 仅更新变更文件 |
-| 索引损坏怎么办? | smartReindex 自动降级清 .index/ + 全量重建,无需手动删目录 |
-| 用 Ollama 需要联网吗? | 不需要,纯本地推理 |
-| 支持移动端吗? | 暂不支持(依赖 Node.js fs) |
-| 数据上传到哪? | 仅模型 API 端点,Ollama 模式零外发 |
-| 思考段只有 DeepSeek 有? | 当前已接入 DeepSeek,其他 reasoning 模型视 adapter 实现支持 |
-| 切换语言后命令名没更新? | 命令名在 Obsidian 启动时一次性注册,切换语言后需 toggle 插件或重启 Obsidian 才刷新命令名。UI 文案(设置/聊天/状态)即时生效 |
-| 怎么让 Ratel 记住我的偏好? | 直接说"记住我偏好 X"或"记住这个项目用 Y"。Ratel 会写进 vault 的 `.ratel/memory/` 目录,后续对话自动注入。两层结构:全局偏好(global.md,始终注入)+ 主题记忆(topics/<name>.md,相关时才调用) |
-| 记忆文件存哪了? | vault 根目录的 `.ratel/memory/` 下:`global.md`(全局)+ `topics/`(主题文件夹)+ `index.md`(主题索引)。都是普通 Markdown,可直接打开编辑 |
-| 怎么删除一条记忆? | 跟 Ratel 说"忘掉 X",它会按 match 字符串匹配删除。也可直接在文件管理器删 `.ratel/memory/` 下对应文件 |
-| 记忆会无限增长吗? | 不会。单条 global.md 注入前截断到 20KB;总存储上限 10MB,超出会拒绝写入并提示 |
-| 记忆会发到云端吗? | 不会。记忆文件纯本地,只在你与模型对话时作为上下文注入(发往你配置的模型 API 端点),不会被上传到任何第三方 |
-| 怎么扩展 Ratel 的能力? | 用 Skill 机制。在 vault 的 `.ratel/skills/`、`~/.ratel/skills/` 或预置目录下放一个文件夹,内含 `SKILL.md`(frontmatter + 正文)。Ratel 启动时三源合并扫描,LLM 看到发现列表后自主激活,或用 `/skill <name>` 手动激活 |
-| skill 文件夹结构是什么? | 一个文件夹代表一个 skill,必须包含 `SKILL.md`(frontmatter 含 name/description/activation 等字段 + 正文即激活后注入 system prompt 的指令)。文件夹名需匹配 `^[a-z][a-z0-9-]{0,63}$`。后续版本会支持 references / scripts 子目录 |
+> 面向日常使用。装好插件、配好模型后，按场景查即可。  
+> 英文读者见文末 [English summary](#english-summary)。
 
 ---
 
-# Ratel User Guide (English)
+## 1. 这是什么
 
-## 1. Setup — Get Ratel Running
+Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔记写综述，也能记住你的偏好。索引在本地跑，密钥进钥匙串；只有你配置的模型 API 会联网。
 
-### 1.1 Installation
+**适合**：知识库问答、写综述、整理最近笔记、扩展自定义 Skill。  
+**不适合**：移动端、需要外网搜索 / Shell 的场景（本插件不做）。
 
-- **Store install** (once listed): Obsidian → Settings → Community plugins → Browse → search "Ratel" → Install & Enable
-- **BRAT install** (pre-listing): Install BRAT plugin → BRAT settings → Add → enter repo URL
+---
 
-### 1.2 First Launch
+## 2. 安装与五分钟上手
 
-- On enable, automatically scans vault → builds index
-- Status bar shows "Indexing" + progress; you can keep using Obsidian (indexing runs in background Worker)
-- Index complete → status bar shows "Ready"
+### 2.1 安装
 
-### 1.3 Interface Language (Optional)
+1. Obsidian → **设置** → **社区插件** → 关闭安全模式  
+2. **浏览** → 搜索 **Ratel** → 安装并启用  
+3. 左侧出现 🦡 图标即成功
 
-Settings → Ratel → top General group → Language dropdown:
+> 需要 Obsidian **1.13.0+**，**仅桌面端**。
 
-- **auto** (default): follow system language; zh prefix uses Chinese, others use English
-- **中文**: force Chinese interface
-- **English**: force English interface
+### 2.2 第一次打开
 
-Switch takes effect instantly — settings panel / chat sidebar / status bar / diagnostics all refresh. **Known limitation**: command names in the command palette are registered once at Obsidian startup; toggle the plugin or restart Obsidian to refresh after switching.
+1. **配对话模型**（设置 → Ratel）  
+   - 远端：填 API Base + 模型名；钥匙串添加 `ratel-chat-openai-compatible`  
+   - 本机 Ollama：Base 如 `http://localhost:11434`，通常免 Key  
+2. **等索引** — 底部状态条显示索引进度；可继续用 Obsidian  
+3. 点侧栏 🦡（或命令面板 → `Ratel: Ask vault`）开始提问
 
-### 1.4 Configure Chat Model (pick one)
+默认嵌入是本地 ONNX，首次会下载模型（约几十 MB），之后离线可用。
 
-- **DeepSeek**: Endpoint `https://api.deepseek.com` + model name + Context Length (default 256k; use **Get recommendation** to fill from the public model registry)
-- **Claude**: Endpoint `https://api.anthropic.com` + model name
-- **Local Ollama**: Endpoint `http://localhost:11434` + model name (no API key needed)
-- API key setup: Obsidian Settings → Keychain → add with fixed secret ID (see 1.7)
+### 2.3 界面语言
 
-### 1.5 Configure Embedding Model
+设置 → Ratel → Language：`auto` / 中文 / English。UI 即时切换；命令面板里的命令名需重启 Obsidian 才刷新。
 
-- **Default local ONNX** (zero config, auto-downloads model on first use, runs in Web Worker thread)
-- Optional API embedding: Settings → Embedding → switch provider to `api` + configure endpoint
-- Model management: settings panel lets you view / switch / delete downloaded local models
+---
 
-### 1.6 (Optional) Configure Reranker
+## 3. 日常怎么问
 
-- Optional Bailian API only, improves search precision
-- Add `ratel-rerank-bailian` in Keychain to auto-enable; without it, pure vector + BM25 retrieval
-
-### 1.7 API Key List
-
-Users add keys in Obsidian Settings → Keychain using these fixed secret IDs:
-
-| secret ID | purpose | required? |
+| 你想… | 可以这样说 | Ratel 大致会… |
 |---|---|---|
-| `ratel-chat-openai-compatible` | Chat model API key (DeepSeek / OpenAI / SiliconFlow etc.) | Required for remote models, not needed for Ollama |
-| `ratel-embed-openai-compatible` | API embedding key | Only when provider=api |
-| `ratel-rerank-bailian` | Bailian reranker key | Optional |
+| 查主题 | 「我写过哪些性能优化相关笔记？」 | `search_vault` → 引用 `[1][2]` → 可点开原文 |
+| 读某一篇 | 「总结 `notes/xxx.md`」 | `read_note`（含 frontmatter / tags / 反链） |
+| 今天几号 / 星期几 | 「今天星期几？」 | **通常不用调工具**（每轮已注入本地时间） |
+| 精确时间 / 三天后 | 「三天后是几号？」 | `get_datetime` |
+| 当前打开的这篇 | 「概括当前这篇」 | `get_active_note` → `read_note` |
+| 最近改过什么 | 「最近改了哪些笔记？」 | `list_recent_notes` |
+| 今天日记在哪 | 「今天日记在哪？」 | `get_daily_note`（只探测，**不自动创建**） |
+| 章节大纲 | 「这篇有哪些标题？」 | `get_note_outline`（走标题缓存，不读全文） |
+| 谁链到这篇 | 「谁链到这篇？」 | 用 `read_note` 看 `backlinks` |
+| 写综述 / 整理 | 「把产品规划相关笔记整理成背景文档」 | 多步检索 → 读写（写前会按权限询问） |
 
-## 2. Daily Use — Chat with Your Vault
+流式回答时可以看到工具调用过程；支持 reasoning 的模型（如 DeepSeek-R1）会显示可折叠「思考」块。
 
-### 2.1 Open Chat
+---
 
-- Sidebar 🦡 icon
-- Or command palette `Cmd+P` (macOS) / `Ctrl+P` (Windows) → type "Ratel: Ask vault"
-- Command palette also offers "Ratel: Show index status" to view index state
+## 4. 日记约定
 
-### 2.2 Basic Q&A
+设置 → Ratel → **日记约定**：
 
-- Type a question → streaming response
-- Citation markers are clickable to jump to source note
-- Context usage shows in real-time on status bar
+| 项 | 默认 | 说明 |
+|---|---|---|
+| 日记文件夹 | （空 = vault 根） | 相对 vault 的路径 |
+| 文件名格式 | `YYYY-MM-DD` | 支持 `YYYY` / `MM` / `DD` |
 
-### 2.3 Multi-step Tasks
+`get_daily_note` **只探测路径是否存在**，不会替你创建日记。不存在时让 Ratel 用 `write_note` 创建，或先自己建好文件。
 
-- Describe a complex task: "Research topic X, write a survey"
-- Ratel auto multi-step retrieves → tool calls → generates → writes new note
-- Tool call process is visualized (expandable to view args / result)
-- MAX_STEPS defaults to 50; exceeding prompts task too long
+---
 
-### 2.4 Reasoning Process
+## 5. 记忆
 
-- Models with reasoning capability (e.g. DeepSeek-R1) show their thinking
-- Collapsible "thinking" block; expanded by default during streaming, auto-collapses when done
-- Click to manually expand and view full reasoning
+跟它说「记住我偏好 Tailwind」或「忘掉 X」即可。
 
-### 2.5 Slash Commands
-
-Type `/` to trigger menu:
-
-| command | effect |
+| 位置 | 内容 |
 |---|---|
-| `/new` | Start new conversation, clear current context |
-| `/compact` | Compress context, summarize history |
-| `/model` | View current model config (temporary, switching to be added later) |
-| `/reindex` | Re-index vault |
-| `/pause` | Pause auto-indexing (FolderWatcher still active, only stops queue consumption) |
-| `/resume` | Resume auto-indexing |
-| `/dropIndex` | Drop index and rebuild (dangerous, requires confirmation) |
-| `/skill <name>` | Activate a skill |
-| `/skills` | List loaded skills |
-| `/skill off <name>` | Deactivate a skill |
+| `.ratel/memory/global.md` | 全局偏好，启动时注入（约 20KB 截断） |
+| `.ratel/memory/topics/` | 主题记忆，相关时再检索 |
+| `.ratel/memory/index.md` | 主题索引 |
 
-### 2.6 Status Bar Reading
+都是普通 Markdown，可直接编辑。总存储上限约 10MB。记忆只作对话上下文发往你配置的模型端点，不会单独上传第三方。
 
-- **Status dot**: ready (green) / thinking (yellow pulse) / indexing (yellow pulse) / error (red) / unconfigured (hollow)
-- **Context usage**: 0-79% green / 80-94% yellow / 95-100% red
-- **Source indicator**: estimate (gray) / streaming (yellow) / API (green) — reflects token stats credibility
-- Click status bar to expand detail drawer
+侧栏可开「记忆」面板查看 / 编辑（设置里也可入口）。
 
-### 2.7 Tool Permissions & Confirmation
+---
 
-- Ratel asks before reading/writing notes (default ask mode)
-- Change to allow / ask / deny in Settings → Tool permissions
-- trustMode skips prompts (use with caution)
+## 6. Skill（扩展能力）
 
-### 2.8 Diagnostics & Troubleshooting
+把含 `SKILL.md` 的文件夹放到：
 
-- Command palette → "Ratel: Show index status" or settings panel entry
-- Three self-checks: model connection / embedding health / index state
-- On errors, view detailed error info in diagnostics panel
+- vault：`.ratel/skills/`  
+- 全局：`~/.ratel/skills/`  
+- 或使用插件预置
 
-### 2.9 FAQ
+启动时三源合并。对话里 `/skill <name>` 激活，`/skills` 列表，`/skill off <name>` 关闭。设置里可总开关 `enableSkills`。
 
-| question | answer |
+`SKILL.md` 需含 frontmatter（`name` / `description` 等）+ 正文指令；文件夹名建议 `kebab-case`。
+
+---
+
+## 7. 斜杠命令与命令面板
+
+聊天输入 `/`：
+
+| 命令 | 作用 |
 |---|---|
-| Why requires Obsidian 1.13.0+? | Uses SecretStorage API for key storage + declarative settings API (getSettingDefinitions) |
-| Where is API key stored? | Obsidian Keychain, not in data.json |
-| Indexing large vault is slow? | First scan runs in background Worker; you can keep using Obsidian |
-| Does Ollama need internet? | No, fully local inference |
-| Mobile support? | Not yet (depends on Node.js fs) |
-| Where does data go? | Only to model API endpoint; Ollama mode has zero outbound |
-| Is thinking block DeepSeek-only? | Currently DeepSeek is integrated; other reasoning models depend on adapter implementation |
-| Command names not updated after language switch? | Command names are registered once at Obsidian startup; toggle the plugin or restart Obsidian to refresh. UI text (settings/chat/status) updates instantly |
-| How to make Ratel remember my preferences? | Just say "remember I prefer X" or "remember this project uses Y". Ratel writes it to `.ratel/memory/` in your vault and injects it into future chats. Two layers: global preferences (global.md, always injected) + topic memory (topics/<name>.md, pulled in when relevant) |
-| Where are memory files stored? | Under `.ratel/memory/` in your vault root: `global.md` (global) + `topics/` (topic folder) + `index.md` (topic index). All plain Markdown — open and edit directly |
-| How to delete a memory entry? | Tell Ratel "forget X" — it matches by string and removes the entry. You can also delete files under `.ratel/memory/` directly in the file manager |
-| Does memory grow unbounded? | No. Single global.md is truncated to 20KB before injection; total storage cap is 10MB — writes are rejected with a notice when exceeded |
-| Is memory uploaded to the cloud? | No. Memory files are purely local. They are only injected as context when you chat with your configured model API endpoint — never uploaded to any third party |
-| How to extend Ratel's capabilities? | Use the Skill mechanism. Drop a folder containing `SKILL.md` (frontmatter + instructions) into `.ratel/skills/` in your vault, `~/.ratel/skills/` globally, or use built-in ones. Ratel scans all three on load; the LLM sees a discovery list and activates on its own, or use `/skill <name>` to activate manually |
-| What's the skill folder structure? | One folder = one skill, must contain `SKILL.md` (frontmatter with name/description/activation etc. + body instructions injected into system prompt when activated). Folder name must match `^[a-z][a-z0-9-]{0,63}$`. Later versions will support references / scripts subdirectories |
+| `/new` | 新对话 |
+| `/compact` | 压缩上下文 |
+| `/model` | 查看当前模型配置 |
+| `/reindex` | 强制全量重建索引 |
+| `/skill` / `/skills` / `/skill off` | Skill 激活 / 列表 / 关闭 |
+
+命令面板（不在 `/` 菜单里）：
+
+- `Ratel: Ask vault` / 显示索引状态  
+- 暂停 / 恢复自动索引  
+- 清空索引（危险，需确认）
+
+---
+
+## 8. 设置速查
+
+| 分组 | 常用项 |
+|---|---|
+| 对话 | API Base、模型、Context Length |
+| 嵌入 | 本地 ONNX / API；改 provider 或分块参数后需**重启 Obsidian** |
+| Rerank | 可选；钥匙串 `ratel-rerank-bailian` |
+| 日记约定 | 文件夹 + 文件名格式 |
+| 工具权限 | 每工具 allow / ask / deny；信任模式慎开 |
+| 记忆 | 开关、自动写入、容量上限 |
+| Skills | 总开关 |
+| 提示词（高级） | 按段覆盖 system / 工具描述（热生效） |
+
+### API Key（钥匙串）
+
+| secret ID | 用途 |
+|---|---|
+| `ratel-chat-openai-compatible` | 对话（DeepSeek / OpenAI 兼容等）；Ollama 通常不需要 |
+| `ratel-embed-openai-compatible` | 仅嵌入 provider = API 时 |
+| `ratel-rerank-bailian` | 可选百炼重排 |
+
+路径：Obsidian **设置 → 钥匙串**，按上表名称添加。
+
+---
+
+## 9. 状态怎么读
+
+- **底部状态点**：就绪 / 思考 / 索引 / 错误 / 未配置  
+- **Chat Header**：上下文占用百分比（绿 → 黄 → 红）  
+- **输入框下方 work 条**：索引中 / 下载模型 / 搜索中等  
+
+未配置 API Key 或索引未就绪时，发送会被挡住并提示原因。
+
+---
+
+## 10. 隐私
+
+- 默认本地索引 + 本地嵌入  
+- **唯一网络**：你配置的模型 /（可选）嵌入 API /（可选）Rerank  
+- 无遥测、无匿名统计  
+- 库内容只发往你填的端点  
+
+---
+
+## 11. FAQ
+
+| 问题 | 回答 |
+|---|---|
+| 为什么要 1.13.0+？ | 钥匙串 + 声明式设置 API |
+| Key 存在哪？ | Obsidian Keychain，不进 `data.json` |
+| 每次启动都全量索引？ | 否。smart reindex 用 hash diff，未改文件跳过 |
+| `/reindex` 和自动索引？ | `/reindex` 清索引后全量；日常改笔记走增量 |
+| 改了嵌入模型没生效？ | 改 embed / 分块后重启 Obsidian |
+| 支持手机？ | 否（桌面 Node fs） |
+| Ollama 要联网吗？ | 本地推理不需要 |
+| 「当前笔记」没打开？ | 会友好说明；用 glob / search 找路径即可 |
+| 日记工具为什么不创建？ | 只读探测，避免误建；创建请明示或用写工具 |
+
+更多问题可开 [GitHub Issues](https://github.com/golddream-y/obsidian-ratel/issues)。
+
+---
+
+## English summary
+
+**Install:** Obsidian → Community plugins → Browse → search **Ratel** → Install & Enable (desktop, 1.13.0+).
+
+**First run:** Configure chat model (+ Keychain `ratel-chat-openai-compatible`, or local Ollama). Wait for indexing. Open chat via the 🦡 ribbon.
+
+**Ask naturally:** topics → semantic search with citations; “today” → injected local time; “this note” → active file; daily note path is probed only (never auto-created). Memory lives in `.ratel/memory/`. Skills live under `.ratel/skills/` (or `~/.ratel/skills/`).
+
+**Privacy:** No telemetry. Network only to the model (and optional embed/rerank) endpoints you configure.

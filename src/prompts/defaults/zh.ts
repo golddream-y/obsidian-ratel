@@ -19,8 +19,13 @@ export const ZH_DEFAULTS: Record<PromptSectionId, string> = {
 
 	'agent.rag.toolGuide': `工具选用说明:
 - 问主题、概念、语义相关:优先 search_vault。
-- 已知路径或需全文:用 read_note。
-- 找精确字面、正则、文件名模式:用 grep / glob(若已注册)。
+- 已知路径或需全文:用 read_note(同时返回 frontmatter / tags / links / backlinks,无需另造工具)。
+- 找精确字面、正则、文件名模式:用 grep / glob。
+- 涉及「今天 / 本周 / 现在几点」:先看系统注入的当前本地时间;需要精确或相对日期时再调 get_datetime。
+- 「当前这篇 / 打开的笔记」:先 get_active_note 拿路径,再 read_note。
+- 「今天的日记」:get_daily_note(只探测路径,不自动创建)。
+- 「最近改过哪些」:list_recent_notes。
+- 「这篇有哪些章节」:get_note_outline(走标题缓存,不必读全文)。
 
 当前可用工具:
 {{toolList}}`,
@@ -134,4 +139,26 @@ export const ZH_DEFAULTS: Record<PromptSectionId, string> = {
 	'tool.activate_skill.param.name': 'Skill 名称(kebab-case)',
 	'tool.deactivate_skill.description': '关闭一个已激活的 Skill,从上下文移除其指令。',
 	'tool.deactivate_skill.param.name': 'Skill 名称',
+
+	'tool.get_datetime.description':
+		'获取当前本地时间(或相对今天加减日)。系统已注入一行当前时间;仅在需要精确到秒、ISO、或「三天后是几号」时调用本工具。',
+	'tool.get_datetime.param.format': '返回形态:iso / local / full(默认 full)',
+	'tool.get_datetime.param.offsetDays': '相对今天加减天数,如 1=明天、-1=昨天',
+
+	'tool.get_active_note.description':
+		'获取用户当前打开的 Markdown 笔记路径、选区与 frontmatter。用户说「当前这篇」「总结打开的笔记」时先调本工具再 read_note。无打开笔记时返回 path=null。',
+	'tool.get_active_note.param.includeSelection': '是否包含编辑器选区(默认 true)',
+	'tool.get_active_note.param.includeFrontmatter': '是否包含 YAML frontmatter(默认 true)',
+
+	'tool.get_daily_note.description':
+		'按设置中的日记目录与文件名格式,探测指定日期(默认今天)的日记路径是否存在。只读探测,不自动创建文件。',
+	'tool.get_daily_note.param.date': '日期 YYYY-MM-DD,默认今天本地日期',
+
+	'tool.list_recent_notes.description':
+		'按修改时间列出最近改过的 Markdown 笔记。用户问「最近写了什么」「刚改过哪些」时使用。',
+	'tool.list_recent_notes.param.limit': '返回条数,默认 10,硬顶 50',
+
+	'tool.get_note_outline.description':
+		'用 Obsidian 标题缓存返回笔记大纲(level + 标题文本),不读全文。需要章节结构时优先本工具;要反链/标签/正文请用 read_note。',
+	'tool.get_note_outline.param.path': '笔记 vault 相对路径',
 };

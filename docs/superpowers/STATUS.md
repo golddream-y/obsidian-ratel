@@ -19,6 +19,7 @@
 |---|---|---|---|---|
 | S-I18N | [2026-06-14-ratel-i18n-design.md](specs/2026-06-14-ratel-i18n-design.md) | 🚫 Superseded | 2026-06-14 | 已被 S-I18N-V2 取代;估算 key 数严重不足(50 vs 300),覆盖类别不全(3 vs 10) |
 | S-SKILL | [2026-07-06-skill-mechanism-design.md](specs/2026-07-06-skill-mechanism-design.md) | Active | 2026-07-06 | Skill 机制(agentskills.io 兼容):三源合并存储 + progressive disclosure + 4 个新工具 + 沙箱脚本执行 |
+| S-BASIC-ENV | [2026-07-14-agent-basic-env-design.md](specs/2026-07-14-agent-basic-env-design.md) | Active | 2026-07-14 | Agent 基础环境感知:时间注入 + active note + daily/recent/outline |
 
 ---
 
@@ -27,6 +28,7 @@
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
 | P-I18N-IMPL | [2026-06-14-ratel-i18n-implementation.md](plans/2026-06-14-ratel-i18n-implementation.md) | 🚫 Superseded | S-I18N | 已被 P-I18N-V2-IMPL 取代 |
+| P-BASIC-ENV | [2026-07-14-agent-basic-env.md](plans/2026-07-14-agent-basic-env.md) | ✅ Completed | S-BASIC-ENV | Phase1+2 已落地（main，待 commit） |
 | P-SKILL-2-EXECUTION | — | ⏳ Pending | S-SKILL | references+scripts:沙箱+权限+read_skill_reference/run_skill_script 工具;依赖 P-SKILL-1-CORE(已归档);plan 待写 |
 | P-SKILL-3-UI | — | ⏳ Pending | S-SKILL | settings 面板+chat 状态显示+预置示例 skills;依赖 P-SKILL-1-CORE(已归档);plan 待写 |
 

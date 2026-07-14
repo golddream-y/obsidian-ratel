@@ -3,7 +3,7 @@
 > 🦡 **架构是港口，不是道路。Engine 定义 Port，Adapter 实现 Port，UI 形态是可换选项。**
 
 本文档回答**怎么做、长什么样、怎么组织**。
-产品形态（做什么、能用上什么）请见 [README.md](file:///Users/golddream/code/git-public/Ratel-CLI/README.md)。
+产品形态（做什么、能用上什么）请见 [README.md](../README.md)。
 
 ---
 
@@ -86,11 +86,11 @@ graph TB
         L2A["Agent Loop"]
         L2B["Context Manager"]
         L2C["Hooks 注册表"]
-        L2D["Tools (14 个)"]
+        L2D["Tools (19 个)"]
         L2E["Subagents (4 个)"]
         L2F["LLM 调用<br/>(HTTP 流式)"]
         L2G["Embedding 调用<br/>(HTTP)"]
-        L2H["ObsidianVault<br/>facade"]
+        L2H["ObsidianVault<br/>+ WorkspacePort"]
     end
 
     subgraph "L1 端口适配层"
@@ -313,10 +313,14 @@ src/
     persistence.ts                 #   Persistence 接口
     vector.ts                      #   VectorStore 接口
     llm.ts                         #   LLMClient 接口
+    embedding.ts                   #   EmbeddingPort 接口
+    workspace.ts                   #   WorkspacePort(活动文件 / 选区)
     skill-port.ts                  #   SkillPort 接口 (三源抽象, skill-fs/skill-vault 实现)
+    vault.ts                       #   VaultPort(+ VaultMetadata.headings)
 
   adapters/                        # Adapter 实现
-    obsidian-vault.ts              #   Obsidian API 薄封装 (TS, ~8 方法)
+    obsidian-vault.ts              #   Obsidian Vault API 薄封装
+    obsidian-workspace.ts          #   Obsidian Workspace(活动文件 / 选区)
     persistence-json.ts            #   Obsidian loadData/saveData
     vector-vectra.ts               #   vectra LocalDocumentIndex 封装
     llm-deepseek.ts                #   DeepSeek (OpenAI 兼容 SDK)
@@ -330,21 +334,26 @@ src/
     skill-registry.ts              #   enabled/disabled/active 三态管理 (会话级 active)
     skill-activator.ts             #   产出 Discovery 段 (skillList) + Active 段 (拼接 instructions)
 
-  tools/                           # Vault 工具集 (14 个)
-    read-note.ts                   #   读取笔记全文
+  tools/                           # Vault 工具集 (19 个)
+    read-note.ts                   #   读取笔记全文 + metadata + backlinks
     search-vault.ts                #   向量+BM25 混合检索
     grep.ts                        #   正则搜索
     glob.ts                        #   文件名匹配
     list-files.ts                  #   列出文件
     write-note.ts                  #   创建/覆盖笔记
     append-note.ts                 #   追加内容
-    edit-note.ts                   #   编辑指定行
+    edit-note.ts                   #   精确替换
     delete-note.ts                 #   删除笔记
     search-memory.ts               #   搜索用户记忆 (向量检索 topics/)
     remember.ts                    #   写入记忆 (global 或 topic)
     forget-memory.ts               #   删除记忆条目
     activate-skill.ts              #   激活指定 skill (LLM 工具)
     deactivate-skill.ts            #   反激活指定 skill (LLM 工具)
+    get-datetime.ts                #   本地时间 / 相对加减日
+    get-active-note.ts             #   活动笔记路径 / 选区 / frontmatter
+    get-daily-note.ts              #   日记路径探测(不创建)
+    list-recent-notes.ts           #   按 mtime 列最近笔记
+    get-note-outline.ts            #   metadataCache.headings 大纲
 
   subagents/                       # 4 个 Subagent
     indexer.ts                     #   维护向量索引 (文件变更 + 定时重检)
@@ -366,13 +375,15 @@ src/
     sections.ts                    #   28 个 section 元数据注册表 (含 agent.skills + 4 个 skill 工具 section)
     defaults/zh.ts                 #   中文默认值(常量,不可变)
     interpolate.ts                 #   {{var}} 占位符引擎 + 校验
-    tool-schemas.ts                #   14 个工具的 JSON schema 骨架
+    tool-schemas.ts                #   工具 JSON schema 骨架(19 个)
     composer.ts                    #   Composer 装配 API(5 个出口函数,含 composeMemorySystemPrompt)
     index.ts                       #   模块 re-export 入口
 
   utils/                           # 工具函数
     hash.ts                        #   SHA-256 content hash
     debounce.ts                    #   防抖
+    local-datetime.ts              #   本地时间格式化(环境注入 + get_datetime 共用)
+    path-safety.ts                 #   vault 路径沙箱
 ```
 
 ### 3.2 依赖关系
@@ -706,6 +717,22 @@ export class ObsidianVault {
 - **可测试**：mock ObsidianVault 即可测试 Tools / Subagents，不用开 Obsidian
 - **可追踪**：所有 Obsidian 调用走一个文件，API 变了只改一处
 - **不过度**：不做成 Port 接口（不会有第二个 Obsidian），就是简单 facade
+
+### 5.1 WorkspacePort（活动文件 / 选区）
+
+工作区状态与 vault 磁盘 IO 分离，独立端口：
+
+```typescript
+// ports/workspace.ts
+export interface WorkspacePort {
+  getActiveFilePath(): string | null;
+  getActiveSelection(): string | null;
+}
+```
+
+实现 `adapters/obsidian-workspace.ts`。`VaultMetadata` 另增 `headings`（来自 `metadataCache.headings`），供 `get_note_outline` 使用，禁止全文正则扫标题。
+
+环境时间：每次 `ask()` 调 `ctx.setEnvContext(formatEnvContextLine(...))`，`toMessages` 顺序为 **system → env → memory → skills → searchResults → history**。详见 [architecture/agent/tools.md](architecture/agent/tools.md) §4.10 与 [context-manager.md](architecture/agent/context-manager.md)。
 
 ---
 
@@ -1191,8 +1218,9 @@ const skillsSegment = [skillsDiscovery, skillsActive]
 | 文件监听 | Obsidian `app.vault.on()` | 比 chokidar 更准（Obsidian 内部事件） |
 | 索引策略 | 增量 + SHA-256 hash | 1k 笔记首扫 5-10 分钟，增量毫秒级 |
 | 块大小 | 500 token + 100 overlap | 召回粒度平衡 |
-| 插件分发 | BRAT 自部署 | 绕开官方市场审核周期 |
+| 插件分发 | 社区商店 + GitHub Release | 用户以商店搜索为主;开发者可读 release 资产 |
 | Worker 路径 | `path.join(__dirname, 'worker.js')` | CJS 环境下 __dirname 可用 |
+| 环境感知 | WorkspacePort + system 时间注入 | 活动文件不塞 VaultPort;「今天」零工具成本 |
 
 ---
 
@@ -1200,7 +1228,7 @@ const skillsSegment = [skillsDiscovery, skillsActive]
 
 | 风险 | 严重度 | 缓解 |
 |---|---|---|
-| Obsidian 插件审核周期长 | 低 | 先 BRAT 自部署，成熟后再提交官方市场 |
+| Obsidian 插件审核周期长 | 低 | 商店已上架;GitHub Release 作备份渠道 |
 | vectra 在 Worker 里跑 | 低 | 纯 JS 无问题；FolderWatcher 在主线程初始化后传给 Worker |
 | 增量索引边界混乱 | 中 | path + content hash 双键 + 幂等保证 |
 | LLM 过度链接 | 中 | 置信度阈值（>0.75）+ 用户确认 |

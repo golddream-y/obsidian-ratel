@@ -251,6 +251,107 @@ function buildSections(): SectionMeta[] {
 			placeholders: [],
 			allowOverride: true,
 		},
+		// --- get_datetime ---
+		{
+			id: 'tool.get_datetime.description',
+			label: tNow('promptLabel.tool.get_datetime.description'),
+			description: tNow('promptLabel.tool.get_datetime.description.desc'),
+			zone: 'tool',
+			placeholders: [],
+			allowOverride: true,
+		},
+		{
+			id: 'tool.get_datetime.param.format',
+			label: tNow('promptLabel.tool.get_datetime.param.format'),
+			description: tNow('promptLabel.tool.get_datetime.param.format.desc'),
+			zone: 'tool',
+			placeholders: [],
+			allowOverride: true,
+		},
+		{
+			id: 'tool.get_datetime.param.offsetDays',
+			label: tNow('promptLabel.tool.get_datetime.param.offsetDays'),
+			description: tNow('promptLabel.tool.get_datetime.param.offsetDays.desc'),
+			zone: 'tool',
+			placeholders: [],
+			allowOverride: true,
+		},
+		// --- get_active_note ---
+		{
+			id: 'tool.get_active_note.description',
+			label: tNow('promptLabel.tool.get_active_note.description'),
+			description: tNow('promptLabel.tool.get_active_note.description.desc'),
+			zone: 'tool',
+			placeholders: [],
+			allowOverride: true,
+		},
+		{
+			id: 'tool.get_active_note.param.includeSelection',
+			label: tNow('promptLabel.tool.get_active_note.param.includeSelection'),
+			description: tNow('promptLabel.tool.get_active_note.param.includeSelection.desc'),
+			zone: 'tool',
+			placeholders: [],
+			allowOverride: true,
+		},
+		{
+			id: 'tool.get_active_note.param.includeFrontmatter',
+			label: tNow('promptLabel.tool.get_active_note.param.includeFrontmatter'),
+			description: tNow('promptLabel.tool.get_active_note.param.includeFrontmatter.desc'),
+			zone: 'tool',
+			placeholders: [],
+			allowOverride: true,
+		},
+		// --- get_daily_note ---
+		{
+			id: 'tool.get_daily_note.description',
+			label: tNow('promptLabel.tool.get_daily_note.description'),
+			description: tNow('promptLabel.tool.get_daily_note.description.desc'),
+			zone: 'tool',
+			placeholders: [],
+			allowOverride: true,
+		},
+		{
+			id: 'tool.get_daily_note.param.date',
+			label: tNow('promptLabel.tool.get_daily_note.param.date'),
+			description: tNow('promptLabel.tool.get_daily_note.param.date.desc'),
+			zone: 'tool',
+			placeholders: [],
+			allowOverride: true,
+		},
+		// --- list_recent_notes ---
+		{
+			id: 'tool.list_recent_notes.description',
+			label: tNow('promptLabel.tool.list_recent_notes.description'),
+			description: tNow('promptLabel.tool.list_recent_notes.description.desc'),
+			zone: 'tool',
+			placeholders: [],
+			allowOverride: true,
+		},
+		{
+			id: 'tool.list_recent_notes.param.limit',
+			label: tNow('promptLabel.tool.list_recent_notes.param.limit'),
+			description: tNow('promptLabel.tool.list_recent_notes.param.limit.desc'),
+			zone: 'tool',
+			placeholders: [],
+			allowOverride: true,
+		},
+		// --- get_note_outline ---
+		{
+			id: 'tool.get_note_outline.description',
+			label: tNow('promptLabel.tool.get_note_outline.description'),
+			description: tNow('promptLabel.tool.get_note_outline.description.desc'),
+			zone: 'tool',
+			placeholders: [],
+			allowOverride: true,
+		},
+		{
+			id: 'tool.get_note_outline.param.path',
+			label: tNow('promptLabel.tool.get_note_outline.param.path'),
+			description: tNow('promptLabel.tool.get_note_outline.param.path.desc'),
+			zone: 'tool',
+			placeholders: [],
+			allowOverride: true,
+		},
 	];
 }
 

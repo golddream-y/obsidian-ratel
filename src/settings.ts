@@ -120,6 +120,10 @@ export interface RatelVaultSettings {
 	memoryContextTotalLimitKB: number;
 	// 关键路径(P-SKILL-1-CORE):Skill 机制总开关,false 时 Agent 不加载 skill。
 	enableSkills: boolean;
+
+	// 关键路径(P-BASIC-ENV):日记约定路径 — get_daily_note 只探测不创建。
+	dailyNoteFolder: string;
+	dailyNoteFormat: string;
 }
 
 /**
@@ -182,6 +186,12 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 		// 关键路径:2 个 skill 工具只读放行(不写文件,只改 system prompt)。
 		activate_skill: 'allow',
 		deactivate_skill: 'allow',
+		// 关键路径(P-BASIC-ENV):环境感知工具只读放行。
+		get_datetime: 'allow',
+		get_active_note: 'allow',
+		get_daily_note: 'allow',
+		list_recent_notes: 'allow',
+		get_note_outline: 'allow',
 	},
 	// 关键路径:默认无任何 override,使用 zh.ts 内置中文模板。
 	promptOverrides: {},
@@ -201,6 +211,9 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 	memoryContextTotalLimitKB: 50,
 	// 关键路径:默认启用 skill 机制,让用户零感知 Discovery 注入。
 	enableSkills: true,
+	// 关键路径:日记默认 vault 根 + YYYY-MM-DD.md,与常见 Daily Notes 约定对齐。
+	dailyNoteFolder: '',
+	dailyNoteFormat: 'YYYY-MM-DD',
 };
 
 /**
@@ -552,6 +565,24 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			],
 		},
 
+		// ==================== Daily note(P-BASIC-ENV) ====================
+		{
+			type: 'group',
+			heading: tNow('settings.daily.heading'),
+			items: [
+				{
+					name: tNow('settings.daily.folder.name'),
+					desc: tNow('settings.daily.folder.desc'),
+					control: { type: 'text', key: 'dailyNoteFolder', placeholder: '' },
+				},
+				{
+					name: tNow('settings.daily.format.name'),
+					desc: tNow('settings.daily.format.desc'),
+					control: { type: 'text', key: 'dailyNoteFormat', placeholder: 'YYYY-MM-DD' },
+				},
+			],
+		},
+
 		// ==================== Developer ====================
 			{
 				type: 'group',
@@ -602,11 +633,22 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			forget_memory: 'settings.toolPermissions.forget_memory',
 			activate_skill: 'settings.toolPermissions.activate_skill',
 			deactivate_skill: 'settings.toolPermissions.deactivate_skill',
+			get_datetime: 'settings.toolPermissions.get_datetime',
+			get_active_note: 'settings.toolPermissions.get_active_note',
+			get_daily_note: 'settings.toolPermissions.get_daily_note',
+			list_recent_notes: 'settings.toolPermissions.list_recent_notes',
+			get_note_outline: 'settings.toolPermissions.get_note_outline',
 		};
 		const key = map[toolName];
 		return key ? tNow(key) : toolName;
 	};
-		const allTools = ['search_vault', 'read_note', 'grep', 'glob', 'list_files', 'write_note', 'append_note', 'edit_note', 'delete_note', 'search_memory', 'remember', 'forget_memory', 'activate_skill', 'deactivate_skill'];
+		const allTools = [
+			'search_vault', 'read_note', 'grep', 'glob', 'list_files',
+			'write_note', 'append_note', 'edit_note', 'delete_note',
+			'search_memory', 'remember', 'forget_memory',
+			'activate_skill', 'deactivate_skill',
+			'get_datetime', 'get_active_note', 'get_daily_note', 'list_recent_notes', 'get_note_outline',
+		];
 
 		const items: SettingGroupItem[] = [
 			{

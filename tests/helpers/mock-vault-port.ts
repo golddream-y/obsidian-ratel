@@ -3,9 +3,13 @@ import type { VaultPort } from '../../src/ports/vault';
 export interface MockVaultState {
 	files: Record<string, string>;
 	dirs?: Record<string, { files: string[]; folders: string[] }>;
+	/** 可选 mtime 覆盖;缺省用固定递增值 */
+	mtimes?: Record<string, number>;
+	metadata?: Record<string, import('../../src/ports/vault').VaultMetadata | null>;
 }
 
 export function createMockVaultPort(state: MockVaultState = { files: {} }): VaultPort {
+	let autoMtime = 1_700_000_000_000;
 	return {
 		readFile: async (path) => {
 			if (!(path in state.files)) throw new Error(`File not found: ${path}`);
@@ -47,7 +51,15 @@ export function createMockVaultPort(state: MockVaultState = { files: {} }): Vaul
 			return next;
 		},
 		getBacklinks: () => new Map(),
-		getMetadata: () => null,
+		getMetadata: (path) => {
+			if (state.metadata && path in state.metadata) return state.metadata[path] ?? null;
+			return null;
+		},
 		listMarkdownFiles: () => Object.keys(state.files).filter((p) => p.endsWith('.md')),
+		stat: (path) => {
+			if (!(path in state.files)) return null;
+			const mtime = state.mtimes?.[path] ?? (autoMtime += 1000);
+			return { mtime, ctime: mtime, size: state.files[path]!.length };
+		},
 	};
 }

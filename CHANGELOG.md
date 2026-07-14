@@ -5,6 +5,16 @@
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-07-14
+
+### Added
+- **Agent 基础环境感知** — 每轮 `ask()` 注入本地时间(「今天几号」通常无需调工具);新增只读工具 `get_datetime` / `get_active_note` / `get_daily_note` / `list_recent_notes` / `get_note_outline`(工具总数 14→19)
+- **WorkspacePort** — 活动 Markdown 文件与编辑器选区与 Vault IO 解耦;`get_note_outline` 走 `metadataCache.headings`,禁止全文正则
+- **日记约定设置** — `dailyNoteFolder` / `dailyNoteFormat`(`YYYY-MM-DD`);`get_daily_note` 只探测路径,不自动创建
+
+### Changed
+- **README / 使用手册** — 以社区商店安装为主入口;手册改为场景表驱动;架构文档同步 WorkspacePort 与环境工具
+
 ## [0.1.4] - 2026-07-14
 
 ### Fixed

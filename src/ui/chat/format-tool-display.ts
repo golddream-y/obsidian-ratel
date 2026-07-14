@@ -24,6 +24,11 @@ const TOOL_NAME_KEY: Record<string, StringKey> = {
 	grep: 'tool.name.grep',
 	glob: 'tool.name.glob',
 	search_vault: 'tool.name.search_vault',
+	get_datetime: 'tool.name.get_datetime',
+	get_active_note: 'tool.name.get_active_note',
+	get_daily_note: 'tool.name.get_daily_note',
+	list_recent_notes: 'tool.name.list_recent_notes',
+	get_note_outline: 'tool.name.get_note_outline',
 };
 
 /**
@@ -73,6 +78,19 @@ export function formatToolDisplayName(name: string, args: unknown): string {
 		case 'search_vault': {
 			// search_vault 模板无占位符,直接返回本地化名
 			return tNow('tool.name.search_vault');
+		}
+		case 'get_datetime':
+			return tNow('tool.name.get_datetime');
+		case 'get_active_note':
+			return tNow('tool.name.get_active_note');
+		case 'get_daily_note':
+			return tNow('tool.name.get_daily_note');
+		case 'list_recent_notes':
+			return tNow('tool.name.list_recent_notes');
+		case 'get_note_outline': {
+			const p = extractPath(obj.path);
+			const key = TOOL_NAME_KEY[name];
+			return p && key ? tNow(key, { path: p }) : name;
 		}
 		default:
 			return name;

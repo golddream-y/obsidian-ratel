@@ -227,7 +227,7 @@ graph TB
 | **Agent** | agent-loop | 主循环:思考 → 调工具 → 拿结果 → 生成回答 | [agent/agent-loop.md](agent/agent-loop.md) |
 | **Agent** | context-manager | 上下文管理:消息历史 / 搜索结果注入 / 上下文压缩(系统提示词见 prompt-management) | [agent/context-manager.md](agent/context-manager.md) |
 | **Agent** | prompt-management | 提示词 registry + Composer:中文模板 / 动态注入 / section 覆盖 | [agent/prompt-management.md](agent/prompt-management.md) |
-| **Agent** | tools | 工具系统:注册、发现、调用、返回格式 | [agent/tools.md](agent/tools.md) |
+| **Agent** | tools | 工具系统:注册、发现、调用、返回格式(含环境感知只读工具) | [agent/tools.md](agent/tools.md) |
 | **Agent** | hooks | 知识治理钩子:pre-write / post-write 阶段化扩展点 | [agent/hooks.md](agent/hooks.md) |
 | **LLM** | model-management | 模型管理:Embedding + Reranker + LLM 的接口级统一管理 | [llm/model-management.md](llm/model-management.md) |
 | **LLM** | streaming | 流式协议:SSE 解析、取消、重试、CORS 策略 | [llm/streaming.md](llm/streaming.md) |
@@ -255,6 +255,8 @@ graph TB
         PV["vector.ts"]
         PL["llm.ts"]
         PE["embedding.ts"]
+        PW["workspace.ts"]
+        PS["skill-port.ts"]
     end
 
     subgraph "Adapter 实现(可替换)"
@@ -264,6 +266,7 @@ graph TB
         ALA["llm-anthropic"]
         AEL["embedding-local"]
         AEA["embedding-api"]
+        AOW["obsidian-workspace"]
     end
 
     Core --> PP
@@ -277,6 +280,7 @@ graph TB
     PL -.-> ALA
     PE -.-> AEL
     PE -.-> AEA
+    PW -.-> AOW
 ```
 
 **规则**:
@@ -360,5 +364,7 @@ graph TB
 | ADR-001 CORS | `docs/adr/2026-06-14-ratel-cors-strategy.md` | LLM 端点 CORS 处理策略 |
 | ADR-006 发版资产 | `docs/adr/2026-06-28-release-asset-distribution.md` | Worker 内联 + WASM 懒下载(商店三文件约束) |
 | ADR-007 Context Window | `docs/adr/2026-06-28-model-context-window-registry.md` | LiteLLM 映射表 + 预设下拉(128k/200k/256k/1M/自定义) |
+| ADR-009 Skill | `docs/adr/2026-07-06-skill-mechanism.md` | Skill 三源加载与端口 |
+| S-BASIC-ENV | `docs/superpowers/specs/2026-07-14-agent-basic-env-design.md` | 环境感知:时间注入 + WorkspacePort + daily/recent/outline |
 | STATUS.md | `docs/superpowers/STATUS.md` | spec / plan 状态追踪 |
 | 归档 | `docs/superpowers/archive/` | 已完成的 spec/plan 历史档案 |
