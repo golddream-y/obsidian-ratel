@@ -27,6 +27,21 @@ jobs:
                   npm run build
                   test -f dist/main.js
 
+            # 安全路径:0.1.2 曾误传与 0.1.1 相同的 main.js(仍含 deprecated display()),
+            # 被 Obsidian plugin checker 静默拦截。门禁保证 release 产物不含 this.display()。
+            - name: Gate — no deprecated display() in bundle
+              run: |
+                  if grep -q 'this\.display()' dist/main.js; then
+                    echo "::error::dist/main.js still contains this.display() — Obsidian plugin checker will reject (no-deprecated-display)"
+                    exit 1
+                  fi
+                  # 声明式设置必须落地:空 stub getSettingDefinitions(){return[]} 也不合格
+                  if grep -q 'getSettingDefinitions(){return\[\]}' dist/main.js; then
+                    echo "::error::dist/main.js has empty getSettingDefinitions stub — settings migration missing from bundle"
+                    exit 1
+                  fi
+                  echo "release gate passed: no this.display(), getSettingDefinitions is non-empty"
+
             - name: Check for optional styles
               id: styles
               run: |
