@@ -5,12 +5,18 @@
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-07-14
+
+### Fixed
+- **社区商店安装加载失败** — 0.1.2 release 的 `main.js` 与 0.1.1 字节级相同,仍含 deprecated `PluginSettingTab.display()`,被 Obsidian 1.13+ plugin checker(`no-deprecated-display`)静默拦截;本版重新构建正确产物(声明式 `getSettingDefinitions()`),CI 增加 `this.display()` 门禁防止复发
+
 ### Added
 - **Skill 机制基础层** — 三源加载(builtin `<pluginDir>/skills/` + global `~/.ratel/skills/` + vault `.ratel/skills/`),gray-matter frontmatter 解析;`SkillRegistry` enabled/disabled/active 三态管理;`SkillPort` 端口 + `skill-fs`/`skill-vault` 双适配器(node:fs 与 VaultPort);2 个工具 `activate_skill`/`deactivate_skill`;3 个斜杠命令 `/skill`/`/skills`/`/skill off`;`agent.skills` prompt section(zone: 'dynamic')注入 Discovery + Active 段;Settings 面板新增「Skills」group(enableSkills 开关)
 - **用户记忆系统** — 两层架构(global + topic),Agent 跨会话记住用户偏好与决策;3 个工具 `search_memory`/`remember`/`forget_memory`;记忆存于 vault 的 `.ratel/memory/`,纯 Markdown 可直接编辑;`MemoryStore` 注入 `EmbeddingPort` 预计算向量,独立索引;启动时 global.md + index.md 注入 system prompt(20KB 截断 + retrieval wrapper 防注入);总存储上限 10MB
 - **记忆管理面板** — Svelte 5 侧边栏面板(brain 图标),查看/搜索/筛选/行内编辑/删除记忆条目;设置面板新增「记忆」group(6 个参数:启用/自动写入/存储上限/注入上限/动态上限/上下文总上限)
 - **i18n V2 基础设施** — `src/i18n/` 模块(svelte/store-based),12 namespace ~340 key,开放式 Strings interface 扩展;中英文界面切换,Settings → Ratel → Language 下拉(auto 跟随系统 / 中文 / English),UI 文案即时生效
 - **tool.name.* 友好名** — 工具调用展示从英文工具名改为本地化友好名(如"查看 xxx.md"、"语义搜索")
+- **Chat UI 打磨** — Header 百分比胶囊 + 状态 tone;StatusLine 精简;work 条(indexing/downloading/preparing 等);抽屉精简
 - **smart reindex 启动路径** — 启动期 hash diff 跳过未变更文件,热启动零 embed 调用
 - **IndexManifest 持久化** — `pluginDir/index-manifest.json` 记录每文件 sha256 + mtime + chunkCount + 全局 embedding 参数,原子写避免半写损坏
 - **mtime 快速跳过** — mtime 未变则不读 content 不算 sha256,直接复用旧 hash
