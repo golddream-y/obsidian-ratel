@@ -25,8 +25,10 @@ jobs:
               run: |
                   # 安全路径:package-lock 在 macOS 生成时可能缺 Linux optional 依赖
                   # (@emnapi 等),npm ci 会 EUSAGE。改用 npm install 保证跨平台可装。
+                  # 发版只跑 esbuild production — npm run build 还含 tsc/svelte-check,
+                  # tests/ 预存 TS 错误会阻断 release(与运行时产物无关)。
                   npm install --no-fund --no-audit
-                  npm run build
+                  node esbuild.config.mjs production
                   test -f dist/main.js
 
             # 安全路径:0.1.2 曾误传与 0.1.1 相同的 main.js(仍含 deprecated display()),

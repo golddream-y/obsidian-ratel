@@ -61,13 +61,14 @@ export function formatToolDisplayName(name: string, args: unknown): string {
 			const p = extractPath(obj.path);
 			const key = TOOL_NAME_KEY[name];
 			// 关键路径:参数存在时才用 i18n 模板,否则 {path} 占位符会以字面量泄漏
-			return p ? tNow(key, { path: p }) : name;
+			// 关键路径:noUncheckedIndexedAccess 下 Record 索引可能 undefined,回退英文工具名。
+			return p && key ? tNow(key, { path: p }) : name;
 		}
 		case 'grep':
 		case 'glob': {
 			const pat = extractShort(obj.pattern);
 			const key = TOOL_NAME_KEY[name];
-			return pat ? tNow(key, { pattern: pat }) : name;
+			return pat && key ? tNow(key, { pattern: pat }) : name;
 		}
 		case 'search_vault': {
 			// search_vault 模板无占位符,直接返回本地化名
