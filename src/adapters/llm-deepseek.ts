@@ -10,6 +10,7 @@ import * as https from 'node:https';
 import * as http from 'node:http';
 import type { IncomingMessage } from 'node:http';
 import type { LLMClient, ChatRequest, ChatDelta, ToolCall } from '../ports/llm';
+import { sanitizeToolMessageOrder } from '../core/tool-message-align';
 import { tNow } from '../i18n';
 
 /**
@@ -390,6 +391,7 @@ export class DeepSeekLLM implements LLMClient {
 	 * 构造 OpenAI 兼容的请求体。
 	 *
 	 * 关键转换:
+	 * - 上送前 `sanitizeToolMessageOrder` — 丢弃孤立 role=tool,避免网关 400。
 	 * - 助手消息若携带 `toolCallId`,补齐 `tool_calls` 数组,让多轮工具调用上下文完整。
 	 * - 工具消息(`role: 'tool'`)需要 `tool_call_id` 把结果回绑到对应调用。
 	 *
@@ -397,7 +399,8 @@ export class DeepSeekLLM implements LLMClient {
 	 * @returns 序列化前的请求体对象。
 	 */
 	private buildRequestBody(req: ChatRequest): Record<string, unknown> {
-		const messages: Record<string, unknown>[] = req.messages.map((m) => {
+		const safeMessages = sanitizeToolMessageOrder(req.messages);
+		const messages: Record<string, unknown>[] = safeMessages.map((m) => {
 			const msg: Record<string, unknown> = { role: m.role, content: m.content };
 			if (m.role === 'assistant' && m.toolCallId) {
 				// OpenAI 协议要求 content 与 tool_calls 同时存在;空内容置 null。

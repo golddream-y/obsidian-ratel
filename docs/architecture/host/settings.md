@@ -59,15 +59,17 @@
 
 ## 3. 配置项分组
 
+设置 UI 按四 Tab 归栏(对话模型 / 笔记索引 / 记忆与权限 / 高级);字段仍落在同一 `RatelVaultSettings`。
+
 ```mermaid
 graph TB
     subgraph "RatelVaultSettings"
-        CHAT["Chat<br/>chatModel / chatApiBase<br/>(Key 在 SecretStorage)"]
-        EMB["Embedding<br/>embedProvider: 'local' | 'api'<br/>local: embedLocalModel / embedLocalDimensions<br/>api: embedApiBase / embedApiModel /<br/>embedApiDimensions<br/>(Key 在 SecretStorage)"]
-        RER["Reranker(可选)<br/>rerankerProvider / rerankerApiBase /<br/>rerankerModel<br/>(Key 在 SecretStorage,未配置则自动关闭)"]
-        IDX["Indexing<br/>chunkSize / chunkOverlap / autoIndex /<br/>indexPaused / embedModelActive /<br/>embedAvailableModels / embedDownloadedModels"]
-        LINK["Link Suggestions<br/>autoSuggestLinks / linkConfidenceThreshold"]
+        CHAT["Chat<br/>chatPreset / chatModel / chatApiBase<br/>(Key 在 SecretStorage)"]
+        EMB["Embedding<br/>embedProvider: 'local' | 'api'<br/>local / api 字段组"]
+        RER["Reranker(可选)<br/>rerankerApiBase / rerankerModel"]
+        IDX["Indexing<br/>chunkSize / chunkOverlap / autoIndex / …"]
         TOOLS["Tools & Security<br/>toolPermissions / trustMode"]
+        MEM["Memory / Skills / Daily"]
         PROMPTS["Prompts<br/>promptOverrides"]
     end
 ```
@@ -76,12 +78,13 @@ graph TB
 
 | 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `chatModel` | string | `deepseek-chat` | 模型标识 |
+| `chatPreset` | `'deepseek' \| 'ollama' \| 'custom'` | `deepseek` | 场景预设;手改模型/Base 置为 custom |
+| `chatModel` | string | `deepseek-v4-flash` | 模型标识 |
 | `chatApiBase` | string | `https://api.deepseek.com` | API base URL |
 
-**API Key**:存储在 SecretStorage,固定 secret ID `ratel-chat-key`。用户在 Obsidian 设置 → Keychain 手动添加。本地 Ollama 端点不需要。详见 [secrets](../agent/secrets.md)。
+**API Key**:存储在 SecretStorage,固定 secret ID `ratel-chat-openai-compatible`。用户在 Obsidian 设置 → Keychain 手动添加。本地 Ollama 端点不需要。详见 [secrets](../agent/secrets.md)。
 
-**热重载**:`chatModel` / `chatApiBase` 任一变更都调 `plugin.rebuildLLM()`。Key 变更由 `secrets` 模块通知重建。
+**热重载**:`chatModel` / `chatApiBase` / `chatPreset` 任一变更都调 `plugin.rebuildLLM()`。Key 变更由 `secrets` 模块通知重建。
 
 ### 3.2 Embedding
 
@@ -94,9 +97,9 @@ graph TB
 | `embedApiModel` | string | `bge-m3` | API 模型标识 |
 | `embedApiDimensions` | number | `1024` | API 模型向量维度 |
 
-**API Key**:存储在 SecretStorage,固定 secret ID `ratel-embed-key`。本地 Ollama 端点不需要。详见 [secrets](../agent/secrets.md)。
+**API Key**:存储在 SecretStorage,固定 secret ID `ratel-embed-openai-compatible`。本地 Ollama 端点不需要。详见 [secrets](../agent/secrets.md)。
 
-**热重载**:任一字段变更调 `plugin.rebuildEmbeddingAdapter()`。Provider 切换还会触发 `this.display()` 整体重渲染,显示对应字段组。
+**热重载**:任一字段变更调 `plugin.rebuildEmbeddingAdapter()`。Provider 切换后 `setControlValue` → `update()` 重渲染,由 `visible()` 互斥显示 local / api 字段。
 
 ### 3.3 Reranker(可选)
 
@@ -181,25 +184,32 @@ graph TB
 
 ## 4. 设置面板渲染
 
-`RatelVaultSettingTab extends PluginSettingTab`,渲染逻辑在 `display()`:
+`RatelVaultSettingTab extends PluginSettingTab`,**禁止** `PluginSettingTab.display()`;全部走声明式 `getSettingDefinitions()`(Obsidian 1.13+)。
+
+顶栏四个 Tab(对话模型 / 笔记索引 / 记忆与权限 / 高级),各内容 group 用声明式 **`visible: () => 当前 Tab || 搜索中`** 切换。
+
+**关键路径:**
+- **不要**用 group `cls` + CSS `is-hidden` 做 Tab 门控 — Obsidian `refreshDomState`/`update` 会重算 `visible`,但**不会**可靠更新 `cls`,会导致「Tab 条变了、主内容区不动」。
+- `visible:false` 仅在该次 render 周期排除搜索(见 `SettingDefinitionBase.visible`);搜索框有查询时全部 `visible=true`,跨 Tab 可搜。
+- Tab 点击:先更新按钮 `ratel-diag-tab-active`,再 `refreshDomState()`(比重做整页 `update()` 轻,避免诊断 page 闪烁)。
+- 诊断入口是 `SettingDefinitionPage`,仅在「高级」或搜索中可见。
 
 ```mermaid
 flowchart TB
-    START["display() 被调"] --> EMPTY["containerEl.empty()"]
-    EMPTY --> CHAT["渲染 Chat 组(无 Key 输入框,显示 SecretStorage 提示)"]
-    CHAT --> EMB["渲染 Embedding 组"]
-    EMB --> CHECK{"embedProvider?"}
-    CHECK -->|"local"| LOCAL["显示 embedLocalModel 字段"]
-    CHECK -->|"api"| API["显示 embedApiBase / model 字段(无 Key 输入框)"]
-    LOCAL --> RER
-    API --> RER["渲染 Reranker 组(无 Key 输入框,显示密钥提示)"]
-    RER --> IDX["渲染 Indexing 组"]
-    IDX --> LINK["渲染 Link Suggestions 组"]
-    LINK --> TOOLS["渲染 Tools & Security 组"]
-    TOOLS --> PROMPTS["渲染 Prompts 组"]
+    START["getSettingDefinitions()"] --> STRIP["顶栏 Tab 条 render"]
+    STRIP --> CHAT["对话模型:语言 / chatPreset / 模型 / Base / 钥匙串 checklist"]
+    STRIP --> IDX["笔记索引:Embedding / 分块 / Rerank"]
+    STRIP --> AGENT["记忆与权限:memory / skills / 日记 / trustMode / toolPermissions"]
+    STRIP --> ADV["高级:Context / registry / prompts / 容量 / developer / 诊断 page"]
+    CHAT --> VIS{"visible: 当前 Tab 或搜索中?"}
+    IDX --> VIS
+    AGENT --> VIS
+    ADV --> VIS
+    VIS -->|"否"| HIDE["框架隐藏该 group"]
+    VIS -->|"是"| SHOW["正常渲染"]
 ```
 
-**关键路径**:Provider 切换时 `onChange` 内调 `this.display()` 整体重渲染,保证 local / api 字段组互斥显示。API Key 输入框已移除,改为 SecretStorage 提示文本(指引到 Obsidian 设置 → Keychain)。
+嵌套 key(`toolPermissions.*` / `promptOverrides.*`)与副作用(`rebuildLLM` / `rebuildEmbeddingAdapter` / `applyLangPreference`)集中在 `getControlValue` / `setControlValue`。
 
 ---
 
@@ -214,34 +224,34 @@ sequenceDiagram
     participant LLM as LLM 适配器
     participant EMB as Embedding 适配器
 
-    U->>ST: 修改 chatApiKey
-    ST->>P: saveSettings()
+    U->>ST: 改 chatPreset / chatModel / chatApiBase
+    ST->>ST: setControlValue → saveSettings
     ST->>P: rebuildLLM()
     P->>LLM: 丢弃旧实例,new DeepSeekLLM(newConfig)
     LLM-->>P: 新实例就绪
+    ST->>ST: update() 重渲染声明式定义
 
     U->>ST: 切换 embedProvider local→api
-    ST->>P: saveSettings()
+    ST->>ST: setControlValue → saveSettings
     ST->>P: rebuildEmbeddingAdapter()
     P->>EMB: 丢弃旧实例,new EmbeddingAPI(newConfig)
     EMB-->>P: 新实例就绪
-    ST->>ST: this.display() 重渲染
+    ST->>ST: update() 重渲染(visible 互斥字段)
 ```
 
 **哪些字段触发重建**:
 
 | 字段组 | 触发 rebuild |
 |---|---|
-| Chat(`chatModel` / `chatApiBase`) | `rebuildLLM()` |
+| Chat(`chatPreset` / `chatModel` / `chatApiBase`) | `rebuildLLM()` |
 | Chat API Key(SecretStorage) | `rebuildLLM()`(由 secrets 模块通知) |
-| Embedding 所有字段 | `rebuildEmbeddingAdapter()` |
+| Embedding 所有字段(除只读 `embedLocalModel`) | `rebuildEmbeddingAdapter()` |
 | Embedding API Key(SecretStorage) | `rebuildEmbeddingAdapter()`(由 secrets 模块通知) |
 | Reranker 字段 | 无 rebuild(运行时读 settings) |
 | Reranker API Key(SecretStorage) | 无 rebuild(运行时读 secrets,未配置则自动关闭) |
 | Indexing 字段 | 无 rebuild(Worker 启动时读) |
-| Link Suggestions | 无 rebuild(运行时读) |
 | Tools & Security | 无 rebuild(Agent Loop 运行时读) |
-| Prompts | 无 rebuild(Composer 下次调用时重新拼接) |
+| Prompts | `syncToolDefinitions()`(热替换 tool schema) |
 
 ---
 
@@ -259,6 +269,6 @@ sequenceDiagram
 
 | 阶段 | 能力 | 状态 |
 |---|---|---|
-| 当前 | 7 组配置(Chat/Embedding/Reranker/Indexing/Link/Tools&Security/Prompts)+ 热重载 + 立即写盘 + SecretStorage | ✅ 已实现 |
+| 当前 | 四 Tab + `visible` 门控 + chatPreset + 钥匙串 checklist + 热重载 | ✅ 已实现 |
 | 后续 | 配置版本号 + 迁移函数 | 待实现(与 persistence 协同) |
 | 远期 | 配置导入导出 + 多 profile | 远期 |

@@ -5,6 +5,21 @@
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-07-15
+
+### Added
+- **设置四 Tab** — 对话模型 / 笔记索引 / 记忆与权限 / 高级;`chatPreset`(DeepSeek / Ollama / 自定义);默认对话模型 `deepseek-v4-flash`;钥匙串 checklist 前置
+- **`@` 笔记引用** — 输入补全 + chip 条 + 文件菜单「添加到 Ratel」;发送策略 A(只带 `@相对路径`,不预读全文)
+
+### Fixed
+- **索引每次重启全量重建** — 清单迁入 `.index/ratel-manifest.json`(兼容旧根目录路径);有索引无清单时只重建 hash,不全量 embed;全量后写真实 mtime/非空 entries
+- **DeepSeek 400 孤立 `role:tool`** — `/compact` 保留窗口对齐 + 上送前 `sanitizeToolMessageOrder`
+- **设置 Tab 切换无效** — 改用声明式 `visible` + `refreshDomState`(不再依赖 CSS `is-hidden`)
+- **对话进行中状态三重叠** — 不再误标 `model:checking`;StatusLine / work-bar / 打字指示去重
+
+### Changed
+- README / user-guide 场景与设置速查按 Tab 更新;架构文档同步 settings / vector-index / chat
+
 ## [0.1.5] - 2026-07-14
 
 ### Added

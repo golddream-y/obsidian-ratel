@@ -26,9 +26,10 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 
 ### 2.2 第一次打开
 
-1. **配对话模型**（设置 → Ratel）  
-   - 远端：填 API Base + 模型名；钥匙串添加 `ratel-chat-openai-compatible`  
-   - 本机 Ollama：Base 如 `http://localhost:11434`，通常免 Key  
+1. **配对话模型**（设置 → Ratel → **对话模型**）  
+   - 场景预设选 DeepSeek 或 Ollama，或自定义 Base / 模型  
+   - DeepSeek：钥匙串添加 `ratel-chat-openai-compatible`；默认模型 `deepseek-v4-flash`  
+   - Ollama：Base 指向 `http://localhost:11434/v1`（通常无需 Key）  
 2. **等索引** — 底部状态条显示索引进度；可继续用 Obsidian  
 3. 点侧栏 🦡（或命令面板 → `Ratel: Ask vault`）开始提问
 
@@ -36,7 +37,7 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 
 ### 2.3 界面语言
 
-设置 → Ratel → Language：`auto` / 中文 / English。UI 即时切换；命令面板里的命令名需重启 Obsidian 才刷新。
+设置 → Ratel → **对话模型** → Language：`auto` / 中文 / English。UI 即时切换；命令面板里的命令名需重启 Obsidian 才刷新。
 
 ---
 
@@ -61,7 +62,7 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 
 ## 4. 日记约定
 
-设置 → Ratel → **日记约定**：
+设置 → Ratel → **记忆与权限** → 日记约定：
 
 | 项 | 默认 | 说明 |
 |---|---|---|
@@ -114,6 +115,8 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 | `/reindex` | 强制全量重建索引 |
 | `/skill` / `/skills` / `/skill off` | Skill 激活 / 列表 / 关闭 |
 
+聊天输入 `@`：按文件名/路径补全库内笔记，发送时只保留 `@相对路径` 字面量（不预读全文）。也可在文件资源管理器右键 Markdown → **添加到 Ratel**。
+
 命令面板（不在 `/` 菜单里）：
 
 - `Ratel: Ask vault` / 显示索引状态  
@@ -124,16 +127,14 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 
 ## 8. 设置速查
 
-| 分组 | 常用项 |
+打开 **设置 → Ratel** 即见顶栏四个 Tab：
+
+| Tab | 常用项 |
 |---|---|
-| 对话 | API Base、模型、Context Length |
-| 嵌入 | 本地 ONNX / API；改 provider 或分块参数后需**重启 Obsidian** |
-| Rerank | 可选；钥匙串 `ratel-rerank-bailian` |
-| 日记约定 | 文件夹 + 文件名格式 |
-| 工具权限 | 每工具 allow / ask / deny；信任模式慎开 |
-| 记忆 | 开关、自动写入、容量上限 |
-| Skills | 总开关 |
-| 提示词（高级） | 按段覆盖 system / 工具描述（热生效） |
+| **对话模型** | 语言、场景预设（DeepSeek / Ollama / 自定义）、模型、API Base、钥匙串状态 |
+| **笔记索引** | Embedding、分块 / 自动索引、Rerank |
+| **记忆与权限** | 记忆开关与面板、Skills、日记约定、信任模式、全部工具权限 |
+| **高级** | Context Length、模型 registry、提示词覆盖、记忆容量、开发者选项、诊断 |
 
 ### API Key（钥匙串）
 

@@ -133,7 +133,8 @@ src/ui/
 ├── chat/                       # 聊天主子系统
 │   ├── ChatView.svelte         # 编排层(~200 行)
 │   ├── message-stream/         # 消息流渲染(segments 模型)
-│   ├── input/                  # SlashMenu / AttachmentStrip
+│   ├── input/                  # SlashMenu / MentionMenu / MentionStrip / AttachmentStrip
+│   ├── compact-session.ts      # /compact — 保留窗口经 tool 对齐
 │   └── chat-send-gate.ts / chat-error.ts / format-tool-display.ts
 ├── status/                     # StatusLine / StatusDrawer
 ├── tokens/                     # token-estimator / probe-model
@@ -150,7 +151,9 @@ graph TB
         SL["status/StatusLine<br/>(30px 常驻底部)"]
         SD["status/StatusDrawer<br/>(展开时显示详情)"]
         AS["chat/input/AttachmentStrip"]
+        MS["chat/input/MentionStrip<br/>(@path chip)"]
         SM["chat/input/SlashMenu<br/>(输入 / 时弹出)"]
+        MM["chat/input/MentionMenu<br/>(输入 @ 时弹出,与 / 互斥)"]
         IR["InputRow<br/>(+ 按钮 + textarea + Send/Stop)"]
     end
 
@@ -285,13 +288,30 @@ sequenceDiagram
 **编排层职责边界:**
 
 ChatView.svelte 瘦身到 ~200 行,只承担:
-1. **状态持有:** `messages` / `input` / `isRunning` / `sessionId` / `drawerExpanded` / `keyTick`
-2. **派生状态:** `gate` / `slashVisible` / `showThinking` / `modelName` / `hasKey`
+1. **状态持有:** `messages` / `input` / `isRunning` / `sessionId` / `drawerExpanded` / `keyTick` / `mentionPaths`
+2. **派生状态:** `gate` / `slashVisible` / `mentionVisible` / `modelName` / `hasKey` / `workBar`
 3. **事件循环:** `sendMessage()` 内的 `for await (const event of events)` 调 segment-appender
-4. **子组件编排:** `<MessageList>` + `<StatusLine>` + `<StatusDrawer>` + `<SlashMenu>` + `<AttachmentStrip>`
+4. **子组件编排:** `<MessageList>` + `<StatusLine chatBusy>` + `<StatusDrawer>` + `<SlashMenu>` + `<MentionMenu>` + `<MentionStrip>` + `<AttachmentStrip>`
 5. **生命周期:** `onMount` / `onDestroy` / abortController 管理
 
-不承担:消息渲染细节(下沉到 MessageBubble / 各 Segment)、工具 displayName 格式化(在 `format-tool-display.ts`)、token 估算(在 `tokens/token-estimator.ts`)、斜杠命令执行细节(在 `input/slash-commands.ts`)。
+不承担:消息渲染细节(下沉到 MessageBubble / 各 Segment)、工具 displayName 格式化(在 `format-tool-display.ts`)、token 估算(在 `tokens/token-estimator.ts`)、斜杠命令执行细节(在 `input/slash-commands.ts`)、@ 路径解析(在 `input/mention-parser.ts`)。
+
+### 6.1 `@` mention(策略 A)
+
+- 输入 `@` 弹出 `MentionMenu`(debounce ≥80ms,topK≤20,只扫 `getMarkdownFiles()` 的 path/basename,**零 readFile**)
+- 与 `/` 斜杠**互斥**;chip 在 `MentionStrip`;textarea 只插字面量 `@vault相对路径`
+- 文件菜单「添加到 Ratel」→ `activateChatView` + `insertChatMention(TFile.path)`
+- 发送不预读全文;绝对路径粘贴拦截
+
+### 6.2 进行中状态(防三重叠)
+
+- 对话进行中**不** patch `model: 'checking'`(model 态由 FeedbackController 维护)
+- `MessageList` 打字指示是唯一「思考中」;StatusLine 在 `chatBusy` 时压制第二条「思考中」;work-bar 对话中不叠「准备模型/搜索中」
+
+### 6.3 工具历史协议(`/compact` + 上送)
+
+- `alignPreservedToolMessages` / `sanitizeToolMessageOrder`(`core/tool-message-align.ts`)丢弃孤立 `role:tool`
+- `compactSession` 保留窗口经 align;`DeepSeekLLM.buildRequestBody` 上送前再 sanitize(双保险)
 
 ---
 

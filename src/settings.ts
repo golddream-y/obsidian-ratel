@@ -47,6 +47,13 @@ import {
 	renderPromptOverrideSection,
 	renderPromptPreviewButton,
 } from './ui/settings/prompt-override-render';
+import {
+	applyChatPreset,
+	type ChatPresetId,
+} from './settings/chat-preset';
+
+/** 设置顶栏 Tab ID(仅 UI 态,不落盘) */
+export type SettingsUiTab = 'chat' | 'index' | 'agent' | 'advanced';
 
 /**
  * 全部用户可配置项。
@@ -60,6 +67,8 @@ export interface RatelVaultSettings {
 	// 关键路径:界面语言偏好,'auto' 跟随 navigator.language,显式 'zh'/'en' 覆盖
 	language: LangPreference;
 	// Chat
+	/** 场景预设 — DeepSeek / Ollama / 自定义;手改模型或 Base 会置为 custom */
+	chatPreset: ChatPresetId;
 	chatModel: string;
 	chatApiBase: string;
 	/** 模型上下文窗口上限(token) — StatusLine 上下文使用率计算 */
@@ -135,6 +144,8 @@ export interface RatelVaultSettings {
 export const DEFAULT_SETTINGS: RatelVaultSettings = {
 	// 关键路径:默认 auto,跟随系统语言(zh* → zh,其余 → en)
 	language: 'auto',
+	// 关键路径:默认 DeepSeek 预设,与官方 Base + deepseek-v4-flash 对齐
+	chatPreset: 'deepseek',
 	chatModel: 'deepseek-v4-flash',
 	chatApiBase: 'https://api.deepseek.com',
 	contextLengthPreset: '256k',
@@ -259,11 +270,19 @@ function contextLengthPresetOptions(): Record<ContextLengthPresetId, string> {
  *
  * 设计要点:
  * - 1.13.0 起用 `getSettingDefinitions()` 声明式 API,删除 deprecated `display()`
+ * - 顶栏四 Tab(对话模型 / 笔记索引 / 记忆与权限 / 高级)用声明式 `visible` 切换,
+ *   搜索激活时全部展开;不用 CSS is-hidden(Obsidian 不随 refresh 更新 cls)
  * - `getControlValue`/`setControlValue` override 处理嵌套 key 与副作用(rebuild/sync)
- * - 诊断 Tab 用 `SettingDefinitionPage` + `DiagnosticsSettingPage` 子类命令式渲染
+ * - 诊断放在「高级」末尾的 `SettingDefinitionPage`
  */
 export class RatelVaultSettingTab extends PluginSettingTab {
 	plugin: RatelVaultPlugin;
+
+	/** 设置顶栏当前 Tab — 仅 UI 态,不落盘;默认对话模型 */
+	private activeSettingsTab: SettingsUiTab = 'chat';
+
+	/** 是否已绑定设置模态全局搜索 input 的 listener */
+	private searchListenerBound = false;
 
 	constructor(app: App, plugin: RatelVaultPlugin) {
 		super(app, plugin);
@@ -271,19 +290,167 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 	}
 
 	/**
+	 * 当前是否为指定顶栏 Tab。
+	 *
+	 * @param tab - Tab ID
+	 * @returns 是否激活
+	 */
+	private isSettingsTab(tab: SettingsUiTab): boolean {
+		return this.activeSettingsTab === tab;
+	}
+
+	/**
+	 * Obsidian 设置模态是否正在全局搜索。
+	 *
+	 * 关键路径:Tab 门控用 `visible: () => tab || search`,搜索时全部展开并可检索;
+	 * `visible:false` 仅在该次 render 周期排除搜索(见 SettingDefinitionBase.visible)。
+	 *
+	 * @returns 搜索框有非空查询时为 true
+	 */
+	private isSettingsSearchActive(): boolean {
+		const container = this.containerEl;
+		if (!container || typeof container.closest !== 'function') {
+			return false;
+		}
+		const modal = container.closest('.modal-container');
+		if (!modal) {
+			return false;
+		}
+		const input =
+			modal.querySelector<HTMLInputElement>('.vertical-tab-header input') ??
+			modal.querySelector<HTMLInputElement>('.search-input-container input');
+		return !!input?.value?.trim();
+	}
+
+	/**
+	 * 绑定设置全局搜索框 — 输入时 update() 以重算面板 is-hidden。
+	 *
+	 * 关键路径:只绑一次,避免每次 Tab 条 render 叠加 listener。
+	 */
+	private bindSettingsSearchListener(): void {
+		if (this.searchListenerBound) {
+			return;
+		}
+		const modal = this.containerEl?.closest?.('.modal-container');
+		if (!modal) {
+			return;
+		}
+		const input =
+			modal.querySelector<HTMLInputElement>('.vertical-tab-header input') ??
+			modal.querySelector<HTMLInputElement>('.search-input-container input');
+		if (!input) {
+			return;
+		}
+		this.searchListenerBound = true;
+		input.addEventListener('input', () => {
+			this.update();
+		});
+	}
+
+	/**
+	 * Tab 内容区静态 class — 仅作样式钩子,不承担显隐。
+	 *
+	 * @param tab - 所属顶栏 Tab
+	 * @returns group.cls 字符串
+	 */
+	private panelCls(tab: SettingsUiTab): string {
+		return `ratel-settings-panel ratel-settings-panel-${tab}`;
+	}
+
+	/**
+	 * 当前是否应显示某 Tab 的内容区。
+	 *
+	 * 关键路径:用声明式 `visible` 而非 CSS `is-hidden`。
+	 * Obsidian `refreshDomState`/`update` 会重算 `visible`,但**不会**可靠更新 `cls`,
+	 * 用 is-hidden 会导致「Tab 条/诊断变了、主内容区不动」。
+	 * 搜索激活时全部 visible=true,仍可进全局搜索(见 SettingDefinitionBase.visible)。
+	 *
+	 * @param tab - 所属顶栏 Tab
+	 */
+	private isPanelVisible(tab: SettingsUiTab): boolean {
+		return this.isSettingsSearchActive() || this.isSettingsTab(tab);
+	}
+
+	/**
 	 * 声明式设置定义 — Obsidian 1.13.0 起替代 display()。
 	 *
-	 * 关键路径:框架根据此返回值自动渲染设置面板,visible() 控制条件项,
-	 * action/render 回调处理命令式逻辑。删除所有 render* 私有方法。
+	 * 关键路径:框架根据此返回值自动渲染设置面板;
+	 * Tab 用 `visible` 切换内容区;embedProvider 等条件项仍用 visible();
+	 * action/render 处理命令式逻辑。
 	 */
 	getSettingDefinitions(): SettingDefinitionItem[] {
 		const settings = this.plugin.settings;
+		const chatCls = this.panelCls('chat');
+		const indexCls = this.panelCls('index');
+		const agentCls = this.panelCls('agent');
+		const advancedCls = this.panelCls('advanced');
+		const chatVisible = () => this.isPanelVisible('chat');
+		const indexVisible = () => this.isPanelVisible('index');
+		const agentVisible = () => this.isPanelVisible('agent');
+		const advancedVisible = () => this.isPanelVisible('advanced');
+		const onAdvancedOrSearch = () => this.isPanelVisible('advanced');
 
 		return [
-			// ==================== General(语言) ====================
+			// ==================== 顶栏 Tab 条 ====================
+			{
+				type: 'group',
+				cls: 'ratel-settings-tab-group',
+				items: [
+					{
+						name: tNow('settings.tabs.strip'),
+						searchable: false,
+						render: (setting) => {
+							this.bindSettingsSearchListener();
+							const el = setting.settingEl;
+							el.empty();
+							el.addClass('ratel-settings-tab-strip');
+							// 搜索展开全部分组时隐藏 Tab 条,避免与「扁平命中列表」抢注意力
+							if (this.isSettingsSearchActive()) {
+								el.hide();
+								return;
+							}
+							el.show();
+							const bar = el.createDiv({ cls: 'ratel-diag-tabs' });
+							const tabs: Array<{ id: SettingsUiTab; labelKey: StringKey }> = [
+								{ id: 'chat', labelKey: 'settings.tabs.chat' },
+								{ id: 'index', labelKey: 'settings.tabs.index' },
+								{ id: 'agent', labelKey: 'settings.tabs.agent' },
+								{ id: 'advanced', labelKey: 'settings.tabs.advanced' },
+							];
+							for (const tab of tabs) {
+								const active = this.activeSettingsTab === tab.id;
+								const btn = bar.createEl('button', {
+									text: tNow(tab.labelKey),
+									cls: 'ratel-diag-tab' + (active ? ' ratel-diag-tab-active' : ''),
+									attr: {
+										type: 'button',
+										role: 'tab',
+										'aria-selected': active ? 'true' : 'false',
+									},
+								});
+								btn.onclick = () => {
+									this.activeSettingsTab = tab.id;
+									// 立即切换按钮态,避免等整页重绘才变
+									for (const child of Array.from(bar.children)) {
+										const isActive = child === btn;
+										child.classList.toggle('ratel-diag-tab-active', isActive);
+										child.setAttribute('aria-selected', isActive ? 'true' : 'false');
+									}
+									// 关键路径:visible 谓词用 refreshDomState 即可,比 update() 轻,也避免诊断 page 整页闪烁
+									this.refreshDomState();
+								};
+							}
+						},
+					},
+				],
+			},
+
+			// ==================== Tab:对话模型 ====================
 			{
 				type: 'group',
 				heading: tNow('settings.language.heading'),
+				cls: chatCls,
+				visible: chatVisible,
 				items: [
 					{
 						name: tNow('settings.language.name'),
@@ -296,11 +463,32 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 					},
 				],
 			},
-
-			// ==================== Chat ====================
+			{
+				type: 'group',
+				heading: tNow('settings.chatPreset.heading'),
+				cls: chatCls,
+				visible: chatVisible,
+				items: [
+					{
+						name: tNow('settings.chatPreset.name'),
+						desc: tNow('settings.chatPreset.desc'),
+						control: {
+							type: 'dropdown',
+							key: 'chatPreset',
+							options: {
+								deepseek: tNow('settings.chatPreset.deepseek'),
+								ollama: tNow('settings.chatPreset.ollama'),
+								custom: tNow('settings.chatPreset.custom'),
+							},
+						},
+					},
+				],
+			},
 			{
 				type: 'group',
 				heading: tNow('settings.chatModel.heading'),
+				cls: chatCls,
+				visible: chatVisible,
 				items: [
 					{
 						name: tNow('settings.chatModel.model.name'),
@@ -316,62 +504,6 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 							placeholder: 'https://api.deepseek.com',
 						},
 					},
-				],
-			},
-
-			// ==================== Context length ====================
-			{
-				type: 'group',
-				heading: tNow('settings.contextLength.heading'),
-				items: [
-					{
-						name: tNow('settings.contextLength.dropdown.name'),
-						desc: tNow('settings.contextLength.dropdown.desc'),
-						control: {
-							type: 'dropdown',
-							key: 'contextLengthPreset',
-							options: contextLengthPresetOptions(),
-						},
-					},
-					{
-						name: tNow('settings.contextLength.probeButton'),
-						action: (el) => void this.handleProbeContext(el),
-					},
-					{
-						name: tNow('settings.contextLength.customTokens.name'),
-						desc: tNow('settings.contextLength.customTokens.desc'),
-						control: {
-							type: 'number',
-							key: 'chatModelMaxTokens',
-							min: CUSTOM_TOKEN_MIN,
-							max: CUSTOM_TOKEN_MAX,
-						},
-						visible: () => this.plugin.settings.contextLengthPreset === 'custom',
-					},
-				],
-			},
-
-			// ==================== Advanced ====================
-			{
-				type: 'group',
-				heading: tNow('settings.advanced.heading'),
-				items: [
-					{
-						name: tNow('settings.advanced.registryUrl.name'),
-						desc: tNow('settings.advanced.registryUrl.desc'),
-						control: {
-							type: 'text',
-							key: 'modelRegistryUrl',
-							placeholder: DEFAULT_MODEL_REGISTRY_URL,
-						},
-					},
-					{
-						name: tNow('settings.advanced.resetButton'),
-						action: () => {
-							this.plugin.settings.modelRegistryUrl = '';
-							void this.plugin.saveSettings().then(() => this.update());
-						},
-					},
 					{
 						name: tNow('settings.advanced.secretHint.title'),
 						render: renderChatSecretHint(this.app, this.plugin),
@@ -379,10 +511,12 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 				],
 			},
 
-			// ==================== Embedding ====================
+			// ==================== Tab:笔记索引 ====================
 			{
 				type: 'group',
 				heading: tNow('settings.embedding.heading'),
+				cls: indexCls,
+				visible: indexVisible,
 				items: [
 					{
 						name: tNow('settings.embedding.provider.name'),
@@ -428,31 +562,11 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 					},
 				],
 			},
-
-			// ==================== Reranker ====================
-			{
-				type: 'group',
-				heading: tNow('settings.reranker.heading'),
-				items: [
-					{
-						name: tNow('settings.reranker.apiBase.name'),
-						control: { type: 'text', key: 'rerankerApiBase' },
-					},
-					{
-						name: tNow('settings.reranker.model.name'),
-						control: { type: 'text', key: 'rerankerModel' },
-					},
-					{
-						name: tNow('settings.advanced.secretHint.title'),
-						render: renderRerankSecretHint(this.app, this.plugin),
-					},
-				],
-			},
-
-			// ==================== Indexing ====================
 			{
 				type: 'group',
 				heading: tNow('settings.indexing.heading'),
+				cls: indexCls,
+				visible: indexVisible,
 				items: [
 					{
 						name: tNow('settings.indexing.chunkSize.name'),
@@ -481,112 +595,187 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 					},
 				],
 			},
+			{
+				type: 'group',
+				heading: tNow('settings.reranker.heading'),
+				cls: indexCls,
+				visible: indexVisible,
+				items: [
+					{
+						name: tNow('settings.reranker.apiBase.name'),
+						control: { type: 'text', key: 'rerankerApiBase' },
+					},
+					{
+						name: tNow('settings.reranker.model.name'),
+						control: { type: 'text', key: 'rerankerModel' },
+					},
+					{
+						name: tNow('settings.advanced.secretHint.title'),
+						render: renderRerankSecretHint(this.app, this.plugin),
+					},
+				],
+			},
 
-			// ==================== Tool permissions ====================
+			// ==================== Tab:记忆与权限 ====================
+			{
+				type: 'group',
+				heading: tNow('memory.settings.heading'),
+				cls: agentCls,
+				visible: agentVisible,
+				items: [
+					{
+						name: tNow('memory.settings.enabled.name'),
+						desc: tNow('memory.settings.enabled.desc'),
+						control: { type: 'toggle', key: 'memoryEnabled' },
+					},
+					{
+						name: tNow('memory.settings.autoWrite.name'),
+						desc: tNow('memory.settings.autoWrite.desc'),
+						control: { type: 'toggle', key: 'memoryAutoWrite' },
+					},
+					{
+						name: tNow('memory.settings.viewMemory.name'),
+						desc: tNow('memory.settings.viewMemory.desc'),
+						action: () => void this.plugin.activateMemoryView(),
+					},
+				],
+			},
+			{
+				type: 'group',
+				heading: tNow('skill.settings.heading'),
+				cls: agentCls,
+				visible: agentVisible,
+				items: [
+					{
+						name: tNow('skill.settings.enableSkills.name'),
+						desc: tNow('skill.settings.enableSkills.desc'),
+						control: { type: 'toggle', key: 'enableSkills' },
+					},
+				],
+			},
+			{
+				type: 'group',
+				heading: tNow('settings.daily.heading'),
+				cls: agentCls,
+				visible: agentVisible,
+				items: [
+					{
+						name: tNow('settings.daily.folder.name'),
+						desc: tNow('settings.daily.folder.desc'),
+						control: { type: 'text', key: 'dailyNoteFolder', placeholder: '' },
+					},
+					{
+						name: tNow('settings.daily.format.name'),
+						desc: tNow('settings.daily.format.desc'),
+						control: { type: 'text', key: 'dailyNoteFormat', placeholder: 'YYYY-MM-DD' },
+					},
+				],
+			},
 			{
 				type: 'group',
 				heading: tNow('settings.toolPermissions.heading'),
+				cls: agentCls,
+				visible: agentVisible,
 				items: this.buildToolPermissionItems(),
 			},
 
-			// ==================== Prompt overrides (advanced) ====================
+			// ==================== Tab:高级 ====================
+			{
+				type: 'group',
+				heading: tNow('settings.contextLength.heading'),
+				cls: advancedCls,
+				visible: advancedVisible,
+				items: [
+					{
+						name: tNow('settings.contextLength.dropdown.name'),
+						desc: tNow('settings.contextLength.dropdown.desc'),
+						control: {
+							type: 'dropdown',
+							key: 'contextLengthPreset',
+							options: contextLengthPresetOptions(),
+						},
+					},
+					{
+						name: tNow('settings.contextLength.probeButton'),
+						action: (el) => void this.handleProbeContext(el),
+					},
+					{
+						name: tNow('settings.contextLength.customTokens.name'),
+						desc: tNow('settings.contextLength.customTokens.desc'),
+						control: {
+							type: 'number',
+							key: 'chatModelMaxTokens',
+							min: CUSTOM_TOKEN_MIN,
+							max: CUSTOM_TOKEN_MAX,
+						},
+						visible: () => this.plugin.settings.contextLengthPreset === 'custom',
+					},
+				],
+			},
+			{
+				type: 'group',
+				heading: tNow('settings.advanced.heading'),
+				cls: advancedCls,
+				visible: advancedVisible,
+				items: [
+					{
+						name: tNow('settings.advanced.registryUrl.name'),
+						desc: tNow('settings.advanced.registryUrl.desc'),
+						control: {
+							type: 'text',
+							key: 'modelRegistryUrl',
+							placeholder: DEFAULT_MODEL_REGISTRY_URL,
+						},
+					},
+					{
+						name: tNow('settings.advanced.resetButton'),
+						action: () => {
+							this.plugin.settings.modelRegistryUrl = '';
+							void this.plugin.saveSettings().then(() => this.update());
+						},
+					},
+				],
+			},
 			{
 				type: 'group',
 				heading: tNow('settings.promptOverrides.heading'),
+				cls: advancedCls,
+				visible: advancedVisible,
 				items: this.buildPromptOverrideItems(),
 			},
-
-			// ==================== Diagnostics (sub-page) ====================
-		{
-			type: 'page',
-			name: tNow('settings.diagnostics.page.name'),
-			desc: tNow('settings.diagnostics.page.desc'),
-			page: () => new DiagnosticsSettingPage(this.app, this.plugin),
-		},
-
-		// ==================== Memory(P-MEMORY-UI — 6 个设置项 + viewMemory action) ====================
-		// 关键路径:声明式 control: { type: 'toggle' / 'number' },框架自动处理 parseInt 与边界校验。
-		// 副作用(无需重建适配器)由 setControlValue 默认路径处理 — saveSettings + update。
-		{
-			type: 'group',
-			heading: tNow('memory.settings.heading'),
-			items: [
-				{
-					name: tNow('memory.settings.enabled.name'),
-					desc: tNow('memory.settings.enabled.desc'),
-					control: { type: 'toggle', key: 'memoryEnabled' },
-				},
-				{
-					name: tNow('memory.settings.autoWrite.name'),
-					desc: tNow('memory.settings.autoWrite.desc'),
-					control: { type: 'toggle', key: 'memoryAutoWrite' },
-				},
-				{
-					name: tNow('memory.settings.storageLimit.name'),
-					desc: tNow('memory.settings.storageLimit.desc'),
-					control: { type: 'number', key: 'memoryStorageLimitMB', min: 1, max: 1000 },
-				},
-				{
-					name: tNow('memory.settings.injectLimit.name'),
-					desc: tNow('memory.settings.injectLimit.desc'),
-					control: { type: 'number', key: 'memoryInjectLimitKB', min: 1, max: 500 },
-				},
-				{
-					name: tNow('memory.settings.dynamicLimit.name'),
-					desc: tNow('memory.settings.dynamicLimit.desc'),
-					control: { type: 'number', key: 'memoryDynamicLimitKB', min: 1, max: 500 },
-				},
-				{
-					name: tNow('memory.settings.contextTotalLimit.name'),
-					desc: tNow('memory.settings.contextTotalLimit.desc'),
-					control: { type: 'number', key: 'memoryContextTotalLimitKB', min: 1, max: 500 },
-				},
-				// 关键路径:viewMemory action 调 plugin.activateMemoryView()(Task 4 在 main.ts 实现)。
-				// 用 () => void 形式标记不等待,避免阻塞设置面板交互。
-				{
-					name: tNow('memory.settings.viewMemory.name'),
-					desc: tNow('memory.settings.viewMemory.desc'),
-					action: () => void this.plugin.activateMemoryView(),
-				},
-			],
-		},
-
-		// ==================== Skills(P-SKILL-1-CORE) ====================
-		// 关键路径:声明式 toggle,saveSettings 后 main.ts 监听 enableSkills 变化触发 reload。
-		{
-			type: 'group',
-			heading: tNow('skill.settings.heading'),
-			items: [
-				{
-					name: tNow('skill.settings.enableSkills.name'),
-					desc: tNow('skill.settings.enableSkills.desc'),
-					control: { type: 'toggle', key: 'enableSkills' },
-				},
-			],
-		},
-
-		// ==================== Daily note(P-BASIC-ENV) ====================
-		{
-			type: 'group',
-			heading: tNow('settings.daily.heading'),
-			items: [
-				{
-					name: tNow('settings.daily.folder.name'),
-					desc: tNow('settings.daily.folder.desc'),
-					control: { type: 'text', key: 'dailyNoteFolder', placeholder: '' },
-				},
-				{
-					name: tNow('settings.daily.format.name'),
-					desc: tNow('settings.daily.format.desc'),
-					control: { type: 'text', key: 'dailyNoteFormat', placeholder: 'YYYY-MM-DD' },
-				},
-			],
-		},
-
-		// ==================== Developer ====================
+			{
+				type: 'group',
+				heading: tNow('memory.settings.limitsHeading'),
+				cls: advancedCls,
+				visible: advancedVisible,
+				items: [
+					{
+						name: tNow('memory.settings.storageLimit.name'),
+						desc: tNow('memory.settings.storageLimit.desc'),
+						control: { type: 'number', key: 'memoryStorageLimitMB', min: 1, max: 1000 },
+					},
+					{
+						name: tNow('memory.settings.injectLimit.name'),
+						desc: tNow('memory.settings.injectLimit.desc'),
+						control: { type: 'number', key: 'memoryInjectLimitKB', min: 1, max: 500 },
+					},
+					{
+						name: tNow('memory.settings.dynamicLimit.name'),
+						desc: tNow('memory.settings.dynamicLimit.desc'),
+						control: { type: 'number', key: 'memoryDynamicLimitKB', min: 1, max: 500 },
+					},
+					{
+						name: tNow('memory.settings.contextTotalLimit.name'),
+						desc: tNow('memory.settings.contextTotalLimit.desc'),
+						control: { type: 'number', key: 'memoryContextTotalLimitKB', min: 1, max: 500 },
+					},
+				],
+			},
 			{
 				type: 'group',
 				heading: tNow('settings.developer.heading'),
+				cls: advancedCls,
+				visible: advancedVisible,
 				items: [
 					{
 						name: tNow('settings.developer.debugLog.name'),
@@ -604,6 +793,14 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 						},
 					},
 				],
+			},
+			{
+				type: 'page',
+				name: tNow('settings.diagnostics.page.name'),
+				desc: tNow('settings.diagnostics.page.desc'),
+				// 关键路径:page 无 cls,只能用 visible;搜索中放开以免诊断入口在索引外
+				visible: onAdvancedOrSearch,
+				page: () => new DiagnosticsSettingPage(this.app, this.plugin),
 			},
 		];
 	}
@@ -807,12 +1004,18 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			// sectionId 是运行时 string,需 cast 为 Record<string,...> 才能用任意 string 索引。
 			(this.plugin.settings.promptOverrides as Record<string, string | undefined>)[sectionId] = value as string;
 			this.plugin.syncToolDefinitions();
+		} else if (key === 'chatPreset') {
+			// 关键路径:预设写入多字段,不能只赋 chatPreset 一个 key
+			applyChatPreset(this.plugin.settings, value as ChatPresetId);
+			this.plugin.rebuildLLM();
 		} else {
 			(this.plugin.settings as unknown as Record<string, unknown>)[key] = value;
 		}
 
 		// 副作用分发
 		if (key === 'chatModel' || key === 'chatApiBase') {
+			// 关键路径:手改模型或 Base → 场景预设自动切到 custom
+			this.plugin.settings.chatPreset = 'custom';
 			this.plugin.rebuildLLM();
 		}
 		// 关键路径:embedLocalModel 当前是只读字段(内置模型),不会触发 setControlValue,

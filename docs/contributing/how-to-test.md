@@ -27,7 +27,7 @@
 | Node.js | ≥ 18(LTS) |
 | Obsidian | ≥ 1.0(manifest 里 `minAppVersion: 1.0.0`) |
 | 测试 vault | 单独建一个,不要拿主力 vault 冒险(插件会写 `data.json`、占 Sidebar) |
-| 模型 API | 二选一:**DeepSeek** key(默认 `chatApiBase: https://api.deepseek.com`、模型 `deepseek-chat`),**或** 本地 Ollama 跑兼容 OpenAI 协议的服务 |
+| 模型 API | 二选一:**DeepSeek** key(默认 `chatApiBase: https://api.deepseek.com`、模型 `deepseek-v4-flash`),**或** 本地 Ollama 跑兼容 OpenAI 协议的服务 |
 
 ```bash
 # 在仓库根
@@ -111,7 +111,7 @@ npm run unlink:vault
 
 `Settings` → `Ratel` → `Chat Model`:
 
-- **用 DeepSeek:** 填 `API Key`(`API Base URL` 默认 `https://api.deepseek.com`、模型 `deepseek-chat`)
+- **用 DeepSeek:** 填 `API Key`(`API Base URL` 默认 `https://api.deepseek.com`、模型 `deepseek-v4-flash`)
 - **用 Ollama:** `API Base URL` 改 `http://localhost:11434/v1`、模型名换你跑的那个(如 `qwen2.5:7b`)、`API Key` 留空
 
 切走前确认 key 写对了 —— 没 key 时点 Send,会立刻在回复框里追加 `⚠ Error: ...`。

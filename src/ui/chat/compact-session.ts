@@ -6,6 +6,7 @@
  */
 
 import type { ContextManager } from '../../core/context-manager';
+import { alignPreservedToolMessages } from '../../core/tool-message-align';
 import type { LLMClient, ChatDelta } from '../../ports/llm';
 import type { ChatMessage } from '../../ports/persistence';
 import { composeCompactMessages } from '../../prompts/composer';
@@ -61,7 +62,8 @@ export async function compactSession(
 		return { summary: '', preservedMessages: allMessages };
 	}
 
-	const preservedMessages = allMessages.slice(-PRESERVED_COUNT);
+	const preservedMessages = alignPreservedToolMessages(allMessages.slice(-PRESERVED_COUNT));
+	// 关键路径:摘要输入仍按原始窗口切分(与对齐前一致),避免把丢弃的孤立 tool 正文漏进摘要又重复保留
 	const summaryInputMessages = allMessages.slice(0, -PRESERVED_COUNT);
 
 	// 拼成对话文本,作为 LLM 摘要输入

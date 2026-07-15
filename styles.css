@@ -71,6 +71,49 @@
 .ratel-diag-tab:hover { color: var(--text-normal); }
 .ratel-diag-tab-active { color: var(--text-accent); border-bottom-color: var(--interactive-accent); font-weight: 500; }
 
+/* ==================== 设置顶栏 Tab ==================== */
+/* 关键路径:声明式 render 行去掉默认 Setting 左右分栏,整行留给 Tab 条 */
+.ratel-settings-tab-group .setting-item {
+	border: none;
+	padding: 0 0 8px;
+}
+.ratel-settings-tab-strip {
+	display: block;
+	width: 100%;
+}
+.ratel-settings-tab-strip .setting-item-info,
+.ratel-settings-tab-strip .setting-item-control {
+	display: none;
+}
+.ratel-settings-tab-strip .ratel-diag-tabs {
+	margin-bottom: 8px;
+}
+
+/* 关键路径:Tab 显隐改由声明式 visible 控制;保留钩子 class 供布局微调 */
+.ratel-settings-panel {
+	/* no-op marker */
+}
+
+/* ==================== 钥匙串 checklist ==================== */
+.ratel-secret-checklist {
+	margin: 0.25em 0 0;
+	padding-left: 1.4em;
+	list-style: decimal;
+}
+.ratel-secret-checklist li {
+	margin: 0.35em 0;
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+}
+.ratel-secret-checklist-id {
+	font-family: var(--font-monospace);
+	font-size: var(--font-smaller);
+}
+.ratel-secret-status {
+	margin-top: 0.5em;
+	font-size: var(--font-ui-small);
+}
+
 .ratel-diag-section { margin-bottom: 24px; }
 .ratel-diag-section h3 { margin-top: 0; margin-bottom: 12px; }
 .ratel-diag-section h4 { margin-top: 16px; margin-bottom: 8px; font-size: 13px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }

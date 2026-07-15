@@ -6,8 +6,9 @@
  */
 
 import { EMBEDDING_WORKER_CODE } from '@ratel/embedding-worker-code';
-import { FileSystemAdapter, Plugin } from 'obsidian';
+import { FileSystemAdapter, Notice, Plugin, TFile } from 'obsidian';
 import { type RatelVaultSettings, DEFAULT_SETTINGS, RatelVaultSettingTab, normalizeContextLengthSettings } from './settings';
+import { normalizeChatPreset } from './settings/chat-preset';
 
 import type { AgentEvent } from './types';
 import { agentLoop } from './core/agent-loop';
@@ -52,6 +53,7 @@ import {
 import { showToolConfirmModal } from './ui/components/confirm-modal';
 import { showReindexConfirm, showDropIndexConfirm } from './ui/confirm-modal';
 import { validateVaultPath, setConfigDir } from './utils/path-safety';
+import { isSafeVaultMentionPath } from './ui/chat/input/mention-parser';
 import { extractToolTargetPath, isDeleteTool } from './hooks/immediate-reindex';
 import type { ToolCall } from './ports/llm';
 import { ModelManager } from './core/model-manager';
@@ -81,7 +83,7 @@ import { applyBadgerEmojiToElement, patchAllChatLeafIcons } from './utils/badger
 import { get } from 'svelte/store';
 import { ensurePluginGitignore } from './utils/gitignore-writer';
 import { sha256 } from './utils/hash';
-import { IndexManifest } from './core/index-manifest';
+import { IndexManifest, migrateLegacyIndexManifest, resolveIndexManifestPath } from './core/index-manifest';
 import { ModelContextRegistry } from './ui/tokens/model-context-registry';
 import os from 'os';
 import path from 'path';
@@ -149,6 +151,8 @@ export default class RatelVaultPlugin extends Plugin {
 	toolSessionGrants = new ToolPermissionSessionGrants();
 	userNotice = new UserNotice();
 	userStatus = new UserStatus();
+	/** file-menu 插入 @mention 时若 ChatView 尚未 mount,先排队 */
+	pendingChatMention?: string;
 	private feedbackController?: FeedbackController;
 	private workerMode: 'thread' | 'inline' = 'inline';
 
@@ -323,8 +327,13 @@ export default class RatelVaultPlugin extends Plugin {
 			},
 		};
 
-		// 关键路径:manifest 与 .index/ 同目录同生命周期。
-		this.indexManifest = new IndexManifest(path.join(pluginDir, 'index-manifest.json'));
+		// 关键路径:清单落在 .index/ratel-manifest.json;启动时迁入旧版插件根 index-manifest.json
+		try {
+			await migrateLegacyIndexManifest(pluginDir, this.indexDir);
+		} catch (err) {
+			devLogger.warn('index', '旧版 index-manifest 迁移失败(可忽略)', err);
+		}
+		this.indexManifest = new IndexManifest(resolveIndexManifestPath(this.indexDir));
 
 		// 关键路径:ObsidianVault 已实现 VaultEventListener 接口,直接传入可保证所有 Obsidian API 访问都走外观层。
 		this.indexController = new IndexController(this.vault, this.indexBackend, vaultBase);
@@ -477,6 +486,21 @@ export default class RatelVaultPlugin extends Plugin {
 		this.registerEvent(
 			this.app.workspace.on('layout-change', () => {
 				patchAllChatLeafIcons(this.app.workspace);
+			}),
+		);
+
+		// 文件菜单:md → 添加到 Ratel(@mention,策略 A 只插相对路径)
+		this.registerEvent(
+			this.app.workspace.on('file-menu', (menu, file) => {
+				if (!(file instanceof TFile) || file.extension !== 'md') return;
+				menu.addItem((item) => {
+					item
+						.setTitle(tNow('chat.mention.fileMenu'))
+						.setIcon('file-plus')
+						.onClick(() => {
+							void this.insertChatMention(file.path);
+						});
+				});
 			}),
 		);
 
@@ -714,12 +738,11 @@ export default class RatelVaultPlugin extends Plugin {
 	/**
 	 * smartReindex 实际实现 — 由 smartReindex 包裹降级 try-catch。
 	 *
-	 * 关键路径:五分支决策:
+	 * 关键路径:决策分支:
 	 * 1. 索引不存在 → 全量 + 写 manifest
-	 * 2. manifest 损坏/不存在 → 全量 + 写 manifest
-	 * 3. 全局参数变 → 清 .index/ + manifest → 全量
-	 * 4. 否则 → hash diff,仅 toAdd+toUpdate 走 index.batch,toDelete 走 index.delete
-	 * 5. 失败时不清 manifest,下次启动重试
+	 * 2. 索引在、manifest 缺失 → **只重建清单**(禁止全量 re-embed;修复同步删清单导致的反复全量)
+	 * 3. 全局参数变 → 清 .index/ → 全量 + writeManifestAfterFullReindex(禁止存空 entries)
+	 * 4. 否则 → hash diff
 	 *
 	 * @returns indexed 为本次实际写入的 chunk 所属文件数,errors 为失败计数,skipped 为未变更文件数。
 	 */
@@ -728,35 +751,42 @@ export default class RatelVaultPlugin extends Plugin {
 		const indexExists = await this.vectraStore.isIndexCreated();
 		if (!indexExists) {
 			const result = await this.indexBackend.fullReindex();
-			// 关键路径:全量后写新 manifest。
 			await this.writeManifestAfterFullReindex();
 			return { indexed: result.indexed, errors: result.errors, skipped: 0 };
 		}
 
-		// 关键路径:加载 manifest,损坏则全量。
-		const manifestData = await this.indexManifest.load();
+		// 修复:向量在、清单丢 → 只写清单,绝不再次全量 embed(用户确认的反复重建根因)
+		let manifestData = await this.indexManifest.load();
 		if (!manifestData) {
-			const result = await this.indexBackend.fullReindex();
+			devLogger.warn('index', '索引存在但清单缺失,仅重建 ratel-manifest(不 re-embed)');
 			await this.writeManifestAfterFullReindex();
-			return { indexed: result.indexed, errors: result.errors, skipped: 0 };
+			manifestData = await this.indexManifest.load();
+			if (!manifestData) {
+				// 清单仍写失败才降级全量
+				devLogger.error('index', '清单重建失败,降级全量 embed');
+				const result = await this.indexBackend.fullReindex();
+				await this.writeManifestAfterFullReindex();
+				return { indexed: result.indexed, errors: result.errors, skipped: 0 };
+			}
+			const skipped = Object.keys(manifestData.entries).length;
+			return { indexed: 0, errors: 0, skipped };
 		}
 
-		// 关键路径:全局参数变化 → 清索引 + manifest → 全量。
+		// 关键路径:全局参数变化 → 清索引 → 全量 → 用完整清单覆盖(禁止 save 空 entries)
 		const currentEmbedModelId = this.resolveCurrentEmbedModelId();
-		if (this.indexManifest.shouldFullRebuild(manifestData, currentEmbedModelId, this.settings.chunkSize, this.settings.chunkOverlap)) {
-			// 关键路径:清 .index/ 目录(vectra 没有清空 API,删目录重建)。
+		if (
+			this.indexManifest.shouldFullRebuild(
+				manifestData,
+				currentEmbedModelId,
+				this.settings.chunkSize,
+				this.settings.chunkOverlap,
+			)
+		) {
 			await this.vectraStore.dropIndex();
 			this.indexManifest.invalidate(manifestData);
-			manifestData.embedModelId = currentEmbedModelId;
-			manifestData.chunkSize = this.settings.chunkSize;
-			manifestData.chunkOverlap = this.settings.chunkOverlap;
 			const result = await this.indexBackend.fullReindex();
-			try {
-				await this.indexManifest.save(manifestData);
-			} catch (err) {
-				// 关键路径:manifest 写盘失败不阻塞索引(spec §9),下次启动重试。
-				devLogger.error('index', 'manifest 写盘失败(参数变更后)', err);
-			}
+			// 修复:原先 save(空 entries)导致下次全库 toAdd;改为写完整清单
+			await this.writeManifestAfterFullReindex();
 			return { indexed: result.indexed, errors: result.errors, skipped: 0 };
 		}
 
@@ -849,15 +879,25 @@ export default class RatelVaultPlugin extends Plugin {
 		return { indexed, errors, skipped: diff.unchanged.length };
 	}
 
-	/** 全量重建后写新 manifest(首次/重置场景)。 */
+	/**
+	 * 按当前 vault 文件重建清单(只 hash,不 embed)。
+	 *
+	 * 用于:全量 embed 之后、或「索引在清单丢」恢复路径。
+	 * 单文件读失败跳过并记 warn,不阻断整份清单落盘。
+	 */
 	private async writeManifestAfterFullReindex(): Promise<void> {
 		const files = this.vault.listMarkdownFiles();
 		const entries: Record<string, import('./core/index-manifest').IndexManifestEntry> = {};
 		for (const p of files) {
-			const content = await this.vault.readFile(p);
-			const hash = await sha256(content);
-			// 关键路径:全量后 chunkCount 未知(未走 index.batch),填 0 占位,下次 incremental 时更新。
-			entries[p] = { path: p, hash, mtime: Date.now(), chunkCount: 0 };
+			try {
+				const content = await this.vault.readFile(p);
+				const hash = await sha256(content);
+				// 修复:用真实 mtime,避免下次启动因 Date.now() 占位导致全库重读
+				const mtime = this.vault.stat(p)?.mtime ?? Date.now();
+				entries[p] = { path: p, hash, mtime, chunkCount: 0 };
+			} catch (err) {
+				devLogger.warn('index', `manifest 跳过无法读取的文件: ${p}`, err);
+			}
 		}
 		const data: import('./core/index-manifest').IndexManifestData = {
 			version: 1,
@@ -984,6 +1024,8 @@ export default class RatelVaultPlugin extends Plugin {
 		delete legacy.rerankerApiKey;
 		delete legacy.rerankerProvider;
 		normalizeContextLengthSettings(this.settings, loaded);
+		// 关键路径:旧版无 chatPreset 字段时按 Base/模型推断,避免误显示 DeepSeek 预设
+		normalizeChatPreset(this.settings, loaded);
 	}
 
 	/** 持久化当前设置到 Obsidian data.json。 */
@@ -1209,7 +1251,7 @@ export default class RatelVaultPlugin extends Plugin {
 	/**
 	 * 唤起或聚焦聊天侧栏 — 幂等,已存在则 reveal,否则在右侧栏创建。
 	 */
-	private async activateChatView() {
+	async activateChatView() {
 		const { workspace } = this.app;
 		let leaf = workspace.getLeavesOfType(VIEW_TYPE_CHAT)[0];
 		if (!leaf) {
@@ -1223,6 +1265,35 @@ export default class RatelVaultPlugin extends Plugin {
 			void workspace.revealLeaf(leaf);
 		}
 		window.requestAnimationFrame(() => patchAllChatLeafIcons(this.app.workspace));
+	}
+
+	/**
+	 * 向聊天输入插入 `@vault相对路径`(策略 A,不读文件)。
+	 *
+	 * @param path - 必须是 vault 相对路径(如 TFile.path)
+	 */
+	async insertChatMention(path: string): Promise<void> {
+		if (!isSafeVaultMentionPath(path)) {
+			new Notice(tNow('chat.mention.absoluteRejected'), 4000);
+			return;
+		}
+		// 关键路径:先排队再 activate — onOpen 冲刷 pending,避免 mount 竞态双插
+		this.pendingChatMention = path;
+		await this.activateChatView();
+		const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_CHAT)[0];
+		if (!leaf) {
+			// 修复:侧栏无法创建时清掉 pending,避免永久泄漏
+			this.pendingChatMention = undefined;
+			devLogger.warn('main', 'insertChatMention: 无法打开 Chat 侧栏');
+			return;
+		}
+		const view = leaf.view;
+		if (view instanceof ChatView && this.pendingChatMention === path) {
+			if (view.insertChatMention(path)) {
+				this.pendingChatMention = undefined;
+			}
+			// 组件尚未 mount 时保留 pending,由 ChatView.onOpen 冲刷
+		}
 	}
 
 	/**

@@ -1,8 +1,8 @@
 /**
- * @file src/ui/secret-hint.ts
- * @description 设置页密钥说明块 — 展示固定密钥名 + 配置状态,替代明文密码框
- * @module ui/secret-hint
- * @depends obsidian, ../secrets/ratel-secrets, ../../i18n
+ * @file src/ui/components/secret-hint.ts
+ * @description 设置页密钥说明块 — checklist + 固定密钥名 + 配置状态,替代明文密码框
+ * @module ui/components/secret-hint
+ * @depends obsidian, ../../i18n
  */
 
 import { Setting } from 'obsidian';
@@ -10,36 +10,54 @@ import { Setting } from 'obsidian';
 import { tNow } from '../../i18n';
 
 /**
- * 渲染需要钥匙串密钥的说明块。
+ * 渲染需要钥匙串密钥的说明块(checklist)。
  *
- * 展示固定密钥名(带复制按钮)与配置状态(✅/⚠️)。
+ * 展示三步清单:打开钥匙串 → 添加同名密钥(可复制) → 配置状态(✅/⚠️)。
  * 不显示 Key 内容或前缀,仅展示是否已配置。
  *
  * @param containerEl - 设置面板容器
  * @param opts.secretId - RATEL_SECRET_IDS 中的密钥名
  * @param opts.hasKey - 钥匙串中是否已有该密钥
- * @param opts.note - 可选附加说明(如「未配置密钥时 Rerank 自动关闭」),追加到 desc 末尾
+ * @param opts.note - 可选附加说明(如「未配置密钥时 Rerank 自动关闭」),追加到末尾
  */
 export function renderSecretHint(
 	containerEl: HTMLElement,
 	opts: { secretId: string; hasKey: boolean; note?: string },
 ): void {
-	// 关键路径:baseDesc 用 tNow 带 secretId 占位符替换,语言切换后立即生效
-	const baseDesc = tNow('settings.advanced.secretHint.hint', { secretId: opts.secretId });
-	new Setting(containerEl)
+	const wrap = containerEl.createDiv({ cls: 'ratel-secret-hint' });
+
+	new Setting(wrap)
 		.setName(tNow('settings.advanced.secretHint.title'))
-		.setDesc(opts.note ? `${baseDesc}${opts.note}` : baseDesc)
+		.setDesc(tNow('settings.advanced.secretHint.privacy'))
 		.addExtraButton((btn) => {
-			btn.setIcon('copy').setTooltip(tNow('settings.advanced.secretHint.copyTooltip')).onClick(() => {
-				void navigator.clipboard.writeText(opts.secretId);
-			});
+			btn
+				.setIcon('copy')
+				.setTooltip(tNow('settings.advanced.secretHint.copyTooltip'))
+				.onClick(() => {
+					void navigator.clipboard.writeText(opts.secretId);
+				});
 		});
-	const status = containerEl.createDiv({ cls: 'ratel-secret-status' });
-	status.setText(
-		opts.hasKey
+
+	const list = wrap.createEl('ol', { cls: 'ratel-secret-checklist' });
+	list.createEl('li', { text: tNow('settings.advanced.secretHint.stepOpen') });
+
+	const idLi = list.createEl('li');
+	idLi.appendText(tNow('settings.advanced.secretHint.stepAddPrefix'));
+	idLi.createEl('code', {
+		cls: 'ratel-secret-checklist-id',
+		text: opts.secretId,
+	});
+	idLi.appendText(tNow('settings.advanced.secretHint.stepAddSuffix'));
+
+	list.createEl('li', {
+		text: opts.hasKey
 			? tNow('settings.advanced.secretHint.configured')
 			: tNow('settings.advanced.secretHint.notConfigured'),
-	);
+	});
+
+	if (opts.note) {
+		wrap.createDiv({ cls: 'setting-item-description', text: opts.note });
+	}
 }
 
 /**

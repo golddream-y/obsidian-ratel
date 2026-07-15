@@ -18,7 +18,7 @@ Obsidian → **设置** → **社区插件** → **浏览** → 搜索 **Ratel**
 
 需要 **Obsidian 1.13.0+**，**仅桌面端**。
 
-然后：配置对话模型（或本机 Ollama）→ 等首次索引完成 → 点侧栏 🦡（或命令面板 **Ratel: Ask vault**）。
+然后：打开 **设置 → Ratel → 对话模型**，选场景预设（DeepSeek / Ollama）或自定义 Base → 等首次索引完成 → 点侧栏 🦡（或命令面板 **Ratel: Ask vault**）。
 
 完整说明见 [使用手册](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/user-guide.md)。
 
@@ -43,6 +43,16 @@ DeepSeek / Claude / Ollama。密钥在 Obsidian 钥匙串，不进配置文件�
 
 **权限与状态可控**  
 每个工具可设允许 / 询问 / 禁止。状态条 + 诊断面板。无遥测；网络只打你配置的端点。
+
+---
+
+## 特性
+
+- 语义检索 + 可点击出处  
+- Agent 工具：读写 / grep / glob、记忆、Skill、当前笔记与日记路径  
+- 默认本地 ONNX 嵌入；可选 API 嵌入 / 百炼重排  
+- 设置页场景预设（DeepSeek / Ollama / 自定义）；密钥在 Obsidian 钥匙串  
+- 按工具权限 + 信任模式；仅桌面；无遥测  
 
 ---
 

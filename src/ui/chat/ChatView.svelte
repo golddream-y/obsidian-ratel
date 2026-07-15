@@ -4,7 +4,8 @@
 	 * @description Chat 编排层 — 状态持有 + 事件循环 + 子组件编排(~200 行)
 	 * @module ui/chat/ChatView
 	 * @depends main, ./message-stream/MessageList, ../status/StatusLine, ../status/StatusDrawer,
-	 *          ./input/SlashMenu, ./input/AttachmentStrip, ../tokens/token-estimator
+	 *          ./input/SlashMenu, ./input/MentionMenu, ./input/MentionStrip, ./input/AttachmentStrip,
+	 *          ../tokens/token-estimator
 	 * 设计:Header 毛玻璃徽章 + 输入区毛玻璃 + 底部 Send 按钮精致圆角
 	 */
 	import type RatelVaultPlugin from '../../main';
@@ -13,6 +14,8 @@
 	import { deriveTone } from '../status/tone';
 	import StatusDrawer from '../status/StatusDrawer.svelte';
 	import SlashMenu from './input/SlashMenu.svelte';
+	import MentionMenu from './input/MentionMenu.svelte';
+	import MentionStrip from './input/MentionStrip.svelte';
 	import AttachmentStrip from './input/AttachmentStrip.svelte';
 	import MessageList from './message-stream/MessageList.svelte';
 	import type { Message } from './message-stream/types';
@@ -25,6 +28,13 @@
 		markToolFailed,
 	} from './message-stream/segment-appender';
 	import { filterCommands, type SlashCommand } from './input/slash-commands';
+	import {
+		extractMentions,
+		formatMentionToken,
+		isSafeVaultMentionPath,
+		parseActiveMentionQuery,
+	} from './input/mention-parser';
+	import { suggestMentions } from './input/mention-suggest';
 	import { validateAttachment, estimateImageTokens } from './input/attachment-utils';
 	import { evaluateChatSendGate } from './chat-send-gate';
 	import { hasChatApiKey } from '../../secrets/ratel-secrets';
@@ -49,6 +59,11 @@
 	let drawerExpanded = $state(false);
 	let fileInput = $state<HTMLInputElement | null>(null);
 	let slashMenuEl = $state<{ handleKeydown: (e: KeyboardEvent) => boolean } | null>(null);
+	let mentionMenuEl = $state<{ handleKeydown: (e: KeyboardEvent) => boolean } | null>(null);
+	let textareaEl = $state<HTMLTextAreaElement | null>(null);
+	let mentionPaths = $state<string[]>([]);
+	let mentionQuery = $state<string | null>(null);
+	let mentionItems = $state<string[]>([]);
 	let messagesEl = $state<HTMLDivElement | null>(null);
 	// 关键路径:sticky-to-bottom — 用户主动上滑时暂停自动滚动,流式输出不打断浏览历史
 	let isUserNearBottom = $state(true);
@@ -88,6 +103,8 @@
 		if (!v) return false;
 		return filterCommands(input).length > 0;
 	});
+	// 关键路径:/ 与 @ 互斥 — 斜杠优先;mention 补全仅在非 slash 态
+	const mentionVisible = $derived(mentionQuery !== null && !slashVisible);
 	const modelName = $derived(plugin.settings.chatModel);
 	// 关键路径:Header badge tone 与 StatusLine 同源,保证视觉同步
 	const statusSnap = $derived($statusStore);
@@ -112,23 +129,21 @@
 		if (s.index === 'processing' || s.index === 'scanning' || s.index === 'queueing' || s.index === 'diffing') {
 			return { type: 'indexing' as const, text: $t('chat.workbar.indexing') };
 		}
-		// 模型下载中
+		// 模型下载中(真在下模型时仍提示,即使对话中)
 		if (s.model === 'downloading') {
 			return { type: 'downloading' as const, text: $t('chat.workbar.downloading') };
 		}
-		// 模型初始化中
+		// 对话进行中:只留 MessageList 打字指示 + Stop,避免再叠「准备模型/搜索中」
+		if (isRunning) {
+			return null;
+		}
+		// 模型初始化中(空闲时才显示,避免与对话指示抢戏)
 		if (s.model === 'checking' || s.model === 'initializing') {
 			return { type: 'preparing' as const, text: $t('chat.workbar.preparing') };
 		}
-		// 压缩中
 		if (isCompacting) {
 			return { type: 'compacting' as const, text: $t('chat.workbar.compacting') };
 		}
-		// 搜索中(isRunning 且 gate 不阻塞)
-		if (isRunning) {
-			return { type: 'searching' as const, text: $t('chat.workbar.searching') };
-		}
-		// 空闲
 		return null;
 	});
 
@@ -144,6 +159,87 @@
 		plugin.rebuildLLM();
 		keyTick++;
 	}
+
+	/** 转义正则特殊字符 — 用于从 input 删除 @path */
+	function escapeRegExp(s: string): string {
+		return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+	}
+
+	/**
+	 * 根据光标前文本刷新 mention 查询态。
+	 */
+	function syncMentionQueryFromCursor() {
+		if (slashVisible || !textareaEl) {
+			mentionQuery = null;
+			return;
+		}
+		const before = input.slice(0, textareaEl.selectionStart);
+		mentionQuery = parseActiveMentionQuery(before);
+	}
+
+	/**
+	 * 插入 @mention(策略 A:只写路径字面量)。
+	 * 供菜单选中与 main.ts file-menu 调用。
+	 */
+	export function insertMention(path: string) {
+		if (!isSafeVaultMentionPath(path)) {
+			new Notice(tNow('chat.mention.absoluteRejected'), 4000);
+			return;
+		}
+		if (!mentionPaths.includes(path)) {
+			mentionPaths = [...mentionPaths, path];
+		}
+		const token = formatMentionToken(path);
+		if (textareaEl && mentionQuery !== null) {
+			const start = textareaEl.selectionStart;
+			const before = input.slice(0, start);
+			const at = before.lastIndexOf('@');
+			if (at >= 0) {
+				const afterCursor = input.slice(start);
+				input = before.slice(0, at) + token + afterCursor;
+				requestAnimationFrame(() => {
+					if (!textareaEl) return;
+					const pos = at + token.length;
+					textareaEl.focus();
+					textareaEl.setSelectionRange(pos, pos);
+				});
+			} else {
+				input = `${input}${token}`;
+			}
+		} else {
+			const sep = !input || /[\s\n]$/.test(input) ? '' : ' ';
+			input = `${input}${sep}${token}`;
+		}
+		mentionQuery = null;
+		mentionItems = [];
+	}
+
+	function removeMention(path: string) {
+		mentionPaths = mentionPaths.filter((p) => p !== path);
+		const re = new RegExp(`@${escapeRegExp(path)}(\\s)?`, 'g');
+		input = input.replace(re, '').replace(/ {2,}/g, ' ');
+	}
+
+	/**
+	 * 从 textarea 文本重建 chip — 手动删掉 @path 时 strip 同步消失。
+	 */
+	function syncMentionPathsFromInput() {
+		mentionPaths = extractMentions(input).filter(isSafeVaultMentionPath);
+	}
+
+	// 性能:debounce ≥80ms;只扫 path 列表,零 readFile
+	$effect(() => {
+		const q = mentionQuery;
+		if (q === null || slashVisible) {
+			mentionItems = [];
+			return;
+		}
+		const timer = setTimeout(() => {
+			const paths = plugin.app.vault.getMarkdownFiles().map((f) => f.path);
+			mentionItems = suggestMentions(q, paths);
+		}, 80);
+		return () => clearTimeout(timer);
+	});
 
 	function handleAgentError(am: Message, code: string, message: string, toolName?: string) {
 		if (code === 'CANCELLED') {
@@ -167,6 +263,7 @@
 			case '/new':
 				messages = [];
 				sessionId = 'session-' + Date.now();
+				mentionPaths = [];
 				plugin.userStatus.patchContextUsage({
 					usedTokens: 0,
 					maxTokens: getEffectiveChatModelMaxTokens(plugin.settings),
@@ -221,6 +318,12 @@
 		const text = input.trim();
 		if (!text || isRunning || isCompacting) return;
 
+		// 策略 A:发送文本以 textarea 为准(含 @path 字面量);extractMentions 仅开发日志,零 readFile
+		const mentioned = extractMentions(text).filter(isSafeVaultMentionPath);
+		if (mentioned.length > 0) {
+			devLogger.info('agent', `@mention 发送路径: ${mentioned.join(', ')}`);
+		}
+
 		const currentGate = evaluateChatSendGate(plugin.settings, get(statusStore), {
 			hasChatApiKey: hasChatApiKey(plugin.app, plugin.settings),
 		});
@@ -242,8 +345,12 @@
 		const am = messages[messages.length - 1] as Message;
 
 		input = '';
+		mentionPaths = [];
+		mentionQuery = null;
+		mentionItems = [];
 		isRunning = true;
-		plugin.userStatus.patch({ model: 'checking' });
+		// 关键路径:不在此 patch model=checking — 否则 StatusLine「思考中」+ work-bar「准备模型中」
+		// 与 MessageList 打字指示三重叠;model 状态只由 FeedbackController 维护。
 		const ac = new AbortController();
 		let lastToolName: string | undefined;
 
@@ -344,7 +451,6 @@
 		} finally {
 			isRunning = false;
 			abortController = null;
-			plugin.userStatus.patch({ model: 'ready' });
 			plugin.userStatus.clearAttachments();
 			scrollToBottom();
 		}
@@ -357,6 +463,9 @@
 
 	// ==================== 键盘 / 文件 ====================
 	function handleKeydown(e: KeyboardEvent) {
+		if (mentionVisible && mentionMenuEl) {
+			if (mentionMenuEl.handleKeydown(e)) return;
+		}
 		if (slashVisible && slashMenuEl) {
 			if (slashMenuEl.handleKeydown(e)) return;
 		}
@@ -369,6 +478,32 @@
 				return;
 			}
 			sendMessage();
+		}
+	}
+
+	function handleInput() {
+		syncMentionQueryFromCursor();
+		syncMentionPathsFromInput();
+	}
+
+	function handleSelect() {
+		syncMentionQueryFromCursor();
+	}
+
+	/**
+	 * 整段粘贴绝对路径时拦截 — 避免 @Users/... 假相对路径进对话。
+	 */
+	function handlePaste(e: ClipboardEvent) {
+		const raw = (e.clipboardData?.getData('text') ?? '').trim();
+		if (!raw || raw.includes('\n')) return;
+		const candidate = raw.replace(/^@/, '');
+		const looksAbsolute =
+			candidate.startsWith('/') ||
+			/^[A-Za-z]:[/\\]/.test(candidate) ||
+			/^(Users|home|private|var|tmp)\//i.test(candidate);
+		if (looksAbsolute && !isSafeVaultMentionPath(candidate)) {
+			e.preventDefault();
+			new Notice(tNow('chat.mention.absoluteRejected'), 4000);
 		}
 	}
 
@@ -449,6 +584,7 @@
 	<StatusLine
 		status$={statusStore}
 		expanded={drawerExpanded}
+		chatBusy={isRunning}
 		onToggle={() => (drawerExpanded = !drawerExpanded)}
 	/>
 
@@ -468,6 +604,24 @@
 			onRemove={(id) => plugin.userStatus.removeAttachment(id)}
 		/>
 
+		<!-- @mention chip 条 -->
+		<MentionStrip paths={mentionPaths} onRemove={removeMention} />
+
+		<!-- @mention 补全(与斜杠互斥,绝对定位浮在输入框上方) -->
+		{#if mentionVisible}
+			<div class="ratel-slash-wrap">
+				<MentionMenu
+					bind:this={mentionMenuEl}
+					items={mentionItems}
+					onSelect={insertMention}
+					onClose={() => {
+						mentionQuery = null;
+						mentionItems = [];
+					}}
+				/>
+			</div>
+		{/if}
+
 		<!-- 斜杠命令(绝对定位,浮在输入框上方) -->
 		{#if slashVisible}
 			<div class="ratel-slash-wrap">
@@ -484,8 +638,13 @@
 			<button class="ratel-plus-btn" type="button" onclick={triggerFileInput} aria-label={$t('chat.input.addImage')} disabled={isRunning}>+</button>
 			<input bind:this={fileInput} type="file" accept="image/png,image/jpeg,image/webp,image/gif" onchange={handleFileSelect} style="display:none;" />
 			<textarea
+				bind:this={textareaEl}
 				bind:value={input}
 				onkeydown={handleKeydown}
+				oninput={handleInput}
+				onselect={handleSelect}
+				onkeyup={handleSelect}
+				onpaste={handlePaste}
 				onfocus={refreshKeyState}
 				placeholder={$t('chat.input.placeholder')}
 				disabled={isRunning || isCompacting || !gate.canSend}

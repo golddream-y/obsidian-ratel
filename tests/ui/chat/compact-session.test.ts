@@ -133,4 +133,45 @@ describe('compactSession', () => {
 		expect(result.summary).toBe('');
 		expect(result.preservedMessages).toHaveLength(1);
 	});
+
+	it('含工具对的长历史 - compact 后 preserved 无孤立 tool', async () => {
+		const sessions = new Map<string, Session>();
+		const oldMessages: ChatMessage[] = [
+			{ role: 'user', content: '早问' },
+			{ role: 'assistant', content: '早答' },
+			{
+				role: 'assistant',
+				content: '',
+				toolCallId: 'A',
+				toolName: 'read_note',
+				toolArgs: { path: 'a.md' },
+			},
+			{ role: 'tool', content: 'ra', toolCallId: 'A' },
+			{
+				role: 'assistant',
+				content: '',
+				toolCallId: 'B',
+				toolName: 'read_note',
+				toolArgs: { path: 'b.md' },
+			},
+			{ role: 'tool', content: 'rb', toolCallId: 'B' },
+		];
+		sessions.set('s1', { id: 's1', title: '', messages: oldMessages, createdAt: 0, updatedAt: 0 });
+
+		const persistence = createPersistence(sessions);
+		const ctx = new ContextManager(persistence);
+		const llm = createMockLLM([[{ text: '工具史摘要' }]]);
+
+		const result = await compactSession(ctx, llm, 's1');
+		expect(result.summary).toBe('工具史摘要');
+		// slice(-3) 原为 [tool A, asst B, tool B],对齐后不应含孤立 A
+		expect(result.preservedMessages.some((m) => m.role === 'tool' && m.toolCallId === 'A')).toBe(false);
+		for (const m of result.preservedMessages) {
+			if (m.role !== 'tool') continue;
+			const idx = result.preservedMessages.indexOf(m);
+			const prev = result.preservedMessages.slice(0, idx).reverse().find((x) => x.role !== 'tool');
+			expect(prev?.role).toBe('assistant');
+			expect(prev?.toolCallId).toBe(m.toolCallId);
+		}
+	});
 });
