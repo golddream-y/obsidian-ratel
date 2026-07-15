@@ -365,6 +365,6 @@ graph TB
 | ADR-006 发版资产 | `docs/adr/2026-06-28-release-asset-distribution.md` | Worker 内联 + WASM 懒下载(商店三文件约束) |
 | ADR-007 Context Window | `docs/adr/2026-06-28-model-context-window-registry.md` | LiteLLM 映射表 + 预设下拉(128k/200k/256k/1M/自定义) |
 | ADR-009 Skill | `docs/adr/2026-07-06-skill-mechanism.md` | Skill 三源加载与端口 |
-| S-BASIC-ENV | `docs/superpowers/specs/2026-07-14-agent-basic-env-design.md` | 环境感知:时间注入 + WorkspacePort + daily/recent/outline |
+| S-BASIC-ENV | `docs/superpowers/archive/S-BASIC-ENV/` | 环境感知:时间注入 + WorkspacePort + daily/recent/outline(已归档,0.1.5) |
 | STATUS.md | `docs/superpowers/STATUS.md` | spec / plan 状态追踪 |
 | 归档 | `docs/superpowers/archive/` | 已完成的 spec/plan 历史档案 |
