@@ -29,6 +29,10 @@ const TOOL_NAME_KEY: Record<string, StringKey> = {
 	get_daily_note: 'tool.name.get_daily_note',
 	list_recent_notes: 'tool.name.list_recent_notes',
 	get_note_outline: 'tool.name.get_note_outline',
+	get_links: 'tool.name.get_links',
+	search_by_tag: 'tool.name.search_by_tag',
+	search_by_property: 'tool.name.search_by_property',
+	get_vault_structure: 'tool.name.get_vault_structure',
 };
 
 /**
@@ -92,6 +96,23 @@ export function formatToolDisplayName(name: string, args: unknown): string {
 			const key = TOOL_NAME_KEY[name];
 			return p && key ? tNow(key, { path: p }) : name;
 		}
+		case 'get_links': {
+			const p = extractPath(obj.path);
+			const key = TOOL_NAME_KEY[name];
+			return p && key ? tNow(key, { path: p }) : name;
+		}
+		case 'search_by_tag': {
+			const tag = extractShort(obj.tag);
+			const key = TOOL_NAME_KEY[name];
+			return tag && key ? tNow(key, { tag }) : name;
+		}
+		case 'search_by_property': {
+			const keyName = extractShort(obj.key);
+			const key = TOOL_NAME_KEY[name];
+			return keyName && key ? tNow(key, { key: keyName }) : name;
+		}
+		case 'get_vault_structure':
+			return tNow('tool.name.get_vault_structure');
 		default:
 			return name;
 	}

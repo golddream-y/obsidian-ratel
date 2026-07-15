@@ -203,6 +203,11 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 		get_daily_note: 'allow',
 		list_recent_notes: 'allow',
 		get_note_outline: 'allow',
+		// 关键路径:图谱读侧工具只读放行。
+		get_links: 'allow',
+		search_by_tag: 'allow',
+		search_by_property: 'allow',
+		get_vault_structure: 'allow',
 	},
 	// 关键路径:默认无任何 override,使用 zh.ts 内置中文模板。
 	promptOverrides: {},
@@ -835,6 +840,10 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			get_daily_note: 'settings.toolPermissions.get_daily_note',
 			list_recent_notes: 'settings.toolPermissions.list_recent_notes',
 			get_note_outline: 'settings.toolPermissions.get_note_outline',
+			get_links: 'settings.toolPermissions.get_links',
+			search_by_tag: 'settings.toolPermissions.search_by_tag',
+			search_by_property: 'settings.toolPermissions.search_by_property',
+			get_vault_structure: 'settings.toolPermissions.get_vault_structure',
 		};
 		const key = map[toolName];
 		return key ? tNow(key) : toolName;
@@ -845,6 +854,7 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			'search_memory', 'remember', 'forget_memory',
 			'activate_skill', 'deactivate_skill',
 			'get_datetime', 'get_active_note', 'get_daily_note', 'list_recent_notes', 'get_note_outline',
+			'get_links', 'search_by_tag', 'search_by_property', 'get_vault_structure',
 		];
 
 		const items: SettingGroupItem[] = [

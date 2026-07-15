@@ -113,6 +113,10 @@ export interface SettingsStrings {
   'settings.toolPermissions.get_daily_note': string;
   'settings.toolPermissions.list_recent_notes': string;
   'settings.toolPermissions.get_note_outline': string;
+  'settings.toolPermissions.get_links': string;
+  'settings.toolPermissions.search_by_tag': string;
+  'settings.toolPermissions.search_by_property': string;
+  'settings.toolPermissions.get_vault_structure': string;
   'settings.toolPermissions.allow': string;
   'settings.toolPermissions.ask': string;
   'settings.toolPermissions.deny': string;
@@ -215,6 +219,10 @@ export interface ToolNameStrings {
   'tool.name.get_daily_note': string;
   'tool.name.list_recent_notes': string;
   'tool.name.get_note_outline': string;
+  'tool.name.get_links': string;
+  'tool.name.search_by_tag': string;
+  'tool.name.search_by_property': string;
+  'tool.name.get_vault_structure': string;
 }
 
 // ==================== Slash commands ====================
@@ -575,6 +583,28 @@ export interface PromptLabelStrings {
   'promptLabel.tool.get_note_outline.description.desc': string;
   'promptLabel.tool.get_note_outline.param.path': string;
   'promptLabel.tool.get_note_outline.param.path.desc': string;
+  'promptLabel.tool.get_links.description': string;
+  'promptLabel.tool.get_links.description.desc': string;
+  'promptLabel.tool.get_links.param.path': string;
+  'promptLabel.tool.get_links.param.path.desc': string;
+  'promptLabel.tool.search_by_tag.description': string;
+  'promptLabel.tool.search_by_tag.description.desc': string;
+  'promptLabel.tool.search_by_tag.param.tag': string;
+  'promptLabel.tool.search_by_tag.param.tag.desc': string;
+  'promptLabel.tool.search_by_tag.param.limit': string;
+  'promptLabel.tool.search_by_tag.param.limit.desc': string;
+  'promptLabel.tool.search_by_property.description': string;
+  'promptLabel.tool.search_by_property.description.desc': string;
+  'promptLabel.tool.search_by_property.param.key': string;
+  'promptLabel.tool.search_by_property.param.key.desc': string;
+  'promptLabel.tool.search_by_property.param.value': string;
+  'promptLabel.tool.search_by_property.param.value.desc': string;
+  'promptLabel.tool.search_by_property.param.limit': string;
+  'promptLabel.tool.search_by_property.param.limit.desc': string;
+  'promptLabel.tool.get_vault_structure.description': string;
+  'promptLabel.tool.get_vault_structure.description.desc': string;
+  'promptLabel.tool.get_vault_structure.param.include': string;
+  'promptLabel.tool.get_vault_structure.param.include.desc': string;
   'promptLabel.retrieval.wrapperPrefix': string;
   'promptLabel.retrieval.wrapperSuffix': string;
 }

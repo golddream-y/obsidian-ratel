@@ -17,6 +17,7 @@ import type { VectorSearchResult } from '../../src/ports/vector';
 import type { Persistence, Session } from '../../src/ports/persistence';
 import type { VaultPort } from '../../src/ports/vault';
 import type { AgentEvent } from '../../src/types';
+import { makeToolDef } from '../helpers/make-tool-def';
 
 function createMockPersistence(sessions: Map<string, Session> = new Map()): Persistence {
 	return {
@@ -41,6 +42,10 @@ describe('RAG loop integration', () => {
 			readFile: vi.fn(async () => '项目使用 TypeScript + esbuild'),
 			getMetadata: vi.fn(() => null),
 			getBacklinks: vi.fn(() => new Map()),
+			getLinks: vi.fn(() => ({ outgoing: [], backlinks: [], unresolved: [] })),
+			findByTag: vi.fn(() => []),
+			findByProperty: vi.fn(() => []),
+			getVaultStructure: vi.fn(() => ({ folders: [], tags: [], orphans: [] })),
 			writeFile: vi.fn(),
 			listMarkdownFiles: vi.fn(() => []),
 		};
@@ -53,7 +58,7 @@ describe('RAG loop integration', () => {
 		};
 
 		const tools = new ToolRegistry();
-		tools.register(createSearchVaultTool(searcher as never, () => true));
+		tools.register(createSearchVaultTool(searcher as never, () => true, makeToolDef('search_vault'), vault));
 		tools.register(createReadNoteTool(vault));
 
 		const toolCalls: ToolCall[] = [

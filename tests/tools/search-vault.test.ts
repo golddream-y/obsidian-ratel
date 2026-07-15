@@ -15,35 +15,75 @@ function createMockSearcher(results: VectorSearchResult[]) {
 	};
 }
 
+function createMockVault() {
+	return {
+		getMetadata: vi.fn((path: string) => {
+			if (path === 'notes/project.md') {
+				return {
+					tags: [{ tag: '#inline' }],
+					frontmatter: { tags: ['project', '#inline'], tag: 'architecture' },
+				};
+			}
+			return null;
+		}),
+		getBacklinks: vi.fn((path: string) => new Map(path === 'notes/project.md' ? [['notes/other.md', 2]] : [])),
+	};
+}
+
 describe('createSearchVaultTool', () => {
-	it('search_vault - 查询命中 - 返回 docId + score + metadata + index(从1) + reranked', async () => {
+	it('search_vault - 查询命中 - 返回带 tags 与 backlinkCount 的结果', async () => {
 		const searcher = createMockSearcher([
 			{ docId: 'notes/project.md#chunk-0', score: 0.95, metadata: { path: 'notes/project.md', chunkIndex: 0 }, reranked: true },
 			{ docId: 'notes/other.md#chunk-0', score: 0.80, metadata: { path: 'notes/other.md', chunkIndex: 0 }, reranked: true },
 		]);
+		const vault = createMockVault();
 
-		const tool = createSearchVaultTool(searcher as never, () => true, makeToolDef('search_vault'));
+		const tool = createSearchVaultTool(searcher as never, () => true, makeToolDef('search_vault'), vault as never);
 		const result = await tool.execute({ query: '技术栈', topK: 5 });
 
 		// 关键路径:searcher.search 被调用,参数透传
 		expect(searcher.search).toHaveBeenCalledWith('技术栈', 5);
 		// 关键路径:index 从 1 开始,供 LLM 引用 [1][2]
 		expect(result).toEqual([
-			{ docId: 'notes/project.md#chunk-0', score: 0.95, metadata: { path: 'notes/project.md', chunkIndex: 0 }, reranked: true, index: 1 },
-			{ docId: 'notes/other.md#chunk-0', score: 0.80, metadata: { path: 'notes/other.md', chunkIndex: 0 }, reranked: true, index: 2 },
+			{
+				docId: 'notes/project.md#chunk-0',
+				score: 0.95,
+				metadata: {
+					path: 'notes/project.md',
+					chunkIndex: 0,
+					tags: ['inline', 'project', 'architecture'],
+					backlinkCount: 1,
+				},
+				reranked: true,
+				index: 1,
+			},
+			{
+				docId: 'notes/other.md#chunk-0',
+				score: 0.80,
+				metadata: {
+					path: 'notes/other.md',
+					chunkIndex: 0,
+					tags: [],
+					backlinkCount: 0,
+				},
+				reranked: true,
+				index: 2,
+			},
 		]);
+		expect(vault.getMetadata).toHaveBeenCalledWith('notes/project.md');
+		expect(vault.getBacklinks).toHaveBeenCalledWith('notes/project.md');
 	});
 
 	it('search_vault - 未命中 - 返回空数组', async () => {
 		const searcher = createMockSearcher([]);
-		const tool = createSearchVaultTool(searcher as never, () => true, makeToolDef('search_vault'));
+		const tool = createSearchVaultTool(searcher as never, () => true, makeToolDef('search_vault'), createMockVault() as never);
 		const result = await tool.execute({ query: '不存在', topK: 3 });
 		expect(result).toEqual([]);
 	});
 
 	it('search_vault - 未传 topK - 默认使用 5', async () => {
 		const searcher = createMockSearcher([]);
-		const tool = createSearchVaultTool(searcher as never, () => true, makeToolDef('search_vault'));
+		const tool = createSearchVaultTool(searcher as never, () => true, makeToolDef('search_vault'), createMockVault() as never);
 		await tool.execute({ query: '技术栈' });
 		// 关键路径:未传 topK 时用默认值 5
 		expect(searcher.search).toHaveBeenCalledWith('技术栈', 5);
@@ -51,14 +91,14 @@ describe('createSearchVaultTool', () => {
 
 	it('search_vault - query 非字符串 - 抛错', async () => {
 		const searcher = createMockSearcher([]);
-		const tool = createSearchVaultTool(searcher as never, () => true, makeToolDef('search_vault'));
+		const tool = createSearchVaultTool(searcher as never, () => true, makeToolDef('search_vault'), createMockVault() as never);
 		await expect(tool.execute({ query: 123 })).rejects.toThrow('query 必须是有效字符串');
 	});
 
 	it('search_vault - 检索未就绪 - 抛 INDEX_NOT_READY', async () => {
 		// 关键路径:符合 S-FEEDBACK 验收标准 — 检索未就绪时抛 INDEX_NOT_READY。
 		const searcher = createMockSearcher([]);
-		const tool = createSearchVaultTool(searcher as never, () => false, makeToolDef('search_vault'));
+		const tool = createSearchVaultTool(searcher as never, () => false, makeToolDef('search_vault'), createMockVault() as never);
 
 		let caught: (Error & { code?: string }) | null = null;
 		try {
@@ -78,7 +118,7 @@ describe('createSearchVaultTool', () => {
 		const searcher = {
 			search: vi.fn().mockRejectedValue(new Error('Worker timeout')),
 		};
-		const tool = createSearchVaultTool(searcher as never, () => true, makeToolDef('search_vault'));
+		const tool = createSearchVaultTool(searcher as never, () => true, makeToolDef('search_vault'), createMockVault() as never);
 		await expect(tool.execute({ query: '技术栈' })).rejects.toThrow('Worker timeout');
 	});
 });

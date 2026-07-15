@@ -19,7 +19,11 @@ export const ZH_DEFAULTS: Record<PromptSectionId, string> = {
 
 	'agent.rag.toolGuide': `工具选用说明:
 - 问主题、概念、语义相关:优先 search_vault。
-- 已知路径或需全文:用 read_note(同时返回 frontmatter / tags / links / backlinks,无需另造工具)。
+- 已知路径或需全文:用 read_note(同时返回全文及单篇 frontmatter / tags / links / backlinks 元数据)。
+- 问「谁链到这篇 / 这篇链向哪 / 有哪些未解析链接或知识缺口」:先用 get_links 看链接图切片。
+- 要按标签精确过滤:用 search_by_tag(支持嵌套标签前缀),再决定是否用 search_vault 做语义搜索。
+- 要按 frontmatter 属性过滤:用 search_by_property;省略 value 可查询属性键是否存在。
+- 要看知识库目录、标签统计或孤儿笔记:用 get_vault_structure。
 - 找精确字面、正则、文件名模式:用 grep / glob。
 - 涉及「今天 / 本周 / 现在几点」:先看系统注入的当前本地时间;需要精确或相对日期时再调 get_datetime。
 - 「当前这篇 / 打开的笔记」:先 get_active_note 拿路径,再 read_note。
@@ -161,4 +165,23 @@ export const ZH_DEFAULTS: Record<PromptSectionId, string> = {
 	'tool.get_note_outline.description':
 		'用 Obsidian 标题缓存返回笔记大纲(level + 标题文本),不读全文。需要章节结构时优先本工具;要反链/标签/正文请用 read_note。',
 	'tool.get_note_outline.param.path': '笔记 vault 相对路径',
+
+	'tool.get_links.description':
+		'查询指定笔记的出链、反向链接与未解析链接。未解析链接代表知识缺口,适合发现待补充的笔记。',
+	'tool.get_links.param.path': '笔记 vault 相对路径',
+
+	'tool.search_by_tag.description':
+		'按标签筛选笔记,支持嵌套标签前缀匹配。需要先按知识结构过滤时使用,再决定是否调用 search_vault 做语义搜索。',
+	'tool.search_by_tag.param.tag': '标签名,可省略 #,例如 project 或 project/active',
+	'tool.search_by_tag.param.limit': '返回条数上限,默认 50',
+
+	'tool.search_by_property.description':
+		'按 YAML frontmatter 属性筛选笔记。省略 value 时查询属性键是否存在,适合按状态、类型等结构化元数据过滤。',
+	'tool.search_by_property.param.key': 'frontmatter 属性键,例如 status',
+	'tool.search_by_property.param.value': '属性值;省略时仅匹配包含该键的笔记',
+	'tool.search_by_property.param.limit': '返回条数上限,默认 50',
+
+	'tool.get_vault_structure.description':
+		'获取知识库目录、标签统计与孤儿笔记概览。大库全量查询可能返回较多数据,可用 include 只请求需要的部分。',
+	'tool.get_vault_structure.param.include': '要返回的维度: folders、tags、orphans;省略时返回全部',
 };

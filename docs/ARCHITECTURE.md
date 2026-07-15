@@ -86,7 +86,7 @@ graph TB
         L2A["Agent Loop"]
         L2B["Context Manager"]
         L2C["Hooks 注册表"]
-        L2D["Tools (19 个)"]
+        L2D["Tools (23 个)"]
         L2E["Subagents (4 个)"]
         L2F["LLM 调用<br/>(HTTP 流式)"]
         L2G["Embedding 调用<br/>(HTTP)"]
@@ -334,7 +334,7 @@ src/
     skill-registry.ts              #   enabled/disabled/active 三态管理 (会话级 active)
     skill-activator.ts             #   产出 Discovery 段 (skillList) + Active 段 (拼接 instructions)
 
-  tools/                           # Vault 工具集 (19 个)
+  tools/                           # Vault 工具集 (23 个)
     read-note.ts                   #   读取笔记全文 + metadata + backlinks
     search-vault.ts                #   向量+BM25 混合检索
     grep.ts                        #   正则搜索
@@ -354,6 +354,10 @@ src/
     get-daily-note.ts              #   日记路径探测(不创建)
     list-recent-notes.ts           #   按 mtime 列最近笔记
     get-note-outline.ts            #   metadataCache.headings 大纲
+    get-links.ts                   #   出链 / 反链 / 未解析链接
+    search-by-tag.ts               #   嵌套标签前缀过滤
+    search-by-property.ts          #   frontmatter 属性过滤
+    get-vault-structure.ts         #   目录 / 标签 / 孤儿笔记概览
 
   subagents/                       # 4 个 Subagent
     indexer.ts                     #   维护向量索引 (文件变更 + 定时重检)
@@ -375,7 +379,7 @@ src/
     sections.ts                    #   28 个 section 元数据注册表 (含 agent.skills + 4 个 skill 工具 section)
     defaults/zh.ts                 #   中文默认值(常量,不可变)
     interpolate.ts                 #   {{var}} 占位符引擎 + 校验
-    tool-schemas.ts                #   工具 JSON schema 骨架(19 个)
+    tool-schemas.ts                #   工具 JSON schema 骨架(23 个)
     composer.ts                    #   Composer 装配 API(5 个出口函数,含 composeMemorySystemPrompt)
     index.ts                       #   模块 re-export 入口
 
