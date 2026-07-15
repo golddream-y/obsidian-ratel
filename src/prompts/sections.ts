@@ -352,6 +352,98 @@ function buildSections(): SectionMeta[] {
 			placeholders: [],
 			allowOverride: true,
 		},
+		// --- get_links ---
+		{
+			id: 'tool.get_links.description',
+			label: tNow('promptLabel.tool.get_links.description'),
+			description: tNow('promptLabel.tool.get_links.description.desc'),
+			zone: 'tool',
+			placeholders: [],
+			allowOverride: true,
+		},
+		{
+			id: 'tool.get_links.param.path',
+			label: tNow('promptLabel.tool.get_links.param.path'),
+			description: tNow('promptLabel.tool.get_links.param.path.desc'),
+			zone: 'tool',
+			placeholders: [],
+			allowOverride: true,
+		},
+		// --- search_by_tag ---
+		{
+			id: 'tool.search_by_tag.description',
+			label: tNow('promptLabel.tool.search_by_tag.description'),
+			description: tNow('promptLabel.tool.search_by_tag.description.desc'),
+			zone: 'tool',
+			placeholders: [],
+			allowOverride: true,
+		},
+		{
+			id: 'tool.search_by_tag.param.tag',
+			label: tNow('promptLabel.tool.search_by_tag.param.tag'),
+			description: tNow('promptLabel.tool.search_by_tag.param.tag.desc'),
+			zone: 'tool',
+			placeholders: [],
+			allowOverride: true,
+		},
+		{
+			id: 'tool.search_by_tag.param.limit',
+			label: tNow('promptLabel.tool.search_by_tag.param.limit'),
+			description: tNow('promptLabel.tool.search_by_tag.param.limit.desc'),
+			zone: 'tool',
+			placeholders: [],
+			allowOverride: true,
+		},
+		// --- search_by_property ---
+		{
+			id: 'tool.search_by_property.description',
+			label: tNow('promptLabel.tool.search_by_property.description'),
+			description: tNow('promptLabel.tool.search_by_property.description.desc'),
+			zone: 'tool',
+			placeholders: [],
+			allowOverride: true,
+		},
+		{
+			id: 'tool.search_by_property.param.key',
+			label: tNow('promptLabel.tool.search_by_property.param.key'),
+			description: tNow('promptLabel.tool.search_by_property.param.key.desc'),
+			zone: 'tool',
+			placeholders: [],
+			allowOverride: true,
+		},
+		{
+			id: 'tool.search_by_property.param.value',
+			label: tNow('promptLabel.tool.search_by_property.param.value'),
+			description: tNow('promptLabel.tool.search_by_property.param.value.desc'),
+			zone: 'tool',
+			placeholders: [],
+			allowOverride: true,
+		},
+		{
+			id: 'tool.search_by_property.param.limit',
+			label: tNow('promptLabel.tool.search_by_property.param.limit'),
+			description: tNow('promptLabel.tool.search_by_property.param.limit.desc'),
+			zone: 'tool',
+			placeholders: [],
+			allowOverride: true,
+		},
+		// --- get_vault_structure ---
+		{
+			id: 'tool.get_vault_structure.description',
+			label: tNow('promptLabel.tool.get_vault_structure.description'),
+			description: tNow('promptLabel.tool.get_vault_structure.description.desc'),
+			zone: 'tool',
+			placeholders: [],
+			allowOverride: true,
+		},
+		{
+			id: 'tool.get_vault_structure.param.include',
+			label: tNow('promptLabel.tool.get_vault_structure.param.include'),
+			description: tNow('promptLabel.tool.get_vault_structure.param.include.desc'),
+			zone: 'tool',
+			placeholders: [],
+			allowOverride: true,
+		},
 	];
 }
 

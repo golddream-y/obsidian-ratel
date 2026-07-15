@@ -23,6 +23,20 @@ export interface VaultMetadata {
 	headings?: Array<{ level: number; heading: string; line?: number }>;
 }
 
+/** 单篇笔记的链接图切片（来自 metadataCache，实时）。 */
+export interface NoteLinks {
+	outgoing: Array<{ path: string; count: number }>;
+	backlinks: Array<{ path: string; count: number }>;
+	/** 未解析链接文本（知识缺口信号），非路径。 */
+	unresolved: Array<{ link: string; count: number }>;
+}
+
+export interface VaultStructureResult {
+	folders?: string[];
+	tags?: Array<{ tag: string; count: number }>;
+	orphans?: string[];
+}
+
 /**
  * Vault 抽象接口。
  *
@@ -57,6 +71,41 @@ export interface VaultPort {
 	 * @returns 文件不存在或尚未被 Obsidian 解析时返回 null。
 	 */
 	getMetadata(path: string): VaultMetadata | null;
+
+	/**
+	 * 获取单篇笔记的出链、反链和未解析链接。
+	 *
+	 * @param path - vault 相对路径。
+	 * @returns 基于当前 metadataCache 的链接图切片。
+	 */
+	getLinks(path: string): NoteLinks;
+
+	/**
+	 * 按标签查询笔记。
+	 *
+	 * @param tag - 标签名，可带 `#` 前缀。
+	 * @param opts - 结果数量限制。
+	 * @returns 匹配的笔记路径及其原始标签写法。
+	 */
+	findByTag(tag: string, opts?: { limit?: number }): Array<{ path: string; tags: string[] }>;
+
+	/**
+	 * 按 frontmatter 属性查询笔记。
+	 *
+	 * @param key - frontmatter 属性名。
+	 * @param value - 要匹配的值；省略时仅判断属性是否存在。
+	 * @param opts - 结果数量限制。
+	 * @returns 匹配路径及该属性的原始值。
+	 */
+	findByProperty(key: string, value?: unknown, opts?: { limit?: number }): Array<{ path: string; value: unknown }>;
+
+	/**
+	 * 获取 vault 的目录、标签和孤儿笔记概览。
+	 *
+	 * @param include - 需要返回的维度；省略时返回全部。
+	 * @returns 按请求维度生成的结构化概览。
+	 */
+	getVaultStructure(include?: Array<'folders' | 'tags' | 'orphans'>): VaultStructureResult;
 
 	/**
 	 * 列出 vault 内所有 Markdown 文件路径。

@@ -100,6 +100,10 @@ import { createGetActiveNoteTool } from './tools/get-active-note';
 import { createGetDailyNoteTool } from './tools/get-daily-note';
 import { createListRecentNotesTool } from './tools/list-recent-notes';
 import { createGetNoteOutlineTool } from './tools/get-note-outline';
+import { createGetLinksTool } from './tools/get-links';
+import { createSearchByTagTool } from './tools/search-by-tag';
+import { createSearchByPropertyTool } from './tools/search-by-property';
+import { createGetVaultStructureTool } from './tools/get-vault-structure';
 import { ObsidianWorkspace } from './adapters/obsidian-workspace';
 import type { WorkspacePort } from './ports/workspace';
 import { formatEnvContextLine } from './utils/local-datetime';
@@ -390,6 +394,7 @@ export default class RatelVaultPlugin extends Plugin {
 				multiQuerySearcher,
 				() => isSearchReady(get(this.userStatus.statusBar$)),
 				toolDefMap.get('search_vault')!,
+				this.vault,
 			),
 		);
 		this.tools.register(createGrepTool(this.vault, toolDefMap.get('grep')!));
@@ -427,6 +432,13 @@ export default class RatelVaultPlugin extends Plugin {
 		);
 		this.tools.register(createListRecentNotesTool(this.vault, toolDefMap.get('list_recent_notes')!));
 		this.tools.register(createGetNoteOutlineTool(this.vault, toolDefMap.get('get_note_outline')!));
+		// 关键路径:P-EVO-A-READ — 图谱读侧工具复用 Obsidian metadataCache，不扫描全文。
+		this.tools.register(createGetLinksTool(this.vault, toolDefMap.get('get_links')!));
+		this.tools.register(createSearchByTagTool(this.vault, toolDefMap.get('search_by_tag')!));
+		this.tools.register(createSearchByPropertyTool(this.vault, toolDefMap.get('search_by_property')!));
+		this.tools.register(
+			createGetVaultStructureTool(this.vault, toolDefMap.get('get_vault_structure')!),
+		);
 		this.hooks = new HookRegistry();
 		this.hooks.register(
 			'pre-tool-use',

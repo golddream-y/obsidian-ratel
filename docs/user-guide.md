@@ -53,7 +53,10 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 | 最近改过什么 | 「最近改了哪些笔记？」 | `list_recent_notes` |
 | 今天日记在哪 | 「今天日记在哪？」 | `get_daily_note`（只探测，**不自动创建**） |
 | 章节大纲 | 「这篇有哪些标题？」 | `get_note_outline`（走标题缓存，不读全文） |
-| 谁链到这篇 | 「谁链到这篇？」 | 用 `read_note` 看 `backlinks` |
+| 谁链到这篇 / 链到谁 | 「谁链到这篇？」「这篇链向哪里？」 | `get_links`（含未解析链接，可发现知识缺口） |
+| 按标签找笔记 | 「找所有 `#project` 笔记」 | `search_by_tag`（支持嵌套标签前缀） |
+| 按属性筛选 | 「找 `status: draft` 的笔记」 | `search_by_property`（不传 value 时查键是否存在） |
+| 查看库概览 | 「库里有哪些标签和孤儿笔记？」 | `get_vault_structure`（可按目录 / 标签 / 孤儿笔记选择） |
 | 写综述 / 整理 | 「把产品规划相关笔记整理成背景文档」 | 多步检索 → 读写（写前会按权限询问） |
 
 流式回答时可以看到工具调用过程；支持 reasoning 的模型（如 DeepSeek-R1）会显示可折叠「思考」块。

@@ -6,7 +6,7 @@
  */
 
 import { type App, TFile } from 'obsidian';
-import type { VaultPort, VaultMetadata } from '../ports/vault';
+import type { NoteLinks, VaultPort, VaultMetadata, VaultStructureResult } from '../ports/vault';
 import { validateVaultPath } from '../utils/path-safety';
 import { tNow } from '../i18n';
 
@@ -123,6 +123,158 @@ export class ObsidianVault implements VaultPort {
 				line: h.position.start.line,
 			})),
 		};
+	}
+
+	/**
+	 * 获取笔记的出链、反链与未解析链接。
+	 *
+	 * @param path - vault 相对路径。
+	 * @returns 直接从 metadataCache 生成的实时图谱切片。
+	 */
+	getLinks(path: string): NoteLinks {
+		// 关键路径:链接关系由 metadataCache 维护，避免读取文件或依赖文件系统。
+		const resolved = this.app.metadataCache.resolvedLinks[path] ?? {};
+		const unresolvedRaw = this.app.metadataCache.unresolvedLinks[path] ?? {};
+		const backlinks = this.getBacklinks(path);
+		return {
+			outgoing: Object.entries(resolved).map(([targetPath, count]) => ({ path: targetPath, count })),
+			backlinks: [...backlinks.entries()].map(([sourcePath, count]) => ({ path: sourcePath, count })),
+			unresolved: Object.entries(unresolvedRaw).map(([link, count]) => ({ link, count })),
+		};
+	}
+
+	/**
+	 * 按标签查询笔记，父标签会匹配其所有嵌套标签。
+	 *
+	 * @param tag - 标签名，可带 `#` 前缀。
+	 * @param opts - 可选的结果数量限制。
+	 * @returns 匹配的路径及保留原始写法的标签。
+	 */
+	findByTag(tag: string, opts?: { limit?: number }): Array<{ path: string; tags: string[] }> {
+		const query = this.normalizeTag(tag);
+		const limit = this.resolveLimit(opts?.limit);
+		const results: Array<{ path: string; tags: string[] }> = [];
+
+		for (const path of this.listMarkdownFiles()) {
+			const tags = this.collectTags(path);
+			if (tags.some((candidate) => {
+				const normalized = this.normalizeTag(candidate);
+				return normalized === query || normalized.startsWith(`${query}/`);
+			})) {
+				results.push({ path, tags });
+				if (results.length >= limit) break;
+			}
+		}
+		return results;
+	}
+
+	/**
+	 * 按 frontmatter 属性查询笔记。
+	 *
+	 * @param key - frontmatter 属性名。
+	 * @param value - 目标值；省略时只检查属性存在。
+	 * @param opts - 可选的结果数量限制。
+	 * @returns 匹配的路径及属性值。
+	 */
+	findByProperty(key: string, value?: unknown, opts?: { limit?: number }): Array<{ path: string; value: unknown }> {
+		const limit = this.resolveLimit(opts?.limit);
+		const results: Array<{ path: string; value: unknown }> = [];
+
+		for (const path of this.listMarkdownFiles()) {
+			const frontmatter = this.getMetadata(path)?.frontmatter;
+			if (!frontmatter || !(key in frontmatter)) continue;
+			const propertyValue = frontmatter[key];
+			if (value !== undefined && JSON.stringify(propertyValue) !== JSON.stringify(value)) continue;
+			results.push({ path, value: propertyValue });
+			if (results.length >= limit) break;
+		}
+		return results;
+	}
+
+	/**
+	 * 获取 vault 的目录、标签统计与孤儿笔记。
+	 *
+	 * @param include - 需要收集的维度；省略时包含全部。
+	 * @returns 仅包含所请求维度的 vault 结构概览。
+	 */
+	getVaultStructure(include: Array<'folders' | 'tags' | 'orphans'> = ['folders', 'tags', 'orphans']): VaultStructureResult {
+		const requested = new Set(include);
+		const paths = this.listMarkdownFiles();
+		const result: VaultStructureResult = {};
+
+		if (requested.has('folders')) {
+			result.folders = [...new Set(paths
+				.map((path) => path.lastIndexOf('/') >= 0 ? path.slice(0, path.lastIndexOf('/')) : '')
+				.filter(Boolean))]
+				.sort();
+		}
+
+		if (requested.has('tags')) {
+			const tags = new Map<string, { tag: string; count: number }>();
+			for (const path of paths) {
+				for (const tag of this.collectTags(path)) {
+					const normalized = this.normalizeTag(tag);
+					const existing = tags.get(normalized);
+					if (existing) existing.count += 1;
+					else tags.set(normalized, { tag, count: 1 });
+				}
+			}
+			result.tags = [...tags.values()].sort((left, right) => left.tag.localeCompare(right.tag));
+		}
+
+		if (requested.has('orphans')) {
+			result.orphans = paths
+				.filter((path) => {
+					const normalizedPath = path.toLowerCase();
+					if (normalizedPath.startsWith('.') || normalizedPath.startsWith('templates/')) return false;
+					const links = this.getLinks(path);
+					return links.outgoing.length === 0 && links.backlinks.length === 0;
+				})
+				.sort();
+		}
+
+		return result;
+	}
+
+	/**
+	 * 汇集笔记内联标签与 frontmatter 标签。
+	 *
+	 * @param path - vault 相对路径。
+	 * @returns 去重后、保留库内原始写法的标签列表。
+	 */
+	private collectTags(path: string): string[] {
+		const metadata = this.getMetadata(path);
+		if (!metadata) return [];
+		const frontmatter = metadata.frontmatter;
+		const frontmatterTags = [
+			...this.toStringTags(frontmatter?.tags),
+			...this.toStringTags(frontmatter?.tag),
+		];
+		const tags = [...(metadata.tags?.map(({ tag }) => tag) ?? []), ...frontmatterTags];
+		const unique = new Map<string, string>();
+		for (const tag of tags) {
+			const normalized = this.normalizeTag(tag);
+			if (normalized && !unique.has(normalized)) unique.set(normalized, tag.replace(/^#/, ''));
+		}
+		return [...unique.values()];
+	}
+
+	private toStringTags(value: unknown): string[] {
+		if (typeof value === 'string') return [value];
+		if (!Array.isArray(value)) return [];
+		const tags: string[] = [];
+		for (const item of value) {
+			if (typeof item === 'string') tags.push(item);
+		}
+		return tags;
+	}
+
+	private normalizeTag(tag: string): string {
+		return tag.replace(/^#/, '').toLocaleLowerCase();
+	}
+
+	private resolveLimit(limit: number | undefined): number {
+		return Math.max(0, Math.min(limit ?? 50, 200));
 	}
 
 	onFileModify(callback: (path: string) => void): () => void {

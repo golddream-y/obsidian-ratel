@@ -65,6 +65,10 @@ graph TB
         V8["onFileDelete(cb)"]
         V9["onFileRename(cb)"]
         V10["stat(path)"]
+        V11["getLinks(path)"]
+        V12["findByTag(tag)"]
+        V13["findByProperty(key, value?)"]
+        V14["getVaultStructure(include?)"]
     end
 
     subgraph "底层 Obsidian API"
@@ -92,9 +96,13 @@ graph TB
     V8 --> AV
     V9 --> AV
     V10 --> AV
+    V11 --> MC
+    V12 --> MC
+    V13 --> MC
+    V14 --> MC
 ```
 
-**关键**:`getBacklinks` / `getMetadata` 走 `metadataCache`(同步);`getMetadata` 另暴露 `headings`(来自 `CachedMetadata.headings`),供 `get_note_outline` 使用,**禁止**工具层全文正则扫标题。`writeFile` 自动处理"文件存在则 modify,不存在则 create + 自动建父目录"。
+**关键**:`getBacklinks` / `getMetadata` 及图谱查询 `getLinks`、`findByTag`、`findByProperty`、`getVaultStructure` 都基于 `metadataCache` 的同步索引；前者读取单篇链接图，后者分别按标签、frontmatter 属性与全库结构查询。`getMetadata` 另暴露 `headings`(来自 `CachedMetadata.headings`),供 `get_note_outline` 使用,**禁止**工具层全文正则扫标题。`writeFile` 自动处理"文件存在则 modify,不存在则 create + 自动建父目录"。
 
 ---
 

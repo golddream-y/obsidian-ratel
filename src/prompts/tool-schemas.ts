@@ -221,6 +221,50 @@ export const TOOL_SCHEMA_SKELETONS: Record<string, SchemaSkeleton> = {
 			required: ['path'],
 		},
 	},
+	get_links: {
+		name: 'get_links',
+		parameters: {
+			type: 'object',
+			properties: { path: { type: 'string' } },
+			required: ['path'],
+		},
+	},
+	search_by_tag: {
+		name: 'search_by_tag',
+		parameters: {
+			type: 'object',
+			properties: {
+				tag: { type: 'string' },
+				limit: { type: 'number' },
+			},
+			required: ['tag'],
+		},
+	},
+	search_by_property: {
+		name: 'search_by_property',
+		parameters: {
+			type: 'object',
+			properties: {
+				key: { type: 'string' },
+				value: {},
+				limit: { type: 'number' },
+			},
+			required: ['key'],
+		},
+	},
+	get_vault_structure: {
+		name: 'get_vault_structure',
+		parameters: {
+			type: 'object',
+			properties: {
+				include: {
+					type: 'array',
+					items: { type: 'string', enum: ['folders', 'tags', 'orphans'] },
+				},
+			},
+			required: [],
+		},
+	},
 };
 
 export const ALL_TOOL_NAMES = [
@@ -229,4 +273,5 @@ export const ALL_TOOL_NAMES = [
 	'search_memory', 'remember', 'forget_memory',
 	'activate_skill', 'deactivate_skill',
 	'get_datetime', 'get_active_note', 'get_daily_note', 'list_recent_notes', 'get_note_outline',
+	'get_links', 'search_by_tag', 'search_by_property', 'get_vault_structure',
 ];

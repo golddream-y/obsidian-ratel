@@ -49,6 +49,7 @@ const { mockTFile, mockApp } = vi.hoisted(() => {
 		},
 		metadataCache: {
 			resolvedLinks: {} as Record<string, Record<string, number>>,
+			unresolvedLinks: {} as Record<string, Record<string, number>>,
 			getFileCache: vi.fn(),
 		},
 	};
@@ -175,6 +176,88 @@ describe('ObsidianVault', () => {
 		const result = vault.getBacklinks('target.md');
 
 		expect(result.size).toBe(0);
+	});
+
+	it('getLinks - 有已解析链接、反链和未解析链接 - 返回图谱切片', () => {
+		mockApp.metadataCache.resolvedLinks = {
+			'target.md': { 'outgoing.md': 2 },
+			'source.md': { 'target.md': 3 },
+		};
+		mockApp.metadataCache.unresolvedLinks = {
+			'target.md': { 'Missing Note': 1 },
+		};
+
+		expect(vault.getLinks('target.md')).toEqual({
+			outgoing: [{ path: 'outgoing.md', count: 2 }],
+			backlinks: [{ path: 'source.md', count: 3 }],
+			unresolved: [{ link: 'Missing Note', count: 1 }],
+		});
+	});
+
+	it('findByTag - 查询父标签 - 匹配自身与嵌套标签且保留原始写法', () => {
+		const files = [mockFile('a.md'), mockFile('b.md'), mockFile('c.md')];
+		mockApp.vault.getMarkdownFiles.mockReturnValue(files);
+		mockApp.vault.getAbstractFileByPath.mockImplementation((path: string) =>
+			files.find((file) => file.path === path) ?? null,
+		);
+		mockApp.metadataCache.getFileCache.mockImplementation((file: { path: string }) => ({
+			'a.md': { tags: [{ tag: '#Project/Foo' }] },
+			'b.md': { frontmatter: { tags: ['project'] } },
+			'c.md': { tags: [{ tag: '#other' }] },
+		})[file.path]);
+
+		expect(vault.findByTag('#project')).toEqual([
+			{ path: 'a.md', tags: ['Project/Foo'] },
+			{ path: 'b.md', tags: ['project'] },
+		]);
+	});
+
+	it('findByProperty - 未指定值 - 返回含该 frontmatter 键的笔记', () => {
+		const files = [mockFile('a.md'), mockFile('b.md')];
+		mockApp.vault.getMarkdownFiles.mockReturnValue(files);
+		mockApp.vault.getAbstractFileByPath.mockImplementation((path: string) =>
+			files.find((file) => file.path === path) ?? null,
+		);
+		mockApp.metadataCache.getFileCache.mockImplementation((file: { path: string }) => ({
+			'a.md': { frontmatter: { status: 'done' } },
+			'b.md': { frontmatter: { title: 'Draft' } },
+		})[file.path]);
+
+		expect(vault.findByProperty('status')).toEqual([{ path: 'a.md', value: 'done' }]);
+	});
+
+	it('getVaultStructure - 默认包含所有维度 - 返回排序文件夹、标签统计和排除模板的孤儿', () => {
+		const files = [
+			mockFile('projects/a.md'),
+			mockFile('inbox/b.md'),
+			mockFile('templates/template.md'),
+			mockFile('.hidden.md'),
+		];
+		mockApp.vault.getMarkdownFiles.mockReturnValue(files);
+		mockApp.vault.getAbstractFileByPath.mockImplementation((path: string) =>
+			files.find((file) => file.path === path) ?? null,
+		);
+		mockApp.metadataCache.resolvedLinks = {
+			'projects/a.md': {},
+			'inbox/b.md': {},
+			'templates/template.md': {},
+			'.hidden.md': {},
+		};
+		mockApp.metadataCache.getFileCache.mockImplementation((file: { path: string }) => ({
+			'projects/a.md': { tags: [{ tag: '#Work' }] },
+			'inbox/b.md': { frontmatter: { tag: 'work' } },
+			'templates/template.md': { tags: [{ tag: '#template' }] },
+			'.hidden.md': undefined,
+		})[file.path]);
+
+		expect(vault.getVaultStructure()).toEqual({
+			folders: ['inbox', 'projects', 'templates'],
+			tags: [
+				{ tag: 'template', count: 1 },
+				{ tag: 'Work', count: 2 },
+			],
+			orphans: ['inbox/b.md', 'projects/a.md'],
+		});
 	});
 
 	it('getMetadata - 文件存在且有缓存 - 返回结构化元数据', () => {

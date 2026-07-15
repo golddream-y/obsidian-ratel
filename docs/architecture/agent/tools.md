@@ -72,6 +72,10 @@ graph TB
     subgraph "发现类(只读)"
         SV["search_vault<br/>语义搜索<br/>readOnly: true"]
         RN["read_note<br/>读取笔记<br/>readOnly: true"]
+        GLK["get_links<br/>链接图切片<br/>readOnly: true"]
+        SBT["search_by_tag<br/>标签过滤<br/>readOnly: true"]
+        SBP["search_by_property<br/>属性过滤<br/>readOnly: true"]
+        GVS["get_vault_structure<br/>库结构概览<br/>readOnly: true"]
         GR["grep<br/>精确/正则搜索<br/>readOnly: true"]
         GL["glob<br/>文件名匹配<br/>readOnly: true"]
         LF["list_files<br/>列目录<br/>readOnly: true"]
@@ -102,6 +106,10 @@ graph TB
 
     SV --> REG
     RN --> REG
+    GLK --> REG
+    SBT --> REG
+    SBP --> REG
+    GVS --> REG
     GR --> REG
     GL --> REG
     LF --> REG
@@ -143,6 +151,8 @@ interface ToolDefinition {
 | readOnly | true |
 | 参数 | `query: string`, `topK: number`(默认 5) |
 | 返回 | `[{ docId, score, metadata, index }]` |
+
+`metadata` 会补充 Obsidian `metadataCache` 中的实时 `tags` 与 `backlinkCount`，避免索引元数据滞后。
 
 **调用路径**:
 
@@ -260,7 +270,16 @@ sequenceDiagram
 | `list_recent_notes` | 按 mtime 列最近笔记 | 过滤 configDir / `.trash` / `.ratel/`;limit 硬顶 50 |
 | `get_note_outline` | 标题大纲 | **只用** `VaultMetadata.headings`(metadataCache),禁止全文正则 |
 
-反链 / tags / frontmatter 正文仍走已有 `read_note`,不另造工具。
+### 4.11 图谱读取工具(P-EVO-A-READ)
+
+| 工具 | 作用 | readOnly | 默认权限 |
+|---|---|---|---|
+| `get_links` | 查询单篇笔记的出链、反链与未解析链接 | ✅ | allow |
+| `search_by_tag` | 按标签精确过滤，支持嵌套标签前缀 | ✅ | allow |
+| `search_by_property` | 按 frontmatter 属性过滤；省略 `value` 时仅判断键存在 | ✅ | allow |
+| `get_vault_structure` | 返回目录、标签统计与孤儿笔记概览 | ✅ | allow |
+
+`read_note` 仍用于读取全文及单篇元数据；需要跨笔记链接关系或结构化筛选时，应使用上述专用工具。
 
 ---
 
@@ -316,6 +335,7 @@ sequenceDiagram
 |---|---|---|---|---|
 | **检索类** | search_vault | ✅ | ✅(权限 + 路径) | ❌ |
 | **读取类** | read_note | ✅ | ✅(权限 + 路径) | ❌ |
+| **图谱读取类** | get_links, search_by_tag, search_by_property, get_vault_structure | ✅ | ✅(权限;有 path 时校验) | ❌ |
 | **发现类** | grep, glob, list_files | ✅ | ✅(权限 + 路径) | ❌ |
 | **环境感知** | get_datetime, get_active_note, get_daily_note, list_recent_notes, get_note_outline | ✅ | ✅(权限;有 path 时校验) | ❌ |
 | **记忆类** | search_memory, remember, forget_memory | 读写混合 | ✅ | ❌ |
