@@ -6,9 +6,9 @@
 [![Obsidian](https://img.shields.io/badge/Obsidian-1.13.0%2B-7c3aed?style=flat-square)](https://obsidian.md)
 [![Desktop only](https://img.shields.io/badge/platform-desktop-0ea5e9?style=flat-square)](https://obsidian.md)
 
-**Chat with your vault. Get things done.**
+**The graph-native AI agent for your vault.**
 
-Ask what you wrote about a topic. Have Ratel research across notes and draft a summary. Answers cite sources you can open in one click.
+Chat, research, and act on your linked notes. Ask what you wrote about a topic; have Ratel pull sources into a draft. Answers cite notes you can open in one click.
 
 ---
 
@@ -33,7 +33,7 @@ Full walkthrough: [User Guide](https://github.com/golddream-y/obsidian-ratel/blo
 “Pull product-planning notes into a background doc” — search, read, synthesize, write (with confirmation before edits).
 
 **Know the room**  
-Every turn injects local time. “Summarize this note” uses the active file. Daily note path, recent edits, and outlines are first-class tools — without inventing separate backlink gadgets (`read_note` already returns them).
+Every turn injects local time. “Summarize this note” uses the active file. Daily note path, recent edits, and outlines are first-class tools.
 
 **Remember & extend**  
 Say “remember I prefer Tailwind…” — stored as Markdown under `.ratel/memory/`. Drop a `SKILL.md` into `.ratel/skills/` to teach new workflows.
@@ -46,12 +46,22 @@ Per-tool allow / ask / deny. Status bar + diagnostics when something’s wrong. 
 
 ---
 
+## Why Ratel
+
+- **Graph-native** — built for linked notes, not generic chat over files  
+- **Grounded answers** — numbered citations you can open in one click  
+- **Private by default** — local embeddings; network only to the model you configure  
+- **You approve edits** — per-tool permissions before anything changes your vault  
+
+---
+
 ## Features
 
-- Semantic search over your vault with clickable citations  
+- Semantic search with clickable citations, plus link graph inspection (`get_links`)
+- Graph tools: `get_links`, `search_by_tag`, `search_by_property`, and `get_vault_structure`
 - Agent tools: read / write / grep / glob, memory, skills, active note & daily path  
-- Local ONNX embedding by default; optional API embed / Bailian rerank  
-- Scene presets in settings (DeepSeek / Ollama / Custom); keys in Obsidian Keychain  
+- Private semantic search — local ONNX embeddings by default; optional API embed / Bailian rerank  
+- Scene presets (DeepSeek / Ollama / Custom); keys in Obsidian Keychain  
 - Per-tool permissions + trust mode; desktop only; no telemetry  
 
 ---
@@ -66,7 +76,7 @@ Per-tool allow / ask / deny. Status bar + diagnostics when something’s wrong. 
 
 ## Docs
 
-| | |
+| Doc | Contents |
 |---|---|
 | [User Guide](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/user-guide.md) | Setup, scenarios, slash commands, FAQ |
 | [Architecture](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/ARCHITECTURE.md) | Ports, agent loop, tools, workers |
