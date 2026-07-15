@@ -17,9 +17,7 @@
 
 | ID | 文件 | 状态 | 创建日期 | 备注 |
 |---|---|---|---|---|
-| S-I18N | [2026-06-14-ratel-i18n-design.md](specs/2026-06-14-ratel-i18n-design.md) | 🚫 Superseded | 2026-06-14 | 已被 S-I18N-V2 取代;估算 key 数严重不足(50 vs 300),覆盖类别不全(3 vs 10) |
 | S-SKILL | [2026-07-06-skill-mechanism-design.md](specs/2026-07-06-skill-mechanism-design.md) | Active | 2026-07-06 | Skill 机制(agentskills.io 兼容):三源加载 + Discovery/Active + 2 工具(执行层 P-SKILL-2/3 仍 pending) |
-| S-BASIC-ENV | [2026-07-14-agent-basic-env-design.md](specs/2026-07-14-agent-basic-env-design.md) | Active | 2026-07-14 | Agent 基础环境感知:时间注入 + active note + daily/recent/outline(0.1.5 已发;可另轮归档) |
 
 ---
 
@@ -27,8 +25,6 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
-| P-I18N-IMPL | [2026-06-14-ratel-i18n-implementation.md](plans/2026-06-14-ratel-i18n-implementation.md) | 🚫 Superseded | S-I18N | 已被 P-I18N-V2-IMPL 取代 |
-| P-BASIC-ENV | [2026-07-14-agent-basic-env.md](plans/2026-07-14-agent-basic-env.md) | ✅ Completed | S-BASIC-ENV | 0.1.5 已发;待归档 |
 | P-SKILL-2-EXECUTION | — | ⏳ Pending | S-SKILL | references+scripts:沙箱+权限+read_skill_reference/run_skill_script 工具;依赖 P-SKILL-1-CORE(已归档);plan 待写 |
 | P-SKILL-3-UI | — | ⏳ Pending | S-SKILL | settings 面板+chat 状态显示+预置示例 skills;依赖 P-SKILL-1-CORE(已归档);plan 待写 |
 
@@ -51,7 +47,6 @@
 
 1. **P-SKILL-2-EXECUTION**(S-SKILL 执行)— plan 待写
 2. **P-SKILL-3-UI**(S-SKILL UI)— plan 待写
-3. （可选）归档 S-BASIC-ENV / P-BASIC-ENV
 
 ---
 
@@ -95,3 +90,5 @@
 | S-INDEX-MANIFEST-FIX | [archive/S-INDEX-MANIFEST-FIX/](archive/S-INDEX-MANIFEST-FIX/) | 2026-07-15 | 清单迁 `.index/ratel-manifest.json`;缺清单不全量 embed |
 | S-CHAT-INPUT-MENTIONS | [archive/S-CHAT-INPUT-MENTIONS/](archive/S-CHAT-INPUT-MENTIONS/) | 2026-07-15 | `/`+`@`+file-menu;策略 A |
 | S-TOOL-HISTORY-400 | [archive/S-TOOL-HISTORY-400/](archive/S-TOOL-HISTORY-400/) | 2026-07-15 | compact/上送孤立 tool 对齐 |
+| S-BASIC-ENV | [archive/S-BASIC-ENV/](archive/S-BASIC-ENV/) | 2026-07-15 | Phase1+2 已随 0.1.5 发版;Phase3 非目标另开 |
+| S-I18N | [archive/S-I18N/](archive/S-I18N/) | 2026-07-15 | Superseded by S-I18N-V2;v1 未落地 |
