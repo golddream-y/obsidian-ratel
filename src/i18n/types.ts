@@ -319,7 +319,6 @@ export interface StatusStrings {
   'status.embedding.loading': string;
   'status.embedding.notConfigured': string;
   'status.embedding.unknown': string;
-  'status.degraded.inline': string;
   'status.degraded.apiEmbedding': string;
   'status.detail.checkingChanges': string;
   'status.detail.pending': string;

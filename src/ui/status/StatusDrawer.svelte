@@ -113,7 +113,7 @@
 		</div>
 		<div class="ratel-drawer-row">
 			<span class="ratel-drawer-label">{$t('status.drawer.label.workerMode')}</span>
-			<span class="ratel-drawer-pill ratel-drawer-pill-warn">{snap.worker === 'inline' ? $t('status.drawer.workerMode.inline') : $t('status.drawer.workerMode.worker')}</span>
+			<span class="ratel-drawer-pill">{snap.worker === 'inline' ? $t('status.drawer.workerMode.inline') : $t('status.drawer.workerMode.worker')}</span>
 		</div>
 		{#if snap.degraded}
 			<div class="ratel-drawer-degraded">

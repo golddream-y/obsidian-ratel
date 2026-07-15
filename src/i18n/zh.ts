@@ -314,7 +314,6 @@ const statusZh: StatusStrings = {
   'status.embedding.loading': '加载中',
   'status.embedding.notConfigured': '未配置',
   'status.embedding.unknown': '…',
-  'status.degraded.inline': '主线程内联模式,大库索引较慢,可在设置启用 Worker 线程',
   'status.degraded.apiEmbedding': 'API Embedding 模式暂不支持自动索引,请切换到本地模型',
   'status.detail.checkingChanges': '正在检查 vault 变更...',
   'status.detail.pending': '{count} 待索引',

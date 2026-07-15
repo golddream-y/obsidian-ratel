@@ -609,7 +609,6 @@ export default class RatelVaultPlugin extends Plugin {
 			userNotice: this.userNotice,
 			userStatus: this.userStatus,
 			getEmbeddingReady: () => !(this.embedding instanceof EmbeddingLocal) || this.embedding.isReady,
-			getWorkerMode: () => this.workerMode,
 			getSettings: () => this.settings,
 		});
 		this.feedbackController.start();

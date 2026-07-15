@@ -307,7 +307,6 @@ export const en: Strings = {
   'status.embedding.loading': 'Loading',
   'status.embedding.notConfigured': 'Not configured',
   'status.embedding.unknown': '…',
-  'status.degraded.inline': 'Inline main-thread mode; large vaults are slower. Enable Worker thread in settings.',
   'status.degraded.apiEmbedding': 'API Embedding mode does not support auto-indexing. Switch to a local model.',
   'status.detail.checkingChanges': 'Checking vault for changes...',
   'status.detail.pending': '{count} pending index',
