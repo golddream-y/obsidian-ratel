@@ -6,9 +6,9 @@
 [![Obsidian](https://img.shields.io/badge/Obsidian-1.13.0%2B-7c3aed?style=flat-square)](https://obsidian.md)
 [![仅桌面](https://img.shields.io/badge/平台-桌面端-0ea5e9?style=flat-square)](https://obsidian.md)
 
-**让你的 Obsidian 知识库能对话、能办事。**
+**面向链接笔记的图谱原生 AI Agent。**
 
-问它记过什么，让它翻资料写综述；回答带来源编号，点一下打开原文。
+能对话、能检索、能在双链知识库上办事。问它记过什么，让它翻资料写综述；回答带来源编号，点一下打开原文。
 
 ---
 
@@ -33,7 +33,7 @@ Obsidian → **设置** → **社区插件** → **浏览** → 搜索 **Ratel**
 「把产品规划相关笔记整理成背景文档」—— 检索、阅读、归纳、写入（改删前会按权限确认）。
 
 **懂当前环境**  
-每轮对话注入本地时间。「概括当前这篇」走活动笔记；日记路径、最近修改、标题大纲都有专用工具；反链 / 标签仍用已有 `read_note`。
+每轮对话注入本地时间。「概括当前这篇」走活动笔记；日记路径、最近修改、标题大纲都有专用工具。
 
 **记得住，可扩展**  
 说「记住我偏好 Tailwind…」→ 写入 `.ratel/memory/`。把 `SKILL.md` 放进 `.ratel/skills/` 就能教会新流程。
@@ -46,11 +46,21 @@ DeepSeek / Claude / Ollama。密钥在 Obsidian 钥匙串，不进配置文件�
 
 ---
 
+## 为什么是 Ratel
+
+- **图谱原生** — 为双链笔记设计，不是通用文件聊天框  
+- **回答有出处** — 带编号引用，一点跳转原文  
+- **默认本地** — 本地嵌入；网络只连你配置的模型  
+- **改库先确认** — 按工具权限，动手前你说了算  
+
+---
+
 ## 特性
 
-- 语义检索 + 可点击出处  
+- 语义检索 + 可点击出处，并可查看链接图（`get_links`）
+- 图谱工具：`get_links`、`search_by_tag`、`search_by_property`、`get_vault_structure`
 - Agent 工具：读写 / grep / glob、记忆、Skill、当前笔记与日记路径  
-- 默认本地 ONNX 嵌入；可选 API 嵌入 / 百炼重排  
+- 私有语义检索 — 默认本地 ONNX 嵌入；可选 API 嵌入 / 百炼重排  
 - 设置页场景预设（DeepSeek / Ollama / 自定义）；密钥在 Obsidian 钥匙串  
 - 按工具权限 + 信任模式；仅桌面；无遥测  
 
@@ -66,7 +76,7 @@ DeepSeek / Claude / Ollama。密钥在 Obsidian 钥匙串，不进配置文件�
 
 ## 文档
 
-| | |
+| 文档 | 内容 |
 |---|---|
 | [使用手册](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/user-guide.md) | 上手、场景、斜杠命令、FAQ |
 | [架构](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/ARCHITECTURE.md) | 端口、Agent Loop、工具、Worker |
