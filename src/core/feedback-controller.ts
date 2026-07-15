@@ -21,7 +21,6 @@ export interface FeedbackControllerDeps {
 	userNotice: UserNotice;
 	userStatus: UserStatus;
 	getEmbeddingReady: () => boolean;
-	getWorkerMode: () => 'thread' | 'inline';
 	// 关键路径:Key 已迁至钥匙串,这里只暴露端点分类所需的最小字段(不传明文 Key)。
 	getSettings: () => { embedProvider: 'local' | 'api'; embedApiBase: string; chatApiBase: string };
 	onFullIndexComplete?: (indexed: number, errors: number) => void;
@@ -47,7 +46,6 @@ export class FeedbackController {
 	private readonly deps: FeedbackControllerDeps;
 	private unsubscribers: Unsubscriber[] = [];
 	private modelProgress: ProgressHandle | null = null;
-	private inlineWorkerNotified = false;
 	private apiModeNotified = false;
 
 	constructor(deps: FeedbackControllerDeps) {
@@ -55,7 +53,7 @@ export class FeedbackController {
 	}
 
 	/**
-	 * 注册 status$ 订阅,并执行启动期一次性检查(Worker 降级、API 模式、Embedding 就绪)。
+	 * 注册 status$ 订阅,并执行启动期一次性检查(API Embedding 模式、Embedding 就绪)。
 	 */
 	start(): void {
 		this.applyStartupChecks();
@@ -127,16 +125,9 @@ export class FeedbackController {
 		this.safeRun(() => {
 			this.patchEmbeddingReady();
 
-			// 关键路径:内联模式降级提示迁移到 StatusDrawer 降级区,不再弹 toast。
-			if (this.deps.getWorkerMode() === 'inline' && !this.inlineWorkerNotified) {
-				this.inlineWorkerNotified = true;
-				this.deps.userStatus.patch({
-					worker: 'inline',
-					degraded: tNow('status.degraded.inline'),
-				});
-			}
-
-			// 关键路径:API Embedding 降级提示迁移到 StatusDrawer,不再弹 toast。
+			// 关键路径:InlineWorker 是 Obsidian 渲染进程唯一可行路径(ADR-002),
+			// 不再作为「降级」红字提示;抽屉「运行模式」仍显示默认 worker: inline。
+			// API Embedding 降级提示迁移到 StatusDrawer,不再弹 toast。
 			const settings = this.deps.getSettings();
 			if (settings.embedProvider === 'api' && !this.apiModeNotified) {
 				this.apiModeNotified = true;

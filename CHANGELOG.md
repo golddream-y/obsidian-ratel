@@ -5,6 +5,17 @@
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-07-16
+
+### Added
+- **图谱原生 Phase A 读工具** — `get_links`(出链/反链/未解析链接)、`search_by_tag`(嵌套前缀)、`search_by_property`(frontmatter)、`get_vault_structure`(目录/标签计数/orphan)
+- **`search_vault` 结构信号** — 结果附带 `tags` 与 `backlinkCount`,便于模型判断权威度
+- **VaultPort 图谱查询** — `getLinks` / `findByTag` / `findByProperty` / `getVaultStructure`,全部走 `metadataCache`,不改索引
+
+### Changed
+- **对外主张** — README / manifest 立 Graph-native AI agent;toolGuide 与架构文档对齐新工具
+- **状态抽屉** — 去掉误导性的「可在设置启用 Worker 线程」红字(Obsidian 渲染进程无法启用 `worker_threads`;Embedding 已在 Web Worker)
+
 ## [0.1.6] - 2026-07-15
 
 ### Added

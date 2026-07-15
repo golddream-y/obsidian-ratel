@@ -31,7 +31,6 @@ describe('FeedbackController', () => {
 			userNotice,
 			userStatus,
 			getEmbeddingReady: () => false,
-			getWorkerMode: () => 'thread',
 			// 关键路径:Key 已迁至钥匙串,getSettings 只暴露端点分类字段。
 			getSettings: () => ({
 				embedProvider: 'local',
@@ -79,12 +78,13 @@ describe('FeedbackController', () => {
 		expect(progressUpdate).not.toHaveBeenCalled();
 	});
 
-	it('applyStartupChecks - 内联模式 - 不弹 toast,只 patch degraded', () => {
-		const ctl = createController({ getWorkerMode: () => 'inline' });
+	it('applyStartupChecks - 内联模式 - 不弹 toast,不写 degraded 红字', () => {
+		const ctl = createController();
 		ctl.start();
-		// 关键路径:迁移后内联模式不再弹 toast,改由 StatusDrawer 降级区显示
+		// 关键路径:InlineWorker 是 Obsidian 常态(ADR-002),不再当作降级写红字。
 		expect((userNotice.toast as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
 		expect(get(userStatus.statusBar$).worker).toBe('inline');
+		expect(get(userStatus.statusBar$).degraded).toBeUndefined();
 		ctl.destroy();
 	});
 
