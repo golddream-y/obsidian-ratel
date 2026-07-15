@@ -8,6 +8,7 @@
 <script lang="ts">
 	import type { Message } from './types';
 	import MessageBubble from './MessageBubble.svelte';
+	import { t } from '../../../i18n';
 
 	/**
 	 * MessageList props。
@@ -60,7 +61,7 @@
 	{#if showThinking()}
 		<div class="ratel-typing">
 			<span class="ratel-typing-dot"></span>
-			<span class="ratel-typing-text">思考中…</span>
+			<span class="ratel-typing-text">{$t('chat.typing')}</span>
 		</div>
 	{/if}
 </div>

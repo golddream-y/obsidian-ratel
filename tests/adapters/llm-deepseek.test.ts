@@ -229,6 +229,23 @@ describe('DeepSeekLLM', () => {
 		expect(fn.arguments).toBe('{"path":"notes/test.md"}');
 	});
 
+	it('buildRequestBody - 含孤立 tool - 上送前剥掉', () => {
+		const adapter = new DeepSeekLLM({ apiBase: 'http://test', apiKey: 'sk-test', model: 'test' });
+		const req: ChatRequest = {
+			messages: [
+				{ role: 'tool', content: 'orphan', toolCallId: 'A' },
+				{ role: 'assistant', content: '', toolCallId: 'B', toolName: 'read_note', toolArgs: {} },
+				{ role: 'tool', content: 'ok', toolCallId: 'B' },
+			],
+		};
+		const body = (adapter as unknown as { buildRequestBody: (req: ChatRequest) => Record<string, unknown> }).buildRequestBody(req) as {
+			messages: Array<Record<string, unknown>>;
+		};
+		expect(body.messages).toHaveLength(2);
+		expect(body.messages[0]!.role).toBe('assistant');
+		expect(body.messages[1]).toEqual({ role: 'tool', content: 'ok', tool_call_id: 'B' });
+	});
+
 	it('countTokens returns rough estimate', () => {
 		const llm = new DeepSeekLLM({
 			apiBase: 'https://api.deepseek.com',

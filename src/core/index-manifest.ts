@@ -2,15 +2,63 @@
  * @file src/core/index-manifest.ts
  * @description 索引清单 — 记录每文件 hash + 全局 embedding 参数,启动期 hash diff 跳过未变更文件
  * @module core/index-manifest
- * @depends fs
+ * @depends fs, path
  *
  * 设计要点:
- * - 独立于 data.json(不走 Obsidian loadData/saveData),与 .index/ 同目录同生命周期
+ * - 独立于 data.json(不走 Obsidian loadData/saveData)
+ * - 落在 `.index/ratel-manifest.json`,与向量目录同生命周期(同步工具通常整目录忽略 `.index/`)
  * - 原子写:先写 .tmp 再 rename,避免半写损坏
- * - load 失败返回 null,调用方走全量降级
+ * - load 失败返回 null,调用方优先「只重建清单」再考虑全量 embed
  * - 全局参数(embedModelId/chunkSize/chunkOverlap)变化 → shouldFullRebuild 返回 true
  */
 import fs from 'fs';
+import path from 'path';
+
+/** 当前清单文件名(位于 `.index/` 内) */
+export const INDEX_MANIFEST_FILENAME = 'ratel-manifest.json';
+
+/** 旧版清单文件名(插件根目录,易被同步删除) */
+export const LEGACY_INDEX_MANIFEST_FILENAME = 'index-manifest.json';
+
+/**
+ * 解析当前清单绝对路径 — `.index/ratel-manifest.json`。
+ *
+ * @param indexDir - 向量索引目录(pluginDir/.index)
+ */
+export function resolveIndexManifestPath(indexDir: string): string {
+	return path.join(indexDir, INDEX_MANIFEST_FILENAME);
+}
+
+/**
+ * 若存在旧版 `pluginDir/index-manifest.json` 且新路径尚无文件,则迁入 `.index/`。
+ *
+ * @param pluginDir - 插件目录
+ * @param indexDir - `.index` 目录
+ * @returns 是否执行了迁移
+ */
+export async function migrateLegacyIndexManifest(
+	pluginDir: string,
+	indexDir: string,
+): Promise<boolean> {
+	const nextPath = resolveIndexManifestPath(indexDir);
+	const legacyPath = path.join(pluginDir, LEGACY_INDEX_MANIFEST_FILENAME);
+	if (fs.existsSync(nextPath)) {
+		if (fs.existsSync(legacyPath)) {
+			try {
+				await fs.promises.unlink(legacyPath);
+			} catch {
+				// 忽略旧文件清理失败
+			}
+		}
+		return false;
+	}
+	if (!fs.existsSync(legacyPath)) {
+		return false;
+	}
+	await fs.promises.mkdir(indexDir, { recursive: true });
+	await fs.promises.rename(legacyPath, nextPath);
+	return true;
+}
 
 /** 索引清单条目 — 单个文件在向量索引中的元数据。 */
 export interface IndexManifestEntry {

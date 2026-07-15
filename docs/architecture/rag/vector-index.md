@@ -312,19 +312,23 @@ graph TD
 ```
 .obsidian/plugins/ratel-vault/
 ├── main.js
-├── worker.js
+├── worker.js                  ← 仅本地开发(InlineWorker);商店 release 不含
 ├── manifest.json
-├── data.json              ← settings(不含 API Keys,走 SecretStorage)
-├── index-manifest.json    ← smart reindex 清单(每文件 hash + 全局参数)
-├── .gitignore             ← 自动生成,排除索引文件
-└── index/                 ← vectra 索引目录
-    ├── index.json         ← 文档元数据
-    └── items/             ← 向量 + 文本
-        ├── doc1.json
-        └── ...
+├── data.json                  ← settings(不含 API Keys,走 SecretStorage)
+├── .gitignore                 ← 自动生成,排除 .index/ 与旧版根目录清单
+└── .index/                    ← vectra 索引目录(+ 清单同生命周期)
+    ├── ratel-manifest.json    ← smart reindex 清单(每文件 hash + 全局参数)
+    ├── index.json             ← 文档元数据
+    └── items/                 ← 向量 + 文本
+        ├── …
+        └── …
 ```
 
-**index-manifest.json 与 data.json 分离**:manifest 记录每文件 sha256 + mtime + chunkCount + 全局 embedModelId/chunkSize/chunkOverlap,启动期 hash diff 跳过未变更文件。独立于 data.json,不走 Obsidian loadData/saveData,与 `.index/` 同目录同生命周期。原子写(.tmp + rename)避免半写损坏。
+**清单路径演进:** 旧版写在插件根目录 `index-manifest.json`,易被 Remotely Save 等同步工具删掉 → 每次启动误判「无清单」走全量 embed。现迁至 **`.index/ratel-manifest.json`**,启动期 `migrateLegacyIndexManifest` 兼容旧路径。
+
+**缺清单但索引仍在:** 只重建 hash 清单,**禁止**全量 re-embed;参数变更全量后必须 `writeManifestAfterFullReindex`(真实 mtime + 非空 entries)。
+
+**ratel-manifest.json 与 data.json 分离:** 记录每文件 sha256 + mtime + chunkCount + 全局 embedModelId/chunkSize/chunkOverlap,启动期 hash diff 跳过未变更文件。独立于 data.json,不走 Obsidian loadData/saveData。原子写(.tmp + rename)避免半写损坏。
 
 ### 6.2 metadata 结构
 
@@ -338,12 +342,13 @@ graph TD
 
 ### 6.3 索引新鲜度
 
-- `index-manifest.json` 记录每文件 sha256 + mtime,启动期 hash diff 跳过未变更文件
+- `.index/ratel-manifest.json` 记录每文件 sha256 + mtime,启动期 hash diff 跳过未变更文件
 - `mtime` 快速跳过:mtime 未变则不读 content 不算 sha256,直接复用旧 hash
 - 文件变更时增量更新(FolderWatcher → enqueue → index.incremental / index.batch),无需全量重建
 - 模型切换 / chunkSize / chunkOverlap 变化时 `shouldFullRebuild` 返回 true,触发 dropIndex + 全量重建(维度不兼容)
 - 索引损坏时 smartReindex 降级:dropIndex + manifest.invalidate + 全量重建(spec §9)
 - `/reindex` 命令强制绕过 hash diff:先 dropIndex + manifest.invalidate 再全量
+- 有 `.index/` 无清单:只重建清单 hash,不全量 embed
 
 ---
 

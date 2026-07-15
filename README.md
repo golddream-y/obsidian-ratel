@@ -18,7 +18,7 @@ Obsidian → **Settings** → **Community plugins** → **Browse** → search **
 
 Requires **Obsidian 1.13.0+**, **desktop only**.
 
-Then: configure a chat model (or local Ollama) → wait for the first index → click the 🦡 ribbon (or run **Ratel: Ask vault**).
+Then: open **Settings → Ratel → Chat model**, pick a scene preset (DeepSeek / Ollama) or custom Base → wait for the first index → click the 🦡 ribbon (or run **Ratel: Ask vault**).
 
 Full walkthrough: [User Guide](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/user-guide.md).
 
@@ -43,6 +43,16 @@ DeepSeek, Claude, or Ollama. Keys live in Obsidian Keychain — not in `data.jso
 
 **Stay in control**  
 Per-tool allow / ask / deny. Status bar + diagnostics when something’s wrong. No telemetry; network only to endpoints you configure.
+
+---
+
+## Features
+
+- Semantic search over your vault with clickable citations  
+- Agent tools: read / write / grep / glob, memory, skills, active note & daily path  
+- Local ONNX embedding by default; optional API embed / Bailian rerank  
+- Scene presets in settings (DeepSeek / Ollama / Custom); keys in Obsidian Keychain  
+- Per-tool permissions + trust mode; desktop only; no telemetry  
 
 ---
 

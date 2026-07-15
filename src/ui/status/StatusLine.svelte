@@ -15,10 +15,13 @@
 		status$,
 		expanded = false,
 		onToggle,
+		/** 对话进行中时压制「思考中」文案 — 消息区已有打字指示,避免双份 */
+		chatBusy = false,
 	}: {
 		status$: Readable<UserStatusSnapshot>;
 		expanded: boolean;
 		onToggle: () => void;
+		chatBusy?: boolean;
 	} = $props();
 
 	// 关键路径:Svelte 5 直接用 $ 前缀订阅 store
@@ -34,6 +37,10 @@
 
 	const state = $derived.by(() => {
 		const { tone } = deriveTone(snap);
+		// 对话中:不把 checking 映射成第二条「思考中」(MessageList 已有)
+		if (chatBusy && tone === 'thinking') {
+			return { tone: 'ready' as Tone, label: $t('status.index.ready') };
+		}
 		return { tone, label: $t(toneLabels[tone]) };
 	});
 </script>

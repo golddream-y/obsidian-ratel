@@ -14,6 +14,11 @@ import { patchChatLeafIcon } from '../../utils/badger-icon';
 /** Obsidian 工作区视图类型 — 唯一字符串,注册到 `registerView`。 */
 export const VIEW_TYPE_CHAT = 'ratel-chat';
 
+/** Svelte ChatView 对外导出(insertMention 等) */
+type ChatViewExports = {
+	insertMention?: (path: string) => void;
+};
+
 /**
  * Ratel 聊天侧栏的 Obsidian 视图。
  *
@@ -27,7 +32,7 @@ export const VIEW_TYPE_CHAT = 'ratel-chat';
  * - 持有 `plugin` 引用以便 Svelte 组件访问主线程 API(`ask`、`persistence` 等)。
  */
 export class ChatView extends ItemView {
-	component: ReturnType<typeof mount> | null = null;
+	component: (ReturnType<typeof mount> & ChatViewExports) | null = null;
 
 	constructor(leaf: WorkspaceLeaf, private plugin: RatelVaultPlugin) {
 		super(leaf);
@@ -49,6 +54,19 @@ export class ChatView extends ItemView {
 	}
 
 	/**
+	 * 向输入框插入 @mention(vault 相对路径)。
+	 *
+	 * @param path - TFile.path 形态的相对路径
+	 * @returns 组件已挂载并成功调用时为 true
+	 */
+	insertChatMention(path: string): boolean {
+		const fn = this.component?.insertMention;
+		if (!fn) return false;
+		fn(path);
+		return true;
+	}
+
+	/**
 	 * 视图打开时挂载 Svelte 组件。
 	 *
 	 * 关键路径:`containerEl.children[1]` 是 Obsidian 分配给 `ItemView` 的内容容器;
@@ -63,7 +81,14 @@ export class ChatView extends ItemView {
 			props: {
 				plugin: this.plugin,
 			},
-		});
+		}) as ReturnType<typeof mount> & ChatViewExports;
+
+		// 关键路径:file-menu 可能在 mount 前排队 pendingChatMention
+		const pending = this.plugin.pendingChatMention;
+		if (pending) {
+			this.plugin.pendingChatMention = undefined;
+			this.insertChatMention(pending);
+		}
 
 		window.requestAnimationFrame(() => patchChatLeafIcon(this.leaf));
 	}

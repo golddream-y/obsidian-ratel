@@ -83,4 +83,97 @@ describe('RatelVaultSettingTab 嵌套 key 读写', () => {
 		await tab.setControlValue('promptOverrides.system.role', 'custom');
 		expect(plugin.syncToolDefinitions).toHaveBeenCalled();
 	});
+
+	it('setControlValue - chatPreset deepseek - 写入多字段并 rebuildLLM', async () => {
+		plugin.settings.chatModel = 'other';
+		plugin.settings.chatApiBase = 'https://example.com';
+		await tab.setControlValue('chatPreset', 'deepseek');
+		expect(plugin.settings.chatPreset).toBe('deepseek');
+		expect(plugin.settings.chatModel).toBe('deepseek-v4-flash');
+		expect(plugin.settings.chatApiBase).toBe('https://api.deepseek.com');
+		expect(plugin.rebuildLLM).toHaveBeenCalled();
+	});
+
+	it('setControlValue - 手改 chatModel - chatPreset 变为 custom', async () => {
+		plugin.settings.chatPreset = 'deepseek';
+		await tab.setControlValue('chatModel', 'gpt-4');
+		expect(plugin.settings.chatPreset).toBe('custom');
+	});
+
+	it('setControlValue - 手改 chatApiBase - chatPreset 变为 custom', async () => {
+		plugin.settings.chatPreset = 'deepseek';
+		await tab.setControlValue('chatApiBase', 'https://example.com/v1');
+		expect(plugin.settings.chatPreset).toBe('custom');
+		expect(plugin.rebuildLLM).toHaveBeenCalled();
+	});
+
+	it('getSettingDefinitions - 含四 Tab 与 chatPreset key - 非空', () => {
+		const defs = tab.getSettingDefinitions();
+		expect(defs.length).toBeGreaterThan(0);
+		const json = JSON.stringify(defs);
+		expect(json).toContain('chatPreset');
+		expect(json).toContain('chatModel');
+		expect(json).toContain('toolPermissions.');
+	});
+
+	it('getSettingDefinitions - agent Tab - 工具权限组可见且无 is-hidden', () => {
+		setActiveTab(tab, 'agent');
+		const group = findGroupWithControlKey(tab.getSettingDefinitions(), 'toolPermissions.search_vault');
+		expect(group).toBeDefined();
+		expect(group!.cls).toContain('ratel-settings-panel-agent');
+		expect(group!.cls).not.toContain('is-hidden');
+		expect(typeof group!.visible).toBe('function');
+		expect((group!.visible as () => boolean)()).toBe(true);
+	});
+
+	it('getSettingDefinitions - chat Tab 时 - 工具权限组 visible 为 false(仍在定义中)', () => {
+		setActiveTab(tab, 'chat');
+		const group = findGroupWithControlKey(tab.getSettingDefinitions(), 'toolPermissions.search_vault');
+		expect(group).toBeDefined();
+		expect(group!.cls).toContain('ratel-settings-panel-agent');
+		expect(group!.cls).not.toContain('is-hidden');
+		// 关键路径:用 visible 谓词门控;定义始终返回,搜索激活时 visible 变 true
+		expect(typeof group!.visible).toBe('function');
+		expect((group!.visible as () => boolean)()).toBe(false);
+	});
+
+	it('getSettingDefinitions - advanced Tab - 含诊断 page 且可见', () => {
+		setActiveTab(tab, 'advanced');
+		const page = tab.getSettingDefinitions().find((d) => d.type === 'page');
+		expect(page).toBeDefined();
+		expect(typeof page!.visible).toBe('function');
+		expect((page!.visible as () => boolean)()).toBe(true);
+	});
+
+	it('getSettingDefinitions - chat Tab 时 - 诊断 page visible 为 false', () => {
+		setActiveTab(tab, 'chat');
+		const page = tab.getSettingDefinitions().find((d) => d.type === 'page');
+		expect(page).toBeDefined();
+		expect((page!.visible as () => boolean)()).toBe(false);
+	});
 });
+
+/** 测试用:写入私有 activeSettingsTab */
+function setActiveTab(tab: RatelVaultSettingTab, id: string): void {
+	(tab as unknown as { activeSettingsTab: string }).activeSettingsTab = id;
+}
+
+/** 在声明式定义中查找含指定 control.key 的 group */
+function findGroupWithControlKey(
+	defs: ReturnType<RatelVaultSettingTab['getSettingDefinitions']>,
+	key: string,
+): { cls?: string; visible?: unknown } | undefined {
+	for (const d of defs) {
+		if (d.type !== 'group' && d.type !== 'list') {
+			continue;
+		}
+		const items = d.items ?? [];
+		for (const item of items) {
+			const control = (item as { control?: { key?: string } }).control;
+			if (control?.key === key) {
+				return d as { cls?: string; visible?: unknown };
+			}
+		}
+	}
+	return undefined;
+}

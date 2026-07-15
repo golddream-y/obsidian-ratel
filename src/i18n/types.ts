@@ -23,6 +23,17 @@ export interface SettingsStrings {
   'settings.language.heading': string;
   'settings.language.name': string;
   'settings.language.desc': string;
+  'settings.tabs.strip': string;
+  'settings.tabs.chat': string;
+  'settings.tabs.index': string;
+  'settings.tabs.agent': string;
+  'settings.tabs.advanced': string;
+  'settings.chatPreset.heading': string;
+  'settings.chatPreset.name': string;
+  'settings.chatPreset.desc': string;
+  'settings.chatPreset.deepseek': string;
+  'settings.chatPreset.ollama': string;
+  'settings.chatPreset.custom': string;
   'settings.chatModel.heading': string;
   'settings.chatModel.model.name': string;
   'settings.chatModel.model.desc': string;
@@ -46,7 +57,10 @@ export interface SettingsStrings {
   'settings.advanced.secretHint.notConfigured': string;
   'settings.advanced.secretHint.copyTooltip': string;
   'settings.advanced.secretHint.localOllama': string;
-  'settings.advanced.secretHint.hint': string;
+  'settings.advanced.secretHint.privacy': string;
+  'settings.advanced.secretHint.stepOpen': string;
+  'settings.advanced.secretHint.stepAddPrefix': string;
+  'settings.advanced.secretHint.stepAddSuffix': string;
   'settings.embedding.heading': string;
   'settings.embedding.provider.name': string;
   'settings.embedding.provider.desc': string;
@@ -133,6 +147,7 @@ export interface ChatStrings {
   'chat.workbar.preparing': string;
   'chat.workbar.searching': string;
   'chat.workbar.compacting': string;
+  'chat.typing': string;
   'chat.input.placeholder': string;
   'chat.input.send': string;
   'chat.input.stop': string;
@@ -157,6 +172,12 @@ export interface ChatStrings {
   'chat.attachments.tooLarge': string;
   'chat.attachments.tooMany': string;
   'chat.slashMenu.header': string;
+  'chat.mention.menuTitle': string;
+  'chat.mention.empty': string;
+  'chat.mention.fileMenu': string;
+  'chat.mention.stripAria': string;
+  'chat.mention.removeAria': string;
+  'chat.mention.absoluteRejected': string;
   'chat.compactConfirm.title': string;
   'chat.compactConfirm.body': string;
   'chat.compactConfirm.confirm': string;
@@ -583,6 +604,7 @@ export interface ToolPermStrings {
 export interface MemoryStrings {
   // Settings 面板 — Memory group
   'memory.settings.heading': string;
+  'memory.settings.limitsHeading': string;
   'memory.settings.enabled.name': string;
   'memory.settings.enabled.desc': string;
   'memory.settings.autoWrite.name': string;
