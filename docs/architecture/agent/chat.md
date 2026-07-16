@@ -111,7 +111,7 @@ stateDiagram-v2
 | `message.delta` | `text` / `reasoning?` | `text` 逐字渲染到 TextSegment;`reasoning` 追加到 ThinkSegment(可折叠) |
 | `tool.call` | `name` / `args` | 渲染 ToolSegment 折叠条(`✓ list_files Formatting/`) |
 | `tool.result` | `name` / `result` | 回填 ToolSegment 状态为 done,展示结果摘要 |
-| `search.result` | `results[]` / `reranked` | 渲染 SearchResults 卡片(编号 + 路径 + 分数 + rerank 标记) |
+| `search.result` | `results[]` / `reranked` | 渲染 cite-chip 行;正文 `[n]` 可点开同一 path |
 | `error` | `code` / `message` | `TOOL_ERROR` / `TOOL_DENIED` 附到最近 ToolSegment;其余显示 chatError 块 |
 | `message.end` | `tokens` / `promptTokens?` / `completionTokens?` | 保存会话;API 真值校准 StatusLine token 统计 |
 
@@ -136,35 +136,39 @@ src/ui/
 │   ├── input/                  # SlashMenu / MentionMenu / MentionStrip / AttachmentStrip
 │   ├── compact-session.ts      # /compact — 保留窗口经 tool 对齐
 │   └── chat-send-gate.ts / chat-error.ts / format-tool-display.ts
-├── status/                     # StatusLine / StatusDrawer
+├── status/                     # StatusLine(Strip) / StatusDrawer / strip-label
 ├── tokens/                     # token-estimator / probe-model
 ├── components/                 # Collapsible / MarkdownView / confirm-modal
 └── diagnostics/                # 诊断页(LLM / Embedding / Rerank 测试)
 ```
 
-### 5.2 组件树
+### 5.2 组件树(Conversation-first)
 
 ```mermaid
 graph TB
     subgraph "chat/ChatView.svelte(编排层)"
+        HD["Header<br/>brand + tagline + model chip"]
         ML["MessageList<br/>(messages: Message[])"]
-        SL["status/StatusLine<br/>(30px 常驻底部)"]
-        SD["status/StatusDrawer<br/>(展开时显示详情)"]
-        AS["chat/input/AttachmentStrip"]
-        MS["chat/input/MentionStrip<br/>(@path chip)"]
-        SM["chat/input/SlashMenu<br/>(输入 / 时弹出)"]
-        MM["chat/input/MentionMenu<br/>(输入 @ 时弹出,与 / 互斥)"]
-        IR["InputRow<br/>(+ 按钮 + textarea + Send/Stop)"]
+        subgraph "composer"
+            SL["status/StatusLine<br/>(Strip:点+文案+% )"]
+            SD["status/StatusDrawer<br/>(索引 / 上下文 meter)"]
+            AS["chat/input/AttachmentStrip"]
+            MS["chat/input/MentionStrip"]
+            SM["chat/input/SlashMenu"]
+            MM["chat/input/MentionMenu"]
+            IR["InputRow<br/>(+ / textarea / Send|Stop)"]
+        end
     end
 
     subgraph "message-stream/"
-        MB["MessageBubble<br/>(per message)"]
-        TS["TextSegment<br/>(MarkdownView)"]
-        TK["ThinkSegment<br/>(Collapsible,流式时展开)"]
-        TL["ToolSegment<br/>(Collapsible,displayName + 详情)"]
-        SR["SearchResults<br/>(编号 + 路径 + 分数)"]
+        MB["MessageBubble"]
+        TS["TextSegment"]
+        TK["ThinkSegment"]
+        TL["ToolSegment"]
+        SR["SearchResults"]
     end
 
+    HD --> ML
     ML --> MB
     MB --> TS
     MB --> TK
@@ -173,9 +177,13 @@ graph TB
     ML --> SL
     SL --> SD
     SD --> AS
-    AS --> SM
-    SM --> IR
+    AS --> MS
+    MS --> SM
+    SM --> MM
+    MM --> IR
 ```
+
+**硬规则(S-CHAT-UI-V3 P1):** StatusStrip **不得**夹在消息与输入之间;忙态单通道走 Strip(`busyOverride`);Header 不再显示上下文 `%` / tone 脉冲。
 
 ### 5.3 segments 消息模型
 
@@ -203,15 +211,16 @@ type MessageSegment =
 | ChatView(编排层) | 状态持有 + 事件循环分发到 segment-appender + 子组件 props 编排 | `plugin` |
 | MessageList | 渲染 `Message[]`,滚动管理 | `messages` prop |
 | MessageBubble | 单条消息:用户消息(text + 附件)/ 助手消息(segments 顺序渲染) | `message` prop |
-| TextSegment | Markdown 渲染(MarkdownView) | segment.text |
-| ThinkSegment | 思考过程可折叠(流式中展开,结束后折叠) | segment.text |
-| ToolSegment | 工具调用可折叠(折叠态 displayName + 结果摘要,展开态 args + result JSON) | segment.toolCall |
-| SearchResults | 搜索结果卡片(编号 + 路径 + 分数 + rerank 标记) | message.searchResults |
-| status/StatusLine | 5 种状态(就绪/思考中/错误/未配置/索引中)+ ctx 进度条 + 百分比 | `statusBar$` + `contextUsage$` |
-| status/StatusDrawer | 展开式详情 — 向量化/索引区 + 上下文区(含压缩按钮) | `statusBar$` + `contextUsage$` + `pendingAttachments$` |
+| TextSegment | 助手 Markdown(MarkdownView)+ 可选正文 `[n]` cite 挂钩 | segment.text + searchResults |
+| ThinkSegment | 思考过程时间线行(`◇`);流式展开、结束后折叠 | segment.text |
+| ToolSegment | Trace 时间线(`✓`/`✗`/`●`)+ 轻量 detail(args/result) | segment.toolCall |
+| SearchResults | 引用芯片行(序号 + 截断 path;可选「已精排」弱提示);点击走 `onOpenPath` | message.searchResults |
+| status/StatusLine | composer 顶沿 Strip:点 + 文案(+ busyOverride) + 上下文 `%`(阈值色);硬 gate 时错误强调色 | `statusBar$` + `contextUsage$` |
+| status/StatusDrawer | 展开详情 — 索引(篇数/Embedding 类型) + 上下文 used/max + 渐变 meter + 压缩 | `statusBar$` + `contextUsage$` + `embedKind` |
+| status/strip-label | `composeStripLabel` / `contextPctTextColor` / `clampContextPct` 纯函数 | — |
 | tokens/token-estimator | 中英混合权重估算(ASCII/CJK/符号三类权重) | 纯函数 |
 | tokens/probe-model | 测试连接推断模型 context length(API 响应 + 内置映射表回退) | LLM 配置 |
-| components/Collapsible | 通用可折叠容器(think / tool 段共用) | `expanded` prop |
+| components/Collapsible | 通用可折叠容器(遗留;Trace 段已自包含) | `expanded` prop |
 
 ### 5.5 Token 三层校准
 
@@ -287,11 +296,11 @@ sequenceDiagram
 
 **编排层职责边界:**
 
-ChatView.svelte 瘦身到 ~200 行,只承担:
+ChatView.svelte 编排层只承担:
 1. **状态持有:** `messages` / `input` / `isRunning` / `sessionId` / `drawerExpanded` / `keyTick` / `mentionPaths`
-2. **派生状态:** `gate` / `slashVisible` / `mentionVisible` / `modelName` / `hasKey` / `workBar`
+2. **派生状态:** `gate` / `slashVisible` / `mentionVisible` / `modelName` / `workBar`→`busyOverride`
 3. **事件循环:** `sendMessage()` 内的 `for await (const event of events)` 调 segment-appender
-4. **子组件编排:** `<MessageList>` + `<StatusLine chatBusy>` + `<StatusDrawer>` + `<SlashMenu>` + `<MentionMenu>` + `<MentionStrip>` + `<AttachmentStrip>`
+4. **子组件编排:** Header → MessageList → composer(`StatusLine` + `StatusDrawer` + input 区 menus/strips)
 5. **生命周期:** `onMount` / `onDestroy` / abortController 管理
 
 不承担:消息渲染细节(下沉到 MessageBubble / 各 Segment)、工具 displayName 格式化(在 `format-tool-display.ts`)、token 估算(在 `tokens/token-estimator.ts`)、斜杠命令执行细节(在 `input/slash-commands.ts`)、@ 路径解析(在 `input/mention-parser.ts`)。
@@ -306,8 +315,8 @@ ChatView.svelte 瘦身到 ~200 行,只承担:
 ### 6.2 进行中状态(防三重叠)
 
 - 对话进行中**不** patch `model: 'checking'`(model 态由 FeedbackController 维护)
-- `MessageList` 打字指示是唯一「思考中」;StatusLine 在 `chatBusy` 时压制第二条「思考中」;work-bar 对话中不叠「准备模型/搜索中」
-
+- `MessageList` 打字指示是唯一「思考中」;StatusStrip 在 `chatBusy` 时压制第二条「思考中」
+- 原 work-bar 已合并:`busyOverride` 承载索引/下载/准备/压缩文案;对话中不叠「准备模型」
 ### 6.3 工具历史协议(`/compact` + 上送)
 
 - `alignPreservedToolMessages` / `sanitizeToolMessageOrder`(`core/tool-message-align.ts`)丢弃孤立 `role:tool`

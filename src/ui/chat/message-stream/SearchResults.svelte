@@ -1,177 +1,118 @@
 <!--
 	@file src/ui/chat/message-stream/SearchResults.svelte
-	@description 搜索结果引用列表 — search.result 事件触发渲染
+	@description 检索引用芯片行 — 取代分数墙大卡(S-CHAT-UI-V3 §5.5)
 	@module ui/chat/message-stream/SearchResults
-	设计:毛玻璃卡片 + 精排徽章 + 等宽路径 + 分数色阶
+	设计:序号 + 截断 path;点击走注入的 onOpenPath;无 emoji / 无分数色阶
 -->
 <script lang="ts">
 	import { t } from '../../../i18n';
 
-	/**
-	 * 搜索结果列表 props。
-	 *
-	 * @param results - 扁平化后的搜索结果项(docId / score / path / index)
-	 * @param reranked - 是否经过 Rerank 精排(影响徽章显示)
-	 */
 	let {
 		results,
 		reranked = false,
+		onOpenPath,
 	}: {
 		results: Array<{ docId: string; score: number; path: string; index: number }>;
 		reranked?: boolean;
+		onOpenPath: (path: string) => void;
 	} = $props();
 
-	// 关键路径:分数 ≥0.8 高亮,≥0.6 中等,其余弱化。给用户视觉锚点判断相关性。
-	function scoreClass(score: number): string {
-		if (score >= 0.8) return 'ratel-search-score-high';
-		if (score >= 0.6) return 'ratel-search-score-mid';
-		return 'ratel-search-score-low';
+	function truncatePath(path: string): string {
+		if (path.length <= 42) return path;
+		return '…' + path.slice(-40);
 	}
 </script>
 
 {#if results.length > 0}
-	<div class="ratel-search">
-		<div class="ratel-search-hdr">
-			<span class="ratel-search-icon">🔍</span>
-			<span class="ratel-search-title">{$t('chat.search.title')}</span>
-			<span class="ratel-search-count">{results.length}</span>
-			{#if reranked}
-				<span class="ratel-search-badge">{$t('chat.search.rerankBadge')}</span>
-			{/if}
-		</div>
-		<div class="ratel-search-list">
+	<div class="ratel-cites">
+		{#if reranked}
+			<div class="ratel-cites-hint">{$t('chat.search.rerankHint')}</div>
+		{/if}
+		<div class="ratel-cites-row" role="list">
 			{#each results as r}
-				<div class="ratel-search-row">
-					<span class="ratel-search-idx">[{r.index}]</span>
-					<span class="ratel-search-path" title={r.path}>{r.path}</span>
-					<span class="ratel-search-score {scoreClass(r.score)}">{r.score.toFixed(3)}</span>
-				</div>
+				<button
+					type="button"
+					class="ratel-cite-chip"
+					role="listitem"
+					aria-label={$t('chat.cite.openNote', { path: r.path })}
+					title={r.path}
+					onclick={() => onOpenPath(r.path)}
+				>
+					<span class="ratel-cite-chip-n">{r.index}</span>
+					<span class="ratel-cite-chip-path">{truncatePath(r.path)}</span>
+				</button>
 			{/each}
 		</div>
 	</div>
 {/if}
 
 <style>
-	/*
-	 * 关键路径:毛玻璃卡片 + 微阴影。圆角 6px,边框使用 accent 淡色,
-	 * 营造与消息气泡的层次区分。
-	 */
-	.ratel-search {
-		margin-bottom: 8px;
-		padding: 8px 10px;
-		border-radius: 6px;
-		background: color-mix(in srgb, var(--background-tertiary) 75%, transparent);
-		backdrop-filter: blur(8px);
-		-webkit-backdrop-filter: blur(8px);
-		border: 1px solid color-mix(in srgb, var(--text-accent) 10%, var(--background-modifier-border));
-		font-size: 12px;
+	.ratel-cites {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		margin-top: 4px;
 	}
 
-	.ratel-search-hdr {
-		font-weight: 600;
-		margin-bottom: 6px;
+	.ratel-cites-hint {
+		font-size: 11px;
 		color: var(--text-muted);
+		line-height: 1.3;
+	}
+
+	.ratel-cites-row {
 		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+
+	.ratel-cite-chip {
+		display: inline-flex;
 		align-items: center;
 		gap: 6px;
-		padding-bottom: 5px;
-		border-bottom: 1px solid color-mix(in srgb, var(--background-modifier-border) 60%, transparent);
+		max-width: 100%;
+		padding: 5px 10px 5px 8px;
+		border-radius: 999px;
+		border: 1px solid var(--background-modifier-border);
+		background: color-mix(in srgb, var(--ratel-cite, var(--interactive-accent)) 12%, transparent);
+		color: var(--text-muted);
+		font-size: 11.5px;
+		font-family: inherit;
+		cursor: pointer;
+		transition: border-color 0.15s, background 0.15s, color 0.15s;
+		-webkit-appearance: none;
+		appearance: none;
+		text-align: left;
 	}
 
-	.ratel-search-icon {
-		font-size: 0.9em;
-		opacity: 0.85;
-	}
-
-	.ratel-search-title {
+	.ratel-cite-chip:hover {
+		border-color: color-mix(in srgb, var(--ratel-cite, var(--interactive-accent)) 55%, var(--background-modifier-border));
+		background: color-mix(in srgb, var(--ratel-cite, var(--interactive-accent)) 20%, transparent);
 		color: var(--text-normal);
 	}
 
-	.ratel-search-count {
-		font-family: var(--font-monospace);
-		font-size: 10px;
-		padding: 1px 6px;
-		border-radius: 8px;
-		background: color-mix(in srgb, var(--text-muted) 15%, transparent);
-		color: var(--text-muted);
-		font-weight: 500;
-	}
-
-	.ratel-search-badge {
-		margin-left: auto;
-		padding: 1px 7px;
-		border-radius: 8px;
-		background: color-mix(in srgb, var(--text-warning) 15%, transparent);
-		color: var(--text-warning);
-		font-size: 10px;
-		font-weight: 600;
-		letter-spacing: 0.2px;
-	}
-
-	.ratel-search-list {
-		display: flex;
-		flex-direction: column;
-		gap: 1px;
-	}
-
-	.ratel-search-row {
-		display: flex;
-		gap: 8px;
-		align-items: center;
-		padding: 3px 4px;
-		border-radius: 4px;
-		transition: background 0.12s ease;
-	}
-
-	.ratel-search-row:hover {
-		background: color-mix(in srgb, var(--text-accent) 6%, transparent);
-	}
-
-	.ratel-search-idx {
-		font-family: var(--font-monospace);
-		font-weight: 700;
-		color: var(--text-muted);
-		min-width: 26px;
+	.ratel-cite-chip-n {
 		flex-shrink: 0;
-		font-size: 11px;
+		min-width: 1.2em;
+		padding: 0;
+		border-radius: 0;
+		background: transparent;
+		color: var(--ratel-cite, var(--interactive-accent));
+		font-family: var(--font-monospace);
+		font-size: 10px;
+		font-weight: 500;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
 	}
 
-	.ratel-search-path {
-		flex: 1;
-		font-family: var(--font-monospace);
-		font-size: 11px;
+	.ratel-cite-chip-path {
+		min-width: 0;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
-		color: var(--text-normal);
-	}
-
-	.ratel-search-score {
+		max-width: 200px;
 		font-family: var(--font-monospace);
-		font-size: 10px;
-		flex-shrink: 0;
-		font-weight: 600;
-		padding: 1px 5px;
-		border-radius: 4px;
-	}
-
-	/* 关键路径:分数色阶 — 高/中/低三档,用 color-mix 生成淡背景 */
-	.ratel-search-score-high {
-		color: var(--text-success);
-		background: color-mix(in srgb, var(--text-success) 12%, transparent);
-	}
-
-	.ratel-search-score-mid {
-		color: var(--text-warning);
-		background: color-mix(in srgb, var(--text-warning) 12%, transparent);
-	}
-
-	.ratel-search-score-low {
-		color: var(--text-faint, var(--text-muted));
-		background: color-mix(in srgb, var(--text-muted) 8%, transparent);
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.ratel-search-row { transition: none; }
+		font-size: 11px;
 	}
 </style>

@@ -24,13 +24,14 @@
 		msg,
 		isLast,
 		isRunning,
+		onOpenPath,
 	}: {
 		msg: Message;
 		isLast: boolean;
 		isRunning: boolean;
+		onOpenPath: (path: string) => void;
 	} = $props();
 
-	// 关键路径:最后一条助手消息在 running 时,think 段为流式
 	const isAssistantStreaming = $derived(isLast && isRunning && msg.role === 'assistant');
 </script>
 
@@ -58,6 +59,8 @@
 				text={seg.text}
 				isUser={msg.role === 'user'}
 				streaming={isAssistantStreaming}
+				searchResults={msg.role === 'assistant' ? msg.searchResults : undefined}
+				{onOpenPath}
 			/>
 		{:else if seg.type === 'think'}
 			<ThinkSegment text={seg.text} streaming={isAssistantStreaming} />
@@ -67,7 +70,11 @@
 	{/each}
 
 	{#if msg.searchResults && msg.searchResults.length > 0}
-		<SearchResults results={msg.searchResults} reranked={msg.searchReranked ?? false} />
+		<SearchResults
+			results={msg.searchResults}
+			reranked={msg.searchReranked ?? false}
+			{onOpenPath}
+		/>
 	{/if}
 
 	{#if msg.chatError}
@@ -92,28 +99,29 @@
 
 <style>
 	/*
-	 * 关键路径:用户气泡使用毛玻璃 + 微阴影,助手消息无背景(直接在 leaf 上渲染)。
-	 * 最大宽度 88% 留出呼吸感,圆角 8px 符合设计系统上限。
+	 * 关键路径:用户气泡右下尖角贴近原型(14/14/4/14);助手无底。
+	 * 最大宽度 86% 与原型一致。
 	 */
 	.ratel-msg {
-		max-width: 88%;
+		max-width: 86%;
 		display: flex;
 		flex-direction: column;
-		gap: 6px;
+		gap: 10px;
 	}
 
 	.ratel-msg-user {
 		align-self: flex-end;
-		padding: 10px 13px;
-		border-radius: 8px;
-		background: color-mix(in srgb, var(--background-tertiary) 78%, transparent);
-		backdrop-filter: blur(10px);
-		-webkit-backdrop-filter: blur(10px);
-		border: 1px solid color-mix(in srgb, var(--background-modifier-border) 70%, transparent);
+		padding: 11px 14px;
+		border-radius: 14px 14px 4px 14px;
+		background: color-mix(in srgb, var(--background-secondary) 88%, transparent);
+		border: 1px solid var(--background-modifier-border);
+		font-size: 14px;
+		line-height: 1.55;
 	}
 
 	.ratel-msg-assistant {
-		align-self: flex-start;
+		align-self: stretch;
+		max-width: 100%;
 		padding: 0;
 		background: transparent;
 		border: none;

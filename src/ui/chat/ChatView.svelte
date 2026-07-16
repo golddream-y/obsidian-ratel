@@ -6,12 +6,11 @@
 	 * @depends main, ./message-stream/MessageList, ../status/StatusLine, ../status/StatusDrawer,
 	 *          ./input/SlashMenu, ./input/MentionMenu, ./input/MentionStrip, ./input/AttachmentStrip,
 	 *          ../tokens/token-estimator
-	 * 设计:Header 毛玻璃徽章 + 输入区毛玻璃 + 底部 Send 按钮精致圆角
+	 * 设计:Conversation-first — Header(brand+model chip) → Messages → composer(Strip→Drawer→input)
 	 */
 	import type RatelVaultPlugin from '../../main';
 	import { get } from 'svelte/store';
 	import StatusLine from '../status/StatusLine.svelte';
-	import { deriveTone } from '../status/tone';
 	import StatusDrawer from '../status/StatusDrawer.svelte';
 	import SlashMenu from './input/SlashMenu.svelte';
 	import MentionMenu from './input/MentionMenu.svelte';
@@ -42,6 +41,7 @@
 	import { showCompactConfirm } from './compact-confirm';
 	import { compactSession } from './compact-session';
 	import { ModelInfoModal } from './model-info-modal';
+	import { openChatNote } from './open-chat-note';
 	import { Notice } from 'obsidian';
 	import { devLogger } from '../../logging/dev-logger';
 	import { formatToolDisplayName } from './format-tool-display';
@@ -85,6 +85,19 @@
 			el.scrollHeight - el.scrollTop - el.clientHeight < SCROLL_NEAR_BOTTOM_THRESHOLD;
 	}
 
+	/** 芯片 / 正文 `[n]` 共用打开入口 — 函数体内读 plugin,避免模板闭包捕获初值 */
+	function handleOpenPath(path: string): void {
+		void openChatNote(plugin.app, path);
+	}
+
+	function openModelInfo(): void {
+		new ModelInfoModal(plugin.app, plugin).open();
+	}
+
+	function removePendingAttachment(id: string): void {
+		plugin.userStatus.removeAttachment(id);
+	}
+
 	const statusStore = plugin.userStatus.statusBar$;
 	const contextStore = plugin.userStatus.contextUsage$;
 	const attachmentStore = plugin.userStatus.pendingAttachments$;
@@ -106,24 +119,13 @@
 	// 关键路径:/ 与 @ 互斥 — 斜杠优先;mention 补全仅在非 slash 态
 	const mentionVisible = $derived(mentionQuery !== null && !slashVisible);
 	const modelName = $derived(plugin.settings.chatModel);
-	// 关键路径:Header badge tone 与 StatusLine 同源,保证视觉同步
-	const statusSnap = $derived($statusStore);
-	const headerTone = $derived(deriveTone(statusSnap).tone);
-	// 关键路径:Header 百分比胶囊按使用率阈值变色,与原 StatusLine 阈值一致
-	const headerCtxColor = $derived.by(() => {
-		const p = $contextStore.percentage;
-		if (p >= 95) return 'var(--text-error)';
-		if (p >= 80) return 'var(--text-warning)';
-		return 'var(--text-success)';
-	});
-	const headerPct = $derived(Math.min($contextStore.percentage, 100));
 
-	// 关键路径:work-bar 显示状态 — 优先级从上到下,同时满足只显示第一个
+	// 关键路径:原 work-bar 文案合并进 StatusStrip — 优先级从上到下,同时满足只取第一个
 	// 关键路径:indexing 分支不解析 indexDetail(progressing 状态是文件名,queueing 是 i18n 文字,
-	// 格式不统一)。进度数字由 StatusDrawer 进度条承担,work-bar 只显示笼统的"索引中..."
+	// 格式不统一)。进度数字由 StatusDrawer 进度条承担,Strip 只显示笼统的"索引中..."
 	const workBar = $derived.by(() => {
 		const s = $statusStore;
-		// 阻塞提示优先单独显示
+		// 阻塞提示优先单独显示(hard gate 时 Send 仍禁用)
 		if (gate.hardBlockReason) return { type: 'hard' as const, text: gate.hardBlockReason };
 		// 索引中(processing/scanning/queueing/diffing 四种状态,统一显示"索引中...")
 		if (s.index === 'processing' || s.index === 'scanning' || s.index === 'queueing' || s.index === 'diffing') {
@@ -146,6 +148,8 @@
 		}
 		return null;
 	});
+	// 关键路径:busyOverride 喂给 StatusLine,替代独立黄条 DOM
+	const busyOverride = $derived(workBar ? workBar.text : null);
 
 	// 关键路径:chatModelMaxTokens 由设置面板预设/自定义配置,见 ADR-007。
 	$effect(() => {
@@ -349,8 +353,8 @@
 		mentionQuery = null;
 		mentionItems = [];
 		isRunning = true;
-		// 关键路径:不在此 patch model=checking — 否则 StatusLine「思考中」+ work-bar「准备模型中」
-		// 与 MessageList 打字指示三重叠;model 状态只由 FeedbackController 维护。
+		// 关键路径:不在此 patch model=checking — 否则 StatusStrip「思考中」
+		// 与 MessageList 打字指示双重叠;model 状态只由 FeedbackController 维护。
 		const ac = new AbortController();
 		let lastToolName: string | undefined;
 
@@ -563,118 +567,122 @@
 </script>
 
 <div class="ratel-chat">
-	<!-- Header — logo + 标题 + 上下文百分比胶囊 + 模型徽章(tone 变色) -->
+	<!-- Header — 词标 + 副标同行(原型 brand baseline) + 静默 model chip -->
 	<div class="ratel-header">
 		<div class="ratel-header-left">
-			<span class="ratel-header-logo">R</span>
-			<span class="ratel-header-title">{$t('chat.header.title')}</span>
+			<div class="ratel-header-brand">
+				<span class="ratel-header-mark"
+					>{$t('chat.header.title')}<span class="ratel-header-dot" aria-hidden="true">.</span></span
+				>
+				<span class="ratel-header-tagline">{$t('chat.header.tagline')}</span>
+			</div>
 		</div>
 		<div class="ratel-header-right">
-			<span class="ratel-header-ctx" style={`color: ${headerCtxColor}; border-color: color-mix(in srgb, ${headerCtxColor} 20%, transparent); background: color-mix(in srgb, ${headerCtxColor} 12%, transparent);`}>{headerPct}%</span>
-			<span class="ratel-header-badge ratel-header-badge--{headerTone}">{modelName}</span>
+			<button
+				type="button"
+				class="ratel-header-model"
+				onclick={openModelInfo}
+				aria-label={$t('chat.header.modelChip', { model: modelName })}
+			>{modelName}</button>
 		</div>
 	</div>
 
 	<!-- 消息流(委托 MessageList,容器 ref + onscroll 由子组件透传上来) -->
 	<div class="ratel-messages-wrap">
-		<MessageList {messages} {isRunning} bind:containerRef={messagesEl} onScroll={handleScroll} />
+		<MessageList
+			{messages}
+			{isRunning}
+			bind:containerRef={messagesEl}
+			onScroll={handleScroll}
+			onOpenPath={handleOpenPath}
+		/>
 	</div>
 
-	<!-- StatusLine(常驻底部) -->
-	<StatusLine
-		status$={statusStore}
-		expanded={drawerExpanded}
-		chatBusy={isRunning}
-		onToggle={() => (drawerExpanded = !drawerExpanded)}
-	/>
-
-	<!-- StatusDrawer(展开时显示) -->
-	<StatusDrawer
-		expanded={drawerExpanded}
-		status$={statusStore}
-		contextUsage$={contextStore}
-		onCompact={handleCompact}
-	/>
-
-	<!-- 输入区(毛玻璃) -->
-	<div class="ratel-input">
-		<!-- 附件预览条 -->
-		<AttachmentStrip
-			pendingAttachments$={attachmentStore}
-			onRemove={(id) => plugin.userStatus.removeAttachment(id)}
+	<!-- composer: Strip → Drawer → input(Conversation-first,状态不夹在消息与输入之间) -->
+	<div class="ratel-composer">
+		<StatusLine
+			status$={statusStore}
+			contextUsage$={contextStore}
+			expanded={drawerExpanded}
+			chatBusy={isRunning}
+			busyOverride={busyOverride}
+			busyHard={workBar?.type === 'hard'}
+			onToggle={() => (drawerExpanded = !drawerExpanded)}
 		/>
+		<StatusDrawer
+			expanded={drawerExpanded}
+			status$={statusStore}
+			contextUsage$={contextStore}
+			embedKind={plugin.settings.embedProvider}
+			onCompact={handleCompact}
+		/>
+		<div class="ratel-input">
+			<!-- 附件预览条 -->
+			<AttachmentStrip
+				pendingAttachments$={attachmentStore}
+				onRemove={removePendingAttachment}
+			/>
 
-		<!-- @mention chip 条 -->
-		<MentionStrip paths={mentionPaths} onRemove={removeMention} />
+			<!-- @mention chip 条 -->
+			<MentionStrip paths={mentionPaths} onRemove={removeMention} />
 
-		<!-- @mention 补全(与斜杠互斥,绝对定位浮在输入框上方) -->
-		{#if mentionVisible}
-			<div class="ratel-slash-wrap">
-				<MentionMenu
-					bind:this={mentionMenuEl}
-					items={mentionItems}
-					onSelect={insertMention}
-					onClose={() => {
-						mentionQuery = null;
-						mentionItems = [];
-					}}
-				/>
-			</div>
-		{/if}
-
-		<!-- 斜杠命令(绝对定位,浮在输入框上方) -->
-		{#if slashVisible}
-			<div class="ratel-slash-wrap">
-				<SlashMenu
-					bind:this={slashMenuEl}
-					input={input}
-					onSelect={executeSlashCommand}
-					onClose={() => { input = ''; }}
-				/>
-			</div>
-		{/if}
-
-		<div class="ratel-input-row">
-			<button class="ratel-plus-btn" type="button" onclick={triggerFileInput} aria-label={$t('chat.input.addImage')} disabled={isRunning}>+</button>
-			<input bind:this={fileInput} type="file" accept="image/png,image/jpeg,image/webp,image/gif" onchange={handleFileSelect} style="display:none;" />
-			<textarea
-				bind:this={textareaEl}
-				bind:value={input}
-				onkeydown={handleKeydown}
-				oninput={handleInput}
-				onselect={handleSelect}
-				onkeyup={handleSelect}
-				onpaste={handlePaste}
-				onfocus={refreshKeyState}
-				placeholder={$t('chat.input.placeholder')}
-				disabled={isRunning || isCompacting || !gate.canSend}
-				rows={1}
-			></textarea>
-		</div>
-		<div class="ratel-input-footer">
-			{#if isRunning}
-				<button class="ratel-send ratel-stop" onclick={stopGeneration} type="button">{$t('chat.input.stop')}</button>
-			{:else}
-				<button class="ratel-send" onclick={sendMessage} disabled={!input.trim() || !gate.canSend} type="button">{$t('chat.input.send')}</button>
-			{/if}
-		</div>
-
-		<!-- work 条 — 显示"正在做的事"或 gate 提示,空闲时隐藏 -->
-		{#if workBar}
-			<div class="ratel-work-bar">
-				{#if workBar.type === 'hard'}
-					<span class="ratel-work-hint ratel-work-hint-hard">⚠ {workBar.text}</span>
-				{:else}
-					<span class="ratel-work-item ratel-work-item--{workBar.type}">
-						<span class="ratel-work-dot"></span>
-						<span>{workBar.text}</span>
-					</span>
-					{#if gate.softHint}
-						<span class="ratel-work-hint">ⓘ {gate.softHint}</span>
-					{/if}
+			<!--
+				浮层相对一体壳顶边定位(§5.6):wrap 套住 shell,
+				slash/mention 的 bottom:100% 贴壳顶,而非整块 .ratel-input(含 strips)。
+			-->
+			<div class="ratel-input-shell-wrap">
+				{#if mentionVisible}
+					<div class="ratel-slash-wrap">
+						<MentionMenu
+							bind:this={mentionMenuEl}
+							items={mentionItems}
+							onSelect={insertMention}
+							onClose={() => {
+								mentionQuery = null;
+								mentionItems = [];
+							}}
+						/>
+					</div>
 				{/if}
+
+				{#if slashVisible}
+					<div class="ratel-slash-wrap">
+						<SlashMenu
+							bind:this={slashMenuEl}
+							input={input}
+							onSelect={executeSlashCommand}
+							onClose={() => { input = ''; }}
+						/>
+					</div>
+				{/if}
+
+				<div
+					class="ratel-input-shell"
+					class:ratel-input-shell--disabled={isRunning || isCompacting || !gate.canSend}
+				>
+					<button class="ratel-plus-btn" type="button" onclick={triggerFileInput} aria-label={$t('chat.input.addImage')} disabled={isRunning}>+</button>
+					<input bind:this={fileInput} type="file" accept="image/png,image/jpeg,image/webp,image/gif" onchange={handleFileSelect} style="display:none;" />
+					<textarea
+						bind:this={textareaEl}
+						bind:value={input}
+						onkeydown={handleKeydown}
+						oninput={handleInput}
+						onselect={handleSelect}
+						onkeyup={handleSelect}
+						onpaste={handlePaste}
+						onfocus={refreshKeyState}
+						placeholder={$t('chat.input.placeholder')}
+						disabled={isRunning || isCompacting || !gate.canSend}
+						rows={1}
+					></textarea>
+					{#if isRunning}
+						<button class="ratel-send ratel-stop" onclick={stopGeneration} type="button">{$t('chat.input.stop')}</button>
+					{:else}
+						<button class="ratel-send" onclick={sendMessage} disabled={!input.trim() || !gate.canSend} type="button">{$t('chat.input.send')}</button>
+					{/if}
+				</div>
 			</div>
-		{/if}
+		</div>
 	</div>
 </div>
 
@@ -696,12 +704,17 @@
 		line-height: 1.5;
 		color: var(--text-normal);
 		font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+		/* Drawer 上下文 meter 渐变端点 — StatusDrawer 消费 */
+		--ratel-meter-from: var(--interactive-accent);
+		--ratel-meter-to: var(--text-success);
+		/* 正文 [n] / cite-chip 共用(§5.10) */
+		--ratel-cite: var(--interactive-accent);
 	}
 
-	/* ==================== Header(毛玻璃,无 box-shadow) ==================== */
+	/* ==================== Header — 对齐原型 v3:词标同行 + 胶囊 chip ==================== */
 	.ratel-header {
 		flex-shrink: 0;
-		padding: 10px 14px;
+		padding: 14px 16px 12px;
 		border-bottom: 1px solid var(--background-modifier-border);
 		display: flex;
 		align-items: center;
@@ -715,105 +728,66 @@
 		display: flex;
 		align-items: center;
 		gap: 8px;
+		min-width: 0;
 	}
 
 	.ratel-header-right {
 		display: flex;
 		align-items: center;
 		gap: 6px;
-	}
-
-	/* R logo — 22×22 圆角 6px,半透明绿底 */
-	.ratel-header-logo {
-		width: 22px;
-		height: 22px;
-		border-radius: 6px;
-		background: color-mix(in srgb, var(--text-success) 20%, transparent);
-		color: var(--text-success);
-		font-size: 12px;
-		font-weight: 700;
-		font-family: var(--font-monospace);
-		border: 1px solid color-mix(in srgb, var(--text-success) 30%, transparent);
-		display: flex;
-		align-items: center;
-		justify-content: center;
 		flex-shrink: 0;
 	}
 
-	.ratel-header-title {
-		font-size: 13px;
-		font-weight: 600;
+	/* 关键路径:原型 brand 用 baseline 横排,不是上下堆叠 */
+	.ratel-header-brand {
+		display: flex;
+		align-items: baseline;
+		gap: 8px;
+		min-width: 0;
+	}
+
+	.ratel-header-mark {
+		font-size: 15px;
+		font-weight: 650;
+		letter-spacing: -0.02em;
 		color: var(--text-normal);
-		letter-spacing: 0.3px;
+		flex-shrink: 0;
 	}
 
-	/* 上下文百分比胶囊 — 只显示数字,按阈值变色 */
-	.ratel-header-ctx {
-		font-size: 11px;
-		font-family: var(--font-monospace);
-		padding: 2px 9px;
-		border-radius: 8px;
-		border: 1px solid;
-		font-weight: 600;
-		min-width: 36px;
-		text-align: center;
+	.ratel-header-dot {
+		color: var(--ratel-cite, var(--interactive-accent));
 	}
 
-	/* model badge — 随 tone 变色 */
-	.ratel-header-badge {
+	.ratel-header-tagline {
 		font-size: 11px;
-		font-family: var(--font-monospace);
-		padding: 2px 9px;
-		border-radius: 8px;
-		font-weight: 500;
-		max-width: 180px;
+		font-weight: 450;
+		color: var(--text-faint, var(--text-muted));
+		letter-spacing: 0.01em;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
-		border: 1px solid;
-		/* 关键路径:默认 ready 绿底,其他 tone 由修饰类覆盖 */
-		background: color-mix(in srgb, var(--text-success) 12%, transparent);
-		color: var(--text-success);
-		border-color: color-mix(in srgb, var(--text-success) 20%, transparent);
 	}
 
-	.ratel-header-badge--ready {
-		background: color-mix(in srgb, var(--text-success) 12%, transparent);
-		color: var(--text-success);
-		border-color: color-mix(in srgb, var(--text-success) 20%, transparent);
-	}
-
-	.ratel-header-badge--thinking,
-	.ratel-header-badge--indexing {
-		background: color-mix(in srgb, var(--text-warning) 12%, transparent);
-		color: var(--text-warning);
-		border-color: color-mix(in srgb, var(--text-warning) 20%, transparent);
-		animation: ratel-header-pulse 1.2s infinite;
-	}
-
-	.ratel-header-badge--error {
-		background: color-mix(in srgb, var(--text-error) 12%, transparent);
-		color: var(--text-error);
-		border-color: color-mix(in srgb, var(--text-error) 20%, transparent);
-	}
-
-	.ratel-header-badge--unconfigured {
-		background: color-mix(in srgb, var(--text-muted) 10%, transparent);
+	.ratel-header-model {
+		font-size: 10.5px;
+		font-family: var(--font-monospace);
+		font-weight: 500;
+		padding: 4px 9px;
+		border-radius: 999px;
+		border: 1px solid var(--background-modifier-border);
+		background: transparent;
 		color: var(--text-muted);
-		border-color: color-mix(in srgb, var(--text-muted) 20%, transparent);
-		border-style: dashed;
+		cursor: pointer;
+		max-width: 160px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		transition: border-color 0.15s, color 0.15s;
 	}
 
-	@keyframes ratel-header-pulse {
-		0%, 100% { opacity: 1; }
-		50% { opacity: 0.6; }
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.ratel-header-badge--thinking,
-		.ratel-header-badge--indexing {
-			animation: none;
-		}
+	.ratel-header-model:hover {
+		color: var(--ratel-cite, var(--interactive-accent));
+		border-color: color-mix(in srgb, var(--ratel-cite, var(--interactive-accent)) 55%, var(--background-modifier-border));
 	}
 
 	/* ==================== 消息流容器 ==================== */
@@ -824,118 +798,90 @@
 		flex-direction: column;
 	}
 
-	/* ==================== work 条(底部,显示正在做的事) ==================== */
-	.ratel-work-bar {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 12px;
-		padding: 6px 10px;
-		border-radius: 6px;
-		background: color-mix(in srgb, var(--background-secondary) 50%, transparent);
-		backdrop-filter: blur(6px);
-		-webkit-backdrop-filter: blur(6px);
-		font-size: 11.5px;
-		margin-top: 4px;
-	}
-
-	.ratel-work-item {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		color: var(--text-warning);
-		font-family: var(--font-monospace);
-		font-size: 11px;
-	}
-
-	.ratel-work-dot {
-		width: 6px;
-		height: 6px;
-		border-radius: 50%;
-		background: var(--text-warning);
-		animation: ratel-work-pulse 1.2s infinite;
+	/* ==================== composer(Strip → Drawer → input) ==================== */
+	.ratel-composer {
 		flex-shrink: 0;
+		display: flex;
+		flex-direction: column;
+		border-top: 1px solid var(--background-modifier-border);
 	}
 
-	@keyframes ratel-work-pulse {
-		0%, 100% { opacity: 1; }
-		50% { opacity: 0.4; }
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.ratel-work-dot {
-			animation: none;
-		}
-	}
-
-	.ratel-work-hint {
-		color: var(--text-muted);
-		font-size: 11px;
-	}
-
-	.ratel-work-hint-hard {
-		color: var(--text-error);
-		font-weight: 500;
-		width: 100%;
-	}
-
-	/* ==================== 输入区(毛玻璃) ==================== */
+	/* ==================== 输入区(毛玻璃;顶边由 composer 承担,避免双线) ==================== */
 	.ratel-input {
 		flex-shrink: 0;
 		display: flex;
 		flex-direction: column;
 		gap: 8px;
-		border-top: 1px solid var(--background-modifier-border);
 		padding: 10px 14px 14px;
-		position: relative;
 		background: color-mix(in srgb, var(--background-secondary) 65%, transparent);
 		backdrop-filter: blur(10px);
 		-webkit-backdrop-filter: blur(10px);
 	}
 
+	/* 关键路径:相对定位锚点仅包一体壳,浮层 bottom:100% 贴壳顶(§5.6) */
+	.ratel-input-shell-wrap {
+		position: relative;
+	}
+
 	.ratel-slash-wrap {
 		position: absolute;
 		bottom: 100%;
-		left: 14px;
-		right: 14px;
+		left: 0;
+		right: 0;
 		margin-bottom: 4px;
 		z-index: 20;
 	}
 
-	.ratel-input-row {
+	/*
+	 * 一体输入壳 — + / textarea / Send 同框(spec §5.9)。
+	 * 关键路径:边框与 focus ring 只画在壳上,子控件去边框,避免「三块拼盘」。
+	 */
+	.ratel-input-shell {
 		display: flex;
 		align-items: flex-end;
-		gap: 8px;
+		gap: 6px;
+		padding: 8px;
+		border-radius: 12px;
+		border: 1px solid var(--background-modifier-border);
+		background: var(--background-modifier-form-field);
+		transition: border-color 0.15s, outline-color 0.15s;
 	}
 
-	/* + 按钮(毛玻璃) */
+	.ratel-input-shell:focus-within {
+		border-color: var(--interactive-accent);
+		/* 项目禁止 box-shadow;用 outline 做 soft ring */
+		outline: 2px solid color-mix(in srgb, var(--interactive-accent) 28%, transparent);
+		outline-offset: 0;
+	}
+
+	.ratel-input-shell--disabled {
+		opacity: 0.85;
+	}
+
 	.ratel-plus-btn {
 		width: 32px;
 		height: 32px;
 		flex-shrink: 0;
 		border-radius: 8px;
-		border: 1px solid var(--background-modifier-border);
-		background: color-mix(in srgb, var(--background-secondary) 70%, transparent);
-		backdrop-filter: blur(6px);
-		-webkit-backdrop-filter: blur(6px);
+		border: none;
+		background: transparent;
 		color: var(--text-muted);
-		font-size: 16px;
+		font-size: 18px;
 		line-height: 1;
 		cursor: pointer;
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		padding: 0;
-		transition: color 0.15s, border-color 0.15s, background 0.15s;
+		transition: color 0.15s, background 0.15s;
 		-webkit-appearance: none;
 		appearance: none;
 		font-family: inherit;
 	}
 
-	.ratel-plus-btn:hover {
+	.ratel-plus-btn:hover:not(:disabled) {
 		color: var(--text-normal);
-		border-color: var(--interactive-accent);
-		background: color-mix(in srgb, var(--interactive-accent) 8%, var(--background-secondary));
+		background: color-mix(in srgb, var(--interactive-accent) 10%, transparent);
 	}
 
 	.ratel-plus-btn:disabled {
@@ -943,43 +889,36 @@
 		cursor: not-allowed;
 	}
 
-	.ratel-input-row textarea {
+	.ratel-input-shell textarea {
 		flex: 1;
+		min-width: 0;
 		min-height: 54px;
 		max-height: 160px;
-		padding: 10px 12px;
-		border-radius: 8px;
-		border: 1px solid var(--background-modifier-border);
-		background: var(--background-modifier-form-field);
+		padding: 8px 4px;
+		border: none;
+		border-radius: 0;
+		background: transparent;
 		color: var(--text-normal);
 		font-family: inherit;
 		font-size: 13px;
 		line-height: 1.5;
 		resize: none;
 		outline: none;
-		transition: border-color 0.15s;
 		overflow-y: auto;
+		box-shadow: none;
+		-webkit-appearance: none;
+		appearance: none;
 	}
 
-	.ratel-input-row textarea:focus {
-		border-color: var(--interactive-accent);
-		outline: 2px solid color-mix(in srgb, var(--interactive-accent) 30%, transparent);
-		outline-offset: -1px;
-	}
-
-	.ratel-input-row textarea::placeholder {
+	.ratel-input-shell textarea::placeholder {
 		color: var(--text-faint);
 	}
 
-	.ratel-input-footer {
-		display: flex;
-		justify-content: flex-end;
-		margin-top: 4px;
-	}
-
-	/* Send 按钮(产品绿背景) */
+	/* Send 在壳内右侧,与 + / 文本同一视觉平面 */
 	.ratel-send {
-		padding: 7px 18px;
+		flex-shrink: 0;
+		align-self: flex-end;
+		padding: 7px 14px;
 		border-radius: 8px;
 		border: none;
 		background: var(--text-success);
@@ -1010,7 +949,7 @@
 
 	@media (prefers-reduced-motion: reduce) {
 		.ratel-plus-btn,
-		.ratel-input-row textarea,
+		.ratel-input-shell,
 		.ratel-send {
 			transition: none;
 		}

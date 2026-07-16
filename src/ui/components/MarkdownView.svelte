@@ -1,71 +1,96 @@
 <script lang="ts">
 	/**
-	 * @file src/ui/MarkdownView.svelte
-	 * @description Markdown 流式渲染组件 — rAF 节流 + marked + DOMPurify + mermaid
-	 * @module ui/MarkdownView
-	 * @depends utils/markdown-renderer, utils/mermaid-renderer
+	 * @file src/ui/components/MarkdownView.svelte
+	 * @description Markdown 流式渲染 — rAF 节流 + marked + DOMPurify + mermaid + cite 挂钩
+	 * @module ui/components/MarkdownView
+	 * @depends utils/markdown-renderer, utils/mermaid-renderer, ui/chat/cite-enhance
 	 */
 
 	import { onDestroy } from 'svelte';
 	import { renderMarkdownToHtml, areAllCodeBlocksClosed } from '../../utils/markdown-renderer';
 	import { renderMermaidBlocks } from '../../utils/mermaid-renderer';
+	import { enhanceCiteLinks } from '../chat/cite-enhance';
+	import { pathForCiteIndex } from '../chat/open-chat-note';
+	import { tNow } from '../../i18n';
 
-	/**
-	 * 组件 Props。
-	 *
-	 * @param content - Markdown 源文本(流式追加)
-	 * @param streaming - 是否正在流式输出中(true 时 mermaid 块需等闭合后渲染)
-	 */
-	let { content, streaming = false }: { content: string; streaming?: boolean } = $props();
+	let {
+		content,
+		streaming = false,
+		searchResults,
+		onOpenPath,
+	}: {
+		content: string;
+		streaming?: boolean;
+		searchResults?: Array<{ docId: string; score: number; path: string; index: number }>;
+		onOpenPath?: (path: string) => void;
+	} = $props();
 
 	let containerEl: HTMLDivElement | null = $state(null);
 	let rafId = 0;
 	let lastRenderedText = '';
+	let lastCiteKey = '';
+	let cleanupCites: (() => void) | null = null;
 
-	/**
-	 * 渲染管线:marked → DOMPurify → innerHTML → mermaid post-process。
-	 *
-	 * 关键路径:rAF 节流确保同一帧内多次 content 变化只渲染最后一次,
-	 * 避免 60fps 被打满。mermaid 仅在代码块全部闭合时渲染。
-	 */
-	function renderToDom(text: string) {
-		if (!containerEl || text === lastRenderedText) return;
-		lastRenderedText = text;
+	function citeKey(): string {
+		if (!searchResults?.length) return '';
+		return searchResults.map((r) => `${r.index}:${r.path}`).join('|');
+	}
 
-		const html = renderMarkdownToHtml(text);
-		// 关键路径:用 innerHTML 替换内容,因为 mermaid post-process
-		// 需要在 DOM 更新后操作 querySelectorAll,直接用 innerHTML 更可控。
-		containerEl.innerHTML = html;
-
-		// mermaid 渲染:仅在代码块全部闭合时执行
-		if (areAllCodeBlocksClosed(text)) {
-			renderMermaidBlocks(containerEl).catch(() => {
-				// mermaid 渲染异常已在 renderSingleMermaidBlock 内处理,此处静默
-			});
+	function applyCites() {
+		cleanupCites?.();
+		cleanupCites = null;
+		if (!containerEl || !onOpenPath || !searchResults?.length) return;
+		const valid = new Set(searchResults.map((r) => r.index));
+		cleanupCites = enhanceCiteLinks(containerEl, valid, (index) => {
+			const path = pathForCiteIndex(searchResults, index);
+			if (path) onOpenPath(path);
+		});
+		// aria 用 i18n(按钮创建时仅有编号,此处补 title)
+		for (const btn of containerEl.querySelectorAll<HTMLButtonElement>('button.ratel-cite')) {
+			const n = Number(btn.dataset.citeIndex);
+			const path = pathForCiteIndex(searchResults, n);
+			if (path) btn.setAttribute('aria-label', tNow('chat.cite.openNote', { path }));
 		}
 	}
 
+	function renderToDom(text: string, force = false) {
+		if (!containerEl) return;
+		const key = citeKey();
+		if (!force && text === lastRenderedText && key === lastCiteKey) return;
+		lastRenderedText = text;
+		lastCiteKey = key;
+
+		const html = renderMarkdownToHtml(text);
+		containerEl.innerHTML = html;
+
+		if (areAllCodeBlocksClosed(text)) {
+			renderMermaidBlocks(containerEl).catch(() => {});
+		}
+		applyCites();
+	}
+
 	$effect(() => {
-		const text = content; // 追踪依赖
+		const text = content;
+		const _sr = searchResults;
+		void _sr;
 		cancelAnimationFrame(rafId);
 		rafId = requestAnimationFrame(() => {
 			renderToDom(text);
 		});
 	});
 
-	// streaming 从 true→false 时(模型回复完成),强制重新渲染以触发 mermaid
 	$effect(() => {
 		if (!streaming && containerEl && content) {
 			cancelAnimationFrame(rafId);
 			rafId = requestAnimationFrame(() => {
-				lastRenderedText = ''; // 强制刷新
-				renderToDom(content);
+				renderToDom(content, true);
 			});
 		}
 	});
 
 	onDestroy(() => {
 		cancelAnimationFrame(rafId);
+		cleanupCites?.();
 	});
 </script>
 
@@ -73,13 +98,13 @@
 
 <style>
 	.ratel-md {
-		font-size: 13.5px;
-		line-height: 1.6;
-		color: var(--text-normal);
+		font-size: 14px;
+		line-height: 1.65;
+		color: var(--text-muted);
+		letter-spacing: 0.01em;
 		word-break: break-word;
 	}
 
-	/* 标题 */
 	.ratel-md :global(h1) {
 		font-size: 1.5em;
 		font-weight: 600;
@@ -107,12 +132,10 @@
 		color: var(--text-normal);
 	}
 
-	/* 段落 */
 	.ratel-md :global(p) {
 		margin: 0.4em 0;
 	}
 
-	/* 列表 */
 	.ratel-md :global(ul),
 	.ratel-md :global(ol) {
 		margin: 0.4em 0;
@@ -122,7 +145,6 @@
 		margin: 0.15em 0;
 	}
 
-	/* 代码 */
 	.ratel-md :global(code) {
 		font-family: var(--font-monospace);
 		font-size: 0.9em;
@@ -144,7 +166,6 @@
 		line-height: 1.5;
 	}
 
-	/* 表格 */
 	.ratel-md :global(table) {
 		border-collapse: collapse;
 		margin: 0.5em 0;
@@ -161,7 +182,6 @@
 		background: var(--background-secondary);
 	}
 
-	/* 引用块 */
 	.ratel-md :global(blockquote) {
 		border-left: 3px solid var(--background-modifier-border);
 		padding-left: 10px;
@@ -169,7 +189,6 @@
 		color: var(--text-muted);
 	}
 
-	/* 链接 */
 	.ratel-md :global(a) {
 		color: var(--text-accent);
 		text-decoration: none;
@@ -178,14 +197,36 @@
 		text-decoration: underline;
 	}
 
-	/* 分隔线 */
+	/* 引用编号 — 与芯片共用 --ratel-cite;原型为下划线散链气质 */
+	.ratel-md :global(button.ratel-cite) {
+		display: inline;
+		padding: 0 1px;
+		margin: 0 1px;
+		border: none;
+		border-radius: 0;
+		border-bottom: 1px solid color-mix(in srgb, var(--ratel-cite, var(--interactive-accent)) 35%, transparent);
+		background: transparent;
+		color: var(--ratel-cite, var(--interactive-accent));
+		font-family: inherit;
+		font-size: inherit;
+		font-weight: 500;
+		cursor: pointer;
+		vertical-align: baseline;
+		-webkit-appearance: none;
+		appearance: none;
+	}
+	.ratel-md :global(button.ratel-cite:hover) {
+		background: transparent;
+		border-bottom-color: var(--ratel-cite, var(--interactive-accent));
+		text-decoration: none;
+	}
+
 	.ratel-md :global(hr) {
 		border: none;
 		border-top: 1px solid var(--background-modifier-border);
 		margin: 1em 0;
 	}
 
-	/* highlight.js 令牌色 — 适配 Obsidian 暗色主题 */
 	.ratel-md :global(.hljs-keyword) { color: #c678dd; }
 	.ratel-md :global(.hljs-string) { color: #98c379; }
 	.ratel-md :global(.hljs-number) { color: #d19a66; }
@@ -196,7 +237,6 @@
 	.ratel-md :global(.hljs-built_in) { color: #e6c07b; }
 	.ratel-md :global(.hljs-type) { color: #e6c07b; }
 
-	/* mermaid 容器 */
 	.ratel-md :global(.ratel-mermaid) {
 		margin: 0.5em 0;
 		text-align: center;
@@ -206,7 +246,6 @@
 		height: auto;
 	}
 
-	/* mermaid 渲染失败提示 */
 	.ratel-md :global(.ratel-mermaid-error) {
 		padding: 8px 10px;
 		border-radius: 6px;
@@ -216,7 +255,6 @@
 		margin: 0.5em 0;
 	}
 
-	/* 任务列表 */
 	.ratel-md :global(input[type="checkbox"]) {
 		margin-right: 6px;
 	}

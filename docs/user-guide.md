@@ -30,7 +30,7 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
    - 场景预设选 DeepSeek 或 Ollama，或自定义 Base / 模型  
    - DeepSeek：钥匙串添加 `ratel-chat-openai-compatible`；默认模型 `deepseek-v4-flash`  
    - Ollama：Base 指向 `http://localhost:11434/v1`（通常无需 Key）  
-2. **等索引** — 底部状态条显示索引进度；可继续用 Obsidian  
+2. **等索引** — 输入区顶沿 StatusStrip 显示索引进度；可继续用 Obsidian  
 3. 点侧栏 🦡（或命令面板 → `Ratel: Ask vault`）开始提问
 
 默认嵌入是本地 ONNX，首次会下载模型（约几十 MB），之后离线可用。
@@ -153,11 +153,11 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 
 ## 9. 状态怎么读
 
-- **底部状态点**：就绪 / 思考 / 索引 / 错误 / 未配置  
-- **Chat Header**：上下文占用百分比（绿 → 黄 → 红）  
-- **输入框下方 work 条**：索引中 / 下载模型 / 搜索中等  
+- **输入区顶沿 StatusStrip**：状态点 + 就绪/忙态文案 + 右侧上下文占用 `%`（绿 → 黄 → 红）
+- **点开 Strip**：抽屉里看索引篇数、Embedding 类型、上下文 used/max 与进度条、压缩按钮
+- **Header**：模型名（点击查看模型信息）；不再显示占用百分比
 
-未配置 API Key 或索引未就绪时，发送会被挡住并提示原因。
+未配置 API Key 或索引未就绪时，发送会被挡住并在 Strip 提示原因。
 
 ---
 

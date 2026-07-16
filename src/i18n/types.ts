@@ -146,6 +146,8 @@ export interface SettingsStrings {
 // ==================== Chat UI ====================
 export interface ChatStrings {
   'chat.header.title': string;
+  'chat.header.tagline': string;
+  'chat.header.modelChip': string;
   'chat.workbar.indexing': string;
   'chat.workbar.downloading': string;
   'chat.workbar.preparing': string;
@@ -171,6 +173,9 @@ export interface ChatStrings {
   'chat.tool.failed': string;
   'chat.search.title': string;
   'chat.search.rerankBadge': string;
+  'chat.search.rerankHint': string;
+  'chat.cite.openNote': string;
+  'chat.cite.openFailed': string;
   'chat.attachments.deleteAria': string;
   'chat.attachments.invalidType': string;
   'chat.attachments.tooLarge': string;
@@ -298,9 +303,9 @@ export interface StatusStrings {
   'status.drawer.label.index': string;
   'status.drawer.label.currentFile': string;
   'status.drawer.label.embedding': string;
-  'status.drawer.label.workerMode': string;
-  'status.drawer.workerMode.inline': string;
-  'status.drawer.workerMode.worker': string;
+  'status.drawer.label.embedKind': string;
+  'status.drawer.embedKind.local': string;
+  'status.drawer.embedKind.api': string;
   'status.drawer.section.context': string;
   'status.drawer.label.usedMax': string;
   'status.drawer.compactButton': string;

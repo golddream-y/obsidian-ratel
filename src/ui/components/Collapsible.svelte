@@ -1,15 +1,15 @@
 <!--
 	@file src/ui/components/Collapsible.svelte
-	@description 通用折叠容器 — think / tool 段共用,slot 内容 + prop 控制样式
+	@description 通用折叠容器 — 轻量边框卡片;Trace 段已自管时间线外壳,本组件供其它折叠场景复用
 	@module ui/components/Collapsible
-	设计:中性卡片背景 + 细边框 + hover 微阴影 + 无左侧色带
+	设计:轻边框 + 无 hover box-shadow(S-CHAT-UI-V3)
 -->
 <script lang="ts">
 	/**
 	 * Collapsible 折叠容器 props。
 	 *
 	 * @param title - 折叠条标题文本
-	 * @param icon - 标题前缀图标(如 ✓ ✗ 💭)
+	 * @param icon - 标题前缀图标(如 ✓ ✗ ◇)
 	 * @param iconClass - 图标样式类(done/failed/calling/think)
 	 * @param variant - 卡片变体: 'think' 用 sans-serif 标题, 'tool' 用 mono 标题
 	 * @param titleClass - 标题附加 CSS 类(用于状态色如 done/failed)
@@ -84,20 +84,14 @@
 
 <style>
 	/*
-	 * 关键路径:中性卡片背景 + 统一边框,无左侧色带。
-	 * hover 时微阴影增强层次感,无 backdrop-filter。
+	 * 关键路径:轻量边框卡片,无左侧色带、无 hover box-shadow(项目禁止厚阴影)。
 	 */
 	.ratel-collapsible {
 		border-radius: 6px;
-		background: var(--background-secondary-alt, var(--background-modifier-form-field));
-		border: 1px solid var(--background-modifier-border);
+		background: color-mix(in srgb, var(--background-secondary) 55%, transparent);
+		border: 1px solid color-mix(in srgb, var(--background-modifier-border) 70%, transparent);
 		margin-bottom: 6px;
 		overflow: hidden;
-		transition: box-shadow 0.15s ease;
-	}
-
-	.ratel-collapsible:hover {
-		box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
 	}
 
 	.ratel-collapsible-hdr {
@@ -147,7 +141,6 @@
 		border-radius: 50%;
 		background: var(--text-warning);
 		animation: ratel-collapsible-pulse 1.2s infinite;
-		box-shadow: 0 0 6px color-mix(in srgb, var(--text-warning) 50%, transparent);
 	}
 
 	.ratel-collapsible-title {
@@ -196,7 +189,6 @@
 
 	@media (prefers-reduced-motion: reduce) {
 		.ratel-collapsible-arrow,
-		.ratel-collapsible,
 		.ratel-collapsible-hdr {
 			transition: none;
 		}

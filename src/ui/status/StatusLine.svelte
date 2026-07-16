@@ -1,31 +1,43 @@
 <script lang="ts">
 	/**
 	 * @file src/ui/status/StatusLine.svelte
-	 * @description 底部常驻单行状态条 — 状态点 + 文字 + 展开 ▲(百分比已外移到 Header)
+	 * @description composer 顶沿 StatusStrip — 点 + 文案 + 上下文% + 展开
 	 * @module ui/StatusLine
-	 * @depends svelte/store, user-feedback/user-status, ./tone
-	 * 设计:毛玻璃背景,只留 3 件事:点 + 文字 + 箭头
+	 * @depends svelte/store, user-feedback/user-status, ./tone, ./strip-label
+	 * 设计:毛玻璃背景,点 + 文案 + % + 箭头
 	 */
 	import type { Readable } from 'svelte/store';
-	import type { UserStatusSnapshot } from '../../user-feedback/user-status';
+	import type { UserStatusSnapshot, ContextUsage } from '../../user-feedback/user-status';
 	import { t, type StringKey } from '../../i18n';
 	import { deriveTone, type Tone } from './tone';
+	import { clampContextPct, composeStripLabel, contextPctTextColor } from './strip-label';
 
 	let {
 		status$,
+		contextUsage$,
 		expanded = false,
 		onToggle,
 		/** 对话进行中时压制「思考中」文案 — 消息区已有打字指示,避免双份 */
 		chatBusy = false,
+		busyOverride = null,
+		/** 硬 gate 阻塞时强制错误强调色(文案仍走 busyOverride) */
+		busyHard = false,
 	}: {
 		status$: Readable<UserStatusSnapshot>;
+		contextUsage$: Readable<ContextUsage>;
 		expanded: boolean;
 		onToggle: () => void;
 		chatBusy?: boolean;
+		busyOverride?: string | null;
+		busyHard?: boolean;
 	} = $props();
 
 	// 关键路径:Svelte 5 直接用 $ 前缀订阅 store
 	const snap = $derived($status$);
+	const usage = $derived($contextUsage$);
+	// 关键路径:显示与色阶共用同一 clamp,避免 >100 时数字截断但色阶仍按原值跳 error
+	const pct = $derived(clampContextPct(usage.percentage));
+	const pctColor = $derived(contextPctTextColor(pct));
 
 	const toneLabels: Record<Tone, StringKey> = {
 		ready: 'status.index.ready',
@@ -43,9 +55,25 @@
 		}
 		return { tone, label: $t(toneLabels[tone]) };
 	});
+
+	const label = $derived(
+		composeStripLabel({
+			busyOverride,
+			toneLabel: state.label,
+			chatBusy,
+			tone: state.tone,
+		}),
+	);
+
+	// 关键路径:work-bar 忙态可能尚未反映进 deriveTone(如 compacting),busyOverride 时强制 busy 点
+	const dotBusy = $derived(
+		state.tone === 'thinking' ||
+			state.tone === 'indexing' ||
+			(!!busyOverride && state.tone !== 'error' && state.tone !== 'unconfigured'),
+	);
 </script>
 
-<!-- 关键路径:整行可点击切换 Drawer,ctx 百分比已外移到 Header -->
+<!-- 关键路径:整行可点击切换 Drawer;布局 点 | 文案 | % | ▲ -->
 <div
 	class="ratel-status-line"
 	onclick={onToggle}
@@ -55,36 +83,32 @@
 >
 	<span
 		class="ratel-sl-dot"
-		class:ratel-sl-dot-ready={state.tone === 'ready'}
-		class:ratel-sl-dot-thinking={state.tone === 'thinking' || state.tone === 'indexing'}
-		class:ratel-sl-dot-error={state.tone === 'error'}
-		class:ratel-sl-dot-unconfigured={state.tone === 'unconfigured'}
+		class:ratel-sl-dot-ready={state.tone === 'ready' && !dotBusy && !busyHard}
+		class:ratel-sl-dot-thinking={dotBusy && !busyHard}
+		class:ratel-sl-dot-error={state.tone === 'error' || busyHard}
+		class:ratel-sl-dot-unconfigured={state.tone === 'unconfigured' && !busyHard}
 	></span>
 	<span
 		class="ratel-sl-text"
-		class:ratel-sl-text-warn={state.tone === 'thinking' || state.tone === 'indexing'}
-		class:ratel-sl-text-error={state.tone === 'error'}
-		class:ratel-sl-text-muted={state.tone === 'unconfigured'}
-	>{state.label}</span>
+		class:ratel-sl-text-warn={dotBusy && !busyHard}
+		class:ratel-sl-text-error={state.tone === 'error' || busyHard}
+		class:ratel-sl-text-muted={state.tone === 'unconfigured' && !busyHard}
+	>{label}</span>
+	<span class="ratel-sl-pct" style={`color: ${pctColor}`}>{pct}%</span>
 	<span class="ratel-sl-arrow">▲</span>
 </div>
 
 <style>
 	/*
-	 * 关键路径:状态条使用毛玻璃背景,与 Header/输入区视觉一致。
-	 * 高度 30px 常驻底部,hover 微亮反馈。
-	 * 删除 ctx 块后只剩 点 + 文字 + 箭头,无 box-shadow。
+	 * 关键路径:状态条贴 composer 顶沿,极薄;用 padding 代替固定 height,对齐原型 8px 16px。
 	 */
 	.ratel-status-line {
 		display: flex;
 		align-items: center;
 		gap: 8px;
-		height: 30px;
-		padding: 0 14px;
-		border-top: 1px solid var(--background-modifier-border);
-		background: color-mix(in srgb, var(--background-secondary) 75%, transparent);
-		backdrop-filter: blur(10px);
-		-webkit-backdrop-filter: blur(10px);
+		padding: 8px 16px;
+		/* 顶边由 .ratel-composer 承担,避免与 composer 双线 */
+		background: transparent;
 		font-size: 11.5px;
 		color: var(--text-muted);
 		cursor: pointer;
@@ -94,12 +118,12 @@
 	}
 
 	.ratel-status-line:hover {
-		background: color-mix(in srgb, var(--background-modifier-hover) 70%, transparent);
+		background: color-mix(in srgb, var(--text-normal) 2%, transparent);
 	}
 
 	.ratel-sl-dot {
-		width: 7px;
-		height: 7px;
+		width: 6px;
+		height: 6px;
 		border-radius: 50%;
 		flex-shrink: 0;
 		transition: background 0.2s;
@@ -137,6 +161,10 @@
 	.ratel-sl-text {
 		font-weight: 500;
 		color: var(--text-normal);
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.ratel-sl-text-warn {
@@ -152,8 +180,15 @@
 		font-weight: 400;
 	}
 
-	.ratel-sl-arrow {
+	.ratel-sl-pct {
 		margin-left: auto;
+		font-family: var(--font-monospace);
+		font-size: 11px;
+		font-weight: 600;
+		flex-shrink: 0;
+	}
+
+	.ratel-sl-arrow {
 		font-size: 10px;
 		opacity: 0.6;
 		flex-shrink: 0;
