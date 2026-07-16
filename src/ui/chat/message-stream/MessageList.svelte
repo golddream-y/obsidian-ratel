@@ -23,11 +23,13 @@
 		isRunning,
 		containerRef = $bindable(),
 		onScroll,
+		onOpenPath,
 	}: {
 		messages: Message[];
 		isRunning: boolean;
 		containerRef?: HTMLDivElement | null;
 		onScroll?: (el: HTMLDivElement) => void;
+		onOpenPath: (path: string) => void;
 	} = $props();
 
 	/*
@@ -56,7 +58,7 @@
 
 <div class="ratel-messages" bind:this={containerRef} onscroll={() => { if (containerRef) onScroll?.(containerRef); }}>
 	{#each messages as msg, i}
-		<MessageBubble {msg} isLast={i === messages.length - 1} {isRunning} />
+		<MessageBubble {msg} isLast={i === messages.length - 1} {isRunning} {onOpenPath} />
 	{/each}
 	{#if showThinking()}
 		<div class="ratel-typing">
@@ -68,16 +70,15 @@
 
 <style>
 	/*
-	 * 关键路径:消息流容器使用 flex 列布局 + gap 12px 营造呼吸感。
-	 * overflow-y auto 支持滚动,父容器(ChatView)负责 bind:this 控制滚动位置。
+	 * 关键路径:消息流 gap/padding 贴近原型 v3(20/16, gap 20),对话区更疏朗。
 	 */
 	.ratel-messages {
 		flex: 1;
 		overflow-y: auto;
-		padding: 14px;
+		padding: 20px 16px 12px;
 		display: flex;
 		flex-direction: column;
-		gap: 12px;
+		gap: 20px;
 		scroll-behavior: smooth;
 	}
 

@@ -247,10 +247,10 @@ background: linear-gradient(
 
 ### 5.9 Composer 输入框
 
-- 单一圆角容器包裹:`+` | textarea | Send/Stop  
-- focus 时用 accent 描边 + 外圈 soft ring(原型 copper-soft;生产用 accent 透明度)  
-- 附件条 / MentionStrip 仍在一体框**上方**(composer 壳内)  
-- SlashMenu / MentionMenu 定位见 §5.6
+- **单一圆角壳**包裹:`+` | textarea | Send/Stop(三者**同框**,禁止各自独立边框拼盘)
+- focus 时壳用 accent 描边 + soft ring(`:focus-within`;生产用 accent 透明度;禁止 box-shadow)
+- 附件条 / MentionStrip 仍在一体壳**上方**(composer 壳内)
+- SlashMenu / MentionMenu 定位相对 `.ratel-composer` / 输入区(§5.6)
 
 ### 5.10 主题与 token(生产约束)
 
@@ -276,12 +276,12 @@ background: linear-gradient(
 
 | Phase | 内容 | 风险 |
 |---|---|---|
-| **P1 布局骨架** | StatusStrip 迁入 composer;Header 去 %/tone;work-bar→Strip;Drawer 精简 + **meter 渐变** | 中 |
+| **P1 布局骨架** | StatusStrip 迁入 composer;Header 去 %/tone;work-bar→Strip;Drawer 精简 + meter 渐变;**一体输入壳**(§5.9,不可再推迟) | 中 |
 | **P2 Trace + 浮层皮肤** | 时间线换皮;Slash/Mention 相对 composer 定位与统一皮肤 | 低 |
 | **P3 引用机制** | 芯片取代 Search 大卡;**正文 `[n]` 可点** + 共用 `onOpenPath` | 中高 — 渲染挂钩 |
-| **P4 抛光** | 一体输入框、cite 色、Drawer 动效、可选 source 行 | 低 |
+| **P4 抛光** | cite 色、Drawer 动效、可选 source 行 | 低 |
 
-P1 含 meter 渐变(用户已点名);P3 必须含正文引用联动,不能只做芯片外壳。
+P1 **必须**含一体输入壳(用户已确认:分列 + / textarea / footer Send 不算 Conversation-first)。P3 必须含正文引用联动。
 
 ---
 

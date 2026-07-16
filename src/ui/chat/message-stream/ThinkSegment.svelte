@@ -1,12 +1,11 @@
 <!--
 	@file src/ui/chat/message-stream/ThinkSegment.svelte
-	@description think 段渲染 — 可折叠思考过程,流式中默认展开,结束后折叠
+	@description think 段渲染 — Trace 时间线行;流式默认展开,结束后自动折叠
 	@module ui/chat/message-stream/ThinkSegment
-	@depends ../components/Collapsible.svelte
-	设计:warning 色 accent + 流式光标 + 等宽字体 + 结束后自动折叠
+	@depends i18n
+	设计:左边线 + ◇ 字形 + 轻量 detail;无 emoji、无厚卡片阴影
 -->
 <script lang="ts">
-	import Collapsible from '../../components/Collapsible.svelte';
 	import { t } from '../../../i18n';
 
 	/**
@@ -34,36 +33,105 @@
 		}
 	});
 
-	function handleToggle(next: boolean) {
+	function toggle() {
 		userToggled = true;
-		expanded = next;
+		expanded = !expanded;
 	}
 </script>
 
-<div class="ratel-think-wrap" class:ratel-think-streaming={streaming}>
-	<Collapsible
-		title={streaming ? $t('chat.thinking') : $t('chat.thinking.done')}
-		icon="💭"
-		iconClass="think"
-		variant="think"
-		bind:expanded
-		onToggle={handleToggle}
+<div
+	class="ratel-trace ratel-trace-think"
+	class:ratel-trace-expanded={expanded}
+	class:ratel-trace-streaming={streaming}
+>
+	<button
+		class="ratel-trace-row"
+		type="button"
+		aria-expanded={expanded}
+		onclick={toggle}
 	>
-		<div class="ratel-think-content" class:ratel-think-streaming-text={streaming}>
-			{text}{#if streaming}<span class="ratel-think-cursor">▋</span>{/if}
+		<span class="ratel-trace-glyph">◇</span>
+		<span class="ratel-trace-name">
+			{streaming ? $t('chat.thinking') : $t('chat.thinking.done')}
+		</span>
+	</button>
+	{#if expanded}
+		<div class="ratel-trace-detail">
+			<div class="ratel-think-content" class:ratel-think-streaming-text={streaming}>
+				{text}{#if streaming}<span class="ratel-think-cursor">▋</span>{/if}
+			</div>
 		</div>
-	</Collapsible>
+	{/if}
 </div>
 
 <style>
-	.ratel-think-wrap {
-		width: 100%;
+	/*
+	 * 与 ToolSegment 共用时间线语言:1px 左边线 + 单行 + 轻量 detail。
+	 * think 用 ◇;原型用 muted 色而非 warning 抢戏。
+	 */
+	.ratel-trace {
+		margin: 2px 0 4px;
+		padding-left: 2px;
+		margin-left: 4px;
+		border-left: 1px solid var(--background-modifier-border);
 	}
 
-	/*
-	 * 关键路径:think 内容用等宽字体 + muted 色,与正文文本视觉区分。
-	 * 流式时光标闪烁,增强"正在思考"的反馈。
-	 */
+	.ratel-trace-row {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		width: 100%;
+		padding: 5px 10px 5px 12px;
+		border: none;
+		background: transparent;
+		color: inherit;
+		font: inherit;
+		cursor: pointer;
+		user-select: none;
+		text-align: left;
+		border-radius: 0 6px 6px 0;
+		transition: background 0.12s ease, color 0.12s ease;
+	}
+
+	.ratel-trace-row:hover {
+		background: color-mix(in srgb, var(--text-normal) 3%, transparent);
+	}
+
+	.ratel-trace-glyph {
+		flex-shrink: 0;
+		width: 14px;
+		text-align: center;
+		font-size: 11px;
+		font-weight: 600;
+		line-height: 1.4;
+		color: var(--text-faint, var(--text-muted));
+		font-family: var(--font-monospace);
+	}
+
+	.ratel-trace-name {
+		flex: 1;
+		min-width: 0;
+		font-size: 11px;
+		font-weight: 500;
+		font-family: var(--font-monospace);
+		color: var(--text-faint, var(--text-muted));
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.ratel-trace-streaming .ratel-trace-name {
+		color: var(--text-muted);
+	}
+
+	.ratel-trace-detail {
+		margin: 0 10px 6px 26px;
+		padding: 8px 10px;
+		border-radius: 6px;
+		border: 1px solid var(--background-modifier-border);
+		background: color-mix(in srgb, var(--background-secondary) 70%, transparent);
+	}
+
 	.ratel-think-content {
 		font-size: 12px;
 		color: var(--text-muted);
@@ -91,5 +159,6 @@
 
 	@media (prefers-reduced-motion: reduce) {
 		.ratel-think-cursor { animation: none; opacity: 0.6; }
+		.ratel-trace-row { transition: none; }
 	}
 </style>

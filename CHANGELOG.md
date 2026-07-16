@@ -5,6 +5,15 @@
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-07-17
+
+### Changed
+- **Chat UI Conversation-first(S-CHAT-UI-V3)** — StatusStrip 沉入输入区顶沿;Header 为 `Ratel.` 词标 + 副标同行 + 静默胶囊模型 chip;work-bar 合并进 Strip;Drawer 仅索引/上下文 + 渐变 meter + 开合动效;一体输入壳;工具/思考改为细线 Trace 时间线;Slash/Mention 贴一体壳顶;检索结果改为胶囊 cite-chip,正文 `[n]` 可点开同一笔记
+
+### Fixed
+- **vault skills 路径二次拼接** — `SkillVaultAdapter` 误注入绝对路径,Obsidian `adapter.list` 再拼 vault 根导致 ENOENT;改为 vault 相对路径 `.ratel/skills`
+- **vault skills 目录缺失刷屏** — `.ratel/skills` 不存在时静默返回空列表,不再把 ENOENT 打成警告
+
 ## [0.1.7] - 2026-07-16
 
 ### Added

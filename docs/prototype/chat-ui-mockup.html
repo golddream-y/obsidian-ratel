@@ -3,1347 +3,867 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Ratel Chat UI Mockup v2 — 统一卡片式折叠</title>
+  <title>Ratel Chat — Prototype v3 · Conversation-first</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
+    /*
+      Direction: Quiet atelier — conversation-first, graph-native.
+      消息是主角；状态沉入 composer；引用像笔记芯片，不像运维日志。
+    */
     :root {
-      --bg-primary: #1e1e1e;
-      --bg-secondary: #252526;
-      --bg-tertiary: #2d2d2d;
-      --bg-input: #3c3c3c;
-      --text-normal: #d4d4d4;
-      --text-muted: #a0a0a0;
-      --accent: #7ee787;
-      --accent-dim: rgba(126, 231, 135, 0.12);
-      --warning: #facc15;
-      --warning-bg: rgba(250, 204, 21, 0.10);
-      --error: #f87171;
-      --error-bg: rgba(248, 113, 113, 0.10);
-      --border: #3e3e3e;
-      --shadow: 0 4px 20px rgba(0,0,0,0.4);
-      --radius: 8px;
-      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      --mono: "SF Mono", Monaco, "Cascadia Code", monospace;
+      --ink: #12110f;
+      --ink-elevated: #1a1916;
+      --ink-soft: #23211e;
+      --line: rgba(245, 236, 220, 0.08);
+      --line-strong: rgba(245, 236, 220, 0.14);
+      --paper: #f3ece0;
+      --paper-muted: rgba(243, 236, 224, 0.55);
+      --paper-faint: rgba(243, 236, 224, 0.32);
+      --copper: #c9956c;
+      --copper-soft: rgba(201, 149, 108, 0.16);
+      --copper-glow: rgba(201, 149, 108, 0.35);
+      --sage: #8faf8a;
+      --sage-soft: rgba(143, 175, 138, 0.14);
+      --rose: #d0887a;
+      --rose-soft: rgba(208, 136, 122, 0.14);
+      --amber: #d4b06a;
+      --amber-soft: rgba(212, 176, 106, 0.14);
+      --radius: 10px;
+      --radius-sm: 6px;
+      --font: "Instrument Sans", system-ui, sans-serif;
+      --mono: "IBM Plex Mono", ui-monospace, monospace;
+      --space-1: 4px;
+      --space-2: 8px;
+      --space-3: 12px;
+      --space-4: 16px;
+      --space-5: 24px;
     }
 
-    * { box-sizing: border-box; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
     body {
-      margin: 0;
-      font-family: var(--font);
-      background: #111;
-      color: var(--text-normal);
-      display: flex;
-      justify-content: center;
-      align-items: center;
       min-height: 100vh;
-      padding: 20px;
+      display: grid;
+      place-items: center;
+      padding: var(--space-5);
+      font-family: var(--font);
+      color: var(--paper);
+      background:
+        radial-gradient(ellipse 80% 60% at 20% 0%, rgba(201, 149, 108, 0.09), transparent 55%),
+        radial-gradient(ellipse 70% 50% at 90% 100%, rgba(143, 175, 138, 0.06), transparent 50%),
+        #0a0908;
     }
 
-    .chat-frame {
-      width: 420px;
-      height: 780px;
-      background: var(--bg-primary);
-      border: 1px solid var(--border);
-      border-radius: 12px;
+    .stage {
       display: flex;
       flex-direction: column;
-      overflow: hidden;
-      box-shadow: var(--shadow);
+      gap: var(--space-3);
+      align-items: center;
     }
 
-    /* ==================== Header ==================== */
-    .chat-header {
-      padding: 10px 14px;
-      border-bottom: 1px solid var(--border);
+    .stage-label {
+      font-size: 11px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--paper-faint);
+      font-weight: 500;
+    }
+
+    /* ==================== Frame ==================== */
+    .chat {
+      width: min(420px, 100vw - 40px);
+      height: min(760px, 92vh);
+      display: flex;
+      flex-direction: column;
+      background: linear-gradient(180deg, var(--ink-elevated) 0%, var(--ink) 40%);
+      border: 1px solid var(--line-strong);
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow:
+        0 0 0 1px rgba(0, 0, 0, 0.4),
+        0 24px 64px rgba(0, 0, 0, 0.55);
+    }
+
+    /* ==================== Header — 极简 ==================== */
+    .header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      background: rgba(37, 37, 38, 0.65);
-      backdrop-filter: blur(10px);
-      -webkit-backdrop-filter: blur(10px);
+      padding: 14px 16px 12px;
+      border-bottom: 1px solid var(--line);
+      flex-shrink: 0;
     }
 
-    .chat-header .header-left {
+    .brand {
       display: flex;
-      align-items: center;
+      align-items: baseline;
       gap: 8px;
     }
 
-    .chat-header .logo {
-      width: 22px;
-      height: 22px;
-      border-radius: 6px;
-      background: rgba(126, 231, 135, 0.2);
-      color: var(--accent);
-      font-size: 12px;
-      font-weight: 700;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-family: var(--mono);
-      border: 1px solid rgba(126, 231, 135, 0.3);
+    .brand-mark {
+      font-size: 15px;
+      font-weight: 650;
+      letter-spacing: -0.02em;
+      color: var(--paper);
     }
 
-    .chat-header .title {
-      font-size: 13px;
-      font-weight: 600;
-      color: var(--text-normal);
-      letter-spacing: 0.3px;
+    .brand-mark span {
+      color: var(--copper);
     }
 
-    .chat-header .model-badge {
+    .brand-sub {
       font-size: 11px;
-      padding: 2px 9px;
-      border-radius: 12px;
-      background: var(--accent-dim);
-      color: var(--accent);
+      color: var(--paper-faint);
+      font-weight: 450;
+    }
+
+    .model-chip {
       font-family: var(--mono);
+      font-size: 10.5px;
       font-weight: 500;
-      border: 1px solid rgba(126, 231, 135, 0.2);
-      max-width: 180px;
+      color: var(--paper-muted);
+      padding: 4px 9px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: transparent;
+      max-width: 160px;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s;
     }
 
-    /* ==================== Messages ==================== */
+    .model-chip:hover {
+      border-color: var(--copper-glow);
+      color: var(--copper);
+    }
+
+    /* ==================== Messages — 主角 ==================== */
     .messages {
       flex: 1;
       overflow-y: auto;
-      padding: 14px;
+      padding: 20px 16px 12px;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 20px;
       scroll-behavior: smooth;
     }
 
-    .message {
-      max-width: 88%;
+    .messages::-webkit-scrollbar { width: 6px; }
+    .messages::-webkit-scrollbar-thumb {
+      background: var(--line-strong);
+      border-radius: 3px;
+    }
+
+    .turn { display: flex; flex-direction: column; gap: 10px; max-width: 100%; }
+    .turn.user { align-items: flex-end; }
+    .turn.assistant { align-items: stretch; }
+
+    .bubble-user {
+      max-width: 86%;
+      padding: 11px 14px;
+      font-size: 14px;
+      line-height: 1.55;
+      color: var(--paper);
+      background: var(--ink-soft);
+      border: 1px solid var(--line-strong);
+      border-radius: 14px 14px 4px 14px;
+    }
+
+    .bubble-user .thumbs {
       display: flex;
-      flex-direction: column;
       gap: 6px;
-    }
-
-    .message.user {
-      align-self: flex-end;
-      padding: 10px 13px;
-      border-radius: var(--radius);
-      background: rgba(45, 45, 45, 0.78);
-      backdrop-filter: blur(10px);
-      border: 1px solid rgba(62, 62, 62, 0.7);
-      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-      font-size: 13.5px;
-      line-height: 1.5;
-    }
-
-    .message.assistant {
-      align-self: flex-start;
-    }
-
-    .segment { margin-bottom: 6px; }
-    .segment:last-child { margin-bottom: 0; }
-
-    /* ==================== 统一折叠卡片(Think / Tool / Search 共用骨架) ==================== */
-    .card {
-      border-radius: 6px;
-      background: var(--bg-tertiary);
-      border: 1px solid var(--border);
-      overflow: hidden;
-      transition: box-shadow 0.15s;
-    }
-
-    .card:hover {
-      box-shadow: 0 1px 4px rgba(0,0,0,0.15);
-    }
-
-    .card-hdr {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 12px;
-      cursor: pointer;
-      user-select: none;
-      font-size: 12px;
-      transition: background 0.12s;
-    }
-
-    .card-hdr:hover {
-      background: rgba(255,255,255,0.03);
-    }
-
-    .card-hdr .card-icon {
-      flex-shrink: 0;
-      font-size: 13px;
-      width: 18px;
-      text-align: center;
-    }
-
-    .card-hdr .card-title {
-      flex: 1;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      font-family: var(--mono);
-    }
-
-    .card-hdr .card-arrow {
-      font-size: 10px;
-      opacity: 0.5;
-      transition: transform 0.25s ease;
-      flex-shrink: 0;
-    }
-
-    .card-hdr .card-arrow.open {
-      transform: rotate(180deg);
-    }
-
-    .card-body {
-      max-height: 0;
-      overflow: hidden;
-      transition: max-height 0.3s ease;
-      border-top: 0 solid var(--border);
-    }
-
-    .card-body.open {
-      max-height: 300px;
-      padding: 10px 12px;
-      border-top-width: 1px;
-    }
-
-    /* ==================== ThinkSegment ==================== */
-    .card.think .card-icon { color: var(--warning); }
-    .card.think .card-title { color: var(--warning); font-weight: 500; font-family: var(--font); }
-
-    .card.think .think-text {
-      font-size: 12px;
-      color: var(--text-muted);
-      line-height: 1.6;
-      white-space: pre-wrap;
-      word-break: break-word;
-      font-family: var(--mono);
-    }
-
-    .card.think .think-cursor {
-      color: var(--warning);
-      font-weight: 600;
-      animation: blink 1s steps(2, start) infinite;
-    }
-
-    @keyframes blink {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0; }
-    }
-
-    /* ==================== ToolSegment ==================== */
-    .card.tool .card-icon { font-size: 14px; }
-    .card.tool .card-title { color: var(--text-muted); }
-    .card.tool.done .card-icon { color: var(--accent); }
-    .card.tool.done .card-title { color: var(--accent); }
-    .card.tool.failed .card-icon { color: var(--error); }
-    .card.tool.failed .card-title { color: var(--error); }
-
-    .card.tool .calling-row {
-      display: flex;
-      align-items: center;
-      gap: 7px;
-      color: var(--warning);
-      font-size: 11px;
       margin-bottom: 8px;
-      font-family: var(--mono);
     }
 
-    .card.tool .calling-dot {
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: var(--warning);
-      animation: pulse 1.2s infinite;
-      flex-shrink: 0;
+    .bubble-user .thumbs img {
+      width: 72px;
+      height: 72px;
+      object-fit: cover;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--line);
     }
 
-    .card-body .detail-section { margin-bottom: 8px; }
-    .card-body .detail-section:last-child { margin-bottom: 0; }
-
-    .card-body .detail-label {
-      font-size: 10px;
-      color: var(--text-faint, #666);
-      text-transform: uppercase;
-      letter-spacing: 0.6px;
-      margin-bottom: 4px;
-      font-weight: 600;
+    .assistant-prose {
+      font-size: 14px;
+      line-height: 1.65;
+      color: var(--paper-muted);
+      letter-spacing: 0.01em;
     }
 
-    .card-body pre {
-      margin: 0;
-      font-family: var(--mono);
-      font-size: 11px;
-      color: var(--text-muted);
-      white-space: pre-wrap;
-      word-break: break-all;
-      line-height: 1.5;
-      padding: 6px 8px;
-      border-radius: 4px;
-      background: rgba(0,0,0,0.2);
-      border: 1px solid rgba(255,255,255,0.04);
-    }
-
-    /* ==================== SearchResults ==================== */
-    .card.search { border-color: rgba(126, 231, 135, 0.15); }
-
-    .card.search .search-hdr {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 8px 12px;
-      border-bottom: 1px solid var(--border);
-      font-size: 12px;
-    }
-
-    .card.search .search-icon { font-size: 0.9em; opacity: 0.85; }
-    .card.search .search-title { color: var(--text-normal); font-weight: 600; }
-
-    .card.search .search-count {
-      font-family: var(--mono);
-      font-size: 10px;
-      padding: 1px 6px;
-      border-radius: 8px;
-      background: rgba(160,160,160,0.15);
-      color: var(--text-muted);
+    .assistant-prose strong { color: var(--paper); font-weight: 600; }
+    .assistant-prose .cite {
+      color: var(--copper);
       font-weight: 500;
+      text-decoration: none;
+      border-bottom: 1px solid rgba(201, 149, 108, 0.35);
+      cursor: pointer;
     }
 
-    .card.search .rerank-badge {
-      margin-left: auto;
-      padding: 1px 7px;
-      border-radius: 8px;
-      background: var(--warning-bg);
-      color: var(--warning);
-      font-size: 10px;
-      font-weight: 600;
-    }
-
-    .card.search .search-list {
+    /* 工作轨迹 — 细线时间线，不是厚卡片堆 */
+    .trace {
       display: flex;
       flex-direction: column;
-      gap: 1px;
-      padding: 4px 8px;
+      gap: 2px;
+      margin: 2px 0 4px;
+      padding-left: 2px;
+      border-left: 1px solid var(--line);
+      margin-left: 4px;
     }
 
-    .card.search .search-row {
+    .trace-item {
       display: flex;
-      gap: 8px;
       align-items: center;
-      padding: 4px 6px;
-      border-radius: 4px;
+      gap: 8px;
+      padding: 5px 10px 5px 12px;
+      font-size: 12px;
+      color: var(--paper-faint);
+      cursor: pointer;
+      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+      transition: background 0.12s, color 0.12s;
+    }
+
+    .trace-item:hover {
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--paper-muted);
+    }
+
+    .trace-item .ico {
+      width: 14px;
+      text-align: center;
+      flex-shrink: 0;
       font-size: 11px;
-      transition: background 0.12s;
     }
 
-    .card.search .search-row:hover {
-      background: rgba(126, 231, 135, 0.06);
-    }
+    .trace-item.done .ico { color: var(--sage); }
+    .trace-item.done .label { color: var(--paper-muted); }
+    .trace-item.run .ico { color: var(--amber); }
+    .trace-item.run .label { color: var(--amber); }
+    .trace-item.think .ico { color: var(--paper-faint); }
 
-    .card.search .search-idx {
-      font-family: var(--mono);
-      font-weight: 700;
-      color: var(--text-muted);
-      min-width: 24px;
-      font-size: 11px;
-    }
-
-    .card.search .search-path {
+    .trace-item .label {
       flex: 1;
       font-family: var(--mono);
       font-size: 11px;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      color: var(--text-normal);
     }
 
-    .card.search .search-score {
+    .trace-item .meta {
+      font-size: 10px;
+      color: var(--paper-faint);
       font-family: var(--mono);
-      font-size: 10px;
-      font-weight: 600;
-      padding: 1px 5px;
-      border-radius: 4px;
     }
 
-    .score-high { color: var(--accent); background: var(--accent-dim); }
-    .score-mid { color: var(--warning); background: var(--warning-bg); }
-    .score-low { color: var(--text-muted); background: rgba(160,160,160,0.1); }
-
-    /* ==================== TextSegment ==================== */
-    .text-segment {
-      font-size: 13.5px;
+    .trace-detail {
+      display: none;
+      margin: 0 10px 6px 26px;
+      padding: 8px 10px;
+      background: var(--ink-soft);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      font-family: var(--mono);
+      font-size: 10.5px;
       line-height: 1.5;
+      color: var(--paper-faint);
+      white-space: pre-wrap;
     }
 
-    /* ==================== StatusLine ==================== */
-    .status-line {
-      height: 30px;
-      padding: 0 14px;
+    .trace-item.open + .trace-detail { display: block; }
+
+    /* 图谱引用 — 笔记芯片 */
+    .citations {
       display: flex;
-      align-items: center;
-      gap: 10px;
-      border-top: 1px solid var(--border);
-      background: rgba(37, 37, 38, 0.75);
-      backdrop-filter: blur(10px);
-      font-size: 11.5px;
-      color: var(--text-muted);
-      cursor: pointer;
-      transition: background 0.15s;
-      user-select: none;
-      flex-shrink: 0;
-    }
-
-    .status-line:hover { background: rgba(45, 45, 45, 0.8); }
-
-    .status-line .dot {
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: var(--accent);
-      box-shadow: 0 0 6px var(--accent);
-      flex-shrink: 0;
-    }
-
-    .status-line .dot.processing {
-      background: var(--warning);
-      box-shadow: 0 0 6px var(--warning);
-      animation: pulse 1.2s infinite;
-    }
-
-    .status-line .dot.error {
-      background: var(--error);
-      box-shadow: 0 0 6px var(--error);
-    }
-
-    .status-line .dot.unconfigured {
-      background: transparent;
-      border: 1.5px solid #666;
-      box-shadow: none;
-    }
-
-    .status-line .status-text { font-weight: 500; color: var(--text-normal); }
-    .status-line .status-text.muted { color: var(--text-muted); font-weight: 400; }
-    .status-line .status-text.warn { color: var(--warning); }
-    .status-line .status-text.error { color: var(--error); }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.4; }
-    }
-
-    .status-line .expand-hint {
-      font-size: 10px;
-      opacity: 0.6;
-      transition: opacity 0.15s;
-    }
-
-    .status-line:hover .expand-hint { opacity: 0.9; }
-
-    .ctx-meter {
-      display: flex;
-      align-items: center;
+      flex-wrap: wrap;
       gap: 6px;
-      margin-left: auto;
-    }
-
-    .ctx-bar {
-      width: 48px;
-      height: 4px;
-      border-radius: 2px;
-      background: var(--bg-tertiary);
-      overflow: hidden;
-      box-shadow: 0 1px 2px rgba(0,0,0,0.06) inset;
-    }
-
-    .ctx-bar-fill {
-      height: 100%;
-      border-radius: 2px;
-      transition: width 0.3s, background 0.3s;
-      box-shadow: 0 0 4px rgba(126,231,135,0.3);
-    }
-
-    .ctx-pct {
-      font-size: 10px;
-      font-family: var(--mono);
-      color: var(--text-muted);
-      min-width: 28px;
-      text-align: right;
-      font-weight: 600;
-    }
-
-    /* source 指示器(药丸形,带标签) */
-    .source-pill {
-      display: flex;
-      align-items: center;
-      gap: 3px;
-      padding: 1px 6px 1px 5px;
-      border-radius: 8px;
-      font-size: 9.5px;
-      font-family: var(--mono);
-      font-weight: 500;
-      letter-spacing: 0.2px;
-      margin-left: 2px;
-    }
-
-    .source-pill .src-dot {
-      width: 5px;
-      height: 5px;
-      border-radius: 50%;
-      flex-shrink: 0;
-    }
-
-    .source-pill.estimate { background: rgba(160,160,160,0.12); color: var(--text-muted); }
-    .source-pill.estimate .src-dot { background: var(--text-muted); }
-
-    .source-pill.streaming { background: var(--warning-bg); color: var(--warning); }
-    .source-pill.streaming .src-dot { background: var(--warning); animation: pulse 1.2s infinite; }
-
-    .source-pill.api { background: var(--accent-dim); color: var(--accent); }
-    .source-pill.api .src-dot { background: var(--accent); box-shadow: 0 0 4px rgba(126,231,135,0.5); }
-
-    /* ==================== StatusDrawer ==================== */
-    .status-drawer {
-      max-height: 0;
-      overflow: hidden;
-      background: var(--bg-secondary);
-      border-top: 1px solid var(--border);
-      transition: max-height 0.25s ease;
-    }
-
-    .status-drawer.open { max-height: 560px; }
-
-    .drawer-inner {
-      padding: 14px;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-
-    .drawer-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      font-size: 12px;
-    }
-
-    .drawer-row .label { color: var(--text-muted); }
-    .drawer-row .value { color: var(--text-normal); font-weight: 500; }
-
-    .drawer-section-title {
-      font-size: 11.5px;
-      font-weight: 600;
-      letter-spacing: 0.2px;
-      color: var(--text-muted);
-      padding: 6px 0 6px;
-      margin-top: 2px;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .drawer-section-title:first-child {
-      margin-top: 0;
-      padding-top: 0;
-    }
-
-    /* token 进度条(drawer 内) */
-    .token-meter {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin: 2px 0 4px;
-    }
-
-    .token-meter .meter-track {
-      flex: 1;
-      height: 6px;
-      border-radius: 3px;
-      background: var(--bg-tertiary);
-      overflow: hidden;
-      box-shadow: 0 1px 2px rgba(0,0,0,0.08) inset;
-    }
-
-    .token-meter .meter-fill {
-      height: 100%;
-      border-radius: 3px;
-      transition: width 0.4s ease, background 0.3s;
-      box-shadow: 0 0 4px rgba(126,231,135,0.3);
-    }
-
-    .token-meter .meter-pct {
-      font-size: 10px;
-      font-family: var(--mono);
-      font-weight: 600;
-      min-width: 32px;
-      text-align: right;
-    }
-
-    .progress-track {
-      width: 100%;
-      height: 4px;
-      background: var(--bg-tertiary);
-      border-radius: 2px;
-      overflow: hidden;
-    }
-
-    .progress-fill {
-      height: 100%;
-      width: 45%;
-      background: var(--warning);
-      border-radius: 2px;
-      transition: width 0.3s;
-    }
-
-    .hint-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      padding: 2px 8px;
-      border-radius: 10px;
-      background: var(--warning-bg);
-      color: var(--warning);
-      font-size: 11px;
-    }
-
-    .degraded-row {
-      padding: 6px 10px;
-      border-radius: 6px;
-      background: var(--error-bg);
-      color: var(--error);
-      font-size: 11px;
-      line-height: 1.4;
-    }
-
-    .micro-btn {
-      padding: 3px 10px;
-      border-radius: 4px;
-      border: 1px solid var(--border);
-      background: var(--bg-tertiary);
-      color: var(--text-muted);
-      font-size: 11px;
-      cursor: pointer;
-      transition: color 0.12s, border-color 0.12s;
-    }
-
-    .micro-btn:hover {
-      color: var(--text-normal);
-      border-color: var(--accent);
-    }
-
-
-    /* ==================== Input Area ==================== */
-    .input-area {
-      padding: 10px 14px 14px;
-      border-top: 1px solid var(--border);
-      background: rgba(30, 30, 30, 0.65);
-      backdrop-filter: blur(10px);
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      position: relative;
-      flex-shrink: 0;
-    }
-
-    .attachment-strip {
-      display: flex;
-      gap: 8px;
-      overflow-x: auto;
-    }
-
-    .attachment-thumb {
-      position: relative;
-      width: 56px;
-      height: 56px;
-      border-radius: 6px;
-      overflow: hidden;
-      border: 1px solid var(--border);
-      flex-shrink: 0;
-    }
-
-    .attachment-thumb img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-
-    .attachment-thumb .remove {
-      position: absolute;
-      top: 2px;
-      right: 2px;
-      width: 16px;
-      height: 16px;
-      border-radius: 50%;
-      background: rgba(0,0,0,0.7);
-      color: #fff;
-      font-size: 10px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-    }
-
-    .input-row {
-      display: flex;
-      align-items: flex-end;
-      gap: 8px;
-    }
-
-    .attach-btn {
-      width: 32px;
-      height: 32px;
-      border-radius: 8px;
-      border: 1px solid var(--border);
-      background: rgba(37, 37, 38, 0.7);
-      backdrop-filter: blur(6px);
-      color: var(--text-muted);
-      font-size: 16px;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: color 0.15s, border-color 0.15s, background 0.15s;
-      box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-    }
-
-    .attach-btn:hover {
-      color: var(--text-normal);
-      border-color: var(--accent);
-      background: rgba(126, 231, 135, 0.08);
-    }
-
-    .input-area textarea {
-      flex: 1;
-      min-height: 54px;
-      max-height: 160px;
-      padding: 10px 12px;
-      border-radius: var(--radius);
-      border: 1px solid var(--border);
-      background: var(--bg-input);
-      color: var(--text-normal);
-      font-family: inherit;
-      font-size: 13px;
-      line-height: 1.5;
-      resize: none;
-      outline: none;
-      transition: border-color 0.15s, box-shadow 0.15s;
-      box-shadow: 0 1px 2px rgba(0,0,0,0.04) inset;
-    }
-
-    .input-area textarea:focus {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 2px rgba(126, 231, 135, 0.15), 0 1px 2px rgba(0,0,0,0.04) inset;
-    }
-
-    .input-area textarea::placeholder { color: #666; }
-
-    .input-footer {
-      display: flex;
-      justify-content: flex-end;
       margin-top: 4px;
     }
 
-    .send-btn {
-      padding: 7px 18px;
-      border-radius: 8px;
-      border: none;
-      background: var(--accent);
-      color: #1a1a1a;
-      font-size: 12px;
-      font-weight: 600;
-      font-family: inherit;
+    .cite-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      max-width: 100%;
+      padding: 5px 10px 5px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--line-strong);
+      background: var(--copper-soft);
+      color: var(--paper-muted);
+      font-size: 11.5px;
       cursor: pointer;
-      letter-spacing: 0.3px;
-      transition: box-shadow 0.15s, transform 0.1s;
-      box-shadow: 0 1px 3px rgba(126, 231, 135, 0.3), 0 1px 2px rgba(0,0,0,0.08);
+      transition: border-color 0.15s, background 0.15s, color 0.15s;
     }
 
-    .send-btn:hover {
-      box-shadow: 0 2px 6px rgba(126, 231, 135, 0.4), 0 1px 3px rgba(0,0,0,0.1);
+    .cite-chip:hover {
+      border-color: var(--copper-glow);
+      color: var(--paper);
+      background: rgba(201, 149, 108, 0.22);
     }
 
-    .send-btn:active {
-      transform: translateY(1px);
+    .cite-chip .n {
+      font-family: var(--mono);
+      font-size: 10px;
+      font-weight: 500;
+      color: var(--copper);
+      min-width: 1.2em;
     }
 
-    /* ==================== SlashMenu ==================== */
-    .slash-menu {
+    .cite-chip .path {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 200px;
+    }
+
+    .cite-chip .score {
+      font-family: var(--mono);
+      font-size: 9.5px;
+      color: var(--paper-faint);
+    }
+
+    /* ==================== Composer 区（状态沉到底） ==================== */
+    .composer {
+      flex-shrink: 0;
+      border-top: 1px solid var(--line);
+      background: rgba(18, 17, 15, 0.92);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+    }
+
+    /* 状态条 — 贴在输入上方，极薄，不抢戏 */
+    .status-strip {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      font-size: 11.5px;
+      color: var(--paper-faint);
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.15s;
+    }
+
+    .status-strip:hover { background: rgba(255, 255, 255, 0.02); }
+
+    .status-strip .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--sage);
+      box-shadow: 0 0 8px rgba(143, 175, 138, 0.45);
+      flex-shrink: 0;
+    }
+
+    .status-strip .dot.busy {
+      background: var(--amber);
+      box-shadow: 0 0 8px rgba(212, 176, 106, 0.5);
+      animation: pulse 1.4s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.35; }
+    }
+
+    .status-strip .text { font-weight: 500; color: var(--paper-muted); }
+    .status-strip .text.busy { color: var(--amber); }
+
+    .status-strip .spacer { flex: 1; }
+
+    .status-strip .ctx {
+      font-family: var(--mono);
+      font-size: 10.5px;
+      color: var(--paper-faint);
+    }
+
+    .status-strip .chev {
+      font-size: 9px;
+      opacity: 0.45;
+      transition: transform 0.2s ease;
+    }
+
+    .status-strip.open .chev { transform: rotate(180deg); }
+
+    /* Drawer — 从状态条向上展开，简洁两栏 */
+    .drawer {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+      border-top: 0 solid var(--line);
+    }
+
+    .drawer.open {
+      max-height: 280px;
+      border-top-width: 1px;
+    }
+
+    .drawer-inner {
+      padding: 12px 16px 14px;
+      display: grid;
+      gap: 14px;
+    }
+
+    .drawer-block h4 {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--paper-faint);
+      margin-bottom: 8px;
+    }
+
+    .kv {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      padding: 3px 0;
+    }
+
+    .kv .k { color: var(--paper-faint); }
+    .kv .v { color: var(--paper-muted); font-weight: 500; }
+    .kv .v.mono { font-family: var(--mono); font-size: 11px; }
+
+    .meter {
+      height: 3px;
+      border-radius: 2px;
+      background: var(--ink-soft);
+      overflow: hidden;
+      margin-top: 6px;
+    }
+
+    .meter > i {
+      display: block;
+      height: 100%;
+      width: 12%;
+      background: linear-gradient(90deg, var(--copper), var(--sage));
+      border-radius: 2px;
+      transition: width 0.35s ease;
+    }
+
+    .ghost-btn {
+      margin-top: 8px;
+      margin-left: auto;
+      display: block;
+      padding: 5px 12px;
+      font-size: 11.5px;
+      font-family: inherit;
+      color: var(--paper-muted);
+      background: transparent;
+      border: 1px solid var(--line-strong);
+      border-radius: 999px;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s;
+    }
+
+    .ghost-btn:hover {
+      border-color: var(--copper);
+      color: var(--copper);
+    }
+
+    /* 输入 */
+    .input-pad {
+      padding: 0 14px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      position: relative;
+    }
+
+    .mention-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .mention-chip {
+      font-size: 11px;
+      font-family: var(--mono);
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: var(--sage-soft);
+      color: var(--sage);
+      border: 1px solid rgba(143, 175, 138, 0.25);
+    }
+
+    .composer-box {
+      display: flex;
+      align-items: flex-end;
+      gap: 8px;
+      padding: 8px 8px 8px 12px;
+      border: 1px solid var(--line-strong);
+      border-radius: 14px;
+      background: var(--ink-soft);
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+
+    .composer-box:focus-within {
+      border-color: rgba(201, 149, 108, 0.45);
+      box-shadow: 0 0 0 3px var(--copper-soft);
+    }
+
+    .icon-btn {
+      width: 32px;
+      height: 32px;
+      border: none;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--paper-faint);
+      font-size: 18px;
+      line-height: 1;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: color 0.15s, background 0.15s;
+    }
+
+    .icon-btn:hover {
+      color: var(--paper);
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    textarea {
+      flex: 1;
+      min-height: 44px;
+      max-height: 140px;
+      border: none;
+      background: transparent;
+      color: var(--paper);
+      font-family: inherit;
+      font-size: 13.5px;
+      line-height: 1.5;
+      resize: none;
+      outline: none;
+      padding: 6px 0;
+    }
+
+    textarea::placeholder { color: var(--paper-faint); }
+
+    .send {
+      width: 34px;
+      height: 34px;
+      border: none;
+      border-radius: 10px;
+      background: var(--copper);
+      color: var(--ink);
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: transform 0.1s, filter 0.15s;
+    }
+
+    .send:hover { filter: brightness(1.08); }
+    .send:active { transform: scale(0.96); }
+
+    .hint {
+      font-size: 10.5px;
+      color: var(--paper-faint);
+      padding: 0 4px;
+    }
+
+    .hint kbd {
+      font-family: var(--mono);
+      font-size: 9.5px;
+      padding: 1px 5px;
+      border-radius: 4px;
+      border: 1px solid var(--line);
+      color: var(--paper-faint);
+    }
+
+    /* Slash */
+    .slash {
+      display: none;
       position: absolute;
-      bottom: 100%;
       left: 14px;
       right: 14px;
-      margin-bottom: 4px;
-      background: var(--bg-secondary);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      box-shadow: 0 -4px 16px rgba(0,0,0,0.3);
+      bottom: calc(100% - 8px);
+      background: var(--ink-elevated);
+      border: 1px solid var(--line-strong);
+      border-radius: 12px;
       overflow: hidden;
-      display: none;
+      box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.45);
+      z-index: 5;
     }
 
-    .slash-menu.open { display: block; }
+    .slash.open { display: block; }
 
-    .slash-menu-header {
-      padding: 6px 12px;
+    .slash-head {
+      padding: 8px 12px;
       font-size: 10px;
+      letter-spacing: 0.1em;
       text-transform: uppercase;
-      letter-spacing: 0.5px;
-      color: #666;
-      border-bottom: 1px solid var(--border);
+      color: var(--paper-faint);
+      border-bottom: 1px solid var(--line);
     }
 
     .slash-item {
       display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 8px 12px;
+      gap: 12px;
+      padding: 9px 12px;
       cursor: pointer;
       font-size: 12.5px;
-      transition: background 0.1s;
     }
 
-    .slash-item:hover, .slash-item.active {
-      background: var(--bg-tertiary);
-    }
-
+    .slash-item:hover, .slash-item.active { background: rgba(255, 255, 255, 0.04); }
     .slash-item .cmd {
       font-family: var(--mono);
-      color: var(--accent);
-      font-weight: 600;
-      min-width: 72px;
+      color: var(--copper);
+      font-weight: 500;
+      min-width: 76px;
     }
-
-    .slash-item .desc { color: var(--text-muted); }
-
-    /* ==================== Misc ==================== */
-    .message-images {
-      display: flex;
-      gap: 6px;
-      flex-wrap: wrap;
-      margin-bottom: 8px;
-    }
-
-    .message-images img {
-      width: 96px;
-      height: 96px;
-      object-fit: cover;
-      border-radius: 6px;
-      border: 1px solid var(--border);
-      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-      transition: transform 0.15s ease;
-    }
-
-    .message-images img:hover { transform: scale(1.03); }
-
-    .typing-indicator {
-      color: var(--warning);
-      font-size: 12px;
-      padding: 4px 2px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-family: var(--mono);
-    }
-
-    .typing-dot {
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: var(--warning);
-      animation: pulse 1.2s infinite;
-      flex-shrink: 0;
-      box-shadow: 0 0 6px rgba(250, 204, 21, 0.5);
-    }
-
-    .typing-text { opacity: 0.85; }
-
-    .cancelled {
-      font-size: 11.5px;
-      color: var(--text-muted);
-      font-style: italic;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      margin-top: 4px;
-    }
-
-    .cancelled-dot {
-      width: 5px;
-      height: 5px;
-      border-radius: 50%;
-      background: var(--text-muted);
-      opacity: 0.7;
-    }
-
-    .error-block {
-      margin-top: 4px;
-      padding: 8px 10px;
-      border-radius: 6px;
-      background: var(--error-bg);
-      backdrop-filter: blur(6px);
-      border-left: 2px solid var(--error);
-      border-top: 1px solid rgba(248,113,113,0.12);
-      border-right: 1px solid rgba(248,113,113,0.12);
-      border-bottom: 1px solid rgba(248,113,113,0.12);
-      color: var(--error);
-      font-size: 11.5px;
-      line-height: 1.5;
-      display: flex;
-      gap: 8px;
-      align-items: flex-start;
-    }
+    .slash-item .desc { color: var(--paper-faint); }
 
     @media (prefers-reduced-motion: reduce) {
-      .card, .card-hdr, .send-btn, .attach-btn, .status-line, .micro-btn,
-      .input-area textarea, .ctx-bar-fill, .progress-fill, .search-row { transition: none; }
-      .send-btn:active { transform: none; }
-      .message-images img:hover { transform: none; }
+      *, *::before, *::after {
+        animation: none !important;
+        transition: none !important;
+      }
     }
   </style>
 </head>
 <body>
+  <div class="stage">
+    <div class="stage-label">Ratel · Chat prototype v3 · Conversation-first</div>
 
-<div class="chat-frame">
-  <!-- ==================== Header ==================== -->
-  <div class="chat-header">
-    <div class="header-left">
-      <span class="logo">R</span>
-      <span class="title">Ratel</span>
-    </div>
-    <span class="model-badge">deepseek-reasoner</span>
-  </div>
+    <div class="chat">
+      <!-- Header：只留品牌 + 模型 -->
+      <header class="header">
+        <div class="brand">
+          <div class="brand-mark">Ratel<span>.</span></div>
+          <div class="brand-sub">graph-native</div>
+        </div>
+        <button type="button" class="model-chip" title="查看模型">deepseek-v4-flash</button>
+      </header>
 
-  <!-- ==================== Messages ==================== -->
-  <div class="messages" id="messages">
-    <!-- 用户消息 -->
-    <div class="message user">
-      <div class="message-images">
-        <img src="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=200&h=200&fit=crop" alt="uploaded">
-      </div>
-      帮我看看这张图，然后生成 vault 的整体目录 markdown
-    </div>
-
-    <!-- 助手消息(segments 按时序) -->
-    <div class="message assistant">
-      <!-- Text -->
-      <div class="segment">
-        <div class="text-segment">好的，我先遍历各目录，然后汇总成 markdown。</div>
-      </div>
-
-      <!-- Tool: done -->
-      <div class="segment">
-        <div class="card tool done" onclick="toggleCard(this)">
-          <div class="card-hdr">
-            <span class="card-icon">✓</span>
-            <span class="card-title">list_files Formatting — 7 项</span>
-            <span class="card-arrow">▼</span>
+      <!-- 消息：主角 -->
+      <div class="messages" id="messages">
+        <div class="turn user">
+          <div class="bubble-user">
+            <div class="thumbs">
+              <img src="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=200&h=200&fit=crop" alt="">
+            </div>
+            @产品规划 里关于性能优化写过什么？整理成一段背景说明。
           </div>
-          <div class="card-body">
-            <div class="detail-section">
-              <div class="detail-label">参数</div>
-              <pre>{"path": "Formatting"}</pre>
+        </div>
+
+        <div class="turn assistant">
+          <div class="trace">
+            <div class="trace-item done" onclick="this.classList.toggle('open')">
+              <span class="ico">✓</span>
+              <span class="label">search_by_tag · project/perf</span>
+              <span class="meta">4</span>
             </div>
-            <div class="detail-section">
-              <div class="detail-label">结果</div>
-              <pre>["note1.md", "note2.md", "note3.md", "note4.md", "note5.md", "note6.md", "note7.md"]</pre>
+            <div class="trace-detail">tag: project/perf → notes/perf-budget.md, notes/cdn.md, …</div>
+
+            <div class="trace-item done" onclick="this.classList.toggle('open')">
+              <span class="ico">✓</span>
+              <span class="label">search_vault · 性能优化</span>
+              <span class="meta">3</span>
             </div>
+            <div class="trace-detail">query: 性能优化 · topK: 5 · reranked</div>
+
+            <div class="trace-item done" onclick="this.classList.toggle('open')">
+              <span class="ico">✓</span>
+              <span class="label">get_links · 产品规划/MOC.md</span>
+              <span class="meta">图</span>
+            </div>
+            <div class="trace-detail">outgoing: 6 · backlinks: 12 · unresolved: 1</div>
+
+            <div class="trace-item think" onclick="this.classList.toggle('open')">
+              <span class="ico">◇</span>
+              <span class="label">思考 · 合并引用并写背景</span>
+            </div>
+            <div class="trace-detail">优先用反链多的笔记作权威来源；未解析链接标为知识缺口。</div>
+          </div>
+
+          <div class="assistant-prose">
+            你们在规划里把性能当成<strong>体验预算</strong>，而不是事后优化：首屏关键路径要有可量化的上限，CDN 与缓存策略写在同一套约定里。核心依据见
+            <a class="cite" href="#">[1]</a>
+            <a class="cite" href="#">[2]</a>；
+            图谱上 <em style="font-style:normal;color:var(--copper)">产品规划/MOC</em> 仍有一处未解析链接，建议补笔记。
+          </div>
+
+          <div class="citations">
+            <button type="button" class="cite-chip">
+              <span class="n">1</span>
+              <span class="path">产品规划/perf-budget.md</span>
+              <span class="score">·12</span>
+            </button>
+            <button type="button" class="cite-chip">
+              <span class="n">2</span>
+              <span class="path">基础设施/cdn.md</span>
+              <span class="score">·5</span>
+            </button>
+            <button type="button" class="cite-chip">
+              <span class="n">3</span>
+              <span class="path">产品规划/MOC.md</span>
+              <span class="score">图</span>
+            </button>
           </div>
         </div>
       </div>
 
-      <!-- Tool: done -->
-      <div class="segment">
-        <div class="card tool done" onclick="toggleCard(this)">
-          <div class="card-hdr">
-            <span class="card-icon">✓</span>
-            <span class="card-title">list_files Guides — 4 项</span>
-            <span class="card-arrow">▼</span>
-          </div>
-          <div class="card-body">
-            <div class="detail-section">
-              <div class="detail-label">参数</div>
-              <pre>{"path": "Guides"}</pre>
+      <!-- Composer：状态沉入底部 -->
+      <div class="composer">
+        <div class="status-strip" id="statusStrip" onclick="toggleDrawer()">
+          <span class="dot" id="statusDot"></span>
+          <span class="text" id="statusText">就绪</span>
+          <span class="spacer"></span>
+          <span class="ctx" id="ctxPct">12%</span>
+          <span class="chev">▲</span>
+        </div>
+
+        <div class="drawer" id="drawer">
+          <div class="drawer-inner">
+            <div class="drawer-block">
+              <h4>索引</h4>
+              <div class="kv"><span class="k">状态</span><span class="v">就绪</span></div>
+              <div class="kv"><span class="k">笔记</span><span class="v mono">128 篇</span></div>
+              <div class="kv"><span class="k">Embedding</span><span class="v">本地 ONNX</span></div>
             </div>
-            <div class="detail-section">
-              <div class="detail-label">结果</div>
-              <pre>["guide1.md", "guide2.md", "guide3.md", "guide4.md"]</pre>
+            <div class="drawer-block">
+              <h4>上下文</h4>
+              <div class="kv"><span class="k">已用 / 上限</span><span class="v mono" id="tokenDisplay">6,874 / 256,000</span></div>
+              <div class="meter"><i id="meterFill" style="width:12%"></i></div>
+              <button type="button" class="ghost-btn" onclick="event.stopPropagation()">压缩上下文</button>
             </div>
           </div>
         </div>
-      </div>
 
-      <!-- Think: 卡片式折叠 -->
-      <div class="segment">
-        <div class="card think" onclick="toggleCard(this)">
-          <div class="card-hdr">
-            <span class="card-icon">💭</span>
-            <span class="card-title">思考过程</span>
-            <span class="card-arrow">▼</span>
+        <div class="input-pad">
+          <div class="slash" id="slashMenu">
+            <div class="slash-head">命令</div>
+            <div class="slash-item active"><span class="cmd">/new</span><span class="desc">新对话</span></div>
+            <div class="slash-item"><span class="cmd">/compact</span><span class="desc">压缩上下文</span></div>
+            <div class="slash-item"><span class="cmd">/model</span><span class="desc">模型信息</span></div>
+            <div class="slash-item"><span class="cmd">/reindex</span><span class="desc">重新索引</span></div>
           </div>
-          <div class="card-body">
-            <div class="think-text">用户要求生成 vault 目录 markdown。我已经遍历了 Formatting (7 项) 和 Guides (4 项) 两个目录。接下来需要继续遍历 Adventurer 目录，然后汇总所有文件路径生成完整的目录结构...</div>
+
+          <div class="mention-row">
+            <span class="mention-chip">@产品规划</span>
           </div>
+
+          <div class="composer-box">
+            <button type="button" class="icon-btn" title="附件">+</button>
+            <textarea id="chatInput" rows="1" placeholder="问笔记、派任务，或输入 / …"></textarea>
+            <button type="button" class="send" onclick="simulateSend()" title="发送">↑</button>
+          </div>
+          <div class="hint">Enter 发送 · <kbd>Shift</kbd>+<kbd>Enter</kbd> 换行</div>
         </div>
-      </div>
-
-      <!-- Tool: calling -->
-      <div class="segment">
-        <div class="card tool" onclick="toggleCard(this)">
-          <div class="card-hdr">
-            <span class="card-icon"><span class="calling-dot" style="width:8px;height:8px;border-radius:50%;background:var(--warning);animation:pulse 1.2s infinite;display:inline-block"></span></span>
-            <span class="card-title">list_files Adventurer</span>
-            <span class="card-arrow">▼</span>
-          </div>
-          <div class="card-body">
-            <div class="calling-row">
-              <span class="calling-dot"></span>
-              <span>执行中…</span>
-            </div>
-            <div class="detail-section">
-              <div class="detail-label">参数</div>
-              <pre>{"path": "Adventurer"}</pre>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- SearchResults: 卡片式 + 三档色阶 -->
-      <div class="segment">
-        <div class="card search">
-          <div class="search-hdr">
-            <span class="search-icon">🔍</span>
-            <span class="search-title">搜索结果</span>
-            <span class="search-count">3</span>
-            <span class="rerank-badge">✨ 精排</span>
-          </div>
-          <div class="search-list">
-            <div class="search-row">
-              <span class="search-idx">[1]</span>
-              <span class="search-path">Formatting/Headings.md</span>
-              <span class="search-score score-high">0.923</span>
-            </div>
-            <div class="search-row">
-              <span class="search-idx">[2]</span>
-              <span class="search-path">Guides/Link notes.md</span>
-              <span class="search-score score-mid">0.714</span>
-            </div>
-            <div class="search-row">
-              <span class="search-idx">[3]</span>
-              <span class="search-path">Adventurer/Day 1.md</span>
-              <span class="search-score score-low">0.431</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Text -->
-      <div class="segment">
-        <div class="text-segment">正在分析目录结构...</div>
       </div>
     </div>
   </div>
 
-  <!-- ==================== StatusLine ==================== -->
-  <div class="status-line" id="statusLine" onclick="toggleDrawer()">
-    <span class="dot processing"></span>
-    <span class="status-text warn">思考中…</span>
-    <div class="ctx-meter">
-      <div class="ctx-bar"><div class="ctx-bar-fill" id="ctxBarFill" style="width:6%; background:var(--accent)"></div></div>
-      <span class="ctx-pct" id="ctxPct">6%</span>
-      <span class="source-pill streaming" id="sourcePill" title="数据来源:流式估算">
-        <span class="src-dot"></span>
-        <span class="src-label">流式</span>
-      </span>
-    </div>
-    <span class="expand-hint">▲</span>
-  </div>
+  <script>
+    function toggleDrawer() {
+      const d = document.getElementById('drawer');
+      const s = document.getElementById('statusStrip');
+      d.classList.toggle('open');
+      s.classList.toggle('open');
+    }
 
-  <!-- ==================== StatusDrawer ==================== -->
-  <div class="status-drawer" id="statusDrawer">
-    <div class="drawer-inner">
-      <div class="drawer-section-title">向量化 / 索引</div>
-      <div class="drawer-row">
-        <span class="label">索引</span>
-        <span class="value">处理中 12/30</span>
-      </div>
-      <div class="progress-track"><div class="progress-fill"></div></div>
-      <div class="drawer-row">
-        <span class="label">当前文件</span>
-        <span class="value" style="font-family:var(--mono)">Guides/Link notes.md</span>
-      </div>
-      <div class="drawer-row">
-        <span class="label">Embedding</span>
-        <span class="value">就绪</span>
-      </div>
-      <div class="drawer-row">
-        <span class="label">运行模式</span>
-        <span class="value"><span class="hint-pill">内联</span></span>
-      </div>
-      <div class="degraded-row">⚠ 主线程内联模式。大库索引较慢，可在设置启用 Worker 线程。</div>
+    function setBusy(busy, label) {
+      const dot = document.getElementById('statusDot');
+      const text = document.getElementById('statusText');
+      dot.classList.toggle('busy', busy);
+      text.classList.toggle('busy', busy);
+      text.textContent = label;
+    }
 
-      <div class="drawer-section-title">上下文</div>
-      <div class="drawer-row">
-        <span class="label">已用 / 上限</span>
-        <span class="value" id="tokenDisplay">12,420 / 64,000 tokens</span>
-      </div>
-      <div class="token-meter">
-        <div class="meter-track">
-          <div class="meter-fill" id="drawerMeterFill" style="width:6%; background:var(--accent)"></div>
-        </div>
-        <span class="meter-pct" id="drawerMeterPct" style="color:var(--accent)">6%</span>
-      </div>
-      <div class="drawer-row">
-        <span class="label">数据来源</span>
-        <span class="value">
-          <span class="source-pill streaming" style="display:inline-flex">
-            <span class="src-dot"></span>
-            <span class="src-label" id="drawerSourceLabel">流式估算</span>
-          </span>
-        </span>
-      </div>
-      <div class="drawer-row">
-        <span class="label">附件</span>
-        <span class="value">1 张图片 (估 187 tokens)</span>
-      </div>
-      <div class="drawer-row">
-        <button class="micro-btn" style="margin-left:auto" onclick="event.stopPropagation(); alert('将历史消息压缩为摘要并释放 token')">压缩上下文</button>
-      </div>
+    function simulateSend() {
+      const input = document.getElementById('chatInput');
+      const text = input.value.trim();
+      if (!text) return;
+      const messages = document.getElementById('messages');
 
+      const user = document.createElement('div');
+      user.className = 'turn user';
+      user.innerHTML = `<div class="bubble-user"></div>`;
+      user.querySelector('.bubble-user').textContent = text;
+      messages.appendChild(user);
+      input.value = '';
+      messages.scrollTop = messages.scrollHeight;
 
-    </div>
-  </div>
+      setBusy(true, '检索中…');
 
-  <!-- ==================== Input Area ==================== -->
-  <div class="input-area">
-    <div class="slash-menu" id="slashMenu">
-      <div class="slash-menu-header">命令</div>
-      <div class="slash-item active">
-        <span class="cmd">/new</span>
-        <span class="desc">开始新对话，清空当前上下文</span>
-      </div>
-      <div class="slash-item">
-        <span class="cmd">/compact</span>
-        <span class="desc">压缩上下文，将历史总结为摘要</span>
-      </div>
-      <div class="slash-item">
-        <span class="cmd">/model</span>
-        <span class="desc">切换模型</span>
-      </div>
-      <div class="slash-item">
-        <span class="cmd">/reindex</span>
-        <span class="desc">重新索引 vault</span>
-      </div>
-    </div>
-    <div class="attachment-strip">
-      <div class="attachment-thumb">
-        <img src="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=200&h=200&fit=crop" alt="uploaded">
-        <span class="remove">×</span>
-      </div>
-    </div>
-    <div class="input-row">
-      <button class="attach-btn">+</button>
-      <textarea id="chatInput" placeholder="输入 / 查看命令，或直接提问…"></textarea>
-    </div>
-    <div class="input-footer">
-      <button class="send-btn" onclick="simulateSend()">Send</button>
-    </div>
-  </div>
-</div>
+      const asst = document.createElement('div');
+      asst.className = 'turn assistant';
+      messages.appendChild(asst);
 
-<script>
-  // ==================== 统一折叠卡片 ====================
-  function toggleCard(card) {
-    const body = card.querySelector('.card-body');
-    const arrow = card.querySelector('.card-arrow');
-    if (body) body.classList.toggle('open');
-    if (arrow) arrow.classList.toggle('open');
-  }
+      setTimeout(() => {
+        asst.innerHTML = `
+          <div class="trace">
+            <div class="trace-item run">
+              <span class="ico">●</span>
+              <span class="label">search_vault · ${text.slice(0, 24)}</span>
+              <span class="meta">…</span>
+            </div>
+          </div>`;
+        messages.scrollTop = messages.scrollHeight;
+      }, 280);
 
-  // ==================== Drawer ====================
-  function toggleDrawer() {
-    document.getElementById('statusDrawer').classList.toggle('open');
-  }
+      setTimeout(() => {
+        setBusy(false, '就绪');
+        asst.innerHTML = `
+          <div class="trace">
+            <div class="trace-item done" onclick="this.classList.toggle('open')">
+              <span class="ico">✓</span>
+              <span class="label">search_vault</span>
+              <span class="meta">2</span>
+            </div>
+            <div class="trace-detail">query: ${text.replace(/</g, '&lt;')}</div>
+          </div>
+          <div class="assistant-prose">已根据库内笔记整理了一版要点。需要我写成新笔记并链回 MOC 吗？</div>
+          <div class="citations">
+            <button type="button" class="cite-chip"><span class="n">1</span><span class="path">相关笔记.md</span></button>
+          </div>`;
+        document.getElementById('ctxPct').textContent = '14%';
+        document.getElementById('meterFill').style.width = '14%';
+        messages.scrollTop = messages.scrollHeight;
+      }, 1100);
+    }
 
-  // ==================== 模拟 Send ====================
-  function simulateSend() {
     const input = document.getElementById('chatInput');
-    const text = input.value.trim();
-    if (!text) return;
-    const messagesEl = document.getElementById('messages');
-    const userMsg = document.createElement('div');
-    userMsg.className = 'message user';
-    userMsg.textContent = text;
-    messagesEl.appendChild(userMsg);
-    messagesEl.scrollTop = messagesEl.scrollHeight;
-    input.value = '';
-    const assistantMsg = document.createElement('div');
-    assistantMsg.className = 'message assistant';
-    messagesEl.appendChild(assistantMsg);
-    simulateStreaming(assistantMsg);
-  }
+    const menu = document.getElementById('slashMenu');
+    const items = menu.querySelectorAll('.slash-item');
+    let activeIdx = 0;
 
-  function simulateStreaming(msgEl) {
-    updateTokenSource('estimate');
-
-    setTimeout(() => {
-      const seg = document.createElement('div');
-      seg.className = 'segment';
-      seg.innerHTML = `
-        <div class="card think" onclick="toggleCard(this)">
-          <div class="card-hdr">
-            <span class="card-icon">💭</span>
-            <span class="card-title">思考过程…<span class="think-cursor">▋</span></span>
-            <span class="card-arrow open">▼</span>
-          </div>
-          <div class="card-body open">
-            <div class="think-text">用户问了一个问题，我需要先理解意图...</div>
-          </div>
-        </div>`;
-      msgEl.appendChild(seg);
-      updateTokenSource('streaming');
-      animateTokenUsage();
-    }, 300);
-
-    setTimeout(() => {
-      const seg = document.createElement('div');
-      seg.className = 'segment';
-      seg.innerHTML = '<div class="text-segment">好的，我来帮你分析...</div>';
-      msgEl.appendChild(seg);
-    }, 800);
-
-    setTimeout(() => {
-      const seg = document.createElement('div');
-      seg.className = 'segment';
-      seg.innerHTML = `
-        <div class="card tool" onclick="toggleCard(this)">
-          <div class="card-hdr">
-            <span class="card-icon"><span class="calling-dot" style="width:8px;height:8px;border-radius:50%;background:var(--warning);animation:pulse 1.2s infinite;display:inline-block"></span></span>
-            <span class="card-title">search_vault 分析</span>
-            <span class="card-arrow">▼</span>
-          </div>
-          <div class="card-body">
-            <div class="calling-row"><span class="calling-dot"></span><span>执行中…</span></div>
-            <div class="detail-section">
-              <div class="detail-label">参数</div>
-              <pre>{"query": "分析"}</pre>
-            </div>
-          </div>
-        </div>`;
-      msgEl.appendChild(seg);
-    }, 1200);
-
-    setTimeout(() => {
-      updateTokenSource('api');
-      const pct = 19;
-      document.getElementById('ctxBarFill').style.width = pct + '%';
-      document.getElementById('ctxPct').textContent = pct + '%';
-      document.getElementById('tokenDisplay').textContent = '12,160 / 64,000 tokens';
-      // 同步 drawer 进度条
-      const mf = document.getElementById('drawerMeterFill');
-      const mp = document.getElementById('drawerMeterPct');
-      if (mf) mf.style.width = pct + '%';
-      if (mp) mp.textContent = pct + '%';
-    }, 2000);
-  }
-
-  function updateTokenSource(source) {
-    const pill = document.getElementById('sourcePill');
-    pill.className = 'source-pill ' + source;
-    const labels = { estimate: '估算', streaming: '流式', api: 'API' };
-    pill.querySelector('.src-label').textContent = labels[source];
-    const titles = { estimate: '本地估算', streaming: '流式估算', api: 'API 真值' };
-    pill.title = '数据来源:' + titles[source];
-
-    const drawerPill = document.querySelector('#statusDrawer .source-pill');
-    if (drawerPill) {
-      drawerPill.className = 'source-pill ' + source;
-      drawerPill.style.display = 'inline-flex';
-      const drawerLabels = { estimate: '本地估算', streaming: '流式估算', api: 'API 真值' };
-      document.getElementById('drawerSourceLabel').textContent = drawerLabels[source];
+    function updateActive() {
+      items.forEach((el, i) => el.classList.toggle('active', i === activeIdx));
     }
-  }
 
-  function animateTokenUsage() {
-    let current = 6;
-    const interval = setInterval(() => {
-      current += Math.random() * 2;
-      if (current > 18) { clearInterval(interval); return; }
-      const rounded = Math.round(current);
-      document.getElementById('ctxBarFill').style.width = current + '%';
-      document.getElementById('ctxPct').textContent = rounded + '%';
-      // 同步 drawer 进度条
-      const mf = document.getElementById('drawerMeterFill');
-      const mp = document.getElementById('drawerMeterPct');
-      if (mf) mf.style.width = current + '%';
-      if (mp) mp.textContent = rounded + '%';
-    }, 200);
-  }
-
-  // ==================== 斜杠命令 ====================
-  const input = document.getElementById('chatInput');
-  const menu = document.getElementById('slashMenu');
-  const items = menu.querySelectorAll('.slash-item');
-  let activeIdx = 0;
-
-  function updateActive() {
-    items.forEach((el, i) => el.classList.toggle('active', i === activeIdx));
-  }
-
-  input.addEventListener('input', () => {
-    const val = input.value;
-    if (val.startsWith('/') && !val.includes(' ')) {
-      menu.classList.add('open');
-      const filter = val.slice(1).toLowerCase();
-      let visibleIdx = [];
-      items.forEach((el, i) => {
-        const cmd = el.querySelector('.cmd').textContent;
-        const visible = cmd.startsWith('/' + filter);
-        el.style.display = visible ? '' : 'none';
-        if (visible) visibleIdx.push(i);
-      });
-      if (visibleIdx.length > 0) { activeIdx = visibleIdx[0]; updateActive(); }
-    } else {
-      menu.classList.remove('open');
-    }
-  });
-
-  input.addEventListener('keydown', (e) => {
-    if (!menu.classList.contains('open')) {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        simulateSend();
+    input.addEventListener('input', () => {
+      const val = input.value;
+      if (val.startsWith('/') && !val.includes(' ')) {
+        menu.classList.add('open');
+        const filter = val.slice(1).toLowerCase();
+        items.forEach((el) => {
+          const cmd = el.querySelector('.cmd').textContent;
+          el.style.display = cmd.startsWith('/' + filter) ? '' : 'none';
+        });
+      } else {
+        menu.classList.remove('open');
       }
-      return;
-    }
-    const visibleItems = Array.from(items).filter(el => el.style.display !== 'none');
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      activeIdx = Math.min(activeIdx + 1, visibleItems.length - 1);
-      activeIdx = Array.from(items).indexOf(visibleItems[activeIdx] || visibleItems[0]);
-      updateActive();
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      activeIdx = Math.max(activeIdx - 1, 0);
-      activeIdx = Array.from(items).indexOf(visibleItems[activeIdx] || visibleItems[0]);
-      updateActive();
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      input.value = '';
-      menu.classList.remove('open');
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      input.value = '';
-      menu.classList.remove('open');
-    }
-  });
-
-  items.forEach((el) => {
-    el.addEventListener('click', () => {
-      input.value = '';
-      menu.classList.remove('open');
     });
-  });
-</script>
 
+    input.addEventListener('keydown', (e) => {
+      if (!menu.classList.contains('open')) {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          simulateSend();
+        }
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Escape') {
+        e.preventDefault();
+        input.value = '';
+        menu.classList.remove('open');
+      }
+    });
+  </script>
 </body>
 </html>

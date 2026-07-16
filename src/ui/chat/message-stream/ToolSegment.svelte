@@ -1,12 +1,11 @@
 <!--
 	@file src/ui/chat/message-stream/ToolSegment.svelte
-	@description 工具段渲染 — 可折叠,折叠态显示 displayName + 结果摘要,展开态显示 args/result
+	@description 工具段渲染 — Trace 时间线行;折叠态单行 mono,展开态轻量 detail
 	@module ui/chat/message-stream/ToolSegment
-	@depends ../components/Collapsible.svelte, ./types
-	设计:状态色 accent(success/warning/error)+ calling pulse + 等宽参数/结果
+	@depends ./types, i18n
+	设计:左边线 + ✓/✗/脉冲● + displayName + 右侧摘要;无 emoji、无厚卡片阴影
 -->
 <script lang="ts">
-	import Collapsible from '../../components/Collapsible.svelte';
 	import type { ToolCallEntry } from './types';
 	import { t } from '../../../i18n';
 
@@ -23,12 +22,15 @@
 		}
 	});
 
-	function handleToggle(next: boolean) {
+	function toggle() {
 		userToggled = true;
-		expanded = next;
+		expanded = !expanded;
 	}
 
-	function formatResult(result: unknown): string {
+	/**
+	 * 折叠行右侧短摘要 — 结果条数 / 截断字符串 / 失败文案;calling 无摘要。
+	 */
+	function formatSummary(result: unknown): string {
 		if (Array.isArray(result)) return $t('chat.tool.found', { count: result.length });
 		if (typeof result === 'string') return result.length > 60 ? result.slice(0, 60) + '…' : result;
 		if (result && typeof result === 'object') {
@@ -38,33 +40,27 @@
 		return String(result);
 	}
 
-	function icon(): string {
-		// 关键路径:calling 状态返回占位符,Collapsible 的 CSS ::after 渲染 pulsing dot
-		if (toolCall.status === 'calling') return '\u00A0';
+	function glyph(): string {
+		if (toolCall.status === 'calling') return '●';
 		if (toolCall.status === 'failed') return '✗';
 		return '✓';
 	}
 
-	function iconClass(): string {
+	function statusClass(): string {
 		if (toolCall.status === 'calling') return 'calling';
 		if (toolCall.status === 'failed') return 'failed';
 		return 'done';
 	}
 
-	function titleClass(): string {
-		if (toolCall.status === 'failed') return 'failed';
-		if (toolCall.status === 'done') return 'done';
+	const summary = $derived.by(() => {
+		if (toolCall.status === 'failed') {
+			return toolCall.errorMessage ?? $t('chat.tool.failed');
+		}
+		if (toolCall.status === 'done' && toolCall.result != null) {
+			return formatSummary(toolCall.result);
+		}
 		return '';
-	}
-
-	function title(): string {
-		const summary = toolCall.status === 'failed'
-			? toolCall.errorMessage ?? $t('chat.tool.failed')
-			: toolCall.status === 'done' && toolCall.result != null
-				? `— ${formatResult(toolCall.result)}`
-				: '';
-		return `${toolCall.displayName} ${summary}`.trim();
-	}
+	});
 
 	function prettyArgs(): string {
 		try {
@@ -84,41 +80,143 @@
 	}
 </script>
 
-<Collapsible
-	title={title()}
-	icon={icon()}
-	iconClass={iconClass()}
-	titleClass={titleClass()}
-	variant="tool"
-	bind:expanded
-	onToggle={handleToggle}
+<div
+	class="ratel-trace ratel-trace-{statusClass()}"
+	class:ratel-trace-expanded={expanded}
 >
-	{#if toolCall.status === 'calling'}
-		<div class="ratel-tool-calling">
-			<span class="ratel-tool-dot"></span>
-			<span>{$t('chat.tool.executing')}</span>
+	<button
+		class="ratel-trace-row"
+		type="button"
+		aria-expanded={expanded}
+		onclick={toggle}
+	>
+		<span class="ratel-trace-glyph" class:ratel-trace-glyph-pulse={toolCall.status === 'calling'}>{glyph()}</span>
+		<span class="ratel-trace-name">{toolCall.displayName}</span>
+		{#if summary}
+			<span class="ratel-trace-summary">{summary}</span>
+		{/if}
+	</button>
+	{#if expanded}
+		<div class="ratel-trace-detail">
+			{#if toolCall.status === 'calling'}
+				<div class="ratel-tool-calling">
+					<span class="ratel-tool-dot"></span>
+					<span>{$t('chat.tool.executing')}</span>
+				</div>
+			{/if}
+			<div class="ratel-tool-section">
+				<div class="ratel-tool-label">{$t('chat.tool.params')}</div>
+				<pre class="ratel-tool-pre">{prettyArgs()}</pre>
+			</div>
+			{#if toolCall.result != null}
+				<div class="ratel-tool-section">
+					<div class="ratel-tool-label">{$t('chat.tool.result')}</div>
+					<pre class="ratel-tool-pre">{prettyResult()}</pre>
+				</div>
+			{/if}
+			{#if toolCall.status === 'failed' && toolCall.errorMessage}
+				<div class="ratel-tool-err">{toolCall.errorMessage}</div>
+			{/if}
 		</div>
 	{/if}
-	<div class="ratel-tool-section">
-		<div class="ratel-tool-label">{$t('chat.tool.params')}</div>
-		<pre class="ratel-tool-pre">{prettyArgs()}</pre>
-	</div>
-	{#if toolCall.result != null}
-		<div class="ratel-tool-section">
-			<div class="ratel-tool-label">{$t('chat.tool.result')}</div>
-			<pre class="ratel-tool-pre">{prettyResult()}</pre>
-		</div>
-	{/if}
-	{#if toolCall.status === 'failed' && toolCall.errorMessage}
-		<div class="ratel-tool-err">{toolCall.errorMessage}</div>
-	{/if}
-</Collapsible>
+</div>
 
 <style>
 	/*
-	 * 关键路径:calling 状态显示 pulse 动画点,与 ThinkSegment 的光标区分。
-	 * 参数/结果用等宽字体 + muted 色,标签用大写小字号增强视觉层次。
+	 * Trace 时间线外壳 — 左边线 1px muted(对齐原型 v3),无厚卡片 / box-shadow。
+	 * 关键路径:calling 行用脉冲 ●,与正文气泡视觉权重分离。
 	 */
+	.ratel-trace {
+		margin: 2px 0 4px;
+		padding-left: 2px;
+		margin-left: 4px;
+		border-left: 1px solid var(--background-modifier-border);
+	}
+
+	.ratel-trace-row {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		width: 100%;
+		padding: 5px 10px 5px 12px;
+		border: none;
+		background: transparent;
+		color: inherit;
+		font: inherit;
+		cursor: pointer;
+		user-select: none;
+		text-align: left;
+		border-radius: 0 6px 6px 0;
+		transition: background 0.12s ease, color 0.12s ease;
+	}
+
+	.ratel-trace-row:hover {
+		background: color-mix(in srgb, var(--text-normal) 4%, transparent);
+	}
+
+	.ratel-trace-glyph {
+		flex-shrink: 0;
+		width: 14px;
+		text-align: center;
+		font-size: 11px;
+		font-weight: 600;
+		line-height: 1.4;
+		font-family: var(--font-monospace);
+	}
+
+	.ratel-trace-done .ratel-trace-glyph { color: var(--text-success); }
+	.ratel-trace-failed .ratel-trace-glyph { color: var(--text-error); }
+	.ratel-trace-calling .ratel-trace-glyph { color: var(--text-warning); }
+
+	.ratel-trace-glyph-pulse {
+		animation: ratel-trace-pulse 1.2s infinite;
+	}
+
+	@keyframes ratel-trace-pulse {
+		0%, 100% { opacity: 1; }
+		50% { opacity: 0.35; }
+	}
+
+	.ratel-trace-name {
+		flex: 1;
+		min-width: 0;
+		font-size: 12px;
+		font-family: var(--font-monospace);
+		color: var(--text-muted);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.ratel-trace-done .ratel-trace-name { color: color-mix(in srgb, var(--text-success) 70%, var(--text-muted)); }
+	.ratel-trace-failed .ratel-trace-name { color: color-mix(in srgb, var(--text-error) 75%, var(--text-muted)); }
+	.ratel-trace-calling .ratel-trace-name { color: var(--text-normal); }
+
+	.ratel-trace-summary {
+		flex-shrink: 1;
+		max-width: 42%;
+		font-size: 11px;
+		font-family: var(--font-monospace);
+		color: var(--text-faint, var(--text-muted));
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		text-align: right;
+	}
+
+	.ratel-trace-failed .ratel-trace-summary {
+		color: var(--text-error);
+	}
+
+	/* 展开态轻量 detail — 无大阴影,边框轻 */
+	.ratel-trace-detail {
+		margin: 2px 0 6px 16px;
+		padding: 8px 10px;
+		border-radius: 6px;
+		border: 1px solid color-mix(in srgb, var(--background-modifier-border) 70%, transparent);
+		background: color-mix(in srgb, var(--background-secondary) 55%, transparent);
+	}
+
 	.ratel-tool-calling {
 		display: flex;
 		align-items: center;
@@ -134,13 +232,8 @@
 		height: 7px;
 		border-radius: 50%;
 		background: var(--text-warning);
-		animation: ratel-tool-pulse 1.2s infinite;
+		animation: ratel-trace-pulse 1.2s infinite;
 		flex-shrink: 0;
-	}
-
-	@keyframes ratel-tool-pulse {
-		0%, 100% { opacity: 1; }
-		50% { opacity: 0.4; }
 	}
 
 	.ratel-tool-section {
@@ -185,6 +278,12 @@
 	}
 
 	@media (prefers-reduced-motion: reduce) {
-		.ratel-tool-dot { animation: none; }
+		.ratel-trace-glyph-pulse,
+		.ratel-tool-dot {
+			animation: none;
+		}
+		.ratel-trace-row {
+			transition: none;
+		}
 	}
 </style>

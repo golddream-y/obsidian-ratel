@@ -224,11 +224,12 @@ export default class RatelVaultPlugin extends Plugin {
 		this.memoryStore.ensureDir();
 
 		// ==================== Skills(P-SKILL-1-CORE) ====================
-		// 关键路径:三源路径 — builtin(pluginDir/skills 只读)/ global(~/.ratel/skills)/ vault(vaultBase/.ratel/skills)。
-		// 加载顺序 builtin → global → vault,后者覆盖前者同名(spec §4.3)。
+		// 关键路径:三源路径 — builtin(pluginDir/skills 只读)/ global(~/.ratel/skills)/
+		// vault 源走 VaultPort,rootDir 必须是 vault 相对路径(如 `.ratel/skills`),
+		// 禁止 path.join(vaultBase, ...) 绝对路径 — Obsidian adapter.list 会再拼一次 vault 根,导致 ENOENT 双路径。
 		const builtinSkillsDir = path.join(pluginDir, 'skills');
 		const globalSkillsDir = path.join(os.homedir(), '.ratel', 'skills');
-		const vaultSkillsDir = path.join(vaultBase, '.ratel', 'skills');
+		const vaultSkillsDir = '.ratel/skills';
 		const builtinPort = new SkillFsAdapter('builtin', builtinSkillsDir);
 		const globalPort = new SkillFsAdapter('global', globalSkillsDir);
 		const vaultPort = new SkillVaultAdapter(this.vault, vaultSkillsDir);

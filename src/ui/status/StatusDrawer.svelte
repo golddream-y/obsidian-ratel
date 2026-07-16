@@ -1,23 +1,26 @@
 <script lang="ts">
 	/**
-	 * @file src/ui/StatusDrawer.svelte
+	 * @file src/ui/status/StatusDrawer.svelte
 	 * @description 展开式详情面板 — 向量化/索引区 + 上下文区(max-height 过渡)
-	 * @module ui/StatusDrawer
+	 * @module ui/status/StatusDrawer
 	 * @depends svelte/store, user-feedback/user-status
 	 */
 	import type { Readable } from 'svelte/store';
 	import type { UserStatusSnapshot, ContextUsage } from '../../user-feedback/user-status';
 	import { t } from '../../i18n';
+	import { clampContextPct } from './strip-label';
 
 	let {
 		expanded,
 		status$,
 		contextUsage$,
+		embedKind,
 		onCompact,
 	}: {
 		expanded: boolean;
 		status$: Readable<UserStatusSnapshot>;
 		contextUsage$: Readable<ContextUsage>;
+		embedKind: 'local' | 'api';
 		onCompact: () => void;
 	} = $props();
 
@@ -65,7 +68,8 @@
 
 	const indexValue = $derived.by(() => {
 		let lbl = labelIndex(snap.index);
-		if (snap.indexDocCount != null && snap.index === 'ready') {
+		// 修复:0 篇时不拼括号,避免「就绪 (0 篇)」看起来像异常
+		if (snap.indexDocCount != null && snap.indexDocCount > 0 && snap.index === 'ready') {
 			lbl += ' ' + $t('status.drawer.docCount', { count: snap.indexDocCount });
 		} else if (snap.indexDetail && /^\d+\/\d+$/.test(snap.indexDetail)) {
 			lbl += ` ${snap.indexDetail}`;
@@ -73,9 +77,7 @@
 		return lbl;
 	});
 
-	// 关键路径:sourceInfo / attachmentTokens / pct / ctxColor 已删除
-	// (token-meter / source-pill / 附件统计行从 template 移除后,这些变量变为死代码)
-	// currentFile 保留(仍在 template L122-126 使用)
+	const ctxPct = $derived(clampContextPct(usage.percentage));
 
 	const currentFile = $derived.by(() => {
 		if (snap.index === 'processing' && snap.indexDetail) {
@@ -112,20 +114,24 @@
 			<span class="ratel-drawer-value">{labelEmbedding(snap.embedding)}</span>
 		</div>
 		<div class="ratel-drawer-row">
-			<span class="ratel-drawer-label">{$t('status.drawer.label.workerMode')}</span>
-			<span class="ratel-drawer-pill">{snap.worker === 'inline' ? $t('status.drawer.workerMode.inline') : $t('status.drawer.workerMode.worker')}</span>
+			<span class="ratel-drawer-label">{$t('status.drawer.label.embedKind')}</span>
+			<span class="ratel-drawer-value">
+				{embedKind === 'api' ? $t('status.drawer.embedKind.api') : $t('status.drawer.embedKind.local')}
+			</span>
 		</div>
-		{#if snap.degraded}
-			<div class="ratel-drawer-degraded">
-				<span class="ratel-drawer-degraded-icon">⚠</span>
-				<span>{snap.degraded}</span>
-			</div>
-		{/if}
-
 		<div class="ratel-drawer-section-title">{$t('status.drawer.section.context')}</div>
 		<div class="ratel-drawer-row">
 			<span class="ratel-drawer-label">{$t('status.drawer.label.usedMax')}</span>
 			<span class="ratel-drawer-value ratel-drawer-mono">{usage.usedTokens.toLocaleString()} / {usage.maxTokens.toLocaleString()} tokens</span>
+		</div>
+		<div
+			class="ratel-drawer-meter"
+			role="progressbar"
+			aria-valuenow={ctxPct}
+			aria-valuemin={0}
+			aria-valuemax={100}
+		>
+			<div class="ratel-drawer-meter-fill" style={`width: ${ctxPct}%;`}></div>
 		</div>
 		<div class="ratel-drawer-row ratel-drawer-row-end">
 			<button class="ratel-drawer-micro-btn" type="button" onclick={onCompact}>{$t('status.drawer.compactButton')}</button>
@@ -138,14 +144,21 @@
 		max-height: 0;
 		overflow: hidden;
 		background: var(--background-secondary);
-		border-top: 1px solid var(--background-modifier-border);
-		transition: max-height 0.25s ease;
+		border-top: 1px solid transparent;
+		opacity: 0;
+		/* 关键路径:max-height + opacity 同开合,避免硬切;内容区约 280px,留余量防裁切 */
+		transition:
+			max-height 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+			opacity 0.2s ease,
+			border-color 0.2s ease;
 		flex-shrink: 0;
 	}
 
 	.ratel-drawer-open {
-		max-height: 560px;
+		max-height: 360px;
 		overflow-y: auto;
+		opacity: 1;
+		border-top-color: var(--background-modifier-border);
 	}
 
 	.ratel-drawer-inner {
@@ -219,40 +232,25 @@
 		transition: width 0.3s;
 	}
 
-	/* 药丸徽章 — mockup: 圆角胶囊,轻量底色,彩色字 */
-	.ratel-drawer-pill {
-		display: inline-flex;
-		align-items: center;
-		gap: 4px;
-		padding: 1px 8px;
-		border-radius: 8px;
-		font-size: 11px;
-		font-weight: 500;
+	.ratel-drawer-meter {
+		width: 100%;
+		height: 4px;
+		background: var(--background-modifier-border);
+		border-radius: 2px;
+		overflow: hidden;
+		margin: 6px 0 4px;
 	}
 
-	.ratel-drawer-pill-warn {
-		color: var(--text-warning);
-		/* 关键路径:对齐 mockup hint-pill 黄色淡背景,禁止硬编码 */
-		background: color-mix(in srgb, var(--text-warning) 12%, transparent);
-	}
-
-	/* 降级提示 — mockup: 红色淡背景 + 红字,无边框 */
-	.ratel-drawer-degraded {
-		margin-top: 8px;
-		padding: 8px 10px;
-		border-radius: 6px;
-		background: color-mix(in srgb, var(--text-error) 10%, transparent);
-		color: var(--text-error);
-		font-size: 11.5px;
-		line-height: 1.4;
-		display: flex;
-		gap: 6px;
-		align-items: flex-start;
-	}
-
-	.ratel-drawer-degraded-icon {
-		flex-shrink: 0;
-		line-height: 1.5;
+	.ratel-drawer-meter-fill {
+		height: 100%;
+		border-radius: 2px;
+		/* 关键路径:默认不改渐变随阈值变红,阈值只作用 Strip 文字(spec §5.7.1) */
+		background: linear-gradient(
+			90deg,
+			var(--ratel-meter-from, var(--interactive-accent)) 0%,
+			var(--ratel-meter-to, var(--text-success)) 100%
+		);
+		transition: width 0.35s ease;
 	}
 
 	/* 微按钮 — 强制重置 Obsidian 默认 button 样式 */
