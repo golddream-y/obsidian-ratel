@@ -19,6 +19,7 @@
 |---|---|---|---|---|
 | S-SKILL | [2026-07-06-skill-mechanism-design.md](specs/2026-07-06-skill-mechanism-design.md) | Active | 2026-07-06 | Skill 机制(agentskills.io 兼容):三源加载 + Discovery/Active + 2 工具(执行层 P-SKILL-2/3 仍 pending) |
 | S-EVOLUTION | [2026-07-15-evolution-graph-agent.md](specs/2026-07-15-evolution-graph-agent.md) | Active | 2026-07-15 | 图谱原生 Agent;P-EVO-A-READ Completed;下步 P-EVO-A-FM |
+| S-CHAT-UI-V3 | [2026-07-16-chat-ui-v3-conversation-first.md](specs/2026-07-16-chat-ui-v3-conversation-first.md) | Active | 2026-07-16 | Conversation-first Chat UI;对照原型 v3;P1 plan 已写,P2–P4 待拆 |
 
 ---
 
@@ -26,6 +27,7 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
+| P-CHAT-UI-V3-1 | [2026-07-16-chat-ui-v3-p1-layout.md](plans/2026-07-16-chat-ui-v3-p1-layout.md) | ⏳ Pending | S-CHAT-UI-V3 | 布局骨架:Strip→composer、Header 精简、work-bar 合并、meter 渐变;4 Task |
 | P-EVO-A-READ | [2026-07-15-evo-a-read.md](plans/2026-07-15-evo-a-read.md) | ✅ Completed | S-EVOLUTION | 分支 feat/p-evo-a-read;6 Task + final fix;730 tests;待合并 |
 | P-EVO-A-FM | — | ⏳ Pending | S-EVOLUTION | update_frontmatter;依赖 P-EVO-A-READ;plan 待写 |
 | P-SKILL-2-EXECUTION | — | ⏳ Pending | S-SKILL | references+scripts 沙箱;降优先级,plan 待写 |
@@ -48,10 +50,12 @@
 
 ## Future execution queue(按顺序)
 
-1. **P-EVO-A-FM**(update_frontmatter)— plan 待写
-2. **S-EVOLUTION Phase B**(Write Gate + open_note)— plan 待写
-3. **S-EVOLUTION Phase C**(task_plan + 沉淀)— plan 待写
-4. **P-SKILL-2-EXECUTION** / **P-SKILL-3-UI**— 降优先级,plan 待写
+1. **P-CHAT-UI-V3-1**(布局骨架)— plan 已写,待执行
+2. **P-EVO-A-FM**(update_frontmatter)— plan 待写
+3. **S-CHAT-UI-V3 P2–P4**(Trace / 引用 / 抛光)— plan 待写
+4. **S-EVOLUTION Phase B**(Write Gate + open_note)— plan 待写
+5. **S-EVOLUTION Phase C**(task_plan + 沉淀)— plan 待写
+6. **P-SKILL-2-EXECUTION** / **P-SKILL-3-UI**— 降优先级,plan 待写
 
 ---
 
