@@ -108,131 +108,125 @@ export function renderAppearanceSettings(
 	tab: RatelVaultSettingTab,
 ): void {
 	const plugin = tab.plugin;
-	const root = document.createElement('div');
-	root.className = 'ratel-appearance-settings';
-	containerEl.appendChild(root);
+	// 安全路径:用 Obsidian createEl/createDiv/createSpan,避免商店 prefer-create-el 告警。
+	const root = containerEl.createDiv({ cls: 'ratel-appearance-settings' });
 
-	const preview = document.createElement('div');
-	preview.className = 'ratel-appearance-preview';
-	root.appendChild(preview);
+	const preview = root.createDiv({ cls: 'ratel-appearance-preview' });
 
-	const brand = document.createElement('div');
-	brand.className = 'ratel-appearance-preview-brand';
-	brand.textContent = formatPreviewBrand();
-	preview.appendChild(brand);
+	preview.createDiv({ cls: 'ratel-appearance-preview-brand', text: formatPreviewBrand() });
 
-	const body = document.createElement('p');
-	body.className = 'ratel-appearance-preview-body';
-	body.append(tNow('settings.appearance.preview.body') + ' ');
+	const body = preview.createEl('p', { cls: 'ratel-appearance-preview-body' });
+	body.appendText(tNow('settings.appearance.preview.body') + ' ');
 	// 预览装饰:用 span,避免假控件进入 Tab 序
-	const citeMark = document.createElement('span');
-	citeMark.className = 'ratel-cite';
-	citeMark.setAttribute('aria-hidden', 'true');
-	citeMark.textContent = '[1]';
-	body.appendChild(citeMark);
-	preview.appendChild(body);
+	body.createSpan({
+		cls: 'ratel-cite',
+		text: '[1]',
+		attr: { 'aria-hidden': 'true' },
+	});
 
-	const cites = document.createElement('div');
-	cites.className = 'ratel-cites-row';
-	cites.setAttribute('aria-hidden', 'true');
-	const chip = document.createElement('span');
-	chip.className = 'ratel-cite-chip';
-	const chipN = document.createElement('span');
-	chipN.className = 'ratel-cite-chip-n';
-	chipN.textContent = '1';
-	const chipPath = document.createElement('span');
-	chipPath.className = 'ratel-cite-chip-path';
-	chipPath.textContent = tNow('settings.appearance.preview.citePath');
-	chip.append(chipN, chipPath);
-	cites.appendChild(chip);
-	preview.appendChild(cites);
+	const cites = preview.createDiv({
+		cls: 'ratel-cites-row',
+		attr: { 'aria-hidden': 'true' },
+	});
+	const chip = cites.createSpan({ cls: 'ratel-cite-chip' });
+	chip.createSpan({ cls: 'ratel-cite-chip-n', text: '1' });
+	chip.createSpan({
+		cls: 'ratel-cite-chip-path',
+		text: tNow('settings.appearance.preview.citePath'),
+	});
 
-	const shell = document.createElement('div');
-	shell.className = 'ratel-appearance-preview-shell ratel-input-shell';
-	const fakeInput = document.createElement('div');
-	fakeInput.className = 'ratel-appearance-preview-input';
-	fakeInput.setAttribute('aria-hidden', 'true');
-	const sendBtn = document.createElement('span');
-	sendBtn.className = 'ratel-send';
-	sendBtn.setAttribute('aria-hidden', 'true');
-	sendBtn.textContent = tNow('settings.appearance.preview.send');
-	shell.append(fakeInput, sendBtn);
-	preview.appendChild(shell);
+	const shell = preview.createDiv({ cls: 'ratel-appearance-preview-shell ratel-input-shell' });
+	shell.createDiv({
+		cls: 'ratel-appearance-preview-input',
+		attr: { 'aria-hidden': 'true' },
+	});
+	shell.createSpan({
+		cls: 'ratel-send',
+		text: tNow('settings.appearance.preview.send'),
+		attr: { 'aria-hidden': 'true' },
+	});
 
-	const status = document.createElement('div');
-	status.className = 'ratel-appearance-preview-status';
-	preview.appendChild(status);
+	const status = preview.createDiv({ cls: 'ratel-appearance-preview-status' });
 
-	const schemeLabel = document.createElement('div');
-	schemeLabel.className = 'ratel-appearance-control-label';
-	schemeLabel.id = 'ratel-appearance-scheme-label';
-	schemeLabel.textContent = tNow('settings.appearance.scheme.name');
-	root.appendChild(schemeLabel);
+	root.createDiv({
+		cls: 'ratel-appearance-control-label',
+		text: tNow('settings.appearance.scheme.name'),
+		attr: { id: 'ratel-appearance-scheme-label' },
+	});
 
-	const schemeRow = document.createElement('div');
-	schemeRow.className = 'ratel-appearance-scheme';
-	schemeRow.setAttribute('role', 'radiogroup');
-	schemeRow.setAttribute('aria-labelledby', 'ratel-appearance-scheme-label');
-	root.appendChild(schemeRow);
+	const schemeRow = root.createDiv({
+		cls: 'ratel-appearance-scheme',
+		attr: {
+			role: 'radiogroup',
+			'aria-labelledby': 'ratel-appearance-scheme-label',
+		},
+	});
 
-	const accentLabel = document.createElement('div');
-	accentLabel.className = 'ratel-appearance-control-label';
-	accentLabel.id = 'ratel-appearance-accent-label';
-	accentLabel.textContent = tNow('settings.appearance.accent.name');
-	root.appendChild(accentLabel);
+	root.createDiv({
+		cls: 'ratel-appearance-control-label',
+		text: tNow('settings.appearance.accent.name'),
+		attr: { id: 'ratel-appearance-accent-label' },
+	});
 
-	const swatchRow = document.createElement('div');
-	swatchRow.className = 'ratel-appearance-swatches';
-	swatchRow.setAttribute('role', 'radiogroup');
-	swatchRow.setAttribute('aria-labelledby', 'ratel-appearance-accent-label');
-	root.appendChild(swatchRow);
+	const swatchRow = root.createDiv({
+		cls: 'ratel-appearance-swatches',
+		attr: {
+			role: 'radiogroup',
+			'aria-labelledby': 'ratel-appearance-accent-label',
+		},
+	});
 
-	const hint = document.createElement('p');
-	hint.className = 'ratel-appearance-hint setting-item-description';
-	hint.textContent = tNow('settings.appearance.hint');
-	root.appendChild(hint);
+	root.createEl('p', {
+		cls: 'ratel-appearance-hint setting-item-description',
+		text: tNow('settings.appearance.hint'),
+	});
 
 	const schemeButtons = new Map<UiColorScheme, HTMLButtonElement>();
 	const schemeOrder: UiColorScheme[] = [];
 	for (const opt of SCHEME_OPTIONS) {
-		const btn = document.createElement('button');
-		btn.type = 'button';
-		btn.className = 'ratel-appearance-scheme-btn';
-		btn.setAttribute('role', 'radio');
+		const btn = schemeRow.createEl('button', {
+			cls: 'ratel-appearance-scheme-btn',
+			text: tNow(opt.labelKey),
+			attr: { type: 'button', role: 'radio' },
+		});
 		btn.dataset.scheme = opt.id;
-		btn.textContent = tNow(opt.labelKey);
 		btn.onclick = () => void onSchemeChange(opt.id);
-		schemeRow.appendChild(btn);
 		schemeButtons.set(opt.id, btn);
 		schemeOrder.push(opt.id);
 	}
 
 	const accentButtons = new Map<UiAccentId, HTMLButtonElement>();
 	const accentOrder: UiAccentId[] = [];
-	const followBtn = document.createElement('button');
-	followBtn.type = 'button';
-	followBtn.className = 'ratel-appearance-swatch ratel-appearance-swatch-follow';
-	followBtn.setAttribute('role', 'radio');
+	const followLabel = tNow('settings.appearance.accent.follow');
+	const followBtn = swatchRow.createEl('button', {
+		cls: 'ratel-appearance-swatch ratel-appearance-swatch-follow',
+		text: followLabel,
+		title: followLabel,
+		attr: {
+			type: 'button',
+			role: 'radio',
+			'aria-label': followLabel,
+		},
+	});
 	followBtn.dataset.accent = 'follow';
-	followBtn.setAttribute('aria-label', tNow('settings.appearance.accent.follow'));
-	followBtn.title = tNow('settings.appearance.accent.follow');
-	followBtn.textContent = tNow('settings.appearance.accent.follow');
 	followBtn.onclick = () => void onAccentChange('follow');
-	swatchRow.appendChild(followBtn);
 	accentButtons.set('follow', followBtn);
 	accentOrder.push('follow');
 
 	for (const preset of APPEARANCE_PRESETS) {
-		const btn = document.createElement('button');
-		btn.type = 'button';
-		btn.className = 'ratel-appearance-swatch';
-		btn.setAttribute('role', 'radio');
+		const label = tNow(ACCENT_LABEL_KEYS[preset.id]);
+		const btn = swatchRow.createEl('button', {
+			cls: 'ratel-appearance-swatch',
+			title: label,
+			attr: {
+				type: 'button',
+				role: 'radio',
+				'aria-label': label,
+			},
+		});
 		btn.dataset.accent = preset.id;
 		btn.style.background = preset.hex;
-		btn.setAttribute('aria-label', tNow(ACCENT_LABEL_KEYS[preset.id]));
-		btn.title = tNow(ACCENT_LABEL_KEYS[preset.id]);
 		btn.onclick = () => void onAccentChange(preset.id);
-		swatchRow.appendChild(btn);
 		accentButtons.set(preset.id, btn);
 		accentOrder.push(preset.id);
 	}

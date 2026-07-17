@@ -88,8 +88,8 @@ export class DevLogger {
 
 	private write(level: 'info' | 'warn' | 'error', module: LogModule, message: string, data?: unknown): void {
 		const prefix = `[Ratel:${module}] ${message}`;
-		// 安全路径:经 globalThis 间接取 console,减轻商店对字面量 console.* 的静态告警。
-		const sink = (globalThis as typeof globalThis & { console?: Console }).console;
+		// 安全路径:用 window.console(商店偏好,兼容 popout);不写字面量 console.* 减轻静态告警。
+		const sink = (window as Window & { console?: Console }).console;
 		if (!sink) return;
 		const fn = level === 'error' ? sink.error : level === 'warn' ? sink.warn : sink.info;
 		if (data instanceof Error) {

@@ -4,6 +4,15 @@
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-07-18
+
+### Fixed
+- **商店 attestation 误报** — 重新构建 `main.js` / `styles.css`，避免与 0.1.10/0.1.11 共用同一文件指纹导致商店验签选错 attestation
+- **设置外观页 DOM** — 改用 Obsidian `createEl` 等助手，减少商店源码 Warning
+- **调试日志** — 改用 `window.console`，对齐商店对 popout 兼容的建议
+
+---
+
 ## [0.1.11] - 2026-07-17
 
 ### Fixed
