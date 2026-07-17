@@ -11,9 +11,9 @@ export const BADGER_EMOJI = '🦡';
 const VIEW_TYPE_CHAT = 'ratel-chat';
 
 function createEmojiSpan(text: string): HTMLSpanElement {
-	// 关键路径:用 activeDocument 兼容 popout 窗口
-	const span = activeDocument.createElement('span');
-	span.textContent = text;
+	// 安全路径:activeDocument + createSpan 兼容 popout,并满足商店 prefer-create-el
+	const span = activeDocument.body.createSpan({ text });
+	span.remove();
 	return span;
 }
 

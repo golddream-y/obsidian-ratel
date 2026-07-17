@@ -130,13 +130,14 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 
 ## 8. 设置速查
 
-打开 **设置 → Ratel** 即见顶栏四个 Tab：
+打开 **设置 → Ratel** 即见顶栏五个 Tab：
 
 | Tab | 常用项 |
 |---|---|
 | **对话模型** | 语言、场景预设（DeepSeek / Ollama / 自定义）、模型、API Base、钥匙串状态 |
 | **笔记索引** | Embedding、分块 / 自动索引、Rerank |
 | **记忆与权限** | 记忆开关与面板、Skills、日记约定、信任模式、全部工具权限 |
+| **外观** | 颜色模式（跟随 Obsidian / 浅色 / 深色）、强调色色块（含铜 / Material 色）；仅影响 Ratel 面板，预览即时生效 |
 | **高级** | Context Length、模型 registry、提示词覆盖、记忆容量、开发者选项、诊断 |
 
 ### API Key（钥匙串）

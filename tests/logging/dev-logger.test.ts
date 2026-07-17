@@ -15,7 +15,13 @@ describe('DevLogger', () => {
 		vi.restoreAllMocks();
 	});
 
-	it('info - 输出带 [Ratel:module] 前缀', () => {
+	it('info - debugEnabled=false - 不输出', () => {
+		logger.info('index', '全量索引开始');
+		expect(console.info).not.toHaveBeenCalled();
+	});
+
+	it('info - debugEnabled=true - 输出带 [Ratel:module] 前缀', () => {
+		logger.setDebugEnabled(true);
 		logger.info('index', '全量索引开始');
 		expect(console.info).toHaveBeenCalledWith('[Ratel:index] 全量索引开始');
 	});

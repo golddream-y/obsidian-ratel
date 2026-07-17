@@ -46,22 +46,26 @@ export function enhanceCiteLinks(
 		CITE_RE.lastIndex = 0;
 		let match: RegExpExecArray | null;
 		let last = 0;
-		const frag = document.createDocumentFragment();
+		// 关键路径:用 Obsidian createFragment / createEl,避免商店 prefer-create-el。
+		const frag = createFragment();
 		let changed = false;
 		while ((match = CITE_RE.exec(text)) !== null) {
 			const n = Number(match[1] ?? match[2]);
 			const start = match.index;
 			if (start > last) {
-				frag.appendChild(document.createTextNode(text.slice(last, start)));
+				frag.appendText(text.slice(last, start));
 			}
 			if (validIndexes.has(n)) {
 				changed = true;
-				const btn = document.createElement('button');
-				btn.type = 'button';
-				btn.className = 'ratel-cite';
-				btn.dataset.citeIndex = String(n);
-				btn.textContent = `[${n}]`;
-				btn.setAttribute('aria-label', String(n));
+				const btn = createEl('button', {
+					cls: 'ratel-cite',
+					text: `[${n}]`,
+					attr: {
+						type: 'button',
+						'aria-label': String(n),
+						'data-cite-index': String(n),
+					},
+				});
 				const handler = (e: Event) => {
 					e.preventDefault();
 					e.stopPropagation();
@@ -71,13 +75,13 @@ export function enhanceCiteLinks(
 				buttons.push(btn);
 				frag.appendChild(btn);
 			} else {
-				frag.appendChild(document.createTextNode(match[0]));
+				frag.appendText(match[0]);
 			}
 			last = start + match[0].length;
 		}
 		if (!changed) continue;
 		if (last < text.length) {
-			frag.appendChild(document.createTextNode(text.slice(last)));
+			frag.appendText(text.slice(last));
 		}
 		textNode.parentNode?.replaceChild(frag, textNode);
 	}

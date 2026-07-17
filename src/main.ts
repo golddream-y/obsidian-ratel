@@ -9,6 +9,8 @@ import { EMBEDDING_WORKER_CODE } from '@ratel/embedding-worker-code';
 import { FileSystemAdapter, Notice, Plugin, TFile } from 'obsidian';
 import { type RatelVaultSettings, DEFAULT_SETTINGS, RatelVaultSettingTab, normalizeContextLengthSettings } from './settings';
 import { normalizeChatPreset } from './settings/chat-preset';
+import { normalizeAppearanceSettings } from './ui/appearance/normalize-appearance-settings';
+import { bumpAppearance } from './ui/appearance/appearance-store';
 
 import type { AgentEvent } from './types';
 import { agentLoop } from './core/agent-loop';
@@ -1038,6 +1040,8 @@ export default class RatelVaultPlugin extends Plugin {
 		normalizeContextLengthSettings(this.settings, loaded);
 		// 关键路径:旧版无 chatPreset 字段时按 Base/模型推断,避免误显示 DeepSeek 预设
 		normalizeChatPreset(this.settings, loaded);
+		// 关键路径:旧版无外观字段或非法值时回落 auto/follow
+		normalizeAppearanceSettings(this.settings);
 	}
 
 	/** 持久化当前设置到 Obsidian data.json。 */
@@ -1045,6 +1049,8 @@ export default class RatelVaultPlugin extends Plugin {
 		await this.saveData(this.settings);
 		// 关键路径:settings 变更后热替换工具 definition,让 LLM 立即看到新 description。
 		this.syncToolDefinitions();
+		// 关键路径:通知 Chat / Memory 等视图重跑 applyRatelAppearance(热更新外观)。
+		bumpAppearance();
 	}
 
 	/**

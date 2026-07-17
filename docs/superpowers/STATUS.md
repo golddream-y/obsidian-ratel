@@ -21,6 +21,7 @@
 | S-EVOLUTION | [2026-07-15-evolution-graph-agent.md](specs/2026-07-15-evolution-graph-agent.md) | Active | 2026-07-15 | 图谱原生 Agent;P-EVO-A-READ Completed;下步 P-EVO-A-FM |
 | S-CHAT-UI-V3 | [2026-07-16-chat-ui-v3-conversation-first.md](specs/2026-07-16-chat-ui-v3-conversation-first.md) | Active | 2026-07-16 | Conversation-first;P1–P4 已落地并合入 main(0.1.8);待归档 |
 | S-CHAT-TRACE | [2026-07-17-chat-trace-human-detail.md](specs/2026-07-17-chat-trace-human-detail.md) | Active | 2026-07-17 | Trace + reasoning + 旁注中间层;发版 0.1.9 |
+| S-UI-APPEARANCE | [2026-07-17-ui-appearance-theme.md](specs/2026-07-17-ui-appearance-theme.md) | Active | 2026-07-17 | 外观 Tab 已发版 0.1.10;待归档 |
 
 ---
 
@@ -30,6 +31,7 @@
 |---|---|---|---|---|
 | P-CHAT-UI-V3-1 | [2026-07-16-chat-ui-v3-p1-layout.md](plans/2026-07-16-chat-ui-v3-p1-layout.md) | ✅ Completed | S-CHAT-UI-V3 | 已合入 main;发版 0.1.8;待归档 |
 | P-CHAT-TRACE | [2026-07-17-chat-trace-human-detail.md](plans/2026-07-17-chat-trace-human-detail.md) | ✅ Completed | S-CHAT-TRACE | 发版 0.1.9 |
+| P-UI-APPEARANCE | [2026-07-17-ui-appearance-theme.md](plans/2026-07-17-ui-appearance-theme.md) | ✅ Completed | S-UI-APPEARANCE | 已合入 main;发版 0.1.10;待归档 |
 | P-EVO-A-READ | [2026-07-15-evo-a-read.md](plans/2026-07-15-evo-a-read.md) | ✅ Completed | S-EVOLUTION | 分支 feat/p-evo-a-read;6 Task + final fix;730 tests;待合并 |
 | P-EVO-A-FM | — | ⏳ Pending | S-EVOLUTION | update_frontmatter;依赖 P-EVO-A-READ;plan 待写 |
 | P-SKILL-2-EXECUTION | — | ⏳ Pending | S-SKILL | references+scripts 沙箱;降优先级,plan 待写 |
@@ -57,7 +59,8 @@
 3. **S-EVOLUTION Phase C**(task_plan + 沉淀)— plan 待写
 4. **P-SKILL-2-EXECUTION** / **P-SKILL-3-UI**— 降优先级,plan 待写
 5. **S-CHAT-UI-V3 归档**— 发版 0.1.8 后按需归档  
-6. **S-CHAT-TRACE / P-CHAT-TRACE**— 旁注中间层重构(T1);reasoning 测固(T0)
+6. **S-CHAT-TRACE / P-CHAT-TRACE**— 已发版 0.1.9;待归档  
+7. **S-UI-APPEARANCE / P-UI-APPEARANCE**— 已发版 0.1.10;待归档
 
 ---
 

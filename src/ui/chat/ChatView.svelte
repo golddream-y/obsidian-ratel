@@ -10,6 +10,7 @@
 	 */
 	import type RatelVaultPlugin from '../../main';
 	import { get } from 'svelte/store';
+	import { onMount, onDestroy } from 'svelte';
 	import StatusLine from '../status/StatusLine.svelte';
 	import StatusDrawer from '../status/StatusDrawer.svelte';
 	import SlashMenu from './input/SlashMenu.svelte';
@@ -48,8 +49,30 @@
 	import { estimateTokens } from '../tokens/token-estimator';
 	import { getEffectiveChatModelMaxTokens } from '../../utils/context-window';
 	import { t, tNow } from '../../i18n';
+	import { applyRatelAppearance } from '../appearance/apply-ratel-appearance';
+	import { appearanceRevision } from '../appearance/appearance-store';
 
 	let { plugin }: { plugin: RatelVaultPlugin } = $props();
+
+	// ==================== 外观热更新 ====================
+	let chatRoot: HTMLElement | undefined;
+	let appearanceUnsub: (() => void) | undefined;
+
+	/** 把当前 settings 外观写到 Chat 根节点。 */
+	function syncAppearance() {
+		if (!chatRoot) return;
+		applyRatelAppearance(chatRoot, {
+			uiColorScheme: plugin.settings.uiColorScheme,
+			uiAccent: plugin.settings.uiAccent,
+		});
+	}
+
+	onMount(() => {
+		syncAppearance();
+		// 关键路径:subscribe 立即回调一次(与 onMount sync 重复无害);后续 bump 触发热更新。
+		appearanceUnsub = appearanceRevision.subscribe(() => syncAppearance());
+	});
+	onDestroy(() => appearanceUnsub?.());
 
 	// ==================== 响应式状态 ====================
 	let messages = $state<Message[]>([]);
@@ -566,7 +589,7 @@
 	}
 </script>
 
-<div class="ratel-chat">
+<div class="ratel-chat" bind:this={chatRoot}>
 	<!-- Header — 词标 + 副标同行(原型 brand baseline) + 静默 model chip -->
 	<div class="ratel-header">
 		<div class="ratel-header-left">
@@ -914,15 +937,15 @@
 		color: var(--text-faint);
 	}
 
-	/* Send 在壳内右侧,与 + / 文本同一视觉平面 */
+	/* Send 在壳内右侧 — 必须走强调色,否则外观 Tab 色块切换时最醒目按钮仍钉死成功绿 */
 	.ratel-send {
 		flex-shrink: 0;
 		align-self: flex-end;
 		padding: 7px 14px;
 		border-radius: 8px;
 		border: none;
-		background: var(--text-success);
-		color: var(--background-primary);
+		background: var(--interactive-accent);
+		color: var(--text-on-accent, #fff);
 		font-size: 12px;
 		font-weight: 600;
 		font-family: inherit;
