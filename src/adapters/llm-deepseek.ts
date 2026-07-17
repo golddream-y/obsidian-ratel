@@ -393,6 +393,7 @@ export class DeepSeekLLM implements LLMClient {
 	 * 关键转换:
 	 * - 上送前 `sanitizeToolMessageOrder` — 丢弃孤立 role=tool,避免网关 400。
 	 * - 助手消息若携带 `toolCallId`,补齐 `tool_calls` 数组,让多轮工具调用上下文完整。
+	 * - 助手消息若携带 `reasoning`,映射为 `reasoning_content`(DeepSeek thinking 模式 tool 轮必回传)。
 	 * - 工具消息(`role: 'tool'`)需要 `tool_call_id` 把结果回绑到对应调用。
 	 *
 	 * @param req - 内部 `ChatRequest`。
@@ -410,6 +411,10 @@ export class DeepSeekLLM implements LLMClient {
 					type: 'function',
 					function: { name: m.toolName ?? '', arguments: JSON.stringify(m.toolArgs ?? {}) },
 				}];
+			}
+			// 安全路径:thinking 模式 + tool_calls 时缺 reasoning_content 会 400
+			if (m.role === 'assistant' && m.reasoning) {
+				msg.reasoning_content = m.reasoning;
 			}
 			if (m.role === 'tool' && m.toolCallId) {
 				msg.tool_call_id = m.toolCallId;

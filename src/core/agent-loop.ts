@@ -118,6 +118,8 @@ export async function* agentLoop(
 			yield { type: 'message.start', payload: { role: 'assistant' as const } };
 
 			let accumulatedText = '';
+			// 关键路径:thinking 模式下 tool 轮必须把本轮 reasoning 全文写入 session 并回传 API
+			let accumulatedReasoning = '';
 			const toolCalls: ToolCall[] = [];
 			let finishReason: string | null = null;
 			let streamAborted = false;
@@ -139,8 +141,9 @@ export async function* agentLoop(
 						accumulatedText += delta.text;
 						yield { type: 'message.delta', payload: { text: delta.text } };
 					}
-					// 关键路径:透传思考过程为 message.delta.reasoning
+					// 关键路径:透传思考过程为 message.delta.reasoning,并累积供入库回传
 					if (delta.reasoning) {
+						accumulatedReasoning += delta.reasoning;
 						yield { type: 'message.delta', payload: { text: '', reasoning: delta.reasoning } };
 					}
 					if (delta.toolCall) {
@@ -159,7 +162,7 @@ export async function* agentLoop(
 				// 然后跳出本轮循环,进入 finally 收尾。
 				const message = err instanceof Error ? err.message : String(err);
 				yield { type: 'error', payload: { code: 'LLM_ERROR', message } };
-				ctx.addAssistantMessage(accumulatedText || `Error: ${message}`);
+				ctx.addAssistantMessage(accumulatedText || `Error: ${message}`, accumulatedReasoning || undefined);
 				loopExitedViaBreak = true;
 				break;
 			}
@@ -167,7 +170,7 @@ export async function* agentLoop(
 			// 关键路径:流式输出被取消时,把已收到的文本存入 session 后退出。
 			if (signal?.aborted || streamAborted) {
 				yield { type: 'error', payload: { code: 'CANCELLED', message: '用户取消' } };
-				ctx.addAssistantMessage(accumulatedText);
+				ctx.addAssistantMessage(accumulatedText, accumulatedReasoning || undefined);
 				loopExitedViaBreak = true;
 				break;
 			}
@@ -188,7 +191,7 @@ export async function* agentLoop(
 							message: '模型输出长度达到上限被截断。发送「继续」可让模型接着输出。',
 						},
 					};
-					ctx.addAssistantMessage(accumulatedText);
+					ctx.addAssistantMessage(accumulatedText, accumulatedReasoning || undefined);
 					loopExitedViaBreak = true;
 					break;
 				}
@@ -197,10 +200,14 @@ export async function* agentLoop(
 
 			// 无 toolCall → 这一步就是纯文本回答,直接收尾。
 			if (toolCalls.length === 0) {
-				ctx.addAssistantMessage(accumulatedText);
+				ctx.addAssistantMessage(accumulatedText, accumulatedReasoning || undefined);
 				loopExitedViaBreak = true;
 				break;
 			}
+
+			// 关键路径:本轮思考全文在拆分多条 tool_calls 时复用到每条 assistant 消息 —
+			// DeepSeek thinking 模式要求含 tool_calls 的 assistant 都带回 reasoning_content。
+			const turnReasoning = accumulatedReasoning || undefined;
 
 			// 关键路径:一轮内逐个执行工具调用(对 UI 展示为逐条 tool.call/tool.result),
 			// 每个工具独立过权限门控与钩子,单个失败不阻断其他工具。
@@ -214,7 +221,7 @@ export async function* agentLoop(
 					} catch (err) {
 						const message = err instanceof Error ? err.message : String(err);
 						yield { type: 'error', payload: { code: 'TOOL_DENIED', message } };
-						ctx.addAssistantToolCall(tc, accumulatedText);
+						ctx.addAssistantToolCall(tc, accumulatedText, turnReasoning);
 						ctx.addToolResult(tc.id, `Error: ${message}`);
 						accumulatedText = '';
 						continue;
@@ -226,7 +233,7 @@ export async function* agentLoop(
 				if (!preDecision.allowed) {
 					const message = `工具调用被拒绝: ${preDecision.reason ?? '未知原因'}`;
 					yield { type: 'error', payload: { code: 'TOOL_DENIED', message } };
-					ctx.addAssistantToolCall(tc, accumulatedText);
+					ctx.addAssistantToolCall(tc, accumulatedText, turnReasoning);
 					ctx.addToolResult(tc.id, `Error: ${message}`);
 					accumulatedText = '';
 					continue;
@@ -280,7 +287,8 @@ export async function* agentLoop(
 				// 把 assistant tool call + 工具结果写回 session。
 				// 第一个工具携带 accumulatedText(模型在工具调用前的文本),后续工具 text 为空,
 				// 避免在上下文中重复插入相同文本。
-				ctx.addAssistantToolCall(tc, accumulatedText);
+				// 安全路径:turnReasoning 整轮复用,满足 thinking 模式 tool 轮回传契约。
+				ctx.addAssistantToolCall(tc, accumulatedText, turnReasoning);
 				ctx.addToolResult(tc.id, JSON.stringify(result));
 				accumulatedText = '';
 			}

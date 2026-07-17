@@ -23,6 +23,9 @@ export interface SettingsStrings {
   'settings.language.heading': string;
   'settings.language.name': string;
   'settings.language.desc': string;
+  'settings.language.option.auto': string;
+  'settings.language.option.zh': string;
+  'settings.language.option.en': string;
   'settings.tabs.strip': string;
   'settings.tabs.chat': string;
   'settings.tabs.index': string;
@@ -64,6 +67,8 @@ export interface SettingsStrings {
   'settings.embedding.heading': string;
   'settings.embedding.provider.name': string;
   'settings.embedding.provider.desc': string;
+  'settings.embedding.provider.option.local': string;
+  'settings.embedding.provider.option.api': string;
   'settings.embedding.localModel.name': string;
   'settings.embedding.localModel.desc': string;
   'settings.embedding.localDimensions.name': string;
@@ -171,6 +176,31 @@ export interface ChatStrings {
   'chat.tool.noResult': string;
   'chat.tool.found': string;
   'chat.tool.failed': string;
+  /** get_links 等图类工具的折叠 meta 短标签 */
+  'chat.tool.meta.graph': string;
+  'chat.tool.detail.listingFiles': string;
+  'chat.tool.detail.listingFolders': string;
+  'chat.tool.detail.listingBoth': string;
+  'chat.tool.detail.listingEmpty': string;
+  'chat.tool.detail.hitsFound': string;
+  'chat.tool.detail.snippetChars': string;
+  'chat.tool.detail.linksFor': string;
+  'chat.tool.detail.path': string;
+  'chat.tool.detail.bullet': string;
+  'chat.tool.detail.more': string;
+  'chat.tool.detail.query': string;
+  'chat.tool.detail.topK': string;
+  'chat.tool.detail.hitsReranked': string;
+  'chat.tool.detail.outgoing': string;
+  'chat.tool.detail.backlinks': string;
+  'chat.tool.detail.unresolved': string;
+  'chat.tool.detail.matches': string;
+  'chat.tool.detail.pattern': string;
+  'chat.tool.detail.glob': string;
+  'chat.tool.detail.orphans': string;
+  'chat.tool.detail.tag': string;
+  'chat.tool.detail.property': string;
+  'chat.tool.detail.kv': string;
   'chat.search.title': string;
   'chat.search.rerankBadge': string;
   'chat.search.rerankHint': string;
@@ -308,6 +338,7 @@ export interface StatusStrings {
   'status.drawer.embedKind.api': string;
   'status.drawer.section.context': string;
   'status.drawer.label.usedMax': string;
+  'status.drawer.usedMaxValue': string;
   'status.drawer.compactButton': string;
   'status.drawer.docCount': string;
   'status.indexLabel.ready': string;

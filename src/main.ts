@@ -1353,7 +1353,12 @@ export default class RatelVaultPlugin extends Plugin {
 				devLogger.warn('skill', `${w.path}: ${w.message}`);
 			}
 		}
-		devLogger.info('skill', `已加载 ${skills.length} 个 skill`);
+		// 安全路径:0 个 skill 是常态(未建 .ratel/skills),勿每次启动刷 info 干扰排障
+		if (skills.length > 0) {
+			devLogger.info('skill', `已加载 ${skills.length} 个 skill`);
+		} else {
+			devLogger.debug('skill', '未加载任何 skill(目录为空或不存在)');
+		}
 		return skills.length;
 	}
 }

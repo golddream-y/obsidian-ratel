@@ -12,6 +12,15 @@
 
 ---
 
+## 最近更新
+
+面向用户的版本说明在 **[更新日志](CHANGELOG.md)**：写的是「你多了什么能力」，不是内部 commit。
+
+- **当前稳定版：** [0.1.9](CHANGELOG.md#019---2026-07-17) — 点开工具步骤看白话说明（不是 JSON）；思考模式用完工具还能继续回答；思考与工具排成一条轨迹  
+- 上一版：[0.1.8](CHANGELOG.md#018---2026-07-17) — 对话优先侧栏、正文 `[n]` 可点
+
+---
+
 ## 安装
 
 Obsidian → **设置** → **社区插件** → **浏览** → 搜索 **Ratel** → **安装** → **启用**。
@@ -57,8 +66,9 @@ DeepSeek / Claude / Ollama。密钥在 Obsidian 钥匙串，不进配置文件�
 
 ## 特性
 
-- 语义检索 + 可点击出处，并可查看链接图（`get_links`）
-- 图谱工具：`get_links`、`search_by_tag`、`search_by_property`、`get_vault_structure`
+- 语义检索 + 正文 `[n]` / 芯片可点开出处  
+- 对话优先侧栏：细工具时间线，状态条贴在输入区  
+- 图谱能力：出链反链、标签、属性、库概览  
 - Agent 工具：读写 / grep / glob、记忆、Skill、当前笔记与日记路径  
 - 私有语义检索 — 默认本地 ONNX 嵌入；可选 API 嵌入 / 百炼重排  
 - 设置页场景预设（DeepSeek / Ollama / 自定义）；密钥在 Obsidian 钥匙串  
@@ -79,8 +89,8 @@ DeepSeek / Claude / Ollama。密钥在 Obsidian 钥匙串，不进配置文件�
 | 文档 | 内容 |
 |---|---|
 | [使用手册](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/user-guide.md) | 上手、场景、斜杠命令、FAQ |
+| [更新日志](CHANGELOG.md) | **面向用户的版本说明** |
 | [架构](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/ARCHITECTURE.md) | 端口、Agent Loop、工具、Worker |
-| [更新日志](https://github.com/golddream-y/obsidian-ratel/blob/main/CHANGELOG.md) | 发版说明 |
 
 问题与建议：[GitHub Issues](https://github.com/golddream-y/obsidian-ratel/issues)。
 

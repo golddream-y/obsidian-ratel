@@ -882,6 +882,40 @@ describe('agentLoop', () => {
 		expect(reasoningDeltas[0]!.payload.reasoning).toBe('思考中');
 	});
 
+	it('工具轮 - 累积 reasoning - 写入 session assistant 消息', async () => {
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence);
+		const toolCall: ToolCall = {
+			id: 'call_1',
+			name: 'list_files',
+			args: { path: 'Guides' },
+		};
+		const llm = createMockLLM([
+			[
+				{ text: '', reasoning: '先看目录' },
+				{ text: '', toolCall },
+			],
+			[{ text: '有 3 篇' }],
+		]);
+		const tools = new ToolRegistry();
+		tools.register({
+			definition: { name: 'list_files', description: 'list', parameters: { type: 'object', properties: {} } },
+			execute: async () => ({ files: [] }),
+		});
+		const hooks = new HookRegistry();
+
+		for await (const _ of agentLoop(
+			{ sessionId: 's1', message: '有哪些文档' }, ctx, llm, tools, hooks,
+		)) { /* drain */ }
+
+		const session = await persistence.sessions.get('s1');
+		expect(session).not.toBeNull();
+		const assistantWithTool = session!.messages.find(
+			(m) => m.role === 'assistant' && m.toolCallId === 'call_1',
+		);
+		expect(assistantWithTool?.reasoning).toBe('先看目录');
+	});
+
 	it('passes usage through to message.end', async () => {
 		const persistence = createMockPersistence();
 		const ctx = new ContextManager(persistence);

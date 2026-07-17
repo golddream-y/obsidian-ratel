@@ -463,7 +463,11 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 						control: {
 							type: 'dropdown',
 							key: 'language',
-							options: { auto: 'auto', zh: '中文', en: 'English' },
+							options: {
+								auto: tNow('settings.language.option.auto'),
+								zh: tNow('settings.language.option.zh'),
+								en: tNow('settings.language.option.en'),
+							},
 						},
 					},
 				],
@@ -529,7 +533,10 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 						control: {
 							type: 'dropdown',
 							key: 'embedProvider',
-							options: { local: 'Local (built-in)', api: 'API (external)' },
+							options: {
+								local: tNow('settings.embedding.provider.option.local'),
+								api: tNow('settings.embedding.provider.option.api'),
+							},
 						},
 					},
 					{

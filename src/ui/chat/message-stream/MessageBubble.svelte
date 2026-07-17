@@ -1,9 +1,9 @@
 <!--
 	@file src/ui/chat/message-stream/MessageBubble.svelte
-	@description 单条消息渲染 — 按 segments 顺序委托各 Segment 组件
+	@description 单条消息渲染 — text 独立;连续 tool/think 合并进同一 Trace 脊柱
 	@module ui/chat/message-stream/MessageBubble
-	@depends ./TextSegment, ./ThinkSegment, ./ToolSegment, ./SearchResults, ./types
-	设计:用户气泡毛玻璃 + 助手无背景 + 附件预览圆角 + 错误/取消状态精致呈现
+	@depends ./TextSegment, ./ThinkSegment, ./ToolSegment, ./SearchResults, ./group-trace-segments, ./types
+	设计:用户气泡毛玻璃 + 助手无背景 + Trace 一根左边线 + 错误/取消精致呈现
 -->
 <script lang="ts">
 	import type { Message } from './types';
@@ -11,6 +11,7 @@
 	import ThinkSegment from './ThinkSegment.svelte';
 	import ToolSegment from './ToolSegment.svelte';
 	import SearchResults from './SearchResults.svelte';
+	import { groupTraceSegments } from './group-trace-segments';
 	import { t } from '../../../i18n';
 
 	/**
@@ -33,6 +34,8 @@
 	} = $props();
 
 	const isAssistantStreaming = $derived(isLast && isRunning && msg.role === 'assistant');
+	// 关键路径:连续 tool/think 收成一块,共享一根左边线(对齐原型 .trace)
+	const blocks = $derived(groupTraceSegments(msg.segments));
 </script>
 
 <div
@@ -53,19 +56,25 @@
 		</div>
 	{/if}
 
-	{#each msg.segments as seg}
-		{#if seg.type === 'text'}
+	{#each blocks as block}
+		{#if block.kind === 'text'}
 			<TextSegment
-				text={seg.text}
+				text={block.seg.text}
 				isUser={msg.role === 'user'}
 				streaming={isAssistantStreaming}
 				searchResults={msg.role === 'assistant' ? msg.searchResults : undefined}
 				{onOpenPath}
 			/>
-		{:else if seg.type === 'think'}
-			<ThinkSegment text={seg.text} streaming={isAssistantStreaming} />
-		{:else if seg.type === 'tool'}
-			<ToolSegment toolCall={seg.toolCall} />
+		{:else if block.kind === 'trace'}
+			<div class="ratel-trace">
+				{#each block.items as item}
+					{#if item.kind === 'tool'}
+						<ToolSegment toolCall={item.seg.toolCall} />
+					{:else}
+						<ThinkSegment text={item.seg.text} streaming={isAssistantStreaming} />
+					{/if}
+				{/each}
+			</div>
 		{/if}
 	{/each}
 
@@ -126,6 +135,17 @@
 		background: transparent;
 		border: none;
 		box-shadow: none;
+	}
+
+	/* 关键路径:一根左边线包住连续 tool/think,行组件用 display:contents 挂到此容器 */
+	.ratel-trace {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		margin: 2px 0 4px;
+		margin-left: 4px;
+		padding-left: 2px;
+		border-left: 1px solid var(--background-modifier-border);
 	}
 
 	.ratel-msg-imgs {

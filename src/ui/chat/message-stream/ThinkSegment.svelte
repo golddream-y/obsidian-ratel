@@ -3,7 +3,7 @@
 	@description think 段渲染 — Trace 时间线行;流式默认展开,结束后自动折叠
 	@module ui/chat/message-stream/ThinkSegment
 	@depends i18n
-	设计:左边线 + ◇ 字形 + 轻量 detail;无 emoji、无厚卡片阴影
+	设计:无独立左边线(由 TraceGroup 提供脊柱);◇ 字形 + muted 色;无厚卡片
 -->
 <script lang="ts">
 	import { t } from '../../../i18n';
@@ -31,6 +31,9 @@
 		if (!streaming && !userToggled) {
 			expanded = false;
 		}
+		if (streaming && !userToggled) {
+			expanded = true;
+		}
 	});
 
 	function toggle() {
@@ -40,8 +43,8 @@
 </script>
 
 <div
-	class="ratel-trace ratel-trace-think"
-	class:ratel-trace-expanded={expanded}
+	class="ratel-trace-item ratel-trace-think"
+	class:ratel-trace-open={expanded}
 	class:ratel-trace-streaming={streaming}
 >
 	<button
@@ -50,30 +53,29 @@
 		aria-expanded={expanded}
 		onclick={toggle}
 	>
-		<span class="ratel-trace-glyph">◇</span>
-		<span class="ratel-trace-name">
+		<span class="ratel-trace-ico">◇</span>
+		<span class="ratel-trace-label">
 			{streaming ? $t('chat.thinking') : $t('chat.thinking.done')}
 		</span>
 	</button>
 	{#if expanded}
 		<div class="ratel-trace-detail">
-			<div class="ratel-think-content" class:ratel-think-streaming-text={streaming}>
-				{text}{#if streaming}<span class="ratel-think-cursor">▋</span>{/if}
-			</div>
+			<span class="ratel-think-body" class:ratel-think-streaming-text={streaming}
+				>{text}{#if streaming}<span class="ratel-think-cursor">▋</span>{/if}</span
+			>
 		</div>
 	{/if}
 </div>
 
 <style>
 	/*
-	 * 与 ToolSegment 共用时间线语言:1px 左边线 + 单行 + 轻量 detail。
-	 * think 用 ◇;原型用 muted 色而非 warning 抢戏。
+	 * 修复:不用 display:contents — 与 ToolSegment 一致,避免展开区被布局裁切。
+	 * 左边线由父级 .ratel-trace 提供。
 	 */
-	.ratel-trace {
-		margin: 2px 0 4px;
-		padding-left: 2px;
-		margin-left: 4px;
-		border-left: 1px solid var(--background-modifier-border);
+	.ratel-trace-item {
+		display: flex;
+		flex-direction: column;
+		min-width: 0;
 	}
 
 	.ratel-trace-row {
@@ -97,7 +99,7 @@
 		background: color-mix(in srgb, var(--text-normal) 3%, transparent);
 	}
 
-	.ratel-trace-glyph {
+	.ratel-trace-ico {
 		flex-shrink: 0;
 		width: 14px;
 		text-align: center;
@@ -108,7 +110,7 @@
 		font-family: var(--font-monospace);
 	}
 
-	.ratel-trace-name {
+	.ratel-trace-label {
 		flex: 1;
 		min-width: 0;
 		font-size: 11px;
@@ -120,7 +122,7 @@
 		white-space: nowrap;
 	}
 
-	.ratel-trace-streaming .ratel-trace-name {
+	.ratel-trace-streaming .ratel-trace-label {
 		color: var(--text-muted);
 	}
 
@@ -130,15 +132,20 @@
 		border-radius: 6px;
 		border: 1px solid var(--background-modifier-border);
 		background: color-mix(in srgb, var(--background-secondary) 70%, transparent);
-	}
-
-	.ratel-think-content {
-		font-size: 12px;
-		color: var(--text-muted);
+		font-family: var(--font-monospace);
+		font-size: 10.5px;
+		line-height: 1.5;
+		color: var(--text-faint, var(--text-muted));
 		white-space: pre-wrap;
 		word-break: break-word;
-		font-family: var(--font-monospace);
-		line-height: 1.6;
+		overflow-x: auto;
+		overflow-y: auto;
+		max-height: min(40vh, 320px);
+		box-sizing: border-box;
+	}
+
+	.ratel-think-body {
+		display: inline;
 	}
 
 	.ratel-think-streaming-text {

@@ -142,10 +142,14 @@ export class ContextManager {
 	 * 追加纯文本 assistant 消息(无 tool call 的回复)。
 	 *
 	 * @param content - assistant 文本。
+	 * @param reasoning - 可选思考过程(thinking 模式多轮回传用)。
 	 */
-	addAssistantMessage(content: string): void {
+	addAssistantMessage(content: string, reasoning?: string): void {
 		const session = this.requireSession();
-		session.messages.push({ role: 'assistant', content });
+		const msg: ChatMessage = { role: 'assistant', content };
+		// 关键路径:仅在有内容时写入,避免持久化空字段污染历史
+		if (reasoning) msg.reasoning = reasoning;
+		session.messages.push(msg);
 		session.updatedAt = Date.now();
 	}
 
@@ -154,16 +158,19 @@ export class ContextManager {
 	 *
 	 * @param toolCall - 工具调用对象(含 id/name/args)。
 	 * @param text - 与 tool call 同时产生的 assistant 文本(可为空)。
+	 * @param reasoning - 可选思考过程;含 tool_calls 时 DeepSeek thinking 模式要求后续必回传。
 	 */
-	addAssistantToolCall(toolCall: ToolCall, text: string): void {
+	addAssistantToolCall(toolCall: ToolCall, text: string, reasoning?: string): void {
 		const session = this.requireSession();
-		session.messages.push({
+		const msg: ChatMessage = {
 			role: 'assistant',
 			content: text,
 			toolCallId: toolCall.id,
 			toolName: toolCall.name,
 			toolArgs: toolCall.args,
-		});
+		};
+		if (reasoning) msg.reasoning = reasoning;
+		session.messages.push(msg);
 		session.updatedAt = Date.now();
 	}
 

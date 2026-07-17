@@ -213,9 +213,16 @@ export class VectraStore implements VectorStore {
 			// 关键路径:过度抓取,与 search() 一致,聚合后确保 topK 文档都能拿到。
 			results = await index.queryItems(queryVector, query, topK * 10, undefined, true);
 		} catch (err) {
-			// 修复:BM25 在文档极少时 winkBM25S consolidation 失败(如 1-2 个文档),
-			// 降级为纯向量搜索,保证 hybrid.search 请求不抛错。
-			devLogger.warn('search', 'BM25 hybrid search failed, falling back to vector-only search', err);
+			// 修复:小库时 winkBM25S consolidation 必然失败 — 属预期,静默降级纯向量,勿把 Error 刷屏。
+			if (isBm25CorpusTooSmall(err)) {
+				devLogger.debug('search', '库文档过少,BM25 不可用,改用纯向量检索');
+			} else {
+				devLogger.warn(
+					'search',
+					'BM25 混合检索失败,降级为纯向量',
+					err instanceof Error ? err.message : err,
+				);
+			}
 			return this.search(queryVector, topK);
 		}
 
@@ -431,4 +438,16 @@ export class VectraStore implements VectorStore {
 		const index = await this.ensureIndex();
 		index.cancelUpdate();
 	}
+}
+
+/**
+ * 是否为 winkBM25S「语料过小无法 consolidate」— 小库预期失败,不是真正故障。
+ *
+ * @param err - queryItems / BM25 抛出的错误
+ * @returns true 时应静默降级纯向量
+ */
+export function isBm25CorpusTooSmall(err: unknown): boolean {
+	const msg = err instanceof Error ? err.message : String(err ?? '');
+	return /document collection is too small for consolidation/i.test(msg)
+		|| /too small for consolidation/i.test(msg);
 }
