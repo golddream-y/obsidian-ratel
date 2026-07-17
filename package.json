@@ -1,6 +1,6 @@
 {
 	"name": "ratel-vault",
-	"version": "0.1.11",
+	"version": "0.1.12",
 	"description": "Harness-driven knowledge base agent for your Obsidian vault",
 	"main": "main.js",
 	"type": "module",

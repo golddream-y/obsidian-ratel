@@ -4,12 +4,71 @@
  * @module tests/ui/appearance/appearance-settings-render.test
  */
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { renderAppearanceSettings } from '../../../src/ui/appearance/appearance-settings-render';
 import { RATEL_APPEARANCE_ROOT_CLASS } from '../../../src/ui/appearance/apply-ratel-appearance';
 import { appearanceRevision } from '../../../src/ui/appearance/appearance-store';
 import type { RatelVaultSettingTab } from '../../../src/settings';
 import type { UiAccentId, UiColorScheme } from '../../../src/ui/appearance/appearance-presets';
+
+type DomElementInfo = {
+	cls?: string | string[];
+	text?: string | DocumentFragment;
+	title?: string;
+	attr?: Record<string, string | number | boolean | null>;
+};
+
+/**
+ * jsdom 无 Obsidian Element 助手 — 在 HTMLElement 原型上补 createEl/createDiv/createSpan/appendText。
+ */
+beforeAll(() => {
+	const proto = HTMLElement.prototype as HTMLElement & {
+		createEl?: (tag: string, o?: DomElementInfo | string) => HTMLElement;
+		createDiv?: (o?: DomElementInfo | string) => HTMLDivElement;
+		createSpan?: (o?: DomElementInfo | string) => HTMLSpanElement;
+		appendText?: (val: string) => void;
+	};
+
+	const applyInfo = (el: HTMLElement, o?: DomElementInfo | string): void => {
+		if (typeof o === 'string') {
+			el.className = o;
+			return;
+		}
+		if (!o) return;
+		if (o.cls) el.className = Array.isArray(o.cls) ? o.cls.join(' ') : o.cls;
+		if (o.text != null) el.textContent = String(o.text);
+		if (o.title != null) el.title = o.title;
+		if (o.attr) {
+			for (const [k, v] of Object.entries(o.attr)) {
+				if (v != null) el.setAttribute(k, String(v));
+			}
+		}
+	};
+
+	if (!proto.createEl) {
+		proto.createEl = function (this: HTMLElement, tag, o) {
+			const el = document.createElement(tag);
+			applyInfo(el, o);
+			this.appendChild(el);
+			return el;
+		};
+	}
+	if (!proto.createDiv) {
+		proto.createDiv = function (this: HTMLElement, o) {
+			return this.createEl!('div', o) as HTMLDivElement;
+		};
+	}
+	if (!proto.createSpan) {
+		proto.createSpan = function (this: HTMLElement, o) {
+			return this.createEl!('span', o) as HTMLSpanElement;
+		};
+	}
+	if (!proto.appendText) {
+		proto.appendText = function (this: HTMLElement, val) {
+			this.appendChild(document.createTextNode(val));
+		};
+	}
+});
 
 function makeTab(
 	scheme: UiColorScheme = 'auto',
