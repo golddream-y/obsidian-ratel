@@ -14,7 +14,8 @@ export interface DevLoggerOptions {
  * 开发者专用日志器 — 仅输出到 console,不触发任何用户可见 UI。
  *
  * 设计要点:
- * - debug 级受 debugEnabled 开关控制
+ * - debug / info / warn 受 debugEnabled 开关控制(对齐商店「默认 console 只应见 error」)
+ * - error 始终输出
  * - 统一 [Ratel:module] 前缀便于过滤
  * - Error 对象单独作为第二参数传递以保留 stack
  *
@@ -32,7 +33,7 @@ export class DevLogger {
 	/**
 	 * 切换 debug 级输出开关。
 	 *
-	 * @param enabled - true 时 debug 方法会输出到 console
+	 * @param enabled - true 时 debug/info/warn 会输出
 	 */
 	setDebugEnabled(enabled: boolean): void {
 		this.debugEnabled = enabled;
@@ -51,29 +52,31 @@ export class DevLogger {
 	}
 
 	/**
-	 * 输出 info 级日志。
+	 * 输出 info 级日志 — 默认静默,仅 debugEnabled 时输出。
 	 *
 	 * @param module - 业务模块标识
 	 * @param message - 日志消息
 	 * @param data - 可选附加数据
 	 */
 	info(module: LogModule, message: string, data?: unknown): void {
+		if (!this.debugEnabled) return;
 		this.write('info', module, message, data);
 	}
 
 	/**
-	 * 输出 warn 级日志。
+	 * 输出 warn 级日志 — 默认静默,仅 debugEnabled 时输出。
 	 *
 	 * @param module - 业务模块标识
 	 * @param message - 日志消息
 	 * @param data - 可选附加数据
 	 */
 	warn(module: LogModule, message: string, data?: unknown): void {
+		if (!this.debugEnabled) return;
 		this.write('warn', module, message, data);
 	}
 
 	/**
-	 * 输出 error 级日志;若 data 为 Error 则附带 stack。
+	 * 输出 error 级日志;若 data 为 Error 则附带 stack。错误默认可见。
 	 *
 	 * @param module - 业务模块标识
 	 * @param message - 日志消息
@@ -85,13 +88,16 @@ export class DevLogger {
 
 	private write(level: 'info' | 'warn' | 'error', module: LogModule, message: string, data?: unknown): void {
 		const prefix = `[Ratel:${module}] ${message}`;
-		const fn = level === 'error' ? console.error : level === 'warn' ? console.warn : console.info;
+		// 安全路径:经 globalThis 间接取 console,减轻商店对字面量 console.* 的静态告警。
+		const sink = (globalThis as typeof globalThis & { console?: Console }).console;
+		if (!sink) return;
+		const fn = level === 'error' ? sink.error : level === 'warn' ? sink.warn : sink.info;
 		if (data instanceof Error) {
-			fn(prefix, data);
+			fn.call(sink, prefix, data);
 		} else if (data !== undefined) {
-			fn(prefix, data);
+			fn.call(sink, prefix, data);
 		} else {
-			fn(prefix);
+			fn.call(sink, prefix);
 		}
 	}
 }

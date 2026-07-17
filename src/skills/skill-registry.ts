@@ -5,7 +5,7 @@
  * @depends skills/types, i18n
  */
 
-import type { Skill, SkillManifest, SkillLoadWarning } from './types';
+import type { Skill, SkillLoadWarning } from './types';
 import { tNow } from '../i18n';
 
 /**

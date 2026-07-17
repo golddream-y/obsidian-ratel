@@ -115,7 +115,8 @@ async function forgetTopic(
 		// 关键路径:删文件确保下次 remember 同名主题时 readTopic 返回 null → 触发 addTopicToIndex 重建索引行。
 		// MemoryStore 作为文件 IO 唯一入口,deleteTopic 内部用 fs.unlinkSync 真正删除磁盘文件。
 		memoryStore.deleteTopic(topic);
-		await memoryStore.removeTopicFromIndex(topic);
+		// removeTopicFromIndex 同步写 index.md;仅 vectra 清理是 async。
+		memoryStore.removeTopicFromIndex(topic);
 		await memoryStore.removeTopicFromIndexStore(topic);
 		return tNow('notice.memory.topicRemoved', { topic });
 	}

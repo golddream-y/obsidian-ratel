@@ -114,8 +114,9 @@ async function renderSingleMermaidBlock(codeEl: HTMLElement): Promise<void> {
 		// 关键路径:替换 <pre><code> 结构为 mermaid SVG 容器
 		// 关键路径:用 DOMParser + replaceChildren 替代 innerHTML=,避免触发 no-inner-html 规则;
 		// 即便经 DOMPurify 清洗,linter 仍会拦截 innerHTML 赋值,改用 DOM 解析后插入子节点更安全。
-		const wrapper = activeDocument.createElement('div');
-		wrapper.className = 'ratel-mermaid';
+		// 安全路径:activeDocument.body.createDiv 满足 prefer-create-el,且兼容 popout
+		const wrapper = activeDocument.body.createDiv({ cls: 'ratel-mermaid' });
+		wrapper.remove();
 		const sanitized = DOMPurify.sanitize(svg, MERMAID_SANITIZE_CONFIG);
 		const parsed = new DOMParser().parseFromString(sanitized, 'image/svg+xml');
 		wrapper.replaceChildren(parsed.documentElement);
@@ -127,9 +128,11 @@ async function renderSingleMermaidBlock(codeEl: HTMLElement): Promise<void> {
 		}
 	} catch (err) {
 		// 修复:mermaid 渲染失败时显示原始代码 + 错误提示,不影响其他内容
-		const errorDiv = activeDocument.createElement('div');
-		errorDiv.className = 'ratel-mermaid-error';
-		errorDiv.textContent = `Mermaid 渲染失败: ${err instanceof Error ? err.message : String(err)}`;
+		const errorDiv = activeDocument.body.createDiv({
+			cls: 'ratel-mermaid-error',
+			text: `Mermaid 渲染失败: ${err instanceof Error ? err.message : String(err)}`,
+		});
+		errorDiv.remove();
 		const pre = codeEl.parentElement;
 		if (pre && pre.tagName === 'PRE') {
 			pre.replaceWith(errorDiv);

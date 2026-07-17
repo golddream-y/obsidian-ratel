@@ -4,8 +4,52 @@
  * @module tests/ui/chat/cite-enhance
  */
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeAll } from 'vitest';
 import { enhanceCiteLinks } from '../../../src/ui/chat/cite-enhance';
+
+type DomElementInfo = {
+	cls?: string | string[];
+	text?: string | DocumentFragment;
+	attr?: Record<string, string | number | boolean | null>;
+};
+
+/** jsdom 无 Obsidian DOM 助手 — 测试前补齐 createFragment / createEl / appendText */
+beforeAll(() => {
+	const g = globalThis as typeof globalThis & {
+		createFragment?: () => DocumentFragment;
+		createEl?: (tag: string, o?: DomElementInfo | string) => HTMLElement;
+	};
+	if (!g.createFragment) {
+		g.createFragment = () => {
+			const frag = document.createDocumentFragment();
+			(frag as DocumentFragment & { appendText: (val: string) => void }).appendText = (val) => {
+				frag.appendChild(document.createTextNode(val));
+			};
+			return frag;
+		};
+	}
+	if (!g.createEl) {
+		g.createEl = (tag, o) => {
+			const el = document.createElement(tag);
+			if (typeof o === 'string') {
+				el.className = o;
+				return el;
+			}
+			if (o?.cls) {
+				el.className = Array.isArray(o.cls) ? o.cls.join(' ') : o.cls;
+			}
+			if (o?.text != null) {
+				el.textContent = String(o.text);
+			}
+			if (o?.attr) {
+				for (const [k, v] of Object.entries(o.attr)) {
+					if (v != null) el.setAttribute(k, String(v));
+				}
+			}
+			return el;
+		};
+	}
+});
 
 describe('enhanceCiteLinks', () => {
 	it('增强 - 匹配编号 - 替换为按钮并可点击', () => {

@@ -51,9 +51,12 @@ import {
 	applyChatPreset,
 	type ChatPresetId,
 } from './settings/chat-preset';
+// 关键路径:外观类型从 presets 导入,避免 appearance-presets ↔ settings 循环依赖
+import type { UiAccentId, UiColorScheme } from './ui/appearance/appearance-presets';
+import { renderAppearanceSettings } from './ui/appearance/appearance-settings-render';
 
 /** 设置顶栏 Tab ID(仅 UI 态,不落盘) */
-export type SettingsUiTab = 'chat' | 'index' | 'agent' | 'advanced';
+export type SettingsUiTab = 'chat' | 'index' | 'agent' | 'appearance' | 'advanced';
 
 /**
  * 全部用户可配置项。
@@ -133,6 +136,12 @@ export interface RatelVaultSettings {
 	// 关键路径(P-BASIC-ENV):日记约定路径 — get_daily_note 只探测不创建。
 	dailyNoteFolder: string;
 	dailyNoteFormat: string;
+
+	// Appearance(P-UI-APPEARANCE — Chat 外观配色与强调色)
+	/** 配色方案:auto 跟随 Obsidian,light/dark 强制 */
+	uiColorScheme: UiColorScheme;
+	/** 强调色:follow 跟随 Obsidian,其余为 Material 预设 id */
+	uiAccent: UiAccentId;
 }
 
 /**
@@ -230,6 +239,9 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 	// 关键路径:日记默认 vault 根 + YYYY-MM-DD.md,与常见 Daily Notes 约定对齐。
 	dailyNoteFolder: '',
 	dailyNoteFormat: 'YYYY-MM-DD',
+	// 关键路径:默认跟随 Obsidian 主题配色与强调色。
+	uiColorScheme: 'auto',
+	uiAccent: 'follow',
 };
 
 /**
@@ -388,10 +400,12 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 		const chatCls = this.panelCls('chat');
 		const indexCls = this.panelCls('index');
 		const agentCls = this.panelCls('agent');
+		const appearanceCls = this.panelCls('appearance');
 		const advancedCls = this.panelCls('advanced');
 		const chatVisible = () => this.isPanelVisible('chat');
 		const indexVisible = () => this.isPanelVisible('index');
 		const agentVisible = () => this.isPanelVisible('agent');
+		const appearanceVisible = () => this.isPanelVisible('appearance');
 		const advancedVisible = () => this.isPanelVisible('advanced');
 		const onAdvancedOrSearch = () => this.isPanelVisible('advanced');
 
@@ -420,6 +434,7 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 								{ id: 'chat', labelKey: 'settings.tabs.chat' },
 								{ id: 'index', labelKey: 'settings.tabs.index' },
 								{ id: 'agent', labelKey: 'settings.tabs.agent' },
+								{ id: 'appearance', labelKey: 'settings.tabs.appearance' },
 								{ id: 'advanced', labelKey: 'settings.tabs.advanced' },
 							];
 							for (const tab of tabs) {
@@ -689,6 +704,25 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 				cls: agentCls,
 				visible: agentVisible,
 				items: this.buildToolPermissionItems(),
+			},
+
+			// ==================== Tab:外观 ====================
+			{
+				type: 'group',
+				heading: tNow('settings.appearance.heading'),
+				cls: appearanceCls,
+				visible: appearanceVisible,
+				items: [
+					{
+						name: tNow('settings.appearance.previewLabel'),
+						searchable: true,
+						render: (setting) => {
+							const el = setting.settingEl;
+							el.empty();
+							renderAppearanceSettings(el, this);
+						},
+					},
+				],
 			},
 
 			// ==================== Tab:高级 ====================

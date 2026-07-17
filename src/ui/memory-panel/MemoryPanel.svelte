@@ -13,11 +13,34 @@
 	 * - 样式:复用 Obsidian 主题变量,圆角 ≤8px,无 box-shadow,所有 class 用 'ratel-' 前缀。
 	 */
 	import type RatelVaultPlugin from '../../main';
+	import { onMount, onDestroy } from 'svelte';
 	import { Modal, Notice } from 'obsidian';
 	import { t, tNow } from '../../i18n';
 	import type { TopicIndexEntry, MemoryEntry } from '../../types';
+	import { applyRatelAppearance } from '../appearance/apply-ratel-appearance';
+	import { appearanceRevision } from '../appearance/appearance-store';
 
 	let { plugin }: { plugin: RatelVaultPlugin } = $props();
+
+	// ==================== 外观热更新 ====================
+	let panelRoot: HTMLElement | undefined;
+	let appearanceUnsub: (() => void) | undefined;
+
+	/** 把当前 settings 外观写到 Memory 面板根节点。 */
+	function syncAppearance() {
+		if (!panelRoot) return;
+		applyRatelAppearance(panelRoot, {
+			uiColorScheme: plugin.settings.uiColorScheme,
+			uiAccent: plugin.settings.uiAccent,
+		});
+	}
+
+	onMount(() => {
+		syncAppearance();
+		// 关键路径:subscribe 立即回调一次(与 onMount sync 重复无害);后续 bump 触发热更新。
+		appearanceUnsub = appearanceRevision.subscribe(() => syncAppearance());
+	});
+	onDestroy(() => appearanceUnsub?.());
 
 	// ==================== 响应式状态 ====================
 	let searchQuery = $state('');
@@ -364,7 +387,7 @@
 	loadMemories();
 </script>
 
-<div class="ratel-memory-panel">
+<div class="ratel-memory-panel" bind:this={panelRoot}>
 	<!-- 顶部:标题 + 搜索框 -->
 	<div class="ratel-memory-header">
 		<span class="ratel-memory-title">{$t('memory.panel.title')}</span>

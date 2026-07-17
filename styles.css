@@ -178,3 +178,188 @@
 .ratel-index-warn.ratel-is-visible {
 	display: block;
 }
+
+/* --- Ratel 外观(S-UI-APPEARANCE):仅 .ratel-appearance-root --- */
+/* 强调色 hex 由 applyRatelAppearance 自预设表写入 CSS 变量,此处不重复硬编码。 */
+/* 深色对齐原型 Quiet atelier(docs/prototype/chat-ui-mockup.html);浅色保持暖纸白。 */
+
+.ratel-appearance-root[data-ratel-scheme="light"] {
+	--background-primary: #f7f3ea;
+	--background-primary-alt: #f3ece0;
+	--background-secondary: #efe8dc;
+	--background-secondary-alt: #f7f3ea;
+	--background-modifier-border: rgba(18, 17, 15, 0.12);
+	--background-modifier-form-field: #ffffff;
+	--text-normal: #1a1916;
+	--text-muted: rgba(18, 17, 15, 0.58);
+	--text-faint: rgba(18, 17, 15, 0.38);
+	--text-success: #5f7f5c;
+	--text-warning: #9a7a2e;
+	--text-error: #a85a4e;
+	color-scheme: light;
+}
+
+/*
+ * 关键路径:显式「深色」与 Obsidian theme-dark + auto 共用 atelier 表面。
+ * 否则「跟随」在 Obsidian 暗色下仍是冷灰,与原型差距过大(用户反馈)。
+ */
+.ratel-appearance-root[data-ratel-scheme="dark"],
+body.theme-dark .ratel-appearance-root:not([data-ratel-scheme]) {
+	/* 原型 --ink / --ink-elevated / --ink-soft */
+	--background-primary: #12110f;
+	--background-primary-alt: #1a1916;
+	--background-secondary: #1a1916;
+	--background-secondary-alt: #23211e;
+	--background-modifier-border: rgba(245, 236, 220, 0.14);
+	--background-modifier-form-field: #23211e;
+	/* 原型 --paper / muted / faint */
+	--text-normal: #f3ece0;
+	--text-muted: rgba(243, 236, 224, 0.55);
+	--text-faint: rgba(243, 236, 224, 0.32);
+	/* 原型 --sage / --amber / --rose */
+	--text-success: #8faf8a;
+	--text-warning: #d4b06a;
+	--text-error: #d0887a;
+	color-scheme: dark;
+}
+
+/*
+ * 深色 + 跟随强调色:默认落到原型铜调。
+ * 用户点了色块后 data-ratel-accent 存在,本规则不生效。
+ */
+.ratel-appearance-root[data-ratel-scheme="dark"]:not([data-ratel-accent]),
+body.theme-dark .ratel-appearance-root:not([data-ratel-scheme]):not([data-ratel-accent]) {
+	--interactive-accent: #c9956c;
+	--interactive-accent-hover: color-mix(in srgb, #c9956c 85%, white);
+	--text-accent: #c9956c;
+	--ratel-cite: #c9956c;
+	--text-on-accent: #12110f;
+	--ratel-meter-from: #c9956c;
+	--ratel-meter-to: #8faf8a;
+}
+
+/* --- 外观 Tab 控件(S-UI-APPEARANCE) --- */
+.ratel-appearance-preview {
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 8px;
+	padding: 12px;
+	margin-bottom: 12px;
+	background: var(--background-primary);
+	color: var(--text-normal);
+}
+.ratel-appearance-preview-brand {
+	font-weight: 600;
+	margin-bottom: 8px;
+}
+.ratel-appearance-preview-body {
+	margin: 0 0 8px;
+	line-height: 1.5;
+}
+.ratel-appearance-preview-body .ratel-cite {
+	background: none;
+	border: none;
+	padding: 0;
+	cursor: default;
+	color: var(--ratel-cite, var(--interactive-accent));
+	border-bottom: 1px solid color-mix(in srgb, var(--ratel-cite, var(--interactive-accent)) 35%, transparent);
+}
+.ratel-appearance-preview .ratel-cites-row {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-bottom: 10px;
+}
+.ratel-appearance-preview .ratel-cite-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 2px 8px;
+	border-radius: 6px;
+	border: 1px solid var(--background-modifier-border);
+	background: color-mix(in srgb, var(--ratel-cite, var(--interactive-accent)) 12%, transparent);
+	color: var(--text-normal);
+	font-size: 12px;
+	cursor: default;
+}
+.ratel-appearance-preview .ratel-cite-chip-n {
+	color: var(--ratel-cite, var(--interactive-accent));
+	font-weight: 600;
+}
+.ratel-appearance-preview-shell {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 8px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 8px;
+	background: var(--background-secondary);
+	margin-bottom: 8px;
+}
+.ratel-appearance-preview-input {
+	flex: 1;
+	min-height: 24px;
+}
+.ratel-appearance-preview-shell .ratel-send {
+	padding: 4px 10px;
+	border-radius: 6px;
+	border: none;
+	background: var(--interactive-accent);
+	color: var(--text-on-accent, #fff);
+	cursor: default;
+	opacity: 0.85;
+}
+.ratel-appearance-preview-status {
+	font-size: 12px;
+	color: var(--text-muted);
+}
+.ratel-appearance-control-label {
+	font-size: 12px;
+	color: var(--text-muted);
+	margin-top: 4px;
+}
+.ratel-appearance-scheme {
+	display: flex;
+	gap: 6px;
+	margin: 8px 0;
+	flex-wrap: wrap;
+}
+.ratel-appearance-scheme-btn {
+	padding: 4px 10px;
+	border-radius: 6px;
+	border: 1px solid var(--background-modifier-border);
+	background: var(--background-secondary);
+	color: var(--text-normal);
+	cursor: pointer;
+}
+.ratel-appearance-scheme-btn.is-selected {
+	border-color: var(--interactive-accent);
+	background: color-mix(in srgb, var(--interactive-accent) 12%, transparent);
+}
+.ratel-appearance-swatches {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin: 8px 0;
+}
+.ratel-appearance-swatch {
+	width: 28px;
+	height: 28px;
+	border-radius: 6px;
+	border: 2px solid transparent;
+	cursor: pointer;
+	padding: 0;
+}
+.ratel-appearance-swatch-follow {
+	width: auto;
+	min-width: 28px;
+	padding: 0 6px;
+	font-size: 11px;
+	background: var(--background-secondary);
+	color: var(--text-muted);
+}
+.ratel-appearance-swatch.is-selected {
+	border-color: var(--text-normal);
+}
+.ratel-appearance-hint {
+	margin-top: 8px;
+}

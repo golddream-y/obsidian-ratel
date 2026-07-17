@@ -51,11 +51,21 @@ jobs:
               run: |
                   [ -f styles.css ] && echo "exists=true" >> "$GITHUB_OUTPUT" || echo "exists=false" >> "$GITHUB_OUTPUT"
 
+            # 关键路径:Obsidian plugin checker 按 release 资产名(main.js)核对 attestation subject。
+            # 若 attest 的是 dist/main.js,商店会报「attestation exists but signature invalid / does not match」。
+            # 与 obsidian-sample-plugin 对齐:先落到仓库根再 attest + 上传。
+            - name: Stage release artifacts at repo root
+              run: |
+                  cp dist/main.js main.js
+                  test -f main.js
+                  test -f manifest.json
+                  ls -la main.js manifest.json ${{ steps.styles.outputs.exists == 'true' && 'styles.css' || '' }}
+
             - name: Attest build provenance
               uses: actions/attest@v4
               with:
                   subject-path: |
-                      dist/main.js
+                      main.js
                       manifest.json
                       ${{ steps.styles.outputs.exists == 'true' && 'styles.css' || '' }}
 
@@ -67,9 +77,10 @@ jobs:
 
                   # 正式发布(非 draft):社区商店只拉 published release。
                   # 0.1.x 曾因 CI npm ci 失败改为手传包,导致资产与源码不一致。
+                  # 禁止手传本地 dist 覆盖 CI 产物 — 会破坏 attestation 与 digest 绑定。
                   gh release create "$tag" \
                     --title="$tag" \
                     --notes-file CHANGELOG.md \
-                    dist/main.js \
+                    main.js \
                     manifest.json \
                     ${{ steps.styles.outputs.exists == 'true' && 'styles.css' || '' }}

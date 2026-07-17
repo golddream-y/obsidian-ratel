@@ -389,7 +389,8 @@ export class MemoryStore {
 			throw new Error(tNow('error.memory.invalidTopic', { name: String(name) }));
 		}
 		// 关键路径:路径分隔符(正反斜杠)— 一旦命中即拒绝,不允许子目录主题。
-		if (/[\/\\]/.test(name)) {
+		// 字符类里 `/` 无需转义(商店 no-useless-escape)。
+		if (/[/\\]/.test(name)) {
 			throw new Error(tNow('error.memory.invalidTopic', { name }));
 		}
 		// 关键路径:. 与 .. 直接穿越,显式拒绝。
@@ -400,9 +401,11 @@ export class MemoryStore {
 		if (/^(CON|NUL|AUX|COM[1-9]|LPT[1-9])$/i.test(name)) {
 			throw new Error(tNow('error.memory.invalidTopic', { name }));
 		}
-		// 关键路径:控制字符(\x00-\x1f)包括换行、制表符等 — 注入到文件名会引发异常。
-		if (/[\x00-\x1f]/.test(name)) {
-			throw new Error(tNow('error.memory.invalidTopic', { name }));
+		// 关键路径:控制字符(0x00-0x1f)包括换行、制表符等 — 不用正则字面量嵌入控制字符(商店 no-control-regex)。
+		for (let i = 0; i < name.length; i++) {
+			if (name.charCodeAt(i) <= 0x1f) {
+				throw new Error(tNow('error.memory.invalidTopic', { name }));
+			}
 		}
 	}
 
