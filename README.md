@@ -12,6 +12,15 @@ Chat, research, and act on your linked notes. Ask what you wrote about a topic; 
 
 ---
 
+## What's new
+
+User-facing release notes live in the **[Changelog](CHANGELOG.md)** — what you can do now, not internal commits.
+
+- **Latest stable:** [0.1.9](CHANGELOG.md#019---2026-07-17) — open a tool step and read plain Chinese/English (not JSON); thinking models keep answering after tools; think+tool steps share one timeline  
+- Earlier: [0.1.8](CHANGELOG.md#018---2026-07-17) — conversation-first chat, clickable `[n]` citations
+
+---
+
 ## Install
 
 Obsidian → **Settings** → **Community plugins** → **Browse** → search **Ratel** → **Install** → **Enable**.
@@ -57,8 +66,9 @@ Per-tool allow / ask / deny. Status bar + diagnostics when something’s wrong. 
 
 ## Features
 
-- Semantic search with clickable citations, plus link graph inspection (`get_links`)
-- Graph tools: `get_links`, `search_by_tag`, `search_by_property`, and `get_vault_structure`
+- Semantic search with clickable citations (`[n]` in the reply and note chips)
+- Conversation-first chat: slim tool timeline, status beside the composer
+- Graph tools: links, tags, properties, vault overview  
 - Agent tools: read / write / grep / glob, memory, skills, active note & daily path  
 - Private semantic search — local ONNX embeddings by default; optional API embed / Bailian rerank  
 - Scene presets (DeepSeek / Ollama / Custom); keys in Obsidian Keychain  
@@ -79,8 +89,8 @@ Per-tool allow / ask / deny. Status bar + diagnostics when something’s wrong. 
 | Doc | Contents |
 |---|---|
 | [User Guide](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/user-guide.md) | Setup, scenarios, slash commands, FAQ |
+| [Changelog](CHANGELOG.md) | **What changed for users** each release |
 | [Architecture](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/ARCHITECTURE.md) | Ports, agent loop, tools, workers |
-| [Changelog](https://github.com/golddream-y/obsidian-ratel/blob/main/CHANGELOG.md) | Release notes |
 
 Issues & ideas: [GitHub Issues](https://github.com/golddream-y/obsidian-ratel/issues).
 

@@ -50,10 +50,14 @@ export interface ChatRequest {
  * 聊天消息:支持 system/user/assistant/tool 四种角色。
  * - `toolCallId` + `toolName` + `toolArgs` 只在 assistant 工具调用消息上设置。
  * - `toolCallId` 在 tool 角色消息上设置,用于与 assistant 工具调用配对。
+ * - `reasoning` 为思考过程全文(DeepSeek reasoning_content);thinking 模式下含 tool_calls 的
+ *   assistant 消息必须在后续请求中原样回传,否则 API 返回 400。
  */
 export interface ChatMessage {
 	role: 'system' | 'user' | 'assistant' | 'tool';
 	content: string;
+	/** 思考过程全文 — 适配器映射为 API 的 reasoning_content */
+	reasoning?: string;
 	toolCallId?: string;
 	toolName?: string;
 	toolArgs?: Record<string, unknown>;

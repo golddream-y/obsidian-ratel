@@ -31,7 +31,7 @@
 					onclick={() => onRemove(att.id)}
 					aria-label={$t('chat.attachments.deleteAria', { fileName: att.fileName })}
 				>×</button>
-				<span class="ratel-as-tokens">~{att.estimatedTokens}t</span>
+				<span class="ratel-as-tokens">{$t('chat.attachments.tokenEstimate', { n: att.estimatedTokens })}</span>
 			</div>
 		{/each}
 	</div>

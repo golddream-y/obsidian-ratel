@@ -1,104 +1,111 @@
-# 更新日志 / Changelog
+# 更新日志
 
-本项目遵循 [Keep a Changelog 1.1.0](https://keepachangelog.com/zh-CN/1.1.0/) 与 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
-本文件由 AI 从 Conventional Commits 生成草稿,开发者确认后合入。详见[生成规则](docs/superpowers/specs/2026-06-28-docs-system-v1-design.md)。
+本文件记录面向用户的版本说明。格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
 ## [Unreleased]
+
+## [0.1.9] - 2026-07-17
+
+### Added
+- **点开工具步骤能看懂在干什么** — 例如列目录会写成「在 Adventurer 找到 3 个文件」，并列出文件名；不再默认展开一长串 JSON
+- **思考模式跑完工具还能继续聊** — 用 DeepSeek 等带「思考过程」的模型时，助手查完笔记、列完目录后可以正常接着回答；以前会中途报错停住
+
+### Changed
+- **思考与工具排成一条工作轨迹** — 连续的「思考 → 列目录 → 再思考」共用一根细左边线，一眼能扫完整段过程，不再每一步各自一条粗边框
+- **界面文案更齐全** — 侧栏标题、设置里的语言与嵌入提供方选项会跟着中/英文切换
+
+### Fixed
+- **笔记很少时搜索更安静** — 小库自动改用语义检索，控制台不再刷红色报错（搜索结果仍可用）
+
+---
 
 ## [0.1.8] - 2026-07-17
 
 ### Changed
-- **Chat UI Conversation-first(S-CHAT-UI-V3)** — StatusStrip 沉入输入区顶沿;Header 为 `Ratel.` 词标 + 副标同行 + 静默胶囊模型 chip;work-bar 合并进 Strip;Drawer 仅索引/上下文 + 渐变 meter + 开合动效;一体输入壳;工具/思考改为细线 Trace 时间线;Slash/Mention 贴一体壳顶;检索结果改为胶囊 cite-chip,正文 `[n]` 可点开同一笔记
+- **对话优先的聊天侧栏** — 状态条沉到输入框上方，不再夹在消息中间；标题更简洁，忙的时候不再整栏抢戏
+- **一体输入区** — 加号、输入框、发送/停止在同一圆角壳里，slash 与 @ 菜单贴着输入框打开
+- **出处更好点** — 检索结果变成可点的笔记芯片；回答里的 `[1][2]` 也能一点打开同一篇笔记
+- **工具过程更好扫** — 思考与工具调用收成细时间线，而不是厚卡片堆
 
 ### Fixed
-- **vault skills 路径二次拼接** — `SkillVaultAdapter` 误注入绝对路径,Obsidian `adapter.list` 再拼 vault 根导致 ENOENT;改为 vault 相对路径 `.ratel/skills`
-- **vault skills 目录缺失刷屏** — `.ratel/skills` 不存在时静默返回空列表,不再把 ENOENT 打成警告
+- **自定义 Skill 目录** — 库内 `.ratel/skills` 路径错误导致加载失败；目录不存在时也不再刷屏警告
+
+---
 
 ## [0.1.7] - 2026-07-16
 
 ### Added
-- **图谱原生 Phase A 读工具** — `get_links`(出链/反链/未解析链接)、`search_by_tag`(嵌套前缀)、`search_by_property`(frontmatter)、`get_vault_structure`(目录/标签计数/orphan)
-- **`search_vault` 结构信号** — 结果附带 `tags` 与 `backlinkCount`,便于模型判断权威度
-- **VaultPort 图谱查询** — `getLinks` / `findByTag` / `findByProperty` / `getVaultStructure`,全部走 `metadataCache`,不改索引
+- **顺着链接找笔记** — 看一篇的出链、反链、未解析链接；按标签或属性筛笔记；一眼看库目录与孤儿笔记
+- **检索更懂结构** — 语义搜索结果带上标签与反链数，方便判断哪篇更「权威」
 
 ### Changed
-- **对外主张** — README / manifest 立 Graph-native AI agent;toolGuide 与架构文档对齐新工具
-- **状态抽屉** — 去掉误导性的「可在设置启用 Worker 线程」红字(Obsidian 渲染进程无法启用 `worker_threads`;Embedding 已在 Web Worker)
+- **产品定位** — 对外明确为面向链接笔记的图谱原生 Agent
+- **状态抽屉文案** — 去掉「可在设置启用 Worker」等易误导说明
+
+---
 
 ## [0.1.6] - 2026-07-15
 
 ### Added
-- **设置四 Tab** — 对话模型 / 笔记索引 / 记忆与权限 / 高级;`chatPreset`(DeepSeek / Ollama / 自定义);默认对话模型 `deepseek-v4-flash`;钥匙串 checklist 前置
-- **`@` 笔记引用** — 输入补全 + chip 条 + 文件菜单「添加到 Ratel」;发送策略 A(只带 `@相对路径`,不预读全文)
+- **设置分四页** — 对话模型 / 笔记索引 / 记忆与权限 / 高级；一键场景预设（DeepSeek / Ollama / 自定义）
+- **用 @ 点名笔记** — 输入时补全，发送时带上路径；文件菜单也可「添加到 Ratel」
 
 ### Fixed
-- **索引每次重启全量重建** — 清单迁入 `.index/ratel-manifest.json`(兼容旧根目录路径);有索引无清单时只重建 hash,不全量 embed;全量后写真实 mtime/非空 entries
-- **DeepSeek 400 孤立 `role:tool`** — `/compact` 保留窗口对齐 + 上送前 `sanitizeToolMessageOrder`
-- **设置 Tab 切换无效** — 改用声明式 `visible` + `refreshDomState`(不再依赖 CSS `is-hidden`)
-- **对话进行中状态三重叠** — 不再误标 `model:checking`;StatusLine / work-bar / 打字指示去重
+- **重启不再无故全量重索引** — 未改动的笔记会跳过，启动更快
+- **压缩对话后模型报错** — 工具消息顺序对齐，减少 DeepSeek 等接口的 400
+- **设置页切换 Tab 无效** — 已修好
+- **对话时状态条重复提示** — 忙态只保留一条清晰通道
 
 ### Changed
-- README / user-guide 场景与设置速查按 Tab 更新;架构文档同步 settings / vector-index / chat
+- 手册与 README 按新设置结构更新
+
+---
 
 ## [0.1.5] - 2026-07-14
 
 ### Added
-- **Agent 基础环境感知** — 每轮 `ask()` 注入本地时间(「今天几号」通常无需调工具);新增只读工具 `get_datetime` / `get_active_note` / `get_daily_note` / `list_recent_notes` / `get_note_outline`(工具总数 14→19)
-- **WorkspacePort** — 活动 Markdown 文件与编辑器选区与 Vault IO 解耦;`get_note_outline` 走 `metadataCache.headings`,禁止全文正则
-- **日记约定设置** — `dailyNoteFolder` / `dailyNoteFormat`(`YYYY-MM-DD`);`get_daily_note` 只探测路径,不自动创建
+- **更懂当前上下文** — 每轮知道本地时间；能用当前笔记、日记路径、最近编辑、大纲，少绕弯
+- **日记路径约定** — 可在设置里指定日记文件夹与日期格式（只探测，不擅自建文件）
 
 ### Changed
-- **README / 使用手册** — 以社区商店安装为主入口;手册改为场景表驱动;架构文档同步 WorkspacePort 与环境工具
+- 安装说明以社区商店为主；使用手册改为场景表驱动
+
+---
 
 ## [0.1.4] - 2026-07-14
 
 ### Fixed
-- **首次安装加载失败** — `loadData()` 返回 `null` 时读 `loaded.toolPermissions` 抛 TypeError;归一成 `{}` 后再合并。`onunload` 对未初始化字段改用可选链,避免卸载二次报错
+- **首次安装可能加载失败** — 无本地数据时的空值错误已修复；卸载时也不再二次报错
+
+---
 
 ## [0.1.3] - 2026-07-14
 
 ### Fixed
-- **社区商店安装加载失败** — 0.1.2 release 的 `main.js` 与 0.1.1 字节级相同,仍含 deprecated `PluginSettingTab.display()`,被 Obsidian 1.13+ plugin checker(`no-deprecated-display`)静默拦截;本版重新构建正确产物(声明式 `getSettingDefinitions()`),CI 增加 `this.display()` 门禁防止复发
+- **社区商店安装后无法加载** — 发布包与 Obsidian 1.13+ 检查冲突已消除，可正常启用
 
 ### Added
-- **Skill 机制基础层** — 三源加载(builtin `<pluginDir>/skills/` + global `~/.ratel/skills/` + vault `.ratel/skills/`),gray-matter frontmatter 解析;`SkillRegistry` enabled/disabled/active 三态管理;`SkillPort` 端口 + `skill-fs`/`skill-vault` 双适配器(node:fs 与 VaultPort);2 个工具 `activate_skill`/`deactivate_skill`;3 个斜杠命令 `/skill`/`/skills`/`/skill off`;`agent.skills` prompt section(zone: 'dynamic')注入 Discovery + Active 段;Settings 面板新增「Skills」group(enableSkills 开关)
-- **用户记忆系统** — 两层架构(global + topic),Agent 跨会话记住用户偏好与决策;3 个工具 `search_memory`/`remember`/`forget_memory`;记忆存于 vault 的 `.ratel/memory/`,纯 Markdown 可直接编辑;`MemoryStore` 注入 `EmbeddingPort` 预计算向量,独立索引;启动时 global.md + index.md 注入 system prompt(20KB 截断 + retrieval wrapper 防注入);总存储上限 10MB
-- **记忆管理面板** — Svelte 5 侧边栏面板(brain 图标),查看/搜索/筛选/行内编辑/删除记忆条目;设置面板新增「记忆」group(6 个参数:启用/自动写入/存储上限/注入上限/动态上限/上下文总上限)
-- **i18n V2 基础设施** — `src/i18n/` 模块(svelte/store-based),12 namespace ~340 key,开放式 Strings interface 扩展;中英文界面切换,Settings → Ratel → Language 下拉(auto 跟随系统 / 中文 / English),UI 文案即时生效
-- **tool.name.* 友好名** — 工具调用展示从英文工具名改为本地化友好名(如"查看 xxx.md"、"语义搜索")
-- **Chat UI 打磨** — Header 百分比胶囊 + 状态 tone;StatusLine 精简;work 条(indexing/downloading/preparing 等);抽屉精简
-- **smart reindex 启动路径** — 启动期 hash diff 跳过未变更文件,热启动零 embed 调用
-- **IndexManifest 持久化** — `pluginDir/index-manifest.json` 记录每文件 sha256 + mtime + chunkCount + 全局 embedding 参数,原子写避免半写损坏
-- **mtime 快速跳过** — mtime 未变则不读 content 不算 sha256,直接复用旧 hash
-- **`index.batch` Worker 协议** — 批量索引消息类型,reembedFile 先 `deleteByPath` 清旧 chunk 防残留
-- **Diffing 状态** — IndexStatus 新增"检查变更中"状态,UI 状态条适配
-- **设置面板重启提示** — embedProvider / chunkSize / chunkOverlap 改动需重启 Obsidian 生效
+- **Skill 扩展** — 在 `.ratel/skills/` 等处放 `SKILL.md`，用 `/skill` 开关工作流
+- **跨会话记忆** — 可以说「记住我喜欢…」，存在库内 Markdown，可在记忆面板查看编辑
+- **中英文界面** — 设置里切换语言；工具步骤显示本地化友好名
+- **更聪明的索引** — 未改动的笔记启动时跳过；损坏索引会自动降级重建
 
 ### Fixed
-- **`/reindex` 不清 manifest** — 手动重索引时未变更文件被跳过,违反用户预期;现先 dropIndex + manifest.invalidate 再全量
-- **`.index/` 损坏无降级** — smartReindex 任意步骤异常降级清 .index + 全量重建,不再卡在 Failed
-- **`autoIndex=false` 仍跑 smartReindex** — 关闭自动索引后仍被启动期索引,违反设置语义;现仅启动 FolderWatcher
-- **VectraStore catalog 旁路 bug** — `upsertItem` 不写 vectra 内部 catalog,`deleteDocument(uri)` 静默失败;`deleteByPath` 改用 `deleteItems(itemIds)` 按 metadata.path 过滤
+- 手动全量重索引、关闭自动索引、删除旧向量条目等边界行为
+
+---
 
 ## [0.1.0] - 2026-06-28
 
 ### Added
-- **问答 vault** — 自然语言提问,流式回答带引用
-- **多步闭环** — Agent Loop 自动检索多篇笔记生成综述,MAX_STEPS 默认 50 可配置
-- **混合检索** — 向量召回 + BM25 全文匹配 + Backlinks 增强
-- **本地 ONNX 嵌入** — Web Worker 子线程推理,主线程零阻塞,批量处理 maxBatchSize=16
-- **DeepSeek / Claude / Ollama** 三模型适配器,流式输出支持思考过程(DeepSeek reasoning_content)
-- **SecretStorage 密钥管理** — Obsidian 1.11.4+ 钥匙串,API Key 不出现在 data.json
-- **状态条** — 模型/索引状态 + 上下文使用率 + token 数据源指示(估算/流式/API)
-- **诊断面板** — 模型连接 / 嵌入健康 / 索引状态 / 工具权限自查
-- **斜杠命令** — `/new` `/compact` `/model` `/reindex`
-- **中文界面 + i18n 框架**
-- **工具权限** — read_note / write_note / delete_note 的 allow / ask / deny 配置
-- **三产物构建** — main.js + worker.js + embedding-worker.js
+- **和知识库对话** — 自然语言提问，流式回答，带来源
+- **多步办事** — 自动检索多篇笔记再综述；深度可配置
+- **混合检索** — 语义 + 关键词 + 链接信号
+- **默认本地嵌入** — 不把笔记内容发去嵌入云（除非你改成 API）
+- **自选模型** — DeepSeek / Claude / Ollama；密钥进钥匙串
+- **可控改库** — 按工具允许 / 询问 / 拒绝；状态条与诊断面板
 
 ### Known Limitations
-- 仅桌面端(依赖 Node.js fs)
-- 索引大 vault(>5000 笔记)首扫较慢
-- Claude adapter 未接 thinking blocks(仅 DeepSeek 接入 reasoning_content)
-
-**English summary:** Initial public release. Chat with vault, multi-step agent loop (MAX_STEPS=50), hybrid retrieval (vector + BM25 + backlinks), local ONNX embedding in Web Worker with batch processing, three model adapters (DeepSeek/Claude/Ollama) with reasoning_content support, SecretStorage key management, status line with token source indicator, diagnostics panel, slash commands, i18n framework, tool permissions, three-artifact build.
+- 仅桌面端
+- 超大库首次索引较慢
+- Claude 侧思考块尚未接入（DeepSeek 思考过程已支持）

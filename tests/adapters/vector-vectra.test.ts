@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
-import { VectraStore } from '../../src/adapters/vector-vectra';
+import { VectraStore, isBm25CorpusTooSmall } from '../../src/adapters/vector-vectra';
 import type { EmbeddingsModel, EmbeddingsResponse } from 'vectra';
 import path from 'path';
 import fs from 'fs';
@@ -299,6 +299,44 @@ describe('VectraStore.hybridSearch', () => {
 		expect(results[1]!.score).toBe(0.6);
 		// 关键路径:hybridSearch 不填 index(由 search_vault 工具层填)
 		expect(results[0]!.index).toBeUndefined();
+	});
+
+	it('hybridSearch - BM25 语料过小 - 降级纯向量且不抛错', async () => {
+		const queryItemsMock = vi
+			.fn()
+			.mockRejectedValueOnce(
+				new Error('winkBM25S: document collection is too small for consolidation; add more docs!'),
+			)
+			.mockResolvedValueOnce([]);
+		const fakeIndex = {
+			queryItems: queryItemsMock,
+			isIndexCreated: vi.fn().mockResolvedValue(true),
+			createIndex: vi.fn(),
+			getDocumentUri: vi.fn(),
+			getCatalogStats: vi.fn(),
+			listDocuments: vi.fn(),
+		} as unknown as import('vectra').LocalDocumentIndex;
+
+		const store = new VectraStore('/tmp/test-index-bm25-small');
+		(store as unknown as { index: unknown }).index = fakeIndex;
+		(store as unknown as { _ready: Promise<void> | null })._ready = Promise.resolve();
+
+		await expect(store.hybridSearch('q', [0.1], 3)).resolves.toEqual([]);
+		// 第一次 hybrid(BM25=true),第二次 search(无 isBm25)
+		expect(queryItemsMock).toHaveBeenCalledTimes(2);
+		expect(queryItemsMock.mock.calls[0]![4]).toBe(true);
+		expect(queryItemsMock.mock.calls[1]!).toHaveLength(3);
+	});
+});
+
+describe('isBm25CorpusTooSmall', () => {
+	it('识别 - wink 小库文案 - true', () => {
+		expect(
+			isBm25CorpusTooSmall(
+				new Error('winkBM25S: document collection is too small for consolidation; add more docs!'),
+			),
+		).toBe(true);
+		expect(isBm25CorpusTooSmall(new Error('network timeout'))).toBe(false);
 	});
 });
 

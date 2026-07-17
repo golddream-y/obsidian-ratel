@@ -157,8 +157,23 @@ AI 读 `git log <plan-start-commit>..HEAD`,判断这些 commit 是否改变用�
 - 新增 FAQ 候选(同类 issue 反复出现)
 
 #### CHANGELOG
-- 通常由 release 工作流(spec § 6.3)在发版时统一生成,此处只标记"下次发版需覆盖本次变更"
-- 例外:若本次是 BREAKING CHANGE,必须立即在 CHANGELOG `[Unreleased]` 块补一行,不能等到发版
+
+**写给谁:** 使用 Ratel 的人。本文件必须达到「打开就能看懂自己多了什么能力」的标准。
+
+**写什么:**
+- 这个版本让你**多了什么能力**、**好了什么体验**(场景语言:做了什么、以前怎样、现在怎样)
+- 用 Added / Changed / Fixed / Removed 分类([Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/));SemVer
+
+**不写什么(禁止出现在 CHANGELOG 正文):**
+- 写作规范自述、「读者是谁」、内部流程说明(规范只放本文件 AGENTS.md)
+- 文件路径、模块名、commit 哈希、内部重构口号
+- 含糊标题(如「多步更稳」「体验优化」)— 必须写清**用户能感知的具体变化**
+
+**发版节奏:**
+- 通常在 release 时把 `[Unreleased]` 收成 `[x.y.z] - 日期`
+- 例外:BREAKING CHANGE 必须立即在 `[Unreleased]` 补一行,不能等到发版
+
+**自检:** 写完后用「外行用户只读标题」试读 — 若说不清优化了什么,重写该条。
 
 #### ARCHITECTURE.md / adr/(⚠️ 谨慎,改前必须确认)
 **触发条件(满足任一即需评估):**

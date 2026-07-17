@@ -10,6 +10,7 @@ import { mount, unmount } from 'svelte';
 import ChatViewComponent from './ChatView.svelte';
 import type RatelVaultPlugin from '../../main';
 import { patchChatLeafIcon } from '../../utils/badger-icon';
+import { tNow } from '../../i18n';
 
 /** Obsidian 工作区视图类型 — 唯一字符串,注册到 `registerView`。 */
 export const VIEW_TYPE_CHAT = 'ratel-chat';
@@ -43,9 +44,13 @@ export class ChatView extends ItemView {
 		return VIEW_TYPE_CHAT;
 	}
 
-	/** 工作区标签上显示的标题。 */
+	/**
+	 * 工作区标签上显示的标题。
+	 *
+	 * 关键路径:用 tNow 同步读,与 Header brand 同 key;语言切换后下次打开视图生效。
+	 */
 	getDisplayText(): string {
-		return 'Ratel Agent';
+		return tNow('chat.header.title');
 	}
 
 	/** 工作区侧栏占位图标 — 实际显示由 patchChatLeafIcon 替换为 🦡。 */

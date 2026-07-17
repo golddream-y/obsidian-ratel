@@ -229,6 +229,41 @@ describe('DeepSeekLLM', () => {
 		expect(fn.arguments).toBe('{"path":"notes/test.md"}');
 	});
 
+	it('buildRequestBody - assistant 带 reasoning - 回传 reasoning_content', () => {
+		const adapter = new DeepSeekLLM({ apiBase: 'http://test', apiKey: 'sk-test', model: 'deepseek-reasoner' });
+		const req: ChatRequest = {
+			messages: [
+				{ role: 'user', content: '查文档' },
+				{
+					role: 'assistant',
+					content: '',
+					reasoning: '先列目录',
+					toolCallId: 'call_1',
+					toolName: 'list_files',
+					toolArgs: { path: 'Guides' },
+				},
+				{ role: 'tool', content: '[]', toolCallId: 'call_1' },
+			],
+		};
+		const body = (adapter as unknown as { buildRequestBody: (req: ChatRequest) => Record<string, unknown> }).buildRequestBody(req) as {
+			messages: Array<Record<string, unknown>>;
+		};
+		const assistantMsg = body.messages[1]!;
+		expect(assistantMsg.reasoning_content).toBe('先列目录');
+		expect(assistantMsg).toHaveProperty('tool_calls');
+	});
+
+	it('buildRequestBody - 无 reasoning - 不上送 reasoning_content 字段', () => {
+		const adapter = new DeepSeekLLM({ apiBase: 'http://test', apiKey: 'sk-test', model: 'test' });
+		const req: ChatRequest = {
+			messages: [{ role: 'assistant', content: 'hi' }],
+		};
+		const body = (adapter as unknown as { buildRequestBody: (req: ChatRequest) => Record<string, unknown> }).buildRequestBody(req) as {
+			messages: Array<Record<string, unknown>>;
+		};
+		expect(body.messages[0]).not.toHaveProperty('reasoning_content');
+	});
+
 	it('buildRequestBody - 含孤立 tool - 上送前剥掉', () => {
 		const adapter = new DeepSeekLLM({ apiBase: 'http://test', apiKey: 'sk-test', model: 'test' });
 		const req: ChatRequest = {
