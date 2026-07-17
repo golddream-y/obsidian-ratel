@@ -62,8 +62,10 @@ jobs:
                   test -f manifest.json
                   ls -la main.js manifest.json ${{ steps.styles.outputs.exists == 'true' && 'styles.css' || '' }}
 
+            # 0.1.10: actions/attest@v4 本地 gh verify 通过,商店仍报 signature invalid。
+            # 改用社区已通过方案 actions/attest-build-provenance@v2。
             - name: Attest build provenance
-              uses: actions/attest@v4
+              uses: actions/attest-build-provenance@v2
               with:
                   subject-path: |
                       main.js
