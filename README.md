@@ -14,10 +14,10 @@ Chat, research, and act on your linked notes. Ask what you wrote about a topic; 
 
 ## What's new
 
-User-facing release notes live in the **[Changelog](CHANGELOG.md)** — what you can do now, not internal commits.
+**README is the short “what you can do now” snapshot.** Full history stays in the **[Changelog](CHANGELOG.md)** (range entries OK for patch bursts).
 
-- **Latest stable:** [0.1.9](CHANGELOG.md#019---2026-07-17) — open a tool step and read plain Chinese/English (not JSON); thinking models keep answering after tools; think+tool steps share one timeline  
-- Earlier: [0.1.8](CHANGELOG.md#018---2026-07-17) — conversation-first chat, clickable `[n]` citations
+- **Latest stable: [0.1.12](CHANGELOG.md#0110--0112---2026-07-18)** — Appearance settings (light / dark / follow Obsidian + accent swatches, including copper); warmer dark theme; send button follows accent; community-store release verification fixed  
+- Earlier: [0.1.9](CHANGELOG.md#019---2026-07-17) — plain tool-step copy (not JSON); thinking models keep answering after tools; think+tool timeline · [0.1.8](CHANGELOG.md#018---2026-07-17) — conversation-first chat, clickable `[n]` citations
 
 ---
 
@@ -89,7 +89,7 @@ Per-tool allow / ask / deny. Status bar + diagnostics when something’s wrong. 
 | Doc | Contents |
 |---|---|
 | [User Guide](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/user-guide.md) | Setup, scenarios, slash commands, FAQ |
-| [Changelog](CHANGELOG.md) | **What changed for users** each release |
+| [Changelog](CHANGELOG.md) | Full release history (ranges OK for patch bursts) |
 | [Architecture](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/ARCHITECTURE.md) | Ports, agent loop, tools, workers |
 
 Issues & ideas: [GitHub Issues](https://github.com/golddream-y/obsidian-ratel/issues).
