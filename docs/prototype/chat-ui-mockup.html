@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Ratel Chat — Prototype v3 · Conversation-first</title>
+  <title>Ratel Chat — Prototype v3.1 · Sessions</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -139,6 +139,257 @@
     .model-chip:hover {
       border-color: var(--copper-glow);
       color: var(--copper);
+    }
+
+    /* ==================== Header 右侧：历史图标 + 模型 ==================== */
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      position: relative;
+    }
+
+    .icon-ghost {
+      width: 28px;
+      height: 28px;
+      display: grid;
+      place-items: center;
+      border-radius: 8px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--paper-faint);
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s, background 0.15s;
+    }
+
+    .icon-ghost:hover,
+    .icon-ghost[aria-expanded="true"] {
+      color: var(--copper);
+      border-color: var(--line);
+      background: var(--copper-soft);
+    }
+
+    .icon-ghost svg {
+      width: 15px;
+      height: 15px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 1.75;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    /* 会话小菜单 — 不是侧栏，轻量 popover */
+    .session-menu {
+      position: absolute;
+      top: calc(100% + 8px);
+      right: 0;
+      width: 260px;
+      max-height: 280px;
+      overflow: hidden;
+      display: none;
+      flex-direction: column;
+      background: var(--ink-elevated);
+      border: 1px solid var(--line-strong);
+      border-radius: 12px;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+      z-index: 40;
+    }
+
+    .session-menu.open {
+      display: flex;
+    }
+
+    .session-menu-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 12px 8px;
+      border-bottom: 1px solid var(--line);
+      flex-shrink: 0;
+    }
+
+    .session-menu-head .label {
+      font-size: 11px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--paper-faint);
+      font-weight: 550;
+    }
+
+    .session-new {
+      font-family: var(--font);
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--copper);
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      padding: 2px 4px;
+    }
+
+    .session-new:hover { text-decoration: underline; }
+
+    .session-list {
+      overflow-y: auto;
+      padding: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .session-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 4px;
+      align-items: start;
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid transparent;
+      background: transparent;
+    }
+
+    .session-row-body {
+      cursor: pointer;
+      min-width: 0;
+    }
+
+    .session-row:hover { background: var(--ink-soft); }
+    .session-row.current {
+      background: var(--copper-soft);
+      border-color: rgba(201, 149, 108, 0.22);
+    }
+
+    .session-row .title {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--paper);
+      line-height: 1.35;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .session-row .when {
+      font-size: 11px;
+      color: var(--paper-faint);
+      margin-top: 3px;
+    }
+
+    .session-row .del {
+      width: 22px;
+      height: 22px;
+      border: none;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--paper-faint);
+      cursor: pointer;
+      opacity: 0;
+      font-size: 14px;
+      line-height: 1;
+    }
+
+    .session-row:hover .del { opacity: 1; }
+    .session-row .del:hover { color: var(--rose); background: var(--rose-soft); }
+
+    .proto-note {
+      max-width: 420px;
+      font-size: 12px;
+      line-height: 1.55;
+      color: var(--paper-faint);
+      text-align: center;
+      padding: 0 8px;
+    }
+
+    .proto-note strong { color: var(--paper-muted); font-weight: 550; }
+
+    /* ==================== 会话切换：消息区 shell + loading ==================== */
+    .messages-shell {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .messages-shell.is-loading .messages {
+      pointer-events: none;
+    }
+
+    .messages-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 5;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      background: rgba(18, 17, 15, 0.55);
+      backdrop-filter: blur(2px);
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.18s ease, visibility 0.18s ease;
+    }
+
+    .messages-shell.is-loading .messages-overlay {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    .session-spinner {
+      width: 22px;
+      height: 22px;
+      border: 2px solid var(--line-strong);
+      border-top-color: var(--copper);
+      border-radius: 50%;
+      animation: session-spin 0.7s linear infinite;
+    }
+
+    .messages-overlay .load-label {
+      font-size: 12px;
+      color: var(--paper-muted);
+      letter-spacing: 0.02em;
+    }
+
+    @keyframes session-spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .messages.is-exit {
+      animation: messages-exit 0.16s ease forwards;
+    }
+
+    .messages.is-enter {
+      animation: messages-enter 0.22s ease forwards;
+    }
+
+    @keyframes messages-exit {
+      from { opacity: 1; transform: translateY(0); }
+      to { opacity: 0; transform: translateY(6px); }
+    }
+
+    @keyframes messages-enter {
+      from { opacity: 0; transform: translateY(-8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .session-row.is-loading .title::after {
+      content: '';
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      margin-left: 8px;
+      vertical-align: -1px;
+      border: 1.5px solid var(--line-strong);
+      border-top-color: var(--copper);
+      border-radius: 50%;
+      animation: session-spin 0.65s linear infinite;
+    }
+
+    .icon-ghost.is-loading svg {
+      animation: session-spin 0.8s linear infinite;
     }
 
     /* ==================== Messages — 主角 ==================== */
@@ -622,25 +873,63 @@
         animation: none !important;
         transition: none !important;
       }
+      .messages.is-exit,
+      .messages.is-enter {
+        opacity: 1;
+        transform: none;
+      }
     }
   </style>
 </head>
 <body>
   <div class="stage">
-    <div class="stage-label">Ratel · Chat prototype v3 · Conversation-first</div>
+    <div class="stage-label">Ratel · Chat prototype v3.1 · Sessions</div>
 
     <div class="chat">
-      <!-- Header：只留品牌 + 模型 -->
+      <!-- Header：品牌 + 历史小图标 + 模型 -->
       <header class="header">
         <div class="brand">
           <div class="brand-mark">Ratel<span>.</span></div>
           <div class="brand-sub">graph-native</div>
         </div>
-        <button type="button" class="model-chip" title="查看模型">deepseek-v4-flash</button>
+        <div class="header-actions">
+          <button
+            type="button"
+            class="icon-ghost"
+            id="sessionToggle"
+            title="会话"
+            aria-label="会话列表"
+            aria-expanded="true"
+            aria-controls="sessionMenu"
+            onclick="toggleSessionMenu(event)"
+          >
+            <!-- 时钟/历史：刻意小，不是第二侧栏 -->
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="8"></circle>
+              <path d="M12 8v4l2.5 1.5"></path>
+            </svg>
+          </button>
+          <button type="button" class="model-chip" title="查看模型">deepseek-v4-flash</button>
+
+          <div class="session-menu open" id="sessionMenu" role="menu" aria-label="最近会话">
+            <div class="session-menu-head">
+              <span class="label">最近</span>
+              <button type="button" class="session-new" onclick="protoNewSession()">＋ 新对话</button>
+            </div>
+            <div class="session-list" id="sessionList">
+              <!-- 由 script 填充；默认展开方便评审 -->
+            </div>
+          </div>
+        </div>
       </header>
 
-      <!-- 消息：主角 -->
-      <div class="messages" id="messages">
+      <!-- 消息：主角（shell 承载切换 loading / 动画） -->
+      <div class="messages-shell" id="messagesShell">
+        <div class="messages-overlay" id="messagesOverlay" aria-live="polite" aria-busy="false">
+          <div class="session-spinner" aria-hidden="true"></div>
+          <span class="load-label" id="messagesLoadLabel">加载会话…</span>
+        </div>
+        <div class="messages" id="messages">
         <div class="turn user">
           <div class="bubble-user">
             <div class="thumbs">
@@ -706,6 +995,7 @@
           </div>
         </div>
       </div>
+      </div>
 
       <!-- Composer：状态沉入底部 -->
       <div class="composer">
@@ -756,9 +1046,205 @@
         </div>
       </div>
     </div>
+
+    <p class="proto-note">
+      <strong>确认点：</strong>右上角只有一个历史图标。
+      切换会话时：消息区淡出 → 短暂 loading（模拟读单场文件）→ 淡入；
+      菜单行与时钟图标也会转圈。尊重系统「减少动态效果」时跳过动画。
+    </p>
   </div>
 
   <script>
+    /* —— 会话原型：可点切换 / 新对话 / 删除 —— */
+    const PROTO_SESSIONS = [
+      {
+        id: 's1',
+        title: '性能预算与 CDN 背景说明',
+        when: '刚才',
+        html: null, // 挂载后从 #messages 抓取
+      },
+      {
+        id: 's2',
+        title: '整理本周未完成的项目笔记',
+        when: '昨天',
+        html: `
+        <div class="turn user">
+          <div class="bubble-user">帮我列出本周还没收尾的项目相关笔记。</div>
+        </div>
+        <div class="turn assistant">
+          <div class="trace">
+            <div class="trace-item done" onclick="this.classList.toggle('open')">
+              <span class="ico">✓</span>
+              <span class="label">search_vault · 未完成</span>
+              <span class="meta">5</span>
+            </div>
+            <div class="trace-detail">query: 未完成 · project</div>
+          </div>
+          <div class="assistant-prose">找到 5 篇带「进行中」标记的笔记。需要我按优先级排一版 checklist 吗？</div>
+        </div>`,
+      },
+      {
+        id: 's3',
+        title: '新对话',
+        when: '周一',
+        html: `
+        <div class="turn user">
+          <div class="bubble-user">今天几号？</div>
+        </div>
+        <div class="turn assistant">
+          <div class="assistant-prose">今天是本地环境日期（原型占位）。</div>
+        </div>`,
+      },
+    ];
+
+    let currentSessionId = 's1';
+    let menuOpen = true;
+    let switching = false;
+
+    function captureInitialMessages() {
+      const el = document.getElementById('messages');
+      PROTO_SESSIONS[0].html = el.innerHTML;
+    }
+
+    function renderSessionList(loadingId) {
+      const list = document.getElementById('sessionList');
+      list.innerHTML = PROTO_SESSIONS.map((s) => `
+        <div class="session-row ${s.id === currentSessionId ? 'current' : ''} ${loadingId === s.id ? 'is-loading' : ''}" role="menuitem">
+          <div class="session-row-body" onclick="protoSwitchSession('${s.id}')">
+            <div class="title">${s.title}</div>
+            <div class="when">${s.when}</div>
+          </div>
+          <button type="button" class="del" title="删除" onclick="protoDeleteSession('${s.id}')">×</button>
+        </div>
+      `).join('');
+    }
+
+    function setSessionLoading(on, label) {
+      const shell = document.getElementById('messagesShell');
+      const overlay = document.getElementById('messagesOverlay');
+      const btn = document.getElementById('sessionToggle');
+      shell.classList.toggle('is-loading', on);
+      overlay.setAttribute('aria-busy', on ? 'true' : 'false');
+      document.getElementById('messagesLoadLabel').textContent = label || '加载会话…';
+      btn.classList.toggle('is-loading', on);
+    }
+
+    function wait(ms) {
+      return new Promise((r) => setTimeout(r, ms));
+    }
+
+    async function transitionToHtml(html, { loadLabel, skipDelay }) {
+      const messages = document.getElementById('messages');
+      const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const delay = skipDelay || reduce ? 0 : 320;
+
+      messages.classList.remove('is-enter');
+      messages.classList.add('is-exit');
+      if (!reduce) await wait(150);
+
+      setSessionLoading(true, loadLabel);
+      // 模拟按需读 sessions/<id>.json
+      if (delay) await wait(delay);
+
+      messages.innerHTML = html || '';
+      messages.scrollTop = 0;
+      messages.classList.remove('is-exit');
+      messages.classList.add('is-enter');
+
+      setSessionLoading(false);
+      if (!reduce) {
+        await wait(220);
+        messages.classList.remove('is-enter');
+      } else {
+        messages.classList.remove('is-enter');
+      }
+    }
+
+    async function protoSwitchSession(id) {
+      if (switching || id === currentSessionId) {
+        closeSessionMenu();
+        return;
+      }
+      const s = PROTO_SESSIONS.find((x) => x.id === id);
+      if (!s) return;
+
+      switching = true;
+      renderSessionList(id);
+      closeSessionMenu();
+
+      try {
+        currentSessionId = id;
+        await transitionToHtml(s.html || '', { loadLabel: '加载会话…' });
+        renderSessionList();
+      } finally {
+        switching = false;
+      }
+    }
+
+    async function protoNewSession() {
+      if (switching) return;
+      switching = true;
+      closeSessionMenu();
+
+      const id = 's' + Date.now();
+      PROTO_SESSIONS.unshift({
+        id,
+        title: '新对话',
+        when: '现在',
+        html: '',
+      });
+      currentSessionId = id;
+      renderSessionList(id);
+
+      try {
+        await transitionToHtml('', { loadLabel: '新对话…', skipDelay: false });
+        // 新对话可略快
+        renderSessionList();
+        document.getElementById('chatInput').focus();
+      } finally {
+        switching = false;
+      }
+    }
+
+    async function protoDeleteSession(id) {
+      if (switching) return;
+      const idx = PROTO_SESSIONS.findIndex((x) => x.id === id);
+      if (idx < 0) return;
+      PROTO_SESSIONS.splice(idx, 1);
+      if (PROTO_SESSIONS.length === 0) {
+        await protoNewSession();
+        return;
+      }
+      if (currentSessionId === id) {
+        await protoSwitchSession(PROTO_SESSIONS[0].id);
+      } else {
+        renderSessionList();
+      }
+    }
+
+    function toggleSessionMenu(e) {
+      e.stopPropagation();
+      menuOpen = !menuOpen;
+      const menu = document.getElementById('sessionMenu');
+      const btn = document.getElementById('sessionToggle');
+      menu.classList.toggle('open', menuOpen);
+      btn.setAttribute('aria-expanded', menuOpen ? 'true' : 'false');
+    }
+
+    function closeSessionMenu() {
+      menuOpen = false;
+      document.getElementById('sessionMenu').classList.remove('open');
+      document.getElementById('sessionToggle').setAttribute('aria-expanded', 'false');
+    }
+
+    document.addEventListener('click', (e) => {
+      const actions = document.querySelector('.header-actions');
+      if (menuOpen && actions && !actions.contains(e.target)) closeSessionMenu();
+    });
+
+    captureInitialMessages();
+    renderSessionList();
+
     function toggleDrawer() {
       const d = document.getElementById('drawer');
       const s = document.getElementById('statusStrip');
@@ -858,7 +1344,15 @@
         }
         return;
       }
-      if (e.key === 'Enter' || e.key === 'Escape') {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const visible = [...items].filter((el) => el.style.display !== 'none');
+        const active = visible.find((el) => el.classList.contains('active')) || visible[0];
+        const cmd = active?.querySelector('.cmd')?.textContent;
+        input.value = '';
+        menu.classList.remove('open');
+        if (cmd === '/new') protoNewSession();
+      } else if (e.key === 'Escape') {
         e.preventDefault();
         input.value = '';
         menu.classList.remove('open');

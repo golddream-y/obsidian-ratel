@@ -365,6 +365,9 @@ graph TB
 | ADR-006 发版资产 | `docs/adr/2026-06-28-release-asset-distribution.md` | Worker 内联 + WASM 懒下载(商店三文件约束) |
 | ADR-007 Context Window | `docs/adr/2026-06-28-model-context-window-registry.md` | LiteLLM 映射表 + 预设下拉(128k/200k/256k/1M/自定义) |
 | ADR-009 Skill | `docs/adr/2026-07-06-skill-mechanism.md` | Skill 三源加载与端口 |
+| ADR-010 Skill 边界 | `docs/adr/2026-07-21-skill-vs-builtin-capability.md` | Skill vs 内置工具/workflow 的产品边界 |
+| ADR-011 混合检索 | `docs/adr/2026-07-23-hybrid-retrieval-graph-routing.md` | 语义+结构混合;按问题用图,不硬上图 |
+| ADR-012 Skill 激活 | `docs/adr/2026-07-23-skill-activation-claude-aligned.md` | 激活写入会话消息;废除 Active 段/全局 Set 注入 |
 | S-BASIC-ENV | `docs/superpowers/archive/S-BASIC-ENV/` | 环境感知:时间注入 + WorkspacePort + daily/recent/outline(已归档,0.1.5) |
 | STATUS.md | `docs/superpowers/STATUS.md` | spec / plan 状态追踪 |
 | 归档 | `docs/superpowers/archive/` | 已完成的 spec/plan 历史档案 |

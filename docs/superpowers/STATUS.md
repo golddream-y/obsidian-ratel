@@ -17,11 +17,13 @@
 
 | ID | 文件 | 状态 | 创建日期 | 备注 |
 |---|---|---|---|---|
-| S-SKILL | [2026-07-06-skill-mechanism-design.md](specs/2026-07-06-skill-mechanism-design.md) | Active | 2026-07-06 | Skill 机制(agentskills.io 兼容):三源加载 + Discovery/Active + 2 工具(执行层 P-SKILL-2/3 仍 pending) |
+| S-SESSION | [2026-07-23-chat-session-management-design.md](specs/2026-07-23-chat-session-management-design.md) | Active | 2026-07-23 | 续聊+/new+按需分文件;Header 小图标;切换动效/loading;ADR-012;原型 v3.1 |
+| S-SKILL | [2026-07-06-skill-mechanism-design.md](specs/2026-07-06-skill-mechanism-design.md) | Active | 2026-07-06 | Skill 机制;激活注入见 ADR-012;P-SKILL-2/3 pending |
+| S-SKILL-UX | [2026-07-21-skill-ux-design.md](specs/2026-07-21-skill-ux-design.md) | Active | 2026-07-21 | Skill UX;对齐 ADR-010 |
 | S-EVOLUTION | [2026-07-15-evolution-graph-agent.md](specs/2026-07-15-evolution-graph-agent.md) | Active | 2026-07-15 | 图谱原生 Agent;P-EVO-A-READ Completed;下步 P-EVO-A-FM |
-| S-CHAT-UI-V3 | [2026-07-16-chat-ui-v3-conversation-first.md](specs/2026-07-16-chat-ui-v3-conversation-first.md) | Active | 2026-07-16 | Conversation-first;P1–P4 已落地并合入 main(0.1.8);待归档 |
-| S-CHAT-TRACE | [2026-07-17-chat-trace-human-detail.md](specs/2026-07-17-chat-trace-human-detail.md) | Active | 2026-07-17 | Trace + reasoning + 旁注中间层;发版 0.1.9 |
-| S-UI-APPEARANCE | [2026-07-17-ui-appearance-theme.md](specs/2026-07-17-ui-appearance-theme.md) | Active | 2026-07-17 | 外观 Tab 已发版 0.1.10;待归档 |
+| S-CHAT-UI-V3 | [2026-07-16-chat-ui-v3-conversation-first.md](specs/2026-07-16-chat-ui-v3-conversation-first.md) | Active | 2026-07-16 | Conversation-first;待归档 |
+| S-CHAT-TRACE | [2026-07-17-chat-trace-human-detail.md](specs/2026-07-17-chat-trace-human-detail.md) | Active | 2026-07-17 | Trace;待归档 |
+| S-UI-APPEARANCE | [2026-07-17-ui-appearance-theme.md](specs/2026-07-17-ui-appearance-theme.md) | Active | 2026-07-17 | 外观 Tab;待归档 |
 
 ---
 
@@ -54,13 +56,12 @@
 
 ## Future execution queue(按顺序)
 
-1. **P-EVO-A-FM**(update_frontmatter)— plan 待写
-2. **S-EVOLUTION Phase B**(Write Gate + open_note)— plan 待写
-3. **S-EVOLUTION Phase C**(task_plan + 沉淀)— plan 待写
-4. **P-SKILL-2-EXECUTION** / **P-SKILL-3-UI**— 降优先级,plan 待写
-5. **S-CHAT-UI-V3 归档**— 发版 0.1.8 后按需归档  
-6. **S-CHAT-TRACE / P-CHAT-TRACE**— 已发版 0.1.9;待归档  
-7. **S-UI-APPEARANCE / P-UI-APPEARANCE**— 已发版 0.1.10;待归档
+1. **S-SESSION / P-SESSION**— 会话续聊+分文件+小图标+切换动效;plan 待写(含 ADR-012 激活落地或紧随)  
+2. **P-EVO-A-FM**(update_frontmatter)— plan 待写  
+3. **S-EVOLUTION Phase B**(Write Gate + open_note)— plan 待写  
+4. **S-EVOLUTION Phase C**(task_plan + 沉淀)— plan 待写  
+5. **P-SKILL-2-EXECUTION** / **P-SKILL-3-UI**— 降优先级;P-SKILL-3 对齐 S-SKILL-UX  
+6. **S-CHAT-UI-V3 / S-CHAT-TRACE / S-UI-APPEARANCE 归档**— 已发版,待归档  
 
 ---
 

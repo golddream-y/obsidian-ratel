@@ -1,7 +1,9 @@
 # ADR-009:Skill 机制三源加载与端口设计
 
-**状态**:Accepted
+**状态**:Accepted(部分被修订)
 **日期**:2026-07-06
+
+> **修订(2026-07-23):** §3 Active 段每轮注入、§4 插件级 `activeSkills` Set 作为注入源 — 由 [ADR-012](2026-07-23-skill-activation-claude-aligned.md) 取代为「激活写入 Session 消息」。三源加载、SkillPort、Discovery 段仍以本文为准。
 
 ---
 
@@ -133,3 +135,5 @@ v1 不做 i18n fallback(`resolveDescription` 直接返回 `manifest.description`
 - [S-SKILL spec](../docs/superpowers/specs/2026-07-06-skill-mechanism-design.md)
 - [ARCHITECTURE.md §8.5 Skill 子系统](../docs/ARCHITECTURE.md#85-skill-子系统)
 - [ADR-008:Prompt Registry 设计决策](2026-07-04-prompt-registry.md) — agent.skills section 复用 Prompt Registry 注册表机制
+- [ADR-010:Skill 与内置能力的产品边界](2026-07-21-skill-vs-builtin-capability.md) — 何为标配内核、何为 Skill 扩展面
+- [ADR-012:Skill 激活对齐 Claude](2026-07-23-skill-activation-claude-aligned.md) — 激活写入会话消息;修正本文 §3–§4 注入模型
