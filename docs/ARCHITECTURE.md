@@ -1201,7 +1201,9 @@ const skillsSegment = [skillsDiscovery, skillsActive]
 | `activate_skill` | LLM 主动激活一个 skill(幂等,已激活返回 alreadyActive) | allow |
 | `deactivate_skill` | LLM 反激活一个 skill | allow |
 
-详见 [ADR-009:Skill 机制三源加载与端口设计](adr/2026-07-06-skill-mechanism.md)。
+详见 [ADR-009:Skill 机制三源加载与端口设计](adr/2026-07-06-skill-mechanism.md)。  
+产品边界(何为内置能力、何为 Skill)见 [ADR-010](adr/2026-07-21-skill-vs-builtin-capability.md)。  
+**激活注入目标态**见 [ADR-012](adr/2026-07-23-skill-activation-claude-aligned.md)(写入 Session 消息;不再以全局 `activeSkills` + Active 段为正确模型;§8.5 上文三态/Active 段描述待实施后改写)。
 
 ---
 

@@ -231,6 +231,8 @@ i18n:
 - `activation: 'always'` 的 skill 在 Discovery 阶段就自动激活(等效于全局指令)
 - `activation: 'manual'` 的 skill 不出现在 Discovery 的"可激活"提示中,仅 `/skill <name>` 可触发
 
+> **修订(2026-07-23):** 「持续生效」的载体改为 **写入 Session 消息**(对齐 Claude),不再用插件级 `activeSkills` + 每轮 Active 段。见 [ADR-012](../../adr/2026-07-23-skill-activation-claude-aligned.md)。`always` = 新 session 首次组上下文时写入一次;`deactivate` 见该 ADR(transcript 模型下为 supersede / best-effort)。
+
 **激活时上下文注入示例**:
 
 ```markdown
