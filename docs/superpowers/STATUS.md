@@ -31,6 +31,7 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
+| P-SESSION | [2026-07-23-chat-session-management.md](plans/2026-07-23-chat-session-management.md) | ⏳ Pending | S-SESSION | 分文件+续聊+/new+菜单动效+hydrate+标题+ADR-012；8 Task |
 | P-CHAT-UI-V3-1 | [2026-07-16-chat-ui-v3-p1-layout.md](plans/2026-07-16-chat-ui-v3-p1-layout.md) | ✅ Completed | S-CHAT-UI-V3 | 已合入 main;发版 0.1.8;待归档 |
 | P-CHAT-TRACE | [2026-07-17-chat-trace-human-detail.md](plans/2026-07-17-chat-trace-human-detail.md) | ✅ Completed | S-CHAT-TRACE | 发版 0.1.9 |
 | P-UI-APPEARANCE | [2026-07-17-ui-appearance-theme.md](plans/2026-07-17-ui-appearance-theme.md) | ✅ Completed | S-UI-APPEARANCE | 已合入 main;发版 0.1.10;待归档 |
@@ -56,7 +57,7 @@
 
 ## Future execution queue(按顺序)
 
-1. **S-SESSION / P-SESSION**— 会话续聊+分文件+小图标+切换动效;plan 待写(含 ADR-012 激活落地或紧随)  
+1. **P-SESSION**(S-SESSION)— 会话续聊+分文件+小图标+切换动效+ADR-012；plan 已写  
 2. **P-EVO-A-FM**(update_frontmatter)— plan 待写  
 3. **S-EVOLUTION Phase B**(Write Gate + open_note)— plan 待写  
 4. **S-EVOLUTION Phase C**(task_plan + 沉淀)— plan 待写  
