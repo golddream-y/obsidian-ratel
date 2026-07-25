@@ -16,6 +16,13 @@ import { composeAgentSystem, composeMemorySystemPrompt, formatSearchResultsBlock
 import type { OverrideMap } from '../prompts/types';
 // 关键路径:TopicIndexEntry 用于 setMemoryContext 接收记忆索引主题列表的类型契约
 import type { TopicIndexEntry } from '../types';
+import {
+	formatSkillInstructionsContent,
+	formatSkillSupersedeContent,
+	sessionHasSkillInstructions,
+	sessionHasSkillSupersede,
+} from './skill-session-messages';
+import type { Skill } from '../skills/types';
 
 /**
  * ContextManager 依赖注入 — 解耦 settings/工具注册表。
@@ -74,8 +81,7 @@ export class ContextManager {
 	 */
 	private skillsDiscovery = '';
 	/**
-	 * Skill Active 段 — 激活/反激活时由 setSkillsContext() 更新,
-	 * 注入位置在 skillsDiscovery 之后。
+	 * @deprecated ADR-012:Active 段不再作为注入源;保留字段仅为 API 兼容,toMessages 忽略之。
 	 */
 	private skillsActive = '';
 	/**
@@ -305,19 +311,65 @@ export class ContextManager {
 	}
 
 	/**
-	 * 设置 Skill 上下文 — 在会话启动时与 activate/deactivate 工具执行后调用。
+	 * 设置 Skill 上下文 — 会话启动时注入 Discovery 目录。
 	 *
-	 * 关键路径:
-	 * - discovery 与 active 文本由 SkillActivator 产出(在调用方)
-	 * - toMessages 时注入到 memorySystemPrompt 之后、searchResultsMessages 之前
-	 * - 空串表示对应段不注入
+	 * ADR-012:第二个参数 `active` 已废弃,传入值会被忽略(指令靠 Session.messages)。
 	 *
 	 * @param discovery - Discovery 段文本(空串则不注入)
-	 * @param active - Active 段文本(空串则不注入)
+	 * @param _active - 忽略;保留签名兼容旧调用
 	 */
-	setSkillsContext(discovery: string, active: string): void {
+	setSkillsContext(discovery: string, _active: string = ''): void {
 		this.skillsDiscovery = discovery;
-		this.skillsActive = active;
+		this.skillsActive = '';
+		void _active;
+	}
+
+	/**
+	 * 本场 messages 是否已含该 skill 指令正文。
+	 */
+	hasSkillInstructions(name: string): boolean {
+		const session = this.requireSession();
+		return sessionHasSkillInstructions(session.messages, name);
+	}
+
+	/**
+	 * 将 skill 正文写入当前 Session(system + `[skill:name]` 前缀)。
+	 * 已存在则幂等跳过。
+	 */
+	appendSkillInstructions(name: string, body: string): void {
+		const session = this.requireSession();
+		if (sessionHasSkillInstructions(session.messages, name)) return;
+		session.messages.push({
+			role: 'system',
+			content: formatSkillInstructionsContent(name, body),
+		});
+		session.updatedAt = Date.now();
+	}
+
+	/**
+	 * 追加 supersede 短消息(无法从历史上物理删除已注入正文)。
+	 * 未注入过则 no-op;已 supersede 则幂等跳过。
+	 */
+	appendSkillSupersede(name: string): void {
+		const session = this.requireSession();
+		if (!sessionHasSkillInstructions(session.messages, name)) return;
+		if (sessionHasSkillSupersede(session.messages, name)) return;
+		session.messages.push({
+			role: 'system',
+			content: formatSkillSupersedeContent(name),
+		});
+		session.updatedAt = Date.now();
+	}
+
+	/**
+	 * 为 `activation: always` 的 skill 各注入一次(本场尚未写入时)。
+	 *
+	 * @param skills - always 且已启用的 Skill 列表
+	 */
+	ensureAlwaysSkillsInjected(skills: Skill[]): void {
+		for (const s of skills) {
+			this.appendSkillInstructions(s.manifest.name, s.instructions);
+		}
 	}
 
 	/**
@@ -328,6 +380,7 @@ export class ContextManager {
 	 * - 记忆注入位置在 system prompt 之后、检索结果之前,让 Agent 先"认识"用户再看检索上下文
 	 * - 历史消息超出 `maxHistoryTokens` 时触发 Layer 1 截断
 	 * - 系统提示词、记忆注入和搜索结果不在裁剪范围
+	 * - ADR-012:Skill 完整指令在 session.messages 内,此处只注入 Discovery 目录
 	 *
 	 * @param intent - 意图分类结果,默认 'direct'(向后兼容)
 	 * @returns 消息数组,首条为 system 角色
@@ -349,14 +402,11 @@ export class ContextManager {
 		if (this.memorySystemPrompt) {
 			messages.push({ role: 'system', content: this.memorySystemPrompt });
 		}
-		// 关键路径:Skill 段注入 — Discovery 在前,Active 在后,均位于 memory 与 searchResults 之间。
-		// 两段合并为一条 system 消息(避免消息数膨胀)。
-		const skillsText = [this.skillsDiscovery, this.skillsActive]
-			.filter((s) => s.length > 0)
-			.join('\n\n');
-		if (skillsText) {
-			messages.push({ role: 'system', content: skillsText });
+		// 关键路径:ADR-012 — 仅 Discovery;Active 段废弃(skillsActive 恒为空)。
+		if (this.skillsDiscovery) {
+			messages.push({ role: 'system', content: this.skillsDiscovery });
 		}
+		void this.skillsActive;
 		messages.push(...this.searchResultsMessages, ...trimmed);
 		return messages;
 	}

@@ -35,16 +35,31 @@ describe('deactivate_skill 工具', () => {
 		registry.reload([makeSkill('reviewer')], []);
 	});
 
-	it('反激活成功 - 返回 deactivated 消息', async () => {
+	it('反激活成功 - 有 session hooks 时写 supersede', async () => {
+		const superseded: string[] = [];
+		const tool = createDeactivateSkillTool(registry, fakeDef, {
+			hasInSession: () => true,
+			appendToSession: () => {},
+			supersedeInSession: (name) => superseded.push(name),
+		});
 		registry.activate('reviewer');
-		const tool = createDeactivateSkillTool(registry, fakeDef);
 		const result = await tool.execute({ name: 'reviewer' });
 		expect(result).toContain('已关闭');
+		expect(superseded).toEqual(['reviewer']);
 		expect(registry.getActive()).toHaveLength(0);
 	});
 
 	it('未激活 - 抛 notActive', async () => {
 		const tool = createDeactivateSkillTool(registry, fakeDef);
+		await expect(tool.execute({ name: 'reviewer' })).rejects.toThrow(/未激活/);
+	});
+
+	it('session hooks 未注入 - 抛 notActive', async () => {
+		const tool = createDeactivateSkillTool(registry, fakeDef, {
+			hasInSession: () => false,
+			appendToSession: () => {},
+			supersedeInSession: () => {},
+		});
 		await expect(tool.execute({ name: 'reviewer' })).rejects.toThrow(/未激活/);
 	});
 

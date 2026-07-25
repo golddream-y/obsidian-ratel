@@ -52,12 +52,7 @@ export class SkillRegistry {
 				this.activeSkills.delete(name);
 			}
 		}
-		// 关键路径:activation='always' 的 skill 自动激活(spec §4.5)。
-		for (const skill of skills) {
-			if (skill.manifest.activation === 'always' && this.isEnabled(skill.manifest.name)) {
-				this.activeSkills.add(skill.manifest.name);
-			}
-		}
+		// ADR-012:always 不再写入全局 activeSkills;由 ContextManager.ensureAlwaysSkillsInjected 按场注入。
 	}
 
 	/**
@@ -65,6 +60,15 @@ export class SkillRegistry {
 	 */
 	getAll(): Skill[] {
 		return Array.from(this.skills.values());
+	}
+
+	/**
+	 * `activation: always` 且已启用的 skill — 供每场 ensureAlwaysSkillsInjected。
+	 */
+	getAlwaysSkills(): Skill[] {
+		return this.getAll().filter(
+			(s) => s.manifest.activation === 'always' && this.isEnabled(s.manifest.name),
+		);
 	}
 
 	/**

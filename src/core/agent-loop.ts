@@ -88,6 +88,13 @@ export async function* agentLoop(
 	let lastUsage: { promptTokens: number; completionTokens: number } | undefined;
 	// 加载或初始化 session,然后把用户消息压入上下文。
 	await ctx.load(req.sessionId);
+	// ADR-012:always skill 按场一次性写入 messages;Discovery 仍走 setSkillsContext。
+	if (skillRegistry) {
+		ctx.ensureAlwaysSkillsInjected(skillRegistry.getAlwaysSkills());
+	}
+	if (skillActivator) {
+		ctx.setSkillsContext(skillActivator.composeDiscovery(ctx.getOverrides()), '');
+	}
 	ctx.addUserMessage(req.message);
 
 	// 关键路径:意图分类,判断是否需要 RAG 工作流。无 classifier 时降级 direct(向后兼容)。
@@ -254,21 +261,16 @@ export async function* agentLoop(
 
 				yield { type: 'tool.result', payload: { name: tc.name, result } };
 
-				// 关键路径:activate_skill / deactivate_skill 执行后,重组 system prompt 的 skills 段。
-				// 不重组则 LLM 下一轮看到的 system prompt 仍是旧的(不含新激活的 instructions / 仍含已关闭的)。
-				// 仅在工具未失败时重组(失败时 registry 状态可能未变更,避免无谓重算)。
+				// 关键路径:activate/deactivate 后只刷新 Discovery(ADR-012:指令已在 messages)。
 				if (
 					skillActivator &&
 					skillRegistry &&
 					(tc.name === 'activate_skill' || tc.name === 'deactivate_skill') &&
 					!toolFailed
 				) {
-					// 关键路径:用当前 settings.promptOverrides 重新产出 Discovery + Active 段,注入 ctx。
-					// skillRegistry 在条件中参与判断,确保 activator/registry 配对使用(避免 activator 拿到不匹配的 registry 状态)。
 					const overrides = ctx.getOverrides();
 					const discovery = skillActivator.composeDiscovery(overrides);
-					const active = skillActivator.composeActive();
-					ctx.setSkillsContext(discovery, active);
+					ctx.setSkillsContext(discovery, '');
 				}
 
 				// 关键路径:search_vault 返回后用 mapSearchResults 扁平化(逻辑外迁到 search-result-mapper)
@@ -313,7 +315,8 @@ export async function* agentLoop(
 			ctx.addAssistantMessage(notice);
 		}
 	} finally {
-		// 收尾:无论正常结束、break 还是异常,都保证发出 message.end + 持久化 session。
+		// 关键路径:先落盘再 message.end,避免 UI 在 end 上立刻 get/upsert 标题时读到未保存快照并覆盖正文。
+		await ctx.save();
 		yield {
 			type: 'message.end',
 			payload: {
@@ -322,6 +325,5 @@ export async function* agentLoop(
 				completionTokens: lastUsage?.completionTokens,
 			},
 		};
-		await ctx.save();
 	}
 }

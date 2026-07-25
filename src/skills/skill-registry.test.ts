@@ -32,14 +32,15 @@ describe('SkillRegistry', () => {
 		registry = new SkillRegistry();
 	});
 
-	it('reload - always 类型自动激活', () => {
+	it('reload - always 类型进入 getAlwaysSkills 但不进 getActive', () => {
 		const skills = [
 			makeSkill('auto-skill', { activation: 'auto' }),
 			makeSkill('always-skill', { activation: 'always' }),
 			makeSkill('manual-skill', { activation: 'manual' }),
 		];
 		registry.reload(skills, []);
-		expect(registry.getActive().map((s) => s.manifest.name)).toEqual(['always-skill']);
+		expect(registry.getActive()).toHaveLength(0);
+		expect(registry.getAlwaysSkills().map((s) => s.manifest.name)).toEqual(['always-skill']);
 	});
 
 	it('getDiscovered - 排除 manual 与 disabled', () => {

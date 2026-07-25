@@ -25,6 +25,9 @@ function createMockPersistence(sessions: Map<string, Session> = new Map()): Pers
 			append: async () => {},
 			list: async () => [],
 		},
+		getLastSessionId: async () => null,
+		setLastSessionId: async () => {},
+		listSessionIndex: async () => [],
 	};
 }
 

@@ -28,6 +28,9 @@ function createPersistence(sessions = new Map<string, Session>()): Persistence {
 			delete: async () => {},
 		},
 		hooks: { append: async () => {}, list: async () => [] },
+		getLastSessionId: async () => null,
+		setLastSessionId: async () => {},
+		listSessionIndex: async () => [],
 	};
 }
 

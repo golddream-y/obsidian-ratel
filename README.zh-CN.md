@@ -14,10 +14,9 @@
 
 ## 最近更新
 
-**这里写「现在能干什么」的短摘要；** 完整历史在 **[更新日志](CHANGELOG.md)**（连续小版本可用区间合并成一条）。
+**这里写「现在能干什么」的短摘要；** 完整历史见 **[更新日志](https://github.com/golddream-y/obsidian-ratel/blob/main/CHANGELOG.md)**。
 
-- **当前稳定版：[0.1.12](CHANGELOG.md#0110--0112---2026-07-18)** — 设置「外观」页（浅色 / 深色 / 跟随 Obsidian + 强调色，含铜色）；深色更暖；发送钮跟强调色；社区商店发版验签已修  
-- 更早：[0.1.9](CHANGELOG.md#019---2026-07-17) — 工具步骤白话说明（不是 JSON）；思考模式用完工具还能继续答；思考与工具一条轨迹 · [0.1.8](CHANGELOG.md#018---2026-07-17) — 对话优先侧栏、正文 `[n]` 可点
+- **当前稳定版：[0.1.13](https://github.com/golddream-y/obsidian-ratel/blob/main/CHANGELOG.md#0113---2026-07-25)** — 关掉侧栏再开还能续聊；右上角短标题芯片可切换最近对话；首轮自动起标题；`/new` 与列表「新对话」行为一致
 
 ---
 
@@ -89,7 +88,7 @@ DeepSeek / Claude / Ollama。密钥在 Obsidian 钥匙串，不进配置文件�
 | 文档 | 内容 |
 |---|---|
 | [使用手册](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/user-guide.md) | 上手、场景、斜杠命令、FAQ |
-| [更新日志](CHANGELOG.md) | 完整发版历史（连续小版本可合并成区间） |
+| [更新日志](https://github.com/golddream-y/obsidian-ratel/blob/main/CHANGELOG.md) | 完整发版历史（连续小版本可合并成区间） |
 | [架构](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/ARCHITECTURE.md) | 端口、Agent Loop、工具、Worker |
 
 问题与建议：[GitHub Issues](https://github.com/golddream-y/obsidian-ratel/issues)。

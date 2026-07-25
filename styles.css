@@ -301,13 +301,18 @@ body.theme-dark .ratel-appearance-root:not([data-ratel-scheme]):not([data-ratel-
 	min-height: 24px;
 }
 .ratel-appearance-preview-shell .ratel-send {
-	padding: 4px 10px;
-	border-radius: 6px;
+	min-width: 34px;
+	height: 34px;
+	padding: 0 10px;
+	border-radius: 10px;
 	border: none;
 	background: var(--interactive-accent);
 	color: var(--text-on-accent, #fff);
 	cursor: default;
 	opacity: 0.85;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
 }
 .ratel-appearance-preview-status {
 	font-size: 12px;
@@ -363,4 +368,21 @@ body.theme-dark .ratel-appearance-root:not([data-ratel-scheme]):not([data-ratel-
 }
 .ratel-appearance-hint {
 	margin-top: 8px;
+}
+
+/* ==================== Session 历史菜单(全局实色) ==================== */
+.ratel-session-menu {
+	background-color: #ffffff !important;
+	background-image: none !important;
+	opacity: 1 !important;
+	backdrop-filter: none !important;
+	-webkit-backdrop-filter: none !important;
+}
+body.theme-dark .ratel-session-menu,
+.theme-dark .ratel-session-menu {
+	background-color: #1e1e1e !important;
+}
+.ratel-session-menu-float {
+	z-index: 1000 !important;
+	isolation: isolate;
 }
