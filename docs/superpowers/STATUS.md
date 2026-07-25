@@ -17,13 +17,9 @@
 
 | ID | 文件 | 状态 | 创建日期 | 备注 |
 |---|---|---|---|---|
-| S-SESSION | [2026-07-23-chat-session-management-design.md](specs/2026-07-23-chat-session-management-design.md) | Active | 2026-07-23 | 续聊+/new+分文件;Header 短标题 chip;双轨标题;切换动效;ADR-012;待归档 |
 | S-SKILL | [2026-07-06-skill-mechanism-design.md](specs/2026-07-06-skill-mechanism-design.md) | Active | 2026-07-06 | Skill 机制;激活注入见 ADR-012;P-SKILL-2/3 pending |
 | S-SKILL-UX | [2026-07-21-skill-ux-design.md](specs/2026-07-21-skill-ux-design.md) | Active | 2026-07-21 | Skill UX;对齐 ADR-010 |
 | S-EVOLUTION | [2026-07-15-evolution-graph-agent.md](specs/2026-07-15-evolution-graph-agent.md) | Active | 2026-07-15 | 图谱原生 Agent;P-EVO-A-READ Completed;下步 P-EVO-A-FM |
-| S-CHAT-UI-V3 | [2026-07-16-chat-ui-v3-conversation-first.md](specs/2026-07-16-chat-ui-v3-conversation-first.md) | Active | 2026-07-16 | Conversation-first;待归档 |
-| S-CHAT-TRACE | [2026-07-17-chat-trace-human-detail.md](specs/2026-07-17-chat-trace-human-detail.md) | Active | 2026-07-17 | Trace;待归档 |
-| S-UI-APPEARANCE | [2026-07-17-ui-appearance-theme.md](specs/2026-07-17-ui-appearance-theme.md) | Active | 2026-07-17 | 外观 Tab;待归档 |
 
 ---
 
@@ -31,11 +27,7 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
-| P-SESSION | [2026-07-23-chat-session-management.md](plans/2026-07-23-chat-session-management.md) | ✅ Completed | S-SESSION | 已合入 main;发版 0.1.13;待归档 |
-| P-CHAT-UI-V3-1 | [2026-07-16-chat-ui-v3-p1-layout.md](plans/2026-07-16-chat-ui-v3-p1-layout.md) | ✅ Completed | S-CHAT-UI-V3 | 已合入 main;发版 0.1.8;待归档 |
-| P-CHAT-TRACE | [2026-07-17-chat-trace-human-detail.md](plans/2026-07-17-chat-trace-human-detail.md) | ✅ Completed | S-CHAT-TRACE | 发版 0.1.9 |
-| P-UI-APPEARANCE | [2026-07-17-ui-appearance-theme.md](plans/2026-07-17-ui-appearance-theme.md) | ✅ Completed | S-UI-APPEARANCE | 已合入 main;发版 0.1.10;待归档 |
-| P-EVO-A-READ | [2026-07-15-evo-a-read.md](plans/2026-07-15-evo-a-read.md) | ✅ Completed | S-EVOLUTION | 分支 feat/p-evo-a-read;6 Task + final fix;730 tests;待合并 |
+| P-EVO-A-READ | [2026-07-15-evo-a-read.md](plans/2026-07-15-evo-a-read.md) | ✅ Completed | S-EVOLUTION | 分支 feat/p-evo-a-read;6 Task + final fix;730 tests;待核对是否已合 main |
 | P-EVO-A-FM | — | ⏳ Pending | S-EVOLUTION | update_frontmatter;依赖 P-EVO-A-READ;plan 待写 |
 | P-SKILL-2-EXECUTION | — | ⏳ Pending | S-SKILL | references+scripts 沙箱;降优先级,plan 待写 |
 | P-SKILL-3-UI | — | ⏳ Pending | S-SKILL | Skill UI;降优先级,plan 待写 |
@@ -57,12 +49,11 @@
 
 ## Future execution queue(按顺序)
 
-1. **S-SESSION / P-SESSION 归档**— 已发版 0.1.13,待归档  
+1. **核对 P-EVO-A-READ 合入状态**— Completed 但备注曾写待合并  
 2. **P-EVO-A-FM**(update_frontmatter)— plan 待写  
 3. **S-EVOLUTION Phase B**(Write Gate + open_note)— plan 待写  
 4. **S-EVOLUTION Phase C**(task_plan + 沉淀)— plan 待写  
 5. **P-SKILL-2-EXECUTION** / **P-SKILL-3-UI**— 降优先级;P-SKILL-3 对齐 S-SKILL-UX  
-6. **S-CHAT-UI-V3 / S-CHAT-TRACE / S-UI-APPEARANCE 归档**— 已发版,待归档  
 
 ---
 
@@ -72,6 +63,10 @@
 
 | ID | 归档目录 | 归档日期 | 备注 |
 |---|---|---|---|
+| S-SESSION | [archive/S-SESSION/](archive/S-SESSION/) | 2026-07-25 | 发版 0.1.13 |
+| S-CHAT-UI-V3 | [archive/S-CHAT-UI-V3/](archive/S-CHAT-UI-V3/) | 2026-07-25 | 发版 0.1.8 |
+| S-CHAT-TRACE | [archive/S-CHAT-TRACE/](archive/S-CHAT-TRACE/) | 2026-07-25 | 发版 0.1.9 |
+| S-UI-APPEARANCE | [archive/S-UI-APPEARANCE/](archive/S-UI-APPEARANCE/) | 2026-07-25 | 发版 0.1.10 |
 | S-ARCH-001 | [archive/S-ARCH-001/](archive/S-ARCH-001/) | 2026-06-14 | — |
 | S-MODEL-001 | [archive/S-MODEL-001/](archive/S-MODEL-001/) | 2026-06-14 | — |
 | S-TEST-ARCH | [archive/S-TEST-ARCH/](archive/S-TEST-ARCH/) | 2026-06-14 | 含 P-W3-TEST / P-W4-TEST(Superseded) |
