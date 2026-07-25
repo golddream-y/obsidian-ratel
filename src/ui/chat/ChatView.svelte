@@ -454,11 +454,11 @@
 
 	let keyTick = $state(0);
 	const hasKey = $derived.by(() => {
-		keyTick;
+		void keyTick;
 		return hasChatApiKey(plugin.app, plugin.settings);
 	});
 	const gate = $derived.by(() => {
-		keyTick;
+		void keyTick;
 		return evaluateChatSendGate(plugin.settings, $statusStore, { hasChatApiKey: hasKey });
 	});
 	const slashVisible = $derived.by(() => {

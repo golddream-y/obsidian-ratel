@@ -8,8 +8,18 @@ import sveltePlugin from 'eslint-plugin-svelte';
 export default tseslint.config(
 	{
 		// 关键路径:dist/ 是 esbuild 产物,.trae/ 是技能文件,scripts/ 暂不纳入 lint。
-		// eslint.config.mts 不在 tsconfig include 内,无法做 typed linting,跳过。
-		ignores: ['dist/**', '.trae/**', 'scripts/**', 'eslint.config.mts'],
+		// .worktrees/ 是本地 git worktree,含独立 eslint/tsconfig,扫进去会 typed-lint 炸。
+		// tests/ 预存大量 unsafe/mock 债,不挡发版;typed lint 只盯 src(与 Obsidian 产物相关)。
+		// eslint.config.mts / vitest.config.ts 不在 tsconfig include 内,跳过。
+		ignores: [
+			'dist/**',
+			'.trae/**',
+			'scripts/**',
+			'.worktrees/**',
+			'tests/**',
+			'eslint.config.mts',
+			'vitest.config.ts',
+		],
 	},
 	js.configs.recommended,
 	...tseslint.configs.recommended,
@@ -20,6 +30,10 @@ export default tseslint.config(
 	...obsidianmd.configs.recommended,
 	{
 		rules: {
+			// 关键路径:关闭 eslint 核心 no-unused-vars,改由 @typescript-eslint 管 —
+			// 否则 Svelte $props() 回调类型里的 (id: string) 参数名会被误报,
+			// 且与下方 argsIgnorePattern 双轨冲突(CI Lint 长期红)。
+			'no-unused-vars': 'off',
 			// 关键路径:允许 _ 前缀的变量/参数作为占位,测试与 mock 中常见。
 			'@typescript-eslint/no-unused-vars': [
 				'error',

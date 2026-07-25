@@ -447,7 +447,13 @@ export class VectraStore implements VectorStore {
  * @returns true 时应静默降级纯向量
  */
 export function isBm25CorpusTooSmall(err: unknown): boolean {
-	const msg = err instanceof Error ? err.message : String(err ?? '');
+	// 安全路径:只抽取可预测字符串,避免 String(object) → "[object Object]"
+	const msg =
+		err instanceof Error
+			? err.message
+			: typeof err === 'string'
+				? err
+				: '';
 	return /document collection is too small for consolidation/i.test(msg)
 		|| /too small for consolidation/i.test(msg);
 }

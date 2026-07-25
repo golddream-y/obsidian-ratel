@@ -237,8 +237,9 @@ export class PersistenceJson implements Persistence {
 	private async hydrateFromRaw(stored: Record<string, unknown>): Promise<void> {
 		const notes = (stored.notes as Record<string, NoteMeta>) ?? {};
 		const hookLog = (stored.hookLog as HookLogEntry[]) ?? [];
-		let sessionIndex = Array.isArray(stored.sessionIndex)
-			? ([...stored.sessionIndex] as SessionIndexEntry[])
+		// 安全路径:先收窄为数组再拷贝,避免对 any 做 unsafe spread
+		let sessionIndex: SessionIndexEntry[] = Array.isArray(stored.sessionIndex)
+			? (stored.sessionIndex as SessionIndexEntry[]).slice()
 			: [];
 		let lastSessionId =
 			typeof stored.lastSessionId === 'string' ? stored.lastSessionId : null;
