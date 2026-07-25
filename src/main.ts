@@ -1069,7 +1069,7 @@ export default class RatelVaultPlugin extends Plugin {
 	/** 持久化当前设置到 Obsidian data.json(与 Persistence 字段 merge,互不覆盖)。 */
 	async saveSettings() {
 		const existing = ((await this.loadData()) ?? {}) as Record<string, unknown>;
-		await this.saveData(mergePluginData(existing, { ...this.settings } as Record<string, unknown>));
+		await this.saveData(mergePluginData(existing, { ...this.settings }));
 		// 关键路径:settings 变更后热替换工具 definition,让 LLM 立即看到新 description。
 		this.syncToolDefinitions();
 		// 关键路径:通知 Chat / Memory 等视图重跑 applyRatelAppearance(热更新外观)。

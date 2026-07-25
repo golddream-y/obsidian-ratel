@@ -18,8 +18,10 @@ jobs:
                   node-version: 24
                   cache: 'npm'
 
+            # 与 release.yml 同因:macOS 生成的 package-lock 常缺 Linux optional
+            # (@emnapi 等),`npm ci` 在 ubuntu-latest 上 EUSAGE。改用 npm install。
             - name: Install dependencies
-              run: npm ci
+              run: npm install --no-fund --no-audit
 
             - name: Lint
               run: npm run lint

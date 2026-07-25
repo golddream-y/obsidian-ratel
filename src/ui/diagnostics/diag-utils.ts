@@ -173,7 +173,7 @@ export function renderError(container: HTMLElement, error: DiagError): void {
             try {
                 rawText = typeof error.raw === 'string' ? error.raw : JSON.stringify(error.raw, null, 2);
             } catch {
-                rawText = String(error.raw);
+                rawText = '[unserializable]';
             }
             details.createEl('pre', { cls: 'ratel-diag-error-raw', text: rawText });
         }

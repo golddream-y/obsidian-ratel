@@ -158,7 +158,11 @@ export class SkillLoader {
 	): SkillActivation {
 		if (value === 'auto' || value === 'manual' || value === 'always') return value;
 		if (value !== undefined) {
-			warnings.push({ path: skillPath, message: `activation 非法值 "${value}",降级 auto` });
+			const shown =
+				typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
+					? String(value)
+					: typeof value;
+			warnings.push({ path: skillPath, message: `activation 非法值 "${shown}",降级 auto` });
 		}
 		return 'auto';
 	}
