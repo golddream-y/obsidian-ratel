@@ -141,51 +141,82 @@
       color: var(--copper);
     }
 
-    /* ==================== Header 右侧：历史图标 + 模型 ==================== */
+    /* ==================== Header 右侧：会话 chip(短标题) + 模型 ==================== */
     .header-actions {
       display: flex;
       align-items: center;
       gap: 6px;
       position: relative;
+      min-width: 0;
+      flex-shrink: 1;
     }
 
-    .icon-ghost {
-      width: 28px;
+    /*
+     * 方案 A：短标题 + 时钟合一 chip
+     * 宽度硬限制 — 侧栏窄，不能抢品牌 / 模型 chip
+     */
+    .session-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      max-width: 132px;
+      min-width: 0;
       height: 28px;
-      display: grid;
-      place-items: center;
-      border-radius: 8px;
-      border: 1px solid transparent;
+      padding: 0 8px 0 10px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
       background: transparent;
-      color: var(--paper-faint);
+      color: var(--paper-muted);
       cursor: pointer;
+      font-family: var(--font);
+      font-size: 12px;
+      font-weight: 500;
       transition: color 0.15s, border-color 0.15s, background 0.15s;
     }
 
-    .icon-ghost:hover,
-    .icon-ghost[aria-expanded="true"] {
+    .session-chip:hover,
+    .session-chip[aria-expanded="true"] {
       color: var(--copper);
-      border-color: var(--line);
+      border-color: var(--copper-glow);
       background: var(--copper-soft);
     }
 
-    .icon-ghost svg {
-      width: 15px;
-      height: 15px;
+    .session-chip-label {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      line-height: 1.2;
+    }
+
+    .session-chip-ico {
+      flex-shrink: 0;
+      width: 14px;
+      height: 14px;
       stroke: currentColor;
       fill: none;
       stroke-width: 1.75;
       stroke-linecap: round;
       stroke-linejoin: round;
+      opacity: 0.85;
     }
 
-    /* 会话小菜单 — 不是侧栏，轻量 popover */
+    .session-chip.is-loading .session-chip-ico {
+      animation: session-spin 0.8s linear infinite;
+    }
+
+    /* 兼容旧类名（若脚本仍引用） */
+    .icon-ghost {
+      display: none;
+    }
+
+    /* 会话小菜单 — 不是侧栏，轻量 popover；加宽以容纳双行标题 */
     .session-menu {
       position: absolute;
       top: calc(100% + 8px);
       right: 0;
-      width: 260px;
-      max-height: 280px;
+      width: 280px;
+      max-height: 300px;
       overflow: hidden;
       display: none;
       flex-direction: column;
@@ -260,11 +291,22 @@
       border-color: rgba(201, 149, 108, 0.22);
     }
 
-    .session-row .title {
+    .session-row .title-short {
       font-size: 13px;
-      font-weight: 500;
+      font-weight: 550;
       color: var(--paper);
       line-height: 1.35;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .session-row .title-full {
+      font-size: 11.5px;
+      font-weight: 450;
+      color: var(--paper-muted);
+      line-height: 1.4;
+      margin-top: 2px;
       display: -webkit-box;
       -webkit-line-clamp: 2;
       -webkit-box-orient: vertical;
@@ -375,7 +417,7 @@
       to { opacity: 1; transform: translateY(0); }
     }
 
-    .session-row.is-loading .title::after {
+    .session-row.is-loading .title-short::after {
       content: '';
       display: inline-block;
       width: 10px;
@@ -386,10 +428,6 @@
       border-top-color: var(--copper);
       border-radius: 50%;
       animation: session-spin 0.65s linear infinite;
-    }
-
-    .icon-ghost.is-loading svg {
-      animation: session-spin 0.8s linear infinite;
     }
 
     /* ==================== Messages — 主角 ==================== */
@@ -883,7 +921,7 @@
 </head>
 <body>
   <div class="stage">
-    <div class="stage-label">Ratel · Chat prototype v3.1 · Sessions</div>
+    <div class="stage-label">Ratel · Chat prototype v3.1 · Sessions · 双轨标题 chip</div>
 
     <div class="chat">
       <!-- Header：品牌 + 历史小图标 + 模型 -->
@@ -895,16 +933,16 @@
         <div class="header-actions">
           <button
             type="button"
-            class="icon-ghost"
+            class="session-chip"
             id="sessionToggle"
             title="会话"
-            aria-label="会话列表"
+            aria-label="当前会话：性能预算… · 打开列表"
             aria-expanded="true"
             aria-controls="sessionMenu"
             onclick="toggleSessionMenu(event)"
           >
-            <!-- 时钟/历史：刻意小，不是第二侧栏 -->
-            <svg viewBox="0 0 24 24" aria-hidden="true">
+            <span class="session-chip-label" id="sessionChipLabel">性能预算…</span>
+            <svg class="session-chip-ico" viewBox="0 0 24 24" aria-hidden="true">
               <circle cx="12" cy="12" r="8"></circle>
               <path d="M12 8v4l2.5 1.5"></path>
             </svg>
@@ -1048,23 +1086,40 @@
     </div>
 
     <p class="proto-note">
-      <strong>确认点：</strong>右上角只有一个历史图标。
-      切换会话时：消息区淡出 → 短暂 loading（模拟读单场文件）→ 淡入；
-      菜单行与时钟图标也会转圈。尊重系统「减少动态效果」时跳过动画。
+      <strong>确认点（方案 A）：</strong>Header 右侧是「短标题 + 时钟」合一 chip（max-width ~132px，省略号）。
+      下拉每行：短标题 + 正常标题（双轨；LLM 生成时分别限长，如短 ≤12 / 正常 ≤40）。
+      切换会话时：消息区淡出 → loading → 淡入；chip 图标转圈。
     </p>
   </div>
 
   <script>
-    /* —— 会话原型：可点切换 / 新对话 / 删除 —— */
+    /* —— 会话原型：双轨标题 + 短标题 chip —— */
+    /** Header 短标题上限（字）；正常标题上限（字）— 落地时 LLM / 截断共用 */
+    const SHORT_TITLE_MAX = 12;
+    const FULL_TITLE_MAX = 40;
+
+    function clipTitle(text, max) {
+      const t = String(text || '').trim().replace(/\s+/g, ' ');
+      if (!t) return '';
+      return t.length <= max ? t : t.slice(0, max - 1) + '…';
+    }
+
+    /** 从正常标题派生短标题（原型本地截断；产品侧可由 LLM 另出短标题） */
+    function deriveShort(full) {
+      return clipTitle(full, SHORT_TITLE_MAX) || '新对话';
+    }
+
     const PROTO_SESSIONS = [
       {
         id: 's1',
+        shortTitle: '性能预算…',
         title: '性能预算与 CDN 背景说明',
         when: '刚才',
-        html: null, // 挂载后从 #messages 抓取
+        html: null,
       },
       {
         id: 's2',
+        shortTitle: '本周未完…',
         title: '整理本周未完成的项目笔记',
         when: '昨天',
         html: `
@@ -1085,6 +1140,7 @@
       },
       {
         id: 's3',
+        shortTitle: '新对话',
         title: '新对话',
         when: '周一',
         html: `
@@ -1106,17 +1162,39 @@
       PROTO_SESSIONS[0].html = el.innerHTML;
     }
 
+    function currentSession() {
+      return PROTO_SESSIONS.find((x) => x.id === currentSessionId);
+    }
+
+    function syncSessionChip() {
+      const s = currentSession();
+      const short = (s && (s.shortTitle || deriveShort(s.title))) || '新对话';
+      const full = (s && s.title) || short;
+      const label = document.getElementById('sessionChipLabel');
+      const btn = document.getElementById('sessionToggle');
+      if (label) label.textContent = short;
+      if (btn) {
+        btn.title = full;
+        btn.setAttribute('aria-label', `当前会话：${short} · 打开列表`);
+      }
+    }
+
     function renderSessionList(loadingId) {
       const list = document.getElementById('sessionList');
-      list.innerHTML = PROTO_SESSIONS.map((s) => `
+      list.innerHTML = PROTO_SESSIONS.map((s) => {
+        const short = s.shortTitle || deriveShort(s.title);
+        const full = clipTitle(s.title, FULL_TITLE_MAX) || short;
+        return `
         <div class="session-row ${s.id === currentSessionId ? 'current' : ''} ${loadingId === s.id ? 'is-loading' : ''}" role="menuitem">
           <div class="session-row-body" onclick="protoSwitchSession('${s.id}')">
-            <div class="title">${s.title}</div>
+            <div class="title-short">${short}</div>
+            <div class="title-full">${full}</div>
             <div class="when">${s.when}</div>
           </div>
           <button type="button" class="del" title="删除" onclick="protoDeleteSession('${s.id}')">×</button>
         </div>
-      `).join('');
+      `;
+      }).join('');
     }
 
     function setSessionLoading(on, label) {
@@ -1143,7 +1221,6 @@
       if (!reduce) await wait(150);
 
       setSessionLoading(true, loadLabel);
-      // 模拟按需读 sessions/<id>.json
       if (delay) await wait(delay);
 
       messages.innerHTML = html || '';
@@ -1174,6 +1251,7 @@
 
       try {
         currentSessionId = id;
+        syncSessionChip();
         await transitionToHtml(s.html || '', { loadLabel: '加载会话…' });
         renderSessionList();
       } finally {
@@ -1189,16 +1267,17 @@
       const id = 's' + Date.now();
       PROTO_SESSIONS.unshift({
         id,
+        shortTitle: '新对话',
         title: '新对话',
         when: '现在',
         html: '',
       });
       currentSessionId = id;
+      syncSessionChip();
       renderSessionList(id);
 
       try {
         await transitionToHtml('', { loadLabel: '新对话…', skipDelay: false });
-        // 新对话可略快
         renderSessionList();
         document.getElementById('chatInput').focus();
       } finally {
@@ -1243,6 +1322,7 @@
     });
 
     captureInitialMessages();
+    syncSessionChip();
     renderSessionList();
 
     function toggleDrawer() {

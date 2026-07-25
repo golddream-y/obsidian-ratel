@@ -1,75 +1,152 @@
 /**
  * @file src/adapters/persistence-json.ts
- * @description JSON 持久化适配器 — 把 Session / NoteMeta / HookLog 存到 Obsidian loadData/saveData 之后端
+ * @description JSON 持久化 — notes/hooks/索引进 data.json；Session 正文进 sessions/*.json
  * @module adapters/persistence-json
- * @depends ports/persistence
+ * @depends ports/persistence, session-file-store, data-json-merge
  */
 
-import type { Persistence, SessionRepository, NoteMetaRepository, HookLogRepository, Session, NoteMeta, HookLogEntry } from '../ports/persistence';
+import * as path from 'node:path';
+import type {
+	Persistence,
+	SessionRepository,
+	NoteMetaRepository,
+	HookLogRepository,
+	Session,
+	SessionIndexEntry,
+	NoteMeta,
+	HookLogEntry,
+} from '../ports/persistence';
 import { devLogger } from '../logging/dev-logger';
+import { DEFAULT_MAX_SESSIONS, SessionFileStore } from './session-file-store';
+import { mergePluginData } from './data-json-merge';
+import {
+	FULL_TITLE_MAX,
+	clipTitle,
+	deriveShortTitle,
+	normalizeTitlePair,
+} from '../ui/chat/session/session-title';
 
 /**
- * 整体落盘结构 — 三个仓库共存于同一个 JSON 文件,符合 Obsidian 插件一个 `data.json` 的现实约束。
+ * 无显式标题时用首条 user 截断作索引标题,避免列表全是「新对话」。
+ * 同时补齐 shortTitle(Header chip)。
  */
-interface DataStore {
-	sessions: Record<string, Session>;
+function deriveSessionTitles(session: Session): { title: string; shortTitle: string } {
+	let title = session.title?.trim() ?? '';
+	if (!title) {
+		for (const m of session.messages) {
+			if (m.role === 'user' && typeof m.content === 'string' && m.content.trim()) {
+				title = clipTitle(m.content, FULL_TITLE_MAX);
+				break;
+			}
+		}
+	}
+	return normalizeTitlePair({
+		title,
+		shortTitle: session.shortTitle,
+	});
+}
+
+/**
+ * data.json 中由 Persistence 维护的字段(不含 settings 扁平键)。
+ */
+interface PersistenceSlice {
+	sessionIndex: SessionIndexEntry[];
+	lastSessionId: string | null;
 	notes: Record<string, NoteMeta>;
 	hookLog: HookLogEntry[];
 }
 
 /**
- * 基于 Obsidian `loadData` / `saveData` 的 JSON 持久化实现。
+ * 基于 Obsidian loadData/saveData + 分文件 Session 的持久化实现。
  *
  * 设计要点:
- * - 三个仓库对象在构造期一次性创建,内部共享 `ensureLoaded` / `persist`。
- * - 加载使用共享 Promise(`loadingPromise`)合并并发请求,避免冷启动 race。
- * - 写入用 `persistPromise.then` 链串行化,保证并发写不互相覆盖。
- * - 损坏数据采用"丢弃+日志"策略,不让一个错误 JSON 把整个插件状态锁死。
- *
- * @example
- *   const persistence = new PersistenceJson(plugin.loadData, plugin.saveData);
- *   await persistence.sessions.upsert({ id, updatedAt: Date.now(), ... });
+ * - Session 正文只经 SessionFileStore；data.json 仅索引 + lastSessionId + notes + hooks
+ * - persist 时 read-merge-write,保留 settings 等其它键
+ * - 启动时若发现旧版内嵌 sessions Record,迁移到文件并清掉内嵌
  */
 export class PersistenceJson implements Persistence {
 	public readonly sessions: SessionRepository;
 	public readonly notes: NoteMetaRepository;
 	public readonly hooks: HookLogRepository;
 
-	private data: DataStore = { sessions: {}, notes: {}, hookLog: [] };
+	private data: PersistenceSlice = {
+		sessionIndex: [],
+		lastSessionId: null,
+		notes: {},
+		hookLog: [],
+	};
+	private readonly fileStore: SessionFileStore;
+	private loaded = false;
+	private loadingPromise: Promise<void> | null = null;
+	private persistPromise: Promise<void> | null = null;
 
 	constructor(
 		private loadData: () => Promise<unknown>,
 		private saveData: (data: unknown) => Promise<void>,
+		pluginDir: string,
 	) {
+		this.fileStore = new SessionFileStore(path.join(pluginDir, 'sessions'));
+
 		this.sessions = {
 			get: async (id: string) => {
 				await this.ensureLoaded();
-				const session = this.data.sessions[id] ?? null;
-				return session ? { ...session } : null;
+				const session = await this.fileStore.get(id);
+				return session ? { ...session, messages: [...session.messages] } : null;
 			},
 			upsert: async (session: Session) => {
 				await this.ensureLoaded();
-				this.data.sessions[session.id] = { ...session };
+				const titles = deriveSessionTitles(session);
+				const titled: Session = {
+					...session,
+					title: titles.title,
+					shortTitle: titles.shortTitle,
+					messages: [...session.messages],
+				};
+				await this.fileStore.upsert(titled);
+				this.upsertIndexEntry({
+					id: titled.id,
+					title: titled.title,
+					shortTitle: titled.shortTitle,
+					createdAt: titled.createdAt,
+					updatedAt: titled.updatedAt,
+					messageCount: titled.messages.length,
+				});
+				this.data.sessionIndex = await this.fileStore.enforceMaxSessions(
+					this.data.sessionIndex,
+					DEFAULT_MAX_SESSIONS,
+				);
 				await this.persist();
 			},
 			list: async (limit?: number) => {
 				await this.ensureLoaded();
-				// 关键路径:按 updatedAt 倒序,最近的会话排前面。
-				const all = Object.values(this.data.sessions)
-					.sort((a, b) => b.updatedAt - a.updatedAt);
-				return limit ? all.slice(0, limit) : all;
+				// 关键路径:list 只返回瘦 Session(messages: []),全文走 get — 避免列表扫全文件
+				const entries = [...this.data.sessionIndex].sort((a, b) => b.updatedAt - a.updatedAt);
+				const sliced = limit ? entries.slice(0, limit) : entries;
+				return sliced.map((e) => ({
+					id: e.id,
+					title: e.title,
+					shortTitle: e.shortTitle ?? deriveShortTitle(e.title),
+					messages: [] as Session['messages'],
+					createdAt: e.createdAt,
+					updatedAt: e.updatedAt,
+				}));
 			},
 			delete: async (id: string) => {
 				await this.ensureLoaded();
-				delete this.data.sessions[id];
+				await this.fileStore.delete(id);
+				this.data.sessionIndex = this.data.sessionIndex.filter((e) => e.id !== id);
+				if (this.data.lastSessionId === id) {
+					const newest = [...this.data.sessionIndex].sort((a, b) => b.updatedAt - a.updatedAt)[0];
+					this.data.lastSessionId = newest?.id ?? null;
+				}
 				await this.persist();
 			},
 		};
 
 		this.notes = {
-			get: async (path: string) => {
+			get: async (pathKey: string) => {
 				await this.ensureLoaded();
-				const meta = this.data.notes[path] ?? null;
+				const meta = this.data.notes[pathKey] ?? null;
 				return meta ? { ...meta } : null;
 			},
 			upsert: async (meta: NoteMeta) => {
@@ -79,12 +156,11 @@ export class PersistenceJson implements Persistence {
 			},
 			listByPath: async (prefix: string) => {
 				await this.ensureLoaded();
-				return Object.values(this.data.notes)
-					.filter((n) => n.path.startsWith(prefix));
+				return Object.values(this.data.notes).filter((n) => n.path.startsWith(prefix));
 			},
-			delete: async (path: string) => {
+			delete: async (pathKey: string) => {
 				await this.ensureLoaded();
-				delete this.data.notes[path];
+				delete this.data.notes[pathKey];
 				await this.persist();
 			},
 		};
@@ -97,39 +173,55 @@ export class PersistenceJson implements Persistence {
 			},
 			list: async (limit?: number) => {
 				await this.ensureLoaded();
-				// 关键路径:最新的排在前面(append-only 日志通常关注尾部)。
 				const all = [...this.data.hookLog].reverse();
 				return limit ? all.slice(0, limit) : all;
 			},
 		};
 	}
 
-	private loaded = false;
-	private loadingPromise: Promise<void> | null = null;
-	private persistPromise: Promise<void> | null = null;
+	async getLastSessionId(): Promise<string | null> {
+		await this.ensureLoaded();
+		return this.data.lastSessionId;
+	}
 
-	/**
-	 * 确保数据已从 `loadData` 加载到内存,后续调用直接返回。
-	 *
-	 * 关键路径:用共享 Promise 把"首次加载"做合并去重,避免并发请求各自拉一遍 JSON。
-	 */
+	async setLastSessionId(id: string | null): Promise<void> {
+		await this.ensureLoaded();
+		this.data.lastSessionId = id;
+		await this.persist();
+	}
+
+	async listSessionIndex(limit?: number): Promise<SessionIndexEntry[]> {
+		await this.ensureLoaded();
+		const sorted = [...this.data.sessionIndex].sort((a, b) => b.updatedAt - a.updatedAt);
+		return limit ? sorted.slice(0, limit) : sorted;
+	}
+
+	private upsertIndexEntry(entry: SessionIndexEntry): void {
+		const i = this.data.sessionIndex.findIndex((e) => e.id === entry.id);
+		if (i >= 0) {
+			this.data.sessionIndex[i] = entry;
+		} else {
+			this.data.sessionIndex.push(entry);
+		}
+	}
+
 	private async ensureLoaded(): Promise<void> {
 		if (this.loaded) return;
 		if (!this.loadingPromise) {
 			this.loadingPromise = (async () => {
 				try {
-					const raw = await this.loadData();
-					const stored = (raw ?? {}) as Partial<DataStore>;
-					this.data = {
-						sessions: (stored.sessions as Record<string, Session>) ?? {},
-						notes: (stored.notes as Record<string, NoteMeta>) ?? {},
-						hookLog: (stored.hookLog as HookLogEntry[]) ?? [],
-					};
+					const raw = (await this.loadData()) ?? {};
+					const stored = raw as Record<string, unknown>;
+					await this.hydrateFromRaw(stored);
 					this.loaded = true;
 				} catch (err) {
-					// 修复:JSON 损坏时降级为空存储 + 错误日志,避免插件启动失败。
 					devLogger.error('vault', 'Failed to load data, starting fresh', err);
-					this.data = { sessions: {}, notes: {}, hookLog: [] };
+					this.data = {
+						sessionIndex: [],
+						lastSessionId: null,
+						notes: {},
+						hookLog: [],
+					};
 					this.loaded = true;
 				} finally {
 					this.loadingPromise = null;
@@ -140,18 +232,145 @@ export class PersistenceJson implements Persistence {
 	}
 
 	/**
-	 * 把内存数据持久化到磁盘。
-	 *
-	 * 关键路径:用 `persistPromise.then` 串行化写盘,避免并发改写互相覆盖。
-	 * 写完清空引用,下一个写请求会作为新一轮的开头。
+	 * 从 data.json 原始对象恢复内存切片,必要时迁移旧 sessions。
+	 */
+	private async hydrateFromRaw(stored: Record<string, unknown>): Promise<void> {
+		const notes = (stored.notes as Record<string, NoteMeta>) ?? {};
+		const hookLog = (stored.hookLog as HookLogEntry[]) ?? [];
+		let sessionIndex = Array.isArray(stored.sessionIndex)
+			? ([...stored.sessionIndex] as SessionIndexEntry[])
+			: [];
+		let lastSessionId =
+			typeof stored.lastSessionId === 'string' ? stored.lastSessionId : null;
+
+		const legacy = stored.sessions as Record<string, Session> | undefined;
+		if (legacy && typeof legacy === 'object' && !Array.isArray(legacy)) {
+			const ids = Object.keys(legacy);
+			if (ids.length > 0) {
+				devLogger.info('vault', `迁移 ${ids.length} 个内嵌 session → sessions/*.json`);
+				for (const id of ids) {
+					const s = legacy[id];
+					if (!s || typeof s !== 'object') continue;
+					const rawSession: Session = {
+						id: typeof s.id === 'string' ? s.id : id,
+						title: typeof s.title === 'string' ? s.title : '',
+						shortTitle: typeof s.shortTitle === 'string' ? s.shortTitle : undefined,
+						messages: Array.isArray(s.messages) ? s.messages : [],
+						createdAt: typeof s.createdAt === 'number' ? s.createdAt : Date.now(),
+						updatedAt: typeof s.updatedAt === 'number' ? s.updatedAt : Date.now(),
+					};
+					const titles = deriveSessionTitles(rawSession);
+					const session: Session = {
+						...rawSession,
+						title: titles.title,
+						shortTitle: titles.shortTitle,
+					};
+					await this.fileStore.upsert(session);
+					if (!sessionIndex.some((e) => e.id === session.id)) {
+						sessionIndex.push({
+							id: session.id,
+							title: session.title,
+							shortTitle: session.shortTitle,
+							createdAt: session.createdAt,
+							updatedAt: session.updatedAt,
+							messageCount: session.messages.length,
+						});
+					}
+				}
+				sessionIndex = await this.fileStore.enforceMaxSessions(
+					sessionIndex,
+					DEFAULT_MAX_SESSIONS,
+				);
+				if (!lastSessionId && sessionIndex.length > 0) {
+					lastSessionId = [...sessionIndex].sort((a, b) => b.updatedAt - a.updatedAt)[0]!.id;
+				}
+				this.data = { sessionIndex, lastSessionId, notes, hookLog };
+				this.loaded = true;
+				await this.persist();
+				return;
+			}
+		}
+
+		this.data = { sessionIndex, lastSessionId, notes, hookLog };
+		await this.repairEmptyIndexTitles();
+	}
+
+	/**
+	 * 索引 title / shortTitle 缺失时从场文件回填(一次性修复旧数据)。
+	 */
+	private async repairEmptyIndexTitles(): Promise<void> {
+		let changed = false;
+		for (let i = 0; i < this.data.sessionIndex.length; i++) {
+			const entry = this.data.sessionIndex[i]!;
+			const needsTitle = !entry.title?.trim();
+			const needsShort = !entry.shortTitle?.trim();
+			if (!needsTitle && !needsShort) continue;
+			const session = await this.fileStore.get(entry.id);
+			if (!session) {
+				if (!needsTitle && needsShort && entry.title?.trim()) {
+					this.data.sessionIndex[i] = {
+						...entry,
+						shortTitle: deriveShortTitle(entry.title),
+					};
+					changed = true;
+				}
+				continue;
+			}
+			const titles = deriveSessionTitles(session);
+			if (!titles.title.trim() && !entry.title?.trim()) continue;
+			const nextTitle = entry.title?.trim() ? entry.title : titles.title;
+			const nextShort =
+				entry.shortTitle?.trim() ||
+				titles.shortTitle ||
+				deriveShortTitle(nextTitle);
+			this.data.sessionIndex[i] = {
+				...entry,
+				title: nextTitle,
+				shortTitle: nextShort,
+			};
+			if (!session.title?.trim() || !session.shortTitle?.trim()) {
+				await this.fileStore.upsert({
+					...session,
+					title: session.title?.trim() ? session.title : nextTitle,
+					shortTitle: session.shortTitle?.trim() ? session.shortTitle : nextShort,
+				});
+			}
+			changed = true;
+		}
+		if (changed) {
+			await this.persist();
+		}
+	}
+
+	/**
+	 * 把 Persistence 切片 merge 进 data.json(保留 settings 等其它键)。
 	 */
 	private async persist(): Promise<void> {
+		const write = async () => {
+			const existing = ((await this.loadData()) ?? {}) as Record<string, unknown>;
+			const { sessions: _drop, ...rest } = existing;
+			void _drop;
+			const next = mergePluginData(rest, {
+				sessionIndex: this.data.sessionIndex,
+				lastSessionId: this.data.lastSessionId,
+				notes: this.data.notes,
+				hookLog: this.data.hookLog,
+			});
+			// 关键路径:显式删除旧内嵌 sessions,避免残留全量正文
+			delete next.sessions;
+			await this.saveData(next);
+		};
+
 		if (this.persistPromise) {
-			this.persistPromise = this.persistPromise.then(() => this.saveData(this.data));
+			// 关键路径:前序 write 失败时仍继续后续 write,避免队列永久卡在 rejected promise。
+			this.persistPromise = this.persistPromise.then(write, write);
 		} else {
-			this.persistPromise = this.saveData(this.data);
+			this.persistPromise = write();
 		}
-		await this.persistPromise;
-		this.persistPromise = null;
+		try {
+			await this.persistPromise;
+		} finally {
+			this.persistPromise = null;
+		}
 	}
 }

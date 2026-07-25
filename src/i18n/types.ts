@@ -232,6 +232,16 @@ export interface ChatStrings {
   'chat.search.rerankHint': string;
   'chat.cite.openNote': string;
   'chat.cite.openFailed': string;
+  'chat.session.loading': string;
+  'chat.session.loadingNew': string;
+  'chat.session.menuRecent': string;
+  'chat.session.new': string;
+  'chat.session.delete': string;
+  'chat.session.ariaHistory': string;
+  'chat.session.ariaChip': string;
+  'chat.session.emptyTitle': string;
+  'chat.session.loadFailed': string;
+  'chat.session.noteMissing': string;
   'chat.attachments.deleteAria': string;
   'chat.attachments.invalidType': string;
   'chat.attachments.tooLarge': string;

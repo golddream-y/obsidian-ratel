@@ -8,12 +8,17 @@
 import type { ChatMessage } from './llm';
 
 /**
- * 持久化总接口,聚合三个 Repository。
+ * 持久化总接口,聚合三个 Repository 与会话索引辅助。
  */
 export interface Persistence {
 	sessions: SessionRepository;
 	notes: NoteMetaRepository;
 	hooks: HookLogRepository;
+	/** 最近活动会话 id(打开侧栏续聊用) */
+	getLastSessionId(): Promise<string | null>;
+	setLastSessionId(id: string | null): Promise<void>;
+	/** 轻量会话列表(不含 messages 正文) */
+	listSessionIndex(limit?: number): Promise<SessionIndexEntry[]>;
 }
 
 /**
@@ -68,10 +73,26 @@ export interface HookLogRepository {
  */
 export interface Session {
 	id: string;
+	/** 正常标题(列表副行 / tooltip),≤40 字 */
 	title: string;
+	/** Header chip 短标题,≤12 字;缺省时由 title 截断派生 */
+	shortTitle?: string;
 	messages: ChatMessage[];
 	createdAt: number;
 	updatedAt: number;
+}
+
+/**
+ * 轻量索引项 — 不含 messages,供列表与 lastSessionId 配套。
+ */
+export interface SessionIndexEntry {
+	id: string;
+	title: string;
+	/** Header / 列表主行短标题;缺省时由 title 截断派生 */
+	shortTitle?: string;
+	createdAt: number;
+	updatedAt: number;
+	messageCount?: number;
 }
 
 /**

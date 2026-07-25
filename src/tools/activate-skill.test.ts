@@ -1,6 +1,6 @@
 /**
  * @file src/tools/activate-skill.test.ts
- * @description activate_skill 工具单元测试
+ * @description activate_skill 工具单元测试(含 ADR-012 session hooks)
  * @module tools/activate-skill.test
  */
 
@@ -29,24 +29,36 @@ function makeSkill(name: string): Skill {
 describe('activate_skill 工具', () => {
 	let registry: SkillRegistry;
 	beforeEach(() => {
-		// 关键路径:工具返回值/错误消息走 i18n,锁定 zh 让正则稳定匹配"已激活"/"未找到"。
 		setLang('zh');
 		registry = new SkillRegistry();
 		registry.reload([makeSkill('reviewer')], []);
 	});
 
-	it('激活成功 - 返回 activated 消息', async () => {
-		const tool = createActivateSkillTool(registry, fakeDef);
+	it('激活成功 - 返回 activated 并写入 session hooks', async () => {
+		const injected: string[] = [];
+		const tool = createActivateSkillTool(registry, fakeDef, {
+			hasInSession: () => false,
+			appendToSession: (name, body) => {
+				injected.push(`${name}:${body}`);
+			},
+		});
 		const result = await tool.execute({ name: 'reviewer' });
 		expect(result).toContain('已激活');
+		expect(injected).toEqual(['reviewer:instr-reviewer']);
 		expect(registry.getActive().map((s) => s.manifest.name)).toContain('reviewer');
 	});
 
-	it('已激活 - 返回 alreadyActive', async () => {
-		registry.activate('reviewer');
-		const tool = createActivateSkillTool(registry, fakeDef);
+	it('会话已注入 - 返回 alreadyActive 且不再 append', async () => {
+		let appendCount = 0;
+		const tool = createActivateSkillTool(registry, fakeDef, {
+			hasInSession: (name) => name === 'reviewer',
+			appendToSession: () => {
+				appendCount += 1;
+			},
+		});
 		const result = await tool.execute({ name: 'reviewer' });
-		expect(result).toContain('已激活');
+		expect(result).toMatch(/已激活/);
+		expect(appendCount).toBe(0);
 	});
 
 	it('不存在 - 抛 notFound', async () => {

@@ -30,6 +30,11 @@ export class ToolPermissionSessionGrants {
 	grant(toolName: string, path?: string): void {
 		this.keys.add(this.key(toolName, path));
 	}
+
+	/** 清空本会话授权 — /new 或切换会话时调用 */
+	clear(): void {
+		this.keys.clear();
+	}
 }
 
 export function extractToolPath(toolCall: ToolCall): string | undefined {

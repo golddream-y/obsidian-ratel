@@ -20,6 +20,7 @@ import { HookRegistry } from './core/hooks';
 import { ToolRegistry } from './core/tool-registry';
 import { ObsidianVault } from './adapters/obsidian-vault';
 import { PersistenceJson } from './adapters/persistence-json';
+import { mergePluginData } from './adapters/data-json-merge';
 import { DeepSeekLLM } from './adapters/llm-deepseek';
 import type { EmbeddingPort } from './ports/embedding';
 import { EmbeddingApi } from './adapters/embedding-api';
@@ -144,6 +145,8 @@ export default class RatelVaultPlugin extends Plugin {
 	private skillLoader!: SkillLoader;
 	private skillRegistry!: SkillRegistry;
 	private skillActivator!: SkillActivator;
+	/** ADR-012:当前 ask 的 ContextManager,供 activate/deactivate 工具写 transcript */
+	private currentAskCtx: ContextManager | null = null;
 	modelManager!: ModelManager;
 	modelContextRegistry!: ModelContextRegistry;
 	indexController!: IndexController;
@@ -179,9 +182,14 @@ export default class RatelVaultPlugin extends Plugin {
 		// ==================== 适配器装配 ====================
 		this.vault = new ObsidianVault(this.app);
 		this.workspacePort = new ObsidianWorkspace(this.app);
+		// 关键路径:Persistence 分文件 sessions 依赖 pluginDir,须在构造前解析绝对路径
+		const adapter = this.app.vault.adapter as FileSystemAdapter;
+		const vaultBase = adapter.getBasePath();
+		const pluginDir = path.join(vaultBase, this.app.vault.configDir, 'plugins', 'ratel-vault');
 		this.persistence = new PersistenceJson(
 			() => this.loadData(),
 			(data) => this.saveData(data),
+			pluginDir,
 		);
 		this.llm = new DeepSeekLLM({
 			apiBase: this.settings.chatApiBase,
@@ -195,14 +203,8 @@ export default class RatelVaultPlugin extends Plugin {
 		this.rebuildEmbeddingAdapter();
 
 		// ==================== 索引目录(启动期) ====================
-		// 关键路径:`app.vault.adapter` 实际运行时是 `FileSystemAdapter`,
-		// `getBasePath()` 是 FileSystemAdapter 的方法,DataAdapter 基类不暴露,需要类型断言。
-		const adapter = this.app.vault.adapter as FileSystemAdapter;
-		const vaultBase = adapter.getBasePath();
-		// 关键路径:configDir 返回的是相对路径名(通常 '.obsidian',可自定义),不是绝对路径。
-		// 必须用 vaultBase 拼前缀,否则 fs.writeFileSync/fs.existsSync 会以 cwd 解析,导致 ENOENT。
-		const pluginDir = path.join(vaultBase, this.app.vault.configDir, 'plugins', 'ratel-vault');
-		// 关键路径:注入实际 configDir 名,供 path-safety 拦截配置目录访问(兼容用户自定义 configDir)。
+		// 关键路径:pluginDir / vaultBase 已在上方构造 Persistence 时解析。
+		// 注入实际 configDir 名,供 path-safety 拦截配置目录访问(兼容用户自定义 configDir)。
 		setConfigDir(this.app.vault.configDir);
 		this.indexDir = path.join(pluginDir, '.index');
 		// 关键路径:启动期 vectraStore 可能尚无 embeddings(本地模型在 onLayoutReady 才下载),
@@ -414,10 +416,30 @@ export default class RatelVaultPlugin extends Plugin {
 		);
 		this.tools.register(createRememberTool(this.memoryStore, toolDefMap.get('remember')!));
 		this.tools.register(createForgetMemoryTool(this.memoryStore, toolDefMap.get('forget_memory')!));
-		// 关键路径:P-SKILL-1-CORE — 2 个 skill 工具,复用 skillRegistry。
-		// definition 由 composeToolDefinitions 生成(ALL_TOOL_NAMES 已含 activate_skill/deactivate_skill)。
-		this.tools.register(createActivateSkillTool(this.skillRegistry, toolDefMap.get('activate_skill')!));
-		this.tools.register(createDeactivateSkillTool(this.skillRegistry, toolDefMap.get('deactivate_skill')!));
+		// 关键路径:P-SKILL / ADR-012 — skill 工具写入当前 ask 的 ContextManager(transcript)。
+		const skillSessionHooks = {
+			hasInSession: (name: string) => this.currentAskCtx?.hasSkillInstructions(name) ?? false,
+			appendToSession: (name: string, instructions: string) => {
+				this.currentAskCtx?.appendSkillInstructions(name, instructions);
+			},
+			supersedeInSession: (name: string) => {
+				this.currentAskCtx?.appendSkillSupersede(name);
+			},
+		};
+		this.tools.register(
+			createActivateSkillTool(
+				this.skillRegistry,
+				toolDefMap.get('activate_skill')!,
+				skillSessionHooks,
+			),
+		);
+		this.tools.register(
+			createDeactivateSkillTool(
+				this.skillRegistry,
+				toolDefMap.get('deactivate_skill')!,
+				skillSessionHooks,
+			),
+		);
 		// 关键路径(P-BASIC-ENV):环境感知工具 — 时间 / 活动笔记 / 日记 / 最近修改 / 大纲。
 		this.tools.register(createGetDatetimeTool(toolDefMap.get('get_datetime')!));
 		this.tools.register(
@@ -1044,9 +1066,10 @@ export default class RatelVaultPlugin extends Plugin {
 		normalizeAppearanceSettings(this.settings);
 	}
 
-	/** 持久化当前设置到 Obsidian data.json。 */
+	/** 持久化当前设置到 Obsidian data.json(与 Persistence 字段 merge,互不覆盖)。 */
 	async saveSettings() {
-		await this.saveData(this.settings);
+		const existing = ((await this.loadData()) ?? {}) as Record<string, unknown>;
+		await this.saveData(mergePluginData(existing, { ...this.settings } as Record<string, unknown>));
 		// 关键路径:settings 变更后热替换工具 definition,让 LLM 立即看到新 description。
 		this.syncToolDefinitions();
 		// 关键路径:通知 Chat / Memory 等视图重跑 applyRatelAppearance(热更新外观)。
@@ -1087,24 +1110,22 @@ export default class RatelVaultPlugin extends Plugin {
 		const ctx = new ContextManager(this.persistence, {
 			getOverrides: () => this.settings.promptOverrides,
 			getTools: () => this.tools.definitions(),
-			// 关键路径:注入 skills 段 getter,让 toMessages 时能拿到 Discovery + Active 文本。
-			// enableSkills=false 或无 skill 时返回空串(不注入)。
+			// ADR-012:仅 Discovery;Active 指令写入 Session.messages。
 			getSkillsDiscovery: () =>
 				this.settings.enableSkills
 					? this.skillActivator.composeDiscovery(this.settings.promptOverrides)
 					: '',
-			getSkillsActive: () =>
-				this.settings.enableSkills ? this.skillActivator.composeActive() : '',
+			getSkillsActive: () => '',
 		});
 
 		// 关键路径(P-BASIC-ENV):每次 ask 注入当前本地时间,零工具成本回答「今天几号」。
 		ctx.setEnvContext(formatEnvContextLine(new Date()));
 
-		// 关键路径:会话启动时设置初始 skills 段(Discovery + Active,后者含 always 激活的 skill)。
+		// 关键路径:会话启动时只注入 Discovery 目录(always / activate 写进 messages)。
 		if (this.settings.enableSkills) {
 			ctx.setSkillsContext(
 				this.skillActivator.composeDiscovery(this.settings.promptOverrides),
-				this.skillActivator.composeActive(),
+				'',
 			);
 		}
 
@@ -1138,20 +1159,25 @@ export default class RatelVaultPlugin extends Plugin {
 				(call) => showToolConfirmModal(this.app, call),
 			);
 
-		yield* agentLoop(
-			{ sessionId, message },
-			ctx,
-			this.llm,
-			this.tools,
-			this.hooks,
-			signal,
-			intentClassifier,
-			toolPermissionCheck,
-			this.settings.agentMaxSteps,
-			// 关键路径:注入 skillActivator + skillRegistry,让 activate/deactivate 工具执行后能重组 skills 段。
-			this.skillActivator,
-			this.skillRegistry,
-		);
+		// 关键路径:绑定当前 ctx 供 activate_skill / deactivate_skill 写 transcript。
+		this.currentAskCtx = ctx;
+		try {
+			yield* agentLoop(
+				{ sessionId, message },
+				ctx,
+				this.llm,
+				this.tools,
+				this.hooks,
+				signal,
+				intentClassifier,
+				toolPermissionCheck,
+				this.settings.agentMaxSteps,
+				this.skillActivator,
+				this.skillRegistry,
+			);
+		} finally {
+			this.currentAskCtx = null;
+		}
 	}
 
 	/**

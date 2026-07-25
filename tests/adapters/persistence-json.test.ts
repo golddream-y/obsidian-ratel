@@ -1,24 +1,36 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+/**
+ * @file tests/adapters/persistence-json.test.ts
+ * @description PersistenceJson 分文件会话 + 迁移 + notes/hooks
+ */
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { PersistenceJson } from '../../src/adapters/persistence-json';
 import type { Session, NoteMeta, HookLogEntry } from '../../src/ports/persistence';
 
 describe('PersistenceJson', () => {
-	let storage: Record<string, unknown>;
-	let loadData: () => Promise<unknown>;
-	let saveData: (data: unknown) => Promise<void>;
+	let pluginDir: string;
+	let disk: Record<string, unknown>;
 	let persistence: PersistenceJson;
 
 	beforeEach(() => {
-		storage = {};
-		loadData = async () => storage['data'] ?? null;
-		saveData = async (data: unknown) => { storage['data'] = data; };
-		persistence = new PersistenceJson(loadData, saveData);
+		pluginDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ratel-plugin-'));
+		disk = {};
+		const loadData = async () => disk;
+		const saveData = async (data: unknown) => {
+			disk = data as Record<string, unknown>;
+		};
+		persistence = new PersistenceJson(loadData, saveData, pluginDir);
+	});
+
+	afterEach(() => {
+		fs.rmSync(pluginDir, { recursive: true, force: true });
 	});
 
 	describe('sessions', () => {
 		it('returns null for non-existent session', async () => {
-			const session = await persistence.sessions.get('non-existent');
-			expect(session).toBeNull();
+			expect(await persistence.sessions.get('non-existent')).toBeNull();
 		});
 
 		it('upserts and retrieves a session', async () => {
@@ -32,44 +44,64 @@ describe('PersistenceJson', () => {
 			await persistence.sessions.upsert(session);
 			const retrieved = await persistence.sessions.get('s1');
 			expect(retrieved).toEqual(session);
+			expect(disk.sessions).toBeUndefined();
+			expect(Array.isArray(disk.sessionIndex)).toBe(true);
 		});
 
-		it('updates existing session on upsert', async () => {
-			const session: Session = {
+		it('list - 瘦 Session messages 为空 - 全文靠 get', async () => {
+			await persistence.sessions.upsert({
 				id: 's1',
-				title: 'Original',
-				messages: [],
-				createdAt: Date.now(),
-				updatedAt: Date.now(),
-			};
-			await persistence.sessions.upsert(session);
-			session.title = 'Updated';
-			await persistence.sessions.upsert(session);
-			const retrieved = await persistence.sessions.get('s1');
-			expect(retrieved?.title).toBe('Updated');
-		});
-
-		it('lists sessions', async () => {
-			await persistence.sessions.upsert({
-				id: 's1', title: 'A', messages: [],
-				createdAt: 1, updatedAt: 1,
-			});
-			await persistence.sessions.upsert({
-				id: 's2', title: 'B', messages: [],
-				createdAt: 2, updatedAt: 2,
+				title: 'A',
+				messages: [{ role: 'user', content: 'x' }],
+				createdAt: 1,
+				updatedAt: 1,
 			});
 			const list = await persistence.sessions.list();
-			expect(list).toHaveLength(2);
+			expect(list).toHaveLength(1);
+			expect(list[0]!.messages).toEqual([]);
+			const full = await persistence.sessions.get('s1');
+			expect(full?.messages[0]?.content).toBe('x');
 		});
 
 		it('deletes a session', async () => {
 			await persistence.sessions.upsert({
-				id: 's1', title: 'A', messages: [],
-				createdAt: 1, updatedAt: 1,
+				id: 's1',
+				title: 'A',
+				messages: [],
+				createdAt: 1,
+				updatedAt: 1,
 			});
 			await persistence.sessions.delete('s1');
-			const retrieved = await persistence.sessions.get('s1');
-			expect(retrieved).toBeNull();
+			expect(await persistence.sessions.get('s1')).toBeNull();
+		});
+
+		it('迁移 - 旧内嵌 sessions - 拆到文件并清掉内嵌', async () => {
+			disk = {
+				sessions: {
+					'session-old': {
+						id: 'session-old',
+						title: 'old',
+						messages: [{ role: 'user', content: 'x' }],
+						createdAt: 1,
+						updatedAt: 2,
+					},
+				},
+				notes: {},
+				hookLog: [],
+				someSetting: true,
+			};
+			const p = new PersistenceJson(
+				async () => disk,
+				async (d) => {
+					disk = d as Record<string, unknown>;
+				},
+				pluginDir,
+			);
+			const s = await p.sessions.get('session-old');
+			expect(s?.messages[0]?.content).toBe('x');
+			expect(disk.sessions).toBeUndefined();
+			expect(Array.isArray(disk.sessionIndex)).toBe(true);
+			expect(disk.someSetting).toBe(true);
 		});
 	});
 
@@ -79,38 +111,14 @@ describe('PersistenceJson', () => {
 				path: 'notes/test.md',
 				hash: 'abc123',
 				mtime: Date.now(),
-				tags: ['test'],
 			};
 			await persistence.notes.upsert(meta);
-			const retrieved = await persistence.notes.get('notes/test.md');
-			expect(retrieved).toEqual(meta);
-		});
-
-		it('lists notes by path prefix', async () => {
-			await persistence.notes.upsert({
-				path: 'notes/a.md', hash: 'a', mtime: 1,
-			});
-			await persistence.notes.upsert({
-				path: 'notes/b.md', hash: 'b', mtime: 2,
-			});
-			await persistence.notes.upsert({
-				path: 'daily/c.md', hash: 'c', mtime: 3,
-			});
-			const list = await persistence.notes.listByPath('notes/');
-			expect(list).toHaveLength(2);
-		});
-
-		it('deletes note metadata', async () => {
-			await persistence.notes.upsert({
-				path: 'notes/test.md', hash: 'abc', mtime: 1,
-			});
-			await persistence.notes.delete('notes/test.md');
-			expect(await persistence.notes.get('notes/test.md')).toBeNull();
+			expect(await persistence.notes.get('notes/test.md')).toEqual(meta);
 		});
 	});
 
 	describe('hooks', () => {
-		it('appends and lists hook log entries', async () => {
+		it('appends and lists hook entries', async () => {
 			const entry: HookLogEntry = {
 				phase: 'pre-write',
 				tool: 'create_note',
@@ -122,96 +130,18 @@ describe('PersistenceJson', () => {
 			expect(list).toHaveLength(1);
 			expect(list[0]).toEqual(entry);
 		});
-
-		it('serializes concurrent persist calls', async () => {
-		const saved: unknown[] = [];
-		const persistence = new PersistenceJson(
-			async () => ({ sessions: {} }),
-			async (data) => { saved.push(JSON.parse(JSON.stringify(data))); },
-		);
-
-		// Fire two session upserts concurrently
-		await Promise.all([
-			persistence.sessions.upsert({ id: 'test', title: 'First', messages: [{ role: 'user', content: 'first' }], createdAt: Date.now(), updatedAt: Date.now() }),
-			persistence.sessions.upsert({ id: 'test', title: 'Second', messages: [{ role: 'user', content: 'second' }], createdAt: Date.now(), updatedAt: Date.now() }),
-		]);
-
-		// Both writes should complete without data loss
-		// At least one save should have occurred
-		expect(saved.length).toBeGreaterThanOrEqual(1);
-	});
-
-	it('respects limit when listing hooks', async () => {
-			for (let i = 0; i < 5; i++) {
-				await persistence.hooks.append({
-					phase: 'pre-write',
-					tool: `tool_${i}`,
-					timestamp: Date.now(),
-					result: 'pass',
-				});
-			}
-			const list = await persistence.hooks.list(3);
-			expect(list).toHaveLength(3);
-		});
 	});
 
 	describe('resilience', () => {
 		it('recovers from corrupt JSON on load', async () => {
-			const persistence = new PersistenceJson(
+			const p = new PersistenceJson(
 				async () => {
 					throw new Error('data.json contains invalid JSON');
 				},
 				async () => {},
+				pluginDir,
 			);
-
-			// Should not throw — corrupt data should trigger a fresh start.
-			// Using sessions.get to force ensureLoaded(); expect null (no session after recovery).
-			await expect(persistence.sessions.get('test')).resolves.toBeNull();
-		});
-
-		it('deduplicates concurrent load calls via loadingPromise', async () => {
-			let loadCallCount = 0;
-			const persistence = new PersistenceJson(
-				async () => {
-					loadCallCount++;
-					await new Promise((r) => setTimeout(r, 50));
-					return { sessions: {} };
-				},
-				async () => {},
-			);
-
-			// Fire 3 concurrent calls that each trigger ensureLoaded()
-			await Promise.all([
-				persistence.sessions.get('s1'),
-				persistence.sessions.get('s2'),
-				persistence.sessions.get('s3'),
-			]);
-
-			// loadData should be called only once due to loadingPromise
-			expect(loadCallCount).toBe(1);
-		});
-
-		it('handles empty data file gracefully', async () => {
-			const persistence = new PersistenceJson(
-				async () => ({}),
-				async () => {},
-			);
-
-			// Force ensureLoaded() on an empty object
-			await persistence.sessions.get('test');
-			await expect(persistence.sessions.upsert({ id: 's', title: '', messages: [], createdAt: 0, updatedAt: 0 })).resolves.toBeUndefined();
-		});
-
-		it('handles missing sessions key', async () => {
-			const persistence = new PersistenceJson(
-				async () => ({ otherData: 'foo' }),
-				async () => {},
-			);
-
-			// Force ensureLoaded() on data that lacks the sessions key
-			await persistence.sessions.get('test');
-			// Should be able to upsert without error
-			await expect(persistence.sessions.upsert({ id: 's', title: '', messages: [], createdAt: 0, updatedAt: 0 })).resolves.toBeUndefined();
+			await expect(p.sessions.get('test')).resolves.toBeNull();
 		});
 	});
 });

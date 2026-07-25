@@ -20,6 +20,23 @@
 	import MessageList from './message-stream/MessageList.svelte';
 	import type { Message } from './message-stream/types';
 	import { preservedChatMessagesToUi } from './message-stream/chat-message-to-ui';
+	import { hydrateSessionMessages } from './message-stream/hydrate-session-messages';
+	import SessionMenu from './session/SessionMenu.svelte';
+	import { sessionHasContent } from './session/session-content';
+	import {
+		SESSION_ENTER_MS,
+		SESSION_EXIT_MS,
+		loadingPadMs,
+		prefersReducedMotion,
+	} from './session/session-transition';
+	import {
+		deriveShortTitle,
+		fallbackSessionTitle,
+		generateSessionTitles,
+		normalizeTitlePair,
+	} from './session/session-title';
+	import type { SessionIndexEntry } from '../../ports/persistence';
+	import { t, tNow } from '../../i18n';
 	import {
 		appendText,
 		appendThink,
@@ -48,7 +65,6 @@
 	import { formatToolDisplayName } from './format-tool-display';
 	import { estimateTokens } from '../tokens/token-estimator';
 	import { getEffectiveChatModelMaxTokens } from '../../utils/context-window';
-	import { t, tNow } from '../../i18n';
 	import { applyRatelAppearance } from '../appearance/apply-ratel-appearance';
 	import { appearanceRevision } from '../appearance/appearance-store';
 
@@ -71,14 +87,43 @@
 		syncAppearance();
 		// 关键路径:subscribe 立即回调一次(与 onMount sync 重复无害);后续 bump 触发热更新。
 		appearanceUnsub = appearanceRevision.subscribe(() => syncAppearance());
+		void bootstrapSession();
+		const onDocClick = (e: MouseEvent) => {
+			if (!sessionMenuOpen) return;
+			const t = e.target as Node | null;
+			if (!t) return;
+			// 关键路径:用 DOM 查询,避免 onMount 闭包未捕获到后声明的 \$state 绑定
+			const float = chatRoot?.querySelector('.ratel-session-menu-float');
+			if (historyBtnEl?.contains(t) || (float instanceof Node && float.contains(t))) return;
+			sessionMenuOpen = false;
+		};
+		document.addEventListener('click', onDocClick);
+		return () => document.removeEventListener('click', onDocClick);
 	});
-	onDestroy(() => appearanceUnsub?.());
+	onDestroy(() => {
+		appearanceUnsub?.();
+		void flushCurrentSession();
+	});
 
 	// ==================== 响应式状态 ====================
 	let messages = $state<Message[]>([]);
 	let input = $state('');
 	let isRunning = $state(false);
-	let sessionId = $state('session-' + Date.now());
+	let sessionId = $state('');
+	let sessionShortTitle = $state('');
+	let sessionFullTitle = $state('');
+	let sessionEntries = $state<SessionIndexEntry[]>([]);
+	let sessionMenuOpen = $state(false);
+	let sessionMenuFloatEl = $state<HTMLDivElement | null>(null);
+	let historyBtnEl = $state<HTMLButtonElement | null>(null);
+	let switching = $state(false);
+	let sessionLoading = $state(false);
+	let sessionLoadingLabel = $state('');
+	let sessionLoadingId = $state<string | null>(null);
+	let messagesAnimClass = $state('');
+	let sessionDirty = $state(false);
+	let titleAbort: AbortController | null = null;
+	let abortController: AbortController | null = null;
 	let drawerExpanded = $state(false);
 	let fileInput = $state<HTMLInputElement | null>(null);
 	let slashMenuEl = $state<{ handleKeydown: (e: KeyboardEvent) => boolean } | null>(null);
@@ -119,6 +164,288 @@
 
 	function removePendingAttachment(id: string): void {
 		plugin.userStatus.removeAttachment(id);
+	}
+
+	// ==================== Session 生命周期 ====================
+
+	function emptyTitle(): string {
+		return tNow('chat.session.emptyTitle');
+	}
+
+	/** 同步 Header chip 的短/正常标题。 */
+	function syncChipTitles(s: { title?: string; shortTitle?: string } | null): void {
+		const empty = emptyTitle();
+		if (!s) {
+			sessionShortTitle = empty;
+			sessionFullTitle = empty;
+			return;
+		}
+		const pair = normalizeTitlePair(
+			{ title: s.title, shortTitle: s.shortTitle },
+			empty,
+		);
+		sessionShortTitle = pair.shortTitle;
+		sessionFullTitle = pair.title;
+	}
+
+	function resetComposerForNewSession(): void {
+		mentionPaths = [];
+		mentionQuery = null;
+		mentionItems = [];
+		input = '';
+		plugin.userStatus.patchContextUsage({
+			usedTokens: 0,
+			maxTokens: getEffectiveChatModelMaxTokens(plugin.settings),
+			source: 'estimate',
+		});
+		plugin.userStatus.clearAttachments();
+	}
+
+	function clearToolSessionGrants(): void {
+		plugin.toolSessionGrants.clear();
+	}
+
+	async function refreshSessionIndex(): Promise<void> {
+		sessionEntries = await plugin.persistence.listSessionIndex();
+	}
+
+	/**
+	 * 关侧栏 / 切换前 flush:有内容则确保 lastSessionId;空场文件删除。
+	 * 正文一般已由 agent-loop upsert;此处兜底脏标题等。
+	 */
+	async function flushCurrentSession(): Promise<void> {
+		if (!sessionId) return;
+		await plugin.persistence.setLastSessionId(sessionId);
+		const s = await plugin.persistence.sessions.get(sessionId);
+		if (!s) {
+			sessionDirty = false;
+			return;
+		}
+		if (!sessionHasContent(s.messages)) {
+			await plugin.persistence.sessions.delete(sessionId);
+			sessionDirty = false;
+			return;
+		}
+		if (sessionDirty) {
+			await plugin.persistence.sessions.upsert(s);
+		}
+		sessionDirty = false;
+	}
+
+	async function loadSessionIntoUi(id: string): Promise<void> {
+		const s = await plugin.persistence.sessions.get(id);
+		if (!s) {
+			await startBlankSession();
+			return;
+		}
+		sessionId = s.id;
+		syncChipTitles(s);
+		messages = hydrateSessionMessages(s.messages);
+		await plugin.persistence.setLastSessionId(s.id);
+		sessionDirty = false;
+		isUserNearBottom = true;
+		if (messagesEl) messagesEl.scrollTop = 0;
+	}
+
+	/** 新开空白场:只占本地 sessionId,正文不落盘直到首条消息(ContextManager.load 同语义)。 */
+	async function startBlankSession(): Promise<void> {
+		const id = `session-${Date.now()}`;
+		sessionId = id;
+		syncChipTitles(null);
+		messages = [];
+		await plugin.persistence.setLastSessionId(id);
+		sessionDirty = false;
+		clearToolSessionGrants();
+		resetComposerForNewSession();
+	}
+
+	async function bootstrapSession(): Promise<void> {
+		await refreshSessionIndex();
+		const lastId = await plugin.persistence.getLastSessionId();
+		if (lastId) {
+			const s = await plugin.persistence.sessions.get(lastId);
+			if (s && sessionHasContent(s.messages)) {
+				await loadSessionIntoUi(s.id);
+				return;
+			}
+			if (s && !sessionHasContent(s.messages)) {
+				await plugin.persistence.sessions.delete(s.id);
+			}
+		}
+		await startBlankSession();
+		await refreshSessionIndex();
+	}
+
+	function sleep(ms: number): Promise<void> {
+		return new Promise((r) => setTimeout(r, ms));
+	}
+
+	async function runSessionTransition(
+		load: () => Promise<void>,
+		loadingKey: 'chat.session.loading' | 'chat.session.loadingNew' = 'chat.session.loading',
+		loadingIdForMenu: string | null = null,
+	): Promise<void> {
+		if (switching) return;
+		switching = true;
+		sessionMenuOpen = false;
+		titleAbort?.abort();
+		titleAbort = null;
+		const reduced = prefersReducedMotion();
+		const exitMs = reduced ? 0 : SESSION_EXIT_MS;
+		const enterMs = reduced ? 0 : SESSION_ENTER_MS;
+		try {
+			messagesAnimClass = reduced ? '' : 'is-exiting';
+			if (exitMs > 0) await sleep(exitMs);
+			sessionLoading = true;
+			sessionLoadingLabel = tNow(loadingKey);
+			// 关键路径:菜单行 spinner 指向目标场;新对话则为 null
+			sessionLoadingId = loadingIdForMenu;
+			const t0 = Date.now();
+			await load();
+			const pad = loadingPadMs(Date.now() - t0);
+			if (pad > 0) await sleep(pad);
+			messagesAnimClass = reduced ? '' : 'is-entering';
+			if (enterMs > 0) await sleep(enterMs);
+			messagesAnimClass = '';
+		} catch (err) {
+			devLogger.error('agent', '会话切换失败', err);
+			new Notice(tNow('chat.session.loadFailed'), 4000);
+			messagesAnimClass = '';
+		} finally {
+			sessionLoading = false;
+			sessionLoadingId = null;
+			switching = false;
+			await refreshSessionIndex();
+		}
+	}
+
+	/** 若正在生成则 abort 并等到 isRunning 收尾,避免新场被旧 for-await 锁住。 */
+	async function abortActiveGeneration(): Promise<void> {
+		if (!isRunning && !abortController) return;
+		abortController?.abort();
+		const deadline = Date.now() + 8000;
+		while (isRunning && Date.now() < deadline) {
+			await sleep(40);
+		}
+	}
+
+	async function createNewSession(): Promise<void> {
+		if (switching) return;
+		// 已是空白场:关菜单即可,避免「点了没反应」
+		const cur = sessionId ? await plugin.persistence.sessions.get(sessionId) : null;
+		const uiEmpty = messages.length === 0;
+		const diskEmpty = !cur || !sessionHasContent(cur.messages);
+		if (uiEmpty && diskEmpty) {
+			sessionMenuOpen = false;
+			return;
+		}
+		await abortActiveGeneration();
+		await runSessionTransition(async () => {
+			const curId = sessionId;
+			const existing = curId ? await plugin.persistence.sessions.get(curId) : null;
+			if (existing) {
+				if (sessionHasContent(existing.messages)) {
+					await plugin.persistence.sessions.upsert(existing);
+					await plugin.persistence.setLastSessionId(existing.id);
+				} else {
+					await plugin.persistence.sessions.delete(existing.id);
+				}
+			}
+			clearToolSessionGrants();
+			await startBlankSession();
+		}, 'chat.session.loadingNew', null);
+	}
+
+	async function switchToSession(id: string): Promise<void> {
+		if (id === sessionId) {
+			sessionMenuOpen = false;
+			return;
+		}
+		if (switching) return;
+		await abortActiveGeneration();
+		await runSessionTransition(
+			async () => {
+				await flushCurrentSession();
+				clearToolSessionGrants();
+				resetComposerForNewSession();
+				const s = await plugin.persistence.sessions.get(id);
+				if (!s) {
+					new Notice(tNow('chat.session.loadFailed'), 4000);
+					return;
+				}
+				sessionId = s.id;
+				syncChipTitles(s);
+				messages = hydrateSessionMessages(s.messages);
+				await plugin.persistence.setLastSessionId(s.id);
+				sessionDirty = false;
+				isUserNearBottom = true;
+				if (messagesEl) messagesEl.scrollTop = 0;
+			},
+			'chat.session.loading',
+			id,
+		);
+	}
+
+	async function deleteSessionFromMenu(id: string): Promise<void> {
+		if (switching || isRunning) return;
+		await plugin.persistence.sessions.delete(id);
+		if (id === sessionId) {
+			await createNewSession();
+		} else {
+			await refreshSessionIndex();
+		}
+	}
+
+	/**
+	 * 首轮结束后异步双轨标题(短 + 正常)。
+	 * 关键路径:只改 title/shortTitle;upsert 前再 get 一次,避免用过期 messages 覆盖正文。
+	 */
+	async function maybeGenerateTitle(): Promise<void> {
+		const forId = sessionId;
+		let s = await plugin.persistence.sessions.get(forId);
+		// 关键路径:极端时 save 与 end 仍有细小窗口,短重试
+		for (let i = 0; !s?.messages.length && i < 5; i++) {
+			await sleep(30);
+			s = await plugin.persistence.sessions.get(forId);
+		}
+		if (!s || !sessionHasContent(s.messages)) return;
+		const empty = emptyTitle();
+		if (s.title && s.title !== empty && s.title.trim() !== '') {
+			// 旧场缺 shortTitle 时本地派生补齐
+			if (!s.shortTitle?.trim()) {
+				const short = deriveShortTitle(s.title) || empty;
+				s.shortTitle = short;
+				s.updatedAt = Date.now();
+				await plugin.persistence.sessions.upsert(s);
+				if (forId === sessionId) syncChipTitles(s);
+				await refreshSessionIndex();
+			}
+			return;
+		}
+		const firstUser = s.messages.find((m) => m.role === 'user');
+		const seed = typeof firstUser?.content === 'string' ? firstUser.content : '';
+		titleAbort?.abort();
+		titleAbort = new AbortController();
+		const signal = titleAbort.signal;
+		const applyTitles = async (title: string, shortTitle: string) => {
+			if (signal.aborted || forId !== sessionId) return;
+			const cur = await plugin.persistence.sessions.get(forId);
+			if (!cur || !sessionHasContent(cur.messages)) return;
+			const pair = normalizeTitlePair({ title, shortTitle }, empty);
+			cur.title = pair.title;
+			cur.shortTitle = pair.shortTitle;
+			cur.updatedAt = Date.now();
+			await plugin.persistence.sessions.upsert(cur);
+			if (forId === sessionId) syncChipTitles(cur);
+			await refreshSessionIndex();
+		};
+		try {
+			const pair = await generateSessionTitles(plugin.llm, seed, signal);
+			await applyTitles(pair.title, pair.shortTitle);
+		} catch {
+			const title = fallbackSessionTitle(seed) || empty;
+			await applyTitles(title, deriveShortTitle(title) || empty);
+		}
 	}
 
 	const statusStore = plugin.userStatus.statusBar$;
@@ -288,15 +615,7 @@
 		input = '';
 		switch (cmd.name) {
 			case '/new':
-				messages = [];
-				sessionId = 'session-' + Date.now();
-				mentionPaths = [];
-				plugin.userStatus.patchContextUsage({
-					usedTokens: 0,
-					maxTokens: getEffectiveChatModelMaxTokens(plugin.settings),
-					source: 'estimate',
-				});
-				plugin.userStatus.clearAttachments();
+				void createNewSession();
 				break;
 			case '/compact':
 				handleCompact();
@@ -343,7 +662,7 @@
 	async function sendMessage() {
 		refreshKeyState();
 		const text = input.trim();
-		if (!text || isRunning || isCompacting) return;
+		if (!text || isRunning || isCompacting || switching || !sessionId) return;
 
 		// 策略 A:发送文本以 textarea 为准(含 @path 字面量);extractMentions 仅开发日志,零 readFile
 		const mentioned = extractMentions(text).filter(isSafeVaultMentionPath);
@@ -375,6 +694,7 @@
 		mentionPaths = [];
 		mentionQuery = null;
 		mentionItems = [];
+		sessionMenuOpen = false;
 		isRunning = true;
 		// 关键路径:不在此 patch model=checking — 否则 StatusStrip「思考中」
 		// 与 MessageList 打字指示双重叠;model 状态只由 FeedbackController 维护。
@@ -462,6 +782,9 @@
 								source: 'api',
 							});
 						}
+						sessionDirty = true;
+						void maybeGenerateTitle();
+						void refreshSessionIndex();
 						break;
 					case 'error':
 						handleAgentError(am, event.payload.code, event.payload.message, lastToolName);
@@ -483,7 +806,6 @@
 		}
 	}
 
-	let abortController: AbortController | null = null;
 	function stopGeneration() {
 		abortController?.abort();
 	}
@@ -590,7 +912,7 @@
 </script>
 
 <div class="ratel-chat" bind:this={chatRoot}>
-	<!-- Header — 词标 + 副标同行(原型 brand baseline) + 静默 model chip -->
+	<!-- Header — 词标 + 副标同行(原型 brand baseline) + 历史菜单 + 静默 model chip -->
 	<div class="ratel-header">
 		<div class="ratel-header-left">
 			<div class="ratel-header-brand">
@@ -600,25 +922,78 @@
 				<span class="ratel-header-tagline">{$t('chat.header.tagline')}</span>
 			</div>
 		</div>
+		<!-- 对齐原型 .header-actions:chip + model + 菜单同层定位 -->
 		<div class="ratel-header-right">
+			<button
+				bind:this={historyBtnEl}
+				type="button"
+				class="ratel-session-chip"
+				class:is-loading={sessionLoading}
+				title={sessionFullTitle || emptyTitle()}
+				aria-label={$t('chat.session.ariaChip', {
+					short: sessionShortTitle || emptyTitle(),
+				})}
+				aria-expanded={sessionMenuOpen}
+				aria-busy={sessionLoading}
+				disabled={switching}
+				onclick={(e) => {
+					e.stopPropagation();
+					sessionMenuOpen = !sessionMenuOpen;
+					if (sessionMenuOpen) void refreshSessionIndex();
+				}}
+			>
+				<span class="ratel-session-chip-label"
+					>{sessionShortTitle || emptyTitle()}</span
+				>
+				<svg class="ratel-session-chip-ico" viewBox="0 0 24 24" aria-hidden="true">
+					<circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.75"></circle>
+					<path
+						d="M12 8v4l2.5 1.5"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.75"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					></path>
+				</svg>
+			</button>
 			<button
 				type="button"
 				class="ratel-header-model"
 				onclick={openModelInfo}
 				aria-label={$t('chat.header.modelChip', { model: modelName })}
 			>{modelName}</button>
+			{#if sessionMenuOpen}
+				<div class="ratel-session-menu-float" bind:this={sessionMenuFloatEl}>
+					<SessionMenu
+						entries={sessionEntries}
+						currentId={sessionId}
+						loadingId={sessionLoadingId}
+						open={true}
+						onSelect={(id) => void switchToSession(id)}
+						onNew={() => void createNewSession()}
+						onDelete={(id) => void deleteSessionFromMenu(id)}
+					/>
+				</div>
+			{/if}
 		</div>
 	</div>
 
-	<!-- 消息流(委托 MessageList,容器 ref + onscroll 由子组件透传上来) -->
-	<div class="ratel-messages-wrap">
-		<MessageList
-			{messages}
-			{isRunning}
-			bind:containerRef={messagesEl}
-			onScroll={handleScroll}
-			onOpenPath={handleOpenPath}
-		/>
+	<!-- 消息流 shell:切换 loading / exit-enter -->
+	<div class="ratel-messages-shell" class:is-loading={sessionLoading}>
+		<div class="ratel-messages-overlay" aria-live="polite" aria-busy={sessionLoading}>
+			<div class="ratel-session-spinner" aria-hidden="true"></div>
+			<span class="ratel-session-load-label">{sessionLoadingLabel}</span>
+		</div>
+		<div class="ratel-messages-wrap {messagesAnimClass}">
+			<MessageList
+				{messages}
+				{isRunning}
+				bind:containerRef={messagesEl}
+				onScroll={handleScroll}
+				onOpenPath={handleOpenPath}
+			/>
+		</div>
 	</div>
 
 	<!-- composer: Strip → Drawer → input(Conversation-first,状态不夹在消息与输入之间) -->
@@ -711,30 +1086,40 @@
 
 <style>
 	/*
-	 * 设计 Token 映射:
-	 * - 圆角 6-8px(符合设计系统上限,严禁超过 8px)
-	 * - 毛玻璃 backdrop-filter blur(8-10px)
-	 * - 视觉层次靠 border + background 对比度,不使用 box-shadow(项目硬约束禁止)
-	 * - 半透明背景 color-mix 适配亮/暗主题
+	 * Header / session 对齐 docs/prototype/chat-ui-mockup.html(方案 A)。
+	 * 不拉外网字体(隐私约束);栈首留 Instrument Sans 供本机已装时命中。
 	 */
 	* { box-sizing: border-box; }
 
 	.ratel-chat {
+		position: relative;
 		display: flex;
 		flex-direction: column;
 		height: 100%;
 		font-size: 13.5px;
 		line-height: 1.5;
 		color: var(--text-normal);
-		font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+		font-family: 'Instrument Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI',
+			sans-serif;
 		/* Drawer 上下文 meter 渐变端点 — StatusDrawer 消费 */
 		--ratel-meter-from: var(--interactive-accent);
 		--ratel-meter-to: var(--text-success);
 		/* 正文 [n] / cite-chip 共用(§5.10) */
 		--ratel-cite: var(--interactive-accent);
+		/* 对齐原型 --copper-soft / --copper-glow */
+		--ratel-copper-soft: color-mix(
+			in srgb,
+			var(--ratel-cite, var(--interactive-accent)) 16%,
+			transparent
+		);
+		--ratel-copper-glow: color-mix(
+			in srgb,
+			var(--ratel-cite, var(--interactive-accent)) 35%,
+			transparent
+		);
 	}
 
-	/* ==================== Header — 对齐原型 v3:词标同行 + 胶囊 chip ==================== */
+	/* ==================== Header — 原型极简(无毛玻璃) ==================== */
 	.ratel-header {
 		flex-shrink: 0;
 		padding: 14px 16px 12px;
@@ -742,9 +1127,8 @@
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		background: color-mix(in srgb, var(--background-secondary) 65%, transparent);
-		backdrop-filter: blur(10px);
-		-webkit-backdrop-filter: blur(10px);
+		gap: 8px;
+		background: transparent;
 	}
 
 	.ratel-header-left {
@@ -758,10 +1142,12 @@
 		display: flex;
 		align-items: center;
 		gap: 6px;
-		flex-shrink: 0;
+		position: relative;
+		min-width: 0;
+		flex-shrink: 1;
 	}
 
-	/* 关键路径:原型 brand 用 baseline 横排,不是上下堆叠 */
+	/* 安全路径:原型 brand 用 baseline 横排,不是上下堆叠 */
 	.ratel-header-brand {
 		display: flex;
 		align-items: baseline;
@@ -775,9 +1161,13 @@
 		letter-spacing: -0.02em;
 		color: var(--text-normal);
 		flex-shrink: 0;
+		/* 安全路径:禁止合成加粗,避免「Ratel.」的点看起来比正文更重 */
+		font-synthesis: none;
 	}
 
 	.ratel-header-dot {
+		/* 与 Ratel 同字重,只换强调色(对齐原型 .brand-mark span) */
+		font-weight: inherit;
 		color: var(--ratel-cite, var(--interactive-accent));
 	}
 
@@ -785,7 +1175,6 @@
 		font-size: 11px;
 		font-weight: 450;
 		color: var(--text-faint, var(--text-muted));
-		letter-spacing: 0.01em;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
@@ -793,7 +1182,7 @@
 
 	.ratel-header-model {
 		font-size: 10.5px;
-		font-family: var(--font-monospace);
+		font-family: 'IBM Plex Mono', var(--font-monospace), ui-monospace, monospace;
 		font-weight: 500;
 		padding: 4px 9px;
 		border-radius: 999px;
@@ -805,20 +1194,189 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+		flex-shrink: 0;
 		transition: border-color 0.15s, color 0.15s;
 	}
 
 	.ratel-header-model:hover {
 		color: var(--ratel-cite, var(--interactive-accent));
-		border-color: color-mix(in srgb, var(--ratel-cite, var(--interactive-accent)) 55%, var(--background-modifier-border));
+		border-color: var(--ratel-copper-glow);
 	}
 
-	/* ==================== 消息流容器 ==================== */
+	.ratel-session-menu-float {
+		position: absolute;
+		top: calc(100% + 8px);
+		right: 0;
+		z-index: 1000;
+		isolation: isolate;
+	}
+
+	.ratel-session-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		max-width: 132px;
+		min-width: 0;
+		height: 28px;
+		padding: 0 8px 0 10px;
+		border-radius: 999px;
+		border: 1px solid var(--background-modifier-border);
+		background: transparent;
+		color: var(--text-muted);
+		cursor: pointer;
+		font: inherit;
+		font-size: 12px;
+		font-weight: 500;
+		transition: color 0.15s, border-color 0.15s, background 0.15s;
+	}
+
+	.ratel-session-chip:hover:not(:disabled),
+	.ratel-session-chip[aria-expanded='true']:not(:disabled) {
+		color: var(--ratel-cite, var(--interactive-accent));
+		border-color: var(--ratel-copper-glow);
+		background: var(--ratel-copper-soft);
+	}
+
+	.ratel-session-chip:disabled {
+		opacity: 0.45;
+		cursor: not-allowed;
+	}
+
+	.ratel-session-chip-label {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		line-height: 1.2;
+	}
+
+	.ratel-session-chip-ico {
+		flex-shrink: 0;
+		width: 14px;
+		height: 14px;
+		opacity: 0.85;
+	}
+
+	.ratel-session-chip.is-loading .ratel-session-chip-ico {
+		animation: ratel-session-spin 0.8s linear infinite;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.ratel-session-chip.is-loading .ratel-session-chip-ico {
+			animation: none;
+			opacity: 0.7;
+		}
+	}
+
+	/* ==================== 消息流 shell(切换 loading / 动效) ==================== */
+	.ratel-messages-shell {
+		position: relative;
+		flex: 1;
+		min-height: 0;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.ratel-messages-shell.is-loading .ratel-messages-wrap {
+		pointer-events: none;
+	}
+
+	.ratel-messages-overlay {
+		position: absolute;
+		inset: 0;
+		z-index: 5;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 10px;
+		background: color-mix(in srgb, var(--background-primary) 55%, transparent);
+		backdrop-filter: blur(2px);
+		-webkit-backdrop-filter: blur(2px);
+		opacity: 0;
+		visibility: hidden;
+		transition: opacity 0.18s ease, visibility 0.18s ease;
+	}
+
+	.ratel-messages-shell.is-loading .ratel-messages-overlay {
+		opacity: 1;
+		visibility: visible;
+	}
+
+	.ratel-session-spinner {
+		width: 22px;
+		height: 22px;
+		border: 2px solid var(--background-modifier-border);
+		border-top-color: var(--ratel-cite, var(--interactive-accent));
+		border-radius: 50%;
+		animation: ratel-session-spin 0.7s linear infinite;
+	}
+
+	.ratel-session-load-label {
+		font-size: 12px;
+		color: var(--text-muted);
+		letter-spacing: 0.02em;
+	}
+
+	@keyframes ratel-session-spin {
+		to {
+			transform: rotate(360deg);
+		}
+	}
+
 	.ratel-messages-wrap {
 		flex: 1;
 		overflow: hidden;
 		display: flex;
 		flex-direction: column;
+		min-height: 0;
+	}
+
+	.ratel-messages-wrap.is-exiting {
+		animation: ratel-messages-exit 0.15s ease forwards;
+	}
+
+	.ratel-messages-wrap.is-entering {
+		animation: ratel-messages-enter 0.22s ease forwards;
+	}
+
+	@keyframes ratel-messages-exit {
+		from {
+			opacity: 1;
+			transform: translateY(0);
+		}
+		to {
+			opacity: 0;
+			transform: translateY(6px);
+		}
+	}
+
+	@keyframes ratel-messages-enter {
+		from {
+			opacity: 0;
+			transform: translateY(-8px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.ratel-session-spinner {
+			animation: none;
+			border-top-color: var(--background-modifier-border);
+			opacity: 0.85;
+		}
+
+		.ratel-messages-wrap.is-exiting,
+		.ratel-messages-wrap.is-entering {
+			animation: none;
+		}
+
+		.ratel-messages-overlay {
+			transition: none;
+		}
 	}
 
 	/* ==================== composer(Strip → Drawer → input) ==================== */
@@ -937,12 +1495,14 @@
 		color: var(--text-faint);
 	}
 
-	/* Send 在壳内右侧 — 必须走强调色,否则外观 Tab 色块切换时最醒目按钮仍钉死成功绿 */
+	/* Send — 对齐原型 .send:34×34、圆角 10px(圆角方,不是直角方) */
 	.ratel-send {
 		flex-shrink: 0;
 		align-self: flex-end;
-		padding: 7px 14px;
-		border-radius: 8px;
+		min-width: 34px;
+		height: 34px;
+		padding: 0 12px;
+		border-radius: 10px;
 		border: none;
 		background: var(--interactive-accent);
 		color: var(--text-on-accent, #fff);
@@ -950,14 +1510,21 @@
 		font-weight: 600;
 		font-family: inherit;
 		cursor: pointer;
-		transition: opacity 0.15s, transform 0.1s;
+		transition: opacity 0.15s, transform 0.1s, filter 0.15s;
 		-webkit-appearance: none;
 		appearance: none;
 		letter-spacing: 0.3px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.ratel-send:hover:not(:disabled) {
+		filter: brightness(1.08);
 	}
 
 	.ratel-send:active:not(:disabled) {
-		transform: translateY(1px);
+		transform: scale(0.96);
 	}
 
 	.ratel-send:disabled {

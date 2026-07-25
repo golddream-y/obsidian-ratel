@@ -1,7 +1,7 @@
 {
 	"id": "ratel-vault",
 	"name": "Ratel",
-	"version": "0.1.12",
+	"version": "0.1.13",
 	"minAppVersion": "1.13.0",
 	"description": "Graph-native AI agent for your notes—chat, cited semantic search, multi-step research and safe edits. Works with DeepSeek, Claude, Ollama. Local embeddings; no telemetry.",
 	"author": "golddream-y",
