@@ -17,7 +17,7 @@
 
 | ID | 文件 | 状态 | 创建日期 | 备注 |
 |---|---|---|---|---|
-| S-CITE | [2026-07-29-cite-dual-channel-hardening-design.md](specs/2026-07-29-cite-dual-channel-hardening-design.md) | Active | 2026-07-29 | 引用双通道加固;P-CITE Pending |
+| S-CITE | [2026-07-29-cite-dual-channel-hardening-design.md](specs/2026-07-29-cite-dual-channel-hardening-design.md) | Active | 2026-07-29 | 引用双通道加固;P-CITE Completed |
 | S-SKILL | [2026-07-06-skill-mechanism-design.md](specs/2026-07-06-skill-mechanism-design.md) | Active | 2026-07-06 | Skill 机制;激活注入见 ADR-012;P-SKILL-2/3 pending |
 | S-SKILL-UX | — | Active | 2026-07-21 | Skill UX;对齐 ADR-010;**spec 文件缺失**(从未入库),需补写或从 STATUS 剔除 |
 | S-EVOLUTION | [2026-07-15-evolution-graph-agent.md](specs/2026-07-15-evolution-graph-agent.md) | Active | 2026-07-15 | 图谱原生 Agent;P-EVO-A-READ Completed;下步 P-EVO-A-FM |
@@ -28,7 +28,7 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
-| P-CITE | [2026-07-29-cite-dual-channel-hardening.md](plans/2026-07-29-cite-dual-channel-hardening.md) | 🔄 In Progress | S-CITE | 分支 feat/p-cite;注入+prompt+chip 显隐+hydrate 重建;7 Task |
+| P-CITE | [2026-07-29-cite-dual-channel-hardening.md](plans/2026-07-29-cite-dual-channel-hardening.md) | ✅ Completed | S-CITE | 分支 feat/p-cite;注入+prompt+chip 显隐+hydrate 重建;7 Task |
 | P-EVO-A-READ | [2026-07-15-evo-a-read.md](plans/2026-07-15-evo-a-read.md) | ✅ Completed | S-EVOLUTION | 分支 feat/p-evo-a-read;6 Task + final fix;730 tests;待核对是否已合 main |
 | P-EVO-A-FM | — | ⏳ Pending | S-EVOLUTION | update_frontmatter;依赖 P-EVO-A-READ;plan 待写 |
 | P-SKILL-2-EXECUTION | — | ⏳ Pending | S-SKILL | references+scripts 沙箱;降优先级,plan 待写 |
@@ -51,12 +51,11 @@
 
 ## Future execution queue(按顺序)
 
-1. **S-CITE / P-CITE**— 引用双通道加固(plan 已写,待执行)  
-2. **核对 P-EVO-A-READ 合入状态**— Completed 但备注曾写待合并  
-3. **P-EVO-A-FM**(update_frontmatter)— plan 待写  
-4. **S-EVOLUTION Phase B**(Write Gate + open_note)— plan 待写  
-5. **S-EVOLUTION Phase C**(task_plan + 沉淀)— plan 待写  
-6. **P-SKILL-2-EXECUTION** / **P-SKILL-3-UI**— 降优先级;P-SKILL-3 对齐 S-SKILL-UX  
+1. **核对 P-EVO-A-READ 合入状态**— Completed 但备注曾写待合并  
+2. **P-EVO-A-FM**(update_frontmatter)— plan 待写  
+3. **S-EVOLUTION Phase B**(Write Gate + open_note)— plan 待写  
+4. **S-EVOLUTION Phase C**(task_plan + 沉淀)— plan 待写  
+5. **P-SKILL-2-EXECUTION** / **P-SKILL-3-UI**— 降优先级;P-SKILL-3 对齐 S-SKILL-UX  
 
 ---
 

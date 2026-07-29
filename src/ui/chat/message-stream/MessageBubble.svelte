@@ -12,6 +12,10 @@
 	import ToolSegment from './ToolSegment.svelte';
 	import SearchResults from './SearchResults.svelte';
 	import { groupTraceSegments } from './group-trace-segments';
+	import {
+		collectCitedIndexesFromSegments,
+		shouldShowCiteChips,
+	} from '../collect-cited-indexes';
 	import { t } from '../../../i18n';
 
 	/**
@@ -36,6 +40,15 @@
 	const isAssistantStreaming = $derived(isLast && isRunning && msg.role === 'assistant');
 	// 关键路径:连续 tool/think 收成一块,共享一根左边线(对齐原型 .trace)
 	const blocks = $derived(groupTraceSegments(msg.segments));
+	const validIndexes = $derived(
+		new Set((msg.searchResults ?? []).map((r) => r.index)),
+	);
+	const citedIndexes = $derived(
+		collectCitedIndexesFromSegments(msg.segments, validIndexes),
+	);
+	const showCiteChips = $derived(
+		shouldShowCiteChips(!!msg.searchResults?.length, citedIndexes.size),
+	);
 </script>
 
 <div
@@ -78,9 +91,9 @@
 		{/if}
 	{/each}
 
-	{#if msg.searchResults && msg.searchResults.length > 0}
+	{#if showCiteChips}
 		<SearchResults
-			results={msg.searchResults}
+			results={msg.searchResults!}
 			reranked={msg.searchReranked ?? false}
 			{onOpenPath}
 		/>
