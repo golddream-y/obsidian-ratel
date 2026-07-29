@@ -72,7 +72,7 @@ S-CHAT-UI-V3 规定引用为 **双通道**：
 4. 多次 search：采用 **清空本轮检索注入再写入最新一批**（实现上：`searchResultsMessages` 重置为仅含最新块，或等价「只保留最后一次 search 注入」），与 UI 覆盖语义一致。  
 5. 注入格式化失败：`devLogger` 记录，**不阻断**对话。
 
-可复用 / 微调 `ContextManager.addSearchResults`：允许 `content` 为空；或新增窄接口 `setSearchIndexBlock(results)`——plan 阶段二选一，契约以「最后一次 search 的 index 清单在 toMessages() 可见」为准。
+可复用 / 微调 `ContextManager.addSearchResults`：新增 **`replaceSearchIndexBlock`**（先清空 `searchResultsMessages` 再写入）。注入条目顺序必须与 `mapped.results` 一致；`formatSearchResultsBlock` 用数组下标 `i+1` 作为展示 index，**禁止重排**，以保证与 tool `index` 对齐。
 
 ### 4.3 Prompt
 
@@ -143,7 +143,7 @@ Chip 内容：
 新增用户可见文案（中英），至少：
 
 - `chat.cite.sourcesCollapsed`（如「来源 {n} 篇」）  
-- `chat.cite.sourcesExpand` / `sourcesCollapse`（若折叠条需要独立 aria）
+- `chat.cite.sourcesExpandAria` / `chat.cite.sourcesCollapseAria`（折叠条按钮 aria）
 
 走现有 `t` / `tNow`，禁止硬编码。
 
@@ -151,9 +151,9 @@ Chip 内容：
 
 - 保留并扩展 `cite-enhance` 单测。  
 - 新增：截断函数单测（文件名优先）。  
-- 新增：有/无 `citedIndexes` 时 SearchResults 显隐逻辑（纯函数或组件测）。  
-- 新增：hydrate 从 `search_vault` tool 结果重建后，`[1]` 可解析到 path。  
-- 新增：Agent Loop / Context 在 `search_vault` 成功后出现注入块（mock）。
+- 新增：`shouldShowCiteChips`（或等价）显隐纯函数单测。  
+- 新增：hydrate 从 `search_vault` tool 结果重建后，`searchResults` 可解析且 `pathForCiteIndex(..., 1)` 有 path。  
+- 新增：Agent Loop 在 `search_vault` 成功后调用 `replaceSearchIndexBlock`（spy/mock）。
 
 ---
 

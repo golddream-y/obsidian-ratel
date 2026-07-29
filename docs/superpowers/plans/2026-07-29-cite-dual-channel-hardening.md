@@ -26,19 +26,19 @@
 | 文件 | 职责 |
 |---|---|
 | `src/ui/chat/cite-path-display.ts` | 新建：可读 path 截断 |
-| `src/ui/chat/collect-cited-indexes.ts` | 新建：从助手文本抽有效 `[n]` ∩ searchResults |
+| `src/ui/chat/collect-cited-indexes.ts` | 新建：抽取 citedIndexes + `shouldShowCiteChips` |
 | `src/ui/chat/message-stream/hydrate-session-messages.ts` | 从 search_vault tool 结果挂 `searchResults` |
-| `src/ui/chat/message-stream/SearchResults.svelte` | 默认折叠「来源 N 篇」；用新截断 |
+| `src/ui/chat/message-stream/SearchResults.svelte` | 默认折叠「来源 N 篇」；用新截断；保留 `title={r.path}` |
 | `src/ui/chat/message-stream/MessageBubble.svelte` | 有有效内联标则不渲染 SearchResults |
-| `src/core/context-manager.ts` | `replaceSearchIndexBlock`（清空再写） |
-| `src/core/agent-loop.ts` | search 成功后注入 |
+| `src/core/context-manager.ts` | `replaceSearchIndexBlock`（清空再写；保持 results 原序） |
+| `src/core/agent-loop.ts` | search 成功后注入（勿重排 mapped.results） |
 | `src/prompts/defaults/zh.ts` | 收紧 workflow + search_vault 描述 |
 | `src/i18n/types.ts` / `zh.ts` / `en.ts` | 折叠文案 |
 | `tests/ui/chat/cite-path-display.test.ts` | 截断单测 |
-| `tests/ui/chat/collect-cited-indexes.test.ts` | citedIndexes 单测 |
-| `tests/ui/chat/message-stream/hydrate-session-messages.test.ts` | 扩展 hydrate |
+| `tests/ui/chat/collect-cited-indexes.test.ts` | citedIndexes + shouldShowCiteChips 单测 |
+| `tests/ui/chat/message-stream/hydrate-session-messages.test.ts` | 扩展 hydrate + pathForCiteIndex |
 | `tests/core/context-manager-search.test.ts` | 扩展 replace |
-| `tests/core/agent-loop.test.ts` | 扩展：注入出现在 toMessages |
+| `tests/core/agent-loop.test.ts` | 扩展：spy replaceSearchIndexBlock |
 
 ---
 
@@ -55,6 +55,7 @@
   - `formatCitePath(path: string, maxLen?: number): string`
   - `collectCitedIndexes(text: string, validIndexes: ReadonlySet<number>): Set<number>`
   - `collectCitedIndexesFromSegments(segments: Array<{ type: string; text?: string }>, validIndexes: ReadonlySet<number>): Set<number>`
+  - `shouldShowCiteChips(hasSearchResults: boolean, citedCount: number): boolean`
 
 - [ ] **Step 1: 写截断失败测试**
 
@@ -129,6 +130,7 @@ import { describe, it, expect } from 'vitest';
 import {
 	collectCitedIndexes,
 	collectCitedIndexesFromSegments,
+	shouldShowCiteChips,
 } from '../../../src/ui/chat/collect-cited-indexes';
 
 describe('collectCitedIndexes', () => {
@@ -151,13 +153,25 @@ describe('collectCitedIndexes', () => {
 		);
 		expect([...set]).toEqual([2]);
 	});
+
+	it('shouldShowCiteChips - 有结果无引用 - 显示', () => {
+		expect(shouldShowCiteChips(true, 0)).toBe(true);
+	});
+
+	it('shouldShowCiteChips - 有结果且有引用 - 隐藏', () => {
+		expect(shouldShowCiteChips(true, 1)).toBe(false);
+	});
+
+	it('shouldShowCiteChips - 无结果 - 隐藏', () => {
+		expect(shouldShowCiteChips(false, 0)).toBe(false);
+	});
 });
 ```
 
 ```typescript
 /**
  * @file src/ui/chat/collect-cited-indexes.ts
- * @description 从助手正文抽取与 searchResults 交集的引用编号
+ * @description 从助手正文抽取与 searchResults 交集的引用编号；chip 显隐判定
  * @module ui/chat/collect-cited-indexes
  */
 
@@ -189,6 +203,14 @@ export function collectCitedIndexesFromSegments(
 	}
 	return out;
 }
+
+/**
+ * 是否渲染底部 cite chip 行(含折叠条)。
+ * 有 searchResults 且正文无任何有效 [n] 时才显示。
+ */
+export function shouldShowCiteChips(hasSearchResults: boolean, citedCount: number): boolean {
+	return hasSearchResults && citedCount === 0;
+}
 ```
 
 - [ ] **Step 5: 跑测试通过并提交**
@@ -216,7 +238,13 @@ git commit -m "feat(cite): path 截断与 citedIndexes 纯函数"
 
 - [ ] **Step 1: 扩展失败测试**
 
-在 `hydrate-session-messages.test.ts` 追加：
+在 `hydrate-session-messages.test.ts` 顶部增加：
+
+```typescript
+import { pathForCiteIndex } from '../../../../src/ui/chat/open-chat-note';
+```
+
+追加用例：
 
 ```typescript
 it('hydrateSessionMessages - search_vault 标准结果 - 挂 searchResults', () => {
@@ -246,6 +274,7 @@ it('hydrateSessionMessages - search_vault 标准结果 - 挂 searchResults', () 
 		{ docId: 'd1', score: 0.9, path: 'notes/a.md', index: 1 },
 	]);
 	expect(asst.searchReranked).toBe(true);
+	expect(pathForCiteIndex(asst.searchResults, 1)).toBe('notes/a.md');
 });
 
 it('hydrateSessionMessages - 两次 search_vault - 保留最后一次', () => {
@@ -376,7 +405,14 @@ git commit -m "feat(cite): hydrate 从 search_vault tool 重建 searchResults"
     {#if expanded}
       <div class="ratel-cites-row" role="list">
         {#each results as r}
-          <button type="button" class="ratel-cite-chip" ...>
+          <button
+            type="button"
+            class="ratel-cite-chip"
+            role="listitem"
+            aria-label={$t('chat.cite.openNote', { path: r.path })}
+            title={r.path}
+            onclick={() => onOpenPath(r.path)}
+          >
             <span class="ratel-cite-chip-n">{r.index}</span>
             <span class="ratel-cite-chip-path">{formatCitePath(r.path)}</span>
           </button>
@@ -392,7 +428,10 @@ git commit -m "feat(cite): hydrate 从 search_vault tool 重建 searchResults"
 - [ ] **Step 3: MessageBubble — 有有效内联标则不挂 SearchResults**
 
 ```svelte
-import { collectCitedIndexesFromSegments } from '../collect-cited-indexes';
+import {
+  collectCitedIndexesFromSegments,
+  shouldShowCiteChips,
+} from '../collect-cited-indexes';
 
 const validIndexes = $derived(
   new Set((msg.searchResults ?? []).map((r) => r.index)),
@@ -401,7 +440,7 @@ const citedIndexes = $derived(
   collectCitedIndexesFromSegments(msg.segments, validIndexes),
 );
 const showCiteChips = $derived(
-  !!msg.searchResults?.length && citedIndexes.size === 0,
+  shouldShowCiteChips(!!msg.searchResults?.length, citedIndexes.size),
 );
 ```
 
@@ -478,6 +517,7 @@ Expected: FAIL（方法不存在）
 replaceSearchIndexBlock(results: Array<{ path: string; content?: string }>): void {
   this.searchResultsMessages = [];
   if (results.length === 0) return;
+  // 关键路径:保持调用方传入顺序;formatSearchResultsBlock 用 i+1 作 index,勿重排
   this.addSearchResults(
     results.map((r) => ({ path: r.path, content: r.content ?? '' })),
   );
@@ -503,29 +543,54 @@ git commit -m "feat(cite): ContextManager.replaceSearchIndexBlock 覆盖注入"
 - Consumes: `ctx.replaceSearchIndexBlock`
 - 在现有 `yield search.result` 之后调用；try/catch + `devLogger`，不抛
 
-- [ ] **Step 1: 扩展现有 search.result 测试**
+- [ ] **Step 1: 写完整 spy 测试（勿省略 fixture）**
 
-在 `agentLoop - search_vault 返回后发 search.result 事件` 用例末尾追加断言（按该测试已有 mock 结构取 `ctx.toMessages()`）：
-
-```typescript
-const systemBlob = events.length; // 先拿到 loop 用的 ctx
-// 若测试未暴露 ctx: 改为 spy ContextManager.prototype.replaceSearchIndexBlock
-```
-
-推荐更稳的写法 — 在该 describe 内：
+在 `tests/core/agent-loop.test.ts` 追加完整用例：
 
 ```typescript
 it('agentLoop - search_vault 成功 - 调用 replaceSearchIndexBlock', async () => {
-  const spy = vi.spyOn(ContextManager.prototype, 'replaceSearchIndexBlock');
-  // ... 复用同文件 search_vault mock 跑完 agentLoop ...
-  expect(spy).toHaveBeenCalled();
-  const arg = spy.mock.calls[0]?.[0] as Array<{ path: string }>;
-  expect(arg.some((r) => typeof r.path === 'string')).toBe(true);
-  spy.mockRestore();
+	const spy = vi.spyOn(ContextManager.prototype, 'replaceSearchIndexBlock');
+	const persistence = createMockPersistence();
+	const ctx = new ContextManager(persistence);
+
+	const toolCall: ToolCall = {
+		id: 'call_1',
+		name: 'search_vault',
+		args: { query: '技术栈', topK: 3 },
+	};
+
+	const llm = createMockLLM([
+		[{ text: '', toolCall }],
+		[{ text: '根据 [1] 的内容...' }],
+	]);
+
+	const tools = new ToolRegistry();
+	tools.register({
+		definition: { name: 'search_vault', description: 'search', parameters: {} },
+		readOnly: true,
+		execute: async () => [
+			{ docId: 'notes/a.md#chunk-0', score: 0.9, metadata: { path: 'notes/a.md', chunkIndex: 0 }, index: 1 },
+			{ docId: 'notes/b.md#chunk-0', score: 0.8, metadata: { path: 'notes/b.md', chunkIndex: 0 }, index: 2 },
+		],
+	});
+
+	const hooks = new HookRegistry();
+	for await (const _event of agentLoop(
+		{ sessionId: 's1', message: '查技术栈' },
+		ctx,
+		llm,
+		tools,
+		hooks,
+	)) {
+		/* drain */
+	}
+
+	expect(spy).toHaveBeenCalled();
+	const arg = spy.mock.calls[0]?.[0] as Array<{ path: string }>;
+	expect(arg.map((r) => r.path)).toEqual(['notes/a.md', 'notes/b.md']);
+	spy.mockRestore();
 });
 ```
-
-（实现时对照同文件 `search_vault 返回后发 search.result` 的 fixture 复制最小可跑通骨架，避免「Similar to Task」空话——把 messages mock、tools mock 完整粘进本 it。）
 
 - [ ] **Step 2: 改 agent-loop**
 
@@ -535,6 +600,7 @@ if (tc.name === 'search_vault') {
   if (mapped) {
     yield { type: 'search.result', payload: mapped };
     try {
+      // 关键路径:保持 mapped.results 原序,注入 index 与 tool index 对齐
       ctx.replaceSearchIndexBlock(
         mapped.results.map((r) => ({ path: r.path, content: '' })),
       );
@@ -592,18 +658,14 @@ git commit -m "feat(cite): 收紧 RAG workflow 与 search_vault 引用说明"
 
 ---
 
-### Task 7: STATUS 登记 + 全量相关测试
+### Task 7: STATUS 状态推进 + 全量相关测试
 
 **Files:**
 - Modify: `docs/superpowers/STATUS.md`
 
-- [ ] **Step 1: 登记 P-CITE**
+- [ ] **Step 1: 更新 P-CITE 状态**
 
-在「实施 Plan」表增加：
-
-| P-CITE | [2026-07-29-cite-dual-channel-hardening.md](plans/2026-07-29-cite-dual-channel-hardening.md) | ⏳ Pending → 完成后改为 Completed | S-CITE | … |
-
-执行本 plan 开始时改为 `In Progress`；全部 Task 完成后改为 `Completed`。
+P-CITE 已在 STATUS 登记。本 plan **开始执行**时改为 `🔄 In Progress`（备注分支名）；**全部 Task 完成后**改为 `✅ Completed`。不要重复新增行。
 
 - [ ] **Step 2: 跑相关测试套件**
 
@@ -616,17 +678,16 @@ npx vitest run \
   tests/ui/chat/cite-enhance.test.ts \
   tests/ui/chat/message-stream/hydrate-session-messages.test.ts \
   tests/core/context-manager-search.test.ts \
-  tests/core/agent-loop.test.ts \
-  tests/core/search-result-mapper.test.ts
+  tests/core/agent-loop.test.ts
 ```
 
-Expected: 全部 PASS（若无 `search-result-mapper.test.ts` 则去掉该路径）
+Expected: 全部 PASS
 
-- [ ] **Step 3: 提交 STATUS**
+- [ ] **Step 3: 提交 STATUS（Completed 时）**
 
 ```bash
 git add docs/superpowers/STATUS.md
-git commit -m "docs(status): 登记 P-CITE 引用双通道加固 plan"
+git commit -m "docs(status): P-CITE 标记 Completed"
 ```
 
 ---
@@ -637,18 +698,23 @@ git commit -m "docs(status): 登记 P-CITE 引用双通道加固 plan"
 |---|---|
 | prompt 收紧 | Task 6 |
 | search 后注入 `[n] path` | Task 4–5 |
-| 有有效 `[n]` 藏 chip | Task 3 |
+| 有有效 `[n]` 藏 chip | Task 1 `shouldShowCiteChips` + Task 3 |
 | 无 `[n]` 折叠来源 | Task 3 |
 | 可读截断 | Task 1 + 3 |
-| hydrate 从 tool 重建 | Task 2 |
-| 多次 search 覆盖 | Task 2/4/5 |
+| chip `title` 全路径 | Task 3（显式保留 `title={r.path}`） |
+| hydrate 从 tool 重建 + 可解析 path | Task 2 |
+| 多次 search 覆盖 / 勿重排 | Task 2/4/5 |
 | i18n | Task 3 |
 | 不改 Session schema | 全 plan |
 | 不自动插标 | 非目标，无 task |
 
 ## Placeholder 扫描
 
-无 TBD /「类似 Task N」空步骤；agent-loop 测试要求复制 fixture 骨架。
+无 TBD；Task 5 含完整 fixture；Task 7 仅推进 STATUS 状态。
+
+## 审查修订（2026-07-29）
+
+相对初版 plan 已补：`shouldShowCiteChips` 单测、hydrate `pathForCiteIndex` 断言、chip `title`、Task 5 完整 spy 用例、注入勿重排注释、Task 7 STATUS 语义。
 
 ---
 
