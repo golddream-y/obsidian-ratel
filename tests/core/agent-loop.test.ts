@@ -856,6 +856,126 @@ describe('agentLoop', () => {
 		}
 	});
 
+	it('agentLoop - search_vault 成功 - 调用 replaceSearchIndexBlock', async () => {
+		const spy = vi.spyOn(ContextManager.prototype, 'replaceSearchIndexBlock');
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence);
+
+		const toolCall: ToolCall = {
+			id: 'call_1',
+			name: 'search_vault',
+			args: { query: '技术栈', topK: 3 },
+		};
+
+		const llm = createMockLLM([
+			[{ text: '', toolCall }],
+			[{ text: '根据 [1] 的内容...' }],
+		]);
+
+		const tools = new ToolRegistry();
+		tools.register({
+			definition: { name: 'search_vault', description: 'search', parameters: {} },
+			readOnly: true,
+			execute: async () => [
+				{ docId: 'notes/a.md#chunk-0', score: 0.9, metadata: { path: 'notes/a.md', chunkIndex: 0 }, index: 1 },
+				{ docId: 'notes/b.md#chunk-0', score: 0.8, metadata: { path: 'notes/b.md', chunkIndex: 0 }, index: 2 },
+			],
+		});
+
+		const hooks = new HookRegistry();
+		for await (const _event of agentLoop(
+			{ sessionId: 's1', message: '查技术栈' },
+			ctx,
+			llm,
+			tools,
+			hooks,
+		)) {
+			/* drain */
+		}
+
+		expect(spy).toHaveBeenCalled();
+		const arg = spy.mock.calls[0]?.[0] as Array<{ path: string; index?: number; content?: string }>;
+		expect(arg.map((r) => r.path)).toEqual(['notes/a.md', 'notes/b.md']);
+		expect(arg.map((r) => r.index)).toEqual([1, 2]);
+		expect(arg.every((r) => r.content === '')).toBe(true);
+		spy.mockRestore();
+	});
+
+	it('agentLoop - search_vault 二次空结果 - 清空注入并 yield 空 search.result', async () => {
+		const spy = vi.spyOn(ContextManager.prototype, 'replaceSearchIndexBlock');
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence);
+
+		const call1: ToolCall = {
+			id: 'call_1',
+			name: 'search_vault',
+			args: { query: 'a', topK: 3 },
+		};
+		const call2: ToolCall = {
+			id: 'call_2',
+			name: 'search_vault',
+			args: { query: 'b', topK: 3 },
+		};
+
+		let searchRound = 0;
+		const llm = createMockLLM([
+			[{ text: '', toolCall: call1 }],
+			[{ text: '', toolCall: call2 }],
+			[{ text: '无结果' }],
+		]);
+
+		const tools = new ToolRegistry();
+		tools.register({
+			definition: { name: 'search_vault', description: 'search', parameters: {} },
+			readOnly: true,
+			execute: async () => {
+				searchRound += 1;
+				if (searchRound === 1) {
+					return [
+						{
+							docId: 'notes/a.md#chunk-0',
+							score: 0.9,
+							metadata: { path: 'notes/a.md', chunkIndex: 0 },
+							index: 1,
+						},
+					];
+				}
+				return [];
+			},
+		});
+
+		const hooks = new HookRegistry();
+		const events: AgentEvent[] = [];
+		for await (const event of agentLoop(
+			{ sessionId: 's1', message: '查两次' },
+			ctx,
+			llm,
+			tools,
+			hooks,
+		)) {
+			events.push(event);
+		}
+
+		expect(spy.mock.calls.length).toBeGreaterThanOrEqual(2);
+		const lastArg = spy.mock.calls[spy.mock.calls.length - 1]?.[0] as unknown[];
+		expect(lastArg).toEqual([]);
+
+		const searchEvents = events.filter((e) => e.type === 'search.result');
+		const lastSearch = searchEvents[searchEvents.length - 1];
+		expect(lastSearch?.type).toBe('search.result');
+		if (lastSearch?.type === 'search.result') {
+			expect(lastSearch.payload.results).toEqual([]);
+		}
+
+		const searchInject = ctx
+			.toMessages()
+			.filter((m) => m.role === 'system' && m.content.includes('知识库检索结果'))
+			.map((m) => m.content)
+			.join('\n');
+		expect(searchInject).not.toContain('notes/a.md');
+		spy.mockRestore();
+	});
+
 	// ==================== W5: 透传 reasoning / usage ====================
 
 	it('passes reasoning deltas through as message.delta.reasoning', async () => {

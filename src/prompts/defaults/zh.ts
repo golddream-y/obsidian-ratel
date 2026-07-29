@@ -14,8 +14,9 @@ export const ZH_DEFAULTS: Record<PromptSectionId, string> = {
 	'agent.rag.workflow': `回答知识库问题时,按以下流程:
 1. 调用 search_vault 查找相关笔记(结果带 index 编号)。
 2. 对有价值的结果调用 read_note 读全文。
-3. 回答时用 [1][2] 引用 search_vault 返回的 index。
-4. 若无结果,如实告知。`,
+3. 凡依据检索结论的句子,句末必须写 [n](与 search_vault 返回的 index 一致);禁止只用文件名或表格代替 [n] 作为唯一引用方式。
+4. 同一回合若多次调用 search_vault,只用最后一次返回的 index。
+5. 若无结果,如实告知。`,
 
 	'agent.rag.toolGuide': `工具选用说明:
 - 问主题、概念、语义相关:优先 search_vault。
@@ -104,7 +105,7 @@ export const ZH_DEFAULTS: Record<PromptSectionId, string> = {
 	'tool.read_note.param.path': '笔记路径,例如 notes/LangChain.md',
 
 	'tool.search_vault.description':
-		'在知识库中搜索与查询相关的笔记。使用多查询混合检索(向量+BM25)与可选重排,返回带 index 编号的结果;用 read_note 读取全文。',
+		'在知识库中搜索与查询相关的笔记。使用多查询混合检索(向量+BM25)与可选重排,返回带 index 编号的结果;用 read_note 读取全文。回答时用返回的 index 写成 [n] 引用。',
 	'tool.search_vault.param.query': '检索语句,例如「项目技术栈」',
 	'tool.search_vault.param.topK': '返回条数上限,默认 5',
 

@@ -207,7 +207,9 @@ export class ContextManager {
 	 *
 	 * @param results - 搜索结果,每项包含文档路径与已读取的内容。
 	 */
-	addSearchResults(results: Array<{ path: string; content: string }>): void {
+	addSearchResults(
+		results: Array<{ path: string; content: string; index?: number }>,
+	): void {
 		this.requireSession();
 		if (results.length === 0) return;
 
@@ -216,6 +218,29 @@ export class ContextManager {
 			content: formatSearchResultsBlock(results, this.deps.getOverrides()),
 		});
 		// 修复:检索结果消息不应更新 session.updatedAt,它不属于会话历史;但保留对旧行为兼容,暂不影响功能。
+	}
+
+	/**
+	 * 用最新一轮 search 索引块替换上下文中的检索注入(清空后写入)。
+	 *
+	 * 关键路径:同一回合多次 search_vault 时与 UI「后写覆盖」对齐。
+	 *
+	 * @param results - 搜索结果,每项包含文档路径与可选内容(content 缺省为 `''`);
+	 *   可选 `index` 与 search_vault / UI chip 对齐。
+	 */
+	replaceSearchIndexBlock(
+		results: Array<{ path: string; content?: string; index?: number }>,
+	): void {
+		this.searchResultsMessages = [];
+		if (results.length === 0) return;
+		// 关键路径:保持调用方传入顺序与真实 index;勿按过滤后下标重编号
+		this.addSearchResults(
+			results.map((r) => ({
+				path: r.path,
+				content: r.content ?? '',
+				...(r.index !== undefined ? { index: r.index } : {}),
+			})),
+		);
 	}
 
 	/**

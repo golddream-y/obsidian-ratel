@@ -286,13 +286,13 @@ describe('ContextManager', () => {
 		expect(msgs[0]!.content).not.toContain('search_vault');
 	});
 
-	it('toMessages(rag) - 含 search_vault 与 [1] 引用说明', async () => {
+	it('toMessages(rag) - 含 search_vault 与 [n] 引用说明', async () => {
 		const ctx = createCtx(createMockPersistence());
 		await ctx.load('s1');
 		const msgs = ctx.toMessages('rag');
 		expect(msgs[0]!.content).toContain('search_vault');
 		expect(msgs[0]!.content).toContain('read_note');
-		expect(msgs[0]!.content).toContain('[1]');
+		expect(msgs[0]!.content).toContain('[n]');
 	});
 
 	it('toMessages(默认) - 不传 intent 时降级为 direct', async () => {
