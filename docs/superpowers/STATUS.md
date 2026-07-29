@@ -17,8 +17,9 @@
 
 | ID | 文件 | 状态 | 创建日期 | 备注 |
 |---|---|---|---|---|
+| S-CITE | [2026-07-29-cite-dual-channel-hardening-design.md](specs/2026-07-29-cite-dual-channel-hardening-design.md) | Active | 2026-07-29 | 引用双通道加固:注入+prompt+chip 显隐+持久化;plan 待写 |
 | S-SKILL | [2026-07-06-skill-mechanism-design.md](specs/2026-07-06-skill-mechanism-design.md) | Active | 2026-07-06 | Skill 机制;激活注入见 ADR-012;P-SKILL-2/3 pending |
-| S-SKILL-UX | [2026-07-21-skill-ux-design.md](specs/2026-07-21-skill-ux-design.md) | Active | 2026-07-21 | Skill UX;对齐 ADR-010 |
+| S-SKILL-UX | — | Active | 2026-07-21 | Skill UX;对齐 ADR-010;**spec 文件缺失**(从未入库),需补写或从 STATUS 剔除 |
 | S-EVOLUTION | [2026-07-15-evolution-graph-agent.md](specs/2026-07-15-evolution-graph-agent.md) | Active | 2026-07-15 | 图谱原生 Agent;P-EVO-A-READ Completed;下步 P-EVO-A-FM |
 
 ---
@@ -49,11 +50,12 @@
 
 ## Future execution queue(按顺序)
 
-1. **核对 P-EVO-A-READ 合入状态**— Completed 但备注曾写待合并  
-2. **P-EVO-A-FM**(update_frontmatter)— plan 待写  
-3. **S-EVOLUTION Phase B**(Write Gate + open_note)— plan 待写  
-4. **S-EVOLUTION Phase C**(task_plan + 沉淀)— plan 待写  
-5. **P-SKILL-2-EXECUTION** / **P-SKILL-3-UI**— 降优先级;P-SKILL-3 对齐 S-SKILL-UX  
+1. **S-CITE / P-CITE**— 引用双通道加固(plan 待写)  
+2. **核对 P-EVO-A-READ 合入状态**— Completed 但备注曾写待合并  
+3. **P-EVO-A-FM**(update_frontmatter)— plan 待写  
+4. **S-EVOLUTION Phase B**(Write Gate + open_note)— plan 待写  
+5. **S-EVOLUTION Phase C**(task_plan + 沉淀)— plan 待写  
+6. **P-SKILL-2-EXECUTION** / **P-SKILL-3-UI**— 降优先级;P-SKILL-3 对齐 S-SKILL-UX  
 
 ---
 
