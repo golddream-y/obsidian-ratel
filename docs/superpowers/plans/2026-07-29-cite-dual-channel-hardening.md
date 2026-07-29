@@ -17,6 +17,7 @@
 - 文件头 / 导出函数按 AGENTS.md 注释规范（中文）
 - 不改 Session / ChatMessage schema；不自动改写模型正文插 `[n]`
 - 多次 `search_vault`：UI / 注入 / hydrate 均只保留**最后一次**可 map 的结果
+- 注入时保持 `mapped.results` **原序**（`formatSearchResultsBlock` 用 `i+1` 作 index）
 - 不改检索算法 / 默认 topK / Worker
 
 ---
