@@ -32,7 +32,7 @@ S-CHAT-UI-V3 规定引用为 **双通道**：
 2. **B 通道不抢戏**：  
    - 正文出现 ≥1 个有效 `[n]` → **不渲染** chip 行；  
    - 有 `searchResults` 但正文无有效 `[n]` → **折叠**「来源 N 篇」，默认收起，展开后才是 chip。  
-3. **续聊可点**：会话持久化并 hydrate `searchResults`（及 `searchReranked`）。  
+3. **续聊可点**：hydrate 时从会话里已保存的 `search_vault` tool 结果重建 `searchResults`（不新增 Session 字段）。  
 4. **chip 可读**：截断优先保留文件名 / 末两段路径。
 
 成功标准（可验收）：
@@ -40,7 +40,7 @@ S-CHAT-UI-V3 规定引用为 **双通道**：
 - 新一轮含 `search_vault` 的对话：上下文中出现与 tool `index` 对齐的注入块。  
 - 模型若写出 `[1]`：可点打开笔记，且消息底部 **无** chip 行。  
 - 模型若未写任何有效 `[n]`：底部为折叠「来源 N 篇」，展开可点。  
-- 关闭侧栏再打开同一会话：上述行为仍成立（`searchResults` 已恢复）。
+- 关闭侧栏再打开同一会话：上述行为仍成立（由 tool 历史重建 `searchResults`）。
 
 ---
 
@@ -78,36 +78,43 @@ S-CHAT-UI-V3 规定引用为 **双通道**：
 
 更新中文默认（可被 prompt override 覆盖）：
 
-- `agent.rag.workflow`：强调「凡依据检索结论的句子句末必须 `[n]`」；禁止仅以文件名/表格代替 `[n]` 作为唯一引用方式。  
+- `agent.rag.workflow`：强调「凡依据检索结论的句子句末必须 `[n]`」；禁止仅以文件名/表格代替 `[n]` 作为唯一引用方式；**同一回合若多次 `search_vault`，只用最后一次返回的 index**。  
 - `tool.search_vault.description`：补充「回答时用返回的 `index` 写成 `[n]`」。
 
 不新增独立 section id（除非实施时发现 override 面板需要单独开关——默认不需要）。
 
 ### 4.4 UI 消息与持久化
 
-**运行时 `Message`（不变字段，补齐落盘）**
+**运行时 `Message`（不变字段）**
 
 - `searchResults?: { docId, score, path, index }[]`  
 - `searchReranked?: boolean`
 
-**落盘策略（选定）**
+**落盘策略（已选定，不再留给 plan 开岔）**
 
-- 在对应 **assistant** 回合的持久化表示中保存 `searchResults` / `searchReranked`。  
-- 推荐：扩展 session 消息旁路结构（例如 UI hydrate 专用 sidecar，或在最后一条含检索的 assistant 关联字段）。若现有 `ChatMessage` 不宜脏加字段，则在 `Session` 上增加 `messageCitations: Record<assistantKey, SearchResultItem[]>` 或「按消息序号」映射——**plan 必须选一种并写迁移/兼容：旧会话无字段 = 无 chip、正文 `[n]` 不可点（与今日一致）**。  
-- 硬约束：`hydrateSessionMessages`（或其后处理）必须把 `searchResults` 填回 UI `Message`。
+- **不**给 `ChatMessage` / `Session` 新增 citation 字段（避免污染 LLM 回传消息、避免双写）。  
+- **续聊恢复**：在 `hydrateSessionMessages`（或其紧邻后处理）中，从已折叠进该条 UI assistant 的 **tool 消息**里解析 `search_vault` 的 JSON 结果，经现有 `mapSearchResults` 还原 `searchResults` / `searchReranked`。  
+  - 同一 UI 回合内多次 `search_vault`：**取最后一次**成功且可 map 的结果（与实时 `am.searchResults = …` 覆盖一致）。  
+  - 旧会话无 search tool 结果 → 无 chip；正文若有 `[n]` 仍不可点（与今日一致）。  
+- 注入块（`searchResultsMessages`）**不落盘**：随 `ContextManager.load` 清空即可；下一轮对话重新 search 再注入。
 
-**运行时 `citedIndexes`（可不落盘）**
+**运行时 `citedIndexes`（不落盘）**
 
 - 从该条助手全部 text segment 中匹配 `\[(\d+)\]` / `\[\[(\d+)\]\]`，与 `searchResults.index` 求交。  
-- 流式过程中随文本更新重算。
+- 流式过程中随文本更新重算。  
+- 误伤面：正文里碰巧出现的 `[1]` 若恰好落在结果 index 内会变成可点链——可接受；不在本期做 NLP 消歧。
 
 ### 4.5 SearchResults 呈现规则
+
+> **相对 S-CHAT-UI-V3 §5.5.2 的修订**：原文暗示 A/B 常同时可见；本 spec 规定 **有有效内联标时隐藏 B**，无内联标时 B 降为折叠条。以本 spec 为准。
 
 | 条件 | 呈现 |
 |---|---|
 | 无 `searchResults` 或空 | 不显示 |
 | `citedIndexes.size >= 1` | **不渲染** chip 行 |
 | 有 `searchResults` 且 `citedIndexes` 空 | 折叠条「来源 N 篇」（i18n）；默认收起；展开后 chip 列表 |
+
+**产品取舍（已接受）**：隐藏 chip 后，未被 `[n]` 点名的命中仍可在 **Trace 里的 `search_vault` tool 结果**中查看；不在底部重复铺开。
 
 Chip 内容：
 
@@ -117,6 +124,10 @@ Chip 内容：
 - 点击 → 现有 `onOpenPath`。
 
 正文 A 通道：维持 `MarkdownView` + `enhanceCiteLinks`；无匹配 index 则保持纯文本。
+
+### 4.5.1 多次 search 编号（已知限制）
+
+同一助手回合多次 `search_vault` 时，UI/注入/hydrate **均只保留最后一次** index 表。若模型仍引用更早一次的编号，可能点到错误笔记或不可点。缓解：prompt 写明「只用最后一次」；**不做**跨次 search 的全局重编号（范围膨胀，非本期）。
 
 ### 4.6 错误与边界
 
@@ -141,7 +152,7 @@ Chip 内容：
 - 保留并扩展 `cite-enhance` 单测。  
 - 新增：截断函数单测（文件名优先）。  
 - 新增：有/无 `citedIndexes` 时 SearchResults 显隐逻辑（纯函数或组件测）。  
-- 新增：hydrate 恢复 `searchResults` 后 `[1]` 可解析到 path。  
+- 新增：hydrate 从 `search_vault` tool 结果重建后，`[1]` 可解析到 path。  
 - 新增：Agent Loop / Context 在 `search_vault` 成功后出现注入块（mock）。
 
 ---
@@ -154,7 +165,7 @@ Chip 内容：
 | `src/core/context-manager.ts` | 注入 API / 清空再写 |
 | `src/prompts/defaults/zh.ts`（及 en 若有对称默认） | workflow / tool 文案 |
 | `src/ui/chat/message-stream/*` | SearchResults 折叠/显隐；截断；hydrate |
-| Session 持久化 | 保存 searchResults |
+| Session 持久化 | **不改 schema**；hydrate 从 tool JSON 重建 |
 | `src/i18n/*` | 折叠文案 |
 
 ---
@@ -176,5 +187,23 @@ Chip 内容：
 | 模型不写 `[n]` 时 | prompt + 注入 + chip 折叠兜底 |
 | 正文已有有效 `[n]` 时 | 隐藏整行 chip |
 | 注入内容 | 索引清单为主，不强制全文 |
-| 多次 search | 后写覆盖 |
+| 多次 search | 后写覆盖（已知限制，prompt 约束） |
+| 续聊恢复 | 从 tool 历史 `mapSearchResults` 重建，不改 Session schema |
 | 自动改模型原文插标 | 不做 |
+
+---
+
+## 8. 合理性自审（2026-07-29）
+
+| 检查项 | 结论 |
+|---|---|
+| 根因是否对准 | ✅ 对准「模型不写 `[n]` + 无注入示范 + hydrate 丢 searchResults」；非 cite-enhance 渲染 bug |
+| 目标是否可验收 | ✅ 四条成功标准可测 |
+| 持久化是否过度设计 | ⚠️ 初稿把 sidecar / Session 新字段留给 plan → **已改为**从已有 tool 消息重建，YAGNI |
+| 与 S-CHAT-UI-V3 是否冲突 | ⚠️ 「有 A 则藏 B」修订了双通道常同屏 → **已标明以本 spec 为准** |
+| 藏 chip 是否丢信息 | ⚠️ 未引用命中需看 Trace → **已写为接受取舍** |
+| 多次 search 错号 | ⚠️ 覆盖语义与现网一致但有坑 → **已标已知限制 + prompt** |
+| 空 content 注入是否有用 | ✅ 仍给出稳定 `[n] path` 清单，比纯靠 tool JSON 更醒目；不承诺单靠注入 100% 命中 A |
+| 范围是否可单 plan | ✅ 注入 + prompt + UI 显隐/截断 + hydrate 重建；无检索/发版强绑定 |
+
+**自审结论：方案合理，可进入 writing-plans。** 实施时优先落地「hydrate 从 tool 重建」与「SearchResults 显隐」，再接 Agent 注入与 prompt，便于分段验证。
