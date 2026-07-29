@@ -232,6 +232,9 @@ export interface ChatStrings {
   'chat.search.rerankHint': string;
   'chat.cite.openNote': string;
   'chat.cite.openFailed': string;
+  'chat.cite.sourcesCollapsed': string;
+  'chat.cite.sourcesExpandAria': string;
+  'chat.cite.sourcesCollapseAria': string;
   'chat.session.loading': string;
   'chat.session.loadingNew': string;
   'chat.session.menuRecent': string;

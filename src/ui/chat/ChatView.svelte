@@ -765,8 +765,13 @@
 						scrollToBottom();
 						break;
 					case 'search.result':
-						am.searchResults = event.payload.results;
-						am.searchReranked = event.payload.reranked;
+						// 空数组表示本回合最新 search 无可用结果 — 清掉旧 chip / 精排标记
+						am.searchResults = event.payload.results.length
+							? event.payload.results
+							: undefined;
+						am.searchReranked = event.payload.results.length
+							? event.payload.reranked
+							: false;
 						scrollToBottom();
 						break;
 					case 'message.end':

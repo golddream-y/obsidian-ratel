@@ -6,6 +6,7 @@
  */
 
 import type { ChatMessage } from '../../../ports/llm';
+import { mapSearchResults } from '../../../core/search-result-mapper';
 import { formatToolDisplayName } from '../format-tool-display';
 import type { Message, MessageSegment, ToolCallEntry } from './types';
 
@@ -44,6 +45,7 @@ export function hydrateSessionMessages(messages: ChatMessage[]): Message[] {
 		if (m.role === 'assistant') {
 			const segments: MessageSegment[] = [];
 			let sawReasoning = false;
+			let lastSearch: { results: NonNullable<Message['searchResults']>; reranked: boolean } | null = null;
 
 			const pushReasoning = (reasoning?: string) => {
 				if (reasoning && reasoning.trim() && !sawReasoning) {
@@ -88,6 +90,10 @@ export function hydrateSessionMessages(messages: ChatMessage[]): Message[] {
 							result,
 							startAt: 0,
 						};
+						// 成功但不可 map 时清空 lastSearch,与 live「后写覆盖」对齐;失败不覆盖更早成功结果
+						if (toolName === 'search_vault' && status !== 'failed') {
+							lastSearch = mapSearchResults(result);
+						}
 						segments.push({ type: 'tool', toolCall: entry });
 						continue;
 					}
@@ -104,7 +110,13 @@ export function hydrateSessionMessages(messages: ChatMessage[]): Message[] {
 			}
 
 			if (segments.length > 0) {
-				out.push({ role: 'assistant', segments });
+				out.push({
+					role: 'assistant',
+					segments,
+					...(lastSearch
+						? { searchResults: lastSearch.results, searchReranked: lastSearch.reranked }
+						: {}),
+				});
 			}
 			continue;
 		}
