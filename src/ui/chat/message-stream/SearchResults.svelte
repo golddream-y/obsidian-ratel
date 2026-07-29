@@ -1,11 +1,12 @@
 <!--
 	@file src/ui/chat/message-stream/SearchResults.svelte
-	@description 检索引用芯片行 — 取代分数墙大卡(S-CHAT-UI-V3 §5.5)
+	@description 检索引用芯片行 — 默认折叠「来源 N 篇」，展开后显示 chip
 	@module ui/chat/message-stream/SearchResults
-	设计:序号 + 截断 path;点击走注入的 onOpenPath;无 emoji / 无分数色阶
+	设计:序号 + formatCitePath 截断 path;点击走注入的 onOpenPath;无 emoji / 无分数色阶
 -->
 <script lang="ts">
 	import { t } from '../../../i18n';
+	import { formatCitePath } from '../cite-path-display';
 
 	let {
 		results,
@@ -17,32 +18,40 @@
 		onOpenPath: (path: string) => void;
 	} = $props();
 
-	function truncatePath(path: string): string {
-		if (path.length <= 42) return path;
-		return '…' + path.slice(-40);
-	}
+	let expanded = $state(false);
 </script>
 
 {#if results.length > 0}
 	<div class="ratel-cites">
-		{#if reranked}
-			<div class="ratel-cites-hint">{$t('chat.search.rerankHint')}</div>
+		<button
+			type="button"
+			class="ratel-cites-toggle"
+			aria-expanded={expanded}
+			aria-label={expanded ? $t('chat.cite.sourcesCollapseAria') : $t('chat.cite.sourcesExpandAria')}
+			onclick={() => (expanded = !expanded)}
+		>
+			{$t('chat.cite.sourcesCollapsed', { n: results.length })}
+		</button>
+		{#if expanded}
+			{#if reranked}
+				<div class="ratel-cites-hint">{$t('chat.search.rerankHint')}</div>
+			{/if}
+			<div class="ratel-cites-row" role="list">
+				{#each results as r}
+					<button
+						type="button"
+						class="ratel-cite-chip"
+						role="listitem"
+						aria-label={$t('chat.cite.openNote', { path: r.path })}
+						title={r.path}
+						onclick={() => onOpenPath(r.path)}
+					>
+						<span class="ratel-cite-chip-n">{r.index}</span>
+						<span class="ratel-cite-chip-path">{formatCitePath(r.path)}</span>
+					</button>
+				{/each}
+			</div>
 		{/if}
-		<div class="ratel-cites-row" role="list">
-			{#each results as r}
-				<button
-					type="button"
-					class="ratel-cite-chip"
-					role="listitem"
-					aria-label={$t('chat.cite.openNote', { path: r.path })}
-					title={r.path}
-					onclick={() => onOpenPath(r.path)}
-				>
-					<span class="ratel-cite-chip-n">{r.index}</span>
-					<span class="ratel-cite-chip-path">{truncatePath(r.path)}</span>
-				</button>
-			{/each}
-		</div>
 	</div>
 {/if}
 
@@ -58,6 +67,32 @@
 		font-size: 11px;
 		color: var(--text-muted);
 		line-height: 1.3;
+	}
+
+	.ratel-cites-toggle {
+		align-self: flex-start;
+		padding: 0;
+		border: none;
+		background: transparent;
+		color: var(--text-muted);
+		font-size: 11.5px;
+		font-family: inherit;
+		line-height: 1.4;
+		cursor: pointer;
+		text-decoration: underline;
+		text-underline-offset: 2px;
+		-webkit-appearance: none;
+		appearance: none;
+	}
+
+	.ratel-cites-toggle:hover {
+		color: var(--text-normal);
+	}
+
+	.ratel-cites-toggle:focus-visible {
+		outline: 2px solid var(--interactive-accent);
+		outline-offset: 2px;
+		border-radius: 2px;
 	}
 
 	.ratel-cites-row {

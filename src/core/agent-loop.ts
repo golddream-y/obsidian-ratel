@@ -274,10 +274,33 @@ export async function* agentLoop(
 				}
 
 				// 关键路径:search_vault 返回后用 mapSearchResults 扁平化(逻辑外迁到 search-result-mapper)
-				if (tc.name === 'search_vault') {
+				// 成功但不可 map(空/无 path)时也清空 UI 与注入,避免同回合旧来源残留
+				if (tc.name === 'search_vault' && !toolFailed) {
 					const mapped = mapSearchResults(result);
 					if (mapped) {
 						yield { type: 'search.result', payload: mapped };
+						try {
+							// 关键路径:保持 mapped.results 原序,传入真实 index 与 tool/UI 对齐
+							ctx.replaceSearchIndexBlock(
+								mapped.results.map((r) => ({
+									path: r.path,
+									content: '',
+									index: r.index,
+								})),
+							);
+						} catch (err) {
+							devLogger.warn('agent', 'search 索引注入失败', err);
+						}
+					} else {
+						yield {
+							type: 'search.result',
+							payload: { results: [], reranked: false },
+						};
+						try {
+							ctx.replaceSearchIndexBlock([]);
+						} catch (err) {
+							devLogger.warn('agent', 'search 索引清空失败', err);
+						}
 					}
 				}
 

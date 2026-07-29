@@ -212,14 +212,15 @@ export function composeCompactMessages(
  * @returns 含外框的检索结果块字符串
  */
 export function formatSearchResultsBlock(
-	results: Array<{ path: string; content: string }>,
+	results: Array<{ path: string; content: string; index?: number }>,
 	overrides: OverrideMap,
 ): string {
 	const bodyTemplate = resolveSection('injection.searchResults.body', overrides);
 	const body = results
 		.map((r, i) =>
 			interpolate(bodyTemplate, {
-				index: String(i + 1),
+				// 关键路径:优先用工具/UI 的真实 index,过滤缺 path 后避免 i+1 重编号错位
+				index: String(r.index ?? i + 1),
 				path: r.path,
 				content: r.content,
 			}),
