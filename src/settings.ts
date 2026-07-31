@@ -663,7 +663,7 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 					{
 						name: tNow('memory.settings.viewMemory.name'),
 						desc: tNow('memory.settings.viewMemory.desc'),
-						action: () => void this.plugin.activateMemoryView(),
+						action: () => this.plugin.openMemoryModal(),
 					},
 				],
 			},

@@ -12,14 +12,6 @@
 
 ---
 
-## 最近更新
-
-**这里写「现在能干什么」的短摘要；** 完整历史见 **[更新日志](https://github.com/golddream-y/obsidian-ratel/blob/main/CHANGELOG.md)**。
-
-- **当前稳定版：[0.1.13](https://github.com/golddream-y/obsidian-ratel/blob/main/CHANGELOG.md#0113---2026-07-25)** — 关掉侧栏再开还能续聊；右上角短标题芯片可切换最近对话；首轮自动起标题；`/new` 与列表「新对话」行为一致
-
----
-
 ## 安装
 
 Obsidian → **设置** → **社区插件** → **浏览** → 搜索 **Ratel** → **安装** → **启用**。

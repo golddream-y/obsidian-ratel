@@ -105,6 +105,9 @@ export class Setting {
 	addButton() {
 		return this;
 	}
+	addExtraButton() {
+		return this;
+	}
 	setTooltip() {
 		return this;
 	}

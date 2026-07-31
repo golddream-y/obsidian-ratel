@@ -19,6 +19,7 @@ import type { EmbeddingPort } from '../ports/embedding';
 import type { TopicIndexEntry } from '../types';
 import type { VectorSearchResult } from '../ports/vector';
 import { tNow } from '../i18n';
+import { bumpMemory } from './memory-revision';
 
 // 关键路径:spec §7 容量上限 — 记忆目录总大小上限,超出拒绝写入。
 // 注:globalContent 注入到 system prompt 前的 20KB 截断由 composer.ts 的 truncateForInjection 负责。
@@ -129,6 +130,8 @@ export class MemoryStore {
 	writeGlobal(content: string): void {
 		const globalPath = path.join(this.baseDir, 'global.md');
 		fs.writeFileSync(globalPath, content, 'utf-8');
+		// 关键路径:通知 MemoryPanel 等订阅方重读(agent remember / 面板编辑共用)。
+		bumpMemory();
 	}
 
 	/**
@@ -177,6 +180,7 @@ export class MemoryStore {
 		const normalized = existing.endsWith('\n') ? existing : existing + '\n';
 		const appended = normalized + `- [[topics/${name}]] — ${summary}\n`;
 		fs.writeFileSync(indexPath, appended, 'utf-8');
+		bumpMemory();
 	}
 
 	/**
@@ -200,6 +204,7 @@ export class MemoryStore {
 			.filter((line) => !line.includes(target))
 			.join('\n');
 		fs.writeFileSync(indexPath, filtered, 'utf-8');
+		bumpMemory();
 	}
 
 	/**
@@ -231,6 +236,7 @@ export class MemoryStore {
 		this.validateTopicName(name);
 		const topicPath = path.join(this.baseDir, 'topics', `${name}.md`);
 		fs.writeFileSync(topicPath, content, 'utf-8');
+		bumpMemory();
 	}
 
 	/**
@@ -248,6 +254,7 @@ export class MemoryStore {
 		const topicPath = path.join(this.baseDir, 'topics', `${name}.md`);
 		if (fs.existsSync(topicPath)) {
 			fs.unlinkSync(topicPath);
+			bumpMemory();
 		}
 	}
 

@@ -59,10 +59,10 @@ vi.mock('../src/ui/chat/ChatView', () => ({
 	VIEW_TYPE_CHAT: 'ratel-chat',
 }));
 
-// 关键路径:MemoryPanelView import MemoryPanel.svelte,vitest 没配 svelte 解析器,需 stub
-vi.mock('../src/ui/memory-panel/MemoryPanelView', () => ({
-	MemoryPanelView: class {},
-	VIEW_TYPE_MEMORY: 'ratel-memory',
+// 关键路径:MemoryModal import MemoryPanel.svelte,vitest 没配 svelte 解析器,需 stub
+vi.mock('../src/ui/memory-panel/MemoryModal', () => ({
+	MemoryModal: class {},
+	shouldCreateMemoryModal: (current: unknown) => current === null,
 }));
 
 describe('main rag loop integration', () => {

@@ -37,6 +37,8 @@ export function renderPromptOverrideSection(
 ): (setting: Setting, group: SettingGroup) => void {
 	return (setting) => {
 		const container = setting.settingEl;
+		// 修复:update() 重入时先清空,避免自定义 DOM 横向堆叠
+		container.empty();
 		const useCustom = plugin.settings.promptOverrides[meta.id] !== undefined;
 
 		// section 标题行
@@ -122,6 +124,7 @@ export function renderPromptPreviewButton(
 	plugin: RatelVaultPlugin,
 ): (setting: Setting, group: SettingGroup) => void {
 	return (setting) => {
+		setting.settingEl.empty();
 		new Setting(setting.settingEl)
 			.setName(tNow('settings.promptOverrides.previewButton'))
 			.setDesc(tNow('settings.promptOverrides.previewDesc'))

@@ -19,12 +19,21 @@
 	import type { TopicIndexEntry, MemoryEntry } from '../../types';
 	import { applyRatelAppearance } from '../appearance/apply-ratel-appearance';
 	import { appearanceRevision } from '../appearance/appearance-store';
+	import { memoryRevision } from '../../core/memory-revision';
 
-	let { plugin }: { plugin: RatelVaultPlugin } = $props();
+	let {
+		plugin,
+		embeddedInModal = false,
+	}: {
+		plugin: RatelVaultPlugin;
+		/** 嵌在 MemoryModal 内时隐藏面板自带标题,避免与 Modal titleEl 重复 */
+		embeddedInModal?: boolean;
+	} = $props();
 
 	// ==================== 外观热更新 ====================
 	let panelRoot: HTMLElement | undefined;
 	let appearanceUnsub: (() => void) | undefined;
+	let memoryUnsub: (() => void) | undefined;
 
 	/** 把当前 settings 外观写到 Memory 面板根节点。 */
 	function syncAppearance() {
@@ -39,8 +48,16 @@
 		syncAppearance();
 		// 关键路径:subscribe 立即回调一次(与 onMount sync 重复无害);后续 bump 触发热更新。
 		appearanceUnsub = appearanceRevision.subscribe(() => syncAppearance());
+		// 关键路径:agent remember / forget 写盘后 bumpMemory → 重读列表(含主题记忆)。
+		// subscribe 首次回调会再 load 一次,与顶层 loadMemories 重复无害。
+		memoryUnsub = memoryRevision.subscribe(() => {
+			void loadMemories();
+		});
 	});
-	onDestroy(() => appearanceUnsub?.());
+	onDestroy(() => {
+		appearanceUnsub?.();
+		memoryUnsub?.();
+	});
 
 	// ==================== 响应式状态 ====================
 	let searchQuery = $state('');
@@ -390,7 +407,9 @@
 <div class="ratel-memory-panel" bind:this={panelRoot}>
 	<!-- 顶部:标题 + 搜索框 -->
 	<div class="ratel-memory-header">
-		<span class="ratel-memory-title">{$t('memory.panel.title')}</span>
+		{#if !embeddedInModal}
+			<span class="ratel-memory-title">{$t('memory.panel.title')}</span>
+		{/if}
 		<input
 			type="text"
 			class="ratel-memory-search"

@@ -1,10 +1,11 @@
 {
 	"id": "ratel-vault",
 	"name": "Ratel",
-	"version": "0.1.14",
+	"version": "0.1.15",
 	"minAppVersion": "1.13.0",
 	"description": "Graph-native AI agent for your notes—chat, cited semantic search, multi-step research and safe edits. Works with DeepSeek, Claude, Ollama. Local embeddings; no telemetry.",
 	"author": "golddream-y",
 	"authorUrl": "https://github.com/golddream-y",
-	"isDesktopOnly": true
+	"isDesktopOnly": true,
+	"fundingUrl": "https://github.com/golddream-y/obsidian-ratel/blob/main/SPONSOR.md"
 }

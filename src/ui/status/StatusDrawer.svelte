@@ -16,12 +16,21 @@
 		contextUsage$,
 		embedKind,
 		onCompact,
+		onFeedback,
+		onMemory,
+		onSponsor,
 	}: {
 		expanded: boolean;
 		status$: Readable<UserStatusSnapshot>;
 		contextUsage$: Readable<ContextUsage>;
 		embedKind: 'local' | 'api';
 		onCompact: () => void;
+		/** 问题反馈入口(可选) */
+		onFeedback?: () => void;
+		/** 记忆管理入口(可选) */
+		onMemory?: () => void;
+		/** 赞助页入口(可选);按界面语言打开对应文档 */
+		onSponsor?: () => void;
 	} = $props();
 
 	const snap = $derived($status$);
@@ -136,6 +145,76 @@
 		<div class="ratel-drawer-row ratel-drawer-row-end">
 			<button class="ratel-drawer-micro-btn" type="button" onclick={onCompact}>{$t('status.drawer.compactButton')}</button>
 		</div>
+		{#if onFeedback || onMemory || onSponsor}
+			<!-- 低频入口:反馈 / 记忆管理 / 赞助(无 aria-label,避免 Obsidian「相关操作」提示) -->
+			<nav class="ratel-drawer-actions">
+				{#if onFeedback}
+					<button type="button" class="ratel-drawer-action" onclick={onFeedback}>
+						<svg class="ratel-drawer-action-ico" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
+							<path
+								d="M5 5.5A2.5 2.5 0 0 1 7.5 3h9A2.5 2.5 0 0 1 19 5.5v7A2.5 2.5 0 0 1 16.5 15H12l-3.6 3.2a.6.6 0 0 1-1 .4V15H7.5A2.5 2.5 0 0 1 5 12.5v-7Z"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.75"
+								stroke-linejoin="round"
+							/>
+							<path
+								d="M8.5 8h7M8.5 11h4.5"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.75"
+								stroke-linecap="round"
+							/>
+						</svg>
+						<span>{$t('status.drawer.feedback')}</span>
+					</button>
+				{/if}
+				{#if onMemory}
+					<button type="button" class="ratel-drawer-action" onclick={onMemory}>
+						<svg class="ratel-drawer-action-ico" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
+							<path
+								d="M6 4.5h9.5A2.5 2.5 0 0 1 18 7v12.2l-3.2-1.6L12 19l-2.8-1.4L6 19.2V7A2.5 2.5 0 0 1 8.5 4.5"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.75"
+								stroke-linejoin="round"
+							/>
+						</svg>
+						<span>{$t('status.drawer.memory')}</span>
+					</button>
+				{/if}
+				{#if onSponsor}
+					<button type="button" class="ratel-drawer-action" onclick={onSponsor}>
+						<svg class="ratel-drawer-action-ico" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
+							<path
+								d="M5 8h11.5a2.5 2.5 0 0 1 0 5H16"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.75"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							/>
+							<path
+								d="M5 8v7.5A2.5 2.5 0 0 0 7.5 18H14"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.75"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							/>
+							<path
+								d="M8 8V6.5A1.5 1.5 0 0 1 9.5 5h3A1.5 1.5 0 0 1 14 6.5V8"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.75"
+								stroke-linejoin="round"
+							/>
+						</svg>
+						<span>{$t('status.drawer.sponsor')}</span>
+					</button>
+				{/if}
+			</nav>
+		{/if}
 	</div>
 </div>
 
@@ -155,7 +234,8 @@
 	}
 
 	.ratel-drawer-open {
-		max-height: 360px;
+		/* 内容区含记忆入口后略增高,留余量防裁切 */
+		max-height: 400px;
 		overflow-y: auto;
 		opacity: 1;
 		border-top-color: var(--background-modifier-border);
@@ -272,5 +352,46 @@
 	.ratel-drawer-micro-btn:hover {
 		color: var(--text-normal);
 		border-color: var(--text-success);
+	}
+
+	.ratel-drawer-actions {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 12px 16px;
+		margin-top: 10px;
+		padding-top: 8px;
+		border-top: 1px solid var(--background-modifier-border);
+	}
+
+	.ratel-drawer-action {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		padding: 0;
+		border: none;
+		background: transparent;
+		color: var(--text-muted);
+		font-size: 11.5px;
+		font-family: inherit;
+		line-height: 1.4;
+		cursor: pointer;
+		-webkit-appearance: none;
+		appearance: none;
+	}
+
+	.ratel-drawer-action-ico {
+		flex-shrink: 0;
+		opacity: 0.9;
+	}
+
+	.ratel-drawer-action:hover {
+		color: var(--text-normal);
+	}
+
+	.ratel-drawer-action:focus-visible {
+		outline: 2px solid var(--interactive-accent);
+		outline-offset: 2px;
+		border-radius: 2px;
 	}
 </style>
