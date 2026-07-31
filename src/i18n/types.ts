@@ -179,6 +179,12 @@ export interface ChatStrings {
   'chat.header.title': string;
   'chat.header.tagline': string;
   'chat.header.modelChip': string;
+  'chat.feedback.title': string;
+  'chat.feedback.body': string;
+  'chat.feedback.copyDiag': string;
+  'chat.feedback.openIssues': string;
+  'chat.feedback.copyOk': string;
+  'chat.feedback.copyFail': string;
   'chat.workbar.indexing': string;
   'chat.workbar.downloading': string;
   'chat.workbar.preparing': string;
@@ -380,6 +386,9 @@ export interface StatusStrings {
   'status.drawer.usedMaxValue': string;
   'status.drawer.compactButton': string;
   'status.drawer.docCount': string;
+  'status.drawer.feedback': string;
+  'status.drawer.memory': string;
+  'status.drawer.sponsor': string;
   'status.indexLabel.ready': string;
   'status.indexLabel.scanning': string;
   'status.indexLabel.queued': string;

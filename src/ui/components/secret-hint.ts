@@ -24,6 +24,9 @@ export function renderSecretHint(
 	containerEl: HTMLElement,
 	opts: { secretId: string; hasKey: boolean; note?: string },
 ): void {
+	// 修复:声明式 SettingTab.update() 会再次调用 render,必须先清空再画,
+	// 否则每敲一键追加一块,Obsidian .setting-item 横向 flex 会变成窄列墙。
+	containerEl.empty();
 	const wrap = containerEl.createDiv({ cls: 'ratel-secret-hint' });
 
 	new Setting(wrap)
@@ -67,6 +70,8 @@ export function renderSecretHint(
  * @param message - 说明文案(如"当前为内置本地 Embedding 模型,无需 API Key")
  */
 export function renderNoKeyNeeded(containerEl: HTMLElement, message: string): void {
+	// 修复:与 renderSecretHint 相同 — update() 重入时先清空
+	containerEl.empty();
 	new Setting(containerEl)
 		.setName(tNow('settings.advanced.secretHint.title'))
 		.setDesc(message);

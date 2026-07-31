@@ -386,3 +386,46 @@ body.theme-dark .ratel-session-menu,
 	z-index: 1000 !important;
 	isolation: isolate;
 }
+
+/* ==================== 问题反馈 Modal ==================== */
+.ratel-feedback-body {
+	margin: 0 0 12px;
+	color: var(--text-muted);
+	font-size: 13px;
+	line-height: 1.5;
+}
+.ratel-feedback-diag {
+	margin: 0 0 14px;
+	padding: 10px 12px;
+	border-radius: 8px;
+	border: 1px solid var(--background-modifier-border);
+	background: var(--background-secondary);
+	color: var(--text-muted);
+	font-family: var(--font-monospace);
+	font-size: 11.5px;
+	line-height: 1.45;
+	white-space: pre-wrap;
+	word-break: break-word;
+	user-select: text;
+}
+
+/* ==================== 记忆管理 Modal ==================== */
+/* 外框加宽挂在 modalEl（.modal）;flex+定高让 MemoryPanel height:100% 与内部滚动生效 */
+.modal.ratel-memory-modal-shell {
+	width: min(720px, 92vw);
+	height: min(85vh, 900px);
+	max-height: min(85vh, 900px);
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+}
+
+.modal.ratel-memory-modal-shell .ratel-memory-modal {
+	flex: 1 1 auto;
+	min-height: 0;
+	height: 100%;
+	overflow: hidden;
+	display: flex;
+	flex-direction: column;
+	padding-top: 4px;
+}

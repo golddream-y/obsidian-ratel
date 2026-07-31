@@ -12,14 +12,6 @@ Chat, research, and act on your linked notes. Ask what you wrote about a topic; 
 
 ---
 
-## What's new
-
-**README is the short “what you can do now” snapshot.** Full history: **[Changelog](https://github.com/golddream-y/obsidian-ratel/blob/main/CHANGELOG.md)**.
-
-- **Latest stable: [0.1.13](https://github.com/golddream-y/obsidian-ratel/blob/main/CHANGELOG.md#0113---2026-07-25)** — reopen the sidebar and continue the same chat; short-title chip switches recent sessions; auto titles after the first turn; `/new` matches the menu “New chat”
-
----
-
 ## Install
 
 Obsidian → **Settings** → **Community plugins** → **Browse** → search **Ratel** → **Install** → **Enable**.

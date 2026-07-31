@@ -59,6 +59,8 @@
 	import { showCompactConfirm } from './compact-confirm';
 	import { compactSession } from './compact-session';
 	import { ModelInfoModal } from './model-info-modal';
+	import { FeedbackModal } from './feedback-modal';
+	import { openSponsorPage } from './sponsor-links';
 	import { openChatNote } from './open-chat-note';
 	import { Notice } from 'obsidian';
 	import { devLogger } from '../../logging/dev-logger';
@@ -629,6 +631,19 @@
 		}
 	}
 
+	/** 状态抽屉「记忆管理」入口 → 打开 MemoryModal */
+	function openMemory(): void {
+		plugin.openMemoryModal();
+	}
+
+	function openFeedback(): void {
+		new FeedbackModal(plugin.app, plugin).open();
+	}
+
+	function openSponsor(): void {
+		void openSponsorPage();
+	}
+
 	async function handleCompact() {
 		// 关键路径:防止用户从 slash 命令 + StatusDrawer 按钮双重触发,避免并发 resetSession
 		if (isCompacting) return;
@@ -1018,6 +1033,9 @@
 			contextUsage$={contextStore}
 			embedKind={plugin.settings.embedProvider}
 			onCompact={handleCompact}
+			onFeedback={openFeedback}
+			onMemory={openMemory}
+			onSponsor={openSponsor}
 		/>
 		<div class="ratel-input">
 			<!-- 附件预览条 -->
