@@ -48,14 +48,6 @@ Ratel 就是按这个方向一点点做出来的开源 Obsidian 插件。写代�
 
 - **爱发电：** [afdian.com/a/golddream](https://afdian.com/a/golddream)
 
-可选扫码（把收款二维码放到仓库后，取消下面注释）：
-
-<!--
-| 微信 | 支付宝 |
-|:---:|:---:|
-| ![微信赞赏](https://raw.githubusercontent.com/golddream-y/obsidian-ratel/main/docs/assets/sponsor-wechat.png) | ![支付宝](https://raw.githubusercontent.com/golddream-y/obsidian-ratel/main/docs/assets/sponsor-alipay.png) |
--->
-
 ### 国外
 
 - **Ko-fi：** [ko-fi.com/golddream_y](https://ko-fi.com/golddream_y)

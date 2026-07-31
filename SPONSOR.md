@@ -48,14 +48,6 @@ Tipping does not change features. Ratel stays free and open source, and it does 
 
 - **Afdian:** [afdian.com/a/golddream](https://afdian.com/a/golddream)
 
-Optional QR (uncomment after adding images):
-
-<!--
-| WeChat | Alipay |
-|:---:|:---:|
-| ![WeChat](https://raw.githubusercontent.com/golddream-y/obsidian-ratel/main/docs/assets/sponsor-wechat.png) | ![Alipay](https://raw.githubusercontent.com/golddream-y/obsidian-ratel/main/docs/assets/sponsor-alipay.png) |
--->
-
 ### International
 
 - **Ko-fi:** [ko-fi.com/golddream_y](https://ko-fi.com/golddream_y)
