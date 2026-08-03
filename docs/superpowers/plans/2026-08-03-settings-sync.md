@@ -476,12 +476,10 @@ Expected 允许：
 - [ ] **Step 3: 跑相关单测**
 
 ```bash
-npx vitest run tests/ui/settings-store.test.ts tests/ui/settings-revision.test.ts tests/ui/tokens/context-length-presets.test.ts
-# gate 单测（若存在）:
-npx vitest run tests/ui/chat/chat-send-gate.test.ts 2>/dev/null || npx vitest run $(rg -l 'evaluateChatSendGate' tests || true)
+npx vitest run tests/ui/settings-store.test.ts tests/ui/settings-revision.test.ts tests/ui/tokens/context-length-presets.test.ts tests/ui/chat-send-gate.test.ts
 ```
 
-Expected: PASS（无 gate 测试文件时仅跑前一组）
+Expected: PASS
 
 - [ ] **Step 4: 提交**
 
