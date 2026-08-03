@@ -358,23 +358,34 @@
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
-		gap: 12px 16px;
+		gap: 10px 18px;
 		margin-top: 10px;
 		padding-top: 8px;
 		border-top: 1px solid var(--background-modifier-border);
 	}
 
+	/*
+	 * 低频入口 — 静默文字链,非按钮皮。
+	 * 关键路径:Obsidian 全局 button 带边框/阴影/固定高度,scoped 常被盖住;
+	 * 完整重置放 styles.css 的 button.ratel-drawer-action,此处作组件内兜底。
+	 */
 	.ratel-drawer-action {
 		display: inline-flex;
 		align-items: center;
 		gap: 5px;
-		padding: 0;
+		height: auto;
+		min-height: 0;
+		padding: 2px 0;
+		margin: 0;
 		border: none;
+		border-radius: 0;
 		background: transparent;
+		box-shadow: none;
 		color: var(--text-muted);
 		font-size: 11.5px;
+		font-weight: inherit;
 		font-family: inherit;
-		line-height: 1.4;
+		line-height: 1.45;
 		cursor: pointer;
 		-webkit-appearance: none;
 		appearance: none;
@@ -387,6 +398,8 @@
 
 	.ratel-drawer-action:hover {
 		color: var(--text-normal);
+		background: transparent;
+		box-shadow: none;
 	}
 
 	.ratel-drawer-action:focus-visible {

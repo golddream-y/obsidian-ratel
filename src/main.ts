@@ -11,6 +11,7 @@ import { type RatelVaultSettings, DEFAULT_SETTINGS, RatelVaultSettingTab, normal
 import { normalizeChatPreset } from './settings/chat-preset';
 import { normalizeAppearanceSettings } from './ui/appearance/normalize-appearance-settings';
 import { bumpAppearance } from './ui/appearance/appearance-store';
+import { bumpSettingsRevision } from './ui/settings-revision';
 
 import type { AgentEvent } from './types';
 import { agentLoop } from './core/agent-loop';
@@ -1072,6 +1073,8 @@ export default class RatelVaultPlugin extends Plugin {
 		await this.saveData(mergePluginData(existing, { ...this.settings }));
 		// 关键路径:settings 变更后热替换工具 definition,让 LLM 立即看到新 description。
 		this.syncToolDefinitions();
+		// 关键路径:通知 Chat 等视图重读 chatModel / embedProvider(普通对象赋值 Svelte 不可见)。
+		bumpSettingsRevision();
 		// 关键路径:通知 Chat / Memory 等视图重跑 applyRatelAppearance(热更新外观)。
 		bumpAppearance();
 	}
