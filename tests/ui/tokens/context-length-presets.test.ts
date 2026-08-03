@@ -7,6 +7,7 @@ import {
 	presetToTokens,
 	tokensToPreset,
 	applyContextRecommendation,
+	applyContextLengthPreset,
 } from '../../../src/ui/tokens/context-length-presets';
 
 describe('context-length-presets', () => {
@@ -32,5 +33,19 @@ describe('context-length-presets', () => {
 		const r = applyContextRecommendation(200_000);
 		expect(r.preset).toBe('200k');
 		expect(r.chatModelMaxTokens).toBe(200_000);
+	});
+
+	it('applyContextLengthPreset - 切到 1M - 同步写入 chatModelMaxTokens', () => {
+		const s = { contextLengthPreset: '256k' as const, chatModelMaxTokens: 256_000 };
+		applyContextLengthPreset(s, '1M');
+		expect(s.contextLengthPreset).toBe('1M');
+		expect(s.chatModelMaxTokens).toBe(1_048_576);
+	});
+
+	it('applyContextLengthPreset - 切到 custom - 保留当前 token 数', () => {
+		const s = { contextLengthPreset: '256k' as const, chatModelMaxTokens: 256_000 };
+		applyContextLengthPreset(s, 'custom');
+		expect(s.contextLengthPreset).toBe('custom');
+		expect(s.chatModelMaxTokens).toBe(256_000);
 	});
 });
