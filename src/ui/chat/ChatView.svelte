@@ -69,7 +69,7 @@
 	import { getEffectiveChatModelMaxTokens } from '../../utils/context-window';
 	import { applyRatelAppearance } from '../appearance/apply-ratel-appearance';
 	import { appearanceRevision } from '../appearance/appearance-store';
-	import { settingsRevision } from '../settings-revision';
+	import { settings$ as settingsStore } from '../settings-store';
 
 	let { plugin }: { plugin: RatelVaultPlugin } = $props();
 
@@ -458,11 +458,13 @@
 	let keyTick = $state(0);
 	const hasKey = $derived.by(() => {
 		void keyTick;
+		void $settingsStore;
 		return hasChatApiKey(plugin.app, plugin.settings);
 	});
 	const gate = $derived.by(() => {
 		void keyTick;
-		return evaluateChatSendGate(plugin.settings, $statusStore, { hasChatApiKey: hasKey });
+		const s = $settingsStore;
+		return evaluateChatSendGate(s, $statusStore, { hasChatApiKey: hasKey });
 	});
 	const slashVisible = $derived.by(() => {
 		const v = input.startsWith('/') && !input.includes(' ');
@@ -471,15 +473,8 @@
 	});
 	// 关键路径:/ 与 @ 互斥 — 斜杠优先;mention 补全仅在非 slash 态
 	const mentionVisible = $derived(mentionQuery !== null && !slashVisible);
-	// 关键路径:settings 原地改写 Svelte 不可见;saveSettings → bumpSettingsRevision 后重读芯片。
-	const modelName = $derived.by(() => {
-		void $settingsRevision;
-		return plugin.settings.chatModel;
-	});
-	const embedKind = $derived.by(() => {
-		void $settingsRevision;
-		return plugin.settings.embedProvider;
-	});
+	const modelName = $derived($settingsStore.chatModel);
+	const embedKind = $derived($settingsStore.embedProvider);
 
 	// 关键路径:原 work-bar 文案合并进 StatusStrip — 优先级从上到下,同时满足只取第一个
 	// 关键路径:indexing 分支不解析 indexDetail(progressing 状态是文件名,queueing 是 i18n 文字,
@@ -515,7 +510,7 @@
 	// 关键路径:chatModelMaxTokens 由设置面板预设/自定义配置,见 ADR-007。
 	$effect(() => {
 		plugin.userStatus.patchContextUsage({
-			maxTokens: getEffectiveChatModelMaxTokens(plugin.settings),
+			maxTokens: getEffectiveChatModelMaxTokens($settingsStore),
 		});
 	});
 

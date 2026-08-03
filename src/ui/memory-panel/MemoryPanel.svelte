@@ -20,6 +20,7 @@
 	import { applyRatelAppearance } from '../appearance/apply-ratel-appearance';
 	import { appearanceRevision } from '../appearance/appearance-store';
 	import { memoryRevision } from '../../core/memory-revision';
+	import { settings$ as settingsStore } from '../settings-store';
 
 	let {
 		plugin,
@@ -509,7 +510,7 @@
 	<!-- 底部状态栏 -->
 	<div class="ratel-memory-footer">
 		<span class="ratel-memory-size">
-			{$t('memory.panel.totalSize')}: {formatBytes(totalSize)} / {plugin.settings.memoryStorageLimitMB} MB
+			{$t('memory.panel.totalSize')}: {formatBytes(totalSize)} / {$settingsStore.memoryStorageLimitMB} MB
 		</span>
 		<button class="mod-warning ratel-memory-clear" onclick={clearModelMemories}>
 			{$t('memory.panel.clearModelMemories')}

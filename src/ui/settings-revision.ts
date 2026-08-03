@@ -8,16 +8,18 @@
 import { writable, type Writable } from 'svelte/store';
 
 /**
- * 设置 revision — `saveSettings` 成功后 bump。
+ * 设置 revision — 过渡用；生产路径由 `publishSettingsSnapshot` 更新 `settings$`。
  *
  * 设计要点:
  * - settings 是可变普通对象,Svelte 看不到 `chatModel` 等字段赋值;
- * - 用版本号通知侧栏芯片 / embed 类型等 UI 重读 plugin.settings。
+ * - 旧版用版本号通知侧栏芯片 / embed 类型等 UI 重读 plugin.settings。
  */
 export const settingsRevision: Writable<number> = writable(0);
 
 /**
- * 递增设置版本号,通知订阅方重读 settings。
+ * 仅递增版本号，**不**更新 settings$。
+ * 生产路径请用 `publishSettingsSnapshot`（saveSettings 已挂钩）。
+ * 保留本函数供旧测试 / 过渡订阅。
  */
 export function bumpSettingsRevision(): void {
 	settingsRevision.update((n) => n + 1);
