@@ -40,6 +40,23 @@ export function applyContextRecommendation(tokens: number): {
 }
 
 /**
+ * 设置页下拉切换 Context Length 时同步写入 settings。
+ *
+ * @param settings - 可变 settings 片段
+ * @param preset - 新的预设 id
+ */
+export function applyContextLengthPreset(
+	settings: { contextLengthPreset: ContextLengthPresetId; chatModelMaxTokens: number },
+	preset: ContextLengthPresetId,
+): void {
+	settings.contextLengthPreset = preset;
+	// 关键路径:下拉只写 preset 时抽屉上限不更新 — 必须同步 token
+	if (preset !== 'custom') {
+		settings.chatModelMaxTokens = presetToTokens(preset);
+	}
+}
+
+/**
  * 从 chatModelMaxTokens 推断 preset(用于 loadSettings 迁移)。
  */
 export function inferPresetFromTokens(
