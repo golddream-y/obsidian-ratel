@@ -9,6 +9,7 @@ import {
 	App,
 	Notice,
 	PluginSettingTab,
+	Setting,
 	type SettingDefinitionItem,
 	type SettingGroupItem,
 } from 'obsidian';
@@ -55,6 +56,7 @@ import {
 import type { UiAccentId, UiColorScheme } from './ui/appearance/appearance-presets';
 import { renderAppearanceSettings } from './ui/appearance/appearance-settings-render';
 import type { McpServerConfig } from './ports/mcp';
+import { parseMcpToolName } from './ui/mcp/parse-mcp-tool-name';
 
 /** 设置顶栏 Tab ID(仅 UI 态,不落盘) */
 export type SettingsUiTab = 'chat' | 'index' | 'agent' | 'appearance' | 'advanced';
@@ -714,6 +716,22 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 				visible: agentVisible,
 				items: this.buildToolPermissionItems(),
 			},
+			{
+				type: 'group',
+				cls: agentCls,
+				visible: agentVisible,
+				items: [
+					{
+						name: tNow('settings.mcp.openManage'),
+						desc: tNow('settings.mcp.openManage.desc'),
+						action: () => {
+							// 关键路径:与 openMemoryModal 同模式；接线完成前可选方法
+							(this.plugin as RatelVaultPlugin & { openMcpManageModal?: () => void })
+								.openMcpManageModal?.();
+						},
+					},
+				],
+			},
 
 			// ==================== Tab:外观 ====================
 			{
@@ -931,6 +949,46 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			});
 		}
 
+		const mcpToolNames = this.plugin.tools
+			.definitions()
+			.map((d) => d.name)
+			.filter((name) => name.startsWith('mcp__'))
+			.sort();
+
+		if (mcpToolNames.length > 0) {
+			items.push({
+				name: tNow('settings.toolPermissions.mcpSection'),
+				searchable: false,
+				render: (setting) => {
+					new Setting(setting.settingEl)
+						.setName(tNow('settings.toolPermissions.mcpSection'))
+						.setHeading();
+				},
+			});
+
+			const permissionOptions = {
+				allow: tNow('settings.toolPermissions.allow'),
+				ask: tNow('settings.toolPermissions.ask'),
+				deny: tNow('settings.toolPermissions.deny'),
+			};
+
+			for (const name of mcpToolNames) {
+				const parsed = parseMcpToolName(name);
+				const label = parsed
+					? `${parsed.serverId} · ${parsed.toolName}`
+					: name;
+				items.push({
+					name: label,
+					desc: name,
+					control: {
+						type: 'dropdown',
+						key: `toolPermissions.${name}`,
+						options: permissionOptions,
+					},
+				});
+			}
+		}
+
 		return items;
 	}
 
@@ -1028,7 +1086,11 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 	getControlValue(key: string): unknown {
 		if (key.startsWith('toolPermissions.')) {
 			const toolName = key.slice('toolPermissions.'.length);
-			return this.plugin.settings.toolPermissions[toolName];
+			const stored = this.plugin.settings.toolPermissions[toolName];
+			if (stored != null) return stored;
+			// 关键路径:动态 MCP 工具未写入 settings 时默认 ask,与 spec 一致
+			if (toolName.startsWith('mcp__')) return 'ask';
+			return stored;
 		}
 		if (key.startsWith('promptOverrides.')) {
 			const sectionId = key.slice('promptOverrides.'.length);
