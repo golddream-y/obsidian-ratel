@@ -54,6 +54,7 @@ import {
 // 关键路径:外观类型从 presets 导入,避免 appearance-presets ↔ settings 循环依赖
 import type { UiAccentId, UiColorScheme } from './ui/appearance/appearance-presets';
 import { renderAppearanceSettings } from './ui/appearance/appearance-settings-render';
+import type { McpServerConfig } from './ports/mcp';
 
 /** 设置顶栏 Tab ID(仅 UI 态,不落盘) */
 export type SettingsUiTab = 'chat' | 'index' | 'agent' | 'appearance' | 'advanced';
@@ -137,11 +138,16 @@ export interface RatelVaultSettings {
 	dailyNoteFolder: string;
 	dailyNoteFormat: string;
 
-	// Appearance(P-UI-APPEARANCE — Chat 外观配色与强调色)
+	// 关键路径(P-UI-APPEARANCE — Chat 外观配色与强调色)
 	/** 配色方案:auto 跟随 Obsidian,light/dark 强制 */
 	uiColorScheme: UiColorScheme;
 	/** 强调色:follow 跟随 Obsidian,其余为 Material 预设 id */
 	uiAccent: UiAccentId;
+
+	/** MCP Server 列表；默认空 = 零出站 */
+	mcpServers: McpServerConfig[];
+	/** 用户已确认允许 spawn 的 stdio serverId 列表 */
+	mcpApprovedSpawns: string[];
 }
 
 /**
@@ -242,6 +248,9 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 	// 关键路径:默认跟随 Obsidian 主题配色与强调色。
 	uiColorScheme: 'auto',
 	uiAccent: 'follow',
+	// 关键路径:默认空列表 = 零 MCP 出站（ADR-014）
+	mcpServers: [],
+	mcpApprovedSpawns: [],
 };
 
 /**

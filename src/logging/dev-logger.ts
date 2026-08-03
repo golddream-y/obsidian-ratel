@@ -4,7 +4,7 @@
  * @module logging/dev-logger
  */
 
-export type LogModule = 'index' | 'model' | 'worker' | 'agent' | 'vectra' | 'hooks' | 'vault' | 'main' | 'secrets' | 'search' | 'memory' | 'skill';
+export type LogModule = 'index' | 'model' | 'worker' | 'agent' | 'vectra' | 'hooks' | 'vault' | 'main' | 'secrets' | 'search' | 'memory' | 'skill' | 'mcp';
 
 export interface DevLoggerOptions {
 	debugEnabled?: boolean;

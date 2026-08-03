@@ -45,6 +45,26 @@ export class ToolRegistry {
 	}
 
 	/**
+	 * 按名称移除工具；不存在时静默忽略。
+	 *
+	 * @param name - 工具名
+	 */
+	unregister(name: string): void {
+		this.tools.delete(name);
+	}
+
+	/**
+	 * 移除所有名称以 prefix 开头的工具（MCP Server 出册用）。
+	 *
+	 * @param prefix - 例如 `mcp__tavily__`
+	 */
+	unregisterByPrefix(prefix: string): void {
+		for (const name of [...this.tools.keys()]) {
+			if (name.startsWith(prefix)) this.tools.delete(name);
+		}
+	}
+
+	/**
 	 * 更新已注册工具的 definition(LLM 看到的 schema)。
 	 *
 	 * 关键路径:供主线程在 settings.promptOverrides 变化后,

@@ -33,7 +33,7 @@
 |---|---|---|---|---|
 | P-MEMORY-MODAL | [2026-07-31-memory-modal-unify.md](plans/2026-07-31-memory-modal-unify.md) | ✅ Completed | S-MEMORY-MODAL | 分支 feat/p-memory-modal;MemoryModal+拆独立视图;5 Task |
 | P-GRAPH-EXPAND | [2026-08-03-graph-expand.md](plans/2026-08-03-graph-expand.md) | ⏳ Pending | S-GRAPH-EXPAND | 检索 1 跳扩邻;6 Task;**暂缓执行**(优先 S-MCP-HOST) |
-| P-MCP-HOST-CORE | [2026-08-03-mcp-host-core.md](plans/2026-08-03-mcp-host-core.md) | ⏳ Pending | S-MCP-HOST | Port+双 transport+Client+Host+入册;8 Task;优先执行 |
+| P-MCP-HOST-CORE | [2026-08-03-mcp-host-core.md](plans/2026-08-03-mcp-host-core.md) | ✅ Completed | S-MCP-HOST | 分支 cursor/s-mcp-host-spec-5933;Port+双 transport+Client+Host+入册;8 Task |
 | P-MCP-HOST-UI | [2026-08-03-mcp-host-ui.md](plans/2026-08-03-mcp-host-ui.md) | ⏳ Pending | S-MCP-HOST | 抽屉 Modal 安装管理 + 对话 Trace MCP 标识 + spawn/权限;5 Task;依赖 CORE |
 | P-MCP-HOST-DOCS | [2026-08-03-mcp-host-docs.md](plans/2026-08-03-mcp-host-docs.md) | ⏳ Pending | S-MCP-HOST | README/user-guide/隐私边界;finishing 时确认勾选 |
 | P-CITE | [2026-07-29-cite-dual-channel-hardening.md](plans/2026-07-29-cite-dual-channel-hardening.md) | ✅ Completed | S-CITE | 分支 feat/p-cite;注入+prompt+chip 显隐+hydrate 重建;7 Task |
