@@ -87,6 +87,8 @@ import { BailianReranker } from './adapters/reranker-bailian';
 import { Indexer } from './subagents/indexer';
 import { ChatView, VIEW_TYPE_CHAT } from './ui/chat/ChatView';
 import { MemoryModal, shouldCreateMemoryModal } from './ui/memory-panel/MemoryModal';
+import { McpManageModal, shouldCreateMcpManageModal } from './ui/mcp/McpManageModal';
+import { requestMcpSpawnConfirmation } from './ui/mcp/mcp-spawn-confirm-modal';
 import { applyBadgerEmojiToElement, patchAllChatLeafIcons } from './utils/badger-icon';
 import { get } from 'svelte/store';
 import { ensurePluginGitignore } from './utils/gitignore-writer';
@@ -172,6 +174,8 @@ export default class RatelVaultPlugin extends Plugin {
 	private feedbackController?: FeedbackController;
 	/** 记忆管理 Modal 单例 — 已打开则忽略再次 open */
 	private memoryModal: MemoryModal | null = null;
+	/** MCP 管理 Modal 单例 — 已打开则忽略再次 open */
+	private mcpManageModal: McpManageModal | null = null;
 	private workerMode: 'thread' | 'inline' = 'inline';
 
 	/**
@@ -475,12 +479,19 @@ export default class RatelVaultPlugin extends Plugin {
 		);
 
 		// ==================== MCP Host（ADR-014）====================
-		// 关键路径:confirmSpawn 在 CORE 仅放行 mcpApprovedSpawns，避免静默 spawn；UI plan 接 Modal。
+		// 关键路径:stdio 首次 spawn 弹窗确认；已批准 id 直接放行。
 		this.mcpHost = new McpHost({
 			tools: this.tools,
 			confirmSpawn: async (cfg) => {
 				if (cfg.transport !== 'stdio') return true;
-				return this.settings.mcpApprovedSpawns.includes(cfg.id);
+				if (this.settings.mcpApprovedSpawns.includes(cfg.id)) return true;
+				const ok = await requestMcpSpawnConfirmation(this.app, cfg);
+				if (!ok) return false;
+				if (!this.settings.mcpApprovedSpawns.includes(cfg.id)) {
+					this.settings.mcpApprovedSpawns.push(cfg.id);
+					await this.saveSettings();
+				}
+				return true;
 			},
 			getApiKey: (id) => resolveMcpSecret(this.app, id),
 			getEnvValue: (key) => process.env[key] ?? '',
@@ -1034,6 +1045,7 @@ export default class RatelVaultPlugin extends Plugin {
 		this.feedbackController?.destroy();
 		// 关键路径:热重载/禁用时若记忆 Modal 仍开,close 走 onClose→unmount,onClosed 清单例引用。
 		this.memoryModal?.close();
+		this.mcpManageModal?.close();
 		// 关键路径:断开全部 MCP Client（stdio kill / HTTP session）
 		void this.mcpHost?.dispose();
 		this.userStatus?.reset();
@@ -1420,6 +1432,21 @@ export default class RatelVaultPlugin extends Plugin {
 		this.memoryModal = modal;
 		modal.onClosed = () => {
 			if (this.memoryModal === modal) this.memoryModal = null;
+		};
+		modal.open();
+	}
+
+	/**
+	 * 打开 MCP 管理 Modal(单例)。
+	 *
+	 * 关键路径:已打开则忽略,避免叠多个管理窗。
+	 */
+	openMcpManageModal(): void {
+		if (!shouldCreateMcpManageModal(this.mcpManageModal)) return;
+		const modal = new McpManageModal(this.app, this);
+		this.mcpManageModal = modal;
+		modal.onClosed = () => {
+			if (this.mcpManageModal === modal) this.mcpManageModal = null;
 		};
 		modal.open();
 	}

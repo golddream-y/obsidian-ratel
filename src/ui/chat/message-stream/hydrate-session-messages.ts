@@ -7,8 +7,13 @@
 
 import type { ChatMessage } from '../../../ports/llm';
 import { mapSearchResults } from '../../../core/search-result-mapper';
-import { formatToolDisplayName } from '../format-tool-display';
+import { formatToolDisplayName, type FormatToolDisplayOptions } from '../format-tool-display';
 import type { Message, MessageSegment, ToolCallEntry } from './types';
+
+/** hydrate 可选参数 — 与 live 流式 tool 展示名对齐 */
+export interface HydrateSessionMessagesOptions {
+	resolveMcpServerLabel?: FormatToolDisplayOptions['resolveMcpServerLabel'];
+}
 
 /**
  * 从落盘消息 hydrate 出 Chat UI 消息流。
@@ -19,8 +24,12 @@ import type { Message, MessageSegment, ToolCallEntry } from './types';
  * - 连续 assistant(+tool) + 配对 tool 折叠为同一条 UI assistant
  *
  * @param messages - Session.messages
+ * @param opts - 可选 MCP server label 解析(与 ChatView live 一致)
  */
-export function hydrateSessionMessages(messages: ChatMessage[]): Message[] {
+export function hydrateSessionMessages(
+	messages: ChatMessage[],
+	opts?: HydrateSessionMessagesOptions,
+): Message[] {
 	const out: Message[] = [];
 	let i = 0;
 	while (i < messages.length) {
@@ -84,7 +93,9 @@ export function hydrateSessionMessages(messages: ChatMessage[]): Message[] {
 						}
 						const entry: ToolCallEntry = {
 							name: toolName,
-							displayName: formatToolDisplayName(toolName, toolArgs),
+							displayName: formatToolDisplayName(toolName, toolArgs, {
+								resolveMcpServerLabel: opts?.resolveMcpServerLabel,
+							}),
 							args: toolArgs,
 							status,
 							result,

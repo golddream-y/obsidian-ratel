@@ -18,6 +18,7 @@
 		onCompact,
 		onFeedback,
 		onMemory,
+		onMcp,
 		onSponsor,
 	}: {
 		expanded: boolean;
@@ -29,6 +30,8 @@
 		onFeedback?: () => void;
 		/** 记忆管理入口(可选) */
 		onMemory?: () => void;
+		/** MCP 管理入口(可选) */
+		onMcp?: () => void;
 		/** 赞助页入口(可选);按界面语言打开对应文档 */
 		onSponsor?: () => void;
 	} = $props();
@@ -145,7 +148,7 @@
 		<div class="ratel-drawer-row ratel-drawer-row-end">
 			<button class="ratel-drawer-micro-btn" type="button" onclick={onCompact}>{$t('status.drawer.compactButton')}</button>
 		</div>
-		{#if onFeedback || onMemory || onSponsor}
+		{#if onFeedback || onMemory || onMcp || onSponsor}
 			<!-- 低频入口:反馈 / 记忆管理 / 赞助(无 aria-label,避免 Obsidian「相关操作」提示) -->
 			<nav class="ratel-drawer-actions">
 				{#if onFeedback}
@@ -181,6 +184,27 @@
 							/>
 						</svg>
 						<span>{$t('status.drawer.memory')}</span>
+					</button>
+				{/if}
+				{#if onMcp}
+					<button type="button" class="ratel-drawer-action" onclick={onMcp}>
+						<svg class="ratel-drawer-action-ico" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
+							<path
+								d="M4 7.5A2.5 2.5 0 0 1 6.5 5H14l2 2h3.5A2.5 2.5 0 0 1 22 9.5v9A2.5 2.5 0 0 1 19.5 21h-15A2.5 2.5 0 0 1 2 18.5v-11Z"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.75"
+								stroke-linejoin="round"
+							/>
+							<path
+								d="M8 10.5h8M8 14h5"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.75"
+								stroke-linecap="round"
+							/>
+						</svg>
+						<span>{$t('status.drawer.mcp')}</span>
 					</button>
 				{/if}
 				{#if onSponsor}
