@@ -725,9 +725,7 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 						name: tNow('settings.mcp.openManage'),
 						desc: tNow('settings.mcp.openManage.desc'),
 						action: () => {
-							// 关键路径:与 openMemoryModal 同模式；接线完成前可选方法
-							(this.plugin as RatelVaultPlugin & { openMcpManageModal?: () => void })
-								.openMcpManageModal?.();
+							this.plugin.openMcpManageModal();
 						},
 					},
 				],
@@ -949,8 +947,7 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			});
 		}
 
-		const mcpToolNames = this.plugin.tools
-			.definitions()
+		const mcpToolNames = (this.plugin.tools?.definitions() ?? [])
 			.map((d) => d.name)
 			.filter((name) => name.startsWith('mcp__'))
 			.sort();
