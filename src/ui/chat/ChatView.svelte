@@ -69,6 +69,7 @@
 	import { getEffectiveChatModelMaxTokens } from '../../utils/context-window';
 	import { applyRatelAppearance } from '../appearance/apply-ratel-appearance';
 	import { appearanceRevision } from '../appearance/appearance-store';
+	import { settingsRevision } from '../settings-revision';
 
 	let { plugin }: { plugin: RatelVaultPlugin } = $props();
 
@@ -470,7 +471,15 @@
 	});
 	// 关键路径:/ 与 @ 互斥 — 斜杠优先;mention 补全仅在非 slash 态
 	const mentionVisible = $derived(mentionQuery !== null && !slashVisible);
-	const modelName = $derived(plugin.settings.chatModel);
+	// 关键路径:settings 原地改写 Svelte 不可见;saveSettings → bumpSettingsRevision 后重读芯片。
+	const modelName = $derived.by(() => {
+		void $settingsRevision;
+		return plugin.settings.chatModel;
+	});
+	const embedKind = $derived.by(() => {
+		void $settingsRevision;
+		return plugin.settings.embedProvider;
+	});
 
 	// 关键路径:原 work-bar 文案合并进 StatusStrip — 优先级从上到下,同时满足只取第一个
 	// 关键路径:indexing 分支不解析 indexDetail(progressing 状态是文件名,queueing 是 i18n 文字,
@@ -1031,7 +1040,7 @@
 			expanded={drawerExpanded}
 			status$={statusStore}
 			contextUsage$={contextStore}
-			embedKind={plugin.settings.embedProvider}
+			embedKind={embedKind}
 			onCompact={handleCompact}
 			onFeedback={openFeedback}
 			onMemory={openMemory}

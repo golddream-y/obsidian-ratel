@@ -387,6 +387,11 @@ body.theme-dark .ratel-session-menu,
 	isolation: isolate;
 }
 
+/* Ratel 聊天侧栏最小宽度 — 防止拖太窄挤烂 header / 抽屉入口 */
+.workspace-leaf-content[data-type="ratel-chat"] {
+	min-width: 320px;
+}
+
 /* ==================== 问题反馈 Modal ==================== */
 .ratel-feedback-body {
 	margin: 0 0 12px;
@@ -428,4 +433,42 @@ body.theme-dark .ratel-session-menu,
 	display: flex;
 	flex-direction: column;
 	padding-top: 4px;
+}
+
+/* ==================== 状态抽屉低频入口 ==================== */
+/* 关键路径:压过 Obsidian 默认 button(边框/阴影/固定 input 高度),保持静默文字链 */
+button.ratel-drawer-action {
+	display: inline-flex !important;
+	align-items: center;
+	gap: 5px;
+	height: auto !important;
+	min-height: 0 !important;
+	padding: 2px 0 !important;
+	margin: 0 !important;
+	border: none !important;
+	border-radius: 0 !important;
+	background: transparent !important;
+	box-shadow: none !important;
+	color: var(--text-muted);
+	font-size: 11.5px;
+	font-weight: inherit;
+	font-family: inherit;
+	line-height: 1.45;
+	cursor: pointer;
+	-webkit-appearance: none;
+	appearance: none;
+}
+
+button.ratel-drawer-action:hover,
+button.ratel-drawer-action:active {
+	background: transparent !important;
+	box-shadow: none !important;
+	border: none !important;
+	color: var(--text-normal);
+}
+
+button.ratel-drawer-action:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 2px;
+	border-radius: 2px;
 }
