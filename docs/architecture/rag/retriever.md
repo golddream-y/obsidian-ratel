@@ -1,7 +1,7 @@
 # 检索器
 
 > 领域:RAG | 问答链路(同步前台)
-> 查询向量化 → 向量检索 → BM25 → RRF → 重排
+> 查询向量化 → 向量检索 → BM25 → RRF → 重排 → 图谱 1 跳扩邻
 
 ---
 
@@ -46,11 +46,20 @@
 - 混合检索(BM25 + 向量)提升召回率约 17%
 - Reranker 进一步提升精度,但需要额外 API
 
+### 2.4 双通道确认:链接提议,向量裁决
+
+**决策**:图谱扩邻的邻居必须同时 ① 被命中笔记的正文链接 ② 落在检索候选池(topK×2 过度抓取)内,才允许进入结果。
+
+**原因**:
+- 双链边的语义是「人(或工作流)声明的关联」,不等于「与当前查询相关」([ADR-013](../../adr/2026-08-03-graph-retrieval-minimize-human-curation.md))
+- 候选池本来就是过度抓取的副产物,复用它做语义门槛**零额外成本**
+- 不把「用户先整理好链接图」当使用前提;Daily / MOC 类 hub 另由阈值双向挡
+
 ---
 
 ## 3. 检索流程
 
-### 3.1 当前:向量检索(单路)
+### 3.1 向量检索(单路降级)
 
 ```mermaid
 sequenceDiagram
@@ -86,7 +95,7 @@ interface SearchVaultResult {
 }
 ```
 
-### 3.2 后续:混合检索(向量 + BM25)
+### 3.2 混合检索(向量 + BM25,现状基线)
 
 ```mermaid
 sequenceDiagram
@@ -136,7 +145,7 @@ interface SearchVaultResult {
 }
 ```
 
-### 3.3 远期:重排 + 多查询
+### 3.3 重排 + 多查询(现状)
 
 ```mermaid
 sequenceDiagram
@@ -172,6 +181,41 @@ sequenceDiagram
 
 **Reranker 触发条件**:`hasRerankApiKey(app) === true`(钥匙串 `ratel-rerank-bailian` 非空)。无 key 时跳过 Rerank,降级为仅 RRF 融合。
 
+### 3.4 图谱 1 跳扩邻(P-GRAPH-EXPAND)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant AL as Agent Loop
+    participant SV as search_vault
+    participant MQS as MultiQuerySearcher
+    participant GE as GraphExpander
+    participant MC as metadataCache
+
+    Note over AL,MC: 图谱 1 跳机会性扩邻(ADR-013)— 链接提议,向量裁决
+
+    AL->>SV: execute({ query, topK })
+    SV->>MQS: searchWithPool(query, topK)
+    MQS-->>SV: { results[topK], candidatePaths: Set&lt;path&gt; }
+    SV->>SV: enrich(实时补 tags / backlinkCount)
+    SV->>GE: expand(hits, { allowedPaths: candidatePaths })
+    GE->>MC: getLinks / getBacklinks(同步)
+    MC-->>GE: 出链 / 反链
+    Note over GE: 去重 → 候选池门槛 → hub 双向挡(出链&gt;50 / 反链&gt;100)
+    GE-->>SV: neighbors[≤5]
+    SV-->>AL: [...hits, ...via=graph 邻居(index 续编号, score=源×0.8)]
+```
+
+**三道过滤(成本从低到高)**:
+
+1. **去重** — 已在命中集或已被带出的路径跳过
+2. **候选池门槛(双通道确认)** — 邻居须落在 `searchWithPool` 返回的 `candidatePaths` 内,挡「链了但语义无关」的边
+3. **hub 双向挡** — 源命中出链 > `HUB_MAX_OUTGOING`(50)整源跳过(Daily Plan 场景);邻居出链 > 50 或反链 > `HUB_MAX_BACKLINKS`(100)跳过
+
+**邻居条目形状**:`{ docId: 'graph:<path>', score: 源×0.8, index: 续编号, metadata: { path, tags, backlinkCount, via: 'graph', graphFrom } }`,与检索命中共享同一 `[n]` 引用空间;UI 引用芯片加「链接图」徽标。
+
+**降级**:扩邻任一步异常(`getLinks` 抛错 / expand 异常)→ 返回纯检索结果;无边库行为与旧版一致。`MultiQuerySearcher.search()` 旧签名保留为薄包装,`searchWithPool()` 才是完整出口。
+
 ---
 
 ## 4. 检索质量优化路径
@@ -205,9 +249,14 @@ graph LR
         P --> R2
     end
 
+    subgraph "阶段 5 — 图谱扩邻"
+        GE["1 跳邻居<br/>候选池双通道 + hub 双向挡<br/>≤5 条 via=graph"]
+    end
+
     V --> V2
     R --> R2
     RR --> Q
+    RR --> GE
 ```
 
 | 阶段 | 能力 | 召回率提升 | 精度提升 | 依赖 |
@@ -216,6 +265,7 @@ graph LR
 | 2 混合检索 | +BM25(vectra 内置) | ~17% | — | BM25 索引 |
 | 3 重排 | +Reranker + 多查询 RRF | — | ~10-20% | Reranker API |
 | 4 查询优化 | +Query Rewrite +HyDE | ~5-10% | ~5-10% | LLM 额外调用 |
+| 5 图谱扩邻 | +1 跳邻居(via=graph) | 补「语义沾边但未被向量召回」的关联笔记 | 双通道门槛保精度 | metadataCache(零成本) |
 
 ---
 
@@ -226,7 +276,7 @@ graph LR
 ```typescript
 {
   name: 'search_vault',
-  description: '在知识库中搜索与查询相关的文档。使用向量 + BM25 混合检索,返回带引用编号的结果,用 read_note 读取内容。',
+  description: '在知识库中搜索与查询相关的笔记。使用多查询混合检索(向量+BM25)与可选重排,并沿正文链接补充 1 跳邻居(metadata.via 为 graph);返回带 index 编号的结果;用 read_note 读取全文。回答时用返回的 index 写成 [n] 引用。',
   parameters: {
     query: {
       type: 'string',
@@ -246,12 +296,15 @@ graph LR
 ```
 用户问题 → 意图分类器判断 intent='rag'
   → search_vault(query, topK=5)
-  → 拿到 [docId, score, metadata, index] 列表(发 search.result 事件)
+  → 拿到 [docId, score, metadata, index] 列表(发 search.result 事件;
+    尾部可能带 via=graph 图谱邻居,与命中共享同一 [n] 编号空间)
   → 模型用 [1][2] 引用编号,自主决定 read_note 哪些
   → read_note(path) 读取原文
   → ContextManager.addSearchResults()
   → LLM 生成回答(用 [1][2] 引用)
 ```
+
+> UI 侧:引用芯片对 `via=graph` 条目加「链接图」徽标(`chat.cite.viaGraph`),让用户看见图在起作用。
 
 ---
 
@@ -263,3 +316,4 @@ graph LR
 | [model-management](../llm/model-management.md) | 依赖 | EmbeddingPort.embed() 查询向量化 + RerankerPort.rerank() 重排 |
 | [agent/tools](../agent/tools.md) | 被调用 | search_vault 作为工具注册 |
 | [agent/context-manager](../agent/context-manager.md) | 下游 | 检索结果经 read_note 后注入上下文 |
+| 图谱扩邻([ADR-013](../../adr/2026-08-03-graph-retrieval-minimize-human-curation.md)) | 依赖 | core/graph-expander 经 VaultPort.getLinks/getBacklinks 读 metadataCache;候选池由 `MultiQuerySearcher.searchWithPool` 提供 |

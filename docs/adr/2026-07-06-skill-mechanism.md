@@ -133,7 +133,7 @@ v1 不做 i18n fallback(`resolveDescription` 直接返回 `manifest.description`
 ## 参考
 
 - [S-SKILL spec](../docs/superpowers/specs/2026-07-06-skill-mechanism-design.md)
-- [ARCHITECTURE.md §8.5 Skill 子系统](../docs/ARCHITECTURE.md#85-skill-子系统)
+- [架构总览 § Skill 子系统原则](../architecture/overview.md)(原 ARCHITECTURE.md §8.5,已合并)
 - [ADR-008:Prompt Registry 设计决策](2026-07-04-prompt-registry.md) — agent.skills section 复用 Prompt Registry 注册表机制
 - [ADR-010:Skill 与内置能力的产品边界](2026-07-21-skill-vs-builtin-capability.md) — 何为标配内核、何为 Skill 扩展面
 - [ADR-012:Skill 激活对齐 Claude](2026-07-23-skill-activation-claude-aligned.md) — 激活写入会话消息;修正本文 §3–§4 注入模型

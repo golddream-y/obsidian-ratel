@@ -3,7 +3,7 @@
 > 日期: 2026-07-06
 > 状态: Active
 > 作者: Erwin(用户自定义指令包需求)
-> 关联: ARCHITECTURE.md / 2026-07-05-i18n-v2-design.md / agentskills.io 标准
+> 关联: docs/architecture/overview.md / 2026-07-05-i18n-v2-design.md / agentskills.io 标准
 
 ---
 
