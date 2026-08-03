@@ -80,4 +80,34 @@ describe('ToolRegistry', () => {
 		const registry = new ToolRegistry();
 		expect(registry.isReadOnly('nonexistent')).toBe(false);
 	});
+
+	it('unregister - 已注册工具 - 从 definitions 移除', () => {
+		const registry = new ToolRegistry();
+		registry.register(dummyTool);
+		registry.unregister('test_tool');
+		expect(registry.definitions()).toEqual([]);
+	});
+
+	it('unregister - 未注册 - 不抛错', () => {
+		const registry = new ToolRegistry();
+		expect(() => registry.unregister('missing')).not.toThrow();
+	});
+
+	it('unregisterByPrefix - 只删匹配前缀', () => {
+		const registry = new ToolRegistry();
+		registry.register(dummyTool);
+		registry.register({
+			definition: { name: 'mcp__tavily__search', description: 's', parameters: {} },
+			execute: async () => 'ok',
+		});
+		registry.register({
+			definition: { name: 'mcp__brave__search', description: 's', parameters: {} },
+			execute: async () => 'ok',
+		});
+		registry.unregisterByPrefix('mcp__tavily__');
+		expect(registry.definitions().map((d) => d.name).sort()).toEqual([
+			'mcp__brave__search',
+			'test_tool',
+		]);
+	});
 });

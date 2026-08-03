@@ -75,8 +75,13 @@ import {
 	resolveChatApiKey,
 	resolveEmbedApiKey,
 	resolveRerankApiKey,
+	resolveMcpSecret,
 } from './secrets/ratel-secrets';
 import { MultiQuerySearcher } from './core/multi-query-searcher';
+import { McpHost } from './core/mcp-host';
+import { McpHttpTransport } from './adapters/mcp-http';
+import { McpStdioTransport } from './adapters/mcp-stdio';
+import type { McpServerConfig } from './ports/mcp';
 import { rewriteQuery } from './core/query-rewriter';
 import { BailianReranker } from './adapters/reranker-bailian';
 import { Indexer } from './subagents/indexer';
@@ -128,6 +133,8 @@ export default class RatelVaultPlugin extends Plugin {
 	embedding!: EmbeddingPort;
 	tools!: ToolRegistry;
 	hooks!: HookRegistry;
+	/** MCP Host — 多 Server 编排；默认空配置零出站 */
+	mcpHost!: McpHost;
 	workerManager!: WorkerManager;
 	// 关键路径:vectraStore 持有 vectra 索引目录的引用,需在 plugin 生命周期内常驻。
 	vectraStore!: VectraStore;
@@ -466,6 +473,23 @@ export default class RatelVaultPlugin extends Plugin {
 		this.tools.register(
 			createGetVaultStructureTool(this.vault, toolDefMap.get('get_vault_structure')!),
 		);
+
+		// ==================== MCP Host（ADR-014）====================
+		// 关键路径:confirmSpawn 在 CORE 仅放行 mcpApprovedSpawns，避免静默 spawn；UI plan 接 Modal。
+		this.mcpHost = new McpHost({
+			tools: this.tools,
+			confirmSpawn: async (cfg) => {
+				if (cfg.transport !== 'stdio') return true;
+				return this.settings.mcpApprovedSpawns.includes(cfg.id);
+			},
+			getApiKey: (id) => resolveMcpSecret(this.app, id),
+			getEnvValue: (key) => process.env[key] ?? '',
+			createTransport: (cfg) => this.createMcpTransport(cfg),
+		});
+		void this.mcpHost.sync(this.settings.mcpServers).catch((err) => {
+			devLogger.error('mcp', '初始 sync 失败', err);
+		});
+
 		this.hooks = new HookRegistry();
 		this.hooks.register(
 			'pre-tool-use',
@@ -1010,6 +1034,8 @@ export default class RatelVaultPlugin extends Plugin {
 		this.feedbackController?.destroy();
 		// 关键路径:热重载/禁用时若记忆 Modal 仍开,close 走 onClose→unmount,onClosed 清单例引用。
 		this.memoryModal?.close();
+		// 关键路径:断开全部 MCP Client（stdio kill / HTTP session）
+		void this.mcpHost?.dispose();
 		this.userStatus?.reset();
 		// 关键路径:先停 IndexController 释放 vault 事件订阅与 watcher,再终止 Worker。
 		this.indexController?.destroy();
@@ -1073,10 +1099,50 @@ export default class RatelVaultPlugin extends Plugin {
 		await this.saveData(mergePluginData(existing, { ...this.settings }));
 		// 关键路径:settings 变更后热替换工具 definition,让 LLM 立即看到新 description。
 		this.syncToolDefinitions();
+		// 关键路径:MCP Server 列表变更时差分启停
+		if (this.mcpHost) {
+			void this.mcpHost.sync(this.settings.mcpServers).catch((err) => {
+				devLogger.error('mcp', 'settings 变更后 sync 失败', err);
+			});
+		}
 		// 关键路径:通知 Chat 等视图重读 chatModel / embedProvider(普通对象赋值 Svelte 不可见)。
 		bumpSettingsRevision();
 		// 关键路径:通知 Chat / Memory 等视图重跑 applyRatelAppearance(热更新外观)。
 		bumpAppearance();
+	}
+
+	/**
+	 * 按配置构造 MCP Transport（HTTP 用 requestUrl；stdio 用 spawn）。
+	 *
+	 * @param cfg - Server 配置
+	 * @returns 可注入 McpClient 的 Transport
+	 */
+	private createMcpTransport(cfg: McpServerConfig) {
+		if (cfg.transport === 'http') {
+			return new McpHttpTransport({
+				url: cfg.url!,
+				getApiKey: () => resolveMcpSecret(this.app, cfg.id),
+				timeoutMs: cfg.timeoutMs,
+			});
+		}
+		const env: Record<string, string> = {};
+		for (const [k, v] of Object.entries(process.env)) {
+			if (typeof v === 'string') env[k] = v;
+		}
+		const secret = resolveMcpSecret(this.app, cfg.id);
+		for (const key of cfg.envKeys ?? []) {
+			if (secret && /api[_-]?key|token|secret/i.test(key)) {
+				env[key] = secret;
+			} else {
+				env[key] = process.env[key] ?? '';
+			}
+		}
+		return new McpStdioTransport({
+			command: cfg.command!,
+			args: cfg.args ?? [],
+			env,
+			timeoutMs: cfg.timeoutMs,
+		});
 	}
 
 	/**
