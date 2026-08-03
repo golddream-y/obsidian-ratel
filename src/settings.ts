@@ -1036,6 +1036,8 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 	 *
 	 * 关键路径:
 	 * - 嵌套 key 必须分发到嵌套对象,否则会写入字面量字段 `settings["toolPermissions.xxx"]`
+	 * - chatPreset 变更需 applyChatPreset(多字段)+rebuildLLM
+	 * - contextLengthPreset 变更需同步 chatModelMaxTokens(抽屉读上限)
 	 * - chatModel / chatApiBase 变更需 rebuildLLM
 	 * - embed* 变更(除 embedLocalModel)需 rebuildEmbeddingAdapter
 	 * - promptOverrides.* 变更需 syncToolDefinitions
