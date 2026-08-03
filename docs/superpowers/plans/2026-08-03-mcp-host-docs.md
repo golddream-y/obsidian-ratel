@@ -23,7 +23,7 @@
 ```
 MCP 已落地，是否同步文档：
  [ ] README / README.zh-CN（隐私：默认仅模型 API；MCP opt-in）
- [ ] docs/user-guide.md（配置、权限、secret ID `ratel-mcp-<id>`、stdio 确认、FAQ）
+ [ ] docs/user-guide.md（抽屉 MCP 入口、管理 Modal、对话 Trace 标识、权限、secret ID `ratel-mcp-<id>`、stdio 确认、FAQ）
  [ ] CHANGELOG.md `[Unreleased]`（Added：可挂 MCP Server…）
  [ ] S-EVOLUTION 非目标：划掉「不做联网搜索」，链 ADR-014
  [ ] docs/architecture/host/mcp.md（新建：Client 生命周期 / transport 摘要）
