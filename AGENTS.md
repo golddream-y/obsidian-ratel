@@ -138,7 +138,7 @@ AI 读 `git log <plan-start-commit>..HEAD`,判断这些 commit 是否改变用�
   [ ] README(功能清单 / 安装步骤 / 隐私说明)
   [ ] user-guide(操作指引 / 斜杠命令 / secret ID / FAQ)
   [ ] CHANGELOG(下次发版记录,通常由 release 工作流处理,此处仅标记待办)
-  [ ] ARCHITECTURE.md / adr/(架构文档 — ⚠️ 改前必须确认,通常不需要)
+  [ ] docs/architecture/ / adr/(架构文档 — ⚠️ 改前必须确认,通常不需要)
 ```
 
 用户勾选后,要么加 Task 到当前 plan 补做,要么登记到 `STATUS.md` 待办区。**不允许跳过确认直接 present options。**
@@ -175,7 +175,7 @@ AI 读 `git log <plan-start-commit>..HEAD`,判断这些 commit 是否改变用�
 
 **自检:** 写完后用「外行用户只读标题」试读 — 若说不清优化了什么,重写该条。
 
-#### ARCHITECTURE.md / adr/(⚠️ 谨慎,改前必须确认)
+#### docs/architecture/ / adr/(⚠️ 谨慎,改前必须确认)
 **触发条件(满足任一即需评估):**
 - 新增 / 删除 / 重命名核心模块(`ports/` / `adapters/` / `core/` / `worker/` / `ui/` 子系统目录)
 - 跨线程通信协议变更(主线程 ↔ Worker 消息类型 / payload)
