@@ -26,6 +26,7 @@ import {
 } from './secrets/ratel-secrets';
 import type { ContextLengthPresetId } from './ui/tokens/context-length-presets';
 import {
+	applyContextLengthPreset,
 	applyContextRecommendation,
 	CUSTOM_TOKEN_MAX,
 	CUSTOM_TOKEN_MIN,
@@ -1059,6 +1060,9 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			// 关键路径:预设写入多字段,不能只赋 chatPreset 一个 key
 			applyChatPreset(this.plugin.settings, value as ChatPresetId);
 			this.plugin.rebuildLLM();
+		} else if (key === 'contextLengthPreset') {
+			// 修复:下拉只写 preset 时 chatModelMaxTokens 仍是旧值,抽屉上限不跟着变
+			applyContextLengthPreset(this.plugin.settings, value as ContextLengthPresetId);
 		} else {
 			(this.plugin.settings as unknown as Record<string, unknown>)[key] = value;
 		}

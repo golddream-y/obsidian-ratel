@@ -40,6 +40,27 @@ export function applyContextRecommendation(tokens: number): {
 }
 
 /**
+ * 设置页下拉切换 Context Length 时同步写入 settings。
+ *
+ * 设计要点:
+ * - 非 custom 预设必须同时改 `chatModelMaxTokens`,否则抽屉 / StatusLine 仍读旧上限;
+ * - 切到 custom 时保留当前 token 数,作为自定义起点(用户再改 number 输入框)。
+ *
+ * @param settings - 可变 settings 片段
+ * @param preset - 新的预设 id
+ */
+export function applyContextLengthPreset(
+	settings: { contextLengthPreset: ContextLengthPresetId; chatModelMaxTokens: number },
+	preset: ContextLengthPresetId,
+): void {
+	settings.contextLengthPreset = preset;
+	// 关键路径:下拉只写 preset 字段时抽屉不会变 — 必须同步 token 上限
+	if (preset !== 'custom') {
+		settings.chatModelMaxTokens = presetToTokens(preset);
+	}
+}
+
+/**
  * 从 chatModelMaxTokens 推断 preset(用于 loadSettings 迁移)。
  */
 export function inferPresetFromTokens(
