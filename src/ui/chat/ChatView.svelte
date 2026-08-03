@@ -243,7 +243,7 @@
 		}
 		sessionId = s.id;
 		syncChipTitles(s);
-		messages = hydrateSessionMessages(s.messages);
+		messages = hydrateSessionMessages(s.messages, { resolveMcpServerLabel });
 		await plugin.persistence.setLastSessionId(s.id);
 		sessionDirty = false;
 		isUserNearBottom = true;
@@ -378,7 +378,7 @@
 				}
 				sessionId = s.id;
 				syncChipTitles(s);
-				messages = hydrateSessionMessages(s.messages);
+				messages = hydrateSessionMessages(s.messages, { resolveMcpServerLabel });
 				await plugin.persistence.setLastSessionId(s.id);
 				sessionDirty = false;
 				isUserNearBottom = true;
@@ -645,6 +645,16 @@
 		plugin.openMemoryModal();
 	}
 
+	/** 状态抽屉「MCP」入口 → 打开 McpManageModal */
+	function openMcp(): void {
+		plugin.openMcpManageModal();
+	}
+
+	/** MCP 工具展示名 — 用配置 label 替代裸 server id */
+	function resolveMcpServerLabel(id: string): string {
+		return plugin.settings.mcpServers.find((s) => s.id === id)?.label ?? id;
+	}
+
 	function openFeedback(): void {
 		new FeedbackModal(plugin.app, plugin).open();
 	}
@@ -777,7 +787,9 @@
 						lastToolName = event.payload.name;
 						appendToolCall(am, {
 							name: event.payload.name,
-							displayName: formatToolDisplayName(event.payload.name, event.payload.args),
+							displayName: formatToolDisplayName(event.payload.name, event.payload.args, {
+								resolveMcpServerLabel,
+							}),
 							args: event.payload.args,
 							status: 'calling',
 							startAt: Date.now(),
@@ -1044,6 +1056,7 @@
 			onCompact={handleCompact}
 			onFeedback={openFeedback}
 			onMemory={openMemory}
+			onMcp={openMcp}
 			onSponsor={openSponsor}
 		/>
 		<div class="ratel-input">
