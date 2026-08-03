@@ -17,6 +17,7 @@
 
 | ID | 文件 | 状态 | 创建日期 | 备注 |
 |---|---|---|---|---|
+| S-SETTINGS-SYNC | [2026-08-03-settings-sync-design.md](specs/2026-08-03-settings-sync-design.md) | Active | 2026-08-03 | Settings 读入口统一 settings$;消除设置改了 UI 不刷新;与 appearance/UserStatus 分列 |
 | S-MEMORY-MODAL | [2026-07-31-memory-modal-unify-design.md](specs/2026-07-31-memory-modal-unify-design.md) | Active | 2026-07-31 | 记忆并入聊天路径;抽屉入口+MemoryModal;拆除 brain 独立视图 |
 | S-GRAPH-EXPAND | [2026-08-03-graph-expand-design.md](specs/2026-08-03-graph-expand-design.md) | Active | 2026-08-03 | 检索 1 跳扩邻 + hub 降权 + 引用标注;ADR-013 近端落地 |
 | S-CITE | [2026-07-29-cite-dual-channel-hardening-design.md](specs/2026-07-29-cite-dual-channel-hardening-design.md) | Active | 2026-07-29 | 引用双通道加固;P-CITE Completed |
