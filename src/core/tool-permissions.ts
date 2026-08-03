@@ -6,6 +6,7 @@
 
 import type { ToolCall } from '../ports/llm';
 import { tNow } from '../i18n';
+import { parseMcpToolName } from '../ui/mcp/parse-mcp-tool-name';
 
 export type ToolPermission = 'allow' | 'ask' | 'deny';
 
@@ -54,8 +55,16 @@ export function summarizeToolCall(toolCall: ToolCall): string {
 			return path ? tNow('toolPerm.editNote', { path }) : tNow('settings.toolPermissions.edit_note');
 		case 'delete_note':
 			return path ? tNow('toolPerm.deleteNote', { path }) : tNow('settings.toolPermissions.delete_note');
-		default:
+		default: {
+			const parsed = parseMcpToolName(toolCall.name);
+			if (parsed) {
+				return tNow('tool.name.mcp', {
+					server: parsed.serverId,
+					tool: parsed.toolName,
+				});
+			}
 			return path ? `${toolCall.name} → ${path}` : toolCall.name;
+		}
 	}
 }
 

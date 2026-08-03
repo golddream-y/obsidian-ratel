@@ -9,6 +9,8 @@
 	import type { ToolCallEntry } from './types';
 	import { normalizeToolDetail } from '../normalize-tool-detail';
 	import { metaShortFromModel, renderToolDetail } from '../render-tool-detail';
+	import { isMcpToolName } from '../../mcp/parse-mcp-tool-name';
+	import { t } from '../../../i18n';
 
 	let { toolCall }: { toolCall: ToolCallEntry } = $props();
 
@@ -53,6 +55,9 @@
 		onclick={toggle}
 	>
 		<span class="ratel-trace-ico" class:ratel-trace-ico-pulse={toolCall.status === 'calling'}>{glyph()}</span>
+		{#if isMcpToolName(toolCall.name)}
+			<span class="ratel-trace-mcp-badge">{$t('chat.tool.mcpBadge')}</span>
+		{/if}
 		<span class="ratel-trace-label">{toolCall.displayName}</span>
 		{#if meta}
 			<span class="ratel-trace-meta">{meta}</span>
@@ -119,6 +124,18 @@
 
 	.ratel-trace-ico-pulse {
 		animation: ratel-trace-pulse 1.4s ease-in-out infinite;
+	}
+
+	.ratel-trace-mcp-badge {
+		flex-shrink: 0;
+		font-size: 9px;
+		line-height: 1;
+		letter-spacing: 0.04em;
+		padding: 2px 5px;
+		border-radius: 3px;
+		border: 1px solid var(--background-modifier-border);
+		color: var(--text-muted);
+		background: color-mix(in srgb, var(--background-secondary) 80%, transparent);
 	}
 
 	@keyframes ratel-trace-pulse {

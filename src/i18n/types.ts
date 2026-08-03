@@ -124,6 +124,9 @@ export interface SettingsStrings {
   'settings.daily.format.name': string;
   'settings.daily.format.desc': string;
   'settings.toolPermissions.heading': string;
+  'settings.toolPermissions.mcpSection': string;
+  'settings.mcp.openManage': string;
+  'settings.mcp.openManage.desc': string;
   'settings.toolPermissions.search_vault': string;
   'settings.toolPermissions.read_note': string;
   'settings.toolPermissions.grep': string;
@@ -241,6 +244,7 @@ export interface ChatStrings {
   'chat.cite.sourcesCollapsed': string;
   'chat.cite.sourcesExpandAria': string;
   'chat.cite.sourcesCollapseAria': string;
+  'chat.tool.mcpBadge': string;
   'chat.session.loading': string;
   'chat.session.loadingNew': string;
   'chat.session.menuRecent': string;
@@ -303,6 +307,7 @@ export interface ToolNameStrings {
   'tool.name.search_by_tag': string;
   'tool.name.search_by_property': string;
   'tool.name.get_vault_structure': string;
+  'tool.name.mcp': string;
 }
 
 // ==================== Slash commands ====================
@@ -362,6 +367,33 @@ export interface ModalStrings {
   'modal.toolConfirm.allowSession': string;
   'modal.toolConfirm.deny': string;
   'modal.operationFailed': string;
+  'modal.mcpManage.title': string;
+  'modal.mcpManage.empty': string;
+  'modal.mcpManage.addHttp': string;
+  'modal.mcpManage.addStdio': string;
+  'modal.mcpManage.stop': string;
+  'modal.mcpManage.delete': string;
+  'modal.mcpManage.enabled': string;
+  'modal.mcpManage.id': string;
+  'modal.mcpManage.label': string;
+  'modal.mcpManage.url': string;
+  'modal.mcpManage.command': string;
+  'modal.mcpManage.args': string;
+  'modal.mcpManage.save': string;
+  'modal.mcpManage.cancel': string;
+  'modal.mcpManage.secretHint': string;
+  'modal.mcpManage.status.offline': string;
+  'modal.mcpManage.status.connecting': string;
+  'modal.mcpManage.status.online': string;
+  'modal.mcpManage.status.error': string;
+  'modal.mcpManage.error.invalid_id': string;
+  'modal.mcpManage.error.missing_url': string;
+  'modal.mcpManage.error.missing_command': string;
+  'modal.mcpManage.error.duplicate_id': string;
+  'modal.mcpSpawn.title': string;
+  'modal.mcpSpawn.body': string;
+  'modal.mcpSpawn.confirm': string;
+  'modal.mcpSpawn.cancel': string;
 }
 
 // ==================== Status / Drawer ====================
@@ -389,6 +421,7 @@ export interface StatusStrings {
   'status.drawer.feedback': string;
   'status.drawer.memory': string;
   'status.drawer.sponsor': string;
+  'status.drawer.mcp': string;
   'status.indexLabel.ready': string;
   'status.indexLabel.scanning': string;
   'status.indexLabel.queued': string;

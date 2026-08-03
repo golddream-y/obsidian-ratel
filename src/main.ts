@@ -487,9 +487,14 @@ export default class RatelVaultPlugin extends Plugin {
 				if (this.settings.mcpApprovedSpawns.includes(cfg.id)) return true;
 				const ok = await requestMcpSpawnConfirmation(this.app, cfg);
 				if (!ok) return false;
+				// 关键路径:只持久化 approved 列表,禁止 saveSettings→sync 在 bringUp 中间重入
 				if (!this.settings.mcpApprovedSpawns.includes(cfg.id)) {
-					this.settings.mcpApprovedSpawns.push(cfg.id);
-					await this.saveSettings();
+					this.settings.mcpApprovedSpawns = [
+						...this.settings.mcpApprovedSpawns,
+						cfg.id,
+					];
+					const existing = ((await this.loadData()) ?? {}) as Record<string, unknown>;
+					await this.saveData(mergePluginData(existing, { ...this.settings }));
 				}
 				return true;
 			},
