@@ -31,6 +31,7 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
+| P-SETTINGS-SYNC | [2026-08-03-settings-sync.md](plans/2026-08-03-settings-sync.md) | ⏳ Pending | S-SETTINGS-SYNC | settings$ 读入口统一;两阶段 CORE+UI;依赖 PR#2 或 Task1 内含写路径 |
 | P-MEMORY-MODAL | [2026-07-31-memory-modal-unify.md](plans/2026-07-31-memory-modal-unify.md) | ✅ Completed | S-MEMORY-MODAL | 分支 feat/p-memory-modal;MemoryModal+拆独立视图;5 Task |
 | P-GRAPH-EXPAND | [2026-08-03-graph-expand.md](plans/2026-08-03-graph-expand.md) | ⏳ Pending | S-GRAPH-EXPAND | 检索 1 跳扩邻 + 双通道确认 + hub 降权 + 引用标注;6 Task;ADR-013 近端落地 |
 | P-CITE | [2026-07-29-cite-dual-channel-hardening.md](plans/2026-07-29-cite-dual-channel-hardening.md) | ✅ Completed | S-CITE | 分支 feat/p-cite;注入+prompt+chip 显隐+hydrate 重建;7 Task |

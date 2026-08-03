@@ -3,7 +3,8 @@
 > **ID:** S-SETTINGS-SYNC  
 > **状态:** Active  
 > **日期:** 2026-08-03  
-> **前置:** `settingsRevision` / `appearanceRevision`（S-UI-APPEARANCE）；Context Length 抽屉不同步修复（`fix(settings): 上下文长度变更同步抽屉上限`）  
+> **前置:** `settingsRevision` / `appearanceRevision`（S-UI-APPEARANCE）  
+> **依赖:** Context Length 写路径修复（PR [#2](https://github.com/golddream-y/obsidian-ratel/pull/2)，截至撰稿时 **未合入 main**）— 实施时须先合入该 PR，或把 `applyContextLengthPreset` 一并纳入本 plan，禁止假设 main 已有该 fix。  
 > **动机:** `plugin.settings` 为可变普通对象，Svelte 看不见字段赋值；靠各处手动 `void $settingsRevision` 订漏即「设置改了、界面还旧」。需要**单一读入口**收口，而不是继续打补丁。
 
 ---
@@ -24,7 +25,7 @@
 
 | 症状 / 位置 | 根因类型 | 状态 |
 |-------------|----------|------|
-| 设置改 Context Length → 抽屉上限不变 | 写路径未同步 `chatModelMaxTokens` + 读路径未订 revision | 已有独立 fix；本 spec 将其纳入统一读模型 |
+| 设置改 Context Length → 抽屉上限不变 | 写路径未同步 `chatModelMaxTokens` + 读路径未订 revision | PR #2 修写路径+ChatView revision；**本 spec 用 settings$ 收口读路径**，写路径以 #2 或 plan 内含为准 |
 | Chat 发送 gate（是否要 Key） | 只跟 `keyTick`，改 `chatApiBase` / 预设不立刻刷新 | **待本 spec** |
 | Memory 面板页脚 `memoryStorageLimitMB` | 模板直接读 `plugin.settings`，未订 revision | **待本 spec** |
 | 模型芯片 / embed 类型 | 已手工 `void $settingsRevision` | 迁入统一入口后删除特例 |
@@ -68,42 +69,50 @@
 
 ### 4.1 选定方案：只读快照 store（`settings$`）
 
-在现有 `settingsRevision` 之上（或替换对外用法）提供：
+**模块落点（钉死）：** 新建 `src/ui/settings-store.ts` 为唯一实现；`src/ui/settings-revision.ts` 仅 re-export `settingsRevision` / `bumpSettingsRevision`（后者内部转调 `publishSettingsSnapshot` 所需的 revision 递增，或标记 deprecated 指向 publish），避免双实现。
 
 ```typescript
-/** 只读快照；每次 bump 后替换为浅拷贝，Svelte 可订阅 */
+/** 只读快照；每次 publish 后替换为拷贝，Svelte 可订阅 */
 export const settings$: Readable<Readonly<RatelVaultSettings>>;
 
+/**
+ * 由 saveSettings / loadSettings 调用。
+ * 内部：构造快照 → settings$.set → settingsRevision +1。
+ * 禁止调用方再单独 bumpSettingsRevision（否则 revision +2）。
+ */
 export function publishSettingsSnapshot(settings: RatelVaultSettings): void;
-// saveSettings 末尾: publishSettingsSnapshot(this.settings) + 兼容 bumpSettingsRevision
+
+/** 测试专用：恢复初始空/默认快照与 revision=0 */
+export function resetSettingsStoreForTests(): void;
 ```
 
 设计要点：
 
 - **写仍命令式**：业务代码继续改 `plugin.settings` 字段，再 `await saveSettings()`。  
 - **读对 UI 响应式**：组件用 `$settings.chatModel`、`$settings.memoryStorageLimitMB` 等。  
-- **快照形态**：`publish` 时 `{ ...settings }` 浅拷贝；嵌套对象（`toolPermissions`、`mcpServers`、`promptOverrides`）若 UI 需感知内部变更，publish 时对**已知嵌套**做一层拷贝（`{ ...toolPermissions }`、`mcpServers: [...mcpServers]` 等），避免「替换了数组引用但 store 未通知」之外的陈旧。一期列出嵌套拷贝清单（见 4.3）。  
-- **循环依赖**：`settings-revision.ts`（或新 `settings-store.ts`）只依赖 `RatelVaultSettings` **类型**；`main.ts` 在 `saveSettings` 调用 `publish`；禁止 store 模块 import `main`。
+- **快照形态**：见 4.3；禁止把 `plugin.settings` 同一引用直接 `set` 进 store。  
+- **初始值**：模块加载时用 `DEFAULT_SETTINGS` 的拷贝作为占位（`import type` + 对 DEFAULT 的值 import 若拉起重依赖，则改为 `loadSettings` 完成前 UI 未挂载的时序保证，测试必须先 `publish`）。**硬约束：** `loadSettings()` 末尾必须 `publishSettingsSnapshot`，且早于任何 Chat/Memory 视图挂载。  
+- **循环依赖：** store 只 `import type { RatelVaultSettings }`；若需要 `DEFAULT_SETTINGS` 值，从 `settings.ts` 值 import 前确认不形成 `settings → main → settings-store → settings` 环；若有环，把 `DEFAULT_SETTINGS` 类型与默认值抽到 `settings-types.ts`（仅当环真实出现时再拆，一期优先避免）。  
+- **`main.saveSettings`：** 成功 `saveData` 后只调 `publishSettingsSnapshot(this.settings)`（内含 revision bump）+ 既有 `bumpAppearance()` + 扇出；**删除**并列的 `bumpSettingsRevision()` 调用。
 
 ### 4.2 与 `settingsRevision` 的关系
 
-**推荐：** 保留 `settingsRevision` 数字版本（便于非 Svelte 订阅方 / 测试断言），`publishSettingsSnapshot` 内部同时 `settingsRevision.update(n => n+1)` 并 `settings$.set(snapshot)`。  
+保留 `settingsRevision` 数字版本（测试断言 / 过渡期订阅）。`publishSettingsSnapshot` **唯一**负责 `revision +1` 与 `settings$.set`。  
 
-迁移期：现有 `void $settingsRevision; return plugin.settings.x` 改为直接读 `$settings.x`；迁移完成后 ChatView 内不再出现「void revision + 裸读」模式。
+迁移期：现有 `void $settingsRevision; return plugin.settings.x` 改为 `$settings.x`；迁移完成后 ChatView 内禁止「void revision + 裸读」模式。`bumpSettingsRevision()` 若保留，必须委托 publish 且**需要传入当前 settings**——因此更干净的做法是：**对外只推荐 `publishSettingsSnapshot`**；旧 `bumpSettingsRevision()` 仅在无 settings 句柄的测试里递增 revision（不更新 settings$），并在 JSDoc 标明「生产路径勿用」。
 
 ### 4.3 嵌套字段拷贝清单（一期）
 
-publish 时至少：
+`cloneSettingsSnapshot(settings)` 至少：
 
-| 字段 | 拷贝方式 |
-|------|----------|
-| 顶层标量 | 浅拷贝覆盖 |
-| `toolPermissions` | `{ ...obj }` |
-| `promptOverrides` | `{ ...obj }` |
-| `mcpServers` | `[...arr]`（元素仍为原引用；改单条 server 字段后若未换数组，写路径须换新数组或显式 publish） |
-| `mcpApprovedSpawns` | `[...arr]` |
+| 字段 | 拷贝方式 | 备注 |
+|------|----------|------|
+| 顶层标量 / 其余对象 | `{ ...settings }` | 基底 |
+| `toolPermissions` | `{ ...obj }` | main 已有 |
+| `promptOverrides` | `{ ...obj }` | main 已有 |
+| `mcpServers` / `mcpApprovedSpawns` | `[...arr]` | **仅当** `RatelVaultSettings` 已含这些字段（MCP 合入后）；main 无则跳过，禁止为拷贝而提前引入 MCP 类型 |
 
-写路径约定：改嵌套结构时，赋值新对象/新数组（MCP Modal 已有多数此模式），再 `saveSettings`。
+写路径约定：改嵌套结构时赋新对象/新数组，再 `saveSettings`。
 
 ### 4.4 `saveSettings` 扇出（派生投影）
 
@@ -111,7 +120,7 @@ publish 时至少：
 
 | 派生 | 动作 |
 |------|------|
-| 上下文上限 | `userStatus.patchContextUsage({ maxTokens: getEffectiveChatModelMaxTokens(settings) })` |
+| 上下文上限 | 若 `this.userStatus` 已存在：`patchContextUsage({ maxTokens: getEffectiveChatModelMaxTokens(settings) })`（`userStatus` 在插件字段初始化即存在，onload 前亦可） |
 | （可选）外观 | 已有 `bumpAppearance()`，保持 |
 
 ChatView 内仅靠 `$effect` 订 settings 的逻辑可简化为：优先信任 saveSettings 扇出；组件仍可用 `$settings` 驱动芯片文案。
@@ -120,7 +129,7 @@ ChatView 内仅靠 `$effect` 订 settings 的逻辑可简化为：优先信任 s
 
 | 场景 | 要求 |
 |------|------|
-| Context Length 下拉 | 必须 `applyContextLengthPreset`（非 custom 同步 `chatModelMaxTokens`）— 已有 fix，纳入本契约 |
+| Context Length 下拉 | 必须 `applyContextLengthPreset`（非 custom 同步 `chatModelMaxTokens`）。来源：合入 PR #2，或本 plan Task 内补齐 — **验收前 main 必须具备该行为** |
 | `setControlValue` | 唯一设置页写入枢纽；新增多字段 key 必须同步相关字段 |
 | 旁路改 settings（外观、MCP Modal 等） | 必须最终 `saveSettings()`（或调用 `publishSettingsSnapshot` + 持久化）；禁止只改内存不 publish |
 | 密钥不在 settings 明文 | gate 的 `hasChatApiKey` 仍可能需 `keyTick`/聚焦刷新；**settings 侧** `chatApiBase` 变化必须经 settings$ 更新 gate 的「是否需要 Key」分支 |
@@ -129,12 +138,14 @@ ChatView 内仅靠 `$effect` 订 settings 的逻辑可简化为：优先信任 s
 
 | 文件 | 改动 |
 |------|------|
-| `src/ui/settings-revision.ts` 或新 `settings-store.ts` | `settings$` + `publishSettingsSnapshot` |
-| `src/main.ts` `saveSettings` | publish + 扇出 maxTokens |
-| `src/ui/chat/ChatView.svelte` | 芯片 / embed / gate / maxTokens 改读 `$settings`；gate 订 `$settings`（不再只靠 keyTick 覆盖 Base 变更） |
+| `src/ui/settings-store.ts`（新建） | `settings$` / `publishSettingsSnapshot` / `cloneSettingsSnapshot` / `resetSettingsStoreForTests` |
+| `src/ui/settings-revision.ts` | 兼容 re-export；生产 bump 语义对齐 4.2 |
+| `src/main.ts` | `loadSettings` / `saveSettings` 挂钩 publish；扇出 maxTokens；去掉重复 `bumpSettingsRevision` |
+| `src/ui/chat/ChatView.svelte` | 芯片 / embed / gate / maxTokens 改读 `$settings` |
 | `src/ui/memory-panel/MemoryPanel.svelte` | 页脚上限读 `$settings.memoryStorageLimitMB` |
 | `src/ui/status/*` | 继续订 `contextUsage$`；上限由扇出保证 |
-| 设置页 / Modal | 保持命令式写；打开瞬间读可以继续用 `plugin.settings` |
+| `src/settings.ts` | 若 PR #2 未合入：补 `applyContextLengthPreset` 接线 |
+| 设置页 / Modal | 保持命令式写；打开瞬间读可继续用 `plugin.settings` |
 
 ### 4.7 错误与初始化
 
@@ -172,12 +183,12 @@ ChatView 内仅靠 `$effect` 订 settings 的逻辑可简化为：优先信任 s
 
 ## 7. 实施拆分（供后续 plan）
 
-建议两期 plan（writing-plans 时再拆 Task）：
+单 plan **P-SETTINGS-SYNC** 两阶段即可（不必强行拆两个 STATUS 行）：
 
-1. **P-SETTINGS-SYNC-CORE** — store API、saveSettings/loadSettings 挂钩、扇出 maxTokens、单测。  
-2. **P-SETTINGS-SYNC-UI** — ChatView / MemoryPanel / gate 迁移；删除「void revision + 裸读」；grep 守卫清单写入 plan 验收。
+1. **阶段 A CORE** — `settings-store`、load/save 挂钩、扇出 maxTokens、Context Length 写路径（若 #2 未合）、store 单测。  
+2. **阶段 B UI** — ChatView / MemoryPanel / gate 迁移；删除「void revision + 裸读」；grep 验收。
 
-优先级：可与 MCP DOCS 并行；**不阻塞** MCP 功能合并。建议在 Context Length fix 合入 main 后基于 main 实施，避免重复冲突。
+优先级：不阻塞 MCP 功能合并。基线：**main +（#2 或等价写路径）**。
 
 ---
 
