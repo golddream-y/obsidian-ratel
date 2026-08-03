@@ -33,9 +33,9 @@
 |---|---|---|---|---|
 | P-MEMORY-MODAL | [2026-07-31-memory-modal-unify.md](plans/2026-07-31-memory-modal-unify.md) | ✅ Completed | S-MEMORY-MODAL | 分支 feat/p-memory-modal;MemoryModal+拆独立视图;5 Task |
 | P-GRAPH-EXPAND | [2026-08-03-graph-expand.md](plans/2026-08-03-graph-expand.md) | ⏳ Pending | S-GRAPH-EXPAND | 检索 1 跳扩邻;6 Task;**暂缓执行**(优先 S-MCP-HOST) |
-| P-MCP-HOST-CORE | — | ⏳ Pending | S-MCP-HOST | Port+双 transport+Client+Host+入册;plan 待写(spec 审过后 writing-plans) |
-| P-MCP-HOST-UI | — | ⏳ Pending | S-MCP-HOST | 设置页+i18n+钥匙串+spawn 确认;plan 待写 |
-| P-MCP-HOST-DOCS | — | ⏳ Pending | S-MCP-HOST | README/user-guide/隐私边界;finishing 时确认勾选 |
+| P-MCP-HOST-CORE | [2026-08-03-mcp-host-core.md](plans/2026-08-03-mcp-host-core.md) | ⏳ Pending | S-MCP-HOST | Port+双 transport+Client+Host+入册;8 Task;优先执行 |
+| P-MCP-HOST-UI | [2026-08-03-mcp-host-ui.md](plans/2026-08-03-mcp-host-ui.md) | ⏳ Pending | S-MCP-HOST | 设置页+i18n+钥匙串+spawn 确认+动态权限;5 Task;依赖 CORE |
+| P-MCP-HOST-DOCS | [2026-08-03-mcp-host-docs.md](plans/2026-08-03-mcp-host-docs.md) | ⏳ Pending | S-MCP-HOST | README/user-guide/隐私边界;finishing 时确认勾选 |
 | P-CITE | [2026-07-29-cite-dual-channel-hardening.md](plans/2026-07-29-cite-dual-channel-hardening.md) | ✅ Completed | S-CITE | 分支 feat/p-cite;注入+prompt+chip 显隐+hydrate 重建;7 Task |
 | P-EVO-A-READ | [2026-07-15-evo-a-read.md](plans/2026-07-15-evo-a-read.md) | ✅ Completed | S-EVOLUTION | 分支 feat/p-evo-a-read;6 Task + final fix;730 tests;待核对是否已合 main |
 | P-EVO-A-FM | — | ⏳ Pending | S-EVOLUTION | update_frontmatter;依赖 P-EVO-A-READ;plan 待写 |
