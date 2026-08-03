@@ -56,7 +56,7 @@
 | `tests/prompts/composer.test.ts` | 改 formatToolGuideList 签名相关断言 |
 | `docs/superpowers/STATUS.md` | CORE 完成后改状态 |
 
-**依赖 P-MCP-HOST-UI：** 设置页增删 Server、spawn 首次确认 Modal、动态权限列表、钥匙串 hint UI。CORE 可用测试直接构造 `McpServerConfig[]` 调 `sync`；`confirmSpawn` 以依赖注入回调形式预留（默认 always-true 或 always-false 由 Host 构造参数决定，UI plan 接真 Modal）。
+**依赖 P-MCP-HOST-UI：** 设置页不再作为主 CRUD 路径。UI plan 提供：`StatusDrawer` → `McpManageModal`（安装/管理）、对话 Trace MCP 标识、`confirmSpawn` 真 Modal、动态权限。CORE 可用测试直接构造 `McpServerConfig[]` 调 `sync`；`confirmSpawn` 以依赖注入回调预留（默认 always-false 防静默 spawn，UI plan 接真 Modal）。
 
 ---
 

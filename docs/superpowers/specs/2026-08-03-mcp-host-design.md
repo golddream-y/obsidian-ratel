@@ -41,12 +41,14 @@
 4. **权限默认 ask** — 前缀规则或解析缺省为 `ask`；复用确认 Modal / 会话 grants
 5. **密钥走钥匙串** — `ratel-mcp-<serverId>`，不进 `settings.json`，不进 spawn 明文日志
 6. **生命周期对称** — 移除 Server / 断连 / `onunload` 时 unregister + close（stdio kill）
+7. **对话内可辨认** — Agent 调用 MCP 工具时，聊天 Trace 明确标出「MCP / 服务器 / 工具」，不与内置工具混同
+8. **抽屉一键管理** — StatusDrawer 增加 MCP 入口；点击打开管理 Modal，可安装（添加）与启停/删除 Server
 
 成功标准：
 
-- 用户配置 1 个 HTTP MCP（如 Tavily Remote）后，Agent 能调其工具并在聊天时间线看到与内置同形的 `tool.result`
-- 用户配置 1 个 stdio MCP（如 `npx …`）后，首次有命令确认；进程可停；工具同样入册
-- 零 MCP 配置时：无子进程、无额外 HTTP、隐私面与现状一致
+- 用户从抽屉打开 MCP Modal，添加 1 个 HTTP MCP 后，Agent 能调其工具；时间线里该次调用带 MCP 标识
+- 用户添加 1 个 stdio MCP 后，首次有命令确认；进程可停；工具同样入册
+- 零 MCP 配置时：无子进程、无额外 HTTP、隐私面与现状一致；抽屉按钮仍可见（空态引导添加）
 - 不改 Agent Loop 主循环结构、不改融合检索、不改 MemoryStore
 
 ---
@@ -63,6 +65,8 @@
 | 独立 CapabilityExecutor | Loop + Registry 即执行流水线（ADR-015） |
 | 把 Skill 包注册成业务工具 | Skill 仍走元工具（ADR-012） |
 | 本期改能力池 prompt 装配到「单一话术终态」 | MCP 入 FC 即可；Skill Discovery 与池叙事收敛可跟 ADR-015 另任务，不阻塞 Host |
+| MCP 应用商店 / `.mcpb` 一键市场 / OAuth 向导 | 一期不做目录聚合；用户手动填 URL 或 command（见 §4.11 业界对照） |
+| 会话级「仅本会话启用某 Server」开关 | 一期全局 `enabled`；会话级可后续加（llm-hub 有类似能力） |
 
 ---
 
@@ -71,7 +75,7 @@
 ### 4.1 角色与分层
 
 ```
-设置页 mcpServers[]
+设置页 / 抽屉 Modal → mcpServers[]
         │
         ▼
 ┌───────────────────┐
@@ -292,13 +296,70 @@ const perm = settings.toolPermissions[toolCall.name] ?? 'ask';
 - `toolGuide` / `{{toolList}}`：若 Composer 从 Registry 拉列表，MCP 自动进入；若硬编码内置清单，plan 中补「动态拼接」一小步
 - Skill Discovery 独立段保留；本期不强制合并话术（ADR-015 终态可另任务）
 
-### 4.11 设置 UI（用户可见，须 i18n）
+### 4.11 用户可见 UI（抽屉优先 + 对话可辨 + 设置补强）
 
-- Advanced 或 Agent Tab 下「MCP Servers」区块：
-  - 列表：label、transport、status 芯片、enable 开关、编辑/删除、停止
-  - 添加：选 HTTP 或 stdio → 填 id/label/url 或 command+args
-  - 钥匙串 hint、隐私短文案（默认不出站，仅配置端点）
-- 全部字符串走 `src/i18n/zh.ts` + `en.ts`
+#### 4.11.0 业界对照（调研摘要，2026-08）
+
+| 产品 | 安装 / 管理入口 | 对话侧可见性 | 对 Ratel 的借鉴 |
+|---|---|---|---|
+| **Claude Desktop** | Settings → Extensions 市场 / Connectors；高级用户改 JSON；`.mcpb` 一键包 | 聊天底栏锤子图标显示工具数；Connectors 列表 | **不做市场**；借鉴「聊天旁可见已接能力」与「安装≠改 JSON 文件」 |
+| **Cursor** | Customize → MCPs；Add to Cursor；`mcp.json` | Agent 工具列表可开关；MCP 调用默认要批准 | 借鉴 **toggle 启停** + **调用前 ask**（我们已有权限门） |
+| **obsidian-llm-hub** | 插件设置 MCP 段 + `McpServerModal`；可 Test connection | 聊天里 Database 图标按会话开关 Server | 同为 Obsidian：**Modal 管 CRUD** 最贴近；我们改用 **StatusDrawer 入口**（对齐记忆 Modal 模式） |
+
+**Ratel 一期选型：**
+
+- **主入口：StatusDrawer「MCP」按钮 → `McpManageModal`**（安装 + 管理）
+- **设置页：** 可保留精简「已配置 N 个 / 打开管理」跳转或只读摘要，**不以设置长表单为主路径**
+- **不做** Extensions 市场 / `.mcpb` / OAuth 向导（非目标）
+
+#### 4.11.1 抽屉入口（对齐 MemoryModal）
+
+```
+StatusDrawer
+  └── 动作区（反馈 / 记忆 / 赞助旁）新增「MCP」
+        └── onclick → plugin.openMcpManageModal()
+              └── McpManageModal（Obsidian Modal，单例）
+```
+
+- 空态：Modal 内文案引导「添加 HTTP 或本地命令」；隐私一句（默认不出站）
+- 有 Server：列表展示 label、transport、status 芯片、enable、停止、编辑、删除
+- 「添加」：选 HTTP / stdio → 表单（id / label / url 或 command+args）→ 校验 → 写入 `mcpServers` → `mcpHost.sync`
+- 钥匙串 hint：`ratel-mcp-<id>`（不展示密钥值）
+- stdio 首次启动：仍走 spawn 确认 Modal（与管理 Modal 分离）
+- 全部字符串 i18n
+
+#### 4.11.2 对话内 MCP 调用展示
+
+现有链路：`tool.call` / `tool.result` → `ToolCallEntry` → `ToolSegment.svelte`（与内置同形流水线，**红利保留**）。
+
+一期增强（可辨认，不另起事件类型）：
+
+| 点 | 行为 |
+|---|---|
+| **识别** | `toolCall.name.startsWith('mcp__')` → 视为 MCP |
+| **展示名** | `formatToolDisplayName`：解析 `mcp__<serverId>__<tool>`，输出 i18n 如 `MCP · {label} · {tool}`（label 从 `mcpServers` 查，缺失则用 serverId） |
+| **Trace 行** | `ToolSegment` 对 MCP 加轻量徽标/前缀（如 `MCP` chip），状态色仍用 calling/done/failed |
+| **展开详情** | 首行注明 serverId / transport（若可得）；下方仍为规范化旁注，禁止 dump 密钥 |
+| **权限确认 Modal** | `summarizeToolCall` 对 MCP 用同一友好展示名，避免只显示生硬 `mcp__…` |
+
+**不改：** `AgentEvent` 判别联合；不新增 `mcp.call` 事件（避免第三条旁路）。
+
+#### 4.11.3 设置页权限补强
+
+- Agent 权限区：online 后动态列出 `mcp__*`，allow/ask/deny（缺省 ask）
+- 可选：设置页底部「打开 MCP 管理」按钮 → 同 `openMcpManageModal()`
+
+#### 4.11.4 UI 模块边界
+
+| 文件（plan 钉死） | 职责 |
+|---|---|
+| `src/ui/mcp/McpManageModal.ts` | 安装/管理主 Modal（类比 MemoryModal） |
+| `src/ui/mcp/mcp-spawn-confirm-modal.ts` | stdio 首次确认 |
+| `src/ui/mcp/mcp-manage-view.ts` 或内嵌渲染 | 列表 + 添加表单（可用 Setting API 或轻量 Svelte mount） |
+| `src/ui/status/StatusDrawer.svelte` | 新增 `onMcp` 按钮 |
+| `src/ui/chat/format-tool-display.ts` | MCP 展示名 |
+| `src/ui/chat/message-stream/ToolSegment.svelte` | MCP 徽标 |
+| `src/main.ts` | `openMcpManageModal`；Drawer 接线 |
 
 ### 4.12 隐私与文档影响（实现后确认同步）
 
@@ -336,10 +397,10 @@ const perm = settings.toolPermissions[toolCall.name] ?? 'ask';
 | `core/mcp-host.ts` 等 | 新模块 |
 | `core/tool-registry.ts` | 新增 unregister API |
 | `main.ts` | 持有 `mcpHost`；onload sync；onunload dispose；settings 变更触发 sync |
-| `settings.ts` / i18n | `mcpServers` + UI |
+| `settings.ts` / i18n / Drawer / McpManageModal / ToolSegment | 抽屉入口 + 管理 Modal + 对话 MCP 标识 |
 | `secrets/ratel-secrets.ts` | 动态 MCP secret |
 | `tool-permissions` / 设置权限列表 | 动态 MCP 工具项 |
-| Agent Loop / 检索 / Memory / Worker | **无结构改动** |
+| Agent Loop / 检索 / Memory / Worker | **无结构改动**（Loop 事件同形；仅 UI 展示层识别 `mcp__`） |
 | 网络边界 / AGENTS.md 铁律 | 实现后修订表述（文档任务） |
 
 ---
@@ -358,7 +419,7 @@ const perm = settings.toolPermissions[toolCall.name] ?? 'ask';
 | 阶段 | 内容 | 说明 |
 |---|---|---|
 | P-MCP-HOST-CORE | Port + JSON-RPC + 双 Transport + Client + Host + Registry unregister + 入册 | **必做**，无中间态砍 transport |
-| P-MCP-HOST-UI | 设置页、i18n、钥匙串 hint、spawn 确认、状态/停止 | 可紧随 CORE |
+| P-MCP-HOST-UI | 抽屉 MCP 按钮 + McpManageModal（安装/管理）+ 对话 Trace MCP 标识 + i18n + spawn 确认 + 动态权限 | 依赖 CORE |
 | P-MCP-HOST-DOCS | README / user-guide / S-EVOLUTION / host/mcp.md | finishing 时确认勾选 |
 
 不建议「只做 HTTP」的独立发版（违背 ADR-014）。
@@ -370,11 +431,12 @@ const perm = settings.toolPermissions[toolCall.name] ?? 'ask';
 | 检查项 | 结果 |
 |---|---|
 | 与 ADR-014/015 矛盾？ | 无；本 spec 是落地设计 |
-| 占位符 / TBD？ | 协议具体 version 字符串留给实现常量；Resources 等明确砍掉 |
-| 范围过大？ | 砍掉 Resources/Sampling/Roots/Prompts；能力池话术终态不阻塞 |
+| 占位符 / TBD？ | 协议 version 常量钉死 `2024-11-05`；Resources 等明确砍掉 |
+| 范围过大？ | 砍掉市场/OAuth/会话级开关；UI 收敛为抽屉 Modal + Trace 标识 |
 | 图谱扩邻？ | **不在本 spec**；P-GRAPH-EXPAND 另排期 |
 | unregister 缺口？ | 已写入必做 |
-| i18n？ | UI/Notice 强制；开发者日志中文 |
+| i18n？ | UI/Notice/Drawer/Modal/Trace 徽标强制；开发者日志中文 |
+| UI 是否只有设置页？ | **否** — 主路径抽屉 Modal；对话必须可辨 MCP |
 
 ---
 
@@ -382,5 +444,5 @@ const perm = settings.toolPermissions[toolCall.name] ?? 'ask';
 
 - [Model Context Protocol](https://modelcontextprotocol.io/)
 - Tavily / Brave 官方 MCP Server
-- 社区：obsidian-llm-hub、obsidian-gemini、local-runner（spawn 先例）
-- 本仓库：`capability-surface.md` §3、ADR-001 `requestUrl`
+- Claude Desktop Extensions / Connectors；Cursor Customize → MCPs；[obsidian-llm-hub MCP](https://github.com/takeshy/obsidian-llm-hub)
+- 本仓库：`capability-surface.md` §3、ADR-001 `requestUrl`、MemoryModal + StatusDrawer 入口模式

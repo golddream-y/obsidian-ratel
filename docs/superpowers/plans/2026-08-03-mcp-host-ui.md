@@ -1,22 +1,34 @@
-# P-MCP-HOST-UI — MCP 设置页 / i18n / spawn 确认 / 动态权限 Implementation Plan
+# P-MCP-HOST-UI — 抽屉管理 Modal + 对话 MCP 展示 + spawn/权限 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 让用户在设置里增删改 MCP Server、看状态/停止、首次 stdio spawn 确认、钥匙串 hint，以及 MCP 工具动态权限项；全部用户可见字符串走 i18n。
+**Goal:** 用户从 StatusDrawer 打开 MCP 管理 Modal 完成安装/启停/删除；对话 Trace 中 MCP 调用可一眼辨认；stdio 首次 spawn 确认；动态权限；全 i18n。
 
-**Architecture:** 在 Agent 或 Advanced Tab 增加「MCP Servers」声明式设置区块；列表数据读写 `settings.mcpServers`；变更后调用 `plugin.mcpHost.sync`。spawn 确认用 Obsidian Modal，同意后写入 `mcpApprovedSpawns`。权限下拉动态读取当前 Registry 中 `mcp__*` 工具名。
+**Architecture:** 主路径对齐 MemoryModal：`StatusDrawer.onMcp` → `plugin.openMcpManageModal()` → `McpManageModal` 读写 `settings.mcpServers` 并 `mcpHost.sync`。对话侧不改 AgentEvent：在 `formatToolDisplayName` + `ToolSegment` 识别 `mcp__` 前缀加展示名与徽标。设置页仅补动态权限 +「打开管理」跳转。
 
-**Tech Stack:** TypeScript / Obsidian Setting API / Svelte 非必须（跟随现有 declarative settings）/ Vitest / i18n
+**Tech Stack:** TypeScript / Obsidian Modal + Setting API / Svelte（StatusDrawer / ToolSegment）/ Vitest / i18n
 
-**Spec:** [S-MCP-HOST](../specs/2026-08-03-mcp-host-design.md) · **依赖:** [P-MCP-HOST-CORE](2026-08-03-mcp-host-core.md) 先完成
+**Spec:** [S-MCP-HOST](../specs/2026-08-03-mcp-host-design.md) §4.11 · **依赖:** [P-MCP-HOST-CORE](2026-08-03-mcp-host-core.md)
 
 ## Global Constraints
 
 - 用户可见字符串必须 `tNow` / `t`，`zh.ts` + `en.ts` + `types.ts` 同步
 - 测试描述中文：`行为 - 条件 - 期望结果`
-- **不**在 UI 层发裸 HTTP；只调 `mcpHost`
-- 密钥只展示 secret ID hint，不展示密钥值
-- CORE 里 `confirmSpawn` 恒 false 的占位必须替换为本 Modal 逻辑
+- **不以插件设置长表单为主路径**；CRUD 在 `McpManageModal`
+- **不做** MCP 应用商店 / `.mcpb` / OAuth
+- 密钥只展示 secret ID，不展示值
+- CORE 的 `confirmSpawn` 占位（恒 false）必须替换为真 Modal
+- 不新增 `mcp.call` 事件类型
+
+---
+
+## UI 三部分（对照用户需求）
+
+| # | 部分 | 落点 |
+|---|---|---|
+| A | **对话过程中 MCP 调用展示** | `formatToolDisplayName` + `ToolSegment` 徽标 + 权限确认文案 |
+| B | **抽屉 MCP 按钮** | `StatusDrawer` 动作区，旁记忆/反馈 |
+| C | **点击弹框安装与管理** | `McpManageModal`：列表 / 添加 HTTP·stdio / 启停删除 / 状态 / 钥匙串 hint |
 
 ---
 
@@ -24,213 +36,278 @@
 
 | 文件 | 职责 |
 |---|---|
-| `src/i18n/types.ts` | MCP 相关 key 类型 |
-| `src/i18n/zh.ts` / `en.ts` | 文案 |
-| `src/ui/mcp/mcp-spawn-confirm-modal.ts` | 新建：stdio 首次确认 Modal |
-| `src/ui/settings/mcp-servers-render.ts` | 新建：MCP 列表 / 添加 / 删除 / 启停渲染 |
-| `src/settings.ts` | 挂载 MCP 设置区块；权限列表含动态 mcp__* |
-| `src/main.ts` | `confirmSpawn` 接 Modal + 持久化 `mcpApprovedSpawns` |
-| `tests/ui/mcp/mcp-spawn-confirm-modal.test.ts` | 新建（若 Modal 可单测逻辑） |
-| `tests/core/mcp-config-validate.test.ts` | 新建：id/url/command 校验纯函数（可抽到 `src/core/mcp-config.ts`） |
+| `src/i18n/types.ts` / `zh.ts` / `en.ts` | Drawer / Modal / Trace / 错误文案 |
+| `src/core/mcp-config.ts` | 配置校验纯函数 |
+| `src/ui/mcp/parse-mcp-tool-name.ts` | 解析 `mcp__server__tool` |
+| `src/ui/mcp/McpManageModal.ts` | 管理 Modal 单例（类比 MemoryModal） |
+| `src/ui/mcp/mcp-spawn-confirm-modal.ts` | stdio 首次确认 |
+| `src/ui/status/StatusDrawer.svelte` | `onMcp` 按钮 |
+| `src/ui/chat/ChatView.svelte` | 传入 `onMcp` |
+| `src/ui/chat/format-tool-display.ts` | MCP 友好展示名 |
+| `src/ui/chat/message-stream/ToolSegment.svelte` | MCP 徽标 |
+| `src/ui/chat/message-stream/types.ts` | 可选 `kind?: 'mcp'`（或纯靠 name 前缀，不强制改类型） |
+| `src/core/tool-permissions.ts` | `summarizeToolCall` MCP 分支 |
+| `src/settings.ts` | 动态权限 +「打开 MCP 管理」 |
+| `src/main.ts` | `openMcpManageModal`、`confirmSpawn`、Drawer 接线 |
+| `tests/ui/mcp/parse-mcp-tool-name.test.ts` | 新建 |
+| `tests/core/mcp-config-validate.test.ts` | 新建 |
+| `tests/ui/chat/format-tool-display` 相关 | 追加 MCP 用例 |
 
 ---
 
-### Task 1: i18n keys + 配置校验纯函数
+### Task 1: i18n + 校验 + 解析工具名
 
 **Files:**
 - Modify: `src/i18n/types.ts`, `zh.ts`, `en.ts`
 - Create: `src/core/mcp-config.ts`
+- Create: `src/ui/mcp/parse-mcp-tool-name.ts`
 - Test: `tests/core/mcp-config-validate.test.ts`
+- Test: `tests/ui/mcp/parse-mcp-tool-name.test.ts`
 
-- [ ] **Step 1: 校验测试**
+- [ ] **Step 1: 解析测试**
 
 ```typescript
 /**
- * @file tests/core/mcp-config-validate.test.ts
- * @description MCP Server 配置校验
- * @module tests/core/mcp-config-validate
+ * @file tests/ui/mcp/parse-mcp-tool-name.test.ts
+ * @description 解析 mcp__server__tool 注册名
+ * @module tests/ui/mcp/parse-mcp-tool-name
  */
 
 import { describe, it, expect } from 'vitest';
-import { validateMcpServerConfig } from '../../src/core/mcp-config';
+import { parseMcpToolName, isMcpToolName } from '../../../src/ui/mcp/parse-mcp-tool-name';
 
-describe('validateMcpServerConfig', () => {
-	it('合法 http - 返回 null', () => {
-		expect(
-			validateMcpServerConfig({
-				id: 'tavily',
-				label: 'Tavily',
-				enabled: true,
-				transport: 'http',
-				url: 'https://mcp.tavily.com/mcp',
-			}),
-		).toBeNull();
+describe('parseMcpToolName', () => {
+	it('isMcpToolName - mcp__ 前缀 - true', () => {
+		expect(isMcpToolName('mcp__tavily__search')).toBe(true);
+		expect(isMcpToolName('search_vault')).toBe(false);
 	});
 
-	it('非法 id - 返回错误码', () => {
-		expect(
-			validateMcpServerConfig({
-				id: 'Tavily',
-				label: 'Tavily',
-				enabled: true,
-				transport: 'http',
-				url: 'https://x',
-			}),
-		).toBe('invalid_id');
+	it('parseMcpToolName - 标准三段 - 拆出 server 与 tool', () => {
+		expect(parseMcpToolName('mcp__tavily__search')).toEqual({
+			serverId: 'tavily',
+			toolName: 'search',
+		});
 	});
 
-	it('http 缺 url - 返回错误码', () => {
-		expect(
-			validateMcpServerConfig({
-				id: 'tavily',
-				label: 'Tavily',
-				enabled: true,
-				transport: 'http',
-			}),
-		).toBe('missing_url');
+	it('parseMcpToolName - tool 名含下划线 - 只按前两段 __ 切分', () => {
+		expect(parseMcpToolName('mcp__tavily__search_web')).toEqual({
+			serverId: 'tavily',
+			toolName: 'search_web',
+		});
 	});
 
-	it('stdio 缺 command - 返回错误码', () => {
-		expect(
-			validateMcpServerConfig({
-				id: 'local',
-				label: 'Local',
-				enabled: true,
-				transport: 'stdio',
-			}),
-		).toBe('missing_command');
+	it('parseMcpToolName - 非 MCP - 返回 null', () => {
+		expect(parseMcpToolName('read_note')).toBeNull();
 	});
 });
 ```
 
-- [ ] **Step 2: 实现 `validateMcpServerConfig` + i18n**
+实现：
 
 ```typescript
 /**
- * @file src/core/mcp-config.ts
- * @description MCP Server 配置校验
- * @module core/mcp-config
+ * @file src/ui/mcp/parse-mcp-tool-name.ts
+ * @description 解析 ToolRegistry 中的 MCP 工具名
+ * @module ui/mcp/parse-mcp-tool-name
  */
 
-import type { McpServerConfig } from '../ports/mcp';
-import { isValidMcpServerId } from '../ports/mcp';
+export function isMcpToolName(name: string): boolean {
+	return name.startsWith('mcp__');
+}
 
-export type McpConfigErrorCode =
-	| 'invalid_id'
-	| 'missing_url'
-	| 'missing_command'
-	| 'duplicate_id';
-
-export function validateMcpServerConfig(cfg: McpServerConfig): McpConfigErrorCode | null {
-	if (!isValidMcpServerId(cfg.id)) return 'invalid_id';
-	if (cfg.transport === 'http' && !cfg.url?.trim()) return 'missing_url';
-	if (cfg.transport === 'stdio' && !cfg.command?.trim()) return 'missing_command';
-	return null;
+/**
+ * 格式固定为 mcp__<serverId>__<toolName>（toolName 可含 `_`）。
+ */
+export function parseMcpToolName(
+	name: string,
+): { serverId: string; toolName: string } | null {
+	if (!isMcpToolName(name)) return null;
+	const rest = name.slice('mcp__'.length);
+	const i = rest.indexOf('__');
+	if (i <= 0) return null;
+	const serverId = rest.slice(0, i);
+	const toolName = rest.slice(i + 2);
+	if (!serverId || !toolName) return null;
+	return { serverId, toolName };
 }
 ```
 
-i18n 最小集合（`types.ts` SettingsStrings 或独立 namespace，按项目现有 spread 方式合并）：
+- [ ] **Step 2: validateMcpServerConfig**（同原 plan：invalid_id / missing_url / missing_command）
 
-| key | zh | en |
-|---|---|---|
-| `settings.mcp.heading` | MCP 服务器 | MCP servers |
-| `settings.mcp.desc` | 默认关闭。仅你添加的端点会出站；密钥请写入钥匙串。 | Off by default. Only endpoints you add can send traffic; store keys in the keychain. |
-| `settings.mcp.addHttp` | 添加 HTTP | Add HTTP |
-| `settings.mcp.addStdio` | 添加 stdio | Add stdio |
-| `settings.mcp.id` | Server ID | Server ID |
-| `settings.mcp.label` | 显示名 | Display name |
-| `settings.mcp.url` | URL | URL |
-| `settings.mcp.command` | 命令 | Command |
-| `settings.mcp.args` | 参数（空格分隔） | Args (space-separated) |
-| `settings.mcp.enabled` | 启用 | Enabled |
-| `settings.mcp.stop` | 停止 | Stop |
-| `settings.mcp.delete` | 删除 | Delete |
-| `settings.mcp.status.offline` | 离线 | Offline |
-| `settings.mcp.status.connecting` | 连接中 | Connecting |
-| `settings.mcp.status.online` | 在线 | Online |
-| `settings.mcp.status.error` | 错误 | Error |
-| `settings.mcp.secretHint` | 钥匙串名称 | Keychain secret name |
-| `settings.mcp.error.invalid_id` | ID 须小写字母开头… | ID must start with a lowercase letter… |
-| `settings.mcp.error.missing_url` | HTTP 需要 URL | URL required for HTTP |
-| `settings.mcp.error.missing_command` | stdio 需要命令 | Command required for stdio |
-| `settings.mcp.error.duplicate_id` | ID 已存在 | ID already exists |
-| `modal.mcpSpawn.title` | 确认启动本地 MCP | Confirm local MCP launch |
-| `modal.mcpSpawn.body` | 将执行：{{command}} | Will run: {{command}} |
-| `modal.mcpSpawn.confirm` | 允许并记住 | Allow and remember |
-| `modal.mcpSpawn.cancel` | 取消 | Cancel |
-| `settings.toolPermissions.mcpSection` | MCP 工具权限 | MCP tool permissions |
+- [ ] **Step 3: i18n keys（最小集）**
 
-- [ ] **Step 3: PASS → Commit**
+| key | zh 示例 |
+|---|---|
+| `status.drawer.mcp` | MCP |
+| `modal.mcpManage.title` | MCP 服务器 |
+| `modal.mcpManage.empty` | 尚未添加。添加后 Agent 可调用该服务器的工具；默认不配置则不额外出站。 |
+| `modal.mcpManage.addHttp` | 添加 HTTP |
+| `modal.mcpManage.addStdio` | 添加本地命令 |
+| `modal.mcpManage.stop` / `delete` / `enabled` | … |
+| `modal.mcpManage.status.*` | 离线/连接中/在线/错误 |
+| `modal.mcpSpawn.*` | 确认启动… |
+| `tool.name.mcp` | MCP · {server} · {tool} |
+| `chat.tool.mcpBadge` | MCP |
+| `settings.mcp.openManage` | 打开 MCP 管理 |
+| `settings.toolPermissions.mcpSection` | MCP 工具权限 |
+
+- [ ] **Step 4: Commit**
 
 ```bash
-git add src/core/mcp-config.ts src/i18n/ tests/core/mcp-config-validate.test.ts
-git commit -m "feat(mcp): 配置校验与 MCP i18n 键"
+git commit -m "feat(mcp): i18n、配置校验与工具名解析"
 ```
 
 ---
 
-### Task 2: Spawn 确认 Modal + main confirmSpawn
+### Task 2: 对话内 MCP 调用展示（部分 A）
 
 **Files:**
-- Create: `src/ui/mcp/mcp-spawn-confirm-modal.ts`
-- Modify: `src/main.ts`
+- Modify: `src/ui/chat/format-tool-display.ts`
+- Modify: `src/ui/chat/message-stream/ToolSegment.svelte`
+- Modify: `src/core/tool-permissions.ts`（`summarizeToolCall`）
+- Test: 既有 format-tool-display 测试文件（若无则建 `tests/ui/chat/format-tool-display-mcp.test.ts`）
 
-- [ ] **Step 1: 实现 Modal**
-
-参考现有 `ConfirmModal` 模式（`src/ui/` 下同类）：
+- [ ] **Step 1: 失败测试**
 
 ```typescript
-/**
- * @file src/ui/mcp/mcp-spawn-confirm-modal.ts
- * @description stdio MCP 首次 spawn 确认
- * @module ui/mcp/mcp-spawn-confirm-modal
- */
+it('formatToolDisplayName - mcp__ 工具 - 使用 MCP 模板', () => {
+	// 需能注入 label 查找：推荐 formatToolDisplayName(name, args, { mcpLabel?: (id)=>string })
+	// 或读闭包/可选第三参；最小：无 label 时用 serverId
+	expect(formatToolDisplayName('mcp__tavily__search', { query: 'x' })).toContain('tavily');
+	expect(formatToolDisplayName('mcp__tavily__search', {})).toMatch(/search/);
+});
+```
 
-import { App, Modal, Setting } from 'obsidian';
-import { tNow } from '../../i18n';
-import type { McpServerConfig } from '../../ports/mcp';
+钉死 API（避免全局 settings 耦合测试）：
 
-export function requestMcpSpawnConfirmation(
-	app: App,
-	cfg: McpServerConfig,
-): Promise<boolean> {
-	return new Promise((resolve) => {
-		const modal = new (class extends Modal {
-			onOpen() {
-				this.titleEl.setText(tNow('modal.mcpSpawn.title'));
-				const cmd = [cfg.command, ...(cfg.args ?? [])].join(' ');
-				this.contentEl.createEl('p', {
-					text: tNow('modal.mcpSpawn.body', { command: cmd }),
-				});
-				new Setting(this.contentEl)
-					.addButton((btn) =>
-						btn.setButtonText(tNow('modal.mcpSpawn.cancel')).onClick(() => {
-							this.close();
-							resolve(false);
-						}),
-					)
-					.addButton((btn) =>
-						btn
-							.setButtonText(tNow('modal.mcpSpawn.confirm'))
-							.setCta()
-							.onClick(() => {
-								this.close();
-								resolve(true);
-							}),
-					);
-			}
-			onClose() {
-				// 若未点按钮直接关：视为拒绝（用 settled 标志防双 resolve）
-			}
-		})(app);
-		modal.open();
-	});
+```typescript
+export interface FormatToolDisplayOptions {
+	/** 把 serverId 映射为展示名；缺省返回 serverId */
+	resolveMcpServerLabel?: (serverId: string) => string;
+}
+
+export function formatToolDisplayName(
+	name: string,
+	args: unknown,
+	opts?: FormatToolDisplayOptions,
+): string {
+	const parsed = parseMcpToolName(name);
+	if (parsed) {
+		const server = opts?.resolveMcpServerLabel?.(parsed.serverId) ?? parsed.serverId;
+		return tNow('tool.name.mcp', { server, tool: parsed.toolName });
+	}
+	// …原有 switch
 }
 ```
 
-实现时加 `settled` 标志，避免 `onClose` 与按钮双 resolve。
+调用点（ChatView / hydrate）：传入
 
-- [ ] **Step 2: main 接线**
+```typescript
+resolveMcpServerLabel: (id) =>
+  plugin.settings.mcpServers.find((s) => s.id === id)?.label ?? id
+```
+
+- [ ] **Step 2: ToolSegment 徽标**
+
+在 label 前：
+
+```svelte
+{#if isMcpToolName(toolCall.name)}
+	<span class="ratel-trace-mcp-badge">{$t('chat.tool.mcpBadge')}</span>
+{/if}
+```
+
+样式：小 caps / 弱边框，不抢状态色；`prefers-reduced-motion` 无额外动画。
+
+- [ ] **Step 3: summarizeToolCall**
+
+```typescript
+default: {
+	const parsed = parseMcpToolName(toolCall.name);
+	if (parsed) {
+		return tNow('tool.name.mcp', {
+			server: parsed.serverId,
+			tool: parsed.toolName,
+		});
+	}
+	return path ? `${toolCall.name} → ${path}` : toolCall.name;
+}
+```
+
+- [ ] **Step 4: PASS → Commit**
+
+```bash
+git commit -m "feat(mcp): 对话 Trace 与权限文案可辨认 MCP"
+```
+
+---
+
+### Task 3: McpManageModal（部分 C）+ spawn 确认
+
+**Files:**
+- Create: `src/ui/mcp/McpManageModal.ts`
+- Create: `src/ui/mcp/mcp-spawn-confirm-modal.ts`
+- Modify: `src/main.ts`
+
+- [ ] **Step 1: 单例打开（对齐 MemoryModal）**
+
+```typescript
+/**
+ * @file src/ui/mcp/McpManageModal.ts
+ * @description MCP 安装与管理 Modal
+ * @module ui/mcp/McpManageModal
+ */
+
+export function shouldCreateMcpManageModal(current: McpManageModal | null): boolean {
+	return current == null || !(current as { isOpen?: boolean }).isOpen;
+}
+
+export class McpManageModal extends Modal {
+	constructor(
+		app: App,
+		private plugin: RatelVaultPlugin,
+	) {
+		super(app);
+	}
+
+	onOpen() {
+		this.titleEl.setText(tNow('modal.mcpManage.title'));
+		this.renderBody();
+	}
+
+	private renderBody() {
+		this.contentEl.empty();
+		const servers = this.plugin.settings.mcpServers;
+		if (servers.length === 0) {
+			this.contentEl.createEl('p', { text: tNow('modal.mcpManage.empty') });
+		}
+		for (const cfg of servers) {
+			this.renderServerRow(cfg);
+		}
+		new Setting(this.contentEl)
+			.addButton((b) =>
+				b.setButtonText(tNow('modal.mcpManage.addHttp')).onClick(() => this.openAddForm('http')),
+			)
+			.addButton((b) =>
+				b.setButtonText(tNow('modal.mcpManage.addStdio')).onClick(() => this.openAddForm('stdio')),
+			);
+	}
+
+	// renderServerRow: status = plugin.mcpHost.getStatus(cfg.id)
+	// enable toggle → saveSettings → mcpHost.sync
+	// stop → mcpHost.stop + enabled=false
+	// delete → 从数组移除 + 清 mcpApprovedSpawns + sync
+	// secret hint: mcpSecretId(cfg.id)
+}
+```
+
+添加表单：可用二级 Modal 或同 Modal 切换视图；字段校验走 `validateMcpServerConfig`；重复 id → `duplicate_id` Notice。
+
+- [ ] **Step 2: spawn 确认**
+
+`requestMcpSpawnConfirmation(app, cfg): Promise<boolean>`（settled 防双 resolve）。
+
+`main.ts`：
 
 ```typescript
 confirmSpawn: async (cfg) => {
@@ -245,133 +322,107 @@ confirmSpawn: async (cfg) => {
 },
 ```
 
-删除 Server 时：从 `mcpApprovedSpawns` 去掉对应 id（在设置删除逻辑里做）。
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add src/ui/mcp/mcp-spawn-confirm-modal.ts src/main.ts
-git commit -m "feat(mcp): stdio spawn 首次确认 Modal"
-```
-
----
-
-### Task 3: 设置页 MCP Servers 列表 UI
-
-**Files:**
-- Create: `src/ui/settings/mcp-servers-render.ts`
-- Modify: `src/settings.ts`
-
-- [ ] **Step 1: 渲染模块**
-
-`renderMcpServersSection(plugin): SettingGroupItem[]` 或 declarative `render` 回调：
-
-行为清单：
-1. Heading + 隐私短 desc（i18n）
-2. 遍历 `plugin.settings.mcpServers`：显示 label、transport、`plugin.mcpHost.getStatus(id)`、enable toggle、Stop、Delete
-3. 「添加 HTTP」「添加 stdio」按钮：用简单 Modal 或内联 Setting 收集 id/label/url 或 command/args → `validateMcpServerConfig` → push → `saveSettings` → `mcpHost.sync`
-4. 每行钥匙串 hint：`mcpSecretId(id)` + `hasMcpSecret`
-5. args 输入：空格分隔拆成 `string[]`（注意引号不做复杂 shell 解析；文档说明）
-
-Stop：`await plugin.mcpHost.stop(id)` 并可把 `enabled=false` 持久化。
-
-Delete：从数组移除 + 清 `mcpApprovedSpawns` + sync。
-
-- [ ] **Step 2: 挂到 settings**
-
-在 Agent Tab（推荐，与工具权限相邻）或 Advanced Tab 调用 `renderMcpServersSection`。
-
-- [ ] **Step 3: 手动冒烟**（无自动化 E2E）
-  - 添加非法 id → Notice 显示 i18n 错误
-  - 添加 HTTP（可先假 URL）→ 列表出现 → enable → status 变 error/online
-  - Delete → 列表空
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add src/ui/settings/mcp-servers-render.ts src/settings.ts
-git commit -m "feat(mcp): 设置页 MCP Server 列表"
-```
-
----
-
-### Task 4: 动态 MCP 工具权限项
-
-**Files:**
-- Modify: `src/settings.ts`（`buildToolPermissionItems`）
-
-- [ ] **Step 1: 在内置权限列表后追加 MCP 段**
-
 ```typescript
-// 内置 map 循环之后：
-const mcpNames = this.plugin.tools
-	.definitions()
-	.map((d) => d.name)
-	.filter((n) => n.startsWith('mcp__'))
-	.sort();
-
-if (mcpNames.length > 0) {
-	items.push({
-		type: 'heading',
-		heading: tNow('settings.toolPermissions.mcpSection'),
-		// …与现有 heading 形状一致
-	});
-	for (const name of mcpNames) {
-		// 与内置相同的 dropdown allow/ask/deny；label 用 name 本身（或剥前缀）
-		if (!(name in this.plugin.settings.toolPermissions)) {
-			// 不强制写入；resolve 缺省 ask。若 UI 需要显示当前值：
-			// getControlValue 对缺失返回 'ask'
-		}
-		items.push(/* dropdown key: toolPermissions.${name} */);
+openMcpManageModal() {
+	if (shouldCreateMcpManageModal(this.mcpManageModal)) {
+		this.mcpManageModal = new McpManageModal(this.app, this);
 	}
+	this.mcpManageModal.open();
 }
 ```
 
-- [ ] **Step 2: `getControlValue` / `setControlValue`**
-
-对 `toolPermissions.${mcp__…}`：缺失时 get 返回 `'ask'`；set 时写入对象。
-
 - [ ] **Step 3: Commit**
 
 ```bash
-git add src/settings.ts
-git commit -m "feat(mcp): 设置页动态 MCP 工具权限"
+git commit -m "feat(mcp): McpManageModal 安装管理与 spawn 确认"
 ```
 
 ---
 
-### Task 5: 回归测试 + STATUS
+### Task 4: 抽屉按钮（部分 B）+ ChatView 接线
 
-- [ ] **Step 1: 跑测试**
+**Files:**
+- Modify: `src/ui/status/StatusDrawer.svelte`
+- Modify: `src/ui/chat/ChatView.svelte`
+- Modify: `src/main.ts`（若 Drawer 不经 ChatView）
 
-```bash
-npx vitest run tests/core/mcp-config-validate.test.ts tests/core/mcp-host.test.ts tests/prompts/composer.test.ts
+- [ ] **Step 1: StatusDrawer props**
+
+```typescript
+onMcp?: () => void;
 ```
 
-Expected: PASS
+在 `onMemory` 旁增加按钮：
 
-- [ ] **Step 2: 更新 STATUS**
+```svelte
+{#if onMcp}
+	<button type="button" class="ratel-drawer-action" onclick={onMcp}>
+		<!-- 简洁几何图标，避免 emoji -->
+		<span>{$t('status.drawer.mcp')}</span>
+	</button>
+{/if}
+```
 
-`P-MCP-HOST-UI` → Completed（执行结束时）
+条件：`{#if onFeedback || onMemory || onSponsor || onMcp}`
+
+- [ ] **Step 2: ChatView**
+
+```typescript
+function openMcp() {
+	plugin.openMcpManageModal();
+}
+// …
+onMcp={openMcp}
+```
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add docs/superpowers/STATUS.md
-git commit -m "docs(status): P-MCP-HOST-UI 完成标记"
+git commit -m "feat(mcp): StatusDrawer MCP 入口"
 ```
 
 ---
 
-## 自审
+### Task 5: 设置页动态权限 + 打开管理 + 回归
 
-| Spec §4.11 / 4.7 / 4.8 UI | Task |
+**Files:**
+- Modify: `src/settings.ts`
+
+- [ ] **Step 1:** Agent 权限区追加 `mcp__*` 动态项；缺失 get 为 `'ask'`
+
+- [ ] **Step 2:** Advanced/Agent 增加按钮 `settings.mcp.openManage` → `plugin.openMcpManageModal()`
+
+- [ ] **Step 3: 跑测**
+
+```bash
+npx vitest run tests/ui/mcp/ tests/core/mcp-config-validate.test.ts tests/core/mcp-host.test.ts
+```
+
+- [ ] **Step 4: 手工冒烟**
+
+1. 抽屉 → MCP → 空态文案  
+2. 添加 HTTP（假 URL）→ 列表出现 → status error/online  
+3. Agent 若调到 MCP 工具 → Trace 有 MCP 徽标与友好名  
+4. stdio 首次 → 确认框；拒绝则不 spawn  
+
+- [ ] **Step 5: Commit + STATUS**
+
+```bash
+git commit -m "feat(mcp): 设置页动态权限与打开管理入口"
+```
+
+---
+
+## 自审（对照 spec §4.11）
+
+| Spec | Task |
 |---|---|
-| 设置列表 / 添加 / 启停 | T3 |
-| spawn 确认 | T2 |
-| 钥匙串 hint | T3 |
-| 动态权限 | T4 |
+| 对话 MCP 可辨 | T2 |
+| 抽屉按钮 | T4 |
+| 管理 Modal 安装/管理 | T3 |
+| spawn 确认 | T3 |
 | i18n | T1 |
-| 校验 | T1 |
+| 动态权限 | T5 |
+| 不做商店 | ✓ 非目标 |
 
-**依赖：** 必须先合并或同分支完成 P-MCP-HOST-CORE。
+**与旧 UI plan 差异：** 设置页长列表降级为次要；主路径 = 抽屉 Modal；新增 Trace 展示任务。
