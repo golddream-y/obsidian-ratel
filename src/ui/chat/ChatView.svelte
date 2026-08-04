@@ -508,9 +508,7 @@
 	const busyOverride = $derived(workBar ? workBar.text : null);
 
 	// 关键路径:chatModelMaxTokens 由设置面板预设/自定义配置,见 ADR-007。
-	// 修复:settings 原地改写 Svelte 不可见;必须订阅 settingsRevision,否则抽屉上限不刷新。
 	$effect(() => {
-		void $settingsRevision;
 		plugin.userStatus.patchContextUsage({
 			maxTokens: getEffectiveChatModelMaxTokens($settingsStore),
 		});
