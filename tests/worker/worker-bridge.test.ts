@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { WorkerManager } from '../../src/worker/manager';
+import { WorkerManager, type WorkerLike } from '../../src/worker/manager';
 
 function createMockWorker() {
 	const listeners: Record<string, ((...args: unknown[]) => void) | undefined> = {};
@@ -27,7 +27,7 @@ describe('WorkerManager', () => {
 	it('sends index.status request and receives response', async () => {
 		const mockWorker = createMockWorker();
 
-		const manager = new WorkerManager(mockWorker as unknown as Worker);
+		const manager = new WorkerManager(mockWorker as unknown as WorkerLike);
 
 		const responsePromise = manager.request({
 			type: 'index.status',
@@ -59,11 +59,11 @@ describe('WorkerManager', () => {
 	it('handles worker errors', async () => {
 		const mockWorker = createMockWorker();
 
-		const manager = new WorkerManager(mockWorker as unknown as Worker);
+		const manager = new WorkerManager(mockWorker as unknown as WorkerLike);
 
 		const responsePromise = manager.request({
 			type: 'index.full',
-			payload: { vaultPath: '/test' },
+			payload: { files: [{ path: '/test.md', content: 'x' }] },
 		});
 
 		mockWorker._emit('error', new Error('Worker crashed'));
@@ -74,7 +74,7 @@ describe('WorkerManager', () => {
 	it('terminates worker on destroy', () => {
 		const mockWorker = createMockWorker();
 
-		const manager = new WorkerManager(mockWorker as unknown as Worker);
+		const manager = new WorkerManager(mockWorker as unknown as WorkerLike);
 		manager.destroy();
 		expect(mockWorker.terminate).toHaveBeenCalled();
 	});
@@ -83,7 +83,7 @@ describe('WorkerManager', () => {
 		// 关键路径:用真实 50ms timeout 短时间等待,避免 fakeTimers + microtask 死锁
 		const mockWorker = createMockWorker();
 
-		const manager = new WorkerManager(mockWorker as unknown as Worker, {
+		const manager = new WorkerManager(mockWorker as unknown as WorkerLike, {
 			timeoutMs: 50,
 		});
 
@@ -99,7 +99,7 @@ describe('WorkerManager', () => {
 	it('超时后 reject 但不 terminate Worker(InlineWorker 主线程不可中断)', async () => {
 		const mockWorker = createMockWorker();
 
-		const manager = new WorkerManager(mockWorker as unknown as Worker, {
+		const manager = new WorkerManager(mockWorker as unknown as WorkerLike, {
 			timeoutMs: 50,
 		});
 

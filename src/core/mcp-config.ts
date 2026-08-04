@@ -81,6 +81,7 @@ function extractMcpRemoteUrl(command: string, args: string[]): string | null {
 	if (idx === -1) return null;
 	for (let i = idx + 1; i < tokens.length; i++) {
 		const t = tokens[i];
+		if (t === undefined) continue;
 		if (t.startsWith('http://') || t.startsWith('https://')) return t;
 	}
 	return null;

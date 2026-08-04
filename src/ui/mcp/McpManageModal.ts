@@ -213,15 +213,18 @@ export class McpManageModal extends Modal {
 		);
 
 		row.addButton((b) =>
-			b.setButtonText(tNow('modal.mcpManage.delete')).setWarning().onClick(async () => {
-				this.plugin.settings.mcpServers = this.plugin.settings.mcpServers.filter(
-					(s) => s.id !== cfg.id,
-				);
-				this.plugin.settings.mcpApprovedSpawns =
-					this.plugin.settings.mcpApprovedSpawns.filter((id) => id !== cfg.id);
-				await this.plugin.saveSettings();
-				this.renderBody();
-			}),
+			b
+				.setButtonText(tNow('modal.mcpManage.delete'))
+				.setDestructive()
+				.onClick(async () => {
+					this.plugin.settings.mcpServers = this.plugin.settings.mcpServers.filter(
+						(s) => s.id !== cfg.id,
+					);
+					this.plugin.settings.mcpApprovedSpawns =
+						this.plugin.settings.mcpApprovedSpawns.filter((id) => id !== cfg.id);
+					await this.plugin.saveSettings();
+					this.renderBody();
+				}),
 		);
 
 		if (toolNames.length > 0) {
@@ -390,8 +393,8 @@ export class McpManageModal extends Modal {
 		);
 		area.setValue(this.jsonDraft);
 		area.inputEl.rows = 12;
-		area.inputEl.style.width = '100%';
-		area.inputEl.style.fontFamily = 'var(--font-monospace)';
+		// 商店禁 inputEl.style.*;宽度/等宽字体走 styles.css
+		area.inputEl.addClass('ratel-mcp-json-import-textarea');
 		area.onChange((v) => {
 			this.jsonDraft = v;
 		});

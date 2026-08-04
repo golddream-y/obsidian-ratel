@@ -185,6 +185,12 @@
 	max-width: min(90vw, 760px);
 }
 
+/* 关键路径:JSON 导入 textarea 用 class,禁止 inputEl.style.*（商店 no-static-styles-assignment） */
+.ratel-mcp-json-import-textarea {
+	width: 100%;
+	font-family: var(--font-monospace);
+}
+
 .ratel-diag-status-err { background: var(--text-error); }
 
 .ratel-diag-llm-stream { background: var(--background-primary); padding: 12px; border-radius: 4px; min-height: 60px; white-space: pre-wrap; font-size: 14px; line-height: 1.6; }

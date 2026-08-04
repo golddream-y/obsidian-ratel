@@ -34,7 +34,8 @@ export interface McpStdioTransportOptions {
 interface Pending {
 	resolve: (value: unknown) => void;
 	reject: (err: Error) => void;
-	timer: ReturnType<typeof setTimeout>;
+	/** DOM lib 下 window.setTimeout 返回 number；兼容 popout */
+	timer: number;
 }
 
 /**
@@ -60,7 +61,7 @@ export class McpStdioTransport implements McpTransport {
 		this.args = opts.args;
 		this.env = opts.env;
 		this.timeoutMs = opts.timeoutMs ?? MCP_DEFAULT_TIMEOUT_MS;
-		this.spawnImpl = opts.spawnImpl ?? (spawn as unknown as McpSpawnFn);
+		this.spawnImpl = opts.spawnImpl ?? spawn;
 	}
 
 	async start(): Promise<void> {
@@ -98,7 +99,7 @@ export class McpStdioTransport implements McpTransport {
 		const frame = encodeContentLengthMessage(JSON.stringify(req));
 
 		return new Promise<unknown>((resolve, reject) => {
-			const timer = setTimeout(() => {
+			const timer = window.setTimeout(() => {
 				this.pending.delete(id);
 				reject(new Error(`MCP stdio 超时: ${method}`));
 			}, this.timeoutMs);
@@ -106,7 +107,7 @@ export class McpStdioTransport implements McpTransport {
 			try {
 				this.child!.stdin.write(frame, 'utf8');
 			} catch (err) {
-				clearTimeout(timer);
+				window.clearTimeout(timer);
 				this.pending.delete(id);
 				reject(err instanceof Error ? err : new Error(String(err)));
 			}
@@ -139,7 +140,7 @@ export class McpStdioTransport implements McpTransport {
 		if (obj.id === undefined || obj.id === null) return;
 		const pending = this.pending.get(obj.id);
 		if (!pending) return;
-		clearTimeout(pending.timer);
+		window.clearTimeout(pending.timer);
 		this.pending.delete(obj.id);
 		try {
 			pending.resolve(parseJsonRpcResponse(parsed));
@@ -150,7 +151,7 @@ export class McpStdioTransport implements McpTransport {
 
 	private rejectAll(err: Error): void {
 		for (const [, p] of this.pending) {
-			clearTimeout(p.timer);
+			window.clearTimeout(p.timer);
 			p.reject(err);
 		}
 		this.pending.clear();

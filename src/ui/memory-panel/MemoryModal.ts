@@ -57,9 +57,14 @@ export class MemoryModal extends Modal {
 		});
 	}
 
-	async onClose(): Promise<void> {
+	onClose(): void {
+		// 关键路径:Modal.onClose 约定返回 void；Svelte 5 unmount 异步，fire-and-forget 避免 Promise 返回类型冲突。
+		void this.teardown();
+	}
+
+	private async teardown(): Promise<void> {
 		if (this.component) {
-			// 关键路径:与 ChatView 一致 — await unmount 完成后再 empty,避免 Svelte 5 异步销毁竞态。
+			// 关键路径:await unmount 完成后再 empty,避免 Svelte 5 异步销毁竞态。
 			await unmount(this.component);
 			this.component = null;
 		}

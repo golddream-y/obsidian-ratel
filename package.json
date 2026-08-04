@@ -1,12 +1,13 @@
 {
 	"name": "ratel-vault",
-	"version": "0.1.16",
+	"version": "0.1.17",
 	"description": "Harness-driven knowledge base agent for your Obsidian vault",
 	"main": "main.js",
 	"type": "module",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
-		"build": "tsc -noEmit -skipLibCheck && svelte-check --tsconfig tsconfig.json && node esbuild.config.mjs production",
+		"build": "node esbuild.config.mjs production",
+		"typecheck": "tsc -noEmit -skipLibCheck && svelte-check --tsconfig tsconfig.json",
 		"version": "node version-bump.mjs && git add manifest.json versions.json",
 		"lint": "eslint .",
 		"svelte-check": "svelte-check --tsconfig tsconfig.json",
