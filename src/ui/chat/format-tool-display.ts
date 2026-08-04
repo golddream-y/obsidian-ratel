@@ -7,6 +7,7 @@
 
 import { tNow } from '../../i18n';
 import type { StringKey } from '../../i18n/types';
+import { parseMcpToolName } from '../mcp/parse-mcp-tool-name';
 
 /**
  * 工具名 → i18n key 映射 — 集中管理所有已知工具的友好名模板。
@@ -56,7 +57,21 @@ const TOOL_NAME_KEY: Record<string, StringKey> = {
  *   formatToolDisplayName('read_note', { path: '.' }); // '查看 /'(zh)
  *   formatToolDisplayName('search_vault', { query: '向量检索' }); // '语义搜索'(zh)
  */
-export function formatToolDisplayName(name: string, args: unknown): string {
+export interface FormatToolDisplayOptions {
+	resolveMcpServerLabel?: (serverId: string) => string;
+}
+
+export function formatToolDisplayName(
+	name: string,
+	args: unknown,
+	opts?: FormatToolDisplayOptions,
+): string {
+	const parsed = parseMcpToolName(name);
+	if (parsed) {
+		const server = opts?.resolveMcpServerLabel?.(parsed.serverId) ?? parsed.serverId;
+		return tNow('tool.name.mcp', { server, tool: parsed.toolName });
+	}
+
 	// 关键路径:args 运行时类型不可信(LLM 可能传非对象),统一用守卫提取
 	const obj = (args != null && typeof args === 'object') ? args as Record<string, unknown> : {};
 

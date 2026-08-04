@@ -57,13 +57,17 @@ function resolveToolSection(toolName: string, suffix: string, overrides: Overrid
 
 /**
  * 拼接工具指引列表(`- name: description`),供 `{{toolList}}` 注入。
- * 关键路径:与 `composeToolDefinitions` 同源,保证 RAG 指引与 function schema 一致。
+ * 关键路径:内置工具 description 优先走 prompt section；MCP 等无 section 时回退 definition.description。
  */
-export function formatToolGuideList(activeToolNames: string[], overrides: OverrideMap): string {
-	return activeToolNames
-		.map((name) => {
-			const desc = resolveToolSection(name, 'description', overrides);
-			return `- ${name}: ${desc}`;
+export function formatToolGuideList(
+	tools: Array<{ name: string; description: string }>,
+	overrides: OverrideMap,
+): string {
+	return tools
+		.map((t) => {
+			const fromSection = resolveToolSection(t.name, 'description', overrides);
+			const desc = fromSection || t.description || '';
+			return `- ${t.name}: ${desc}`;
 		})
 		.join('\n');
 }
@@ -89,10 +93,7 @@ export function composeAgentSystem(
 	if (intent === 'rag') {
 		parts.push(resolveSection('agent.rag.workflow', overrides));
 		const toolGuide = interpolate(resolveSection('agent.rag.toolGuide', overrides), {
-			toolList: formatToolGuideList(
-				ctx.tools.map((t) => t.name),
-				overrides,
-			),
+			toolList: formatToolGuideList(ctx.tools, overrides),
 		});
 		parts.push(toolGuide);
 	}

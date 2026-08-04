@@ -20,6 +20,9 @@ import {
 	getChatSecretId,
 	getEmbedSecretId,
 	getRerankSecretId,
+	mcpSecretId,
+	resolveMcpSecret,
+	hasMcpSecret,
 } from '../../src/secrets/ratel-secrets';
 import type { App } from 'obsidian';
 
@@ -171,6 +174,27 @@ describe('ratel-secrets', () => {
 
 		it('getRerankSecretId - 返回百炼固定 ID', () => {
 			expect(getRerankSecretId()).toBe(RATEL_SECRET_IDS.rerankBailian);
+		});
+	});
+
+	describe('MCP 动态密钥', () => {
+		it('mcpSecretId - 生成 ratel-mcp-<id>', () => {
+			expect(mcpSecretId('tavily')).toBe('ratel-mcp-tavily');
+		});
+
+		it('resolveMcpSecret - 有密钥 - 返回值', () => {
+			const app = mockApp({ 'ratel-mcp-tavily': 'k' });
+			expect(resolveMcpSecret(app, 'tavily')).toBe('k');
+		});
+
+		it('resolveMcpSecret - 无密钥 - 返回 null', () => {
+			const app = mockApp({});
+			expect(resolveMcpSecret(app, 'tavily')).toBeNull();
+		});
+
+		it('hasMcpSecret - 有/无', () => {
+			expect(hasMcpSecret(mockApp({ 'ratel-mcp-tavily': 'k' }), 'tavily')).toBe(true);
+			expect(hasMcpSecret(mockApp({}), 'tavily')).toBe(false);
 		});
 	});
 

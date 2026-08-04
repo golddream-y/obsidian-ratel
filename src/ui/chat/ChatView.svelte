@@ -243,7 +243,7 @@
 		}
 		sessionId = s.id;
 		syncChipTitles(s);
-		messages = hydrateSessionMessages(s.messages);
+		messages = hydrateSessionMessages(s.messages, { resolveMcpServerLabel });
 		await plugin.persistence.setLastSessionId(s.id);
 		sessionDirty = false;
 		isUserNearBottom = true;
@@ -378,7 +378,7 @@
 				}
 				sessionId = s.id;
 				syncChipTitles(s);
-				messages = hydrateSessionMessages(s.messages);
+				messages = hydrateSessionMessages(s.messages, { resolveMcpServerLabel });
 				await plugin.persistence.setLastSessionId(s.id);
 				sessionDirty = false;
 				isUserNearBottom = true;
@@ -508,7 +508,9 @@
 	const busyOverride = $derived(workBar ? workBar.text : null);
 
 	// 关键路径:chatModelMaxTokens 由设置面板预设/自定义配置,见 ADR-007。
+	// 修复:settings 原地改写 Svelte 不可见;必须订阅 settingsRevision,否则抽屉上限不刷新。
 	$effect(() => {
+		void $settingsRevision;
 		plugin.userStatus.patchContextUsage({
 			maxTokens: getEffectiveChatModelMaxTokens($settingsStore),
 		});
@@ -638,6 +640,16 @@
 	/** 状态抽屉「记忆管理」入口 → 打开 MemoryModal */
 	function openMemory(): void {
 		plugin.openMemoryModal();
+	}
+
+	/** 状态抽屉「MCP」入口 → 打开 McpManageModal */
+	function openMcp(): void {
+		plugin.openMcpManageModal();
+	}
+
+	/** MCP 工具展示名 — 用配置 label 替代裸 server id */
+	function resolveMcpServerLabel(id: string): string {
+		return plugin.settings.mcpServers.find((s) => s.id === id)?.label ?? id;
 	}
 
 	function openFeedback(): void {
@@ -772,7 +784,9 @@
 						lastToolName = event.payload.name;
 						appendToolCall(am, {
 							name: event.payload.name,
-							displayName: formatToolDisplayName(event.payload.name, event.payload.args),
+							displayName: formatToolDisplayName(event.payload.name, event.payload.args, {
+								resolveMcpServerLabel,
+							}),
 							args: event.payload.args,
 							status: 'calling',
 							startAt: Date.now(),
@@ -1039,6 +1053,7 @@
 			onCompact={handleCompact}
 			onFeedback={openFeedback}
 			onMemory={openMemory}
+			onMcp={openMcp}
 			onSponsor={openSponsor}
 		/>
 		<div class="ratel-input">

@@ -9,6 +9,7 @@ import {
 	App,
 	Notice,
 	PluginSettingTab,
+	Setting,
 	type SettingDefinitionItem,
 	type SettingGroupItem,
 } from 'obsidian';
@@ -55,6 +56,8 @@ import {
 // 关键路径:外观类型从 presets 导入,避免 appearance-presets ↔ settings 循环依赖
 import type { UiAccentId, UiColorScheme } from './ui/appearance/appearance-presets';
 import { renderAppearanceSettings } from './ui/appearance/appearance-settings-render';
+import type { McpServerConfig } from './ports/mcp';
+import { parseMcpToolName } from './ui/mcp/parse-mcp-tool-name';
 
 /** 设置顶栏 Tab ID(仅 UI 态,不落盘) */
 export type SettingsUiTab = 'chat' | 'index' | 'agent' | 'appearance' | 'advanced';
@@ -138,11 +141,16 @@ export interface RatelVaultSettings {
 	dailyNoteFolder: string;
 	dailyNoteFormat: string;
 
-	// Appearance(P-UI-APPEARANCE — Chat 外观配色与强调色)
+	// 关键路径(P-UI-APPEARANCE — Chat 外观配色与强调色)
 	/** 配色方案:auto 跟随 Obsidian,light/dark 强制 */
 	uiColorScheme: UiColorScheme;
 	/** 强调色:follow 跟随 Obsidian,其余为 Material 预设 id */
 	uiAccent: UiAccentId;
+
+	/** MCP Server 列表；默认空 = 零出站 */
+	mcpServers: McpServerConfig[];
+	/** 用户已确认允许 spawn 的 stdio serverId 列表 */
+	mcpApprovedSpawns: string[];
 }
 
 /**
@@ -243,6 +251,9 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 	// 关键路径:默认跟随 Obsidian 主题配色与强调色。
 	uiColorScheme: 'auto',
 	uiAccent: 'follow',
+	// 关键路径:默认空列表 = 零 MCP 出站（ADR-014）
+	mcpServers: [],
+	mcpApprovedSpawns: [],
 };
 
 /**
@@ -706,6 +717,20 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 				visible: agentVisible,
 				items: this.buildToolPermissionItems(),
 			},
+			{
+				type: 'group',
+				cls: agentCls,
+				visible: agentVisible,
+				items: [
+					{
+						name: tNow('settings.mcp.openManage'),
+						desc: tNow('settings.mcp.openManage.desc'),
+						action: () => {
+							this.plugin.openMcpManageModal();
+						},
+					},
+				],
+			},
 
 			// ==================== Tab:外观 ====================
 			{
@@ -923,6 +948,45 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			});
 		}
 
+		const mcpToolNames = (this.plugin.tools?.definitions() ?? [])
+			.map((d) => d.name)
+			.filter((name) => name.startsWith('mcp__'))
+			.sort();
+
+		if (mcpToolNames.length > 0) {
+			items.push({
+				name: tNow('settings.toolPermissions.mcpSection'),
+				searchable: false,
+				render: (setting) => {
+					new Setting(setting.settingEl)
+						.setName(tNow('settings.toolPermissions.mcpSection'))
+						.setHeading();
+				},
+			});
+
+			const permissionOptions = {
+				allow: tNow('settings.toolPermissions.allow'),
+				ask: tNow('settings.toolPermissions.ask'),
+				deny: tNow('settings.toolPermissions.deny'),
+			};
+
+			for (const name of mcpToolNames) {
+				const parsed = parseMcpToolName(name);
+				const label = parsed
+					? `${parsed.serverId} · ${parsed.toolName}`
+					: name;
+				items.push({
+					name: label,
+					desc: name,
+					control: {
+						type: 'dropdown',
+						key: `toolPermissions.${name}`,
+						options: permissionOptions,
+					},
+				});
+			}
+		}
+
 		return items;
 	}
 
@@ -1020,7 +1084,11 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 	getControlValue(key: string): unknown {
 		if (key.startsWith('toolPermissions.')) {
 			const toolName = key.slice('toolPermissions.'.length);
-			return this.plugin.settings.toolPermissions[toolName];
+			const stored = this.plugin.settings.toolPermissions[toolName];
+			if (stored != null) return stored;
+			// 关键路径:动态 MCP 工具未写入 settings 时默认 ask,与 spec 一致
+			if (toolName.startsWith('mcp__')) return 'ask';
+			return stored;
 		}
 		if (key.startsWith('promptOverrides.')) {
 			const sectionId = key.slice('promptOverrides.'.length);
@@ -1036,6 +1104,8 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 	 *
 	 * 关键路径:
 	 * - 嵌套 key 必须分发到嵌套对象,否则会写入字面量字段 `settings["toolPermissions.xxx"]`
+	 * - chatPreset 变更需 applyChatPreset(多字段)+rebuildLLM
+	 * - contextLengthPreset 变更需同步 chatModelMaxTokens(抽屉读上限)
 	 * - chatModel / chatApiBase 变更需 rebuildLLM
 	 * - embed* 变更(除 embedLocalModel)需 rebuildEmbeddingAdapter
 	 * - promptOverrides.* 变更需 syncToolDefinitions
@@ -1061,7 +1131,7 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			applyChatPreset(this.plugin.settings, value as ChatPresetId);
 			this.plugin.rebuildLLM();
 		} else if (key === 'contextLengthPreset') {
-			// 修复:下拉只写 preset 时 chatModelMaxTokens 仍是旧值
+			// 修复:下拉只写 preset 时 chatModelMaxTokens 仍是旧值,抽屉上限不跟着变
 			applyContextLengthPreset(this.plugin.settings, value as ContextLengthPresetId);
 		} else {
 			(this.plugin.settings as unknown as Record<string, unknown>)[key] = value;

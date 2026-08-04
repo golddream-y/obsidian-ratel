@@ -18,8 +18,9 @@
 | ID | 文件 | 状态 | 创建日期 | 备注 |
 |---|---|---|---|---|
 | S-SETTINGS-SYNC | [2026-08-03-settings-sync-design.md](specs/2026-08-03-settings-sync-design.md) | Active | 2026-08-03 | Settings 读入口统一 settings$;消除设置改了 UI 不刷新;与 appearance/UserStatus 分列 |
+| S-MCP-HOST | [2026-08-03-mcp-host-design.md](specs/2026-08-03-mcp-host-design.md) | Active | 2026-08-03 | 平台级 MCP Host;双 transport;入 ToolRegistry;抽屉 Modal+对话 Trace;ADR-014/015;优先于图谱扩邻 |
 | S-MEMORY-MODAL | [2026-07-31-memory-modal-unify-design.md](specs/2026-07-31-memory-modal-unify-design.md) | Active | 2026-07-31 | 记忆并入聊天路径;抽屉入口+MemoryModal;拆除 brain 独立视图 |
-| S-GRAPH-EXPAND | [2026-08-03-graph-expand-design.md](specs/2026-08-03-graph-expand-design.md) | Active | 2026-08-03 | 检索 1 跳扩邻 + hub 降权 + 引用标注;ADR-013 近端落地 |
+| S-GRAPH-EXPAND | [2026-08-03-graph-expand-design.md](specs/2026-08-03-graph-expand-design.md) | Active | 2026-08-03 | 检索 1 跳扩邻 + hub 降权 + 引用标注;ADR-013 近端落地;**暂缓**,先做 MCP |
 | S-CITE | [2026-07-29-cite-dual-channel-hardening-design.md](specs/2026-07-29-cite-dual-channel-hardening-design.md) | Active | 2026-07-29 | 引用双通道加固;P-CITE Completed |
 | S-SKILL | [2026-07-06-skill-mechanism-design.md](specs/2026-07-06-skill-mechanism-design.md) | Active | 2026-07-06 | Skill 机制;激活注入见 ADR-012;P-SKILL-2/3 pending |
 | S-SKILL-UX | — | Active | 2026-07-21 | Skill UX;对齐 ADR-010;**spec 文件缺失**(从未入库),需补写或从 STATUS 剔除 |
@@ -33,7 +34,10 @@
 |---|---|---|---|---|
 | P-SETTINGS-SYNC | [2026-08-03-settings-sync.md](plans/2026-08-03-settings-sync.md) | ✅ Completed | S-SETTINGS-SYNC | 分支 cursor/p-settings-sync-5933;settings$ 读入口;扇出 maxTokens;Chat/Memory/gate |
 | P-MEMORY-MODAL | [2026-07-31-memory-modal-unify.md](plans/2026-07-31-memory-modal-unify.md) | ✅ Completed | S-MEMORY-MODAL | 分支 feat/p-memory-modal;MemoryModal+拆独立视图;5 Task |
-| P-GRAPH-EXPAND | [2026-08-03-graph-expand.md](plans/2026-08-03-graph-expand.md) | ⏳ Pending | S-GRAPH-EXPAND | 检索 1 跳扩邻 + 双通道确认 + hub 降权 + 引用标注;6 Task;ADR-013 近端落地 |
+| P-GRAPH-EXPAND | [2026-08-03-graph-expand.md](plans/2026-08-03-graph-expand.md) | ⏳ Pending | S-GRAPH-EXPAND | 检索 1 跳扩邻;6 Task;**暂缓执行**(优先 S-MCP-HOST) |
+| P-MCP-HOST-CORE | [2026-08-03-mcp-host-core.md](plans/2026-08-03-mcp-host-core.md) | ✅ Completed | S-MCP-HOST | 分支 cursor/s-mcp-host-spec-5933;Port+双 transport+Client+Host+入册;8 Task |
+| P-MCP-HOST-UI | [2026-08-03-mcp-host-ui.md](plans/2026-08-03-mcp-host-ui.md) | ✅ Completed | S-MCP-HOST | 抽屉 Modal+Trace+spawn+动态权限;分支 cursor/s-mcp-host-spec-5933 |
+| P-MCP-HOST-DOCS | [2026-08-03-mcp-host-docs.md](plans/2026-08-03-mcp-host-docs.md) | ⏳ Pending | S-MCP-HOST | README/user-guide/隐私边界;finishing 时确认勾选 |
 | P-CITE | [2026-07-29-cite-dual-channel-hardening.md](plans/2026-07-29-cite-dual-channel-hardening.md) | ✅ Completed | S-CITE | 分支 feat/p-cite;注入+prompt+chip 显隐+hydrate 重建;7 Task |
 | P-EVO-A-READ | [2026-07-15-evo-a-read.md](plans/2026-07-15-evo-a-read.md) | ✅ Completed | S-EVOLUTION | 分支 feat/p-evo-a-read;6 Task + final fix;730 tests;待核对是否已合 main |
 | P-EVO-A-FM | — | ⏳ Pending | S-EVOLUTION | update_frontmatter;依赖 P-EVO-A-READ;plan 待写 |

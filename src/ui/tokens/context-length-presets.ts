@@ -42,6 +42,10 @@ export function applyContextRecommendation(tokens: number): {
 /**
  * 设置页下拉切换 Context Length 时同步写入 settings。
  *
+ * 设计要点:
+ * - 非 custom 预设必须同时改 `chatModelMaxTokens`,否则抽屉 / StatusLine 仍读旧上限;
+ * - 切到 custom 时保留当前 token 数,作为自定义起点(用户再改 number 输入框)。
+ *
  * @param settings - 可变 settings 片段
  * @param preset - 新的预设 id
  */

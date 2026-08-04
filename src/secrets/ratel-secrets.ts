@@ -239,3 +239,37 @@ export function getEmbedSecretId(settings: EmbedSecretSettings): string | null {
 export function getRerankSecretId(): string {
 	return RATEL_SECRET_IDS.rerankBailian;
 }
+
+// ==================== MCP 动态密钥 ====================
+
+/**
+ * 生成某 MCP Server 的钥匙串 ID：`ratel-mcp-<serverId>`。
+ *
+ * @param serverId - MCP Server id
+ * @returns 钥匙串密钥名
+ */
+export function mcpSecretId(serverId: string): string {
+	return `ratel-mcp-${serverId}`;
+}
+
+/**
+ * 从钥匙串解析 MCP Server API Key。
+ *
+ * @param app - Obsidian App
+ * @param serverId - MCP Server id
+ * @returns 密钥或 null
+ */
+export function resolveMcpSecret(app: App, serverId: string): string | null {
+	return getSecret(app, mcpSecretId(serverId));
+}
+
+/**
+ * 判断 MCP Server 密钥是否已配置。
+ *
+ * @param app - Obsidian App
+ * @param serverId - MCP Server id
+ * @returns 是否已配置
+ */
+export function hasMcpSecret(app: App, serverId: string): boolean {
+	return !!resolveMcpSecret(app, serverId);
+}

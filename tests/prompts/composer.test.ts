@@ -82,16 +82,31 @@ describe('composeToolDefinitions', () => {
 
 describe('formatToolGuideList', () => {
 	it('与 composeToolDefinitions 同源', () => {
-		const list = formatToolGuideList(['read_note', 'search_vault'], {});
+		const list = formatToolGuideList(
+			[
+				{ name: 'read_note', description: '' },
+				{ name: 'search_vault', description: '' },
+			],
+			{},
+		);
 		expect(list).toContain('read_note:');
 		expect(list).toContain('search_vault:');
 	});
 
 	it('override 后指引同步更新', () => {
-		const list = formatToolGuideList(['read_note'], {
+		const list = formatToolGuideList([{ name: 'read_note', description: '' }], {
 			'tool.read_note.description': '自定义读笔记',
 		});
 		expect(list).toContain('自定义读笔记');
+	});
+
+	it('formatToolGuideList - 无 section 时回退 definition.description（MCP）', () => {
+		const list = formatToolGuideList(
+			[{ name: 'mcp__tavily__search', description: '[MCP:Tavily] web search' }],
+			{},
+		);
+		expect(list).toContain('mcp__tavily__search');
+		expect(list).toContain('web search');
 	});
 });
 

@@ -76,13 +76,20 @@ import {
 	resolveChatApiKey,
 	resolveEmbedApiKey,
 	resolveRerankApiKey,
+	resolveMcpSecret,
 } from './secrets/ratel-secrets';
 import { MultiQuerySearcher } from './core/multi-query-searcher';
+import { McpHost } from './core/mcp-host';
+import { McpHttpTransport } from './adapters/mcp-http';
+import { McpStdioTransport } from './adapters/mcp-stdio';
+import type { McpServerConfig } from './ports/mcp';
 import { rewriteQuery } from './core/query-rewriter';
 import { BailianReranker } from './adapters/reranker-bailian';
 import { Indexer } from './subagents/indexer';
 import { ChatView, VIEW_TYPE_CHAT } from './ui/chat/ChatView';
 import { MemoryModal, shouldCreateMemoryModal } from './ui/memory-panel/MemoryModal';
+import { McpManageModal, shouldCreateMcpManageModal } from './ui/mcp/McpManageModal';
+import { requestMcpSpawnConfirmation } from './ui/mcp/mcp-spawn-confirm-modal';
 import { applyBadgerEmojiToElement, patchAllChatLeafIcons } from './utils/badger-icon';
 import { get } from 'svelte/store';
 import { ensurePluginGitignore } from './utils/gitignore-writer';
@@ -129,6 +136,8 @@ export default class RatelVaultPlugin extends Plugin {
 	embedding!: EmbeddingPort;
 	tools!: ToolRegistry;
 	hooks!: HookRegistry;
+	/** MCP Host — 多 Server 编排；默认空配置零出站 */
+	mcpHost!: McpHost;
 	workerManager!: WorkerManager;
 	// 关键路径:vectraStore 持有 vectra 索引目录的引用,需在 plugin 生命周期内常驻。
 	vectraStore!: VectraStore;
@@ -166,6 +175,8 @@ export default class RatelVaultPlugin extends Plugin {
 	private feedbackController?: FeedbackController;
 	/** 记忆管理 Modal 单例 — 已打开则忽略再次 open */
 	private memoryModal: MemoryModal | null = null;
+	/** MCP 管理 Modal 单例 — 已打开则忽略再次 open */
+	private mcpManageModal: McpManageModal | null = null;
 	private workerMode: 'thread' | 'inline' = 'inline';
 
 	/**
@@ -467,6 +478,35 @@ export default class RatelVaultPlugin extends Plugin {
 		this.tools.register(
 			createGetVaultStructureTool(this.vault, toolDefMap.get('get_vault_structure')!),
 		);
+
+		// ==================== MCP Host（ADR-014）====================
+		// 关键路径:stdio 首次 spawn 弹窗确认；已批准 id 直接放行。
+		this.mcpHost = new McpHost({
+			tools: this.tools,
+			confirmSpawn: async (cfg) => {
+				if (cfg.transport !== 'stdio') return true;
+				if (this.settings.mcpApprovedSpawns.includes(cfg.id)) return true;
+				const ok = await requestMcpSpawnConfirmation(this.app, cfg);
+				if (!ok) return false;
+				// 关键路径:只持久化 approved 列表,禁止 saveSettings→sync 在 bringUp 中间重入
+				if (!this.settings.mcpApprovedSpawns.includes(cfg.id)) {
+					this.settings.mcpApprovedSpawns = [
+						...this.settings.mcpApprovedSpawns,
+						cfg.id,
+					];
+					const existing = ((await this.loadData()) ?? {}) as Record<string, unknown>;
+					await this.saveData(mergePluginData(existing, { ...this.settings }));
+				}
+				return true;
+			},
+			getApiKey: (id) => resolveMcpSecret(this.app, id),
+			getEnvValue: (key) => process.env[key] ?? '',
+			createTransport: (cfg) => this.createMcpTransport(cfg),
+		});
+		void this.mcpHost.sync(this.settings.mcpServers).catch((err) => {
+			devLogger.error('mcp', '初始 sync 失败', err);
+		});
+
 		this.hooks = new HookRegistry();
 		this.hooks.register(
 			'pre-tool-use',
@@ -1011,6 +1051,9 @@ export default class RatelVaultPlugin extends Plugin {
 		this.feedbackController?.destroy();
 		// 关键路径:热重载/禁用时若记忆 Modal 仍开,close 走 onClose→unmount,onClosed 清单例引用。
 		this.memoryModal?.close();
+		this.mcpManageModal?.close();
+		// 关键路径:断开全部 MCP Client（stdio kill / HTTP session）
+		void this.mcpHost?.dispose();
 		this.userStatus?.reset();
 		// 关键路径:先停 IndexController 释放 vault 事件订阅与 watcher,再终止 Worker。
 		this.indexController?.destroy();
@@ -1080,8 +1123,48 @@ export default class RatelVaultPlugin extends Plugin {
 		this.userStatus.patchContextUsage({
 			maxTokens: getEffectiveChatModelMaxTokens(this.settings),
 		});
+		// 关键路径:MCP Server 列表变更时差分启停
+		if (this.mcpHost) {
+			void this.mcpHost.sync(this.settings.mcpServers).catch((err) => {
+				devLogger.error('mcp', 'settings 变更后 sync 失败', err);
+			});
+		}
 		// 关键路径:通知 Chat / Memory 等视图重跑 applyRatelAppearance(热更新外观)。
 		bumpAppearance();
+	}
+
+	/**
+	 * 按配置构造 MCP Transport（HTTP 用 requestUrl；stdio 用 spawn）。
+	 *
+	 * @param cfg - Server 配置
+	 * @returns 可注入 McpClient 的 Transport
+	 */
+	private createMcpTransport(cfg: McpServerConfig) {
+		if (cfg.transport === 'http') {
+			return new McpHttpTransport({
+				url: cfg.url!,
+				getApiKey: () => resolveMcpSecret(this.app, cfg.id),
+				timeoutMs: cfg.timeoutMs,
+			});
+		}
+		const env: Record<string, string> = {};
+		for (const [k, v] of Object.entries(process.env)) {
+			if (typeof v === 'string') env[k] = v;
+		}
+		const secret = resolveMcpSecret(this.app, cfg.id);
+		for (const key of cfg.envKeys ?? []) {
+			if (secret && /api[_-]?key|token|secret/i.test(key)) {
+				env[key] = secret;
+			} else {
+				env[key] = process.env[key] ?? '';
+			}
+		}
+		return new McpStdioTransport({
+			command: cfg.command!,
+			args: cfg.args ?? [],
+			env,
+			timeoutMs: cfg.timeoutMs,
+		});
 	}
 
 	/**
@@ -1359,6 +1442,21 @@ export default class RatelVaultPlugin extends Plugin {
 		this.memoryModal = modal;
 		modal.onClosed = () => {
 			if (this.memoryModal === modal) this.memoryModal = null;
+		};
+		modal.open();
+	}
+
+	/**
+	 * 打开 MCP 管理 Modal(单例)。
+	 *
+	 * 关键路径:已打开则忽略,避免叠多个管理窗。
+	 */
+	openMcpManageModal(): void {
+		if (!shouldCreateMcpManageModal(this.mcpManageModal)) return;
+		const modal = new McpManageModal(this.app, this);
+		this.mcpManageModal = modal;
+		modal.onClosed = () => {
+			if (this.mcpManageModal === modal) this.mcpManageModal = null;
 		};
 		modal.open();
 	}
