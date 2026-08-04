@@ -149,29 +149,8 @@
 			<button class="ratel-drawer-micro-btn" type="button" onclick={onCompact}>{$t('status.drawer.compactButton')}</button>
 		</div>
 		{#if onFeedback || onMemory || onMcp || onSponsor}
-			<!-- 低频入口:反馈 / 记忆管理 / 赞助(无 aria-label,避免 Obsidian「相关操作」提示) -->
+			<!-- 左功能(记忆/MCP) · 右反馈类(反馈/赞助);无 aria-label,避免 Obsidian「相关操作」提示 -->
 			<nav class="ratel-drawer-actions">
-				{#if onFeedback}
-					<button type="button" class="ratel-drawer-action" onclick={onFeedback}>
-						<svg class="ratel-drawer-action-ico" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
-							<path
-								d="M5 5.5A2.5 2.5 0 0 1 7.5 3h9A2.5 2.5 0 0 1 19 5.5v7A2.5 2.5 0 0 1 16.5 15H12l-3.6 3.2a.6.6 0 0 1-1 .4V15H7.5A2.5 2.5 0 0 1 5 12.5v-7Z"
-								fill="none"
-								stroke="currentColor"
-								stroke-width="1.75"
-								stroke-linejoin="round"
-							/>
-							<path
-								d="M8.5 8h7M8.5 11h4.5"
-								fill="none"
-								stroke="currentColor"
-								stroke-width="1.75"
-								stroke-linecap="round"
-							/>
-						</svg>
-						<span>{$t('status.drawer.feedback')}</span>
-					</button>
-				{/if}
 				{#if onMemory}
 					<button type="button" class="ratel-drawer-action" onclick={onMemory}>
 						<svg class="ratel-drawer-action-ico" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
@@ -205,6 +184,27 @@
 							/>
 						</svg>
 						<span>{$t('status.drawer.mcp')}</span>
+					</button>
+				{/if}
+				{#if onFeedback}
+					<button type="button" class="ratel-drawer-action" onclick={onFeedback}>
+						<svg class="ratel-drawer-action-ico" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
+							<path
+								d="M5 5.5A2.5 2.5 0 0 1 7.5 3h9A2.5 2.5 0 0 1 19 5.5v7A2.5 2.5 0 0 1 16.5 15H12l-3.6 3.2a.6.6 0 0 1-1 .4V15H7.5A2.5 2.5 0 0 1 5 12.5v-7Z"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.75"
+								stroke-linejoin="round"
+							/>
+							<path
+								d="M8.5 8h7M8.5 11h4.5"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.75"
+								stroke-linecap="round"
+							/>
+						</svg>
+						<span>{$t('status.drawer.feedback')}</span>
 					</button>
 				{/if}
 				{#if onSponsor}

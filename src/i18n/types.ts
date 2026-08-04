@@ -382,6 +382,14 @@ export interface ModalStrings {
   'modal.mcpManage.importDupSkipped': string;
   'modal.mcpManage.importSkipped': string;
   'modal.mcpManage.importEnvHint': string;
+  'modal.mcpManage.edit': string;
+  'modal.mcpManage.editHeading': string;
+  'modal.mcpManage.editIdLocked': string;
+  'modal.mcpManage.stdioSplitHint': string;
+  'modal.mcpManage.refresh': string;
+  'modal.mcpManage.refreshing': string;
+  'modal.mcpManage.refreshOk': string;
+  'modal.mcpManage.refreshFail': string;
   'modal.mcpManage.backToList': string;
   'modal.mcpManage.stop': string;
   'modal.mcpManage.delete': string;
@@ -408,6 +416,7 @@ export interface ModalStrings {
   'modal.mcpManage.error.invalid_json': string;
   'modal.mcpManage.error.no_servers': string;
   'modal.mcpManage.error.all_duplicate': string;
+  'modal.mcpManage.error.not_found': string;
   'modal.mcpSpawn.title': string;
   'modal.mcpSpawn.body': string;
   'modal.mcpSpawn.confirm': string;

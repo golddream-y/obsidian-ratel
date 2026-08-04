@@ -10,7 +10,7 @@
 	 */
 	import type RatelVaultPlugin from '../../main';
 	import { get } from 'svelte/store';
-	import { onMount, onDestroy } from 'svelte';
+	import { onMount, onDestroy, tick } from 'svelte';
 	import StatusLine from '../status/StatusLine.svelte';
 	import StatusDrawer from '../status/StatusDrawer.svelte';
 	import SlashMenu from './input/SlashMenu.svelte';
@@ -65,7 +65,7 @@
 	import { Notice } from 'obsidian';
 	import { devLogger } from '../../logging/dev-logger';
 	import { formatToolDisplayName } from './format-tool-display';
-	import { estimateTokens } from '../tokens/token-estimator';
+	import { estimateMessagesTokens, estimateTokens } from '../tokens/token-estimator';
 	import { getEffectiveChatModelMaxTokens } from '../../utils/context-window';
 	import { applyRatelAppearance } from '../appearance/apply-ratel-appearance';
 	import { appearanceRevision } from '../appearance/appearance-store';
@@ -244,10 +244,17 @@
 		sessionId = s.id;
 		syncChipTitles(s);
 		messages = hydrateSessionMessages(s.messages, { resolveMcpServerLabel });
+		// 修复:重启/恢复会话后重算 usedTokens,避免 contextUsage$ 归零导致占用显示丢失
+		plugin.userStatus.patchContextUsage({
+			usedTokens: estimateMessagesTokens(messages),
+			maxTokens: getEffectiveChatModelMaxTokens(plugin.settings),
+			source: 'estimate',
+		});
 		await plugin.persistence.setLastSessionId(s.id);
 		sessionDirty = false;
 		isUserNearBottom = true;
-		if (messagesEl) messagesEl.scrollTop = 0;
+		await tick();
+		scrollToBottom();
 	}
 
 	/** 新开空白场:只占本地 sessionId,正文不落盘直到首条消息(ContextManager.load 同语义)。 */
@@ -379,10 +386,17 @@
 				sessionId = s.id;
 				syncChipTitles(s);
 				messages = hydrateSessionMessages(s.messages, { resolveMcpServerLabel });
+				// 修复:切换会话 hydrate 后同样重算上下文占用(与 loadSessionIntoUi 一致)
+				plugin.userStatus.patchContextUsage({
+					usedTokens: estimateMessagesTokens(messages),
+					maxTokens: getEffectiveChatModelMaxTokens(plugin.settings),
+					source: 'estimate',
+				});
 				await plugin.persistence.setLastSessionId(s.id);
 				sessionDirty = false;
 				isUserNearBottom = true;
-				if (messagesEl) messagesEl.scrollTop = 0;
+				await tick();
+				scrollToBottom();
 			},
 			'chat.session.loading',
 			id,
@@ -678,6 +692,12 @@
 			);
 			// 更新 Svelte state — ChatMessage[] 转回 UI Message[]
 			messages = preservedChatMessagesToUi(result.preservedMessages);
+			// 压缩后消息变短,立即重算占用
+			plugin.userStatus.patchContextUsage({
+				usedTokens: estimateMessagesTokens(messages),
+				maxTokens: getEffectiveChatModelMaxTokens(plugin.settings),
+				source: 'estimate',
+			});
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
 			// 关键路径:压缩失败,session 未重置(LLM 抛错时 resetSession 不会被调)
@@ -731,15 +751,7 @@
 		let lastToolName: string | undefined;
 
 		// 第 1 层:send 前精确估算(基于历史消息 segments)
-		const baselineUsed = messages.reduce(
-			(sum, m) =>
-				sum +
-				m.segments.reduce((s, seg) => {
-					if (seg.type === 'text' || seg.type === 'think') return s + estimateTokens(seg.text);
-					return s;
-				}, 0),
-			0,
-		);
+		const baselineUsed = estimateMessagesTokens(messages);
 		const attachmentTokens = get(attachmentStore).reduce((s, a) => s + a.estimatedTokens, 0);
 		const maxTokens = getEffectiveChatModelMaxTokens(plugin.settings);
 		plugin.userStatus.patchContextUsage({

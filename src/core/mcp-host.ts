@@ -20,6 +20,7 @@ import {
 import { McpClient } from '../adapters/mcp-client';
 import { createMcpTool } from './mcp-tool-bridge';
 import type { ToolRegistry } from './tool-registry';
+import { normalizeMcpServerConfig } from './mcp-config';
 import { devLogger } from '../logging/dev-logger';
 
 export interface McpHostDeps {
@@ -37,6 +38,8 @@ interface Slot {
 	status: McpServerStatus;
 	client: McpClient | null;
 	failures: number;
+	/** 最近一次启动/调用失败原因（给 UI Notice） */
+	lastError: string | null;
 }
 
 /**
@@ -55,11 +58,21 @@ export class McpHost implements McpHostPort {
 	}
 
 	/**
+	 * 最近一次失败原因（无则 null）。
+	 *
+	 * @param serverId - Server id
+	 */
+	getLastError(serverId: string): string | null {
+		return this.slots.get(serverId)?.lastError ?? null;
+	}
+
+	/**
 	 * 幂等同步：移除消失的、停用的下线、配置变更则重建。
 	 */
 	async sync(servers: McpServerConfig[]): Promise<void> {
 		const wanted = new Map<string, McpServerConfig>();
-		for (const s of servers) {
+		for (const raw of servers) {
+			const s = normalizeMcpServerConfig(raw);
 			if (!isValidMcpServerId(s.id)) {
 				devLogger.warn('mcp', `忽略非法 server id: ${s.id}`);
 				continue;
@@ -79,6 +92,7 @@ export class McpHost implements McpHostPort {
 					config: cfg,
 					status: 'offline',
 					client: null,
+					lastError: null,
 					failures: 0,
 				});
 				continue;
@@ -100,8 +114,33 @@ export class McpHost implements McpHostPort {
 			config: { ...slot.config, enabled: false },
 			status: 'offline',
 			client: null,
+			lastError: null,
 			failures: 0,
 		});
+	}
+
+	/**
+	 * 强制重连：无视「已 online 且配置相同则跳过」的 sync 短路。
+	 *
+	 * @param cfg - 当前 settings 中的 Server 配置（须 enabled）
+	 */
+	async reconnect(cfg: McpServerConfig): Promise<void> {
+		if (!isValidMcpServerId(cfg.id)) {
+			devLogger.warn('mcp', `reconnect 忽略非法 id: ${cfg.id}`);
+			return;
+		}
+		if (!cfg.enabled) {
+			this.slots.set(cfg.id, {
+				config: cfg,
+				status: 'offline',
+				client: null,
+				lastError: null,
+				failures: 0,
+			});
+			return;
+		}
+		await this.teardown(cfg.id);
+		await this.bringUp(normalizeMcpServerConfig(cfg));
 	}
 
 	async dispose(): Promise<void> {
@@ -116,6 +155,7 @@ export class McpHost implements McpHostPort {
 			config: cfg,
 			status: 'connecting',
 			client: null,
+			lastError: null,
 			failures: 0,
 		});
 		try {
@@ -126,6 +166,7 @@ export class McpHost implements McpHostPort {
 						config: cfg,
 						status: 'offline',
 						client: null,
+						lastError: null,
 						failures: 0,
 					});
 					return;
@@ -157,11 +198,13 @@ export class McpHost implements McpHostPort {
 							slot.failures++;
 							if (slot.failures >= MCP_CIRCUIT_FAILURE_THRESHOLD) {
 								devLogger.warn('mcp', `Server ${cfg.id} 熔断下线`);
+								const msg = e instanceof Error ? e.message : String(e);
 								await this.teardown(cfg.id);
 								this.slots.set(cfg.id, {
 									config: cfg,
 									status: 'error',
 									client: null,
+									lastError: msg,
 									failures: slot.failures,
 								});
 							}
@@ -175,15 +218,18 @@ export class McpHost implements McpHostPort {
 				config: cfg,
 				status: 'online',
 				client,
+				lastError: null,
 				failures: 0,
 			});
 		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err);
 			devLogger.error('mcp', `Server ${cfg.id} 启动失败`, err);
 			this.deps.tools.unregisterByPrefix(mcpToolPrefix(cfg.id));
 			this.slots.set(cfg.id, {
 				config: cfg,
 				status: 'error',
 				client: null,
+				lastError: msg,
 				failures: 0,
 			});
 		}

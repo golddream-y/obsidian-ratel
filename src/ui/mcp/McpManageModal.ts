@@ -12,8 +12,9 @@ import type { McpServerConfig, McpServerStatus } from '../../ports/mcp';
 import { mcpToolPrefix } from '../../ports/mcp';
 import { parseMcpServersJson, validateMcpServerConfig } from '../../core/mcp-config';
 import { mcpSecretId, hasMcpSecret } from '../../secrets/ratel-secrets';
+import { devLogger } from '../../logging/dev-logger';
 
-/** Modal 视图：默认列表；添加 / 粘贴 JSON 为次级流程 */
+/** Modal 视图：默认列表；添加 / 编辑 / 粘贴 JSON 为次级流程 */
 type McpManageView = 'list' | 'add-http' | 'add-stdio' | 'import-json';
 
 /**
@@ -30,7 +31,7 @@ export function shouldCreateMcpManageModal(current: McpManageModal | null): bool
  *
  * 设计要点:
  * - 打开默认进「已装列表」（可空），不直接进添加表单
- * - 添加 HTTP / stdio / 粘贴 JSON 均为次级动作
+ * - 添加 / 编辑 / 粘贴 JSON 均为次级动作；编辑时锁定 server id
  * - 变更后 saveSettings → mcpHost.sync
  */
 export class McpManageModal extends Modal {
@@ -39,6 +40,8 @@ export class McpManageModal extends Modal {
 	private view: McpManageView = 'list';
 	private draft: Partial<McpServerConfig> = {};
 	private jsonDraft = '';
+	/** 非 null 表示正在编辑已有 Server（id 不可改） */
+	private editingId: string | null = null;
 
 	constructor(
 		app: App,
@@ -49,9 +52,12 @@ export class McpManageModal extends Modal {
 
 	onOpen(): void {
 		this.titleEl.setText(tNow('modal.mcpManage.title'));
+		// 关键路径:宽度挂在 modalEl（.modal 外框）,挂 contentEl 无法撑开 Obsidian 默认窄弹框。
+		this.modalEl.addClass('ratel-mcp-manage-modal');
 		this.view = 'list';
 		this.draft = {};
 		this.jsonDraft = '';
+		this.editingId = null;
 		this.renderBody();
 	}
 
@@ -138,9 +144,16 @@ export class McpManageModal extends Modal {
 				? tNow('modal.mcpManage.toolsCount').replace('{count}', String(toolNames.length))
 				: tNow('modal.mcpManage.toolsNone');
 
-		const row = new Setting(this.contentEl)
-			.setName(`${cfg.label} (${cfg.id})`)
-			.setDesc(`${cfg.transport} · ${statusLabel} · ${toolsPart}`);
+		const row = new Setting(this.contentEl).setDesc(
+			`${cfg.transport} · ${statusLabel} · ${toolsPart}`,
+		);
+		// 状态点：在线绿 / 离线·错误红 / 连接中黄
+		row.nameEl.empty();
+		row.nameEl.createSpan({
+			cls: `ratel-mcp-status-dot ratel-mcp-status-${status}`,
+			attr: { 'aria-label': statusLabel },
+		});
+		row.nameEl.createSpan({ text: `${cfg.label} (${cfg.id})` });
 
 		row.addToggle((tog) => {
 			tog.setValue(cfg.enabled).onChange(async (v) => {
@@ -149,6 +162,46 @@ export class McpManageModal extends Modal {
 				this.renderBody();
 			});
 		});
+
+		row.addButton((b) =>
+			b.setButtonText(tNow('modal.mcpManage.edit')).onClick(() => {
+				this.beginEdit(cfg);
+			}),
+		);
+
+		row.addButton((b) =>
+			b.setButtonText(tNow('modal.mcpManage.refresh')).onClick(async () => {
+				const enabledCfg = { ...cfg, enabled: true };
+				cfg.enabled = true;
+				new Notice(tNow('modal.mcpManage.refreshing'));
+				try {
+					// 关键路径:先 reconnect 再 saveSettings，避免 sync 与 reconnect 竞态
+					await this.plugin.mcpHost.reconnect(enabledCfg);
+					await this.plugin.saveSettings();
+					const st = this.plugin.mcpHost.getStatus(cfg.id);
+					const tools = this.listToolNames(cfg.id);
+					if (st === 'online') {
+						new Notice(
+							tNow('modal.mcpManage.refreshOk').replace(
+								'{count}',
+								String(tools.length),
+							),
+						);
+					} else {
+						const detail = this.plugin.mcpHost.getLastError(cfg.id);
+						new Notice(
+							detail
+								? `${tNow('modal.mcpManage.refreshFail')}: ${detail}`
+								: tNow('modal.mcpManage.refreshFail'),
+						);
+					}
+				} catch (err) {
+					devLogger.error('mcp', `刷新 ${cfg.id} 失败`, err);
+					new Notice(tNow('modal.mcpManage.refreshFail'));
+				}
+				this.renderBody();
+			}),
+		);
 
 		row.addButton((b) =>
 			b.setButtonText(tNow('modal.mcpManage.stop')).onClick(async () => {
@@ -202,60 +255,115 @@ export class McpManageModal extends Modal {
 			.filter(Boolean);
 	}
 
+	/**
+	 * 进入编辑表单：预填当前配置，锁定 id。
+	 *
+	 * @param cfg - 已装 Server
+	 */
+	private beginEdit(cfg: McpServerConfig): void {
+		this.editingId = cfg.id;
+		this.draft = {
+			id: cfg.id,
+			label: cfg.label,
+			enabled: cfg.enabled,
+			transport: cfg.transport,
+			url: cfg.url,
+			command: cfg.command,
+			args: [...(cfg.args ?? [])],
+			envKeys: cfg.envKeys ? [...cfg.envKeys] : undefined,
+			timeoutMs: cfg.timeoutMs,
+		};
+		this.view = cfg.transport === 'http' ? 'add-http' : 'add-stdio';
+		this.renderBody();
+	}
+
+	/** 退出添加/编辑表单，回到列表态 */
+	private clearFormState(): void {
+		this.view = 'list';
+		this.draft = {};
+		this.editingId = null;
+	}
+
 	private renderAddForm(kind: 'http' | 'stdio'): void {
+		const editing = this.editingId !== null;
 		this.contentEl.createEl('h3', {
-			text:
-				kind === 'http'
+			text: editing
+				? tNow('modal.mcpManage.editHeading')
+				: kind === 'http'
 					? tNow('modal.mcpManage.addHttp')
 					: tNow('modal.mcpManage.addStdio'),
 		});
+		if (editing) {
+			this.contentEl.createEl('p', {
+				cls: 'setting-item-description',
+				text: tNow('modal.mcpManage.editIdLocked'),
+			});
+		}
 
 		const draft = this.draft;
 		new Setting(this.contentEl)
 			.setName(tNow('modal.mcpManage.id'))
-			.addText((t) =>
-				t.setPlaceholder('tavily').onChange((v) => {
-					draft.id = v.trim();
-				}),
-			);
+			.addText((t) => {
+				t.setPlaceholder('tavily');
+				if (draft.id) t.setValue(draft.id);
+				if (editing) {
+					t.setDisabled(true);
+				} else {
+					t.onChange((v) => {
+						draft.id = v.trim();
+					});
+				}
+			});
 		new Setting(this.contentEl)
 			.setName(tNow('modal.mcpManage.label'))
-			.addText((t) =>
-				t.setPlaceholder('Tavily').onChange((v) => {
+			.addText((t) => {
+				t.setPlaceholder('Tavily');
+				if (draft.label) t.setValue(draft.label);
+				t.onChange((v) => {
 					draft.label = v.trim();
-				}),
-			);
+				});
+			});
 
 		if (kind === 'http') {
 			new Setting(this.contentEl)
 				.setName(tNow('modal.mcpManage.url'))
-				.addText((t) =>
-					t.setPlaceholder('https://…').onChange((v) => {
+				.addText((t) => {
+					t.setPlaceholder('https://…');
+					if (draft.url) t.setValue(draft.url);
+					t.onChange((v) => {
 						draft.url = v.trim();
-					}),
-				);
+					});
+				});
 		} else {
+			this.contentEl.createEl('p', {
+				cls: 'setting-item-description',
+				text: tNow('modal.mcpManage.stdioSplitHint'),
+			});
 			new Setting(this.contentEl)
 				.setName(tNow('modal.mcpManage.command'))
-				.addText((t) =>
-					t.setPlaceholder('npx').onChange((v) => {
+				.addText((t) => {
+					t.setPlaceholder('npx');
+					if (draft.command) t.setValue(draft.command);
+					t.onChange((v) => {
 						draft.command = v.trim();
-					}),
-				);
+					});
+				});
 			new Setting(this.contentEl)
 				.setName(tNow('modal.mcpManage.args'))
-				.addText((t) =>
-					t.setPlaceholder('-y package').onChange((v) => {
+				.addText((t) => {
+					t.setPlaceholder('-y package');
+					const argsText = (draft.args ?? []).join(' ');
+					if (argsText) t.setValue(argsText);
+					t.onChange((v) => {
 						draft.args = v.trim() ? v.trim().split(/\s+/) : [];
-					}),
-				);
+					});
+				});
 		}
 
 		new Setting(this.contentEl)
 			.addButton((b) =>
 				b.setButtonText(tNow('modal.mcpManage.backToList')).onClick(() => {
-					this.view = 'list';
-					this.draft = {};
+					this.clearFormState();
 					this.renderBody();
 				}),
 			)
@@ -307,28 +415,52 @@ export class McpManageModal extends Modal {
 	}
 
 	private async saveDraft(kind: 'http' | 'stdio'): Promise<void> {
+		const editingId = this.editingId;
+		let command = this.draft.command;
+		let args = [...(this.draft.args ?? [])];
+		// 修复:用户常把整行 shell 塞进 command；自动拆成 command + args
+		if (kind === 'stdio' && command?.includes(' ') && args.length === 0) {
+			const parts = command.trim().split(/\s+/).filter(Boolean);
+			command = parts[0];
+			args = parts.slice(1);
+		}
+
 		const cfg: McpServerConfig = {
-			id: this.draft.id ?? '',
-			label: this.draft.label || this.draft.id || '',
-			enabled: true,
+			id: editingId ?? this.draft.id ?? '',
+			label: this.draft.label || editingId || this.draft.id || '',
+			enabled: this.draft.enabled ?? true,
 			transport: kind,
-			url: this.draft.url,
-			command: this.draft.command,
-			args: this.draft.args ?? [],
+			url: kind === 'http' ? this.draft.url : undefined,
+			command: kind === 'stdio' ? command : undefined,
+			args: kind === 'stdio' ? args : undefined,
+			envKeys: this.draft.envKeys,
+			timeoutMs: this.draft.timeoutMs,
 		};
 		const err = validateMcpServerConfig(cfg);
 		if (err) {
 			new Notice(tNow(`modal.mcpManage.error.${err}`));
 			return;
 		}
-		if (this.plugin.settings.mcpServers.some((s) => s.id === cfg.id)) {
-			new Notice(tNow('modal.mcpManage.error.duplicate_id'));
-			return;
+
+		if (editingId) {
+			const idx = this.plugin.settings.mcpServers.findIndex((s) => s.id === editingId);
+			if (idx < 0) {
+				new Notice(tNow('modal.mcpManage.error.not_found'));
+				return;
+			}
+			const next = [...this.plugin.settings.mcpServers];
+			next[idx] = cfg;
+			this.plugin.settings.mcpServers = next;
+		} else {
+			if (this.plugin.settings.mcpServers.some((s) => s.id === cfg.id)) {
+				new Notice(tNow('modal.mcpManage.error.duplicate_id'));
+				return;
+			}
+			this.plugin.settings.mcpServers = [...this.plugin.settings.mcpServers, cfg];
 		}
-		this.plugin.settings.mcpServers = [...this.plugin.settings.mcpServers, cfg];
+
 		await this.plugin.saveSettings();
-		this.view = 'list';
-		this.draft = {};
+		this.clearFormState();
 		this.renderBody();
 	}
 

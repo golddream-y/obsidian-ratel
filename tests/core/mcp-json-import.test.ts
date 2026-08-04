@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { normalizeMcpServerId, parseMcpServersJson } from '../../src/core/mcp-config';
+import { normalizeMcpServerId, normalizeMcpServerConfig, parseMcpServersJson } from '../../src/core/mcp-config';
 
 describe('normalizeMcpServerId', () => {
 	it('normalizeMcpServerId - 大写与下划线 - 转为合法 id', () => {
@@ -14,6 +14,50 @@ describe('normalizeMcpServerId', () => {
 
 	it('normalizeMcpServerId - 非法开头 - 返回 null', () => {
 		expect(normalizeMcpServerId('123bad')).toBeNull();
+	});
+});
+
+describe('normalizeMcpServerConfig', () => {
+	it('normalizeMcpServerConfig - command 含空格且 args 空 - 自动拆分', () => {
+		const n = normalizeMcpServerConfig({
+			id: 'local',
+			label: 't',
+			enabled: true,
+			transport: 'stdio',
+			command: 'npx -y some-local-mcp',
+			args: [],
+		});
+		expect(n.transport).toBe('stdio');
+		expect(n.command).toBe('npx');
+		expect(n.args).toEqual(['-y', 'some-local-mcp']);
+	});
+
+	it('normalizeMcpServerConfig - npx mcp-remote https - 改写为 HTTP', () => {
+		const n = normalizeMcpServerConfig({
+			id: 'tavily',
+			label: 't',
+			enabled: true,
+			transport: 'stdio',
+			command: 'npx -y mcp-remote https://mcp.tavily.com/mcp/?tavilyApiKey=x',
+			args: [],
+		});
+		expect(n).toMatchObject({
+			transport: 'http',
+			url: 'https://mcp.tavily.com/mcp/?tavilyApiKey=x',
+		});
+	});
+
+	it('normalizeMcpServerConfig - 已有 args - 不拆 command', () => {
+		const n = normalizeMcpServerConfig({
+			id: 'tavily',
+			label: 't',
+			enabled: true,
+			transport: 'stdio',
+			command: 'npx',
+			args: ['-y', 'pkg'],
+		});
+		expect(n.command).toBe('npx');
+		expect(n.args).toEqual(['-y', 'pkg']);
 	});
 });
 

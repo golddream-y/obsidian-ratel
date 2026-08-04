@@ -5,6 +5,14 @@
  */
 
 /**
+ * 可估算消息的最小形状 — 与 Message.segments 结构兼容,避免 tokens 反依赖 chat 模块。
+ * 只认 text / think;其余段(tool / image / citation)不计。
+ */
+export type TokenCountableMessage = {
+	segments: ReadonlyArray<{ type: string; text?: string }>;
+};
+
+/**
  * 中英混合 token 估算。
  *
  * 权重依据:
@@ -29,4 +37,27 @@ export function estimateTokens(text: string): number {
 		else otherCount++;
 	}
 	return Math.ceil(asciiCount / 4 + cjkCount / 1.5 + otherCount / 3);
+}
+
+/**
+ * 按消息列表估算上下文占用 — 仅累计 text / think 段。
+ *
+ * 用途:会话 hydrate / 发送前 baseline。tool / image / citation 不计
+ * (与发送路径历史算法一致;真值仍靠 API usage 校准)。
+ *
+ * @param messages - 含 segments 的消息列表
+ * @returns 估算 token 总数
+ */
+export function estimateMessagesTokens(messages: ReadonlyArray<TokenCountableMessage>): number {
+	return messages.reduce(
+		(sum, m) =>
+			sum +
+			m.segments.reduce((s, seg) => {
+				if ((seg.type === 'text' || seg.type === 'think') && typeof seg.text === 'string') {
+					return s + estimateTokens(seg.text);
+				}
+				return s;
+			}, 0),
+		0,
+	);
 }

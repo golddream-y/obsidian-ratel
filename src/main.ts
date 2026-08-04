@@ -13,6 +13,7 @@ import { normalizeAppearanceSettings } from './ui/appearance/normalize-appearanc
 import { bumpAppearance } from './ui/appearance/appearance-store';
 import { publishSettingsSnapshot } from './ui/settings-store';
 import { getEffectiveChatModelMaxTokens } from './utils/context-window';
+import { normalizeMcpServerConfig } from './core/mcp-config';
 
 import type { AgentEvent } from './types';
 import { agentLoop } from './core/agent-loop';
@@ -98,6 +99,7 @@ import { IndexManifest, migrateLegacyIndexManifest, resolveIndexManifestPath } f
 import { ModelContextRegistry } from './ui/tokens/model-context-registry';
 import os from 'os';
 import path from 'path';
+import { readdirSync } from 'node:fs';
 // 关键路径:P-SKILL-1-CORE — Skill 机制(三源加载 + 注册表 + 激活器 + 2 工具)。
 import { SkillLoader } from './skills/skill-loader';
 import { SkillRegistry } from './skills/skill-registry';
@@ -1109,11 +1111,15 @@ export default class RatelVaultPlugin extends Plugin {
 		normalizeChatPreset(this.settings, loaded);
 		// 关键路径:旧版无外观字段或非法值时回落 auto/follow
 		normalizeAppearanceSettings(this.settings);
+		// 契约:stdio 整行 command / mcp-remote → 规范化（常改写为 HTTP）
+		this.settings.mcpServers = (this.settings.mcpServers ?? []).map(normalizeMcpServerConfig);
 		publishSettingsSnapshot(this.settings);
 	}
 
 	/** 持久化当前设置到 Obsidian data.json(与 Persistence 字段 merge,互不覆盖)。 */
 	async saveSettings() {
+		// 契约:落盘前再规范化，避免 UI 把整行 shell 写回 data.json
+		this.settings.mcpServers = (this.settings.mcpServers ?? []).map(normalizeMcpServerConfig);
 		const existing = ((await this.loadData()) ?? {}) as Record<string, unknown>;
 		await this.saveData(mergePluginData(existing, { ...this.settings }));
 		// 关键路径:settings 变更后热替换工具 definition,让 LLM 立即看到新 description。
@@ -1151,6 +1157,23 @@ export default class RatelVaultPlugin extends Plugin {
 		for (const [k, v] of Object.entries(process.env)) {
 			if (typeof v === 'string') env[k] = v;
 		}
+		// 契约:Obsidian GUI 进程 PATH 常缺 nvm/homebrew；补常见目录让 npx 可被找到
+		const pathExtra = [
+			'/opt/homebrew/bin',
+			'/usr/local/bin',
+			path.join(os.homedir(), '.nvm/versions/node/v24.11.0/bin'),
+		];
+		// 也尝试扫描 ~/.nvm/versions/node/*/bin 最新版
+		try {
+			const nvmNode = path.join(os.homedir(), '.nvm/versions/node');
+			const vers = readdirSync(nvmNode).filter((v) => v.startsWith('v')).sort().reverse();
+			for (const v of vers.slice(0, 3)) {
+				pathExtra.push(path.join(nvmNode, v, 'bin'));
+			}
+		} catch {
+			// ignore
+		}
+		env.PATH = [...pathExtra, env.PATH ?? ''].filter(Boolean).join(path.delimiter);
 		const secret = resolveMcpSecret(this.app, cfg.id);
 		for (const key of cfg.envKeys ?? []) {
 			if (secret && /api[_-]?key|token|secret/i.test(key)) {

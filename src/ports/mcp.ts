@@ -76,8 +76,17 @@ export interface McpHostPort {
 	/** 按 settings 同步：启停/重连；幂等 */
 	sync(servers: McpServerConfig[]): Promise<void>;
 	getStatus(serverId: string): McpServerStatus;
+	/** 最近一次启动失败原因（无则 null） */
+	getLastError(serverId: string): string | null;
 	/** 停止单个 Server（设置页 / 管理 Modal「停止」） */
 	stop(serverId: string): Promise<void>;
+	/**
+	 * 强制重连并重新 listTools。
+	 *
+	 * 用于网络闪断、熔断后恢复，或工具列表可能已变更时手动刷新。
+	 * 会先 teardown 再 bringUp；配置须 enabled。
+	 */
+	reconnect(cfg: McpServerConfig): Promise<void>;
 	dispose(): Promise<void>;
 }
 

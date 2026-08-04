@@ -162,6 +162,29 @@
 .ratel-diag-status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
 .ratel-diag-status-ok { background: var(--text-success); }
 .ratel-diag-status-warn { background: var(--text-warning); }
+.ratel-diag-status-error { background: var(--text-error); }
+
+/* ==================== MCP 管理 Modal 状态点 ==================== */
+.ratel-mcp-status-dot {
+	display: inline-block;
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	margin-right: 8px;
+	vertical-align: middle;
+	flex-shrink: 0;
+}
+.ratel-mcp-status-online { background: var(--text-success); }
+.ratel-mcp-status-offline,
+.ratel-mcp-status-error { background: var(--text-error); }
+.ratel-mcp-status-connecting { background: var(--text-warning); }
+
+/* 外框加宽挂在 modalEl（.modal）;行内按钮多,默认 Modal 偏窄 */
+.modal.ratel-mcp-manage-modal {
+	width: min(90vw, 760px);
+	max-width: min(90vw, 760px);
+}
+
 .ratel-diag-status-err { background: var(--text-error); }
 
 .ratel-diag-llm-stream { background: var(--background-primary); padding: 12px; border-radius: 4px; min-height: 60px; white-space: pre-wrap; font-size: 14px; line-height: 1.6; }

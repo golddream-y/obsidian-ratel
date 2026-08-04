@@ -27,6 +27,65 @@ export function validateMcpServerConfig(cfg: McpServerConfig): McpConfigErrorCod
 	return null;
 }
 
+/**
+ * 规范化配置：
+ * 1. 把误塞进 command 的整行 shell 拆成 command + args
+ * 2. 识别 `npx … mcp-remote <https://…>`（Claude/Cursor 配 Tavily Remote 常见写法）并改写为 HTTP
+ *
+ * @param cfg - 原始配置
+ * @returns 新对象（可能与输入同内容）
+ */
+export function normalizeMcpServerConfig(cfg: McpServerConfig): McpServerConfig {
+	if (cfg.transport === 'http') {
+		return { ...cfg, url: cfg.url?.trim() };
+	}
+
+	let command = cfg.command?.trim() ?? '';
+	let args = [...(cfg.args ?? [])];
+	if (command.includes(' ') && args.length === 0) {
+		const parts = command.split(/\s+/).filter(Boolean);
+		command = parts[0] ?? '';
+		args = parts.slice(1);
+	}
+
+	// 契约:Obsidian 桌面进程 PATH 常无 nvm/npx；Tavily Remote 用 HTTP 更稳
+	const remoteUrl = extractMcpRemoteUrl(command, args);
+	if (remoteUrl) {
+		return {
+			id: cfg.id,
+			label: cfg.label,
+			enabled: cfg.enabled,
+			transport: 'http',
+			url: remoteUrl,
+			timeoutMs: cfg.timeoutMs,
+		};
+	}
+
+	return {
+		...cfg,
+		command,
+		args,
+	};
+}
+
+/**
+ * 从 npx mcp-remote 形态中抽出远端 URL。
+ *
+ * @param command - 可执行文件
+ * @param args - 参数
+ * @returns https URL 或 null
+ */
+function extractMcpRemoteUrl(command: string, args: string[]): string | null {
+	const tokens = [command, ...args].filter(Boolean);
+	const idx = tokens.findIndex((t) => t === 'mcp-remote');
+	if (idx === -1) return null;
+	for (let i = idx + 1; i < tokens.length; i++) {
+		const t = tokens[i];
+		if (t.startsWith('http://') || t.startsWith('https://')) return t;
+	}
+	return null;
+}
+
 /** JSON 导入失败码 */
 export type McpJsonImportErrorCode = 'invalid_json' | 'no_servers';
 

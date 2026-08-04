@@ -128,4 +128,37 @@ describe('McpHost', () => {
 		expect(host.getStatus('local')).toBe('offline');
 		expect(registry.definitions()).toEqual([]);
 	});
+
+	it('reconnect - 已 online 时强制重发现工具', async () => {
+		const registry = new ToolRegistry();
+		let toolSet = [{ name: 'search' }];
+		const host = new McpHost({
+			tools: registry,
+			createTransport: (_cfg) => makeTransportFactory(toolSet)(_cfg),
+			confirmSpawn: async () => true,
+			getApiKey: () => null,
+			getEnvValue: () => '',
+		});
+		const cfg: McpServerConfig = {
+			id: 'tavily',
+			label: 'Tavily',
+			enabled: true,
+			transport: 'http',
+			url: 'https://example/mcp',
+		};
+		await host.sync([cfg]);
+		expect(registry.definitions().map((d) => d.name)).toEqual(['mcp__tavily__search']);
+
+		toolSet = [{ name: 'search' }, { name: 'extract' }];
+		// sync 相同配置会跳过；reconnect 必须强制刷新
+		await host.sync([cfg]);
+		expect(registry.definitions().map((d) => d.name)).toEqual(['mcp__tavily__search']);
+
+		await host.reconnect(cfg);
+		expect(host.getStatus('tavily')).toBe('online');
+		expect(registry.definitions().map((d) => d.name).sort()).toEqual([
+			'mcp__tavily__extract',
+			'mcp__tavily__search',
+		]);
+	});
 });
