@@ -30,10 +30,20 @@
 	let lastRenderedText = '';
 	let lastCiteKey = '';
 	let cleanupCites: (() => void) | null = null;
+	/** 有选区时暂存待渲染内容，松手后再写 DOM */
+	let pendingRender: { text: string; force: boolean } | null = null;
 
 	function citeKey(): string {
 		if (!searchResults?.length) return '';
 		return searchResults.map((r) => `${r.index}:${r.path}`).join('|');
+	}
+
+	/** 用户正在拖选本容器内文字时，勿用 innerHTML 冲掉选区。 */
+	function hasSelectionInside(el: HTMLElement): boolean {
+		const sel = window.getSelection();
+		if (!sel || sel.isCollapsed || sel.rangeCount === 0) return false;
+		const node = sel.getRangeAt(0).commonAncestorContainer;
+		return el.contains(node.nodeType === Node.TEXT_NODE ? node.parentNode : node);
 	}
 
 	function applyCites() {
@@ -53,10 +63,24 @@
 		}
 	}
 
+	function flushPendingRender(): void {
+		if (!pendingRender || !containerEl) return;
+		if (hasSelectionInside(containerEl)) return;
+		const next = pendingRender;
+		pendingRender = null;
+		renderToDom(next.text, next.force);
+	}
+
 	function renderToDom(text: string, force = false) {
 		if (!containerEl) return;
 		const key = citeKey();
 		if (!force && text === lastRenderedText && key === lastCiteKey) return;
+		// 关键路径:流式 innerHTML 会清空 Selection；有选区则暂存，等 selectionchange/mouseup 再刷
+		if (hasSelectionInside(containerEl)) {
+			pendingRender = { text, force: force || (pendingRender?.force ?? false) };
+			return;
+		}
+		pendingRender = null;
 		lastRenderedText = text;
 		lastCiteKey = key;
 
@@ -88,9 +112,20 @@
 		}
 	});
 
+	$effect(() => {
+		const onSel = () => flushPendingRender();
+		document.addEventListener('selectionchange', onSel);
+		document.addEventListener('mouseup', onSel);
+		return () => {
+			document.removeEventListener('selectionchange', onSel);
+			document.removeEventListener('mouseup', onSel);
+		};
+	});
+
 	onDestroy(() => {
 		cancelAnimationFrame(rafId);
 		cleanupCites?.();
+		pendingRender = null;
 	});
 </script>
 

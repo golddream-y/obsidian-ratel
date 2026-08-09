@@ -1,6 +1,6 @@
 <!--
 	@file src/ui/chat/session/SessionMenu.svelte
-	@description Header 会话历史小菜单 — 最近列表 / 新对话 / 删除(双轨标题)
+	@description Header 会话历史小菜单 — 最近列表 / 新对话 / 删除
 	@module ui/chat/session/SessionMenu
 -->
 <script lang="ts">
@@ -145,6 +145,7 @@
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
+		gap: 8px;
 		padding: 10px 12px 8px;
 		border-bottom: 1px solid var(--background-modifier-border);
 		flex-shrink: 0;
@@ -263,7 +264,7 @@
 		color: var(--text-muted);
 		cursor: pointer;
 		opacity: 0;
-		font-size: 14px;
+		font-size: 13px;
 		line-height: 1;
 		padding: 0;
 		flex-shrink: 0;

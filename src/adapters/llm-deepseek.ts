@@ -433,6 +433,10 @@ export class DeepSeekLLM implements LLMClient {
 			if (req.options.temperature !== undefined) body.temperature = req.options.temperature;
 			if (req.options.topP !== undefined) body.top_p = req.options.topP;
 			if (req.options.maxTokens !== undefined) body.max_tokens = req.options.maxTokens;
+			// DeepSeek V4:thinking 默认 enabled,推理 token 计入 max_tokens;短任务需显式关闭
+			if (req.options.thinking !== undefined) {
+				body.thinking = { type: req.options.thinking };
+			}
 		}
 
 		if (req.tools && req.tools.length > 0) {

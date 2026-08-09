@@ -80,6 +80,9 @@
 		flex-direction: column;
 		gap: 20px;
 		scroll-behavior: smooth;
+		/* 组件内兜底；全局压过 Obsidian body{user-select:none} 在 styles.css */
+		-webkit-user-select: text;
+		user-select: text;
 	}
 
 	.ratel-typing {

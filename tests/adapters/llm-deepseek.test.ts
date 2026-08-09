@@ -229,6 +229,20 @@ describe('DeepSeekLLM', () => {
 		expect(fn.arguments).toBe('{"path":"notes/test.md"}');
 	});
 
+	it('buildRequestBody - thinking disabled - 上送 thinking.type', () => {
+		const adapter = new DeepSeekLLM({ apiBase: 'http://test', apiKey: 'sk-test', model: 'deepseek-v4-pro' });
+		const req: ChatRequest = {
+			messages: [{ role: 'user', content: '起标题' }],
+			options: { maxTokens: 96, thinking: 'disabled' },
+		};
+		const body = (adapter as unknown as { buildRequestBody: (req: ChatRequest) => Record<string, unknown> }).buildRequestBody(req) as {
+			thinking?: { type: string };
+			max_tokens?: number;
+		};
+		expect(body.thinking).toEqual({ type: 'disabled' });
+		expect(body.max_tokens).toBe(96);
+	});
+
 	it('buildRequestBody - assistant 带 reasoning - 回传 reasoning_content', () => {
 		const adapter = new DeepSeekLLM({ apiBase: 'http://test', apiKey: 'sk-test', model: 'deepseek-reasoner' });
 		const req: ChatRequest = {

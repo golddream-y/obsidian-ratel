@@ -416,9 +416,51 @@ body.theme-dark .ratel-session-menu,
 	isolation: isolate;
 }
 
+/* ==================== 会话标题编辑 Modal ==================== */
+.modal.ratel-session-rename-modal {
+	width: min(360px, 92vw);
+}
+.ratel-session-rename-input {
+	display: block;
+	width: 100%;
+	box-sizing: border-box;
+	margin: 4px 0 16px;
+	padding: 8px 10px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 8px;
+	background: var(--background-primary);
+	color: var(--text-normal);
+	font-size: 14px;
+	line-height: 1.4;
+}
+.ratel-session-rename-input:focus {
+	outline: none;
+	border-color: var(--interactive-accent, var(--text-accent));
+	box-shadow: 0 0 0 2px color-mix(in srgb, var(--interactive-accent, #c9956c) 25%, transparent);
+}
+
 /* Ratel 聊天侧栏最小宽度 — 防止拖太窄挤烂 header / 抽屉入口 */
 .workspace-leaf-content[data-type="ratel-chat"] {
 	min-width: 320px;
+}
+
+/*
+ * 关键路径:Obsidian app.css 对 body 设了 user-select:none，自定义 ItemView 必须显式开回，
+ * 否则对话正文无法拖选/复制。范围只覆盖消息流，header/输入壳仍保持 chrome 不可误选。
+ */
+.workspace-leaf-content[data-type="ratel-chat"] .ratel-messages,
+.workspace-leaf-content[data-type="ratel-chat"] .ratel-messages .ratel-msg,
+.workspace-leaf-content[data-type="ratel-chat"] .ratel-messages .ratel-md,
+.workspace-leaf-content[data-type="ratel-chat"] .ratel-messages .ratel-text-segment {
+	-webkit-user-select: text;
+	user-select: text;
+}
+
+/* 展开后的思考/工具详情也应可复制 */
+.workspace-leaf-content[data-type="ratel-chat"] .ratel-messages .ratel-trace-detail,
+.workspace-leaf-content[data-type="ratel-chat"] .ratel-messages .ratel-think-body {
+	-webkit-user-select: text;
+	user-select: text;
 }
 
 /* ==================== 问题反馈 Modal ==================== */
@@ -500,4 +542,54 @@ button.ratel-drawer-action:focus-visible {
 	outline: 2px solid var(--interactive-accent);
 	outline-offset: 2px;
 	border-radius: 2px;
+}
+
+/* ==================== 来源折叠开关 ==================== */
+/* 关键路径:Obsidian 默认 button 会盖掉 Svelte scoped 的 border/height/underline，中文被线切穿 */
+button.ratel-cites-toggle {
+	display: inline-flex !important;
+	align-items: center;
+	align-self: flex-start;
+	gap: 6px;
+	box-sizing: border-box;
+	height: auto !important;
+	min-height: 0 !important;
+	padding: 4px 10px !important;
+	margin: 0 !important;
+	border: 1px solid var(--background-modifier-border) !important;
+	border-radius: 999px !important;
+	background: var(--background-secondary) !important;
+	box-shadow: none !important;
+	color: var(--text-muted) !important;
+	font-size: 11.5px !important;
+	font-weight: 500 !important;
+	font-family: inherit !important;
+	line-height: 1.25 !important;
+	letter-spacing: 0.01em;
+	cursor: pointer;
+	text-decoration: none !important;
+	-webkit-appearance: none !important;
+	appearance: none !important;
+}
+
+button.ratel-cites-toggle:hover,
+button.ratel-cites-toggle:active {
+	color: var(--text-normal) !important;
+	border-color: color-mix(
+		in srgb,
+		var(--ratel-cite, var(--interactive-accent)) 40%,
+		var(--background-modifier-border)
+	) !important;
+	background: color-mix(
+		in srgb,
+		var(--ratel-cite, var(--interactive-accent)) 10%,
+		var(--background-secondary)
+	) !important;
+	box-shadow: none !important;
+	text-decoration: none !important;
+}
+
+button.ratel-cites-toggle:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 2px;
 }

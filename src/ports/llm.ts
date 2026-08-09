@@ -29,11 +29,13 @@ export interface LLMClient {
  * - `temperature`:0~2,默认 1(0 = 确定性输出,越高越随机)。
  * - `topP`:0~1,默认 1(核采样阈值)。
  * - `maxTokens`:最大生成 token 数,默认由模型侧决定。
+ * - `thinking`:DeepSeek V4 思考开关;`disabled` 用于短任务(标题/分类),避免推理 token 吃光 max_tokens 导致 content 为空。
  */
 export interface GenerationOptions {
 	temperature?: number;
 	topP?: number;
 	maxTokens?: number;
+	thinking?: 'enabled' | 'disabled';
 }
 
 /**

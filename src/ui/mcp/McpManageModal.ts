@@ -32,7 +32,7 @@ export function shouldCreateMcpManageModal(current: McpManageModal | null): bool
  * 设计要点:
  * - 打开默认进「已装列表」（可空），不直接进添加表单
  * - 添加 / 编辑 / 粘贴 JSON 均为次级动作；编辑时锁定 server id
- * - 变更后 saveSettings → mcpHost.sync
+ * - 启停用开关；「刷新」强制重连；变更后 saveSettings 会 await mcpHost.sync 再刷新列表
  */
 export class McpManageModal extends Modal {
 	/** 关闭时回调,供 plugin 清掉单例引用 */
@@ -159,6 +159,8 @@ export class McpManageModal extends Modal {
 			tog.setValue(cfg.enabled).onChange(async (v) => {
 				cfg.enabled = v;
 				await this.plugin.saveSettings();
+				// 开启后 listTools 已在 sync 内完成；关开关等同旧「停止」
+				if (v) this.notifyConnectResult(cfg.id);
 				this.renderBody();
 			});
 		});
@@ -175,39 +177,14 @@ export class McpManageModal extends Modal {
 				cfg.enabled = true;
 				new Notice(tNow('modal.mcpManage.refreshing'));
 				try {
-					// 关键路径:先 reconnect 再 saveSettings，避免 sync 与 reconnect 竞态
+					// 关键路径:先 reconnect 再 saveSettings；saveSettings 会 await sync，但 online+同配置会短路
 					await this.plugin.mcpHost.reconnect(enabledCfg);
 					await this.plugin.saveSettings();
-					const st = this.plugin.mcpHost.getStatus(cfg.id);
-					const tools = this.listToolNames(cfg.id);
-					if (st === 'online') {
-						new Notice(
-							tNow('modal.mcpManage.refreshOk').replace(
-								'{count}',
-								String(tools.length),
-							),
-						);
-					} else {
-						const detail = this.plugin.mcpHost.getLastError(cfg.id);
-						new Notice(
-							detail
-								? `${tNow('modal.mcpManage.refreshFail')}: ${detail}`
-								: tNow('modal.mcpManage.refreshFail'),
-						);
-					}
+					this.notifyConnectResult(cfg.id);
 				} catch (err) {
 					devLogger.error('mcp', `刷新 ${cfg.id} 失败`, err);
 					new Notice(tNow('modal.mcpManage.refreshFail'));
 				}
-				this.renderBody();
-			}),
-		);
-
-		row.addButton((b) =>
-			b.setButtonText(tNow('modal.mcpManage.stop')).onClick(async () => {
-				await this.plugin.mcpHost.stop(cfg.id);
-				cfg.enabled = false;
-				await this.plugin.saveSettings();
 				this.renderBody();
 			}),
 		);
@@ -463,8 +440,31 @@ export class McpManageModal extends Modal {
 		}
 
 		await this.plugin.saveSettings();
+		if (cfg.enabled) this.notifyConnectResult(cfg.id);
 		this.clearFormState();
 		this.renderBody();
+	}
+
+	/**
+	 * 连接结果 Notice — 成功报工具数，失败带 lastError。
+	 *
+	 * @param serverId - Server id
+	 */
+	private notifyConnectResult(serverId: string): void {
+		const st = this.plugin.mcpHost?.getStatus(serverId) ?? 'offline';
+		if (st === 'online') {
+			const tools = this.listToolNames(serverId);
+			new Notice(
+				tNow('modal.mcpManage.refreshOk').replace('{count}', String(tools.length)),
+			);
+			return;
+		}
+		const detail = this.plugin.mcpHost?.getLastError(serverId);
+		new Notice(
+			detail
+				? `${tNow('modal.mcpManage.refreshFail')}: ${detail}`
+				: tNow('modal.mcpManage.refreshFail'),
+		);
 	}
 
 	private async importJson(): Promise<void> {

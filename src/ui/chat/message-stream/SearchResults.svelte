@@ -30,7 +30,10 @@
 			aria-label={expanded ? $t('chat.cite.sourcesCollapseAria') : $t('chat.cite.sourcesExpandAria')}
 			onclick={() => (expanded = !expanded)}
 		>
-			{$t('chat.cite.sourcesCollapsed', { n: results.length })}
+			<span class="ratel-cites-toggle-label"
+				>{$t('chat.cite.sourcesCollapsed', { n: results.length })}</span
+			>
+			<span class="ratel-cites-toggle-caret" aria-hidden="true">{expanded ? '▾' : '▸'}</span>
 		</button>
 		{#if expanded}
 			{#if reranked}
@@ -69,30 +72,61 @@
 		line-height: 1.3;
 	}
 
+	/* 组件内兜底；压过 Obsidian button 的完整重置在 styles.css */
 	.ratel-cites-toggle {
+		display: inline-flex;
+		align-items: center;
 		align-self: flex-start;
-		padding: 0;
-		border: none;
-		background: transparent;
+		gap: 6px;
+		box-sizing: border-box;
+		height: auto;
+		min-height: 0;
+		padding: 4px 10px;
+		margin: 0;
+		border: 1px solid var(--background-modifier-border);
+		border-radius: 999px;
+		background: var(--background-secondary);
+		box-shadow: none;
 		color: var(--text-muted);
 		font-size: 11.5px;
 		font-family: inherit;
-		line-height: 1.4;
+		font-weight: 500;
+		line-height: 1.25;
+		letter-spacing: 0.01em;
 		cursor: pointer;
-		text-decoration: underline;
-		text-underline-offset: 2px;
+		text-decoration: none;
 		-webkit-appearance: none;
 		appearance: none;
 	}
 
 	.ratel-cites-toggle:hover {
 		color: var(--text-normal);
+		border-color: color-mix(
+			in srgb,
+			var(--ratel-cite, var(--interactive-accent)) 40%,
+			var(--background-modifier-border)
+		);
+		background: color-mix(
+			in srgb,
+			var(--ratel-cite, var(--interactive-accent)) 10%,
+			var(--background-secondary)
+		);
 	}
 
 	.ratel-cites-toggle:focus-visible {
 		outline: 2px solid var(--interactive-accent);
 		outline-offset: 2px;
-		border-radius: 2px;
+	}
+
+	.ratel-cites-toggle-label {
+		line-height: 1.25;
+	}
+
+	.ratel-cites-toggle-caret {
+		flex-shrink: 0;
+		font-size: 10px;
+		line-height: 1;
+		opacity: 0.75;
 	}
 
 	.ratel-cites-row {

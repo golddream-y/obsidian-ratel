@@ -250,6 +250,20 @@ export interface ChatStrings {
   'chat.session.menuRecent': string;
   'chat.session.new': string;
   'chat.session.delete': string;
+  'chat.session.rename': string;
+  'chat.session.retitle': string;
+  'chat.session.renameTitle': string;
+  'chat.session.renamePlaceholder': string;
+  'chat.session.renameField': string;
+  'chat.session.renameSave': string;
+  'chat.session.renameCancel': string;
+  'chat.session.retitleOk': string;
+  'chat.session.retitleFail': string;
+  'chat.session.retitleEmpty': string;
+  'chat.session.switchWhileRunningTitle': string;
+  'chat.session.switchWhileRunningBody': string;
+  'chat.session.switchAbortConfirm': string;
+  'chat.session.switchAbortCancel': string;
   'chat.session.ariaHistory': string;
   'chat.session.ariaChip': string;
   'chat.session.emptyTitle': string;
@@ -391,7 +405,6 @@ export interface ModalStrings {
   'modal.mcpManage.refreshOk': string;
   'modal.mcpManage.refreshFail': string;
   'modal.mcpManage.backToList': string;
-  'modal.mcpManage.stop': string;
   'modal.mcpManage.delete': string;
   'modal.mcpManage.enabled': string;
   'modal.mcpManage.id': string;

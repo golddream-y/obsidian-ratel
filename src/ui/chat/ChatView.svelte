@@ -35,6 +35,8 @@
 		generateSessionTitles,
 		normalizeTitlePair,
 	} from './session/session-title';
+	import { showSessionRenameModal } from './session/session-rename-modal';
+	import { showSessionSwitchConfirm } from './session/session-switch-confirm';
 	import type { SessionIndexEntry } from '../../ports/persistence';
 	import { t, tNow } from '../../i18n';
 	import {
@@ -339,6 +341,12 @@
 		}
 	}
 
+	/** 生成中切换/新建前确认，避免默默掐断。 */
+	async function confirmLeaveIfRunning(): Promise<boolean> {
+		if (!isRunning && !abortController) return true;
+		return showSessionSwitchConfirm(plugin.app);
+	}
+
 	async function createNewSession(): Promise<void> {
 		if (switching) return;
 		// 已是空白场:关菜单即可,避免「点了没反应」
@@ -349,6 +357,7 @@
 			sessionMenuOpen = false;
 			return;
 		}
+		if (!(await confirmLeaveIfRunning())) return;
 		await abortActiveGeneration();
 		await runSessionTransition(async () => {
 			const curId = sessionId;
@@ -372,6 +381,7 @@
 			return;
 		}
 		if (switching) return;
+		if (!(await confirmLeaveIfRunning())) return;
 		await abortActiveGeneration();
 		await runSessionTransition(
 			async () => {
@@ -401,6 +411,86 @@
 			'chat.session.loading',
 			id,
 		);
+	}
+
+	/** 编辑当前会话标题；弹窗内可选手改或 AI 总结。 */
+	async function editCurrentSessionTitle(): Promise<void> {
+		sessionMenuOpen = false;
+		const id = sessionId;
+		const s = await plugin.persistence.sessions.get(id);
+		if (!s) {
+			new Notice(tNow('chat.session.loadFailed'), 4000);
+			return;
+		}
+		const empty = emptyTitle();
+		const result = await showSessionRenameModal(
+			plugin.app,
+			s.title?.trim() || s.shortTitle?.trim() || empty,
+		);
+		if (!result) return;
+		if (result.kind === 'retitle') {
+			await retitleSessionFromMenu(id);
+			return;
+		}
+		s.title = result.pair.title;
+		s.shortTitle = result.pair.shortTitle;
+		s.updatedAt = Date.now();
+		await plugin.persistence.sessions.upsert(s);
+		if (id === sessionId) syncChipTitles(s);
+		await refreshSessionIndex();
+	}
+
+	/**
+	 * 强制用 LLM 重新总结标题（忽略已有 title）。
+	 */
+	async function retitleSessionFromMenu(id: string): Promise<void> {
+		const s = await plugin.persistence.sessions.get(id);
+		if (!s || !sessionHasContent(s.messages)) {
+			new Notice(tNow('chat.session.retitleEmpty'), 4000);
+			return;
+		}
+		const empty = emptyTitle();
+		const firstUser = s.messages.find((m) => m.role === 'user');
+		const seed = typeof firstUser?.content === 'string' ? firstUser.content : '';
+		if (!seed.trim()) {
+			new Notice(tNow('chat.session.retitleEmpty'), 4000);
+			return;
+		}
+		titleAbort?.abort();
+		titleAbort = new AbortController();
+		const signal = titleAbort.signal;
+		try {
+			const pair = await generateSessionTitles(plugin.llm, seed, signal);
+			if (signal.aborted) return;
+			const cur = await plugin.persistence.sessions.get(id);
+			if (!cur || !sessionHasContent(cur.messages)) return;
+			const normalized = normalizeTitlePair(pair, empty);
+			cur.title = normalized.title;
+			cur.shortTitle = normalized.shortTitle;
+			cur.updatedAt = Date.now();
+			await plugin.persistence.sessions.upsert(cur);
+			if (id === sessionId) syncChipTitles(cur);
+			await refreshSessionIndex();
+			new Notice(tNow('chat.session.retitleOk'), 2500);
+		} catch (err) {
+			if (signal.aborted) return;
+			// 修复:原先吞错导致无法诊断;V4 thinking 吃光 max_tokens 时常见 empty content
+			devLogger.error('main', '会话标题总结失败', err);
+			const title = fallbackSessionTitle(seed) || empty;
+			const cur = await plugin.persistence.sessions.get(id);
+			if (!cur) return;
+			const normalized = normalizeTitlePair(
+				{ title, shortTitle: deriveShortTitle(title) || empty },
+				empty,
+			);
+			cur.title = normalized.title;
+			cur.shortTitle = normalized.shortTitle;
+			cur.updatedAt = Date.now();
+			await plugin.persistence.sessions.upsert(cur);
+			if (id === sessionId) syncChipTitles(cur);
+			await refreshSessionIndex();
+			new Notice(tNow('chat.session.retitleFail'), 4000);
+		}
 	}
 
 	async function deleteSessionFromMenu(id: string): Promise<void> {
@@ -459,7 +549,8 @@
 		try {
 			const pair = await generateSessionTitles(plugin.llm, seed, signal);
 			await applyTitles(pair.title, pair.shortTitle);
-		} catch {
+		} catch (err) {
+			devLogger.error('main', '首轮会话标题生成失败', err);
 			const title = fallbackSessionTitle(seed) || empty;
 			await applyTitles(title, deriveShortTitle(title) || empty);
 		}
@@ -970,41 +1061,57 @@
 				<span class="ratel-header-tagline">{$t('chat.header.tagline')}</span>
 			</div>
 		</div>
-		<!-- 对齐原型 .header-actions:chip + model + 菜单同层定位 -->
+		<!-- 对齐原型 .header-actions:chip + 编辑标题 + model + 菜单同层定位 -->
 		<div class="ratel-header-right">
-			<button
-				bind:this={historyBtnEl}
-				type="button"
-				class="ratel-session-chip"
-				class:is-loading={sessionLoading}
-				title={sessionFullTitle || emptyTitle()}
-				aria-label={$t('chat.session.ariaChip', {
-					short: sessionShortTitle || emptyTitle(),
-				})}
-				aria-expanded={sessionMenuOpen}
-				aria-busy={sessionLoading}
-				disabled={switching}
-				onclick={(e) => {
-					e.stopPropagation();
-					sessionMenuOpen = !sessionMenuOpen;
-					if (sessionMenuOpen) void refreshSessionIndex();
-				}}
-			>
-				<span class="ratel-session-chip-label"
-					>{sessionShortTitle || emptyTitle()}</span
+			<div class="ratel-session-chip-group">
+				<button
+					bind:this={historyBtnEl}
+					type="button"
+					class="ratel-session-chip"
+					class:is-loading={sessionLoading}
+					title={sessionFullTitle || emptyTitle()}
+					aria-label={$t('chat.session.ariaChip', {
+						short: sessionShortTitle || emptyTitle(),
+					})}
+					aria-expanded={sessionMenuOpen}
+					aria-busy={sessionLoading}
+					disabled={switching}
+					onclick={(e) => {
+						e.stopPropagation();
+						sessionMenuOpen = !sessionMenuOpen;
+						if (sessionMenuOpen) void refreshSessionIndex();
+					}}
 				>
-				<svg class="ratel-session-chip-ico" viewBox="0 0 24 24" aria-hidden="true">
-					<circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.75"></circle>
-					<path
-						d="M12 8v4l2.5 1.5"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="1.75"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-					></path>
-				</svg>
-			</button>
+					<span class="ratel-session-chip-label"
+						>{sessionShortTitle || emptyTitle()}</span
+					>
+					<svg class="ratel-session-chip-ico" viewBox="0 0 24 24" aria-hidden="true">
+						<circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.75"></circle>
+						<path
+							d="M12 8v4l2.5 1.5"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="1.75"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+						></path>
+					</svg>
+				</button>
+				<button
+					type="button"
+					class="ratel-session-edit"
+					title={$t('chat.session.rename')}
+					aria-label={$t('chat.session.rename')}
+					disabled={switching || sessionLoading}
+					onclick={(e) => {
+						e.stopPropagation();
+						sessionMenuOpen = false;
+						void editCurrentSessionTitle();
+					}}
+				>
+					✎
+				</button>
+			</div>
 			<button
 				type="button"
 				class="ratel-header-model"
@@ -1263,6 +1370,13 @@
 		isolation: isolate;
 	}
 
+	.ratel-session-chip-group {
+		display: inline-flex;
+		align-items: center;
+		gap: 2px;
+		min-width: 0;
+	}
+
 	.ratel-session-chip {
 		display: inline-flex;
 		align-items: center;
@@ -1291,6 +1405,42 @@
 
 	.ratel-session-chip:disabled {
 		opacity: 0.45;
+		cursor: not-allowed;
+	}
+
+	.ratel-session-edit {
+		width: 28px;
+		height: 28px;
+		min-height: 28px;
+		padding: 0;
+		border: 1px solid transparent;
+		border-radius: 999px;
+		background: transparent;
+		color: var(--text-faint, var(--text-muted));
+		cursor: pointer;
+		font-size: 13px;
+		line-height: 1;
+		opacity: 0.55;
+		flex-shrink: 0;
+		transition: color 0.15s, opacity 0.15s, background 0.15s, border-color 0.15s;
+	}
+
+	.ratel-session-chip-group:hover .ratel-session-edit,
+	.ratel-session-edit:hover:not(:disabled),
+	.ratel-session-edit:focus-visible:not(:disabled) {
+		opacity: 1;
+		color: var(--text-muted);
+	}
+
+	.ratel-session-edit:hover:not(:disabled),
+	.ratel-session-edit:focus-visible:not(:disabled) {
+		color: var(--ratel-cite, var(--interactive-accent));
+		border-color: var(--background-modifier-border);
+		background: var(--ratel-copper-soft);
+	}
+
+	.ratel-session-edit:disabled {
+		opacity: 0.3;
 		cursor: not-allowed;
 	}
 

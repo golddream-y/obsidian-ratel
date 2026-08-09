@@ -1129,11 +1129,13 @@ export default class RatelVaultPlugin extends Plugin {
 		this.userStatus.patchContextUsage({
 			maxTokens: getEffectiveChatModelMaxTokens(this.settings),
 		});
-		// 关键路径:MCP Server 列表变更时差分启停
+		// 关键路径:MCP 启停必须 await — Modal 里 toggle/添加后立刻 render，void sync 会竞态显示「无工具」
 		if (this.mcpHost) {
-			void this.mcpHost.sync(this.settings.mcpServers).catch((err) => {
+			try {
+				await this.mcpHost.sync(this.settings.mcpServers);
+			} catch (err) {
 				devLogger.error('mcp', 'settings 变更后 sync 失败', err);
-			});
+			}
 		}
 		// 关键路径:通知 Chat / Memory 等视图重跑 applyRatelAppearance(热更新外观)。
 		bumpAppearance();

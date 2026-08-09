@@ -17,24 +17,42 @@ export interface ToolPermissionSettings {
 
 export type ToolConfirmResult = 'allow' | 'session' | 'deny';
 
+/**
+ * 本会话工具授权缓存。
+ *
+ * 设计要点:
+ * - 「允许(本次会话不再询问)」按**工具名**放行整场会话（不绑 path）
+ * - 旧实现按 tool+path 记授权，多篇笔记会反复弹窗，与按钮文案不符
+ * - `/new` 或切换会话时 clear()；不持久化到 settings
+ */
 export class ToolPermissionSessionGrants {
-	private keys = new Set<string>();
+	private tools = new Set<string>();
 
-	private key(toolName: string, path?: string): string {
-		return path ? `${toolName}:${path}` : toolName;
+	/**
+	 * 是否已对本工具会话放行。
+	 *
+	 * @param toolName - 工具名（含 mcp__…）
+	 * @param _path - 保留参数仅为调用方兼容；会话授权不区分路径
+	 */
+	has(toolName: string, _path?: string): boolean {
+		void _path;
+		return this.tools.has(toolName);
 	}
 
-	has(toolName: string, path?: string): boolean {
-		return this.keys.has(this.key(toolName, path));
-	}
-
-	grant(toolName: string, path?: string): void {
-		this.keys.add(this.key(toolName, path));
+	/**
+	 * 记录本会话对该工具的放行。
+	 *
+	 * @param toolName - 工具名
+	 * @param _path - 保留参数仅为调用方兼容；忽略
+	 */
+	grant(toolName: string, _path?: string): void {
+		void _path;
+		this.tools.add(toolName);
 	}
 
 	/** 清空本会话授权 — /new 或切换会话时调用 */
 	clear(): void {
-		this.keys.clear();
+		this.tools.clear();
 	}
 }
 

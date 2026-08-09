@@ -109,6 +109,9 @@ export function parseSessionTitleResponse(raw: string): SessionTitlePair | null 
 /**
  * 异步生成双轨会话标题;失败时抛错由调用方回退。
  * signal 预留:当前 LLMClient.chat 未接 AbortSignal,调用方仍可在外层忽略结果。
+ *
+ * 安全路径:DeepSeek V4 默认 thinking=enabled,推理 token 计入 max_tokens;
+ * 标题只需短输出,必须 thinking:disabled,否则常见「HTTP 200 但 content 为空」。
  */
 export async function generateSessionTitles(
 	llm: LLMClient,
@@ -120,12 +123,18 @@ export async function generateSessionTitles(
 	let text = '';
 	for await (const delta of llm.chat({
 		messages: [{ role: 'user', content: prompt }],
-		options: { maxTokens: 96 },
+		options: { maxTokens: 96, thinking: 'disabled' },
 	})) {
 		if (delta.text) text += delta.text;
 	}
 	const parsed = parseSessionTitleResponse(text);
-	if (!parsed?.title) throw new Error('empty title');
+	if (!parsed?.title) {
+		throw new Error(
+			text.trim()
+				? `无法解析标题输出: ${text.trim().slice(0, 120)}`
+				: 'empty title (模型未返回 content)',
+		);
+	}
 	return parsed;
 }
 

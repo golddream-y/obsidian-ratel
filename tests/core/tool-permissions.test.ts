@@ -57,4 +57,51 @@ describe('resolveToolPermission', () => {
 		);
 		expect(confirm).toHaveBeenCalledTimes(1);
 	});
+
+	it('ask - 会话放行后换 path 也不再弹窗', async () => {
+		const grants = new ToolPermissionSessionGrants();
+		const confirm = vi.fn().mockResolvedValue('session' as const);
+		await resolveToolPermission(
+			writeCall,
+			{ trustMode: false, toolPermissions: { write_note: 'ask' } },
+			grants,
+			confirm,
+		);
+		const otherPath: ToolCall = {
+			id: '2',
+			name: 'write_note',
+			args: { path: 'b.md', content: 'y' },
+		};
+		await resolveToolPermission(
+			otherPath,
+			{ trustMode: false, toolPermissions: { write_note: 'ask' } },
+			grants,
+			confirm,
+		);
+		expect(confirm).toHaveBeenCalledTimes(1);
+	});
+
+	it('ask - 会话放行只覆盖该工具名', async () => {
+		const grants = new ToolPermissionSessionGrants();
+		const confirm = vi.fn().mockResolvedValue('session' as const);
+		await resolveToolPermission(
+			writeCall,
+			{ trustMode: false, toolPermissions: { write_note: 'ask', edit_note: 'ask' } },
+			grants,
+			confirm,
+		);
+		const editCall: ToolCall = {
+			id: '3',
+			name: 'edit_note',
+			args: { path: 'a.md', old_string: 'x', new_string: 'y' },
+		};
+		confirm.mockResolvedValueOnce('allow' as const);
+		await resolveToolPermission(
+			editCall,
+			{ trustMode: false, toolPermissions: { write_note: 'ask', edit_note: 'ask' } },
+			grants,
+			confirm,
+		);
+		expect(confirm).toHaveBeenCalledTimes(2);
+	});
 });
