@@ -59,11 +59,27 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 | 查看库概览 | 「库里有哪些标签和孤儿笔记？」 | `get_vault_structure`（可按目录 / 标签 / 孤儿笔记选择） |
 | 写综述 / 整理 | 「把产品规划相关笔记整理成背景文档」 | 多步检索 → 读写（写前会按权限询问） |
 
-流式回答时可以看到工具调用过程；支持 reasoning 的模型（如 DeepSeek-R1）会显示可折叠「思考」块。
+流式回答时可以看到工具调用过程；支持 reasoning 的模型（如 DeepSeek-R1 / V4）会显示可折叠「思考」块。检索结果在回答下方以「来源 N 篇」折叠条展示，点开可跳转笔记；正文里若已有可点的 `[1][2]`，底部来源条会隐藏以免重复。
+
+对话正文、思考过程与工具详情可以**拖选复制**（顶栏与输入区仍不可误选）。
 
 ---
 
-## 4. 日记约定
+## 4. 多场会话
+
+右上角 **短标题芯片**（时钟图标）打开最近列表：点进旧场、开「＋ 新对话」、悬停行可删除。关侧栏或重启后，会回到上次那一场。
+
+| 你想… | 怎么做 |
+|---|---|
+| 改标题 | 芯片旁的 **✎** → 手改后保存，或点「AI 总结」让模型重起短标题 / 正常标题 |
+| 生成中换场 / 新建 | 会先确认；确认后才会停止当前回复并切换（未完成内容标为已停止） |
+| 工具「本次会话不再询问」 | 按**工具名**整场放行（同一工具读多篇笔记不再反复弹）；`/new` 或换场后清空 |
+
+`/new` 与菜单「新对话」同一套逻辑：有内容的旧场留在列表；空白场不会堆一堆空对话。
+
+---
+
+## 5. 日记约定
 
 设置 → Ratel → **记忆与权限** → 日记约定：
 
@@ -76,7 +92,7 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 
 ---
 
-## 5. 记忆
+## 6. 记忆
 
 跟它说「记住我偏好 Tailwind」或「忘掉 X」即可。
 
@@ -92,7 +108,7 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 
 ---
 
-## 6. Skill（扩展能力）
+## 7. Skill（扩展能力）
 
 把含 `SKILL.md` 的文件夹放到：
 
@@ -106,7 +122,7 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 
 ---
 
-## 7. 斜杠命令与命令面板
+## 8. 斜杠命令与命令面板
 
 聊天输入 `/`：
 
@@ -128,7 +144,7 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 
 ---
 
-## 8. 设置速查
+## 9. 设置速查
 
 打开 **设置 → Ratel** 即见顶栏五个 Tab：
 
@@ -136,9 +152,11 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 |---|---|
 | **对话模型** | 语言、场景预设（DeepSeek / Ollama / 自定义）、模型、API Base、钥匙串状态 |
 | **笔记索引** | Embedding、分块 / 自动索引、Rerank |
-| **记忆与权限** | 记忆开关与面板、Skills、日记约定、信任模式、全部工具权限 |
+| **记忆与权限** | 记忆开关与面板、Skills、日记约定、信任模式、全部工具权限（含 MCP 工具） |
 | **外观** | 颜色模式（跟随 Obsidian / 浅色 / 深色）、强调色色块（含铜 / Material 色）；仅影响 Ratel 面板，预览即时生效 |
 | **高级** | Context Length、模型 registry、提示词覆盖、记忆容量、开发者选项、诊断 |
+
+状态抽屉底部可打开 **MCP** 管理：添加 HTTP / 本地命令服务器，或粘贴 Claude / Cursor 的 JSON 导入。开关开启后会同步工具进对话；「刷新」强制重连。时间线里 MCP 工具带标识。
 
 ### API Key（钥匙串）
 
@@ -152,17 +170,17 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 
 ---
 
-## 9. 状态怎么读
+## 10. 状态怎么读
 
 - **输入区顶沿 StatusStrip**：状态点 + 就绪/忙态文案 + 右侧上下文占用 `%`（绿 → 黄 → 红）
-- **点开 Strip**：抽屉里看索引篇数、Embedding 类型、上下文 used/max 与进度条、压缩按钮
-- **Header**：模型名（点击查看模型信息）；不再显示占用百分比
+- **点开 Strip**：抽屉里看索引篇数、Embedding 类型、上下文 used/max 与进度条、压缩按钮；底部可进记忆 / MCP / 反馈等
+- **Header**：短标题芯片（历史列表）+ ✎（编辑标题）+ 模型名（点击查看模型信息）；不再显示占用百分比
 
 未配置 API Key 或索引未就绪时，发送会被挡住并在 Strip 提示原因。
 
 ---
 
-## 10. 隐私
+## 11. 隐私
 
 - 默认本地索引 + 本地嵌入  
 - **唯一网络**：你配置的模型 /（可选）嵌入 API /（可选）Rerank  
@@ -171,7 +189,7 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 
 ---
 
-## 11. FAQ
+## 12. FAQ
 
 | 问题 | 回答 |
 |---|---|
@@ -184,6 +202,10 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 | Ollama 要联网吗？ | 本地推理不需要 |
 | 「当前笔记」没打开？ | 会友好说明；用 glob / search 找路径即可 |
 | 日记工具为什么不创建？ | 只读探测，避免误建；创建请明示或用写工具 |
+| 选不中 / 复制不了回答？ | 消息区已允许选择；若仍不行，确认选的是正文而非顶栏控件 |
+| AI 总结标题失败？ | DeepSeek V4 等会先思考；当前总结请求已关 thinking。仍失败时标题会退回开场白截断，可手改 |
+| 「本次会话不再询问」还弹？ | 换工具名仍会问；同工具不同路径不应再问。换场或 `/new` 后授权清空 |
+| 刚开 MCP 显示无工具？ | 等开启完成后再看列表；可点「刷新」强制重连 |
 
 更多问题可开 [GitHub Issues](https://github.com/golddream-y/obsidian-ratel/issues)。
 
@@ -197,4 +219,6 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 
 **Ask naturally:** topics → semantic search with citations; “today” → injected local time; “this note” → active file; daily note path is probed only (never auto-created). Memory lives in `.ratel/memory/`. Skills live under `.ratel/skills/` (or `~/.ratel/skills/`).
 
-**Privacy:** No telemetry. Network only to the model (and optional embed/rerank) endpoints you configure.
+**Sessions:** Header chip opens recent chats; ✎ edits / AI-summarizes the title. Switching while generating asks first. “Allow for this session” grants by tool name for the whole chat.
+
+**Privacy:** No telemetry. Network only to the model (and optional embed/rerank/MCP) endpoints you configure.
