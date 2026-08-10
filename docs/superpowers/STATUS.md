@@ -17,6 +17,7 @@
 
 | ID | 文件 | 状态 | 创建日期 | 备注 |
 |---|---|---|---|---|
+| S-CHAT-PROTO | [2026-08-10-chat-prototype-align-design.md](specs/2026-08-10-chat-prototype-align-design.md) | Active | 2026-08-10 | 原型↔现网双向对齐;发送↑;三级权限;底栏避让;回写 0.1.18 UI |
 | S-SETTINGS-SYNC | [2026-08-03-settings-sync-design.md](specs/2026-08-03-settings-sync-design.md) | Active | 2026-08-03 | Settings 读入口统一 settings$;消除设置改了 UI 不刷新;与 appearance/UserStatus 分列 |
 | S-MCP-HOST | [2026-08-03-mcp-host-design.md](specs/2026-08-03-mcp-host-design.md) | Active | 2026-08-03 | 平台级 MCP Host;双 transport;入 ToolRegistry;抽屉 Modal+对话 Trace;ADR-014/015;优先于图谱扩邻 |
 | S-MEMORY-MODAL | [2026-07-31-memory-modal-unify-design.md](specs/2026-07-31-memory-modal-unify-design.md) | Active | 2026-07-31 | 记忆并入聊天路径;抽屉入口+MemoryModal;拆除 brain 独立视图 |
