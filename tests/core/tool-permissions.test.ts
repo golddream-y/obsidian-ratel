@@ -2,19 +2,110 @@ import { describe, it, expect, vi } from 'vitest';
 import {
 	ToolPermissionSessionGrants,
 	resolveToolPermission,
+	isDestructiveTool,
 } from '../../src/core/tool-permissions';
 import type { ToolCall } from '../../src/ports/llm';
 
 const writeCall: ToolCall = { id: '1', name: 'write_note', args: { path: 'a.md', content: 'x' } };
+const deleteCall: ToolCall = { id: '2', name: 'delete_note', args: { path: 'a.md' } };
+const mcpCall: ToolCall = { id: '3', name: 'mcp__srv__tool', args: {} };
 
-describe('resolveToolPermission', () => {
-	it('trustMode - 直接放行', async () => {
+describe('isDestructiveTool', () => {
+	it('isDestructiveTool - delete_note / forget_memory - true', () => {
+		expect(isDestructiveTool('delete_note')).toBe(true);
+		expect(isDestructiveTool('forget_memory')).toBe(true);
+		expect(isDestructiveTool('write_note')).toBe(false);
+		expect(isDestructiveTool('mcp__x__y')).toBe(true);
+	});
+});
+
+describe('resolveToolPermission 档位', () => {
+	it('deny - 任意档位 - 仍抛错', async () => {
 		const grants = new ToolPermissionSessionGrants();
 		await expect(
-			resolveToolPermission(writeCall, { trustMode: true, toolPermissions: { write_note: 'deny' } }, grants, vi.fn()),
-		).resolves.toBeUndefined();
+			resolveToolPermission(
+				writeCall,
+				{ toolPermissionLevel: 'danger', toolPermissions: { write_note: 'deny' } },
+				grants,
+				vi.fn(),
+			),
+		).rejects.toThrow('已被禁用');
 	});
 
+	it('auto - write_note ask - 不弹窗', async () => {
+		const grants = new ToolPermissionSessionGrants();
+		const confirm = vi.fn();
+		await resolveToolPermission(
+			writeCall,
+			{ toolPermissionLevel: 'auto', toolPermissions: { write_note: 'ask' } },
+			grants,
+			confirm,
+		);
+		expect(confirm).not.toHaveBeenCalled();
+	});
+
+	it('auto - delete_note ask - 仍弹窗', async () => {
+		const grants = new ToolPermissionSessionGrants();
+		const confirm = vi.fn().mockResolvedValue('allow' as const);
+		await resolveToolPermission(
+			deleteCall,
+			{ toolPermissionLevel: 'auto', toolPermissions: { delete_note: 'ask' } },
+			grants,
+			confirm,
+		);
+		expect(confirm).toHaveBeenCalledTimes(1);
+	});
+
+	it('auto - MCP 工具 - 仍弹窗', async () => {
+		const grants = new ToolPermissionSessionGrants();
+		const confirm = vi.fn().mockResolvedValue('allow' as const);
+		await resolveToolPermission(
+			mcpCall,
+			{ toolPermissionLevel: 'auto', toolPermissions: {} },
+			grants,
+			confirm,
+		);
+		expect(confirm).toHaveBeenCalledTimes(1);
+	});
+
+	it('danger - write ask - 不弹窗', async () => {
+		const grants = new ToolPermissionSessionGrants();
+		const confirm = vi.fn();
+		await resolveToolPermission(
+			writeCall,
+			{ toolPermissionLevel: 'danger', toolPermissions: { write_note: 'ask' } },
+			grants,
+			confirm,
+		);
+		expect(confirm).not.toHaveBeenCalled();
+	});
+
+	it('safe - write ask - 弹窗', async () => {
+		const grants = new ToolPermissionSessionGrants();
+		const confirm = vi.fn().mockResolvedValue('allow' as const);
+		await resolveToolPermission(
+			writeCall,
+			{ toolPermissionLevel: 'safe', toolPermissions: { write_note: 'ask' } },
+			grants,
+			confirm,
+		);
+		expect(confirm).toHaveBeenCalledTimes(1);
+	});
+
+	it('兼容 - 仅 trustMode true 无 level - 等同 danger', async () => {
+		const grants = new ToolPermissionSessionGrants();
+		const confirm = vi.fn();
+		await resolveToolPermission(
+			writeCall,
+			{ trustMode: true, toolPermissions: { write_note: 'ask' } },
+			grants,
+			confirm,
+		);
+		expect(confirm).not.toHaveBeenCalled();
+	});
+});
+
+describe('resolveToolPermission', () => {
 	it('deny - 抛错', async () => {
 		const grants = new ToolPermissionSessionGrants();
 		await expect(
