@@ -203,6 +203,15 @@ export interface ChatStrings {
   'chat.input.send': string;
   'chat.input.stop': string;
   'chat.input.addImage': string;
+  'chat.perm.safe': string;
+  'chat.perm.auto': string;
+  'chat.perm.danger': string;
+  'chat.perm.aria': string;
+  'chat.composer.permHint.safe': string;
+  'chat.composer.permHint.auto': string;
+  'chat.composer.permHint.danger': string;
+  'chat.composer.send': string;
+  'chat.composer.stop': string;
   'chat.gate.noChatKey': string;
   'chat.gate.searchUnavailable': string;
   'chat.error.stopped': string;
