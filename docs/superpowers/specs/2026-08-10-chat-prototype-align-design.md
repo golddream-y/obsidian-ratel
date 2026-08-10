@@ -119,9 +119,9 @@
 
 **与单工具表关系：**
 
-- 档位是 **运行时覆盖层**：`resolveToolPermission` 先看 `toolPermissionLevel`，再看 `toolPermissions[name]` 的 `deny`，再看会话 grant，再决定是否弹窗。  
+- 档位是 **运行时覆盖层**；决策顺序以 §5.5 为准：`deny` → 会话 grant → 档位放行 → 单工具 `allow` → 弹窗。  
 - 设置页「工具权限」表保留；`deny` 永远优先。  
-- `trustMode`：**迁移** — 读旧数据 `trustMode===true` → `toolPermissionLevel='danger'`；写盘后可停止依赖布尔（或只读兼容一层）。设置页原「信任模式」toggle **改为与三档同步的说明 / 链到侧栏**，避免双入口打架（推荐：设置里用同一三档下拉，侧栏分段为快捷入口）。
+- `trustMode`：**迁移** — 读旧数据 `trustMode===true` → `toolPermissionLevel='danger'`；写盘后可停止依赖布尔（或只读兼容一层）。设置页原「信任模式」toggle **改为与三档同步的下拉**（与侧栏同一字段），避免双入口打架。
 
 **UI：**
 
