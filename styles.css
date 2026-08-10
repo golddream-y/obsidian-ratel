@@ -330,18 +330,32 @@ body.theme-dark .ratel-appearance-root:not([data-ratel-scheme]):not([data-ratel-
 	min-height: 24px;
 }
 .ratel-appearance-preview-shell .ratel-send {
+	width: 34px;
 	min-width: 34px;
 	height: 34px;
-	padding: 0 10px;
+	padding: 0;
 	border-radius: 10px;
 	border: none;
 	background: var(--interactive-accent);
 	color: var(--text-on-accent, #fff);
+	font-size: 14px;
+	font-weight: 700;
+	line-height: 1;
 	cursor: default;
 	opacity: 0.85;
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
+}
+
+/* 关键路径:压过 Obsidian 默认 button,保持 34×34 方钮与无边框 */
+button.ratel-send {
+	min-height: unset;
+	height: 34px;
+	width: 34px;
+	min-width: 34px;
+	padding: 0;
+	box-shadow: none;
 }
 .ratel-appearance-preview-status {
 	font-size: 12px;

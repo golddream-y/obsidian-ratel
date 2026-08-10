@@ -38,7 +38,8 @@
 	import { showSessionRenameModal } from './session/session-rename-modal';
 	import { showSessionSwitchConfirm } from './session/session-switch-confirm';
 	import type { SessionIndexEntry } from '../../ports/persistence';
-	import { t, tNow } from '../../i18n';
+	import { t, tNow, type StringKey } from '../../i18n';
+	import type { ToolPermissionLevel } from '../../core/tool-permissions';
 	import {
 		appendText,
 		appendThink,
@@ -580,6 +581,7 @@
 	const mentionVisible = $derived(mentionQuery !== null && !slashVisible);
 	const modelName = $derived($settingsStore.chatModel);
 	const embedKind = $derived($settingsStore.embedProvider);
+	const permLevel = $derived(($settingsStore.toolPermissionLevel ?? 'safe') as ToolPermissionLevel);
 
 	// 关键路径:原 work-bar 文案合并进 StatusStrip — 优先级从上到下,同时满足只取第一个
 	// 关键路径:indexing 分支不解析 indexDetail(progressing 状态是文件名,queueing 是 i18n 文字,
@@ -949,6 +951,22 @@
 		abortController?.abort();
 	}
 
+	const PERM_LEVELS: readonly ToolPermissionLevel[] = ['safe', 'auto', 'danger'];
+
+	function permLabelKey(level: ToolPermissionLevel): StringKey {
+		return `chat.perm.${level}` as StringKey;
+	}
+
+	function composerPermHintKey(level: ToolPermissionLevel): StringKey {
+		return `chat.composer.permHint.${level}` as StringKey;
+	}
+
+	/** 聊天底栏分段开关 — 写 settings 并落盘,与设置页下拉同步。 */
+	async function setToolPermissionLevel(level: ToolPermissionLevel): Promise<void> {
+		plugin.settings.toolPermissionLevel = level;
+		await plugin.saveSettings();
+	}
+
 	// ==================== 键盘 / 文件 ====================
 	function handleKeydown(e: KeyboardEvent) {
 		if (mentionVisible && mentionMenuEl) {
@@ -1233,11 +1251,42 @@
 						rows={1}
 					></textarea>
 					{#if isRunning}
-						<button class="ratel-send ratel-stop" onclick={stopGeneration} type="button">{$t('chat.input.stop')}</button>
+						<button
+							class="ratel-send ratel-stop"
+							type="button"
+							onclick={stopGeneration}
+							title={$t('chat.composer.stop')}
+							aria-label={$t('chat.composer.stop')}
+						>■</button>
 					{:else}
-						<button class="ratel-send" onclick={sendMessage} disabled={!input.trim() || !gate.canSend} type="button">{$t('chat.input.send')}</button>
+						<button
+							class="ratel-send"
+							type="button"
+							onclick={sendMessage}
+							disabled={!input.trim() || !gate.canSend}
+							title={$t('chat.composer.send')}
+							aria-label={$t('chat.composer.send')}
+						>↑</button>
 					{/if}
 				</div>
+			</div>
+			<div class="ratel-perm-hint" data-level={permLevel}>
+				<div class="ratel-perm-seg" role="radiogroup" aria-label={$t('chat.perm.aria')}>
+					{#each PERM_LEVELS as lv (lv)}
+						<button
+							type="button"
+							role="radio"
+							class:is-active={permLevel === lv}
+							aria-checked={permLevel === lv}
+							data-level={lv}
+							title={$t(composerPermHintKey(lv))}
+							onclick={() => void setToolPermissionLevel(lv)}
+						>{$t(permLabelKey(lv))}</button>
+					{/each}
+				</div>
+				<span class="ratel-perm-keys">
+					<span class="ratel-perm-desc">{$t(composerPermHintKey(permLevel))}</span>
+				</span>
 			</div>
 		</div>
 	</div>
@@ -1587,6 +1636,7 @@
 		display: flex;
 		flex-direction: column;
 		border-top: 1px solid var(--background-modifier-border);
+		padding-bottom: max(22px, env(safe-area-inset-bottom, 0px));
 	}
 
 	/* ==================== 输入区(毛玻璃;顶边由 composer 承担,避免双线) ==================== */
@@ -1697,25 +1747,26 @@
 		color: var(--text-faint);
 	}
 
-	/* Send — 对齐原型 .send:34×34、圆角 10px(圆角方,不是直角方) */
+	/* Send — 对齐原型 .send:34×34 方钮、圆角 10px */
 	.ratel-send {
 		flex-shrink: 0;
 		align-self: flex-end;
+		width: 34px;
 		min-width: 34px;
 		height: 34px;
-		padding: 0 12px;
+		padding: 0;
 		border-radius: 10px;
 		border: none;
 		background: var(--interactive-accent);
 		color: var(--text-on-accent, #fff);
-		font-size: 12px;
-		font-weight: 600;
+		font-size: 14px;
+		font-weight: 700;
+		line-height: 1;
 		font-family: inherit;
 		cursor: pointer;
 		transition: opacity 0.15s, transform 0.1s, filter 0.15s;
 		-webkit-appearance: none;
 		appearance: none;
-		letter-spacing: 0.3px;
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
@@ -1737,6 +1788,91 @@
 	.ratel-stop {
 		background: var(--text-error) !important;
 		color: #fff !important;
+	}
+
+	/* 权限档位 hint — 对齐原型 .hint / .perm-seg */
+	.ratel-perm-hint {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 10px;
+		font-size: 10.5px;
+		color: var(--text-faint);
+		padding: 0 4px;
+		min-height: 22px;
+	}
+
+	.ratel-perm-keys {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.ratel-perm-desc {
+		color: var(--text-faint);
+	}
+
+	.ratel-perm-hint[data-level='auto'] .ratel-perm-desc {
+		color: var(--ratel-cite, var(--interactive-accent));
+	}
+
+	.ratel-perm-hint[data-level='danger'] .ratel-perm-desc {
+		color: var(--text-error);
+	}
+
+	.ratel-perm-seg {
+		display: inline-flex;
+		align-items: stretch;
+		flex-shrink: 0;
+		border: 1px solid var(--background-modifier-border);
+		border-radius: 999px;
+		overflow: hidden;
+		background: color-mix(in srgb, var(--background-primary) 82%, transparent);
+	}
+
+	.ratel-perm-seg button {
+		appearance: none;
+		border: none;
+		background: transparent;
+		color: var(--text-faint);
+		font: inherit;
+		font-size: 10.5px;
+		font-weight: 550;
+		letter-spacing: 0.02em;
+		padding: 3px 9px;
+		cursor: pointer;
+		line-height: 1.2;
+		transition: color 0.12s, background 0.12s;
+	}
+
+	.ratel-perm-seg button + button {
+		border-left: 1px solid var(--background-modifier-border);
+	}
+
+	.ratel-perm-seg button:hover {
+		color: var(--text-muted);
+		background: color-mix(in srgb, var(--text-normal) 4%, transparent);
+	}
+
+	.ratel-perm-seg button.is-active[data-level='safe'] {
+		color: var(--text-success);
+		background: color-mix(in srgb, var(--text-success) 14%, transparent);
+	}
+
+	.ratel-perm-seg button.is-active[data-level='auto'] {
+		color: var(--ratel-cite, var(--interactive-accent));
+		background: var(--ratel-copper-soft);
+	}
+
+	.ratel-perm-seg button.is-active[data-level='danger'] {
+		color: var(--text-error);
+		background: color-mix(in srgb, var(--text-error) 14%, transparent);
+	}
+
+	.ratel-perm-seg button:focus-visible {
+		outline: none;
+		box-shadow: inset 0 0 0 1px var(--ratel-copper-glow);
 	}
 
 	@media (prefers-reduced-motion: reduce) {
