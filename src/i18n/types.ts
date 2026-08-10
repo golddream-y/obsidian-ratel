@@ -118,6 +118,11 @@ export interface SettingsStrings {
   'settings.developer.agentMaxSteps.desc': string;
   'settings.developer.trustMode.name': string;
   'settings.developer.trustMode.desc': string;
+  'settings.toolPermissionLevel.name': string;
+  'settings.toolPermissionLevel.desc': string;
+  'settings.toolPermissionLevel.safe': string;
+  'settings.toolPermissionLevel.auto': string;
+  'settings.toolPermissionLevel.danger': string;
   'settings.daily.heading': string;
   'settings.daily.folder.name': string;
   'settings.daily.folder.desc': string;

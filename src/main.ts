@@ -1100,6 +1100,15 @@ export default class RatelVaultPlugin extends Plugin {
 			...DEFAULT_SETTINGS.toolPermissions,
 			...(loaded.toolPermissions ?? {}),
 		};
+		const legacyTrust = loaded.trustMode === true;
+		const level = loaded.toolPermissionLevel;
+		if (level === 'safe' || level === 'auto' || level === 'danger') {
+			this.settings.toolPermissionLevel = level;
+		} else if (legacyTrust) {
+			this.settings.toolPermissionLevel = 'danger';
+		} else {
+			this.settings.toolPermissionLevel = 'safe';
+		}
 		// 修复:S-KEYCHAIN 之前的明文残留字段,下次 saveSettings 会用清理后的对象自然覆盖 data.json。
 		const legacy = this.settings as unknown as Record<string, unknown>;
 		delete legacy.chatApiKey;
@@ -1268,7 +1277,7 @@ export default class RatelVaultPlugin extends Plugin {
 			resolveToolPermission(
 				tc,
 				{
-					trustMode: this.settings.trustMode,
+					toolPermissionLevel: this.settings.toolPermissionLevel,
 					toolPermissions: this.settings.toolPermissions,
 				},
 				this.toolSessionGrants,
