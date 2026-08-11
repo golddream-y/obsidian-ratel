@@ -13,7 +13,7 @@ import {
 import type { Message } from '../../../../src/ui/chat/message-stream/types';
 
 function newAssistantMsg(): Message {
-	return { role: 'assistant', segments: [] };
+	return { id: 'test-asst', role: 'assistant', segments: [] };
 }
 
 describe('segment-appender', () => {

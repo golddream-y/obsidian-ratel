@@ -17,6 +17,7 @@
 	 * @param isRunning - Agent Loop 是否运行中(影响最后一条消息的流式标记)
 	 * @param containerRef - 可绑定,内层可滚动容器(.ratel-messages)的 DOM 引用,父组件据此控制滚动
 	 * @param onScroll - 滚动事件回调,父组件据此判断用户是否处于底部(sticky-to-bottom)
+	 * @param highlightId - 进度轨跳转高亮的消息 id；null 表示无高亮
 	 */
 	let {
 		messages,
@@ -24,12 +25,14 @@
 		containerRef = $bindable(),
 		onScroll,
 		onOpenPath,
+		highlightId = null,
 	}: {
 		messages: Message[];
 		isRunning: boolean;
 		containerRef?: HTMLDivElement | null;
 		onScroll?: (el: HTMLDivElement) => void;
 		onOpenPath: (path: string) => void;
+		highlightId?: string | null;
 	} = $props();
 
 	/*
@@ -58,7 +61,13 @@
 
 <div class="ratel-messages" bind:this={containerRef} onscroll={() => { if (containerRef) onScroll?.(containerRef); }}>
 	{#each messages as msg, i}
-		<MessageBubble {msg} isLast={i === messages.length - 1} {isRunning} {onOpenPath} />
+		<MessageBubble
+			{msg}
+			isLast={i === messages.length - 1}
+			{isRunning}
+			{onOpenPath}
+			navFlash={msg.id === highlightId}
+		/>
 	{/each}
 	{#if showThinking()}
 		<div class="ratel-typing">
@@ -83,6 +92,15 @@
 		/* 组件内兜底；全局压过 Obsidian body{user-select:none} 在 styles.css */
 		-webkit-user-select: text;
 		user-select: text;
+		/* 用右侧点列导航，隐藏系统纵向滚动条（仍可滚轮/触控板滚动） */
+		scrollbar-width: none;
+		-ms-overflow-style: none;
+	}
+
+	.ratel-messages::-webkit-scrollbar {
+		width: 0;
+		height: 0;
+		display: none;
 	}
 
 	.ratel-typing {

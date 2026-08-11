@@ -330,18 +330,32 @@ body.theme-dark .ratel-appearance-root:not([data-ratel-scheme]):not([data-ratel-
 	min-height: 24px;
 }
 .ratel-appearance-preview-shell .ratel-send {
+	width: 34px;
 	min-width: 34px;
 	height: 34px;
-	padding: 0 10px;
+	padding: 0;
 	border-radius: 10px;
 	border: none;
 	background: var(--interactive-accent);
 	color: var(--text-on-accent, #fff);
+	font-size: 14px;
+	font-weight: 700;
+	line-height: 1;
 	cursor: default;
 	opacity: 0.85;
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
+}
+
+/* 关键路径:压过 Obsidian 默认 button,保持 34×34 方钮与无边框 */
+button.ratel-send {
+	min-height: unset;
+	height: 34px;
+	width: 34px;
+	min-width: 34px;
+	padding: 0;
+	box-shadow: none;
 }
 .ratel-appearance-preview-status {
 	font-size: 12px;
@@ -592,4 +606,39 @@ button.ratel-cites-toggle:active {
 button.ratel-cites-toggle:focus-visible {
 	outline: 2px solid var(--interactive-accent);
 	outline-offset: 2px;
+}
+
+/* 安全路径:压过 Obsidian 默认 button；刻度宽度由组件内联鱼眼控制，勿写死 width */
+button.ratel-chat-nav-bottom,
+button.ratel-chat-nav-tick {
+	min-height: unset !important;
+	box-shadow: none !important;
+	-webkit-appearance: none !important;
+	appearance: none !important;
+	margin: 0 !important;
+}
+
+button.ratel-chat-nav-bottom {
+	width: 22px !important;
+	height: 22px !important;
+	min-width: 22px !important;
+	padding: 0 !important;
+	border: 1px solid var(--background-modifier-border) !important;
+	border-radius: 50% !important;
+}
+
+button.ratel-chat-nav-tick {
+	height: 3px !important;
+	min-width: 6px !important;
+	padding: 0 !important;
+	border: none !important;
+	border-radius: 999px !important;
+}
+
+button.ratel-chat-nav-tick.is-active {
+	height: 5px !important;
+}
+
+button.ratel-chat-nav-tick.is-hover {
+	height: 6px !important;
 }

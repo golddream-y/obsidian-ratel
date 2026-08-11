@@ -19,8 +19,17 @@
 	import AttachmentStrip from './input/AttachmentStrip.svelte';
 	import MessageList from './message-stream/MessageList.svelte';
 	import type { Message } from './message-stream/types';
+	import { newMessageId } from './message-stream/new-message-id';
 	import { preservedChatMessagesToUi } from './message-stream/chat-message-to-ui';
 	import { hydrateSessionMessages } from './message-stream/hydrate-session-messages';
+	import ChatNavRail from './nav/ChatNavRail.svelte';
+	import {
+		CHAT_NAV_TICK_CAP,
+		extractUserAnchors,
+		needsRail,
+		thinAnchors,
+		thumbRatio,
+	} from './nav/chat-nav-rail';
 	import SessionMenu from './session/SessionMenu.svelte';
 	import { sessionHasContent } from './session/session-content';
 	import {
@@ -38,7 +47,8 @@
 	import { showSessionRenameModal } from './session/session-rename-modal';
 	import { showSessionSwitchConfirm } from './session/session-switch-confirm';
 	import type { SessionIndexEntry } from '../../ports/persistence';
-	import { t, tNow } from '../../i18n';
+	import { t, tNow, type StringKey } from '../../i18n';
+	import type { ToolPermissionLevel } from '../../core/tool-permissions';
 	import {
 		appendText,
 		appendThink,
@@ -107,6 +117,7 @@
 	});
 	onDestroy(() => {
 		appearanceUnsub?.();
+		if (navFlashTimer) clearTimeout(navFlashTimer);
 		void flushCurrentSession();
 	});
 
@@ -144,6 +155,27 @@
 	// 关键路径:/compact 压缩进行中标志,控制 loading hint 显示
 	let isCompacting = $state(false);
 
+	// ==================== 对话进度轨 ====================
+	let navHighlightId = $state<string | null>(null);
+	let navRatio = $state(0);
+	let railVisible = $state(false);
+	let navFlashTimer: ReturnType<typeof setTimeout> | null = null;
+
+	const navEnabled = $derived($settingsStore.chatNavRailEnabled !== false);
+	const rawAnchors = $derived(
+		extractUserAnchors(
+			messages.filter((m) => !!m.id) as Array<{
+				id: string;
+				role: string;
+				segments: Message['segments'];
+			}>,
+		),
+	);
+	// 首版 visibleId 用跳转高亮 id；无高亮时 thin 仍保首尾
+	const navAnchorsThinned = $derived(
+		thinAnchors(rawAnchors, navHighlightId, CHAT_NAV_TICK_CAP),
+	);
+
 	// 关键路径:sticky-to-bottom — 用户主动上滑时尊重浏览历史,只在用户处于底部时自动滚动
 	const scrollToBottom = () => {
 		if (!isUserNearBottom) return;
@@ -152,11 +184,68 @@
 		});
 	};
 
-	// 关键路径:onscroll 监听内层 .ratel-messages 的滚动,更新 isUserNearBottom
+	/** 根据滚动容器度量更新轨显隐与拇指比例。 */
+	function updateNavMetrics(el: HTMLDivElement) {
+		railVisible = navEnabled && needsRail(el.scrollHeight, el.clientHeight);
+		navRatio = thumbRatio(el.scrollTop, el.scrollHeight, el.clientHeight);
+	}
+
+	// 关键路径:onscroll 监听内层 .ratel-messages 的滚动,更新 isUserNearBottom + 进度轨
 	function handleScroll(el: HTMLDivElement) {
 		isUserNearBottom =
 			el.scrollHeight - el.scrollTop - el.clientHeight < SCROLL_NEAR_BOTTOM_THRESHOLD;
+		updateNavMetrics(el);
 	}
+
+	/** 回底：恢复 sticky 并滚到最新。 */
+	function forceScrollToBottom() {
+		isUserNearBottom = true;
+		requestAnimationFrame(() => {
+			if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight;
+		});
+	}
+
+	/** 拖拇指：按比例设置 scrollTop。 */
+	function seekByRatio(r: number) {
+		if (!messagesEl) return;
+		const max = messagesEl.scrollHeight - messagesEl.clientHeight;
+		if (max <= 0) return;
+		messagesEl.scrollTop = Math.min(1, Math.max(0, r)) * max;
+	}
+
+	/** 点刻度：滚到对应消息并短暂高亮。 */
+	function jumpToMessage(id: string) {
+		const node = messagesEl?.querySelector(
+			`[data-msg-id="${CSS.escape(id)}"]`,
+		) as HTMLElement | null;
+		if (!node) return;
+		// 离开贴底，避免流式 scrollToBottom 把用户拽回底部
+		isUserNearBottom = false;
+		node.scrollIntoView({ block: 'start', behavior: 'smooth' });
+		navHighlightId = id;
+		if (navFlashTimer) clearTimeout(navFlashTimer);
+		navFlashTimer = setTimeout(() => {
+			navHighlightId = null;
+			navFlashTimer = null;
+		}, 1000);
+	}
+
+	/** 拖侧吸附：写 settings 并持久化。 */
+	async function setNavSide(next: 'left' | 'right') {
+		plugin.settings.chatNavRailSide = next;
+		await plugin.saveSettings();
+	}
+
+	// 消息变高 / 开关变更后重算轨度量
+	$effect(() => {
+		void messages;
+		void navEnabled;
+		const el = messagesEl;
+		if (!el) return;
+		requestAnimationFrame(() => {
+			if (messagesEl) updateNavMetrics(messagesEl);
+		});
+	});
 
 	/** 芯片 / 正文 `[n]` 共用打开入口 — 函数体内读 plugin,避免模板闭包捕获初值 */
 	function handleOpenPath(path: string): void {
@@ -580,6 +669,7 @@
 	const mentionVisible = $derived(mentionQuery !== null && !slashVisible);
 	const modelName = $derived($settingsStore.chatModel);
 	const embedKind = $derived($settingsStore.embedProvider);
+	const permLevel = $derived(($settingsStore.toolPermissionLevel ?? 'safe') as ToolPermissionLevel);
 
 	// 关键路径:原 work-bar 文案合并进 StatusStrip — 优先级从上到下,同时满足只取第一个
 	// 关键路径:indexing 分支不解析 indexDetail(progressing 状态是文件名,queueing 是 i18n 文字,
@@ -823,11 +913,12 @@
 
 		// 关键路径:用 push + 从数组中取出 Proxy 引用,触发细粒度 DOM 更新
 		messages.push({
+			id: newMessageId(),
 			role: 'user' as const,
 			segments: [{ type: 'text', text }],
 			attachments: currentAttachments.length > 0 ? currentAttachments : undefined,
 		});
-		messages.push({ role: 'assistant' as const, segments: [] });
+		messages.push({ id: newMessageId(), role: 'assistant' as const, segments: [] });
 		const am = messages[messages.length - 1] as Message;
 
 		input = '';
@@ -947,6 +1038,22 @@
 
 	function stopGeneration() {
 		abortController?.abort();
+	}
+
+	const PERM_LEVELS: readonly ToolPermissionLevel[] = ['safe', 'auto', 'danger'];
+
+	function permLabelKey(level: ToolPermissionLevel): StringKey {
+		return `chat.perm.${level}` as StringKey;
+	}
+
+	function composerPermHintKey(level: ToolPermissionLevel): StringKey {
+		return `chat.composer.permHint.${level}` as StringKey;
+	}
+
+	/** 聊天底栏分段开关 — 写 settings 并落盘,与设置页下拉同步。 */
+	async function setToolPermissionLevel(level: ToolPermissionLevel): Promise<void> {
+		plugin.settings.toolPermissionLevel = level;
+		await plugin.saveSettings();
 	}
 
 	// ==================== 键盘 / 文件 ====================
@@ -1140,14 +1247,32 @@
 			<div class="ratel-session-spinner" aria-hidden="true"></div>
 			<span class="ratel-session-load-label">{sessionLoadingLabel}</span>
 		</div>
-		<div class="ratel-messages-wrap {messagesAnimClass}">
+		<div
+			class="ratel-messages-wrap {messagesAnimClass}"
+			class:has-nav-rail={railVisible}
+			data-nav-side={railVisible ? ($settingsStore.chatNavRailSide ?? 'right') : undefined}
+		>
 			<MessageList
 				{messages}
 				{isRunning}
 				bind:containerRef={messagesEl}
 				onScroll={handleScroll}
 				onOpenPath={handleOpenPath}
+				highlightId={navHighlightId}
 			/>
+			{#if railVisible}
+				<ChatNavRail
+					enabled={$settingsStore.chatNavRailEnabled}
+					side={$settingsStore.chatNavRailSide ?? 'right'}
+					anchors={navAnchorsThinned}
+					ratio={navRatio}
+					showBackToBottom={!isUserNearBottom}
+					onJump={jumpToMessage}
+					onBackToBottom={forceScrollToBottom}
+					onSideChange={setNavSide}
+					onThumbSeek={seekByRatio}
+				/>
+			{/if}
 		</div>
 	</div>
 
@@ -1233,11 +1358,42 @@
 						rows={1}
 					></textarea>
 					{#if isRunning}
-						<button class="ratel-send ratel-stop" onclick={stopGeneration} type="button">{$t('chat.input.stop')}</button>
+						<button
+							class="ratel-send ratel-stop"
+							type="button"
+							onclick={stopGeneration}
+							title={$t('chat.composer.stop')}
+							aria-label={$t('chat.composer.stop')}
+						>■</button>
 					{:else}
-						<button class="ratel-send" onclick={sendMessage} disabled={!input.trim() || !gate.canSend} type="button">{$t('chat.input.send')}</button>
+						<button
+							class="ratel-send"
+							type="button"
+							onclick={sendMessage}
+							disabled={!input.trim() || !gate.canSend}
+							title={$t('chat.composer.send')}
+							aria-label={$t('chat.composer.send')}
+						>↑</button>
 					{/if}
 				</div>
+			</div>
+			<div class="ratel-perm-hint" data-level={permLevel}>
+				<div class="ratel-perm-seg" role="radiogroup" aria-label={$t('chat.perm.aria')}>
+					{#each PERM_LEVELS as lv (lv)}
+						<button
+							type="button"
+							role="radio"
+							class:is-active={permLevel === lv}
+							aria-checked={permLevel === lv}
+							data-level={lv}
+							title={$t(composerPermHintKey(lv))}
+							onclick={() => void setToolPermissionLevel(lv)}
+						>{$t(permLabelKey(lv))}</button>
+					{/each}
+				</div>
+				<span class="ratel-perm-keys">
+					<span class="ratel-perm-desc">{$t(composerPermHintKey(permLevel))}</span>
+				</span>
 			</div>
 		</div>
 	</div>
@@ -1527,11 +1683,21 @@
 	}
 
 	.ratel-messages-wrap {
+		position: relative;
 		flex: 1;
 		overflow: hidden;
 		display: flex;
 		flex-direction: column;
 		min-height: 0;
+	}
+
+	/* 进度点列占位：正文不贴边，hover 变宽时也不压字 */
+	.ratel-messages-wrap.has-nav-rail[data-nav-side='right'] :global(.ratel-messages) {
+		padding-right: 24px;
+	}
+
+	.ratel-messages-wrap.has-nav-rail[data-nav-side='left'] :global(.ratel-messages) {
+		padding-left: 24px;
 	}
 
 	.ratel-messages-wrap.is-exiting {
@@ -1587,6 +1753,7 @@
 		display: flex;
 		flex-direction: column;
 		border-top: 1px solid var(--background-modifier-border);
+		padding-bottom: max(22px, env(safe-area-inset-bottom, 0px));
 	}
 
 	/* ==================== 输入区(毛玻璃;顶边由 composer 承担,避免双线) ==================== */
@@ -1697,25 +1864,26 @@
 		color: var(--text-faint);
 	}
 
-	/* Send — 对齐原型 .send:34×34、圆角 10px(圆角方,不是直角方) */
+	/* Send — 对齐原型 .send:34×34 方钮、圆角 10px */
 	.ratel-send {
 		flex-shrink: 0;
 		align-self: flex-end;
+		width: 34px;
 		min-width: 34px;
 		height: 34px;
-		padding: 0 12px;
+		padding: 0;
 		border-radius: 10px;
 		border: none;
 		background: var(--interactive-accent);
 		color: var(--text-on-accent, #fff);
-		font-size: 12px;
-		font-weight: 600;
+		font-size: 14px;
+		font-weight: 700;
+		line-height: 1;
 		font-family: inherit;
 		cursor: pointer;
 		transition: opacity 0.15s, transform 0.1s, filter 0.15s;
 		-webkit-appearance: none;
 		appearance: none;
-		letter-spacing: 0.3px;
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
@@ -1737,6 +1905,91 @@
 	.ratel-stop {
 		background: var(--text-error) !important;
 		color: #fff !important;
+	}
+
+	/* 权限档位 hint — 对齐原型 .hint / .perm-seg */
+	.ratel-perm-hint {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 10px;
+		font-size: 10.5px;
+		color: var(--text-faint);
+		padding: 0 4px;
+		min-height: 22px;
+	}
+
+	.ratel-perm-keys {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.ratel-perm-desc {
+		color: var(--text-faint);
+	}
+
+	.ratel-perm-hint[data-level='auto'] .ratel-perm-desc {
+		color: var(--ratel-cite, var(--interactive-accent));
+	}
+
+	.ratel-perm-hint[data-level='danger'] .ratel-perm-desc {
+		color: var(--text-error);
+	}
+
+	.ratel-perm-seg {
+		display: inline-flex;
+		align-items: stretch;
+		flex-shrink: 0;
+		border: 1px solid var(--background-modifier-border);
+		border-radius: 999px;
+		overflow: hidden;
+		background: color-mix(in srgb, var(--background-primary) 82%, transparent);
+	}
+
+	.ratel-perm-seg button {
+		appearance: none;
+		border: none;
+		background: transparent;
+		color: var(--text-faint);
+		font: inherit;
+		font-size: 10.5px;
+		font-weight: 550;
+		letter-spacing: 0.02em;
+		padding: 3px 9px;
+		cursor: pointer;
+		line-height: 1.2;
+		transition: color 0.12s, background 0.12s;
+	}
+
+	.ratel-perm-seg button + button {
+		border-left: 1px solid var(--background-modifier-border);
+	}
+
+	.ratel-perm-seg button:hover {
+		color: var(--text-muted);
+		background: color-mix(in srgb, var(--text-normal) 4%, transparent);
+	}
+
+	.ratel-perm-seg button.is-active[data-level='safe'] {
+		color: var(--text-success);
+		background: color-mix(in srgb, var(--text-success) 14%, transparent);
+	}
+
+	.ratel-perm-seg button.is-active[data-level='auto'] {
+		color: var(--ratel-cite, var(--interactive-accent));
+		background: var(--ratel-copper-soft);
+	}
+
+	.ratel-perm-seg button.is-active[data-level='danger'] {
+		color: var(--text-error);
+		background: color-mix(in srgb, var(--text-error) 14%, transparent);
+	}
+
+	.ratel-perm-seg button:focus-visible {
+		outline: none;
+		box-shadow: inset 0 0 0 1px var(--ratel-copper-glow);
 	}
 
 	@media (prefers-reduced-motion: reduce) {

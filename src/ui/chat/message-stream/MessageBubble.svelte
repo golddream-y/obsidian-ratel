@@ -24,17 +24,20 @@
 	 * @param msg - 消息对象(含 segments / attachments / searchResults / chatError)
 	 * @param isLast - 是否消息流中最后一条(影响流式 think/text 段的 streaming 标记)
 	 * @param isRunning - Agent Loop 是否运行中
+	 * @param navFlash - 进度轨跳转后的短暂高亮
 	 */
 	let {
 		msg,
 		isLast,
 		isRunning,
 		onOpenPath,
+		navFlash = false,
 	}: {
 		msg: Message;
 		isLast: boolean;
 		isRunning: boolean;
 		onOpenPath: (path: string) => void;
+		navFlash?: boolean;
 	} = $props();
 
 	const isAssistantStreaming = $derived(isLast && isRunning && msg.role === 'assistant');
@@ -55,6 +58,8 @@
 	class="ratel-msg"
 	class:ratel-msg-user={msg.role === 'user'}
 	class:ratel-msg-assistant={msg.role === 'assistant'}
+	class:ratel-msg-nav-flash={navFlash}
+	data-msg-id={msg.id}
 >
 	{#if msg.attachments && msg.attachments.length > 0}
 		<div class="ratel-msg-imgs">
@@ -129,6 +134,13 @@
 		display: flex;
 		flex-direction: column;
 		gap: 10px;
+	}
+
+	/* 进度轨跳转反馈：短暂描边 + 淡底 */
+	.ratel-msg-nav-flash {
+		outline: 1px solid color-mix(in srgb, var(--interactive-accent) 55%, transparent);
+		background: color-mix(in srgb, var(--interactive-accent) 10%, transparent);
+		transition: background 0.35s ease, outline-color 0.35s ease;
 	}
 
 	.ratel-msg-user {

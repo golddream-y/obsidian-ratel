@@ -19,7 +19,7 @@ import type RatelVaultPlugin from './main';
 import { devLogger } from './logging/dev-logger';
 // 关键路径:声明式 settings 每次渲染重新调用 tNow,无需 store 订阅;applyLangPreference 用于 Language 下拉切换
 import { tNow, applyLangPreference, type LangPreference, type StringKey } from './i18n';
-import type { ToolPermission } from './core/tool-permissions';
+import type { ToolPermission, ToolPermissionLevel } from './core/tool-permissions';
 import {
 	hasChatApiKey,
 	requiresChatApiKey,
@@ -117,8 +117,11 @@ export interface RatelVaultSettings {
 
 	// Tool permissions (S-VAULT-TOOLS)
 	toolPermissions: Record<string, ToolPermission>;
+	/** 工具权限档位 — safe/auto/danger；取代产品语义上的 trustMode */
+	toolPermissionLevel: ToolPermissionLevel;
 	// 关键路径:Prompt section 级覆盖(来自 Composer registry);空对象 = 全部用 zh.ts 默认。
 	promptOverrides: OverrideMap;
+	/** @deprecated 迁移后由 toolPermissionLevel 取代；读盘兼容 */
 	trustMode: boolean;
 
 	// Memory(P-MEMORY-UI — 用户记忆系统 6 个配置项,见 spec §8.3)
@@ -146,6 +149,12 @@ export interface RatelVaultSettings {
 	uiColorScheme: UiColorScheme;
 	/** 强调色:follow 跟随 Obsidian,其余为 Material 预设 id */
 	uiAccent: UiAccentId;
+
+	// 关键路径(P-CHAT-NAV — 对话位置轨开关与靠边)
+	/** 是否在消息区显示阅读位置轨与回到底部 */
+	chatNavRailEnabled: boolean;
+	/** 位置轨吸附在消息区左侧或右侧 */
+	chatNavRailSide: 'left' | 'right';
 
 	/** MCP Server 列表；默认空 = 零出站 */
 	mcpServers: McpServerConfig[];
@@ -229,6 +238,7 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 	},
 	// 关键路径:默认无任何 override,使用 zh.ts 内置中文模板。
 	promptOverrides: {},
+	toolPermissionLevel: 'safe',
 	trustMode: false,
 
 	// Memory — 6 个配置项默认值(spec §8.3)
@@ -251,6 +261,9 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 	// 关键路径:默认跟随 Obsidian 主题配色与强调色。
 	uiColorScheme: 'auto',
 	uiAccent: 'follow',
+	// 关键路径:默认开启位置轨并靠右,贴合常见阅读滚动条习惯。
+	chatNavRailEnabled: true,
+	chatNavRailSide: 'right',
 	// 关键路径:默认空列表 = 零 MCP 出站（ADR-014）
 	mcpServers: [],
 	mcpApprovedSpawns: [],
@@ -748,6 +761,23 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 							renderAppearanceSettings(el, this);
 						},
 					},
+					{
+						name: tNow('settings.chatNavRailEnabled.name'),
+						desc: tNow('settings.chatNavRailEnabled.desc'),
+						control: { type: 'toggle', key: 'chatNavRailEnabled' },
+					},
+					{
+						name: tNow('settings.chatNavRailSide.name'),
+						desc: tNow('settings.chatNavRailSide.desc'),
+						control: {
+							type: 'dropdown',
+							key: 'chatNavRailSide',
+							options: {
+								left: tNow('settings.chatNavRailSide.left'),
+								right: tNow('settings.chatNavRailSide.right'),
+							},
+						},
+					},
 				],
 			},
 
@@ -926,9 +956,17 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 
 		const items: SettingGroupItem[] = [
 			{
-				name: tNow('settings.developer.trustMode.name'),
-				desc: tNow('settings.developer.trustMode.desc'),
-				control: { type: 'toggle', key: 'trustMode' },
+				name: tNow('settings.toolPermissionLevel.name'),
+				desc: tNow('settings.toolPermissionLevel.desc'),
+				control: {
+					type: 'dropdown',
+					key: 'toolPermissionLevel',
+					options: {
+						safe: tNow('settings.toolPermissionLevel.safe'),
+						auto: tNow('settings.toolPermissionLevel.auto'),
+						danger: tNow('settings.toolPermissionLevel.danger'),
+					},
+				},
 			},
 		];
 
@@ -1133,6 +1171,16 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 		} else if (key === 'contextLengthPreset') {
 			// 修复:下拉只写 preset 时 chatModelMaxTokens 仍是旧值,抽屉上限不跟着变
 			applyContextLengthPreset(this.plugin.settings, value as ContextLengthPresetId);
+		} else if (key === 'toolPermissionLevel') {
+			// 关键路径:仅接受三档枚举,防止 UI 写入非法字符串
+			if (value === 'safe' || value === 'auto' || value === 'danger') {
+				this.plugin.settings.toolPermissionLevel = value;
+			}
+		} else if (key === 'chatNavRailSide') {
+			// 关键路径:仅接受 left|right,防止 UI 写入非法字符串
+			if (value === 'left' || value === 'right') {
+				this.plugin.settings.chatNavRailSide = value;
+			}
 		} else {
 			(this.plugin.settings as unknown as Record<string, unknown>)[key] = value;
 		}

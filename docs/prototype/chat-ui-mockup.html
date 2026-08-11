@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Ratel Chat — Prototype v3.1 · Sessions</title>
+  <title>Ratel Chat — Prototype v3.4 · P1–P7 align</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -61,6 +61,7 @@
       flex-direction: column;
       gap: var(--space-3);
       align-items: center;
+      --obsidian-status-bar-height: 22px;
     }
 
     .stage-label {
@@ -71,19 +72,59 @@
       font-weight: 500;
     }
 
-    /* ==================== Frame ==================== */
-    .chat {
-      width: min(420px, 100vw - 40px);
-      height: min(760px, 92vh);
+    .chat-shell {
       display: flex;
       flex-direction: column;
-      background: linear-gradient(180deg, var(--ink-elevated) 0%, var(--ink) 40%);
-      border: 1px solid var(--line-strong);
+      width: min(420px, 100vw - 40px);
       border-radius: 16px;
       overflow: hidden;
+      border: 1px solid var(--line-strong);
       box-shadow:
         0 0 0 1px rgba(0, 0, 0, 0.4),
         0 24px 64px rgba(0, 0, 0, 0.55);
+    }
+
+    /* ==================== Frame ==================== */
+    .chat {
+      width: 100%;
+      height: min(760px, calc(92vh - var(--obsidian-status-bar-height) - 8px));
+      display: flex;
+      flex-direction: column;
+      background: linear-gradient(180deg, var(--ink-elevated) 0%, var(--ink) 40%);
+      border: none;
+      border-radius: 0;
+      overflow: hidden;
+      box-shadow: none;
+    }
+
+    /* 模拟 Obsidian 窗口底栏 — 原型里看得见，composer 已留同高 padding */
+    .obsidian-status-bar {
+      height: var(--obsidian-status-bar-height);
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 10px;
+      font-size: 11px;
+      color: rgba(243, 236, 224, 0.45);
+      background: #161512;
+      border-top: 1px solid rgba(245, 236, 220, 0.08);
+      font-family: var(--font);
+    }
+
+    .obsidian-status-bar .sb-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--sage);
+      flex-shrink: 0;
+    }
+
+    .obsidian-status-bar .sb-spacer { flex: 1; }
+    .obsidian-status-bar .sb-mono {
+      font-family: var(--mono);
+      font-size: 10px;
+      opacity: 0.85;
     }
 
     /* ==================== Header — 极简 ==================== */
@@ -203,6 +244,50 @@
 
     .session-chip.is-loading .session-chip-ico {
       animation: session-spin 0.8s linear infinite;
+    }
+
+    .session-chip-group {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      min-width: 0;
+      flex-shrink: 1;
+    }
+
+    .session-edit {
+      width: 28px;
+      height: 28px;
+      min-height: 28px;
+      padding: 0;
+      border: 1px solid transparent;
+      border-radius: 999px;
+      background: transparent;
+      color: var(--paper-faint);
+      cursor: pointer;
+      font-size: 13px;
+      line-height: 1;
+      opacity: 0.55;
+      flex-shrink: 0;
+      transition: color 0.15s, opacity 0.15s, background 0.15s, border-color 0.15s;
+    }
+
+    .session-chip-group:hover .session-edit,
+    .session-edit:hover:not(:disabled),
+    .session-edit:focus-visible:not(:disabled) {
+      opacity: 1;
+      color: var(--paper-muted);
+    }
+
+    .session-edit:hover:not(:disabled),
+    .session-edit:focus-visible:not(:disabled) {
+      color: var(--copper);
+      border-color: var(--line-strong);
+      background: var(--copper-soft);
+    }
+
+    .session-edit:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
     }
 
     /* 兼容旧类名（若脚本仍引用） */
@@ -334,17 +419,6 @@
 
     .session-row:hover .del { opacity: 1; }
     .session-row .del:hover { color: var(--rose); background: var(--rose-soft); }
-
-    .proto-note {
-      max-width: 420px;
-      font-size: 12px;
-      line-height: 1.55;
-      color: var(--paper-faint);
-      text-align: center;
-      padding: 0 8px;
-    }
-
-    .proto-note strong { color: var(--paper-muted); font-weight: 550; }
 
     /* ==================== 会话切换：消息区 shell + loading ==================== */
     .messages-shell {
@@ -548,6 +622,20 @@
       font-family: var(--mono);
     }
 
+    .trace-mcp-badge {
+      flex-shrink: 0;
+      font-size: 9px;
+      line-height: 1;
+      letter-spacing: 0.04em;
+      padding: 2px 5px;
+      border-radius: 3px;
+      border: 1px solid var(--line);
+      color: var(--paper-faint);
+      background: rgba(0, 0, 0, 0.2);
+      font-family: var(--mono);
+      font-weight: 500;
+    }
+
     .trace-detail {
       display: none;
       margin: 0 10px 6px 26px;
@@ -564,11 +652,56 @@
 
     .trace-item.open + .trace-detail { display: block; }
 
-    /* 图谱引用 — 笔记芯片 */
+    /* 图谱引用 — 默认折叠「来源 N 篇」 */
+    .cite-sources {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 4px;
+    }
+
+    .cite-toggle {
+      display: inline-flex;
+      align-items: center;
+      align-self: flex-start;
+      gap: 6px;
+      padding: 4px 10px;
+      border: 1px solid var(--line-strong);
+      border-radius: 999px;
+      background: var(--ink-soft);
+      color: var(--paper-muted);
+      font-size: 11.5px;
+      font-weight: 500;
+      font-family: inherit;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s, color 0.15s;
+    }
+
+    .cite-toggle:hover {
+      color: var(--paper);
+      border-color: var(--copper-glow);
+      background: rgba(201, 149, 108, 0.12);
+    }
+
+    .cite-toggle-caret {
+      font-size: 10px;
+      opacity: 0.75;
+      line-height: 1;
+    }
+
+    .cite-sources.is-expanded .cite-toggle-caret { transform: none; }
+
     .citations {
       display: flex;
       flex-wrap: wrap;
       gap: 6px;
+    }
+
+    .cite-sources:not(.is-expanded) .citations {
+      display: none;
+    }
+
+    .citations.standalone {
       margin-top: 4px;
     }
 
@@ -621,6 +754,8 @@
       background: rgba(18, 17, 15, 0.92);
       backdrop-filter: blur(16px);
       -webkit-backdrop-filter: blur(16px);
+      /* 模拟 Obsidian 底部状态栏占位，避免 hint / 权限档被挡住 */
+      padding-bottom: var(--obsidian-status-bar-height, 22px);
     }
 
     /* 状态条 — 贴在输入上方，极薄，不抢戏 */
@@ -686,7 +821,7 @@
     }
 
     .drawer.open {
-      max-height: 280px;
+      max-height: 340px;
       border-top-width: 1px;
     }
 
@@ -754,6 +889,42 @@
       color: var(--copper);
     }
 
+    .drawer-actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px 18px;
+      margin-top: 4px;
+      padding-top: 10px;
+      border-top: 1px solid var(--line);
+    }
+
+    .drawer-action {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 2px 0;
+      border: none;
+      background: transparent;
+      color: var(--paper-faint);
+      font-size: 11.5px;
+      font-family: inherit;
+      line-height: 1.45;
+      cursor: pointer;
+      transition: color 0.15s;
+    }
+
+    .drawer-action:hover {
+      color: var(--paper-muted);
+    }
+
+    .drawer-action-ico {
+      flex-shrink: 0;
+      opacity: 0.9;
+      font-size: 12px;
+      line-height: 1;
+    }
+
     /* 输入 */
     .input-pad {
       padding: 0 14px 14px;
@@ -777,6 +948,67 @@
       background: var(--sage-soft);
       color: var(--sage);
       border: 1px solid rgba(143, 175, 138, 0.25);
+    }
+
+    .attach-row {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding: 2px 0 4px;
+      flex-shrink: 0;
+    }
+
+    .attach-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      max-width: 100%;
+      padding: 4px 8px 4px 4px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--line-strong);
+      background: var(--ink-soft);
+      flex-shrink: 0;
+    }
+
+    .attach-chip .thumb {
+      width: 40px;
+      height: 40px;
+      border-radius: 4px;
+      object-fit: cover;
+      border: 1px solid var(--line);
+      flex-shrink: 0;
+    }
+
+    .attach-chip .name {
+      font-size: 11px;
+      font-family: var(--mono);
+      color: var(--paper-muted);
+      max-width: 120px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .attach-chip .tokens {
+      font-size: 9px;
+      font-family: var(--mono);
+      color: var(--paper-faint);
+      padding: 2px 6px;
+      border-radius: 999px;
+      background: rgba(0, 0, 0, 0.25);
+    }
+
+    .attach-chip .remove {
+      width: 18px;
+      height: 18px;
+      border: none;
+      border-radius: 50%;
+      background: rgba(0, 0, 0, 0.45);
+      color: var(--paper);
+      font-size: 11px;
+      line-height: 1;
+      cursor: pointer;
+      flex-shrink: 0;
     }
 
     .composer-box {
@@ -848,10 +1080,95 @@
     .send:hover { filter: brightness(1.08); }
     .send:active { transform: scale(0.96); }
 
+    .send.is-stop {
+      background: var(--rose);
+      color: #fff;
+    }
+
+    .send.is-stop:hover { filter: brightness(1.06); }
+
+    /* 会话重命名 Modal（P1 示意） */
+    .rename-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.55);
+      padding: 24px;
+    }
+
+    .rename-backdrop.open { display: flex; }
+
+    .rename-modal {
+      width: min(360px, 100%);
+      padding: 16px 18px;
+      border-radius: 12px;
+      border: 1px solid var(--line-strong);
+      background: var(--ink-elevated);
+      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+    }
+
+    .rename-modal h3 {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--paper);
+      margin-bottom: 10px;
+    }
+
+    .rename-modal input {
+      width: 100%;
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid var(--line-strong);
+      background: var(--ink-soft);
+      color: var(--paper);
+      font-family: inherit;
+      font-size: 13px;
+      margin-bottom: 12px;
+    }
+
+    .rename-modal .rename-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .rename-modal button {
+      padding: 6px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--line-strong);
+      background: transparent;
+      color: var(--paper-muted);
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .rename-modal button.primary {
+      background: var(--copper);
+      color: var(--ink);
+      border-color: transparent;
+      font-weight: 600;
+    }
+
+    /* 权限档位 — hint 行（方案 2） */
     .hint {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
       font-size: 10.5px;
       color: var(--paper-faint);
       padding: 0 4px;
+      min-height: 22px;
+    }
+
+    .hint-keys {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .hint kbd {
@@ -862,6 +1179,68 @@
       border: 1px solid var(--line);
       color: var(--paper-faint);
     }
+
+    .perm-seg {
+      display: inline-flex;
+      align-items: stretch;
+      flex-shrink: 0;
+      border: 1px solid var(--line-strong);
+      border-radius: 999px;
+      overflow: hidden;
+      background: rgba(0, 0, 0, 0.18);
+    }
+
+    .perm-seg button {
+      appearance: none;
+      border: none;
+      background: transparent;
+      color: var(--paper-faint);
+      font: inherit;
+      font-size: 10.5px;
+      font-weight: 550;
+      letter-spacing: 0.02em;
+      padding: 3px 9px;
+      cursor: pointer;
+      line-height: 1.2;
+      transition: color 0.12s, background 0.12s;
+    }
+
+    .perm-seg button + button {
+      border-left: 1px solid var(--line);
+    }
+
+    .perm-seg button:hover {
+      color: var(--paper-muted);
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .perm-seg button.is-active[data-level="safe"] {
+      color: var(--sage);
+      background: var(--sage-soft);
+    }
+
+    .perm-seg button.is-active[data-level="auto"] {
+      color: var(--copper);
+      background: var(--copper-soft);
+    }
+
+    .perm-seg button.is-active[data-level="danger"] {
+      color: var(--rose);
+      background: var(--rose-soft);
+    }
+
+    .perm-seg button:focus-visible {
+      outline: none;
+      box-shadow: inset 0 0 0 1px var(--copper-glow);
+    }
+
+    .hint-desc {
+      color: var(--paper-faint);
+    }
+
+    .hint[data-level="safe"] .hint-desc { color: var(--paper-faint); }
+    .hint[data-level="auto"] .hint-desc { color: var(--copper); }
+    .hint[data-level="danger"] .hint-desc { color: var(--rose); }
 
     /* Slash */
     .slash {
@@ -921,8 +1300,9 @@
 </head>
 <body>
   <div class="stage">
-    <div class="stage-label">Ratel · Chat prototype v3.1 · Sessions · 双轨标题 chip</div>
+    <div class="stage-label" onclick="toggleSendStopDemo()" title="点击切换发送↑ / 停止■ 演示">Ratel · Chat</div>
 
+    <div class="chat-shell">
     <div class="chat">
       <!-- Header：品牌 + 历史小图标 + 模型 -->
       <header class="header">
@@ -931,6 +1311,7 @@
           <div class="brand-sub">graph-native</div>
         </div>
         <div class="header-actions">
+          <div class="session-chip-group">
           <button
             type="button"
             class="session-chip"
@@ -947,6 +1328,14 @@
               <path d="M12 8v4l2.5 1.5"></path>
             </svg>
           </button>
+          <button
+            type="button"
+            class="session-edit"
+            title="重命名会话"
+            aria-label="重命名会话"
+            onclick="openRenameModal(event)"
+          >✎</button>
+          </div>
           <button type="button" class="model-chip" title="查看模型">deepseek-v4-flash</button>
 
           <div class="session-menu open" id="sessionMenu" role="menu" aria-label="最近会话">
@@ -1000,6 +1389,14 @@
             </div>
             <div class="trace-detail">outgoing: 6 · backlinks: 12 · unresolved: 1</div>
 
+            <div class="trace-item done" onclick="this.classList.toggle('open')">
+              <span class="ico">✓</span>
+              <span class="trace-mcp-badge">MCP</span>
+              <span class="label">context7 · query-docs</span>
+              <span class="meta">2</span>
+            </div>
+            <div class="trace-detail">server: context7 · tool: query-docs · latency 420ms</div>
+
             <div class="trace-item think" onclick="this.classList.toggle('open')">
               <span class="ico">◇</span>
               <span class="label">思考 · 合并引用并写背景</span>
@@ -1014,6 +1411,11 @@
             图谱上 <em style="font-style:normal;color:var(--copper)">产品规划/MOC</em> 仍有一处未解析链接，建议补笔记。
           </div>
 
+          <div class="cite-sources" id="citeSources">
+            <button type="button" class="cite-toggle" id="citeToggle" aria-expanded="false" onclick="toggleCiteSources(event)">
+              <span class="cite-toggle-label">来源 3 篇</span>
+              <span class="cite-toggle-caret" id="citeCaret" aria-hidden="true">▸</span>
+            </button>
           <div class="citations">
             <button type="button" class="cite-chip">
               <span class="n">1</span>
@@ -1031,13 +1433,14 @@
               <span class="score">图</span>
             </button>
           </div>
+          </div>
         </div>
       </div>
       </div>
 
       <!-- Composer：状态沉入底部 -->
       <div class="composer">
-        <div class="status-strip" id="statusStrip" onclick="toggleDrawer()">
+        <div class="status-strip open" id="statusStrip" onclick="toggleDrawer()">
           <span class="dot" id="statusDot"></span>
           <span class="text" id="statusText">就绪</span>
           <span class="spacer"></span>
@@ -1045,7 +1448,7 @@
           <span class="chev">▲</span>
         </div>
 
-        <div class="drawer" id="drawer">
+        <div class="drawer open" id="drawer">
           <div class="drawer-inner">
             <div class="drawer-block">
               <h4>索引</h4>
@@ -1059,6 +1462,24 @@
               <div class="meter"><i id="meterFill" style="width:12%"></i></div>
               <button type="button" class="ghost-btn" onclick="event.stopPropagation()">压缩上下文</button>
             </div>
+            <nav class="drawer-actions" aria-label="抽屉快捷入口">
+              <button type="button" class="drawer-action" onclick="event.stopPropagation()">
+                <span class="drawer-action-ico" aria-hidden="true">▣</span>
+                <span>记忆</span>
+              </button>
+              <button type="button" class="drawer-action" onclick="event.stopPropagation()">
+                <span class="drawer-action-ico" aria-hidden="true">⎘</span>
+                <span>MCP</span>
+              </button>
+              <button type="button" class="drawer-action" onclick="event.stopPropagation()">
+                <span class="drawer-action-ico" aria-hidden="true">✉</span>
+                <span>反馈</span>
+              </button>
+              <button type="button" class="drawer-action" onclick="event.stopPropagation()">
+                <span class="drawer-action-ico" aria-hidden="true">♡</span>
+                <span>赞助</span>
+              </button>
+            </nav>
           </div>
         </div>
 
@@ -1075,24 +1496,173 @@
             <span class="mention-chip">@产品规划</span>
           </div>
 
+          <div class="attach-row" id="attachRow">
+            <div class="attach-chip" title="diagram-sketch.png">
+              <img class="thumb" src="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80&h=80&fit=crop" alt="">
+              <span class="name">diagram-sketch.png</span>
+              <span class="tokens">842 tok</span>
+              <button type="button" class="remove" title="移除附件" aria-label="移除 diagram-sketch.png">×</button>
+            </div>
+          </div>
+
           <div class="composer-box">
             <button type="button" class="icon-btn" title="附件">+</button>
             <textarea id="chatInput" rows="1" placeholder="问笔记、派任务，或输入 / …"></textarea>
-            <button type="button" class="send" onclick="simulateSend()" title="发送">↑</button>
+            <button type="button" class="send" id="sendBtn" onclick="handleSendClick()" title="发送" aria-label="发送">↑</button>
           </div>
-          <div class="hint">Enter 发送 · <kbd>Shift</kbd>+<kbd>Enter</kbd> 换行</div>
+          <div class="hint" id="permHint" data-level="safe">
+            <div class="perm-seg" role="radiogroup" aria-label="工具权限档位">
+              <button type="button" role="radio" data-level="safe" class="is-active" aria-checked="true" title="安全：读写删都会询问" onclick="setPermLevel('safe', event)">安全</button>
+              <button type="button" role="radio" data-level="auto" aria-checked="false" title="自动：读写放行，删除仍确认" onclick="setPermLevel('auto', event)">自动</button>
+              <button type="button" role="radio" data-level="danger" aria-checked="false" title="危险：全部放行，不再确认" onclick="setPermLevel('danger', event)">危险</button>
+            </div>
+            <span class="hint-keys">
+              <span class="hint-desc" id="permDesc">读写删都会询问</span>
+              · Enter 发送 · <kbd>Shift</kbd>+<kbd>Enter</kbd> 换行
+            </span>
+          </div>
         </div>
       </div>
     </div>
+    <div class="obsidian-status-bar" aria-hidden="true">
+      <span class="sb-dot"></span>
+      <span>Obsidian</span>
+      <span class="sb-spacer"></span>
+      <span class="sb-mono">word count · backlinks</span>
+    </div>
+    </div>
+  </div>
 
-    <p class="proto-note">
-      <strong>确认点（方案 A）：</strong>Header 右侧是「短标题 + 时钟」合一 chip（max-width ~132px，省略号）。
-      下拉每行：短标题 + 正常标题（双轨；LLM 生成时分别限长，如短 ≤12 / 正常 ≤40）。
-      切换会话时：消息区淡出 → loading → 淡入；chip 图标转圈。
-    </p>
+  <!-- P2: 生成中切换/新建会话时产品弹 session-switch-confirm；原型不实现该交互。 -->
+  <div class="rename-backdrop" id="renameBackdrop" onclick="closeRenameModal()">
+    <div class="rename-modal" role="dialog" aria-labelledby="renameTitle" onclick="event.stopPropagation()">
+      <h3 id="renameTitle">重命名会话</h3>
+      <input type="text" id="renameInput" value="性能预算与 CDN 背景说明" aria-label="会话标题">
+      <div class="rename-actions">
+        <button type="button" onclick="closeRenameModal()">取消</button>
+        <button type="button" class="primary" onclick="applyRenameModal()">保存</button>
+      </div>
+    </div>
   </div>
 
   <script>
+    /* —— 工具权限档位（方案 2：hint 行三段） —— */
+    const PERM_LEVELS = {
+      safe: {
+        label: '安全',
+        desc: '读写删都会询问',
+      },
+      auto: {
+        label: '自动',
+        desc: '读写放行 · 删除仍确认',
+      },
+      danger: {
+        label: '危险',
+        desc: '全部放行 · 不再确认',
+      },
+    };
+
+    let permLevel = 'safe';
+
+    function setPermLevel(level, ev) {
+      ev?.stopPropagation?.();
+      if (!PERM_LEVELS[level]) return;
+      permLevel = level;
+      const hint = document.getElementById('permHint');
+      const desc = document.getElementById('permDesc');
+      hint.dataset.level = level;
+      desc.textContent = PERM_LEVELS[level].desc;
+      hint.querySelectorAll('.perm-seg button').forEach((btn) => {
+        const on = btn.dataset.level === level;
+        btn.classList.toggle('is-active', on);
+        btn.setAttribute('aria-checked', on ? 'true' : 'false');
+      });
+    }
+
+    function toggleCiteSources(ev) {
+      const btn = ev?.currentTarget || document.getElementById('citeToggle');
+      const wrap = btn?.closest?.('.cite-sources') || document.getElementById('citeSources');
+      if (!wrap || !btn) return;
+      const open = wrap.classList.toggle('is-expanded');
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      const caret = btn.querySelector('.cite-toggle-caret');
+      if (caret) caret.textContent = open ? '▾' : '▸';
+    }
+
+    function openRenameModal(ev) {
+      ev?.stopPropagation?.();
+      closeSessionMenu();
+      const s = currentSession();
+      const input = document.getElementById('renameInput');
+      if (input && s) input.value = s.title || s.shortTitle || '';
+      document.getElementById('renameBackdrop').classList.add('open');
+      if (input) {
+        input.focus();
+        input.select();
+      }
+    }
+
+    function closeRenameModal() {
+      document.getElementById('renameBackdrop').classList.remove('open');
+    }
+
+    function applyRenameModal() {
+      const input = document.getElementById('renameInput');
+      const s = currentSession();
+      if (!input || !s) {
+        closeRenameModal();
+        return;
+      }
+      const title = input.value.trim() || '新对话';
+      s.title = clipTitle(title, FULL_TITLE_MAX);
+      s.shortTitle = deriveShort(s.title);
+      syncSessionChip();
+      renderSessionList();
+      closeRenameModal();
+    }
+
+    let protoGenerating = false;
+
+    function setSendButtonStop(on) {
+      const btn = document.getElementById('sendBtn');
+      if (!btn) return;
+      protoGenerating = on;
+      btn.classList.toggle('is-stop', on);
+      btn.textContent = on ? '■' : '↑';
+      btn.title = on ? '停止' : '发送';
+      btn.setAttribute('aria-label', on ? '停止' : '发送');
+    }
+
+    function toggleSendStopDemo() {
+      if (protoGenerating) {
+        setSendButtonStop(false);
+        setBusy(false, '就绪');
+        return;
+      }
+      setSendButtonStop(true);
+      setBusy(true, '生成中…');
+    }
+
+    function handleSendClick() {
+      if (protoGenerating) {
+        setSendButtonStop(false);
+        setBusy(false, '就绪');
+        return;
+      }
+      simulateSend();
+    }
+
+    function citeSourcesHtml(n, chipsInner) {
+      return `
+        <div class="cite-sources" id="citeSources">
+          <button type="button" class="cite-toggle" aria-expanded="false" onclick="toggleCiteSources(event)">
+            <span class="cite-toggle-label">来源 ${n} 篇</span>
+            <span class="cite-toggle-caret" aria-hidden="true">▸</span>
+          </button>
+          <div class="citations">${chipsInner}</div>
+        </div>`;
+    }
+
     /* —— 会话原型：双轨标题 + 短标题 chip —— */
     /** Header 短标题上限（字）；正常标题上限（字）— 落地时 LLM / 截断共用 */
     const SHORT_TITLE_MAX = 12;
@@ -1238,6 +1808,7 @@
     }
 
     async function protoSwitchSession(id) {
+      // P2: 产品侧生成中切换会话会弹 session-switch-confirm；原型省略该确认流。
       if (switching || id === currentSessionId) {
         closeSessionMenu();
         return;
@@ -1355,6 +1926,7 @@
       messages.scrollTop = messages.scrollHeight;
 
       setBusy(true, '检索中…');
+      setSendButtonStop(true);
 
       const asst = document.createElement('div');
       asst.className = 'turn assistant';
@@ -1374,6 +1946,8 @@
 
       setTimeout(() => {
         setBusy(false, '就绪');
+        setSendButtonStop(false);
+        const chip = `<button type="button" class="cite-chip"><span class="n">1</span><span class="path">相关笔记.md</span></button>`;
         asst.innerHTML = `
           <div class="trace">
             <div class="trace-item done" onclick="this.classList.toggle('open')">
@@ -1384,9 +1958,7 @@
             <div class="trace-detail">query: ${text.replace(/</g, '&lt;')}</div>
           </div>
           <div class="assistant-prose">已根据库内笔记整理了一版要点。需要我写成新笔记并链回 MOC 吗？</div>
-          <div class="citations">
-            <button type="button" class="cite-chip"><span class="n">1</span><span class="path">相关笔记.md</span></button>
-          </div>`;
+          ${citeSourcesHtml(1, chip)}`;
         document.getElementById('ctxPct').textContent = '14%';
         document.getElementById('meterFill').style.width = '14%';
         messages.scrollTop = messages.scrollHeight;

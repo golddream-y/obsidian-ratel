@@ -10,9 +10,31 @@ import { parseMcpToolName } from '../ui/mcp/parse-mcp-tool-name';
 
 export type ToolPermission = 'allow' | 'ask' | 'deny';
 
+export type ToolPermissionLevel = 'safe' | 'auto' | 'danger';
+
 export interface ToolPermissionSettings {
-	trustMode: boolean;
+	/** @deprecated 迁移期兼容；优先用 toolPermissionLevel */
+	trustMode?: boolean;
+	toolPermissionLevel?: ToolPermissionLevel;
 	toolPermissions: Record<string, ToolPermission>;
+}
+
+const DESTRUCTIVE_TOOLS = new Set(['delete_note', 'forget_memory']);
+
+/**
+ * 破坏性工具 — auto 档仍需确认；MCP 一律视为破坏性。
+ *
+ * @param name - 工具名（含 mcp__…）
+ */
+export function isDestructiveTool(name: string): boolean {
+	if (name.startsWith('mcp__')) return true;
+	return DESTRUCTIVE_TOOLS.has(name);
+}
+
+function effectiveLevel(settings: ToolPermissionSettings): ToolPermissionLevel {
+	if (settings.toolPermissionLevel) return settings.toolPermissionLevel;
+	if (settings.trustMode) return 'danger';
+	return 'safe';
 }
 
 export type ToolConfirmResult = 'allow' | 'session' | 'deny';
@@ -92,16 +114,19 @@ export async function resolveToolPermission(
 	grants: ToolPermissionSessionGrants,
 	confirm: (toolCall: ToolCall) => Promise<ToolConfirmResult>,
 ): Promise<void> {
-	if (settings.trustMode) return;
-
 	const path = extractToolPath(toolCall);
-	if (grants.has(toolCall.name, path)) return;
-
 	const perm: ToolPermission = settings.toolPermissions[toolCall.name] ?? 'ask';
-	if (perm === 'allow') return;
+	// 关键路径: deny 优先于档位与会话 grant
 	if (perm === 'deny') {
 		throw new Error(tNow('error.tool.rejectedDisabled', { toolName: toolCall.name }));
 	}
+	if (grants.has(toolCall.name, path)) return;
+
+	const level = effectiveLevel(settings);
+	if (level === 'danger') return;
+	if (level === 'auto' && !isDestructiveTool(toolCall.name)) return;
+
+	if (perm === 'allow') return;
 
 	const decision = await confirm(toolCall);
 	if (decision === 'deny') {
