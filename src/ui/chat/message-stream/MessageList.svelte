@@ -8,7 +8,10 @@
 <script lang="ts">
 	import type { Message } from './types';
 	import MessageBubble from './MessageBubble.svelte';
-	import { t } from '../../../i18n';
+	import { t, type StringKey } from '../../../i18n';
+	import ThinkingOrb from '../../orbs/ThinkingOrb.svelte';
+	import { mapOrbState, type RatelOrbBusyKind } from '../../orbs/map-orb-state';
+	import type { OrbState } from '../../orbs/types';
 
 	/**
 	 * MessageList props。
@@ -26,6 +29,8 @@
 		onScroll,
 		onOpenPath,
 		highlightId = null,
+		/** 会话最近一次检索结果 — 跟进气泡正文 [n] 挂钩回退 */
+		citeSearchFallback = null,
 	}: {
 		messages: Message[];
 		isRunning: boolean;
@@ -33,30 +38,49 @@
 		onScroll?: (el: HTMLDivElement) => void;
 		onOpenPath: (path: string) => void;
 		highlightId?: string | null;
+		citeSearchFallback?: Message['searchResults'] | null;
 	} = $props();
 
-	/*
-	 * 关键路径:思考指示器 — 仅在 LLM 空窗期(无内容且无 calling 工具)显示。
-	 * 有 calling 状态的 tool-call 时,tool-call 的 pulse dot 已是思考指示,不重复显示独立块。
+	const ORB_LABEL: Record<OrbState, StringKey> = {
+		working: 'orb.state.working',
+		searching: 'orb.state.searching',
+		solving: 'orb.state.solving',
+		listening: 'orb.state.listening',
+		connecting: 'orb.state.connecting',
+		weaving: 'orb.state.weaving',
+		composing: 'orb.state.composing',
+		breathing: 'orb.state.breathing',
+		shaping: 'orb.state.shaping',
+	};
+
+	/**
+	 * 整段 Agent 回合都显示底部 orb(不再只在空窗期)。
+	 * 有 calling 工具时切到 working 动画,与工具行小 orb 语义一致。
 	 */
-	function showThinking(): boolean {
+	const showBusyOrb = $derived.by(() => {
 		if (!isRunning || messages.length === 0) return false;
+		return messages[messages.length - 1]!.role === 'assistant';
+	});
+
+	const busyKind = $derived.by((): RatelOrbBusyKind => {
+		if (!showBusyOrb) return 'thinking';
 		const last = messages[messages.length - 1]!;
-		if (last.role !== 'assistant') return false;
-		// segments 为空,或全部为空 text/think 段
-		const hasContent = last.segments.some(
-			(s) =>
-				(s.type === 'text' && s.text !== '') ||
-				(s.type === 'think' && s.text !== '') ||
-				s.type === 'tool',
-		);
-		if (hasContent) return false;
-		// 有 calling 状态的工具段时不显示(tool 段自身有 pulse)
-		const hasCallingTool = last.segments.some(
+		const calling = last.segments.some(
 			(s) => s.type === 'tool' && s.toolCall.status === 'calling',
 		);
-		return !hasCallingTool;
-	}
+		if (calling) {
+			const name = last.segments
+				.filter((s) => s.type === 'tool' && s.toolCall.status === 'calling')
+				.map((s) => (s.type === 'tool' ? s.toolCall.name : ''))
+				.join(' ');
+			// 检索类工具用 searching 动画
+			if (/search|检索|embed|index/i.test(name)) return 'search';
+			return 'tool';
+		}
+		return 'thinking';
+	});
+
+	const busyOrbState = $derived(mapOrbState(busyKind));
 </script>
 
 <div class="ratel-messages" bind:this={containerRef} onscroll={() => { if (containerRef) onScroll?.(containerRef); }}>
@@ -67,12 +91,13 @@
 			{isRunning}
 			{onOpenPath}
 			navFlash={msg.id === highlightId}
+			{citeSearchFallback}
 		/>
 	{/each}
-	{#if showThinking()}
+	{#if showBusyOrb}
 		<div class="ratel-typing">
-			<span class="ratel-typing-dot"></span>
-			<span class="ratel-typing-text">{$t('chat.typing')}</span>
+			<ThinkingOrb orbState={busyOrbState} size={24} />
+			<span class="ratel-typing-text">{$t(ORB_LABEL[busyOrbState])}</span>
 		</div>
 	{/if}
 </div>
@@ -113,26 +138,11 @@
 		font-family: var(--font-monospace);
 	}
 
-	.ratel-typing-dot {
-		width: 7px;
-		height: 7px;
-		border-radius: 50%;
-		background: var(--text-warning);
-		animation: ratel-pulse 1.2s infinite;
-		flex-shrink: 0;
-	}
-
 	.ratel-typing-text {
 		opacity: 0.85;
 	}
 
-	@keyframes ratel-pulse {
-		0%, 100% { opacity: 1; transform: scale(1); }
-		50% { opacity: 0.4; transform: scale(0.85); }
-	}
-
 	@media (prefers-reduced-motion: reduce) {
-		.ratel-typing-dot { animation: none; }
 		.ratel-messages { scroll-behavior: auto; }
 	}
 </style>

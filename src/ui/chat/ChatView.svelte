@@ -22,6 +22,7 @@
 	import { newMessageId } from './message-stream/new-message-id';
 	import { preservedChatMessagesToUi } from './message-stream/chat-message-to-ui';
 	import { hydrateSessionMessages } from './message-stream/hydrate-session-messages';
+	import { latestCiteSearchResults } from './latest-cite-search';
 	import ChatNavRail from './nav/ChatNavRail.svelte';
 	import {
 		CHAT_NAV_TICK_CAP,
@@ -42,6 +43,7 @@
 		deriveShortTitle,
 		fallbackSessionTitle,
 		generateSessionTitles,
+		isFallbackDerivedTitle,
 		normalizeTitlePair,
 	} from './session/session-title';
 	import { showSessionRenameModal } from './session/session-rename-modal';
@@ -159,6 +161,8 @@
 	let navHighlightId = $state<string | null>(null);
 	let navRatio = $state(0);
 	let railVisible = $state(false);
+	/** 会话内最近一次 search_vault 结果 — 跟进回合 [n] 仍可点 */
+	let lastCiteSearchResults = $state<Message['searchResults'] | null>(null);
 	let navFlashTimer: ReturnType<typeof setTimeout> | null = null;
 
 	const navEnabled = $derived($settingsStore.chatNavRailEnabled !== false);
@@ -335,6 +339,7 @@
 		sessionId = s.id;
 		syncChipTitles(s);
 		messages = hydrateSessionMessages(s.messages, { resolveMcpServerLabel });
+		lastCiteSearchResults = latestCiteSearchResults(messages);
 		// 修复:重启/恢复会话后重算 usedTokens,避免 contextUsage$ 归零导致占用显示丢失
 		plugin.userStatus.patchContextUsage({
 			usedTokens: estimateMessagesTokens(messages),
@@ -354,6 +359,7 @@
 		sessionId = id;
 		syncChipTitles(null);
 		messages = [];
+		lastCiteSearchResults = null;
 		await plugin.persistence.setLastSessionId(id);
 		sessionDirty = false;
 		clearToolSessionGrants();
@@ -485,6 +491,7 @@
 				sessionId = s.id;
 				syncChipTitles(s);
 				messages = hydrateSessionMessages(s.messages, { resolveMcpServerLabel });
+				lastCiteSearchResults = latestCiteSearchResults(messages);
 				// 修复:切换会话 hydrate 后同样重算上下文占用(与 loadSessionIntoUi 一致)
 				plugin.userStatus.patchContextUsage({
 					usedTokens: estimateMessagesTokens(messages),
@@ -505,6 +512,9 @@
 	/** 编辑当前会话标题；弹窗内可选手改或 AI 总结。 */
 	async function editCurrentSessionTitle(): Promise<void> {
 		sessionMenuOpen = false;
+		// 关键路径:在任何 await 之前拍下 Header 正在显示的标题,弹框初值与芯片严格同源
+		const seedFromUi =
+			sessionFullTitle.trim() || sessionShortTitle.trim();
 		const id = sessionId;
 		const s = await plugin.persistence.sessions.get(id);
 		if (!s) {
@@ -514,7 +524,7 @@
 		const empty = emptyTitle();
 		const result = await showSessionRenameModal(
 			plugin.app,
-			s.title?.trim() || s.shortTitle?.trim() || empty,
+			seedFromUi || s.title?.trim() || s.shortTitle?.trim() || empty,
 		);
 		if (!result) return;
 		if (result.kind === 'retitle') {
@@ -606,7 +616,15 @@
 		}
 		if (!s || !sessionHasContent(s.messages)) return;
 		const empty = emptyTitle();
-		if (s.title && s.title !== empty && s.title.trim() !== '') {
+		const firstUser = s.messages.find((m) => m.role === 'user');
+		const seed = typeof firstUser?.content === 'string' ? firstUser.content : '';
+		// 修复:upsert 用首条 user 填的占位 title 不算真标题 — 仍走 LLM,否则 Header/弹框永远停在开场白截断
+		if (
+			s.title &&
+			s.title !== empty &&
+			s.title.trim() !== '' &&
+			!isFallbackDerivedTitle(s.title, seed, empty)
+		) {
 			// 旧场缺 shortTitle 时本地派生补齐
 			if (!s.shortTitle?.trim()) {
 				const short = deriveShortTitle(s.title) || empty;
@@ -618,8 +636,6 @@
 			}
 			return;
 		}
-		const firstUser = s.messages.find((m) => m.role === 'user');
-		const seed = typeof firstUser?.content === 'string' ? firstUser.content : '';
 		titleAbort?.abort();
 		titleAbort = new AbortController();
 		const signal = titleAbort.signal;
@@ -701,6 +717,14 @@
 	});
 	// 关键路径:busyOverride 喂给 StatusLine,替代独立黄条 DOM
 	const busyOverride = $derived(workBar ? workBar.text : null);
+	// 忙态文案对应 ThinkingOrb 动词(硬 gate 无 orb)
+	const busyOrbKind = $derived.by(() => {
+		if (!workBar || workBar.type === 'hard') return null;
+		if (workBar.type === 'indexing') return 'index' as const;
+		if (workBar.type === 'compacting') return 'compact' as const;
+		if (workBar.type === 'preparing' || workBar.type === 'downloading') return 'connecting' as const;
+		return 'thinking' as const;
+	});
 
 	// 关键路径:chatModelMaxTokens 由设置面板预设/自定义配置,见 ADR-007。
 	$effect(() => {
@@ -873,6 +897,7 @@
 			);
 			// 更新 Svelte state — ChatMessage[] 转回 UI Message[]
 			messages = preservedChatMessagesToUi(result.preservedMessages);
+			lastCiteSearchResults = latestCiteSearchResults(messages);
 			// 压缩后消息变短,立即重算占用
 			plugin.userStatus.patchContextUsage({
 				usedTokens: estimateMessagesTokens(messages),
@@ -997,6 +1022,10 @@
 						am.searchReranked = event.payload.results.length
 							? event.payload.reranked
 							: false;
+						// 跟进回合可能不再 search;保留最近一次供正文 [n] 挂钩
+						if (event.payload.results.length) {
+							lastCiteSearchResults = event.payload.results;
+						}
 						scrollToBottom();
 						break;
 					case 'message.end':
@@ -1259,6 +1288,7 @@
 				onScroll={handleScroll}
 				onOpenPath={handleOpenPath}
 				highlightId={navHighlightId}
+				citeSearchFallback={lastCiteSearchResults}
 			/>
 			{#if railVisible}
 				<ChatNavRail
@@ -1284,6 +1314,7 @@
 			expanded={drawerExpanded}
 			chatBusy={isRunning}
 			busyOverride={busyOverride}
+			busyOrbKind={busyOrbKind}
 			busyHard={workBar?.type === 'hard'}
 			onToggle={() => (drawerExpanded = !drawerExpanded)}
 		/>

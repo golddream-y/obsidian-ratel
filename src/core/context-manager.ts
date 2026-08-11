@@ -508,6 +508,17 @@ export class ContextManager {
 	 */
 	async save(): Promise<void> {
 		const session = this.requireSession();
+		// 修复:in-memory session 常保留空 title(load 后未改字段),而 AI 总结已写入磁盘;
+		// 若直接 upsert 会用 derive(首条 user)盖掉总结标题 → Header 新、编辑弹框旧。
+		const disk = await this.persistence.sessions.get(session.id);
+		if (disk) {
+			if (!session.title?.trim() && disk.title?.trim()) {
+				session.title = disk.title;
+			}
+			if (!session.shortTitle?.trim() && disk.shortTitle?.trim()) {
+				session.shortTitle = disk.shortTitle;
+			}
+		}
 		await this.persistence.sessions.upsert(session);
 	}
 

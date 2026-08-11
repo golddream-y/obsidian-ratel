@@ -642,3 +642,30 @@ button.ratel-chat-nav-tick.is-active {
 button.ratel-chat-nav-tick.is-hover {
 	height: 6px !important;
 }
+
+/* ==================== 正文引用 [n] 悬停路径 tip ==================== */
+/* tip 挂在 body 上,必须写全局样式;不能放 Svelte scoped */
+.ratel-cite-tip {
+	position: fixed;
+	z-index: 10000;
+	max-width: min(360px, calc(100vw - 16px));
+	padding: 6px 10px;
+	border-radius: 6px;
+	border: 1px solid var(--background-modifier-border);
+	background: var(--background-secondary);
+	color: var(--text-normal);
+	font-size: 12px;
+	line-height: 1.4;
+	word-break: break-all;
+	box-shadow: 0 4px 16px color-mix(in srgb, black 25%, transparent);
+	pointer-events: none;
+}
+
+/* Obsidian 默认 button 高度会压扁行内 cite,放大命中区 */
+button.ratel-cite {
+	height: auto !important;
+	min-height: 0 !important;
+	padding: 0 2px !important;
+	margin: 0 1px !important;
+	box-shadow: none !important;
+}

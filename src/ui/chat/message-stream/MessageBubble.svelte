@@ -32,12 +32,15 @@
 		isRunning,
 		onOpenPath,
 		navFlash = false,
+		/** 会话内最近一次检索 — 本条未挂 searchResults 时供正文 [n] 挂钩 */
+		citeSearchFallback = null,
 	}: {
 		msg: Message;
 		isLast: boolean;
 		isRunning: boolean;
 		onOpenPath: (path: string) => void;
 		navFlash?: boolean;
+		citeSearchFallback?: Message['searchResults'] | null;
 	} = $props();
 
 	const isAssistantStreaming = $derived(isLast && isRunning && msg.role === 'assistant');
@@ -51,6 +54,11 @@
 	);
 	const showCiteChips = $derived(
 		shouldShowCiteChips(!!msg.searchResults?.length, citedIndexes.size),
+	);
+
+	// 正文挂钩可用本条或会话最近一次检索;芯片仍只认本条,避免跟进气泡误出「来源」折叠条
+	const citeSearchResults = $derived(
+		msg.searchResults?.length ? msg.searchResults : citeSearchFallback ?? undefined,
 	);
 </script>
 
@@ -80,7 +88,7 @@
 				text={block.seg.text}
 				isUser={msg.role === 'user'}
 				streaming={isAssistantStreaming}
-				searchResults={msg.role === 'assistant' ? msg.searchResults : undefined}
+				searchResults={msg.role === 'assistant' ? citeSearchResults : undefined}
 				{onOpenPath}
 			/>
 		{:else if block.kind === 'trace'}

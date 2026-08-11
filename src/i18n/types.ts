@@ -205,6 +205,15 @@ export interface ChatStrings {
   'chat.workbar.searching': string;
   'chat.workbar.compacting': string;
   'chat.typing': string;
+  'orb.state.working': string;
+  'orb.state.searching': string;
+  'orb.state.solving': string;
+  'orb.state.listening': string;
+  'orb.state.connecting': string;
+  'orb.state.weaving': string;
+  'orb.state.composing': string;
+  'orb.state.breathing': string;
+  'orb.state.shaping': string;
   'chat.input.placeholder': string;
   'chat.input.send': string;
   'chat.input.stop': string;

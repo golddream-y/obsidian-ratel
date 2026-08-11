@@ -43,6 +43,28 @@ export function fallbackSessionTitle(
 }
 
 /**
+ * 判断持久化 title 是否只是「首条 user 截断」占位(非 LLM/手改真标题)。
+ *
+ * Persistence upsert 会在空 title 时用首条 user 填洞;maybeGenerateTitle 若把这种
+ * 占位当成已有标题就会跳过 LLM,Header 只变成截断开场白,编辑框也仍是开场白。
+ *
+ * @param title - 当前 title
+ * @param firstUserText - 首条用户消息原文
+ * @param emptyFallback - 「新对话」等空标题文案
+ */
+export function isFallbackDerivedTitle(
+	title: string,
+	firstUserText: string,
+	emptyFallback = '',
+): boolean {
+	const t = title.trim();
+	if (!t || t === emptyFallback) return true;
+	const fb = fallbackSessionTitle(firstUserText);
+	if (!fb) return false;
+	return t === fb || t === deriveShortTitle(fb);
+}
+
+/**
  * 从正常标题派生短标题(无 LLM 时的本地截断)。
  */
 export function deriveShortTitle(full: string, maxLen = SHORT_TITLE_MAX): string {
