@@ -12,6 +12,9 @@
 	import ThinkingOrb from '../../orbs/ThinkingOrb.svelte';
 	import { mapOrbState, type RatelOrbBusyKind } from '../../orbs/map-orb-state';
 	import type { OrbState } from '../../orbs/types';
+	import EmptyStage from '../../motion/empty/EmptyStage.svelte';
+	import { isChatMotionEnabled } from '../../motion/prefs';
+	import { settings$ as settingsStore } from '../../settings-store';
 
 	/**
 	 * MessageList props。
@@ -81,9 +84,13 @@
 	});
 
 	const busyOrbState = $derived(mapOrbState(busyKind));
+	const motionOn = $derived(isChatMotionEnabled($settingsStore));
 </script>
 
 <div class="ratel-messages" bind:this={containerRef} onscroll={() => { if (containerRef) onScroll?.(containerRef); }}>
+	{#if messages.length === 0}
+		<EmptyStage motionOn={motionOn} />
+	{/if}
 	{#each messages as msg, i}
 		<MessageBubble
 			{msg}
@@ -107,6 +114,7 @@
 	 * 关键路径:消息流 gap/padding 贴近原型 v3(20/16, gap 20),对话区更疏朗。
 	 */
 	.ratel-messages {
+		position: relative;
 		flex: 1;
 		overflow-y: auto;
 		padding: 20px 16px 12px;

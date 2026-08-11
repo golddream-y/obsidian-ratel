@@ -27,7 +27,9 @@
 	}: Props = $props();
 
 	let hostEl = $state<HTMLDivElement | undefined>();
-	let useFallback = $state(true);
+	/** 探测完成前不挂 fallback class，避免 WebGL 路径首帧 CSS 闪烁 */
+	let probed = $state(false);
+	let useFallback = $state(false);
 
 	let teardown: (() => void) | null = null;
 
@@ -206,12 +208,15 @@
 	function startBackdrop() {
 		teardown?.();
 		teardown = null;
+		probed = false;
+		useFallback = false;
 
 		const host = hostEl;
 		if (!host) return;
 
 		const webgl2 = probeWebGL2Support();
 		useFallback = shouldUseAuroraFallback(enabled, webgl2);
+		probed = true;
 		if (useFallback) return;
 
 		try {
@@ -247,7 +252,7 @@
 
 <div
 	class="ratel-aurora"
-	class:ratel-aurora-fallback={useFallback}
+	class:ratel-aurora-fallback={probed && useFallback}
 	bind:this={hostEl}
 	aria-hidden="true"
 	style:--aurora-c0={colorStops[0]}
