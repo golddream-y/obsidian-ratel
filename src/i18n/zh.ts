@@ -62,6 +62,8 @@ const settingsZh: SettingsStrings = {
   'settings.appearance.preview.send': '发送',
   'settings.chatNavRailEnabled.name': '对话位置轨',
   'settings.chatNavRailEnabled.desc': '在消息区显示阅读位置与回到底部',
+  'settings.chatMotionEnabled.name': '聊天装饰动效',
+  'settings.chatMotionEnabled.desc': '空态欢迎、消息入场、标题扫光等装饰动画（忙态思考球不受此开关影响）',
   'settings.chatNavRailSide.name': '位置轨靠边',
   'settings.chatNavRailSide.desc': '吸附在消息区左侧或右侧',
   'settings.chatNavRailSide.left': '左侧',
@@ -194,6 +196,8 @@ const chatZh: ChatStrings = {
   'chat.header.title': 'Ratel',
   'chat.header.tagline': 'graph-native',
   'chat.header.modelChip': '模型信息:{model}',
+  'chat.empty.welcome': '有什么想从库里挖的？',
+  'chat.empty.hint': '直接提问，或输入 / 看命令',
   'chat.feedback.title': '问题反馈',
   'chat.feedback.body':
     '遇到 bug 或体验问题？可复制下方诊断摘要（不含笔记内容），再到 GitHub 提 Issue。',

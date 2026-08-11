@@ -61,6 +61,8 @@ export const en: Strings = {
   'settings.appearance.preview.send': 'Send',
   'settings.chatNavRailEnabled.name': 'Conversation position rail',
   'settings.chatNavRailEnabled.desc': 'Show reading position and back-to-bottom in the message list',
+  'settings.chatMotionEnabled.name': 'Chat decorative motion',
+  'settings.chatMotionEnabled.desc': 'Welcome empty state, message entrance, title shimmer, and similar decorations (busy ThinkingOrb is unaffected)',
   'settings.chatNavRailSide.name': 'Rail side',
   'settings.chatNavRailSide.desc': 'Snap to the left or right of the message list',
   'settings.chatNavRailSide.left': 'Left',
@@ -192,6 +194,8 @@ export const en: Strings = {
   'chat.header.title': 'Ratel',
   'chat.header.tagline': 'graph-native',
   'chat.header.modelChip': 'Model info: {model}',
+  'chat.empty.welcome': 'What would you like to dig up from your vault?',
+  'chat.empty.hint': 'Ask a question, or type / for commands',
   'chat.feedback.title': 'Feedback',
   'chat.feedback.body':
     'Found a bug or rough edge? Copy the diagnostics below (no note contents), then open a GitHub Issue.',
