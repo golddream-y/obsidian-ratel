@@ -16,7 +16,7 @@
 | UX 迭代 | DeepSeek 点列 + 悬停摘要 | ✅ | `cbd1f40` | 去粗轨；藏滚动条；hover 预览 |
 
 **测试总数:** 909（全量）/ nav 单元 11  
-**分支:** `feat/p-chat-nav` → squash 合入 `develop`  
+**分支:** `feat/p-chat-nav` → squash 合入 `develop` (`13fb6d2`)  
 **Plan 偏差:** 视觉从「细进度条+拇指」改为 DeepSeek 式中段点列 + 悬停鱼眼加宽 + 内侧摘要；功能目标不变。
 
 ---
