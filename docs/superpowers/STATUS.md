@@ -17,6 +17,7 @@
 
 | ID | 文件 | 状态 | 创建日期 | 备注 |
 |---|---|---|---|---|
+| S-CHAT-NAV | [2026-08-11-chat-nav-rail-design.md](specs/2026-08-11-chat-nav-rail-design.md) | Active | 2026-08-11 | 对话进度轨 P1：细轨+回底+跳 user 轮次+左右吸附；非 Outline |
 | S-CHAT-PROTO | [2026-08-10-chat-prototype-align-design.md](specs/2026-08-10-chat-prototype-align-design.md) | Active | 2026-08-10 | P-CHAT-PROTO Completed;原型↔现网对齐;发送↑;三级权限;底栏避让 |
 | S-SETTINGS-SYNC | [2026-08-03-settings-sync-design.md](specs/2026-08-03-settings-sync-design.md) | Active | 2026-08-03 | Settings 读入口统一 settings$;消除设置改了 UI 不刷新;与 appearance/UserStatus 分列 |
 | S-MCP-HOST | [2026-08-03-mcp-host-design.md](specs/2026-08-03-mcp-host-design.md) | Active | 2026-08-03 | 平台级 MCP Host;双 transport;入 ToolRegistry;抽屉 Modal+对话 Trace;ADR-014/015;优先于图谱扩邻 |
