@@ -19,8 +19,18 @@
 	import AttachmentStrip from './input/AttachmentStrip.svelte';
 	import MessageList from './message-stream/MessageList.svelte';
 	import type { Message } from './message-stream/types';
+	import { newMessageId } from './message-stream/new-message-id';
 	import { preservedChatMessagesToUi } from './message-stream/chat-message-to-ui';
 	import { hydrateSessionMessages } from './message-stream/hydrate-session-messages';
+	import { latestCiteSearchResults } from './latest-cite-search';
+	import ChatNavRail from './nav/ChatNavRail.svelte';
+	import {
+		CHAT_NAV_TICK_CAP,
+		extractUserAnchors,
+		needsRail,
+		thinAnchors,
+		thumbRatio,
+	} from './nav/chat-nav-rail';
 	import SessionMenu from './session/SessionMenu.svelte';
 	import { sessionHasContent } from './session/session-content';
 	import {
@@ -33,6 +43,7 @@
 		deriveShortTitle,
 		fallbackSessionTitle,
 		generateSessionTitles,
+		isFallbackDerivedTitle,
 		normalizeTitlePair,
 	} from './session/session-title';
 	import { showSessionRenameModal } from './session/session-rename-modal';
@@ -108,6 +119,7 @@
 	});
 	onDestroy(() => {
 		appearanceUnsub?.();
+		if (navFlashTimer) clearTimeout(navFlashTimer);
 		void flushCurrentSession();
 	});
 
@@ -145,6 +157,29 @@
 	// 关键路径:/compact 压缩进行中标志,控制 loading hint 显示
 	let isCompacting = $state(false);
 
+	// ==================== 对话进度轨 ====================
+	let navHighlightId = $state<string | null>(null);
+	let navRatio = $state(0);
+	let railVisible = $state(false);
+	/** 会话内最近一次 search_vault 结果 — 跟进回合 [n] 仍可点 */
+	let lastCiteSearchResults = $state<Message['searchResults'] | null>(null);
+	let navFlashTimer: ReturnType<typeof setTimeout> | null = null;
+
+	const navEnabled = $derived($settingsStore.chatNavRailEnabled !== false);
+	const rawAnchors = $derived(
+		extractUserAnchors(
+			messages.filter((m) => !!m.id) as Array<{
+				id: string;
+				role: string;
+				segments: Message['segments'];
+			}>,
+		),
+	);
+	// 首版 visibleId 用跳转高亮 id；无高亮时 thin 仍保首尾
+	const navAnchorsThinned = $derived(
+		thinAnchors(rawAnchors, navHighlightId, CHAT_NAV_TICK_CAP),
+	);
+
 	// 关键路径:sticky-to-bottom — 用户主动上滑时尊重浏览历史,只在用户处于底部时自动滚动
 	const scrollToBottom = () => {
 		if (!isUserNearBottom) return;
@@ -153,11 +188,68 @@
 		});
 	};
 
-	// 关键路径:onscroll 监听内层 .ratel-messages 的滚动,更新 isUserNearBottom
+	/** 根据滚动容器度量更新轨显隐与拇指比例。 */
+	function updateNavMetrics(el: HTMLDivElement) {
+		railVisible = navEnabled && needsRail(el.scrollHeight, el.clientHeight);
+		navRatio = thumbRatio(el.scrollTop, el.scrollHeight, el.clientHeight);
+	}
+
+	// 关键路径:onscroll 监听内层 .ratel-messages 的滚动,更新 isUserNearBottom + 进度轨
 	function handleScroll(el: HTMLDivElement) {
 		isUserNearBottom =
 			el.scrollHeight - el.scrollTop - el.clientHeight < SCROLL_NEAR_BOTTOM_THRESHOLD;
+		updateNavMetrics(el);
 	}
+
+	/** 回底：恢复 sticky 并滚到最新。 */
+	function forceScrollToBottom() {
+		isUserNearBottom = true;
+		requestAnimationFrame(() => {
+			if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight;
+		});
+	}
+
+	/** 拖拇指：按比例设置 scrollTop。 */
+	function seekByRatio(r: number) {
+		if (!messagesEl) return;
+		const max = messagesEl.scrollHeight - messagesEl.clientHeight;
+		if (max <= 0) return;
+		messagesEl.scrollTop = Math.min(1, Math.max(0, r)) * max;
+	}
+
+	/** 点刻度：滚到对应消息并短暂高亮。 */
+	function jumpToMessage(id: string) {
+		const node = messagesEl?.querySelector(
+			`[data-msg-id="${CSS.escape(id)}"]`,
+		) as HTMLElement | null;
+		if (!node) return;
+		// 离开贴底，避免流式 scrollToBottom 把用户拽回底部
+		isUserNearBottom = false;
+		node.scrollIntoView({ block: 'start', behavior: 'smooth' });
+		navHighlightId = id;
+		if (navFlashTimer) clearTimeout(navFlashTimer);
+		navFlashTimer = setTimeout(() => {
+			navHighlightId = null;
+			navFlashTimer = null;
+		}, 1000);
+	}
+
+	/** 拖侧吸附：写 settings 并持久化。 */
+	async function setNavSide(next: 'left' | 'right') {
+		plugin.settings.chatNavRailSide = next;
+		await plugin.saveSettings();
+	}
+
+	// 消息变高 / 开关变更后重算轨度量
+	$effect(() => {
+		void messages;
+		void navEnabled;
+		const el = messagesEl;
+		if (!el) return;
+		requestAnimationFrame(() => {
+			if (messagesEl) updateNavMetrics(messagesEl);
+		});
+	});
 
 	/** 芯片 / 正文 `[n]` 共用打开入口 — 函数体内读 plugin,避免模板闭包捕获初值 */
 	function handleOpenPath(path: string): void {
@@ -247,6 +339,7 @@
 		sessionId = s.id;
 		syncChipTitles(s);
 		messages = hydrateSessionMessages(s.messages, { resolveMcpServerLabel });
+		lastCiteSearchResults = latestCiteSearchResults(messages);
 		// 修复:重启/恢复会话后重算 usedTokens,避免 contextUsage$ 归零导致占用显示丢失
 		plugin.userStatus.patchContextUsage({
 			usedTokens: estimateMessagesTokens(messages),
@@ -266,6 +359,7 @@
 		sessionId = id;
 		syncChipTitles(null);
 		messages = [];
+		lastCiteSearchResults = null;
 		await plugin.persistence.setLastSessionId(id);
 		sessionDirty = false;
 		clearToolSessionGrants();
@@ -397,6 +491,7 @@
 				sessionId = s.id;
 				syncChipTitles(s);
 				messages = hydrateSessionMessages(s.messages, { resolveMcpServerLabel });
+				lastCiteSearchResults = latestCiteSearchResults(messages);
 				// 修复:切换会话 hydrate 后同样重算上下文占用(与 loadSessionIntoUi 一致)
 				plugin.userStatus.patchContextUsage({
 					usedTokens: estimateMessagesTokens(messages),
@@ -417,6 +512,9 @@
 	/** 编辑当前会话标题；弹窗内可选手改或 AI 总结。 */
 	async function editCurrentSessionTitle(): Promise<void> {
 		sessionMenuOpen = false;
+		// 关键路径:在任何 await 之前拍下 Header 正在显示的标题,弹框初值与芯片严格同源
+		const seedFromUi =
+			sessionFullTitle.trim() || sessionShortTitle.trim();
 		const id = sessionId;
 		const s = await plugin.persistence.sessions.get(id);
 		if (!s) {
@@ -426,7 +524,7 @@
 		const empty = emptyTitle();
 		const result = await showSessionRenameModal(
 			plugin.app,
-			s.title?.trim() || s.shortTitle?.trim() || empty,
+			seedFromUi || s.title?.trim() || s.shortTitle?.trim() || empty,
 		);
 		if (!result) return;
 		if (result.kind === 'retitle') {
@@ -518,7 +616,15 @@
 		}
 		if (!s || !sessionHasContent(s.messages)) return;
 		const empty = emptyTitle();
-		if (s.title && s.title !== empty && s.title.trim() !== '') {
+		const firstUser = s.messages.find((m) => m.role === 'user');
+		const seed = typeof firstUser?.content === 'string' ? firstUser.content : '';
+		// 修复:upsert 用首条 user 填的占位 title 不算真标题 — 仍走 LLM,否则 Header/弹框永远停在开场白截断
+		if (
+			s.title &&
+			s.title !== empty &&
+			s.title.trim() !== '' &&
+			!isFallbackDerivedTitle(s.title, seed, empty)
+		) {
 			// 旧场缺 shortTitle 时本地派生补齐
 			if (!s.shortTitle?.trim()) {
 				const short = deriveShortTitle(s.title) || empty;
@@ -530,8 +636,6 @@
 			}
 			return;
 		}
-		const firstUser = s.messages.find((m) => m.role === 'user');
-		const seed = typeof firstUser?.content === 'string' ? firstUser.content : '';
 		titleAbort?.abort();
 		titleAbort = new AbortController();
 		const signal = titleAbort.signal;
@@ -613,6 +717,14 @@
 	});
 	// 关键路径:busyOverride 喂给 StatusLine,替代独立黄条 DOM
 	const busyOverride = $derived(workBar ? workBar.text : null);
+	// 忙态文案对应 ThinkingOrb 动词(硬 gate 无 orb)
+	const busyOrbKind = $derived.by(() => {
+		if (!workBar || workBar.type === 'hard') return null;
+		if (workBar.type === 'indexing') return 'index' as const;
+		if (workBar.type === 'compacting') return 'compact' as const;
+		if (workBar.type === 'preparing' || workBar.type === 'downloading') return 'connecting' as const;
+		return 'thinking' as const;
+	});
 
 	// 关键路径:chatModelMaxTokens 由设置面板预设/自定义配置,见 ADR-007。
 	$effect(() => {
@@ -785,6 +897,7 @@
 			);
 			// 更新 Svelte state — ChatMessage[] 转回 UI Message[]
 			messages = preservedChatMessagesToUi(result.preservedMessages);
+			lastCiteSearchResults = latestCiteSearchResults(messages);
 			// 压缩后消息变短,立即重算占用
 			plugin.userStatus.patchContextUsage({
 				usedTokens: estimateMessagesTokens(messages),
@@ -825,11 +938,12 @@
 
 		// 关键路径:用 push + 从数组中取出 Proxy 引用,触发细粒度 DOM 更新
 		messages.push({
+			id: newMessageId(),
 			role: 'user' as const,
 			segments: [{ type: 'text', text }],
 			attachments: currentAttachments.length > 0 ? currentAttachments : undefined,
 		});
-		messages.push({ role: 'assistant' as const, segments: [] });
+		messages.push({ id: newMessageId(), role: 'assistant' as const, segments: [] });
 		const am = messages[messages.length - 1] as Message;
 
 		input = '';
@@ -908,6 +1022,10 @@
 						am.searchReranked = event.payload.results.length
 							? event.payload.reranked
 							: false;
+						// 跟进回合可能不再 search;保留最近一次供正文 [n] 挂钩
+						if (event.payload.results.length) {
+							lastCiteSearchResults = event.payload.results;
+						}
 						scrollToBottom();
 						break;
 					case 'message.end':
@@ -1158,14 +1276,33 @@
 			<div class="ratel-session-spinner" aria-hidden="true"></div>
 			<span class="ratel-session-load-label">{sessionLoadingLabel}</span>
 		</div>
-		<div class="ratel-messages-wrap {messagesAnimClass}">
+		<div
+			class="ratel-messages-wrap {messagesAnimClass}"
+			class:has-nav-rail={railVisible}
+			data-nav-side={railVisible ? ($settingsStore.chatNavRailSide ?? 'right') : undefined}
+		>
 			<MessageList
 				{messages}
 				{isRunning}
 				bind:containerRef={messagesEl}
 				onScroll={handleScroll}
 				onOpenPath={handleOpenPath}
+				highlightId={navHighlightId}
+				citeSearchFallback={lastCiteSearchResults}
 			/>
+			{#if railVisible}
+				<ChatNavRail
+					enabled={$settingsStore.chatNavRailEnabled}
+					side={$settingsStore.chatNavRailSide ?? 'right'}
+					anchors={navAnchorsThinned}
+					ratio={navRatio}
+					showBackToBottom={!isUserNearBottom}
+					onJump={jumpToMessage}
+					onBackToBottom={forceScrollToBottom}
+					onSideChange={setNavSide}
+					onThumbSeek={seekByRatio}
+				/>
+			{/if}
 		</div>
 	</div>
 
@@ -1177,6 +1314,7 @@
 			expanded={drawerExpanded}
 			chatBusy={isRunning}
 			busyOverride={busyOverride}
+			busyOrbKind={busyOrbKind}
 			busyHard={workBar?.type === 'hard'}
 			onToggle={() => (drawerExpanded = !drawerExpanded)}
 		/>
@@ -1576,11 +1714,21 @@
 	}
 
 	.ratel-messages-wrap {
+		position: relative;
 		flex: 1;
 		overflow: hidden;
 		display: flex;
 		flex-direction: column;
 		min-height: 0;
+	}
+
+	/* 进度点列占位：正文不贴边，hover 变宽时也不压字 */
+	.ratel-messages-wrap.has-nav-rail[data-nav-side='right'] :global(.ratel-messages) {
+		padding-right: 24px;
+	}
+
+	.ratel-messages-wrap.has-nav-rail[data-nav-side='left'] :global(.ratel-messages) {
+		padding-left: 24px;
 	}
 
 	.ratel-messages-wrap.is-exiting {

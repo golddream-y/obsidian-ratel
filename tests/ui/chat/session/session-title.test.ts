@@ -9,6 +9,7 @@ import {
 	clipTitle,
 	deriveShortTitle,
 	fallbackSessionTitle,
+	isFallbackDerivedTitle,
 	buildSessionTitlePrompt,
 	parseSessionTitleResponse,
 	normalizeTitlePair,
@@ -37,6 +38,14 @@ describe('session-title', () => {
 		const pair = normalizeTitlePair({ title: '整理本周未完成的项目笔记' });
 		expect(pair.title).toBe('整理本周未完成的项目笔记');
 		expect(pair.shortTitle.length).toBeLessThanOrEqual(SHORT_TITLE_MAX);
+	});
+
+	it('isFallbackDerivedTitle - 首条截断占位 - 视为可被 LLM 覆盖', () => {
+		const seed = '哪几篇小说是有男女主的';
+		const fb = fallbackSessionTitle(seed);
+		expect(isFallbackDerivedTitle(fb, seed, '新对话')).toBe(true);
+		expect(isFallbackDerivedTitle('新对话', seed, '新对话')).toBe(true);
+		expect(isFallbackDerivedTitle('工部时间线矛盾修复', seed, '新对话')).toBe(false);
 	});
 
 	it('buildSessionTitlePrompt - 含双轨与用户原文', () => {

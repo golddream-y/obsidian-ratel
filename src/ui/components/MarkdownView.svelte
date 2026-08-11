@@ -10,6 +10,7 @@
 	import { renderMarkdownToHtml, areAllCodeBlocksClosed } from '../../utils/markdown-renderer';
 	import { renderMermaidBlocks } from '../../utils/mermaid-renderer';
 	import { enhanceCiteLinks } from '../chat/cite-enhance';
+	import { bindCitePathTooltip } from '../chat/cite-path-tooltip';
 	import { pathForCiteIndex } from '../chat/open-chat-note';
 	import { tNow } from '../../i18n';
 
@@ -30,6 +31,7 @@
 	let lastRenderedText = '';
 	let lastCiteKey = '';
 	let cleanupCites: (() => void) | null = null;
+	let cleanupCiteTips: (() => void) | null = null;
 	/** 有选区时暂存待渲染内容，松手后再写 DOM */
 	let pendingRender: { text: string; force: boolean } | null = null;
 
@@ -49,18 +51,25 @@
 	function applyCites() {
 		cleanupCites?.();
 		cleanupCites = null;
+		cleanupCiteTips?.();
+		cleanupCiteTips = null;
 		if (!containerEl || !onOpenPath || !searchResults?.length) return;
 		const valid = new Set(searchResults.map((r) => r.index));
 		cleanupCites = enhanceCiteLinks(containerEl, valid, (index) => {
 			const path = pathForCiteIndex(searchResults, index);
 			if (path) onOpenPath(path);
 		});
-		// aria 用 i18n(按钮创建时仅有编号,此处补 title)
+		const tipCleaners: Array<() => void> = [];
 		for (const btn of containerEl.querySelectorAll<HTMLButtonElement>('button.ratel-cite')) {
 			const n = Number(btn.dataset.citeIndex);
 			const path = pathForCiteIndex(searchResults, n);
-			if (path) btn.setAttribute('aria-label', tNow('chat.cite.openNote', { path }));
+			if (!path) continue;
+			btn.setAttribute('aria-label', tNow('chat.cite.openNote', { path }));
+			tipCleaners.push(bindCitePathTooltip(btn, path));
 		}
+		cleanupCiteTips = () => {
+			for (const c of tipCleaners) c();
+		};
 	}
 
 	function flushPendingRender(): void {
@@ -125,6 +134,7 @@
 	onDestroy(() => {
 		cancelAnimationFrame(rafId);
 		cleanupCites?.();
+		cleanupCiteTips?.();
 		pendingRender = null;
 	});
 </script>
@@ -234,7 +244,7 @@
 
 	/* 引用编号 — 与芯片共用 --ratel-cite;原型为下划线散链气质 */
 	.ratel-md :global(button.ratel-cite) {
-		display: inline;
+		display: inline-block;
 		padding: 0 1px;
 		margin: 0 1px;
 		border: none;
@@ -245,6 +255,7 @@
 		font-family: inherit;
 		font-size: inherit;
 		font-weight: 500;
+		line-height: inherit;
 		cursor: pointer;
 		vertical-align: baseline;
 		-webkit-appearance: none;

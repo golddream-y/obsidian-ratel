@@ -57,6 +57,12 @@ export interface SettingsStrings {
   'settings.appearance.preview.body': string;
   'settings.appearance.preview.citePath': string;
   'settings.appearance.preview.send': string;
+  'settings.chatNavRailEnabled.name': string;
+  'settings.chatNavRailEnabled.desc': string;
+  'settings.chatNavRailSide.name': string;
+  'settings.chatNavRailSide.desc': string;
+  'settings.chatNavRailSide.left': string;
+  'settings.chatNavRailSide.right': string;
   'settings.chatPreset.heading': string;
   'settings.chatPreset.name': string;
   'settings.chatPreset.desc': string;
@@ -199,6 +205,15 @@ export interface ChatStrings {
   'chat.workbar.searching': string;
   'chat.workbar.compacting': string;
   'chat.typing': string;
+  'orb.state.working': string;
+  'orb.state.searching': string;
+  'orb.state.solving': string;
+  'orb.state.listening': string;
+  'orb.state.connecting': string;
+  'orb.state.weaving': string;
+  'orb.state.composing': string;
+  'orb.state.breathing': string;
+  'orb.state.shaping': string;
   'chat.input.placeholder': string;
   'chat.input.send': string;
   'chat.input.stop': string;
@@ -287,6 +302,9 @@ export interface ChatStrings {
   'chat.attachments.invalidType': string;
   'chat.attachments.tooLarge': string;
   'chat.attachments.tooMany': string;
+  'chat.nav.rail.aria': string;
+  'chat.nav.backToBottom': string;
+  'chat.nav.tick.aria': string;
   'chat.slashMenu.header': string;
   'chat.mention.menuTitle': string;
   'chat.mention.empty': string;

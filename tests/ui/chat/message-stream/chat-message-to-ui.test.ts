@@ -13,6 +13,7 @@ describe('preservedChatMessagesToUi', () => {
 		const result = preservedChatMessagesToUi(input);
 		expect(result).toHaveLength(1);
 		expect(result[0]).toEqual({
+			id: expect.any(String),
 			role: 'user',
 			segments: [{ type: 'text', text: 'hello' }],
 		});
@@ -23,6 +24,7 @@ describe('preservedChatMessagesToUi', () => {
 		const result = preservedChatMessagesToUi(input);
 		expect(result).toHaveLength(1);
 		expect(result[0]).toEqual({
+			id: expect.any(String),
 			role: 'assistant',
 			segments: [{ type: 'text', text: 'world' }],
 		});

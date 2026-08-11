@@ -9,6 +9,8 @@
 	import type { Readable } from 'svelte/store';
 	import type { UserStatusSnapshot, ContextUsage } from '../../user-feedback/user-status';
 	import { t, type StringKey } from '../../i18n';
+	import ThinkingOrb from '../orbs/ThinkingOrb.svelte';
+	import { mapOrbState, type RatelOrbBusyKind } from '../orbs/map-orb-state';
 	import { deriveTone, type Tone } from './tone';
 	import { clampContextPct, composeStripLabel, contextPctTextColor } from './strip-label';
 
@@ -20,6 +22,8 @@
 		/** 对话进行中时压制「思考中」文案 — 消息区已有打字指示,避免双份 */
 		chatBusy = false,
 		busyOverride = null,
+		/** work-bar 类型对应的 orb 忙态;无则按 tone 回退 */
+		busyOrbKind = null,
 		/** 硬 gate 阻塞时强制错误强调色(文案仍走 busyOverride) */
 		busyHard = false,
 	}: {
@@ -29,6 +33,7 @@
 		onToggle: () => void;
 		chatBusy?: boolean;
 		busyOverride?: string | null;
+		busyOrbKind?: RatelOrbBusyKind | null;
 		busyHard?: boolean;
 	} = $props();
 
@@ -71,6 +76,14 @@
 			state.tone === 'indexing' ||
 			(!!busyOverride && state.tone !== 'error' && state.tone !== 'unconfigured'),
 	);
+
+	// 忙态用 ThinkingOrb 替代黄点 pulse;硬错误 / 未配置仍用 CSS 点
+	const showOrb = $derived(dotBusy && !busyHard);
+	const orbKind = $derived.by((): RatelOrbBusyKind => {
+		if (busyOrbKind) return busyOrbKind;
+		if (state.tone === 'indexing') return 'index';
+		return 'thinking';
+	});
 </script>
 
 <!-- 关键路径:整行可点击切换 Drawer;布局 点 | 文案 | % | ▲ -->
@@ -81,13 +94,18 @@
 	aria-expanded={expanded}
 	aria-label={expanded ? $t('status.drawer.collapse') : $t('status.drawer.expand')}
 >
-	<span
-		class="ratel-sl-dot"
-		class:ratel-sl-dot-ready={state.tone === 'ready' && !dotBusy && !busyHard}
-		class:ratel-sl-dot-thinking={dotBusy && !busyHard}
-		class:ratel-sl-dot-error={state.tone === 'error' || busyHard}
-		class:ratel-sl-dot-unconfigured={state.tone === 'unconfigured' && !busyHard}
-	></span>
+	{#if showOrb}
+		<span class="ratel-sl-orb" aria-hidden="true">
+			<ThinkingOrb orbState={mapOrbState(orbKind)} size={14} />
+		</span>
+	{:else}
+		<span
+			class="ratel-sl-dot"
+			class:ratel-sl-dot-ready={state.tone === 'ready' && !dotBusy && !busyHard}
+			class:ratel-sl-dot-error={state.tone === 'error' || busyHard}
+			class:ratel-sl-dot-unconfigured={state.tone === 'unconfigured' && !busyHard}
+		></span>
+	{/if}
 	<span
 		class="ratel-sl-text"
 		class:ratel-sl-text-warn={dotBusy && !busyHard}
@@ -133,11 +151,6 @@
 		background: var(--text-success);
 	}
 
-	.ratel-sl-dot-thinking {
-		background: var(--text-warning);
-		animation: ratel-sl-pulse 1.2s infinite;
-	}
-
 	.ratel-sl-dot-error {
 		background: var(--text-error);
 	}
@@ -147,15 +160,12 @@
 		border: 1.5px solid var(--text-faint, var(--text-muted));
 	}
 
-	@keyframes ratel-sl-pulse {
-		0%, 100% { opacity: 1; }
-		50% { opacity: 0.4; }
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.ratel-sl-dot-thinking {
-			animation: none;
-		}
+	.ratel-sl-orb {
+		display: flex;
+		align-items: center;
+		flex-shrink: 0;
+		width: 14px;
+		height: 14px;
 	}
 
 	.ratel-sl-text {

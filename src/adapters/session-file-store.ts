@@ -52,6 +52,8 @@ export class SessionFileStore {
 			return {
 				id: parsed.id,
 				title: typeof parsed.title === 'string' ? parsed.title : '',
+				// 修复:往返必须保留 shortTitle,否则 Header 已更新、编辑弹框 get 丢短标题/与芯片不一致
+				shortTitle: typeof parsed.shortTitle === 'string' ? parsed.shortTitle : undefined,
 				messages: Array.isArray(parsed.messages) ? parsed.messages : [],
 				createdAt: typeof parsed.createdAt === 'number' ? parsed.createdAt : 0,
 				updatedAt: typeof parsed.updatedAt === 'number' ? parsed.updatedAt : 0,

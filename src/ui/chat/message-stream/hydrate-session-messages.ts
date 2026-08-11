@@ -2,12 +2,13 @@
  * @file src/ui/chat/message-stream/hydrate-session-messages.ts
  * @description 将持久化 ChatMessage[] 还原为 UI Message[](含 think/tool/text Trace)
  * @module ui/chat/message-stream/hydrate-session-messages
- * @depends ports/llm, format-tool-display, ./types
+ * @depends ports/llm, format-tool-display, ./types, ./new-message-id
  */
 
 import type { ChatMessage } from '../../../ports/llm';
 import { mapSearchResults } from '../../../core/search-result-mapper';
 import { formatToolDisplayName, type FormatToolDisplayOptions } from '../format-tool-display';
+import { newMessageId } from './new-message-id';
 import type { Message, MessageSegment, ToolCallEntry } from './types';
 
 /** hydrate 可选参数 — 与 live 流式 tool 展示名对齐 */
@@ -40,6 +41,7 @@ export function hydrateSessionMessages(
 		}
 		if (m.role === 'user') {
 			out.push({
+				id: newMessageId(),
 				role: 'user',
 				segments: [{ type: 'text', text: m.content }],
 			});
@@ -122,6 +124,7 @@ export function hydrateSessionMessages(
 
 			if (segments.length > 0) {
 				out.push({
+					id: newMessageId(),
 					role: 'assistant',
 					segments,
 					...(lastSearch

@@ -2,10 +2,11 @@
  * @file src/ui/chat/message-stream/chat-message-to-ui.ts
  * @description ChatMessage(persistence 层) → Message(UI 层) 转换器 - 用于 /compact 等 session 重置场景
  * @module ui/chat/message-stream/chat-message-to-ui
- * @depends ../../../ports/llm, ./types
+ * @depends ../../../ports/llm, ./types, ./new-message-id
  */
 
 import type { ChatMessage } from '../../../ports/llm';
+import { newMessageId } from './new-message-id';
 import type { Message } from './types';
 
 /**
@@ -23,6 +24,7 @@ export function preservedChatMessagesToUi(messages: ChatMessage[]): Message[] {
 		.filter((m): m is ChatMessage & { role: 'user' | 'assistant' } =>
 			m.role === 'user' || m.role === 'assistant')
 		.map((m) => ({
+			id: newMessageId(),
 			role: m.role,
 			segments: [{ type: 'text' as const, text: m.content }],
 		}));

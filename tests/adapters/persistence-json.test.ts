@@ -43,7 +43,8 @@ describe('PersistenceJson', () => {
 			};
 			await persistence.sessions.upsert(session);
 			const retrieved = await persistence.sessions.get('s1');
-			expect(retrieved).toEqual(session);
+			// Persistence 缺 shortTitle 时会从 title 派生补齐
+			expect(retrieved).toEqual({ ...session, shortTitle: 'Test Session' });
 			expect(disk.sessions).toBeUndefined();
 			expect(Array.isArray(disk.sessionIndex)).toBe(true);
 		});

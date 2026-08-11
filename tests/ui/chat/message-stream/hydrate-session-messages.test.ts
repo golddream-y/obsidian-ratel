@@ -16,6 +16,10 @@ describe('hydrateSessionMessages', () => {
 			{ role: 'assistant', content: 'hello' },
 		]);
 		expect(ui).toHaveLength(2);
+		expect(ui[0]!.id).toEqual(expect.any(String));
+		expect(ui[0]!.id.length).toBeGreaterThan(0);
+		expect(ui[1]!.id).toEqual(expect.any(String));
+		expect(ui[1]!.id).not.toBe(ui[0]!.id);
 		expect(ui[1]!.segments).toEqual([{ type: 'text', text: 'hello' }]);
 	});
 

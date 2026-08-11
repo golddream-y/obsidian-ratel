@@ -42,6 +42,8 @@ export type MessageSegment =
  * 统一消息 — user / assistant 都用 segments,告别 content + toolCalls 双数组。
  */
 export interface Message {
+	/** 会话内稳定锚点（hydrate/发送时生成，不要求写入 Session 落盘） */
+	id: string;
 	role: 'user' | 'assistant';
 	segments: MessageSegment[];
 	chatError?: DiagError;

@@ -32,6 +32,21 @@ describe('SessionFileStore', () => {
 		expect(got?.messages[0]?.content).toBe('hi');
 	});
 
+	it('upsert/get - 含 shortTitle - 往返保留短标题', async () => {
+		const store = new SessionFileStore(dir);
+		await store.upsert({
+			id: 'session-2',
+			title: '正常标题很长很长',
+			shortTitle: '短标题',
+			messages: [{ role: 'user', content: 'hi' }],
+			createdAt: 1,
+			updatedAt: 2,
+		});
+		const got = await store.get('session-2');
+		expect(got?.title).toBe('正常标题很长很长');
+		expect(got?.shortTitle).toBe('短标题');
+	});
+
 	it('delete - 删除后 get 为 null', async () => {
 		const store = new SessionFileStore(dir);
 		await store.upsert({

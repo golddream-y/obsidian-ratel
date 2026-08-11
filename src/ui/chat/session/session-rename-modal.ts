@@ -93,8 +93,11 @@ class SessionRenameModal extends Modal {
 		save.onclick = () => this.submitSave();
 
 		window.setTimeout(() => {
-			this.inputEl?.focus();
-			this.inputEl?.select();
+			if (!this.inputEl) return;
+			// 修复:部分 Obsidian 主题/焦点路径会冲掉初值,focus 前再写一次
+			this.inputEl.value = this.value;
+			this.inputEl.focus();
+			this.inputEl.select();
 		}, 0);
 	}
 

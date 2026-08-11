@@ -11,6 +11,8 @@
 	import { metaShortFromModel, renderToolDetail } from '../render-tool-detail';
 	import { isMcpToolName } from '../../mcp/parse-mcp-tool-name';
 	import { t } from '../../../i18n';
+	import ThinkingOrb from '../../orbs/ThinkingOrb.svelte';
+	import { mapOrbState } from '../../orbs/map-orb-state';
 
 	let { toolCall }: { toolCall: ToolCallEntry } = $props();
 
@@ -28,7 +30,6 @@
 	}
 
 	function glyph(): string {
-		if (toolCall.status === 'calling') return '●';
 		if (toolCall.status === 'failed') return '✗';
 		return '✓';
 	}
@@ -54,7 +55,13 @@
 		aria-expanded={expanded}
 		onclick={toggle}
 	>
-		<span class="ratel-trace-ico" class:ratel-trace-ico-pulse={toolCall.status === 'calling'}>{glyph()}</span>
+		<span class="ratel-trace-ico" class:ratel-trace-ico-orb={toolCall.status === 'calling'}>
+			{#if toolCall.status === 'calling'}
+				<ThinkingOrb orbState={mapOrbState('tool')} size={12} />
+			{:else}
+				{glyph()}
+			{/if}
+		</span>
 		{#if isMcpToolName(toolCall.name)}
 			<span class="ratel-trace-mcp-badge">{$t('chat.tool.mcpBadge')}</span>
 		{/if}
@@ -110,6 +117,15 @@
 		color: var(--text-faint, var(--text-muted));
 	}
 
+	.ratel-trace-ico-orb {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 14px;
+		height: 14px;
+		line-height: 0;
+	}
+
 	.ratel-trace-done .ratel-trace-ico {
 		color: var(--text-success);
 	}
@@ -122,10 +138,6 @@
 		color: var(--text-warning);
 	}
 
-	.ratel-trace-ico-pulse {
-		animation: ratel-trace-pulse 1.4s ease-in-out infinite;
-	}
-
 	.ratel-trace-mcp-badge {
 		flex-shrink: 0;
 		font-size: 9px;
@@ -136,11 +148,6 @@
 		border: 1px solid var(--background-modifier-border);
 		color: var(--text-muted);
 		background: color-mix(in srgb, var(--background-secondary) 80%, transparent);
-	}
-
-	@keyframes ratel-trace-pulse {
-		0%, 100% { opacity: 1; }
-		50% { opacity: 0.35; }
 	}
 
 	.ratel-trace-label {
@@ -199,7 +206,6 @@
 	}
 
 	@media (prefers-reduced-motion: reduce) {
-		.ratel-trace-ico-pulse { animation: none; }
 		.ratel-trace-row { transition: none; }
 	}
 </style>
