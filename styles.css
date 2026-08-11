@@ -357,6 +357,55 @@ button.ratel-send {
 	padding: 0;
 	box-shadow: none;
 }
+
+/*
+ * 权限三档胶囊 — Obsidian 给 button 设了 min-height / padding / 圆角 / 灰底,
+ * Svelte scoped 压不过,会拆成三个独立灰钮。与 .ratel-send 同理提到全局。
+ */
+.ratel-perm-seg {
+	display: inline-flex;
+	align-items: stretch;
+	flex-shrink: 0;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 999px;
+	overflow: hidden;
+	background: color-mix(in srgb, var(--background-primary) 82%, transparent);
+}
+
+button.ratel-perm-btn {
+	appearance: none;
+	-webkit-appearance: none;
+	min-height: unset;
+	height: auto;
+	min-width: unset;
+	margin: 0;
+	padding: 3px 9px;
+	border: none;
+	border-radius: 0;
+	box-shadow: none;
+	background: transparent;
+	color: var(--text-faint);
+	font: inherit;
+	font-size: 10.5px;
+	font-weight: 550;
+	letter-spacing: 0.02em;
+	line-height: 1.2;
+	cursor: pointer;
+	transition: color 0.12s, background 0.12s;
+}
+
+button.ratel-perm-btn + button.ratel-perm-btn {
+	border-left: 1px solid var(--background-modifier-border);
+}
+
+button.ratel-perm-btn:hover {
+	box-shadow: none;
+}
+
+button.ratel-perm-btn:focus-visible {
+	box-shadow: inset 0 0 0 1px
+		color-mix(in srgb, var(--interactive-accent) 35%, transparent);
+}
 .ratel-appearance-preview-status {
 	font-size: 12px;
 	color: var(--text-muted);

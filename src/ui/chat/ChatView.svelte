@@ -1413,6 +1413,7 @@
 					{#each PERM_LEVELS as lv (lv)}
 						<button
 							type="button"
+							class="ratel-perm-btn"
 							role="radio"
 							class:is-active={permLevel === lv}
 							aria-checked={permLevel === lv}
@@ -1969,35 +1970,7 @@
 		color: var(--text-error);
 	}
 
-	.ratel-perm-seg {
-		display: inline-flex;
-		align-items: stretch;
-		flex-shrink: 0;
-		border: 1px solid var(--background-modifier-border);
-		border-radius: 999px;
-		overflow: hidden;
-		background: color-mix(in srgb, var(--background-primary) 82%, transparent);
-	}
-
-	.ratel-perm-seg button {
-		appearance: none;
-		border: none;
-		background: transparent;
-		color: var(--text-faint);
-		font: inherit;
-		font-size: 10.5px;
-		font-weight: 550;
-		letter-spacing: 0.02em;
-		padding: 3px 9px;
-		cursor: pointer;
-		line-height: 1.2;
-		transition: color 0.12s, background 0.12s;
-	}
-
-	.ratel-perm-seg button + button {
-		border-left: 1px solid var(--background-modifier-border);
-	}
-
+	/* 选中色仍 scoped(用 .ratel-chat 上的 --ratel-copper-*);几何重置见 styles.css */
 	.ratel-perm-seg button:hover {
 		color: var(--text-muted);
 		background: color-mix(in srgb, var(--text-normal) 4%, transparent);
