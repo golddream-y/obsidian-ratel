@@ -34,6 +34,7 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
+| P-CHAT-NAV | [2026-08-11-chat-nav-rail.md](plans/2026-08-11-chat-nav-rail.md) | ⏳ Pending | S-CHAT-NAV | 细轨+回底+跳 user 轮次+左右吸附;5 Task |
 | P-CHAT-PROTO | [2026-08-10-chat-prototype-align.md](plans/2026-08-10-chat-prototype-align.md) | ✅ Completed | S-CHAT-PROTO | 分支 main;发送↑;三档权限;底避让;原型回写;6 Task |
 | P-SETTINGS-SYNC | [2026-08-03-settings-sync.md](plans/2026-08-03-settings-sync.md) | ✅ Completed | S-SETTINGS-SYNC | 分支 cursor/p-settings-sync-5933;settings$ 读入口;扇出 maxTokens;Chat/Memory/gate |
 | P-MEMORY-MODAL | [2026-07-31-memory-modal-unify.md](plans/2026-07-31-memory-modal-unify.md) | ✅ Completed | S-MEMORY-MODAL | 分支 feat/p-memory-modal;MemoryModal+拆独立视图;5 Task |
