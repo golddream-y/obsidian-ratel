@@ -1,15 +1,16 @@
 <!--
 	@file src/ui/motion/empty/EmptyStage.svelte
-	@description 空会话欢迎台 — SoftAurora 背景 + 玻璃托盘 + Gradient 主句 + Type 副句
+	@description 空会话欢迎台 — SoftAurora 背景 + 玻璃托盘 + Gradient 主句 + Rotate 副句
 	@module ui/motion/empty/EmptyStage
-	@depends ./SoftAuroraBackdrop, ./NoiseTray, ./GradientWelcome, ./WelcomeTypeLine, i18n
+	@depends ./SoftAuroraBackdrop, ./NoiseTray, ./GradientWelcome, ./RotateHint, ./empty-hints, i18n
 -->
 <script lang="ts">
 	import { t } from '../../../i18n';
+	import { resolveEmptyHints } from './empty-hints';
 	import GradientWelcome from './GradientWelcome.svelte';
 	import NoiseTray from './NoiseTray.svelte';
+	import RotateHint from './RotateHint.svelte';
 	import SoftAuroraBackdrop from './SoftAuroraBackdrop.svelte';
-	import WelcomeTypeLine from './WelcomeTypeLine.svelte';
 
 	interface Props {
 		motionOn: boolean;
@@ -18,7 +19,7 @@
 	let { motionOn }: Props = $props();
 
 	const welcome = $derived($t('chat.empty.welcome'));
-	const hint = $derived($t('chat.empty.hint'));
+	const hints = $derived(resolveEmptyHints((k) => $t(k as any)));
 </script>
 
 <div class="ratel-empty-stage" data-motion={motionOn ? 'on' : 'off'}>
@@ -29,7 +30,7 @@
 		<NoiseTray />
 		<div class="ratel-empty-stage-text">
 			<GradientWelcome text={welcome} play={motionOn} />
-			<WelcomeTypeLine text={hint} play={motionOn} />
+			<RotateHint {hints} play={motionOn} />
 		</div>
 	</div>
 </div>
