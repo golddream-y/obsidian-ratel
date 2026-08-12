@@ -7,6 +7,9 @@
 	 */
 	import { filterCommands, type SlashCommand } from './slash-commands';
 	import { t } from '../../../i18n';
+	import { isChatMotionEnabled } from '../../motion/prefs';
+	import { settings$ } from '../../settings-store';
+	import { staggerDelayMs } from '../../motion/chrome/animated-list-policy';
 
 	let {
 		input,
@@ -26,6 +29,8 @@
 		return filterCommands(input);
 	});
 	let selectedIndex = $state(0);
+
+	const motionOn = $derived(isChatMotionEnabled($settings$));
 
 	$effect(() => {
 		if (selectedIndex >= commands.length) {
@@ -70,7 +75,9 @@
 		{#each commands as cmd, i}
 			<div
 				class="ratel-sm-item"
+				class:ratel-sm-enter={motionOn}
 				class:ratel-sm-active={i === selectedIndex}
+				style:animation-delay={motionOn ? `${staggerDelayMs(i) ?? 0}ms` : '0ms'}
 				role="option"
 				aria-selected={i === selectedIndex}
 				onclick={() => onSelect(cmd)}
@@ -127,5 +134,26 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+
+	.ratel-sm-enter {
+		animation: ratel-sm-enter 220ms ease both;
+	}
+
+	@keyframes ratel-sm-enter {
+		from {
+			opacity: 0;
+			transform: translateY(6px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.ratel-sm-enter {
+			animation: none;
+		}
 	}
 </style>

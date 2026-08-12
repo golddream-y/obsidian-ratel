@@ -7,12 +7,14 @@
 	import { t } from '../../../i18n';
 	import type { SessionIndexEntry } from '../../../ports/persistence';
 	import { deriveShortTitle } from './session-title';
+	import { staggerDelayMs } from '../../motion/chrome/animated-list-policy';
 
 	let {
 		entries,
 		currentId,
 		loadingId = null,
 		open = false,
+		motionOn = false,
 		onSelect,
 		onNew,
 		onDelete,
@@ -21,6 +23,7 @@
 		currentId: string;
 		loadingId?: string | null;
 		open?: boolean;
+		motionOn?: boolean;
 		onSelect: (id: string) => void;
 		onNew: () => void;
 		onDelete: (id: string) => void;
@@ -70,14 +73,16 @@
 			</button>
 		</div>
 		<div class="ratel-session-list">
-			{#each entries as e (e.id)}
+			{#each entries as e, i (e.id)}
 				{@const short = rowShort(e)}
 				{@const full = rowFull(e)}
 				<!-- 安全路径:行主体不用 button — Obsidian 主题常给 button 固定 height,多行标题会被纵向裁切 -->
 				<div
 					class="ratel-session-row"
+					class:ratel-session-enter={motionOn}
 					class:current={e.id === currentId}
 					class:is-loading={loadingId === e.id}
+					style:animation-delay={motionOn ? `${staggerDelayMs(i) ?? 0}ms` : '0ms'}
 					role="menuitem"
 					tabindex="0"
 					onclick={(ev) => {
@@ -278,6 +283,21 @@
 		color: var(--text-error, #d0887a);
 	}
 
+	.ratel-session-enter {
+		animation: ratel-session-enter 220ms ease both;
+	}
+
+	@keyframes ratel-session-enter {
+		from {
+			opacity: 0;
+			transform: translateY(6px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
 	@keyframes ratel-session-spin {
 		to {
 			transform: rotate(360deg);
@@ -286,6 +306,10 @@
 
 	@media (prefers-reduced-motion: reduce) {
 		.ratel-session-row.is-loading .ratel-session-title-short::after {
+			animation: none;
+		}
+
+		.ratel-session-enter {
 			animation: none;
 		}
 	}

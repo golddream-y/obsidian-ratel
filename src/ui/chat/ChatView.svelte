@@ -1289,6 +1289,7 @@
 						currentId={sessionId}
 						loadingId={sessionLoadingId}
 						open={true}
+						motionOn={chatMotionOn}
 						onSelect={(id) => void switchToSession(id)}
 						onNew={() => void createNewSession()}
 						onDelete={(id) => void deleteSessionFromMenu(id)}
