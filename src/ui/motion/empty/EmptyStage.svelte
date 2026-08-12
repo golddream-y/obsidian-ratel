@@ -1,13 +1,14 @@
 <!--
 	@file src/ui/motion/empty/EmptyStage.svelte
-	@description 空会话欢迎台 — SoftAurora 背景 + Blur 主句 + Type 副句
+	@description 空会话欢迎台 — SoftAurora 背景 + 玻璃托盘 + Gradient 主句 + Type 副句
 	@module ui/motion/empty/EmptyStage
-	@depends ./SoftAuroraBackdrop, ./WelcomeBlurText, ./WelcomeTypeLine, i18n
+	@depends ./SoftAuroraBackdrop, ./NoiseTray, ./GradientWelcome, ./WelcomeTypeLine, i18n
 -->
 <script lang="ts">
 	import { t } from '../../../i18n';
+	import GradientWelcome from './GradientWelcome.svelte';
+	import NoiseTray from './NoiseTray.svelte';
 	import SoftAuroraBackdrop from './SoftAuroraBackdrop.svelte';
-	import WelcomeBlurText from './WelcomeBlurText.svelte';
 	import WelcomeTypeLine from './WelcomeTypeLine.svelte';
 
 	interface Props {
@@ -24,9 +25,12 @@
 	{#if motionOn}
 		<SoftAuroraBackdrop />
 	{/if}
-	<div class="ratel-empty-stage-content">
-		<WelcomeBlurText text={welcome} play={motionOn} />
-		<WelcomeTypeLine text={hint} play={motionOn} />
+	<div class="ratel-empty-stage-content has-glass">
+		<NoiseTray />
+		<div class="ratel-empty-stage-text">
+			<GradientWelcome text={welcome} play={motionOn} />
+			<WelcomeTypeLine text={hint} play={motionOn} />
+		</div>
 	</div>
 </div>
 
@@ -50,5 +54,21 @@
 		text-align: center;
 		padding: 24px 16px;
 		max-width: 100%;
+	}
+
+	.has-glass {
+		background: color-mix(in srgb, var(--background-primary) 72%, transparent);
+		backdrop-filter: blur(12px);
+		border-radius: 12px;
+		border: 1px solid color-mix(in srgb, var(--text-muted) 12%, transparent);
+	}
+
+	.ratel-empty-stage-text {
+		position: relative;
+		z-index: 1;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.5rem;
 	}
 </style>
