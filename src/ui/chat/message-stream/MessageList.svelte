@@ -91,7 +91,7 @@
 	{#if messages.length === 0}
 		<EmptyStage motionOn={motionOn} />
 	{/if}
-	{#each messages as msg, i}
+	{#each messages as msg, i (msg.id)}
 		<MessageBubble
 			{msg}
 			isLast={i === messages.length - 1}

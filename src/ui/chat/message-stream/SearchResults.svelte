@@ -7,22 +7,38 @@
 <script lang="ts">
 	import { t } from '../../../i18n';
 	import { formatCitePath } from '../cite-path-display';
+	import {
+		CITE_EACH_STAGGER_MS,
+		shouldStaggerCite,
+	} from '../../motion/enter/cite-policy';
 
 	let {
 		results,
 		reranked = false,
 		onOpenPath,
+		motionOn = false,
+		messageId = '',
 	}: {
 		results: Array<{ docId: string; score: number; path: string; index: number }>;
 		reranked?: boolean;
 		onOpenPath: (path: string) => void;
+		motionOn?: boolean;
+		messageId?: string;
 	} = $props();
 
 	let expanded = $state(false);
+	/** 关键路径:展开后 chip 入场只播一次，class 保持以免动画中途被卸 */
+	let citeEnterActive = $state(false);
+
+	const staggerMode = $derived(shouldStaggerCite(results.length));
+
+	$effect(() => {
+		if (expanded && motionOn) citeEnterActive = true;
+	});
 </script>
 
 {#if results.length > 0}
-	<div class="ratel-cites">
+	<div class="ratel-cites" data-msg-id={messageId}>
 		<button
 			type="button"
 			class="ratel-cites-toggle"
@@ -39,11 +55,19 @@
 			{#if reranked}
 				<div class="ratel-cites-hint">{$t('chat.search.rerankHint')}</div>
 			{/if}
-			<div class="ratel-cites-row" role="list">
-				{#each results as r}
+			<div
+				class="ratel-cites-row"
+				class:ratel-cite-enter={citeEnterActive && expanded && staggerMode === 'group'}
+				role="list"
+			>
+				{#each results as r, i}
 					<button
 						type="button"
 						class="ratel-cite-chip"
+						class:ratel-cite-enter={citeEnterActive && expanded && staggerMode === 'each'}
+						style:animation-delay={citeEnterActive && expanded && staggerMode === 'each'
+							? `${i * CITE_EACH_STAGGER_MS}ms`
+							: undefined}
 						role="listitem"
 						aria-label={$t('chat.cite.openNote', { path: r.path })}
 						title={r.path}
@@ -183,5 +207,30 @@
 		max-width: 200px;
 		font-family: var(--font-monospace);
 		font-size: 11px;
+	}
+
+	.ratel-cite-enter {
+		opacity: 0;
+		transform: translateY(6px);
+		animation: ratel-cite-enter 220ms ease forwards;
+	}
+
+	@keyframes ratel-cite-enter {
+		from {
+			opacity: 0;
+			transform: translateY(6px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.ratel-cite-enter {
+			animation: none;
+			opacity: 1;
+			transform: none;
+		}
 	}
 </style>

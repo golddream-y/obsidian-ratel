@@ -17,6 +17,9 @@
 		shouldShowCiteChips,
 	} from '../collect-cited-indexes';
 	import { t } from '../../../i18n';
+	import FadeIn from '../../motion/enter/FadeIn.svelte';
+	import { isChatMotionEnabled } from '../../motion/prefs';
+	import { settings$ as settingsStore } from '../../settings-store';
 
 	/**
 	 * MessageBubble props。
@@ -60,8 +63,10 @@
 	const citeSearchResults = $derived(
 		msg.searchResults?.length ? msg.searchResults : citeSearchFallback ?? undefined,
 	);
+	const motionOn = $derived(isChatMotionEnabled($settingsStore));
 </script>
 
+<FadeIn play={motionOn}>
 <div
 	class="ratel-msg"
 	class:ratel-msg-user={msg.role === 'user'}
@@ -90,6 +95,8 @@
 				streaming={isAssistantStreaming}
 				searchResults={msg.role === 'assistant' ? citeSearchResults : undefined}
 				{onOpenPath}
+				{motionOn}
+				messageId={msg.id}
 			/>
 		{:else if block.kind === 'trace'}
 			<div class="ratel-trace">
@@ -109,6 +116,8 @@
 			results={msg.searchResults!}
 			reranked={msg.searchReranked ?? false}
 			{onOpenPath}
+			{motionOn}
+			messageId={msg.id}
 		/>
 	{/if}
 
@@ -131,6 +140,7 @@
 		</div>
 	{/if}
 </div>
+</FadeIn>
 
 <style>
 	/*
