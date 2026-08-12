@@ -85,6 +85,8 @@
 	import { appearanceRevision } from '../appearance/appearance-store';
 	import { settings$ as settingsStore } from '../settings-store';
 	import TitleDissolve from '../motion/title/TitleDissolve.svelte';
+	import ShinyBrand from '../motion/brand/ShinyBrand.svelte';
+	import ClickSpark from '../motion/brand/ClickSpark.svelte';
 	import { isChatMotionEnabled } from '../motion/prefs';
 
 	let { plugin }: { plugin: RatelVaultPlugin } = $props();
@@ -151,6 +153,7 @@
 	let slashMenuEl = $state<{ handleKeydown: (e: KeyboardEvent) => boolean } | null>(null);
 	let mentionMenuEl = $state<{ handleKeydown: (e: KeyboardEvent) => boolean } | null>(null);
 	let textareaEl = $state<HTMLTextAreaElement | null>(null);
+	let sendSparkEl = $state<{ burst: () => void } | null>(null);
 	let mentionPaths = $state<string[]>([]);
 	let mentionQuery = $state<string | null>(null);
 	let mentionItems = $state<string[]>([]);
@@ -957,6 +960,9 @@
 		messages.push({ id: newMessageId(), role: 'assistant' as const, segments: [] });
 		const am = messages[messages.length - 1] as Message;
 
+		// 关键路径:入队成功后触发火花;gate 早退与 Stop 不触发
+		sendSparkEl?.burst();
+
 		input = '';
 		mentionPaths = [];
 		mentionQuery = null;
@@ -1202,9 +1208,7 @@
 	<div class="ratel-header">
 		<div class="ratel-header-left">
 			<div class="ratel-header-brand">
-				<span class="ratel-header-mark"
-					>{$t('chat.header.title')}<span class="ratel-header-dot" aria-hidden="true">.</span></span
-				>
+				<ShinyBrand text={$t('chat.header.title')} motionOn={chatMotionOn} />
 				<span class="ratel-header-tagline">{$t('chat.header.tagline')}</span>
 			</div>
 		</div>
@@ -1403,24 +1407,28 @@
 						disabled={isRunning || isCompacting || !gate.canSend}
 						rows={1}
 					></textarea>
-					{#if isRunning}
-						<button
-							class="ratel-send ratel-stop"
-							type="button"
-							onclick={stopGeneration}
-							title={$t('chat.composer.stop')}
-							aria-label={$t('chat.composer.stop')}
-						>■</button>
-					{:else}
-						<button
-							class="ratel-send"
-							type="button"
-							onclick={sendMessage}
-							disabled={!input.trim() || !gate.canSend}
-							title={$t('chat.composer.send')}
-							aria-label={$t('chat.composer.send')}
-						>↑</button>
-					{/if}
+					<ClickSpark enabled={chatMotionOn} bind:this={sendSparkEl}>
+						{#snippet children()}
+							{#if isRunning}
+								<button
+									class="ratel-send ratel-stop"
+									type="button"
+									onclick={stopGeneration}
+									title={$t('chat.composer.stop')}
+									aria-label={$t('chat.composer.stop')}
+								>■</button>
+							{:else}
+								<button
+									class="ratel-send"
+									type="button"
+									onclick={sendMessage}
+									disabled={!input.trim() || !gate.canSend}
+									title={$t('chat.composer.send')}
+									aria-label={$t('chat.composer.send')}
+								>↑</button>
+							{/if}
+						{/snippet}
+					</ClickSpark>
 				</div>
 			</div>
 			<div class="ratel-perm-hint" data-level={permLevel}>
@@ -1515,22 +1523,6 @@
 		align-items: baseline;
 		gap: 8px;
 		min-width: 0;
-	}
-
-	.ratel-header-mark {
-		font-size: 15px;
-		font-weight: 650;
-		letter-spacing: -0.02em;
-		color: var(--text-normal);
-		flex-shrink: 0;
-		/* 安全路径:禁止合成加粗,避免「Ratel.」的点看起来比正文更重 */
-		font-synthesis: none;
-	}
-
-	.ratel-header-dot {
-		/* 与 Ratel 同字重,只换强调色(对齐原型 .brand-mark span) */
-		font-weight: inherit;
-		color: var(--ratel-cite, var(--interactive-accent));
 	}
 
 	.ratel-header-tagline {
@@ -1928,7 +1920,11 @@
 		line-height: 1;
 		font-family: inherit;
 		cursor: pointer;
-		transition: opacity 0.15s, transform 0.1s, filter 0.15s;
+		transition:
+			background 0.15s,
+			opacity 0.15s,
+			transform 0.12s,
+			filter 0.15s;
 		-webkit-appearance: none;
 		appearance: none;
 		display: inline-flex;
