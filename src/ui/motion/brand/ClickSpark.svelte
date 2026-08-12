@@ -1,7 +1,7 @@
 <!--
 	@file src/ui/motion/brand/ClickSpark.svelte
 	@origin https://github.com/DavidHDev/react-bits/blob/main/src/ts-default/Animations/ClickSpark/ClickSpark.tsx
-	@description 发送钮火花 — 纯 canvas 粒子 burst API（无 motion 库）
+	@description 发送钮火花 — tick 触发并将 fixed canvas 挂到 body，避免输入壳裁剪
 	@module ui/motion/brand/ClickSpark
 	@depends ./spark-ease
 -->
@@ -20,6 +20,7 @@
 	interface Props {
 		children: Snippet;
 		enabled?: boolean;
+		tick?: number;
 		sparkCount?: number;
 		duration?: number;
 		sparkSize?: number;
@@ -30,6 +31,7 @@
 	let {
 		children,
 		enabled = true,
+		tick = 0,
 		sparkCount = 8,
 		duration = 400,
 		sparkSize = 10,
@@ -43,10 +45,12 @@
 	let sparks: Spark[] = [];
 	let animId: number | null = null;
 	let sparkColor = '';
+	let previousTick = tick;
 
 	function resizeCanvas(): void {
-		if (!canvasEl || !rootEl) return;
-		const { width, height } = rootEl.getBoundingClientRect();
+		if (!canvasEl) return;
+		const width = window.innerWidth;
+		const height = window.innerHeight;
 		if (canvasEl.width !== width || canvasEl.height !== height) {
 			canvasEl.width = width;
 			canvasEl.height = height;
@@ -59,19 +63,14 @@
 		return accent || '#ffffff';
 	}
 
-	/**
-	 * 在按钮中心（或指定坐标）触发一次火花 burst。
-	 *
-	 * @param x - canvas 内 x；省略则用容器中心
-	 * @param y - canvas 内 y；省略则用容器中心
-	 */
-	export function burst(x?: number, y?: number): void {
+	/** 在按钮的视口中心触发一次火花 burst。 */
+	function burst(): void {
 		if (!enabled || !canvasEl || !rootEl) return;
 
 		sparkColor = readSparkColor();
-		const rect = canvasEl.getBoundingClientRect();
-		const cx = x ?? rect.width / 2;
-		const cy = y ?? rect.height / 2;
+		const rect = rootEl.getBoundingClientRect();
+		const cx = rect.left + rect.width / 2;
+		const cy = rect.top + rect.height / 2;
 		const now = performance.now();
 
 		const batch: Spark[] = Array.from({ length: sparkCount }, (_, i) => ({
@@ -126,22 +125,23 @@
 		animId = requestAnimationFrame(draw);
 	}
 
+	// 关键路径:只响应令牌递增，父组件重渲或 enabled 切换不会重复触发。
+	$effect(() => {
+		const nextTick = tick;
+		if (nextTick > previousTick) burst();
+		previousTick = nextTick;
+	});
+
 	onMount(() => {
+		if (canvasEl) document.body.appendChild(canvasEl);
 		resizeCanvas();
-		let resizeTimeout: ReturnType<typeof setTimeout> | undefined;
 
-		const handleResize = (): void => {
-			clearTimeout(resizeTimeout);
-			resizeTimeout = setTimeout(resizeCanvas, 100);
-		};
-
-		const ro = new ResizeObserver(handleResize);
-		if (rootEl) ro.observe(rootEl);
+		window.addEventListener('resize', resizeCanvas);
 
 		return () => {
-			ro.disconnect();
-			clearTimeout(resizeTimeout);
+			window.removeEventListener('resize', resizeCanvas);
 			if (animId !== null) cancelAnimationFrame(animId);
+			canvasEl?.remove();
 		};
 	});
 </script>
@@ -160,11 +160,11 @@
 	}
 
 	.ratel-click-spark-canvas {
-		position: absolute;
+		position: fixed;
 		inset: 0;
-		width: 100%;
-		height: 100%;
+		width: 100vw;
+		height: 100vh;
 		pointer-events: none;
-		z-index: 1;
+		z-index: 10000;
 	}
 </style>

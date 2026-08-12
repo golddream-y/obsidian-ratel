@@ -89,6 +89,7 @@
 	import ClickSpark from '../motion/brand/ClickSpark.svelte';
 	import GlareHover from '../motion/chrome/GlareHover.svelte';
 	import { isChatMotionEnabled } from '../motion/prefs';
+	import { isNearBottom, snapScrollToBottom } from './sticky-scroll';
 
 	let { plugin }: { plugin: RatelVaultPlugin } = $props();
 
@@ -154,7 +155,7 @@
 	let slashMenuEl = $state<{ handleKeydown: (e: KeyboardEvent) => boolean } | null>(null);
 	let mentionMenuEl = $state<{ handleKeydown: (e: KeyboardEvent) => boolean } | null>(null);
 	let textareaEl = $state<HTMLTextAreaElement | null>(null);
-	let sendSparkEl = $state<{ burst: () => void } | null>(null);
+	let sendSparkTick = $state(0);
 	let mentionPaths = $state<string[]>([]);
 	let mentionQuery = $state<string | null>(null);
 	let mentionItems = $state<string[]>([]);
@@ -192,7 +193,7 @@
 	const scrollToBottom = () => {
 		if (!isUserNearBottom) return;
 		requestAnimationFrame(() => {
-			if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight;
+			if (messagesEl) snapScrollToBottom(messagesEl);
 		});
 	};
 
@@ -204,8 +205,12 @@
 
 	// 关键路径:onscroll 监听内层 .ratel-messages 的滚动,更新 isUserNearBottom + 进度轨
 	function handleScroll(el: HTMLDivElement) {
-		isUserNearBottom =
-			el.scrollHeight - el.scrollTop - el.clientHeight < SCROLL_NEAR_BOTTOM_THRESHOLD;
+		isUserNearBottom = isNearBottom(
+			el.scrollTop,
+			el.scrollHeight,
+			el.clientHeight,
+			SCROLL_NEAR_BOTTOM_THRESHOLD,
+		);
 		updateNavMetrics(el);
 	}
 
@@ -213,7 +218,7 @@
 	function forceScrollToBottom() {
 		isUserNearBottom = true;
 		requestAnimationFrame(() => {
-			if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight;
+			if (messagesEl) snapScrollToBottom(messagesEl);
 		});
 	}
 
@@ -964,8 +969,8 @@
 		messages.push({ id: newMessageId(), role: 'assistant' as const, segments: [] });
 		const am = messages[messages.length - 1] as Message;
 
-		// 关键路径:入队成功后触发火花;gate 早退与 Stop 不触发
-		sendSparkEl?.burst();
+		// 关键路径:入队成功后递增令牌触发火花;gate 早退与 Stop 不触发。
+		sendSparkTick += 1;
 
 		input = '';
 		mentionPaths = [];
@@ -1412,7 +1417,7 @@
 						disabled={isRunning || isCompacting || !gate.canSend}
 						rows={1}
 					></textarea>
-					<ClickSpark enabled={chatMotionOn} bind:this={sendSparkEl}>
+					<ClickSpark enabled={chatMotionOn} tick={sendSparkTick}>
 						{#snippet children()}
 							<GlareHover enabled={chatMotionOn && !isRunning}>
 								{#snippet children()}

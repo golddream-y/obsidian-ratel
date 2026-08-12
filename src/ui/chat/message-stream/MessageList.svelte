@@ -152,7 +152,8 @@
 		display: flex;
 		flex-direction: column;
 		gap: 20px;
-		scroll-behavior: smooth;
+		/* 修复:sticky-to-bottom 必须瞬时落底，避免流式输出期间持续追赶平滑动画。 */
+		scroll-behavior: auto;
 		/* 组件内兜底；全局压过 Obsidian body{user-select:none} 在 styles.css */
 		-webkit-user-select: text;
 		user-select: text;
