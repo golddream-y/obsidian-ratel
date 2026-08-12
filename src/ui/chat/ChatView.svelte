@@ -87,6 +87,7 @@
 	import TitleDissolve from '../motion/title/TitleDissolve.svelte';
 	import ShinyBrand from '../motion/brand/ShinyBrand.svelte';
 	import ClickSpark from '../motion/brand/ClickSpark.svelte';
+	import GlareHover from '../motion/chrome/GlareHover.svelte';
 	import { isChatMotionEnabled } from '../motion/prefs';
 
 	let { plugin }: { plugin: RatelVaultPlugin } = $props();
@@ -1413,24 +1414,28 @@
 					></textarea>
 					<ClickSpark enabled={chatMotionOn} bind:this={sendSparkEl}>
 						{#snippet children()}
-							{#if isRunning}
-								<button
-									class="ratel-send ratel-stop"
-									type="button"
-									onclick={stopGeneration}
-									title={$t('chat.composer.stop')}
-									aria-label={$t('chat.composer.stop')}
-								>■</button>
-							{:else}
-								<button
-									class="ratel-send"
-									type="button"
-									onclick={sendMessage}
-									disabled={!input.trim() || !gate.canSend}
-									title={$t('chat.composer.send')}
-									aria-label={$t('chat.composer.send')}
-								>↑</button>
-							{/if}
+							<GlareHover enabled={chatMotionOn && !isRunning}>
+								{#snippet children()}
+									{#if isRunning}
+										<button
+											class="ratel-send ratel-stop"
+											type="button"
+											onclick={stopGeneration}
+											title={$t('chat.composer.stop')}
+											aria-label={$t('chat.composer.stop')}
+										>■</button>
+									{:else}
+										<button
+											class="ratel-send"
+											type="button"
+											onclick={sendMessage}
+											disabled={!input.trim() || !gate.canSend}
+											title={$t('chat.composer.send')}
+											aria-label={$t('chat.composer.send')}
+										>↑</button>
+									{/if}
+								{/snippet}
+							</GlareHover>
 						{/snippet}
 					</ClickSpark>
 				</div>
