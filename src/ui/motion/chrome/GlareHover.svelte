@@ -59,6 +59,12 @@
 		overflow: hidden;
 	}
 
+	/* 关键路径:保证发送/停止钮在扫光层之上可点 */
+	.ratel-glare :global(button) {
+		position: relative;
+		z-index: 2;
+	}
+
 	.ratel-glare-shine {
 		position: absolute;
 		inset: 0;

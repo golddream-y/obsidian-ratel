@@ -977,10 +977,12 @@
 		mentionQuery = null;
 		mentionItems = [];
 		sessionMenuOpen = false;
+		// 关键路径:先挂 abortController 再翻 isRunning，避免停钮已显示但 abort 仍为 null
+		const ac = new AbortController();
+		abortController = ac;
 		isRunning = true;
 		// 关键路径:不在此 patch model=checking — 否则 StatusStrip「思考中」
 		// 与 MessageList 打字指示双重叠;model 状态只由 FeedbackController 维护。
-		const ac = new AbortController();
 		let lastToolName: string | undefined;
 
 		// 第 1 层:send 前精确估算(基于历史消息 segments)
@@ -1003,7 +1005,6 @@
 
 		try {
 			const events = plugin.ask(sessionId, text, ac.signal);
-			abortController = ac;
 
 			for await (const event of events) {
 				switch (event.type) {
