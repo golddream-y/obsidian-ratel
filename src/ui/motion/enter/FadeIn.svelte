@@ -33,9 +33,11 @@
 </div>
 
 <style>
-	/* 关键路径:wrapper 不占盒，动画打在直接子节点，保留 flex 对齐 */
+	/* 关键路径:flex 列 + 满宽，子节点 align-self:flex-end 才能右对齐用户气泡 */
 	.ratel-fade-in-wrap {
-		display: contents;
+		display: flex;
+		flex-direction: column;
+		width: 100%;
 	}
 
 	.ratel-fade-in-active > :global(*) {

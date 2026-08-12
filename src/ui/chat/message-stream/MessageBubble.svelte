@@ -20,6 +20,7 @@
 	import FadeIn from '../../motion/enter/FadeIn.svelte';
 	import { isChatMotionEnabled } from '../../motion/prefs';
 	import { settings$ as settingsStore } from '../../settings-store';
+	import '../../motion/bubble/star-border.css';
 
 	/**
 	 * MessageBubble props。
@@ -74,6 +75,7 @@
 <div
 	class="ratel-msg"
 	class:ratel-msg-user={msg.role === 'user'}
+	class:ratel-msg-user--star={msg.role === 'user' && motionOn}
 	class:ratel-msg-assistant={msg.role === 'assistant'}
 	class:ratel-msg-nav-flash={navFlash}
 	data-msg-id={msg.id}

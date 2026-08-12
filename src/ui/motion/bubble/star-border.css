@@ -1,0 +1,53 @@
+/**
+ * @file src/ui/motion/bubble/star-border.css
+ * @description 用户气泡扫边微光 — 纯 CSS 版 StarBorder
+ */
+
+@property --ratel-star-angle {
+	syntax: '<angle>';
+	initial-value: 0deg;
+	inherits: false;
+}
+
+.ratel-msg-user--star {
+	position: relative;
+	isolation: isolate;
+}
+
+.ratel-msg-user--star::before {
+	content: '';
+	position: absolute;
+	inset: -1px;
+	border-radius: inherit;
+	padding: 1px;
+	background: linear-gradient(
+		var(--ratel-star-angle, 0deg),
+		transparent 30%,
+		color-mix(in srgb, var(--interactive-accent) 70%, #e8c49a) 50%,
+		transparent 70%
+	);
+	-webkit-mask:
+		linear-gradient(#fff 0 0) content-box,
+		linear-gradient(#fff 0 0);
+	-webkit-mask-composite: xor;
+	mask:
+		linear-gradient(#fff 0 0) content-box,
+		linear-gradient(#fff 0 0);
+	mask-composite: exclude;
+	pointer-events: none;
+	z-index: -1;
+	animation: ratel-star-spin 6s linear infinite;
+}
+
+@keyframes ratel-star-spin {
+	to {
+		--ratel-star-angle: 360deg;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.ratel-msg-user--star::before {
+		animation: none;
+		opacity: 0.55;
+	}
+}
