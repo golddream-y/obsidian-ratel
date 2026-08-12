@@ -42,7 +42,7 @@
 		octaveDecay = 0.1,
 		layerOffset = 0,
 		colorSpeed = 1,
-		enableMouseInteraction = true,
+		enableMouseInteraction = false,
 		mouseInfluence = 0.25,
 	}: Props = $props();
 
@@ -255,8 +255,10 @@
 			ro?.disconnect();
 			io?.disconnect();
 			document.removeEventListener('visibilitychange', onVisibilityChange);
-			canvas.removeEventListener('mousemove', onMouseMove);
-			canvas.removeEventListener('mouseleave', onMouseLeave);
+			if (enableMouseInteraction) {
+				canvas.removeEventListener('mousemove', onMouseMove);
+				canvas.removeEventListener('mouseleave', onMouseLeave);
+			}
 			gl.bindVertexArray(null);
 			gl.useProgram(null);
 			gl.deleteBuffer(vbo);
@@ -275,6 +277,13 @@
 
 		const host = hostEl;
 		if (!host) return;
+
+		// 关键路径: enabled=false 不探测 WebGL2，直接 CSS 降级（不创建 GL 上下文）
+		if (!enabled) {
+			useFallback = true;
+			probed = true;
+			return;
+		}
 
 		const webgl2 = probeWebGL2Support();
 		useFallback = shouldUseAuroraFallback(enabled, webgl2);
