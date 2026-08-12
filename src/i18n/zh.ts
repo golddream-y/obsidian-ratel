@@ -198,6 +198,9 @@ const chatZh: ChatStrings = {
   'chat.header.modelChip': '模型信息:{model}',
   'chat.empty.welcome': '有什么想从库里挖的？',
   'chat.empty.hint': '直接提问，或输入 / 看命令',
+  'chat.empty.hint.1': '直接提问，或输入 / 看命令',
+  'chat.empty.hint.2': '试试「总结这周笔记」',
+  'chat.empty.hint.3': '用 @ 点名库里的某篇',
   'chat.feedback.title': '问题反馈',
   'chat.feedback.body':
     '遇到 bug 或体验问题？可复制下方诊断摘要（不含笔记内容），再到 GitHub 提 Issue。',

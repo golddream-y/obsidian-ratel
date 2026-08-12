@@ -197,6 +197,9 @@ export interface ChatStrings {
   'chat.header.modelChip': string;
   'chat.empty.welcome': string;
   'chat.empty.hint': string;
+  'chat.empty.hint.1': string;
+  'chat.empty.hint.2': string;
+  'chat.empty.hint.3': string;
   'chat.feedback.title': string;
   'chat.feedback.body': string;
   'chat.feedback.copyDiag': string;

@@ -196,6 +196,9 @@ export const en: Strings = {
   'chat.header.modelChip': 'Model info: {model}',
   'chat.empty.welcome': 'What would you like to dig up from your vault?',
   'chat.empty.hint': 'Ask a question, or type / for commands',
+  'chat.empty.hint.1': 'Ask a question, or type / for commands',
+  'chat.empty.hint.2': 'Try "summarize this week\'s notes"',
+  'chat.empty.hint.3': 'Use @ to mention a note in your vault',
   'chat.feedback.title': 'Feedback',
   'chat.feedback.body':
     'Found a bug or rough edge? Copy the diagnostics below (no note contents), then open a GitHub Issue.',
