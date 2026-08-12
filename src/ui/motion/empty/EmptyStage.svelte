@@ -24,7 +24,9 @@
 </script>
 
 <div class="ratel-empty-stage" data-motion={motionOn ? 'on' : 'off'}>
-	<AuroraBackdrop enabled={motionOn} colorStops={AURORA_COLOR_STOPS} />
+	{#if motionOn}
+		<AuroraBackdrop colorStops={AURORA_COLOR_STOPS} />
+	{/if}
 	<div class="ratel-empty-stage-content">
 		<WelcomeBlurText text={welcome} play={motionOn} />
 		<WelcomeTypeLine text={hint} play={motionOn} />

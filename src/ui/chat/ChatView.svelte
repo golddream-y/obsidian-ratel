@@ -578,7 +578,10 @@
 			cur.shortTitle = normalized.shortTitle;
 			cur.updatedAt = Date.now();
 			await plugin.persistence.sessions.upsert(cur);
-			if (id === sessionId) syncChipTitles(cur);
+			if (id === sessionId) {
+				syncChipTitles(cur);
+				titleMotionToken += 1;
+			}
 			await refreshSessionIndex();
 			new Notice(tNow('chat.session.retitleOk'), 2500);
 		} catch (err) {
@@ -1302,6 +1305,7 @@
 		>
 			<MessageList
 				{messages}
+				{sessionId}
 				{isRunning}
 				bind:containerRef={messagesEl}
 				onScroll={handleScroll}
