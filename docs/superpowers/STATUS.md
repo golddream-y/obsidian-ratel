@@ -35,7 +35,7 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
-| P-CHAT-MOTION-v2 | [2026-08-12-chat-motion-v2.md](plans/2026-08-12-chat-motion-v2.md) | 🔄 In Progress | S-CHAT-MOTION-v2 | 分支 feat/p-chat-motion；T1–T9 完成（NOTICE/user-guide/回归）；待终审 |
+| P-CHAT-MOTION-v2 | [2026-08-12-chat-motion-v2.md](plans/2026-08-12-chat-motion-v2.md) | ✅ Completed | S-CHAT-MOTION-v2 | 分支 feat/p-chat-motion；9 Task + SoftAurora clear；965 tests；待合 develop |
 | P-CHAT-MOTION | [2026-08-12-chat-motion-bits.md](plans/2026-08-12-chat-motion-bits.md) | ✅ Completed | S-CHAT-MOTION | 分支 feat/p-chat-motion；8 Task 全完成；待合 main / 归档 |
 | P-CHAT-PROTO | [2026-08-10-chat-prototype-align.md](plans/2026-08-10-chat-prototype-align.md) | ✅ Completed | S-CHAT-PROTO | 分支 main;发送↑;三档权限;底避让;原型回写;6 Task |
 | P-SETTINGS-SYNC | [2026-08-03-settings-sync.md](plans/2026-08-03-settings-sync.md) | ✅ Completed | S-SETTINGS-SYNC | 分支 cursor/p-settings-sync-5933;settings$ 读入口;扇出 maxTokens;Chat/Memory/gate |
