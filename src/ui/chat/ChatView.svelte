@@ -84,6 +84,8 @@
 	import { applyRatelAppearance } from '../appearance/apply-ratel-appearance';
 	import { appearanceRevision } from '../appearance/appearance-store';
 	import { settings$ as settingsStore } from '../settings-store';
+	import TitleDissolve from '../motion/title/TitleDissolve.svelte';
+	import { isChatMotionEnabled } from '../motion/prefs';
 
 	let { plugin }: { plugin: RatelVaultPlugin } = $props();
 
@@ -130,6 +132,8 @@
 	let sessionId = $state('');
 	let sessionShortTitle = $state('');
 	let sessionFullTitle = $state('');
+	/** 标题落定动效令牌 — maybeGenerateTitle / 手改成功后递增 */
+	let titleMotionToken = $state(0);
 	let sessionEntries = $state<SessionIndexEntry[]>([]);
 	let sessionMenuOpen = $state(false);
 	let sessionMenuFloatEl = $state<HTMLDivElement | null>(null);
@@ -535,7 +539,10 @@
 		s.shortTitle = result.pair.shortTitle;
 		s.updatedAt = Date.now();
 		await plugin.persistence.sessions.upsert(s);
-		if (id === sessionId) syncChipTitles(s);
+		if (id === sessionId) {
+			syncChipTitles(s);
+			titleMotionToken += 1;
+		}
 		await refreshSessionIndex();
 	}
 
@@ -648,7 +655,10 @@
 			cur.shortTitle = pair.shortTitle;
 			cur.updatedAt = Date.now();
 			await plugin.persistence.sessions.upsert(cur);
-			if (forId === sessionId) syncChipTitles(cur);
+			if (forId === sessionId) {
+				syncChipTitles(cur);
+				titleMotionToken += 1;
+			}
 			await refreshSessionIndex();
 		};
 		try {
@@ -683,6 +693,7 @@
 	});
 	// 关键路径:/ 与 @ 互斥 — 斜杠优先;mention 补全仅在非 slash 态
 	const mentionVisible = $derived(mentionQuery !== null && !slashVisible);
+	const chatMotionOn = $derived(isChatMotionEnabled($settingsStore));
 	const modelName = $derived($settingsStore.chatModel);
 	const embedKind = $derived($settingsStore.embedProvider);
 	const permLevel = $derived(($settingsStore.toolPermissionLevel ?? 'safe') as ToolPermissionLevel);
@@ -1218,9 +1229,13 @@
 						if (sessionMenuOpen) void refreshSessionIndex();
 					}}
 				>
-					<span class="ratel-session-chip-label"
-						>{sessionShortTitle || emptyTitle()}</span
-					>
+					<span class="ratel-session-chip-label">
+						<TitleDissolve
+							text={sessionShortTitle || emptyTitle()}
+							playToken={titleMotionToken}
+							motionOn={chatMotionOn}
+						/>
+					</span>
 					<svg class="ratel-session-chip-ico" viewBox="0 0 24 24" aria-hidden="true">
 						<circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.75"></circle>
 						<path
