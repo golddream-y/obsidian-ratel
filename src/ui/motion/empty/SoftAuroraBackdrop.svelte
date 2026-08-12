@@ -202,6 +202,8 @@
 			gl.uniform2f(uniforms.mouse, currentMouse[0], currentMouse[1]);
 			gl.uniform1f(uniforms.mouseInfluence, mouseInfluence);
 			gl.uniform1i(uniforms.enableMouse, enableMouseInteraction ? 1 : 0);
+			// 关键路径: 每帧清空帧缓冲，避免 alpha 混合累积未定义内容导致拖影
+			gl.clear(gl.COLOR_BUFFER_BIT);
 			gl.drawArrays(gl.TRIANGLES, 0, 3);
 		};
 
