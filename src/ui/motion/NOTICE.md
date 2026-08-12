@@ -11,6 +11,14 @@
 | `brand/ShinyBrand.svelte` | TextAnimations/ShinyText（无 motion） |
 | `brand/ClickSpark.svelte` | Animations/ClickSpark |
 | `title/TitleDissolve.svelte` | BlurText 短时变体 |
+| `empty/SoftAuroraBackdrop.svelte` | Backgrounds/SoftAurora |
+| `empty/GradientWelcome.svelte` | TextAnimations/GradientText |
+| `empty/RotateHint.svelte` | TextAnimations/RotatingText |
+| `empty/NoiseTray.svelte` | Animations/Noise |
+| `bubble/*` StarBorder | Components/StarBorder |
+| `chrome/GlareHover.svelte` | Animations/GlareHover |
+| `chrome/AnimatedList*` | Components/AnimatedList |
+| `chrome/CountUp*` | TextAnimations/CountUp |
 
 完整许可见 `LICENSE.react-bits.md`。
 
