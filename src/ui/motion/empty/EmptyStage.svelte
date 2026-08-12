@@ -1,12 +1,12 @@
 <!--
 	@file src/ui/motion/empty/EmptyStage.svelte
-	@description 空会话欢迎台 — Aurora 背景 + Blur 主句 + Type 副句
+	@description 空会话欢迎台 — SoftAurora 背景 + Blur 主句 + Type 副句
 	@module ui/motion/empty/EmptyStage
-	@depends ./AuroraBackdrop, ./WelcomeBlurText, ./WelcomeTypeLine, i18n
+	@depends ./SoftAuroraBackdrop, ./WelcomeBlurText, ./WelcomeTypeLine, i18n
 -->
 <script lang="ts">
 	import { t } from '../../../i18n';
-	import AuroraBackdrop from './AuroraBackdrop.svelte';
+	import SoftAuroraBackdrop from './SoftAuroraBackdrop.svelte';
 	import WelcomeBlurText from './WelcomeBlurText.svelte';
 	import WelcomeTypeLine from './WelcomeTypeLine.svelte';
 
@@ -16,16 +16,13 @@
 
 	let { motionOn }: Props = $props();
 
-	/** 暖铜色停 — 模块级常量，避免每次渲染新建数组 */
-	const AURORA_COLOR_STOPS: [string, string, string] = ['#5b4a3a', '#c4a574', '#5b4a3a'];
-
 	const welcome = $derived($t('chat.empty.welcome'));
 	const hint = $derived($t('chat.empty.hint'));
 </script>
 
 <div class="ratel-empty-stage" data-motion={motionOn ? 'on' : 'off'}>
 	{#if motionOn}
-		<AuroraBackdrop colorStops={AURORA_COLOR_STOPS} />
+		<SoftAuroraBackdrop />
 	{/if}
 	<div class="ratel-empty-stage-content">
 		<WelcomeBlurText text={welcome} play={motionOn} />
