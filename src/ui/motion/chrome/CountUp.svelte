@@ -6,6 +6,7 @@
 	@depends ./count-up
 -->
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { easeOutCount, lerpCount } from './count-up';
 
 	interface Props {
@@ -26,7 +27,7 @@
 			return;
 		}
 
-		const from = display;
+		const from = untrack(() => display);
 		const to = target;
 		if (from === to) return;
 
