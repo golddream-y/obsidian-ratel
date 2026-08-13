@@ -69,6 +69,17 @@ export interface HookLogRepository {
 }
 
 /**
+ * 全量压缩标记 — 投影用,不修改 messages 正文。
+ * `afterIndex` 之前的历史已被 `summary` 覆盖;上送从 afterIndex+1 起。
+ */
+export interface CompactMarker {
+	afterIndex: number;
+	summary: string;
+	restoredNotePaths: string[];
+	at: number;
+}
+
+/**
  * Session 实体:UI 侧主键 id,消息历史 messages,以及创建/更新时间戳。
  */
 export interface Session {
@@ -78,6 +89,8 @@ export interface Session {
 	/** Header chip 短标题,≤12 字;缺省时由 title 截断派生 */
 	shortTitle?: string;
 	messages: ChatMessage[];
+	/** 投影压缩标记;缺省表示从未全量压过 */
+	compactMarkers?: CompactMarker[];
 	createdAt: number;
 	updatedAt: number;
 }

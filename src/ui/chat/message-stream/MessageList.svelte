@@ -81,18 +81,30 @@
 	});
 
 	const busyOrbState = $derived(mapOrbState(busyKind));
+
+	function compactLabelKey(phase: Message['compactPhase'] | undefined): StringKey {
+		if (phase === 'running') return 'chat.compact.running';
+		if (phase === 'failed') return 'chat.compact.failed';
+		return 'chat.compact.done';
+	}
 </script>
 
 <div class="ratel-messages" bind:this={containerRef} onscroll={() => { if (containerRef) onScroll?.(containerRef); }}>
 	{#each messages as msg, i}
-		<MessageBubble
-			{msg}
-			isLast={i === messages.length - 1}
-			{isRunning}
-			{onOpenPath}
-			navFlash={msg.id === highlightId}
-			{citeSearchFallback}
-		/>
+		{#if msg.role === 'compact'}
+			<div class="ratel-compact-divider" data-phase={msg.compactPhase ?? 'done'}>
+				{$t(compactLabelKey(msg.compactPhase))}
+			</div>
+		{:else}
+			<MessageBubble
+				{msg}
+				isLast={i === messages.length - 1}
+				{isRunning}
+				{onOpenPath}
+				navFlash={msg.id === highlightId}
+				{citeSearchFallback}
+			/>
+		{/if}
 	{/each}
 	{#if showBusyOrb}
 		<div class="ratel-typing">
@@ -140,6 +152,18 @@
 
 	.ratel-typing-text {
 		opacity: 0.85;
+	}
+
+	.ratel-compact-divider {
+		align-self: center;
+		max-width: 100%;
+		padding: 4px 12px;
+		font-size: 11px;
+		line-height: 1.4;
+		color: var(--text-faint, var(--text-muted));
+		text-align: center;
+		border-top: 1px solid var(--background-modifier-border);
+		border-bottom: 1px solid var(--background-modifier-border);
 	}
 
 	@media (prefers-reduced-motion: reduce) {

@@ -257,6 +257,9 @@ export class PersistenceJson implements Persistence {
 						title: typeof s.title === 'string' ? s.title : '',
 						shortTitle: typeof s.shortTitle === 'string' ? s.shortTitle : undefined,
 						messages: Array.isArray(s.messages) ? s.messages : [],
+						compactMarkers: Array.isArray((s as Session).compactMarkers)
+							? (s as Session).compactMarkers
+							: undefined,
 						createdAt: typeof s.createdAt === 'number' ? s.createdAt : Date.now(),
 						updatedAt: typeof s.updatedAt === 'number' ? s.updatedAt : Date.now(),
 					};

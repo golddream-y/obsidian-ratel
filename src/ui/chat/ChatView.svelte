@@ -20,7 +20,6 @@
 	import MessageList from './message-stream/MessageList.svelte';
 	import type { Message } from './message-stream/types';
 	import { newMessageId } from './message-stream/new-message-id';
-	import { preservedChatMessagesToUi } from './message-stream/chat-message-to-ui';
 	import { hydrateSessionMessages } from './message-stream/hydrate-session-messages';
 	import { latestCiteSearchResults } from './latest-cite-search';
 	import ChatNavRail from './nav/ChatNavRail.svelte';
@@ -70,8 +69,10 @@
 	import { evaluateChatSendGate } from './chat-send-gate';
 	import { hasChatApiKey } from '../../secrets/ratel-secrets';
 	import { formatChatError } from './chat-error';
-	import { showCompactConfirm } from './compact-confirm';
 	import { compactSession } from './compact-session';
+	import { loadSessionContextUsage } from './session-context-usage';
+	import { decidePostTurnCompact, decidePreSendCompact } from './compact-auto';
+	import { CompactCircuitBreaker } from '../../core/compact-project';
 	import { ModelInfoModal } from './model-info-modal';
 	import { FeedbackModal } from './feedback-modal';
 	import { openSponsorPage } from './sponsor-links';
@@ -86,6 +87,9 @@
 	import { settings$ as settingsStore } from '../settings-store';
 
 	let { plugin }: { plugin: RatelVaultPlugin } = $props();
+
+	/** 自动压缩断路器 — 模块级单例,进程内连续失败计数 */
+	const compactCircuit = new CompactCircuitBreaker();
 
 	// ==================== 外观热更新 ====================
 	let chatRoot: HTMLElement | undefined;
@@ -338,14 +342,20 @@
 		}
 		sessionId = s.id;
 		syncChipTitles(s);
-		messages = hydrateSessionMessages(s.messages, { resolveMcpServerLabel });
-		lastCiteSearchResults = latestCiteSearchResults(messages);
-		// 修复:重启/恢复会话后重算 usedTokens,避免 contextUsage$ 归零导致占用显示丢失
-		plugin.userStatus.patchContextUsage({
-			usedTokens: estimateMessagesTokens(messages),
-			maxTokens: getEffectiveChatModelMaxTokens(plugin.settings),
-			source: 'estimate',
+		messages = hydrateSessionMessages(s.messages, {
+			resolveMcpServerLabel,
+			markers: s.compactMarkers,
 		});
+		lastCiteSearchResults = latestCiteSearchResults(messages);
+		// 修复:用 ContextManager 投影估算占用,避免已压历史被 UI 全量重复计入
+		const maxTokens = getEffectiveChatModelMaxTokens(plugin.settings);
+		const usage = await loadSessionContextUsage(
+			() => plugin.createContext(),
+			s.id,
+			maxTokens,
+			estimateMessagesTokens(messages),
+		);
+		plugin.userStatus.patchContextUsage(usage);
 		await plugin.persistence.setLastSessionId(s.id);
 		sessionDirty = false;
 		isUserNearBottom = true;
@@ -426,19 +436,19 @@
 		}
 	}
 
-	/** 若正在生成则 abort 并等到 isRunning 收尾,避免新场被旧 for-await 锁住。 */
+	/** 若正在生成或压缩则 abort 并等到收尾,避免新场被旧循环锁住。 */
 	async function abortActiveGeneration(): Promise<void> {
-		if (!isRunning && !abortController) return;
+		if (!isRunning && !abortController && !isCompacting) return;
 		abortController?.abort();
 		const deadline = Date.now() + 8000;
-		while (isRunning && Date.now() < deadline) {
+		while ((isRunning || isCompacting) && Date.now() < deadline) {
 			await sleep(40);
 		}
 	}
 
 	/** 生成中切换/新建前确认，避免默默掐断。 */
 	async function confirmLeaveIfRunning(): Promise<boolean> {
-		if (!isRunning && !abortController) return true;
+		if (!isRunning && !abortController && !isCompacting) return true;
 		return showSessionSwitchConfirm(plugin.app);
 	}
 
@@ -490,14 +500,19 @@
 				}
 				sessionId = s.id;
 				syncChipTitles(s);
-				messages = hydrateSessionMessages(s.messages, { resolveMcpServerLabel });
+				messages = hydrateSessionMessages(s.messages, {
+			resolveMcpServerLabel,
+			markers: s.compactMarkers,
+		});
 				lastCiteSearchResults = latestCiteSearchResults(messages);
-				// 修复:切换会话 hydrate 后同样重算上下文占用(与 loadSessionIntoUi 一致)
-				plugin.userStatus.patchContextUsage({
-					usedTokens: estimateMessagesTokens(messages),
-					maxTokens: getEffectiveChatModelMaxTokens(plugin.settings),
-					source: 'estimate',
-				});
+				const maxTokens = getEffectiveChatModelMaxTokens(plugin.settings);
+				const usage = await loadSessionContextUsage(
+					() => plugin.createContext(),
+					s.id,
+					maxTokens,
+					estimateMessagesTokens(messages),
+				);
+				plugin.userStatus.patchContextUsage(usage);
 				await plugin.persistence.setLastSessionId(s.id);
 				sessionDirty = false;
 				isUserNearBottom = true;
@@ -877,40 +892,87 @@
 		void openSponsorPage();
 	}
 
-	async function handleCompact() {
-		// 关键路径:防止用户从 slash 命令 + StatusDrawer 按钮双重触发,避免并发 resetSession
-		if (isCompacting) return;
-		const confirmed = await showCompactConfirm(plugin.app);
-		if (!confirmed) return;
+	/** 从 persistence 重水合 compact 分隔(与 runCompactInChat 成功路径一致)。 */
+	async function rehydrateCompactMarkersInUi(targetSessionId: string): Promise<void> {
+		if (targetSessionId !== sessionId) return;
+		const ctx = plugin.createContext();
+		await ctx.load(targetSessionId);
+		messages = hydrateSessionMessages(ctx.getTranscript(), {
+			markers: ctx.getCompactMarkers(),
+			resolveMcpServerLabel,
+		});
+		lastCiteSearchResults = latestCiteSearchResults(messages);
+	}
 
-		// 关键路径:显示压缩中 loading
+	async function runCompactInChat(opts: { auto: boolean }) {
+		// 关键路径:防止 slash + StatusDrawer 与自动压并发
+		if (isCompacting || isRunning) return;
+
 		isCompacting = true;
+		const compactingSessionId = sessionId;
+		const runningId = newMessageId();
+		messages = [
+			...messages,
+			{ id: runningId, role: 'compact', compactPhase: 'running', segments: [] },
+		];
 
 		try {
-			// 关键路径:每次 /compact 创建独立 ctx,与 agent-loop 解耦
 			const ctx = plugin.createContext();
 			const result = await compactSession(
 				ctx,
 				plugin.llm,
-				sessionId,
+				compactingSessionId,
 				plugin.settings.promptOverrides,
 			);
-			// 更新 Svelte state — ChatMessage[] 转回 UI Message[]
-			messages = preservedChatMessagesToUi(result.preservedMessages);
+			if (result.skipped) {
+				if (sessionId === compactingSessionId) {
+					messages = messages.filter((m) => m.id !== runningId);
+					if (!opts.auto) {
+						new Notice(tNow('chat.compact.tooShort'), 2500);
+					}
+				}
+				return;
+			}
+			// 关键路径:切场后只写 persistence,不把旧场 hydrate 进新场 UI
+			if (sessionId !== compactingSessionId) return;
+			await ctx.load(compactingSessionId);
+			messages = hydrateSessionMessages(ctx.getTranscript(), {
+				markers: ctx.getCompactMarkers(),
+				resolveMcpServerLabel,
+			});
 			lastCiteSearchResults = latestCiteSearchResults(messages);
-			// 压缩后消息变短,立即重算占用
+			if (!opts.auto) {
+				new Notice(tNow('chat.compacted'), 2500);
+			}
+			compactCircuit.succeed(compactingSessionId);
 			plugin.userStatus.patchContextUsage({
-				usedTokens: estimateMessagesTokens(messages),
+				usedTokens: ctx.tokenCount(),
 				maxTokens: getEffectiveChatModelMaxTokens(plugin.settings),
 				source: 'estimate',
 			});
 		} catch (err) {
-			const message = err instanceof Error ? err.message : String(err);
-			// 关键路径:压缩失败,session 未重置(LLM 抛错时 resetSession 不会被调)
-			new Notice(tNow('chat.error.compactFailed', { message }), 5000);
+			compactCircuit.fail(compactingSessionId);
+			if (sessionId === compactingSessionId) {
+				messages = messages.map((m) =>
+					m.id === runningId ? { ...m, compactPhase: 'failed' as const } : m,
+				);
+				const message = err instanceof Error ? err.message : String(err);
+				if (!opts.auto) {
+					new Notice(tNow('chat.error.compactFailed', { message }), 5000);
+				}
+				setTimeout(() => {
+					if (sessionId === compactingSessionId) {
+						messages = messages.filter((m) => m.id !== runningId);
+					}
+				}, 2500);
+			}
 		} finally {
 			isCompacting = false;
 		}
+	}
+
+	async function handleCompact() {
+		await runCompactInChat({ auto: false });
 	}
 
 	// ==================== 发送消息(含 token 三层校准) ====================
@@ -936,6 +998,25 @@
 			base64: a.base64,
 		}));
 
+		const maxTokens = getEffectiveChatModelMaxTokens(plugin.settings);
+		const attachmentTokens = get(attachmentStore).reduce((s, a) => s + a.estimatedTokens, 0);
+
+		// 关键路径:发送前先压 — 尚未 push 本条 user,符合 spec
+		const preCtx = plugin.createContext();
+		await preCtx.load(sessionId);
+		const preUsage = preCtx.getContextUsage(maxTokens, attachmentTokens);
+		if (
+			decidePreSendCompact({
+				enabled: plugin.settings.autoCompactEnabled !== false,
+				percentage: preUsage.percentage,
+				circuitOpen: compactCircuit.isOpen(sessionId),
+				isRunning,
+				isCompacting,
+			})
+		) {
+			await runCompactInChat({ auto: true });
+		}
+
 		// 关键路径:用 push + 从数组中取出 Proxy 引用,触发细粒度 DOM 更新
 		messages.push({
 			id: newMessageId(),
@@ -944,7 +1025,7 @@
 			attachments: currentAttachments.length > 0 ? currentAttachments : undefined,
 		});
 		messages.push({ id: newMessageId(), role: 'assistant' as const, segments: [] });
-		const am = messages[messages.length - 1] as Message;
+		let am = messages[messages.length - 1] as Message;
 
 		input = '';
 		mentionPaths = [];
@@ -959,8 +1040,6 @@
 
 		// 第 1 层:send 前精确估算(基于历史消息 segments)
 		const baselineUsed = estimateMessagesTokens(messages);
-		const attachmentTokens = get(attachmentStore).reduce((s, a) => s + a.estimatedTokens, 0);
-		const maxTokens = getEffectiveChatModelMaxTokens(plugin.settings);
 		plugin.userStatus.patchContextUsage({
 			usedTokens: baselineUsed,
 			maxTokens,
@@ -970,6 +1049,8 @@
 
 		// 第 2 层:流式中累计 delta token
 		let streamingUsed = 0;
+		/** 本轮 API usage 真值(若有) — 轮后自动压校准用 */
+		let lastTurnApiTokens: number | null = null;
 
 		// 关键路径:用户发新消息,强制滚到底(忽略之前的手动上滑)
 		isUserNearBottom = true;
@@ -981,6 +1062,28 @@
 
 			for await (const event of events) {
 				switch (event.type) {
+					case 'compact.applied': {
+						if (event.payload.sessionId !== sessionId) break;
+						const inFlight =
+							am.role === 'assistant'
+								? {
+										id: am.id,
+										role: 'assistant' as const,
+										segments: [...am.segments],
+										searchResults: am.searchResults,
+										searchReranked: am.searchReranked,
+										tokenUsage: am.tokenUsage,
+										cancelled: am.cancelled,
+									}
+								: null;
+						await rehydrateCompactMarkersInUi(sessionId);
+						if (inFlight) {
+							messages.push(inFlight);
+							am = messages[messages.length - 1] as Message;
+						}
+						scrollToBottom();
+						break;
+					}
 					case 'message.delta':
 						if (event.payload.reasoning) {
 							appendThink(am, event.payload.reasoning);
@@ -1031,12 +1134,14 @@
 					case 'message.end':
 						// 第 3 层:API 真值校准(若 LLM 返回 usage)
 						if (event.payload.promptTokens && event.payload.completionTokens) {
+							lastTurnApiTokens =
+								event.payload.promptTokens + event.payload.completionTokens;
 							am.tokenUsage = {
 								promptTokens: event.payload.promptTokens,
 								completionTokens: event.payload.completionTokens,
 							};
 							plugin.userStatus.patchContextUsage({
-								usedTokens: event.payload.promptTokens + event.payload.completionTokens,
+								usedTokens: lastTurnApiTokens,
 								maxTokens,
 								source: 'api',
 							});
@@ -1062,6 +1167,26 @@
 			abortController = null;
 			plugin.userStatus.clearAttachments();
 			scrollToBottom();
+
+			// 关键路径:整轮结束后自动压 — 不在流式中途插队
+			let postTurnPercentage: number;
+			if (lastTurnApiTokens != null) {
+				postTurnPercentage =
+					maxTokens > 0 ? Math.round((lastTurnApiTokens / maxTokens) * 100) : 0;
+			} else {
+				const postCtx = plugin.createContext();
+				await postCtx.load(sessionId);
+				postTurnPercentage = postCtx.getContextUsage(maxTokens).percentage;
+			}
+			if (
+				decidePostTurnCompact({
+					enabled: plugin.settings.autoCompactEnabled !== false,
+					percentage: postTurnPercentage,
+					circuitOpen: compactCircuit.isOpen(sessionId),
+				})
+			) {
+				await runCompactInChat({ auto: true });
+			}
 		}
 	}
 

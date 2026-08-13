@@ -54,6 +54,7 @@ export type AgentEvent =
 	| { type: 'subagent.spawn'; payload: { role: string; task: string } }
 	| { type: 'subagent.done'; payload: { role: string; result: unknown } }
 	| { type: 'hook.fired'; payload: { phase: string; tool: string } }
+	| { type: 'compact.applied'; payload: { sessionId: string } }
 	| { type: 'error'; payload: { code: string; message: string } };
 
 // ==================== Worker 请求(主线程 → Worker) ====================

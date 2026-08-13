@@ -5,7 +5,7 @@
  * @depends ../ports/persistence, ../ports/llm
  */
 
-import type { Persistence, Session, ChatMessage } from '../ports/persistence';
+import type { Persistence, Session, ChatMessage, CompactMarker } from '../ports/persistence';
 import type { ToolCall, ToolDefinition } from '../ports/llm';
 // 关键路径:Intent 复用意图分类器定义,避免类型重复声明导致两端不同步
 import type { Intent } from './intent-classifier';
@@ -23,6 +23,7 @@ import {
 	sessionHasSkillSupersede,
 } from './skill-session-messages';
 import type { Skill } from '../skills/types';
+import { projectView } from './compact-project';
 
 /**
  * ContextManager 依赖注入 — 解耦 settings/工具注册表。
@@ -51,7 +52,7 @@ export interface ContextManagerDeps {
  * 设计要点:
  * - `session` 在 `load()` 之前为 `null`,所有 mutator 方法都先调 `requireSession()` 做护栏。
  * - 任何 `add*` 方法都会更新 `session.updatedAt`,便于上层按"最近活跃"排序。
- * - `toMessages()` 总是返回 `[system, ...searchResultsMessages, ...session.messages]`,保证 LLM 始终看到最新系统提示与当前检索上下文。
+ * - `toMessages()` 返回 Composer 系统段 + 检索结果 + `projectView` 投影后的 head/tail(tail 经 Layer 1 截断);`getTranscript()` 仅返回 `session.messages` 浅拷贝(UI 事实源)。
  * - `load()` 切换 session 时会清空 `searchResultsMessages`,避免旧 session 的检索结果泄漏到新 session。
  * - Layer 1 截断:历史消息超过 `maxHistoryTokens` 时从最旧开始裁剪,保护系统提示词 + 搜索结果 + 最近消息。
  * - 系统提示词与检索结果外框通过 Composer 组装(direct / rag),解耦具体文案并支持 section 覆盖。
@@ -415,7 +416,9 @@ export class ContextManager {
 		const tools = this.deps.getTools();
 		const systemPrompt = composeAgentSystem(intent, { intent, tools }, overrides);
 		const history = this.session?.messages ?? [];
-		const trimmed = this.trimHistory(history);
+		const markers = this.session?.compactMarkers;
+		const { head, tail } = projectView(history, markers);
+		const trimmedTail = this.trimHistory(tail);
 
 		// 关键路径:记忆注入位置在 system prompt 之后、检索结果之前,
 		// 让 Agent 在看到检索结果和历史之前先"认识"用户。
@@ -432,8 +435,38 @@ export class ContextManager {
 			messages.push({ role: 'system', content: this.skillsDiscovery });
 		}
 		void this.skillsActive;
-		messages.push(...this.searchResultsMessages, ...trimmed);
+		messages.push(...this.searchResultsMessages, ...head, ...trimmedTail);
 		return messages;
+	}
+
+	/**
+	 * 返回 UI 事实源 transcript — `session.messages` 浅拷贝,不含 Composer 主 system。
+	 *
+	 * @returns 当前 session 消息数组副本(含 skill system 等已写入 transcript 的行)
+	 */
+	getTranscript(): ChatMessage[] {
+		return [...this.requireSession().messages];
+	}
+
+	/**
+	 * 返回当前 session 的 compact 标记副本。
+	 *
+	 * @returns CompactMarker 数组;无标记时返回空数组
+	 */
+	getCompactMarkers(): CompactMarker[] {
+		return [...(this.session?.compactMarkers ?? [])];
+	}
+
+	/**
+	 * 追加全量压缩标记 — 只写 `compactMarkers`,不修改 `messages` 条数。
+	 *
+	 * @param marker - 投影标记(afterIndex / summary / restoredNotePaths / at)
+	 */
+	async appendCompactMarker(marker: CompactMarker): Promise<void> {
+		const session = this.requireSession();
+		session.compactMarkers = [...(session.compactMarkers ?? []), marker];
+		session.updatedAt = Date.now();
+		await this.save();
 	}
 
 	/**
@@ -444,7 +477,7 @@ export class ContextManager {
 	 * - 截断只影响发给 LLM 的消息列表,不修改 session.messages 原文(持久化不受影响)。
 	 * - tool 消息如果对应的 assistant tool call 被裁掉,LLM 会忽略孤立 tool result(可接受,Layer 2 再处理配对)。
 	 *
-	 * @param messages - session 内的完整历史消息。
+	 * @param messages - 投影后的 tail 消息(不含 head 摘要段)。
 	 * @returns 裁剪后的消息数组(可能比输入短)。
 	 */
 	private trimHistory(messages: ChatMessage[]): ChatMessage[] {

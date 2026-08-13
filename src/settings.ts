@@ -80,6 +80,8 @@ export interface RatelVaultSettings {
 	chatApiBase: string;
 	/** 模型上下文窗口上限(token) — StatusLine 上下文使用率计算 */
 	chatModelMaxTokens: number;
+	/** 上下文接近上限时自动压缩(默认开) */
+	autoCompactEnabled: boolean;
 	/** Context Length 下拉预设;custom 时以 chatModelMaxTokens 为准 */
 	contextLengthPreset: ContextLengthPresetId;
 	/** 空字符串 = LiteLLM 默认映射表 URL */
@@ -177,6 +179,7 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 	chatApiBase: 'https://api.deepseek.com',
 	contextLengthPreset: '256k',
 	chatModelMaxTokens: 256_000,
+	autoCompactEnabled: true,
 	modelRegistryUrl: '',
 
 	embedProvider: 'local',
@@ -556,6 +559,11 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 					{
 						name: tNow('settings.advanced.secretHint.title'),
 						render: renderChatSecretHint(this.app, this.plugin),
+					},
+					{
+						name: tNow('settings.autoCompactEnabled.name'),
+						desc: tNow('settings.autoCompactEnabled.desc'),
+						control: { type: 'toggle', key: 'autoCompactEnabled' },
 					},
 				],
 			},

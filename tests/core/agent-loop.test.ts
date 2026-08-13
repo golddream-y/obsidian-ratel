@@ -1064,4 +1064,74 @@ describe('agentLoop', () => {
 		expect(endEvent!.payload.promptTokens).toBe(10);
 		expect(endEvent!.payload.completionTokens).toBe(5);
 	});
+
+	it('agentLoop - skipAddUserMessage true - 不重复追加 user', async () => {
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence);
+		await ctx.load('s1');
+		ctx.addUserMessage('hello');
+		await ctx.save();
+
+		const llm = createMockLLM([[{ text: 'reply' }]]);
+		const tools = new ToolRegistry();
+		const hooks = new HookRegistry();
+
+		for await (const _ of agentLoop(
+			{ sessionId: 's1', message: 'hello' },
+			ctx,
+			llm,
+			tools,
+			hooks,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			true,
+		)) {
+			void _;
+		}
+
+		const session = await persistence.sessions.get('s1');
+		const userMessages = session!.messages.filter(
+			(m) => m.role === 'user' && m.content === 'hello',
+		);
+		expect(userMessages).toHaveLength(1);
+	});
+
+	it('agentLoop - 第一次 llm.chat 抛 prompt too long 且尚未工具 - yield CONTEXT_OVERFLOW 且不写 Error assistant', async () => {
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence);
+		const llm: LLMClient = {
+			async *chat(): AsyncIterable<ChatDelta> {
+				throw new Error('prompt too long');
+			},
+			embed: async () => [],
+			countTokens: () => 1,
+		};
+		const tools = new ToolRegistry();
+		const hooks = new HookRegistry();
+		const events: AgentEvent[] = [];
+
+		for await (const event of agentLoop(
+			{ sessionId: 's1', message: 'hi' },
+			ctx,
+			llm,
+			tools,
+			hooks,
+		)) {
+			events.push(event);
+		}
+
+		expect(
+			events.some((e) => e.type === 'error' && e.payload.code === 'CONTEXT_OVERFLOW'),
+		).toBe(true);
+		const session = await persistence.sessions.get('s1');
+		expect(
+			session!.messages.some(
+				(m) => m.role === 'assistant' && m.content.includes('Error:'),
+			),
+		).toBe(false);
+	});
 });

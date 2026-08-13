@@ -120,6 +120,8 @@ import { createGetVaultStructureTool } from './tools/get-vault-structure';
 import { ObsidianWorkspace } from './adapters/obsidian-workspace';
 import type { WorkspacePort } from './ports/workspace';
 import { formatEnvContextLine } from './utils/local-datetime';
+import { compactSession } from './ui/chat/compact-session';
+import { shouldRetryAfterOverflow } from './core/compact-overflow-retry';
 
 /**
  * Ratel Vault 插件主类。
@@ -1287,19 +1289,77 @@ export default class RatelVaultPlugin extends Plugin {
 		// 关键路径:绑定当前 ctx 供 activate_skill / deactivate_skill 写 transcript。
 		this.currentAskCtx = ctx;
 		try {
-			yield* agentLoop(
-				{ sessionId, message },
-				ctx,
-				this.llm,
-				this.tools,
-				this.hooks,
-				signal,
-				intentClassifier,
-				toolPermissionCheck,
-				this.settings.agentMaxSteps,
-				this.skillActivator,
-				this.skillRegistry,
-			);
+			let skipAdd = false;
+			for (let attempt = 0; attempt < 2; attempt++) {
+				let overflow = false;
+				for await (const ev of agentLoop(
+					{ sessionId, message },
+					ctx,
+					this.llm,
+					this.tools,
+					this.hooks,
+					signal,
+					intentClassifier,
+					toolPermissionCheck,
+					this.settings.agentMaxSteps,
+					this.skillActivator,
+					this.skillRegistry,
+					skipAdd,
+				)) {
+					if (
+						ev.type === 'error' &&
+						shouldRetryAfterOverflow({
+							code: ev.payload.code,
+							toolsAlreadyRun: false,
+							alreadyRetried: attempt > 0,
+						})
+					) {
+						overflow = true;
+						break;
+					}
+					yield ev;
+				}
+				if (!overflow) return;
+
+				try {
+					const cctx = this.createContext();
+					await cctx.load(sessionId);
+					const transcript = cctx.getTranscript();
+					const last = transcript.at(-1);
+					let compactOpts: { untilIndex: number } | undefined;
+					if (last?.role === 'user' && last.content === message) {
+						const untilIndex = transcript.length - 2;
+						if (untilIndex >= 0) {
+							compactOpts = { untilIndex };
+						}
+					}
+					const r = await compactSession(
+						cctx,
+						this.llm,
+						sessionId,
+						this.settings.promptOverrides,
+						compactOpts,
+					);
+					if (r.skipped) {
+						yield {
+							type: 'error',
+							payload: { code: 'LLM_ERROR', message: '上下文过长且无法压缩' },
+						};
+						return;
+					}
+					yield { type: 'compact.applied', payload: { sessionId } };
+				} catch (e) {
+					yield {
+						type: 'error',
+						payload: {
+							code: 'LLM_ERROR',
+							message: e instanceof Error ? e.message : String(e),
+						},
+					};
+					return;
+				}
+				skipAdd = true;
+			}
 		} finally {
 			this.currentAskCtx = null;
 		}

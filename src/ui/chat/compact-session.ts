@@ -1,90 +1,102 @@
 /**
  * @file src/ui/chat/compact-session.ts
- * @description /compact 命令实现 — fork LLM 摘要 + 保留最近 3 条原文 + 重置 session
+ * @description /compact 命令实现 — fork LLM 摘要写入 CompactMarker,不删 transcript
  * @module ui/chat/compact-session
- * @depends ../../core/context-manager, ../../ports/llm, ../../prompts/composer
+ * @depends ../../core/context-manager, ../../core/compact-project, ../../ports/llm, ../../prompts/composer
  */
 
 import type { ContextManager } from '../../core/context-manager';
-import { alignPreservedToolMessages } from '../../core/tool-message-align';
+import {
+	extractRestoredNotePaths,
+	MIN_TRANSCRIPT_TO_COMPACT,
+	projectView,
+} from '../../core/compact-project';
 import type { LLMClient, ChatDelta } from '../../ports/llm';
-import type { ChatMessage } from '../../ports/persistence';
+import type { CompactMarker } from '../../ports/persistence';
 import { composeCompactMessages } from '../../prompts/composer';
 import type { OverrideMap } from '../../prompts/types';
 import { tNow } from '../../i18n';
-
-/**
- * 保留最近 N 条原文(混合 user/assistant),保证压缩后上下文连续性。
- */
-const PRESERVED_COUNT = 3;
 
 /**
  * /compact 结果。
  */
 export interface CompactResult {
 	summary: string;
-	preservedMessages: ChatMessage[];
+	marker?: CompactMarker;
+	skipped?: boolean;
 }
 
 /**
- * 把对话历史压成结构化摘要,保留最近 3 条原文,重置 session。
+ * compactSession 可选参数 — 控制 marker 落点与摘要输入上界。
+ */
+export interface CompactSessionOptions {
+	/** marker.afterIndex;缺省为 transcript.length - 1 */
+	untilIndex?: number;
+}
+
+/**
+ * 把对话历史压成结构化摘要,写入 CompactMarker,不修改 transcript 条数。
  *
- * 流程(Claude Code 式):
- * 1. 拉 session 全部 messages(过滤掉 system)
- * 2. 历史不足 PRESERVED_COUNT 条则全部保留,不调 LLM(避免无意义压缩)
- * 3. 否则保留最后 PRESERVED_COUNT 条,把剩余 messages 拼成对话文本
- * 4. fork 一次 LLM 调用做结构化摘要
- * 5. 调 ctx.resetSession(sessionId, summary, preservedMessages) 重置 session
+ * 流程:
+ * 1. 读取 transcript 与已有 compactMarkers
+ * 2. projectView tail 可压缩段过短则 skipped,不调 LLM
+ * 3. fork LLM 做结构化摘要
+ * 4. appendCompactMarker — 只写标记,不 resetSession
  *
- * 关键路径:LLM 调用先于 resetSession。若 LLM 抛错,session 保持原状(不破坏当前上下文),
- * 用户可重试 /compact;只有摘要成功后才执行重置。
+ * 关键路径:LLM 调用先于 appendCompactMarker。若 LLM 抛错或空摘要,session 保持原状,
+ * 用户可重试 /compact;只有摘要成功后才写入 marker。
  *
  * @param ctx - ContextManager 实例
  * @param llm - LLM 客户端,用于摘要
  * @param sessionId - 会话 ID
  * @param overrides - 可选 prompt section 覆盖(默认空对象)
- * @returns 摘要 + 保留的原文消息
- * @throws LLM 调用失败时抛原错误,session 不重置
+ * @param opts - 可选 untilIndex(溢出重试时排除当前 user)
+ * @returns 摘要与可选 marker;skipped 表示 tail 过短未压缩
+ * @throws LLM 调用失败或空摘要时抛错,不写 marker
  */
 export async function compactSession(
 	ctx: ContextManager,
 	llm: LLMClient,
 	sessionId: string,
 	overrides: OverrideMap = {},
+	opts?: CompactSessionOptions,
 ): Promise<CompactResult> {
 	await ctx.load(sessionId);
-	// 关键路径:toMessages 含 Composer 注入的 system prompt,需过滤掉只取会话历史。
-	// 这里不直接访问 session.messages(私有状态),只通过 toMessages 公开 API 取。
-	const allMessages = ctx.toMessages('direct').filter((m) => m.role !== 'system');
-
-	// 边界:历史不足 PRESERVED_COUNT 条,直接全部保留,不调 LLM(避免无意义压缩)
-	if (allMessages.length <= PRESERVED_COUNT) {
-		return { summary: '', preservedMessages: allMessages };
+	const transcript = ctx.getTranscript();
+	const markers = ctx.getCompactMarkers();
+	const untilIndex = opts?.untilIndex ?? transcript.length - 1;
+	if (untilIndex < 0) {
+		return { summary: '', skipped: true };
 	}
 
-	const preservedMessages = alignPreservedToolMessages(allMessages.slice(-PRESERVED_COUNT));
-	// 关键路径:摘要输入仍按原始窗口切分(与对齐前一致),避免把丢弃的孤立 tool 正文漏进摘要又重复保留
-	const summaryInputMessages = allMessages.slice(0, -PRESERVED_COUNT);
+	const sliceForCompact = transcript.slice(0, untilIndex + 1);
+	const { tail } = projectView(sliceForCompact, markers);
+	const compactable = tail.filter((m) => m.role !== 'system');
+	if (compactable.length <= MIN_TRANSCRIPT_TO_COMPACT) {
+		return { summary: '', skipped: true };
+	}
 
-	// 拼成对话文本,作为 LLM 摘要输入
-	const history = summaryInputMessages
+	const history = projectView(sliceForCompact, markers);
+	const historyText = [...history.head, ...history.tail]
 		.map((m) => `${m.role}: ${m.content}`)
 		.join('\n');
 
-	// 关键路径:fork LLM 调用做摘要,与主对话流独立(不影响主上下文)
-	const llmMessages = composeCompactMessages({ history }, overrides);
+	const llmMessages = composeCompactMessages({ history: historyText }, overrides);
 	const summary = await collectStream(llm.chat({ messages: llmMessages }));
 
-	// 关键路径:LLM 返回空摘要视为异常,避免注入空 system 消息
 	if (!summary.trim()) {
 		throw new Error(tNow('error.compact.emptySummary'));
 	}
 
-	// 关键路径:LLM 成功后才重置 session。resetSession 内部先 delete 再 load,
-	// delete 失败时抛错(此时 session 仍是旧的,符合"原子性"预期)
-	await ctx.resetSession(sessionId, summary, preservedMessages);
-
-	return { summary, preservedMessages };
+	const afterIndex = untilIndex;
+	const marker: CompactMarker = {
+		afterIndex,
+		summary: summary.trim(),
+		restoredNotePaths: extractRestoredNotePaths(transcript, 0, afterIndex),
+		at: Date.now(),
+	};
+	await ctx.appendCompactMarker(marker);
+	return { summary: marker.summary, marker };
 }
 
 /**

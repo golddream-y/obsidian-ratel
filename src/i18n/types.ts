@@ -118,6 +118,8 @@ export interface SettingsStrings {
   'settings.indexing.chunkOverlap.name': string;
   'settings.indexing.autoIndex.name': string;
   'settings.indexing.autoIndex.desc': string;
+  'settings.autoCompactEnabled.name': string;
+  'settings.autoCompactEnabled.desc': string;
   'settings.developer.heading': string;
   'settings.developer.debugLog.name': string;
   'settings.developer.agentMaxSteps.name': string;
@@ -312,10 +314,11 @@ export interface ChatStrings {
   'chat.mention.stripAria': string;
   'chat.mention.removeAria': string;
   'chat.mention.absoluteRejected': string;
-  'chat.compactConfirm.title': string;
-  'chat.compactConfirm.body': string;
-  'chat.compactConfirm.confirm': string;
-  'chat.compactConfirm.cancel': string;
+  'chat.compact.running': string;
+  'chat.compact.done': string;
+  'chat.compact.failed': string;
+  'chat.compact.tooShort': string;
+  'chat.compacted': string;
   'chat.modelInfo.title': string;
   'chat.modelInfo.openSettings': string;
   'chat.modelInfo.notConfigured': string;

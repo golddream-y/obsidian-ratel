@@ -79,6 +79,7 @@ export const ZH_DEFAULTS: Record<PromptSectionId, string> = {
 要求:
 - 不丢失关键决策、约束、未解决问题
 - 不保留原文细节,只提炼要点
+- 工具结果可能已是 [compacted] 占位,禁止臆造笔记原文
 - 若历史为空,直接返回"无历史"`,
 
 	'internal.intent.system': `你是意图分类器。只回答一个词:rag 或 direct。rag 表示需要搜索 Obsidian 知识库;direct 表示不需要。`,

@@ -1,10 +1,11 @@
 /**
  * @file tests/ui/chat/compact-session.test.ts
- * @description compact-session 单元测试 — /compact 流程:LLM 摘要 + 保留最近 3 条 + 重置 session
+ * @description compact-session 单元测试 — /compact 写 marker 不删 transcript
  */
 
 import { describe, it, expect } from 'vitest';
 import { compactSession } from '../../../src/ui/chat/compact-session';
+import { projectView } from '../../../src/core/compact-project';
 import { ContextManager } from '../../../src/core/context-manager';
 import type { LLMClient, ChatRequest, ChatDelta } from '../../../src/ports/llm';
 import type { Persistence, Session, ChatMessage } from '../../../src/ports/persistence';
@@ -45,7 +46,7 @@ function createMockLLM(responses: ChatDelta[][]): LLMClient {
 }
 
 describe('compactSession', () => {
-	it('正常 - 摘要 + 保留最近 3 条 + 重置 session', async () => {
+	it('compactSession - 长历史 - messages 条数不变且写入 marker', async () => {
 		const sessions = new Map<string, Session>();
 		const oldMessages: ChatMessage[] = [
 			{ role: 'user', content: '问题1' },
@@ -67,24 +68,69 @@ describe('compactSession', () => {
 		const result = await compactSession(ctx, llm, 's1');
 
 		expect(result.summary).toBe('这是摘要');
-		expect(result.preservedMessages).toHaveLength(3);
-		// 关键路径:slice(-3) 保留最后 3 条 = [保留问题1, 保留答案1, 保留问题2]
-		// 注:plan 原始测试期望 [答案3, 保留问题1, 保留答案1] 与实现 slice(-3) 语义冲突,此处修正为匹配实现
-		expect(result.preservedMessages[0]!.content).toBe('保留问题1');
-		expect(result.preservedMessages[1]!.content).toBe('保留答案1');
-		expect(result.preservedMessages[2]!.content).toBe('保留问题2');
-
-		// session 已重置,只剩摘要 system + 3 条 preserved
+		expect(result.skipped).toBeFalsy();
 		await ctx.load('s1');
-		const messages = ctx.toMessages('direct');
-		expect(messages.some((m) => m.role === 'system' && m.content.includes('这是摘要'))).toBe(true);
-		expect(messages.some((m) => m.content === '问题1')).toBe(false);
-		expect(messages.some((m) => m.content === '保留问题1')).toBe(true);
+		expect(ctx.getTranscript().length).toBe(9);
+		expect(ctx.getTranscript()[0]!.content).toBe('问题1');
+		expect(ctx.getCompactMarkers()).toHaveLength(1);
+		expect(ctx.getCompactMarkers()[0]!.summary).toBe('这是摘要');
+		const projected = ctx.toMessages('direct');
+		expect(projected.some((m) => m.content.includes('问题1'))).toBe(false);
 	});
 
-	it('LLM 失败 - 抛错,session 不重置', async () => {
-		// 关键路径:数据需 ≥ 4 条才会触发 LLM 摘要(length <= 3 时早返回不调 LLM)
-		// 注:plan 原始测试只放 1 条消息但期望 LLM 抛错,与早返回边界冲突,此处补足至 4 条
+	it('compactSession - 历史不足 - skipped 不调 LLM', async () => {
+		const sessions = new Map<string, Session>();
+		sessions.set('s1', {
+			id: 's1',
+			title: '',
+			messages: [
+				{ role: 'user', content: '问1' },
+				{ role: 'assistant', content: '答1' },
+			],
+			createdAt: 0,
+			updatedAt: 0,
+		});
+		const persistence = createPersistence(sessions);
+		const ctx = new ContextManager(persistence);
+		const llm: LLMClient = {
+			async *chat() {
+				throw new Error('LLM 不应被调用');
+			},
+			countTokens: () => 0,
+		};
+
+		const result = await compactSession(ctx, llm, 's1');
+		expect(result.skipped).toBe(true);
+		expect(result.summary).toBe('');
+		expect(ctx.getCompactMarkers()).toHaveLength(0);
+	});
+
+	it('compactSession - 空摘要 - 抛错且不写 marker', async () => {
+		const sessions = new Map<string, Session>();
+		sessions.set('s1', {
+			id: 's1',
+			title: '',
+			messages: [
+				{ role: 'user', content: '问1' },
+				{ role: 'assistant', content: '答1' },
+				{ role: 'user', content: '问2' },
+				{ role: 'assistant', content: '答2' },
+			],
+			createdAt: 0,
+			updatedAt: 0,
+		});
+		const persistence = createPersistence(sessions);
+		const ctx = new ContextManager(persistence);
+		const llm = createMockLLM([[{ text: '   ' }]]);
+
+		await expect(compactSession(ctx, llm, 's1')).rejects.toThrow();
+
+		await ctx.load('s1');
+		expect(ctx.getCompactMarkers()).toHaveLength(0);
+		expect(ctx.getTranscript().length).toBe(4);
+	});
+
+	it('compactSession - LLM 抛错 - messages 原样', async () => {
 		const sessions = new Map<string, Session>();
 		sessions.set('s1', {
 			id: 's1',
@@ -109,72 +155,50 @@ describe('compactSession', () => {
 
 		await expect(compactSession(ctx, llm, 's1')).rejects.toThrow('network');
 
-		// session 未被重置,原消息还在
 		await ctx.load('s1');
-		const messages = ctx.toMessages('direct');
-		expect(messages.some((m) => m.content === '原问1')).toBe(true);
+		expect(ctx.getTranscript().length).toBe(4);
+		expect(ctx.getTranscript()[0]!.content).toBe('原问1');
+		expect(ctx.getCompactMarkers()).toHaveLength(0);
 	});
 
-	it('历史不足 3 条 - 全部保留,不调 LLM', async () => {
-		const sessions = new Map<string, Session>();
-		sessions.set('s1', {
-			id: 's1',
-			title: '',
-			messages: [{ role: 'user', content: '只一条' }],
-			createdAt: 0,
-			updatedAt: 0,
-		});
-		const persistence = createPersistence(sessions);
-		const ctx = new ContextManager(persistence);
-		// 关键路径:mock 改为 throw,真正验证"历史不足 3 条不调 LLM"(早返回路径)
-		const llm: LLMClient = {
-			async *chat() { throw new Error('LLM 不应被调用'); },
-			countTokens: () => 0,
-		};
-
-		const result = await compactSession(ctx, llm, 's1');
-		expect(result.summary).toBe('');
-		expect(result.preservedMessages).toHaveLength(1);
-	});
-
-	it('含工具对的长历史 - compact 后 preserved 无孤立 tool', async () => {
-		const sessions = new Map<string, Session>();
+	it('compactSession - untilIndex 排除当前 user - marker 后 tail 仍含该句', async () => {
+		const currentUser = '本轮新问题';
 		const oldMessages: ChatMessage[] = [
-			{ role: 'user', content: '早问' },
-			{ role: 'assistant', content: '早答' },
-			{
-				role: 'assistant',
-				content: '',
-				toolCallId: 'A',
-				toolName: 'read_note',
-				toolArgs: { path: 'a.md' },
-			},
-			{ role: 'tool', content: 'ra', toolCallId: 'A' },
-			{
-				role: 'assistant',
-				content: '',
-				toolCallId: 'B',
-				toolName: 'read_note',
-				toolArgs: { path: 'b.md' },
-			},
-			{ role: 'tool', content: 'rb', toolCallId: 'B' },
+			{ role: 'user', content: '问题1' },
+			{ role: 'assistant', content: '答案1' },
+			{ role: 'user', content: '问题2' },
+			{ role: 'assistant', content: '答案2' },
+			{ role: 'user', content: '问题3' },
+			{ role: 'assistant', content: '答案3' },
+			{ role: 'user', content: '保留问题1' },
+			{ role: 'assistant', content: '保留答案1' },
+			{ role: 'user', content: currentUser },
 		];
+		const sessions = new Map<string, Session>();
 		sessions.set('s1', { id: 's1', title: '', messages: oldMessages, createdAt: 0, updatedAt: 0 });
 
+		let capturedHistory = '';
+		const llm: LLMClient = {
+			async *chat(req: ChatRequest): AsyncIterable<ChatDelta> {
+				const userMsg = req.messages.find((m) => m.role === 'user');
+				capturedHistory = typeof userMsg?.content === 'string' ? userMsg.content : '';
+				yield { text: '溢出摘要' };
+			},
+			countTokens: () => 10,
+		};
+
 		const persistence = createPersistence(sessions);
 		const ctx = new ContextManager(persistence);
-		const llm = createMockLLM([[{ text: '工具史摘要' }]]);
+		const untilIndex = oldMessages.length - 2;
 
-		const result = await compactSession(ctx, llm, 's1');
-		expect(result.summary).toBe('工具史摘要');
-		// slice(-3) 原为 [tool A, asst B, tool B],对齐后不应含孤立 A
-		expect(result.preservedMessages.some((m) => m.role === 'tool' && m.toolCallId === 'A')).toBe(false);
-		for (const m of result.preservedMessages) {
-			if (m.role !== 'tool') continue;
-			const idx = result.preservedMessages.indexOf(m);
-			const prev = result.preservedMessages.slice(0, idx).reverse().find((x) => x.role !== 'tool');
-			expect(prev?.role).toBe('assistant');
-			expect(prev?.toolCallId).toBe(m.toolCallId);
-		}
+		const result = await compactSession(ctx, llm, 's1', {}, { untilIndex });
+
+		expect(result.marker?.afterIndex).toBe(untilIndex);
+		expect(capturedHistory).not.toContain(currentUser);
+		await ctx.load('s1');
+		const projected = ctx.toMessages('direct');
+		expect(projected.some((m) => m.content.includes(currentUser))).toBe(true);
+		const { tail } = projectView(ctx.getTranscript(), ctx.getCompactMarkers());
+		expect(tail.some((m) => m.content === currentUser)).toBe(true);
 	});
 });

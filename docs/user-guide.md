@@ -136,7 +136,7 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 | 命令 | 作用 |
 |---|---|
 | `/new` | 新对话 |
-| `/compact` | 压缩上下文 |
+| `/compact` | 压缩发给模型的上下文，聊天记录全部保留；可自动（设置默认开） |
 | `/model` | 查看当前模型配置 |
 | `/reindex` | 强制全量重建索引 |
 | `/skill` / `/skills` / `/skill off` | Skill 激活 / 列表 / 关闭 |
@@ -157,7 +157,7 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 
 | Tab | 常用项 |
 |---|---|
-| **对话模型** | 语言、场景预设（DeepSeek / Ollama / 自定义）、模型、API Base、钥匙串状态 |
+| **对话模型** | 语言、场景预设（DeepSeek / Ollama / 自定义）、模型、API Base、钥匙串状态、自动压缩上下文（默认开） |
 | **笔记索引** | Embedding、分块 / 自动索引、Rerank |
 | **记忆与权限** | 记忆开关与面板、Skills、日记约定、工具权限档位、全部工具权限（含 MCP 工具） |
 | **外观** | 颜色模式（跟随 Obsidian / 浅色 / 深色）、强调色色块（含铜 / Material 色）；仅影响 Ratel 面板，预览即时生效 |
@@ -205,6 +205,7 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 
 | 问题 | 回答 |
 |---|---|
+| `/compact` 会删聊天吗？ | 不会。只压缩发给模型的上下文，气泡全部保留；上下文接近上限时也会自动压（设置可关） |
 | 为什么要 1.13.0+？ | 钥匙串 + 声明式设置 API |
 | Key 存在哪？ | Obsidian Keychain，不进 `data.json` |
 | 每次启动都全量索引？ | 否。smart reindex 用 hash diff，未改文件跳过 |

@@ -44,7 +44,9 @@ export type MessageSegment =
 export interface Message {
 	/** 会话内稳定锚点（hydrate/发送时生成，不要求写入 Session 落盘） */
 	id: string;
-	role: 'user' | 'assistant';
+	role: 'user' | 'assistant' | 'compact';
+	/** 压缩分隔行阶段 — 仅 role=compact 时使用 */
+	compactPhase?: 'running' | 'done' | 'failed';
 	segments: MessageSegment[];
 	chatError?: DiagError;
 	cancelled?: boolean;

@@ -395,3 +395,73 @@ describe('resetSession', () => {
 		expect(msgs[1]!.content).toContain('当前本地时间');
 	});
 });
+
+// ==================== compact 投影 ====================
+
+describe('compact 投影', () => {
+	it('toMessages - 有 compactMarkers - 不含标记前原文且含摘要', async () => {
+		const sessions = new Map<string, Session>();
+		sessions.set('s1', {
+			id: 's1',
+			title: '',
+			messages: [
+				{ role: 'user', content: '旧问' },
+				{ role: 'assistant', content: '旧答' },
+				{ role: 'user', content: '新问' },
+			],
+			compactMarkers: [{ afterIndex: 1, summary: '旧对话摘要', restoredNotePaths: [], at: 1 }],
+			createdAt: 0,
+			updatedAt: 0,
+		});
+		const persistence = createMockPersistence(sessions);
+		const ctx = createCtx(persistence);
+		await ctx.load('s1');
+		const msgs = ctx.toMessages('direct');
+		expect(msgs.some((m) => m.content.includes('旧问'))).toBe(false);
+		expect(msgs.some((m) => m.content.includes('[compact 摘要]') && m.content.includes('旧对话摘要'))).toBe(true);
+		expect(msgs.some((m) => m.content === '新问')).toBe(true);
+	});
+
+	it('appendCompactMarker - 不改 messages 条数', async () => {
+		const sessions = new Map<string, Session>();
+		sessions.set('s1', {
+			id: 's1',
+			title: '',
+			messages: [
+				{ role: 'user', content: '问' },
+				{ role: 'assistant', content: '答' },
+			],
+			createdAt: 0,
+			updatedAt: 0,
+		});
+		const persistence = createMockPersistence(sessions);
+		const ctx = createCtx(persistence);
+		await ctx.load('s1');
+		await ctx.appendCompactMarker({
+			afterIndex: 1,
+			summary: '摘要',
+			restoredNotePaths: [],
+			at: Date.now(),
+		});
+		expect(ctx.getTranscript().length).toBe(2);
+		expect(ctx.getCompactMarkers()).toHaveLength(1);
+		expect(ctx.getCompactMarkers()[0]!.summary).toBe('摘要');
+	});
+
+	it('getTranscript - 不含 Composer system', async () => {
+		const sessions = new Map<string, Session>();
+		sessions.set('s1', {
+			id: 's1',
+			title: '',
+			messages: [{ role: 'user', content: '你好' }],
+			createdAt: 0,
+			updatedAt: 0,
+		});
+		const persistence = createMockPersistence(sessions);
+		const ctx = createCtx(persistence);
+		await ctx.load('s1');
+		const transcript = ctx.getTranscript();
+		expect(transcript.every((m) => m.role !== 'system' || m.content.includes('skill'))).toBe(true);
+		expect(transcript[0]?.content).not.toBe(ctx.toMessages()[0]!.content);
+	});
+});
