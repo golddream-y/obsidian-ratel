@@ -12,11 +12,16 @@
 	import ThinkingOrb from '../../orbs/ThinkingOrb.svelte';
 	import { mapOrbState, type RatelOrbBusyKind } from '../../orbs/map-orb-state';
 	import type { OrbState } from '../../orbs/types';
+	import EmptyStage from '../../motion/empty/EmptyStage.svelte';
+	import { isChatMotionEnabled } from '../../motion/prefs';
+	import { settings$ as settingsStore } from '../../settings-store';
+	import { computeFadePlay, reseedEnteredIds } from '../../motion/enter/fade-play-policy';
 
 	/**
 	 * MessageList props。
 	 *
 	 * @param messages - 消息数组
+	 * @param sessionId - 当前会话 id；切换时重种子 enteredIds，hydrate 不播 FadeIn
 	 * @param isRunning - Agent Loop 是否运行中(影响最后一条消息的流式标记)
 	 * @param containerRef - 可绑定,内层可滚动容器(.ratel-messages)的 DOM 引用,父组件据此控制滚动
 	 * @param onScroll - 滚动事件回调,父组件据此判断用户是否处于底部(sticky-to-bottom)
@@ -24,6 +29,7 @@
 	 */
 	let {
 		messages,
+		sessionId,
 		isRunning,
 		containerRef = $bindable(),
 		onScroll,
@@ -33,6 +39,7 @@
 		citeSearchFallback = null,
 	}: {
 		messages: Message[];
+		sessionId: string;
 		isRunning: boolean;
 		containerRef?: HTMLDivElement | null;
 		onScroll?: (el: HTMLDivElement) => void;
@@ -81,6 +88,33 @@
 	});
 
 	const busyOrbState = $derived(mapOrbState(busyKind));
+	const motionOn = $derived(isChatMotionEnabled($settingsStore));
+
+	/** 已入场或 hydrate 种子的消息 id — 仅新 id 首帧播 FadeIn */
+	let enteredIds = $state(new Set<string>());
+	let trackedSessionId = $state('');
+
+	// 关键路径:会话切换 / 初始 hydrate 同步种子，首帧全部 play=false
+	$effect.pre(() => {
+		const ids = messages.map((m) => m.id);
+		if (sessionId !== trackedSessionId) {
+			trackedSessionId = sessionId;
+			enteredIds = reseedEnteredIds(ids);
+		}
+	});
+
+	// 新消息首帧播完后记入集合，streaming 重渲不重播
+	$effect(() => {
+		const ids = messages.map((m) => m.id);
+		let next: Set<string> | null = null;
+		for (const id of ids) {
+			if (!enteredIds.has(id)) {
+				if (!next) next = new Set(enteredIds);
+				next.add(id);
+			}
+		}
+		if (next) enteredIds = next;
+	});
 
 	function compactLabelKey(phase: Message['compactPhase'] | undefined): StringKey {
 		if (phase === 'running') return 'chat.compact.running';
@@ -90,7 +124,10 @@
 </script>
 
 <div class="ratel-messages" bind:this={containerRef} onscroll={() => { if (containerRef) onScroll?.(containerRef); }}>
-	{#each messages as msg, i}
+	{#if messages.length === 0}
+		<EmptyStage motionOn={motionOn} />
+	{/if}
+	{#each messages as msg, i (msg.id)}
 		{#if msg.role === 'compact'}
 			<div class="ratel-compact-divider" data-phase={msg.compactPhase ?? 'done'}>
 				{$t(compactLabelKey(msg.compactPhase))}
@@ -103,6 +140,7 @@
 				{onOpenPath}
 				navFlash={msg.id === highlightId}
 				{citeSearchFallback}
+				fadePlay={computeFadePlay(msg.id, enteredIds, motionOn)}
 			/>
 		{/if}
 	{/each}
@@ -119,13 +157,15 @@
 	 * 关键路径:消息流 gap/padding 贴近原型 v3(20/16, gap 20),对话区更疏朗。
 	 */
 	.ratel-messages {
+		position: relative;
 		flex: 1;
 		overflow-y: auto;
 		padding: 20px 16px 12px;
 		display: flex;
 		flex-direction: column;
 		gap: 20px;
-		scroll-behavior: smooth;
+		/* 修复:sticky-to-bottom 必须瞬时落底，避免流式输出期间持续追赶平滑动画。 */
+		scroll-behavior: auto;
 		/* 组件内兜底；全局压过 Obsidian body{user-select:none} 在 styles.css */
 		-webkit-user-select: text;
 		user-select: text;

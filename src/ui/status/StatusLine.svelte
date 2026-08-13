@@ -13,6 +13,9 @@
 	import { mapOrbState, type RatelOrbBusyKind } from '../orbs/map-orb-state';
 	import { deriveTone, type Tone } from './tone';
 	import { clampContextPct, composeStripLabel, contextPctTextColor } from './strip-label';
+	import CountUp from '../motion/chrome/CountUp.svelte';
+	import { isChatMotionEnabled } from '../motion/prefs';
+	import { settings$ } from '../settings-store';
 
 	let {
 		status$,
@@ -43,6 +46,7 @@
 	// 关键路径:显示与色阶共用同一 clamp,避免 >100 时数字截断但色阶仍按原值跳 error
 	const pct = $derived(clampContextPct(usage.percentage));
 	const pctColor = $derived(contextPctTextColor(pct));
+	const motionOn = $derived(isChatMotionEnabled($settings$));
 
 	const toneLabels: Record<Tone, StringKey> = {
 		ready: 'status.index.ready',
@@ -112,7 +116,9 @@
 		class:ratel-sl-text-error={state.tone === 'error' || busyHard}
 		class:ratel-sl-text-muted={state.tone === 'unconfigured' && !busyHard}
 	>{label}</span>
-	<span class="ratel-sl-pct" style={`color: ${pctColor}`}>{pct}%</span>
+	<span class="ratel-sl-pct" style:color={pctColor}>
+		<CountUp value={pct} enabled={motionOn} />%
+	</span>
 	<span class="ratel-sl-arrow">▲</span>
 </div>
 

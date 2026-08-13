@@ -17,6 +17,10 @@
 		shouldShowCiteChips,
 	} from '../collect-cited-indexes';
 	import { t } from '../../../i18n';
+	import FadeIn from '../../motion/enter/FadeIn.svelte';
+	import { isChatMotionEnabled } from '../../motion/prefs';
+	import { settings$ as settingsStore } from '../../settings-store';
+	import '../../motion/bubble/star-border.css';
 
 	/**
 	 * MessageBubble props。
@@ -34,6 +38,8 @@
 		navFlash = false,
 		/** 会话内最近一次检索 — 本条未挂 searchResults 时供正文 [n] 挂钩 */
 		citeSearchFallback = null,
+		/** 本条是否播 FadeIn（hydrate / 会话切换为 false） */
+		fadePlay = true,
 	}: {
 		msg: Message;
 		isLast: boolean;
@@ -41,6 +47,7 @@
 		onOpenPath: (path: string) => void;
 		navFlash?: boolean;
 		citeSearchFallback?: Message['searchResults'] | null;
+		fadePlay?: boolean;
 	} = $props();
 
 	const isAssistantStreaming = $derived(isLast && isRunning && msg.role === 'assistant');
@@ -60,11 +67,15 @@
 	const citeSearchResults = $derived(
 		msg.searchResults?.length ? msg.searchResults : citeSearchFallback ?? undefined,
 	);
+	const motionOn = $derived(isChatMotionEnabled($settingsStore));
+	const fadeInPlay = $derived(motionOn && fadePlay);
 </script>
 
+<FadeIn play={fadeInPlay}>
 <div
 	class="ratel-msg"
 	class:ratel-msg-user={msg.role === 'user'}
+	class:ratel-msg-user--star={msg.role === 'user' && motionOn}
 	class:ratel-msg-assistant={msg.role === 'assistant'}
 	class:ratel-msg-nav-flash={navFlash}
 	data-msg-id={msg.id}
@@ -90,6 +101,8 @@
 				streaming={isAssistantStreaming}
 				searchResults={msg.role === 'assistant' ? citeSearchResults : undefined}
 				{onOpenPath}
+				{motionOn}
+				messageId={msg.id}
 			/>
 		{:else if block.kind === 'trace'}
 			<div class="ratel-trace">
@@ -109,6 +122,8 @@
 			results={msg.searchResults!}
 			reranked={msg.searchReranked ?? false}
 			{onOpenPath}
+			{motionOn}
+			messageId={msg.id}
 		/>
 	{/if}
 
@@ -131,6 +146,7 @@
 		</div>
 	{/if}
 </div>
+</FadeIn>
 
 <style>
 	/*

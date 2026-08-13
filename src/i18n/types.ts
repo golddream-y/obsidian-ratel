@@ -59,6 +59,8 @@ export interface SettingsStrings {
   'settings.appearance.preview.send': string;
   'settings.chatNavRailEnabled.name': string;
   'settings.chatNavRailEnabled.desc': string;
+  'settings.chatMotionEnabled.name': string;
+  'settings.chatMotionEnabled.desc': string;
   'settings.chatNavRailSide.name': string;
   'settings.chatNavRailSide.desc': string;
   'settings.chatNavRailSide.left': string;
@@ -195,6 +197,11 @@ export interface ChatStrings {
   'chat.header.title': string;
   'chat.header.tagline': string;
   'chat.header.modelChip': string;
+  'chat.empty.welcome': string;
+  'chat.empty.hint': string;
+  'chat.empty.hint.1': string;
+  'chat.empty.hint.2': string;
+  'chat.empty.hint.3': string;
   'chat.feedback.title': string;
   'chat.feedback.body': string;
   'chat.feedback.copyDiag': string;

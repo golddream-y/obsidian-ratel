@@ -158,6 +158,10 @@ export interface RatelVaultSettings {
 	/** 位置轨吸附在消息区左侧或右侧 */
 	chatNavRailSide: 'left' | 'right';
 
+	// 关键路径(P-CHAT-MOTION — 聊天装饰动效总闸门)
+	/** 是否播放空态/入场/扫光等装饰动效（不含 ThinkingOrb 忙态） */
+	chatMotionEnabled: boolean;
+
 	/** MCP Server 列表；默认空 = 零出站 */
 	mcpServers: McpServerConfig[];
 	/** 用户已确认允许 spawn 的 stdio serverId 列表 */
@@ -267,6 +271,8 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 	// 关键路径:默认开启位置轨并靠右,贴合常见阅读滚动条习惯。
 	chatNavRailEnabled: true,
 	chatNavRailSide: 'right',
+	// 关键路径:默认开启装饰动效;系统 prefers-reduced-motion 时由 prefs 闸门兜底关闭。
+	chatMotionEnabled: true,
 	// 关键路径:默认空列表 = 零 MCP 出站（ADR-014）
 	mcpServers: [],
 	mcpApprovedSpawns: [],
@@ -773,6 +779,11 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 						name: tNow('settings.chatNavRailEnabled.name'),
 						desc: tNow('settings.chatNavRailEnabled.desc'),
 						control: { type: 'toggle', key: 'chatNavRailEnabled' },
+					},
+					{
+						name: tNow('settings.chatMotionEnabled.name'),
+						desc: tNow('settings.chatMotionEnabled.desc'),
+						control: { type: 'toggle', key: 'chatMotionEnabled' },
 					},
 					{
 						name: tNow('settings.chatNavRailSide.name'),

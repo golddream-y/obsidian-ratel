@@ -13,17 +13,26 @@
 	import { bindCitePathTooltip } from '../chat/cite-path-tooltip';
 	import { pathForCiteIndex } from '../chat/open-chat-note';
 	import { tNow } from '../../i18n';
+	import {
+		CITE_EACH_STAGGER_MS,
+		shouldStaggerCite,
+	} from '../motion/enter/cite-policy';
+	import { markCiteEnterIfNew } from '../motion/enter/cite-enter-tracker';
 
 	let {
 		content,
 		streaming = false,
 		searchResults,
 		onOpenPath,
+		motionOn = false,
+		messageId = '',
 	}: {
 		content: string;
 		streaming?: boolean;
 		searchResults?: Array<{ docId: string; score: number; path: string; index: number }>;
 		onOpenPath?: (path: string) => void;
+		motionOn?: boolean;
+		messageId?: string;
 	} = $props();
 
 	let containerEl: HTMLDivElement | null = $state(null);
@@ -48,6 +57,22 @@
 		return el.contains(node.nodeType === Node.TEXT_NODE ? node.parentNode : node);
 	}
 
+	function applyCiteEnterAnimation() {
+		if (!containerEl || !motionOn || !messageId || !searchResults?.length) return;
+		const mode = shouldStaggerCite(searchResults.length);
+		const buttons = containerEl.querySelectorAll<HTMLButtonElement>('button.ratel-cite');
+		let staggerIdx = 0;
+		for (const btn of buttons) {
+			const n = Number(btn.dataset.citeIndex);
+			if (!markCiteEnterIfNew(messageId, n)) continue;
+			btn.classList.add('ratel-cite-enter');
+			if (mode === 'each') {
+				btn.style.animationDelay = `${staggerIdx * CITE_EACH_STAGGER_MS}ms`;
+				staggerIdx += 1;
+			}
+		}
+	}
+
 	function applyCites() {
 		cleanupCites?.();
 		cleanupCites = null;
@@ -70,6 +95,7 @@
 		cleanupCiteTips = () => {
 			for (const c of tipCleaners) c();
 		};
+		applyCiteEnterAnimation();
 	}
 
 	function flushPendingRender(): void {
@@ -265,6 +291,31 @@
 		background: transparent;
 		border-bottom-color: var(--ratel-cite, var(--interactive-accent));
 		text-decoration: none;
+	}
+
+	.ratel-md :global(button.ratel-cite.ratel-cite-enter) {
+		opacity: 0;
+		transform: translateY(6px);
+		animation: ratel-cite-enter 220ms ease forwards;
+	}
+
+	@keyframes ratel-cite-enter {
+		from {
+			opacity: 0;
+			transform: translateY(6px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.ratel-md :global(button.ratel-cite.ratel-cite-enter) {
+			animation: none;
+			opacity: 1;
+			transform: none;
+		}
 	}
 
 	.ratel-md :global(hr) {

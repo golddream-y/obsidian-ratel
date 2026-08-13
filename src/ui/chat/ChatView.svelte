@@ -85,6 +85,12 @@
 	import { applyRatelAppearance } from '../appearance/apply-ratel-appearance';
 	import { appearanceRevision } from '../appearance/appearance-store';
 	import { settings$ as settingsStore } from '../settings-store';
+	import TitleDissolve from '../motion/title/TitleDissolve.svelte';
+	import ShinyBrand from '../motion/brand/ShinyBrand.svelte';
+	import ClickSpark from '../motion/brand/ClickSpark.svelte';
+	import GlareHover from '../motion/chrome/GlareHover.svelte';
+	import { isChatMotionEnabled } from '../motion/prefs';
+	import { isNearBottom, snapScrollToBottom } from './sticky-scroll';
 
 	let { plugin }: { plugin: RatelVaultPlugin } = $props();
 
@@ -134,6 +140,8 @@
 	let sessionId = $state('');
 	let sessionShortTitle = $state('');
 	let sessionFullTitle = $state('');
+	/** 标题落定动效令牌 — maybeGenerateTitle / 手改成功后递增 */
+	let titleMotionToken = $state(0);
 	let sessionEntries = $state<SessionIndexEntry[]>([]);
 	let sessionMenuOpen = $state(false);
 	let sessionMenuFloatEl = $state<HTMLDivElement | null>(null);
@@ -151,6 +159,7 @@
 	let slashMenuEl = $state<{ handleKeydown: (e: KeyboardEvent) => boolean } | null>(null);
 	let mentionMenuEl = $state<{ handleKeydown: (e: KeyboardEvent) => boolean } | null>(null);
 	let textareaEl = $state<HTMLTextAreaElement | null>(null);
+	let sendSparkTick = $state(0);
 	let mentionPaths = $state<string[]>([]);
 	let mentionQuery = $state<string | null>(null);
 	let mentionItems = $state<string[]>([]);
@@ -188,7 +197,7 @@
 	const scrollToBottom = () => {
 		if (!isUserNearBottom) return;
 		requestAnimationFrame(() => {
-			if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight;
+			if (messagesEl) snapScrollToBottom(messagesEl);
 		});
 	};
 
@@ -200,8 +209,12 @@
 
 	// 关键路径:onscroll 监听内层 .ratel-messages 的滚动,更新 isUserNearBottom + 进度轨
 	function handleScroll(el: HTMLDivElement) {
-		isUserNearBottom =
-			el.scrollHeight - el.scrollTop - el.clientHeight < SCROLL_NEAR_BOTTOM_THRESHOLD;
+		isUserNearBottom = isNearBottom(
+			el.scrollTop,
+			el.scrollHeight,
+			el.clientHeight,
+			SCROLL_NEAR_BOTTOM_THRESHOLD,
+		);
 		updateNavMetrics(el);
 	}
 
@@ -209,7 +222,7 @@
 	function forceScrollToBottom() {
 		isUserNearBottom = true;
 		requestAnimationFrame(() => {
-			if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight;
+			if (messagesEl) snapScrollToBottom(messagesEl);
 		});
 	}
 
@@ -550,7 +563,10 @@
 		s.shortTitle = result.pair.shortTitle;
 		s.updatedAt = Date.now();
 		await plugin.persistence.sessions.upsert(s);
-		if (id === sessionId) syncChipTitles(s);
+		if (id === sessionId) {
+			syncChipTitles(s);
+			titleMotionToken += 1;
+		}
 		await refreshSessionIndex();
 	}
 
@@ -583,7 +599,10 @@
 			cur.shortTitle = normalized.shortTitle;
 			cur.updatedAt = Date.now();
 			await plugin.persistence.sessions.upsert(cur);
-			if (id === sessionId) syncChipTitles(cur);
+			if (id === sessionId) {
+				syncChipTitles(cur);
+				titleMotionToken += 1;
+			}
 			await refreshSessionIndex();
 			new Notice(tNow('chat.session.retitleOk'), 2500);
 		} catch (err) {
@@ -663,7 +682,10 @@
 			cur.shortTitle = pair.shortTitle;
 			cur.updatedAt = Date.now();
 			await plugin.persistence.sessions.upsert(cur);
-			if (forId === sessionId) syncChipTitles(cur);
+			if (forId === sessionId) {
+				syncChipTitles(cur);
+				titleMotionToken += 1;
+			}
 			await refreshSessionIndex();
 		};
 		try {
@@ -698,6 +720,7 @@
 	});
 	// 关键路径:/ 与 @ 互斥 — 斜杠优先;mention 补全仅在非 slash 态
 	const mentionVisible = $derived(mentionQuery !== null && !slashVisible);
+	const chatMotionOn = $derived(isChatMotionEnabled($settingsStore));
 	const modelName = $derived($settingsStore.chatModel);
 	const embedKind = $derived($settingsStore.embedProvider);
 	const permLevel = $derived(($settingsStore.toolPermissionLevel ?? 'safe') as ToolPermissionLevel);
@@ -1027,15 +1050,20 @@
 		messages.push({ id: newMessageId(), role: 'assistant' as const, segments: [] });
 		let am = messages[messages.length - 1] as Message;
 
+		// 关键路径:入队成功后递增令牌触发火花;gate 早退与 Stop 不触发。
+		sendSparkTick += 1;
+
 		input = '';
 		mentionPaths = [];
 		mentionQuery = null;
 		mentionItems = [];
 		sessionMenuOpen = false;
+		// 关键路径:先挂 abortController 再翻 isRunning，避免停钮已显示但 abort 仍为 null
+		const ac = new AbortController();
+		abortController = ac;
 		isRunning = true;
 		// 关键路径:不在此 patch model=checking — 否则 StatusStrip「思考中」
 		// 与 MessageList 打字指示双重叠;model 状态只由 FeedbackController 维护。
-		const ac = new AbortController();
 		let lastToolName: string | undefined;
 
 		// 第 1 层:send 前精确估算(基于历史消息 segments)
@@ -1058,7 +1086,6 @@
 
 		try {
 			const events = plugin.ask(sessionId, text, ac.signal);
-			abortController = ac;
 
 			for await (const event of events) {
 				switch (event.type) {
@@ -1316,9 +1343,7 @@
 	<div class="ratel-header">
 		<div class="ratel-header-left">
 			<div class="ratel-header-brand">
-				<span class="ratel-header-mark"
-					>{$t('chat.header.title')}<span class="ratel-header-dot" aria-hidden="true">.</span></span
-				>
+				<ShinyBrand text={$t('chat.header.title')} motionOn={chatMotionOn} />
 				<span class="ratel-header-tagline">{$t('chat.header.tagline')}</span>
 			</div>
 		</div>
@@ -1343,9 +1368,13 @@
 						if (sessionMenuOpen) void refreshSessionIndex();
 					}}
 				>
-					<span class="ratel-session-chip-label"
-						>{sessionShortTitle || emptyTitle()}</span
-					>
+					<span class="ratel-session-chip-label">
+						<TitleDissolve
+							text={sessionShortTitle || emptyTitle()}
+							playToken={titleMotionToken}
+							motionOn={chatMotionOn}
+						/>
+					</span>
 					<svg class="ratel-session-chip-ico" viewBox="0 0 24 24" aria-hidden="true">
 						<circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.75"></circle>
 						<path
@@ -1386,6 +1415,7 @@
 						currentId={sessionId}
 						loadingId={sessionLoadingId}
 						open={true}
+						motionOn={chatMotionOn}
 						onSelect={(id) => void switchToSession(id)}
 						onNew={() => void createNewSession()}
 						onDelete={(id) => void deleteSessionFromMenu(id)}
@@ -1408,6 +1438,7 @@
 		>
 			<MessageList
 				{messages}
+				{sessionId}
 				{isRunning}
 				bind:containerRef={messagesEl}
 				onScroll={handleScroll}
@@ -1513,24 +1544,32 @@
 						disabled={isRunning || isCompacting || !gate.canSend}
 						rows={1}
 					></textarea>
-					{#if isRunning}
-						<button
-							class="ratel-send ratel-stop"
-							type="button"
-							onclick={stopGeneration}
-							title={$t('chat.composer.stop')}
-							aria-label={$t('chat.composer.stop')}
-						>■</button>
-					{:else}
-						<button
-							class="ratel-send"
-							type="button"
-							onclick={sendMessage}
-							disabled={!input.trim() || !gate.canSend}
-							title={$t('chat.composer.send')}
-							aria-label={$t('chat.composer.send')}
-						>↑</button>
-					{/if}
+					<ClickSpark enabled={chatMotionOn} tick={sendSparkTick}>
+						{#snippet children()}
+							<GlareHover enabled={chatMotionOn && !isRunning}>
+								{#snippet children()}
+									{#if isRunning}
+										<button
+											class="ratel-send ratel-stop"
+											type="button"
+											onclick={stopGeneration}
+											title={$t('chat.composer.stop')}
+											aria-label={$t('chat.composer.stop')}
+										>■</button>
+									{:else}
+										<button
+											class="ratel-send"
+											type="button"
+											onclick={sendMessage}
+											disabled={!input.trim() || !gate.canSend}
+											title={$t('chat.composer.send')}
+											aria-label={$t('chat.composer.send')}
+										>↑</button>
+									{/if}
+								{/snippet}
+							</GlareHover>
+						{/snippet}
+					</ClickSpark>
 				</div>
 			</div>
 			<div class="ratel-perm-hint" data-level={permLevel}>
@@ -1625,22 +1664,6 @@
 		align-items: baseline;
 		gap: 8px;
 		min-width: 0;
-	}
-
-	.ratel-header-mark {
-		font-size: 15px;
-		font-weight: 650;
-		letter-spacing: -0.02em;
-		color: var(--text-normal);
-		flex-shrink: 0;
-		/* 安全路径:禁止合成加粗,避免「Ratel.」的点看起来比正文更重 */
-		font-synthesis: none;
-	}
-
-	.ratel-header-dot {
-		/* 与 Ratel 同字重,只换强调色(对齐原型 .brand-mark span) */
-		font-weight: inherit;
-		color: var(--ratel-cite, var(--interactive-accent));
 	}
 
 	.ratel-header-tagline {
@@ -2038,7 +2061,11 @@
 		line-height: 1;
 		font-family: inherit;
 		cursor: pointer;
-		transition: opacity 0.15s, transform 0.1s, filter 0.15s;
+		transition:
+			background 0.15s,
+			opacity 0.15s,
+			transform 0.12s,
+			filter 0.15s;
 		-webkit-appearance: none;
 		appearance: none;
 		display: inline-flex;

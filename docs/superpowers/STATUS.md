@@ -17,7 +17,8 @@
 
 | ID | 文件 | 状态 | 创建日期 | 备注 |
 |---|---|---|---|---|
-| S-CHAT-MOTION | [2026-08-12-chat-motion-bits-design.md](specs/2026-08-12-chat-motion-bits-design.md) | Active | 2026-08-12 | Bits 源码翻译进聊天；空态/入场/标题/品牌；与 ThinkingOrb 分工 |
+| S-CHAT-MOTION-v2 | [2026-08-12-chat-motion-v2-design.md](specs/2026-08-12-chat-motion-v2-design.md) | Active | 2026-08-12 | v1 增强：空态 SoftAurora/Gradient/轮换hint；用户 StarBorder；Glare/AnimatedList/CountUp |
+| S-CHAT-MOTION | [2026-08-12-chat-motion-bits-design.md](specs/2026-08-12-chat-motion-bits-design.md) | Active | 2026-08-12 | Bits 源码翻译进聊天；空态/入场/标题/品牌；与 ThinkingOrb 分工；增强见 v2 |
 | S-CHAT-PROTO | [2026-08-10-chat-prototype-align-design.md](specs/2026-08-10-chat-prototype-align-design.md) | Active | 2026-08-10 | P-CHAT-PROTO Completed;原型↔现网对齐;发送↑;三级权限;底栏避让 |
 | S-SETTINGS-SYNC | [2026-08-03-settings-sync-design.md](specs/2026-08-03-settings-sync-design.md) | Active | 2026-08-03 | Settings 读入口统一 settings$;消除设置改了 UI 不刷新;与 appearance/UserStatus 分列 |
 | S-MCP-HOST | [2026-08-03-mcp-host-design.md](specs/2026-08-03-mcp-host-design.md) | Active | 2026-08-03 | 平台级 MCP Host;双 transport;入 ToolRegistry;抽屉 Modal+对话 Trace;ADR-014/015;优先于图谱扩邻 |
@@ -34,7 +35,8 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
-| P-CHAT-MOTION | [2026-08-12-chat-motion-bits.md](plans/2026-08-12-chat-motion-bits.md) | ⏳ Pending | S-CHAT-MOTION | Bits 剥依赖翻译；空态/入场/标题/品牌；8 Task |
+| P-CHAT-MOTION-v2 | [2026-08-12-chat-motion-v2.md](plans/2026-08-12-chat-motion-v2.md) | ✅ Completed | S-CHAT-MOTION-v2 | 分支 feat/p-chat-motion；已合入 develop |
+| P-CHAT-MOTION | [2026-08-12-chat-motion-bits.md](plans/2026-08-12-chat-motion-bits.md) | ✅ Completed | S-CHAT-MOTION | 分支 feat/p-chat-motion；已合入 develop；待归档 |
 | P-CHAT-PROTO | [2026-08-10-chat-prototype-align.md](plans/2026-08-10-chat-prototype-align.md) | ✅ Completed | S-CHAT-PROTO | 分支 main;发送↑;三档权限;底避让;原型回写;6 Task |
 | P-SETTINGS-SYNC | [2026-08-03-settings-sync.md](plans/2026-08-03-settings-sync.md) | ✅ Completed | S-SETTINGS-SYNC | 分支 cursor/p-settings-sync-5933;settings$ 读入口;扇出 maxTokens;Chat/Memory/gate |
 | P-MEMORY-MODAL | [2026-07-31-memory-modal-unify.md](plans/2026-07-31-memory-modal-unify.md) | ✅ Completed | S-MEMORY-MODAL | 分支 feat/p-memory-modal;MemoryModal+拆独立视图;5 Task |

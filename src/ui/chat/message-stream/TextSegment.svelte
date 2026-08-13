@@ -13,12 +13,16 @@
 		streaming = false,
 		searchResults,
 		onOpenPath,
+		motionOn = false,
+		messageId = '',
 	}: {
 		text: string;
 		isUser?: boolean;
 		streaming?: boolean;
 		searchResults?: Array<{ docId: string; score: number; path: string; index: number }>;
 		onOpenPath?: (path: string) => void;
+		motionOn?: boolean;
+		messageId?: string;
 	} = $props();
 </script>
 
@@ -31,6 +35,8 @@
 			{streaming}
 			{searchResults}
 			{onOpenPath}
+			{motionOn}
+			{messageId}
 		/>
 	</div>
 {/if}
