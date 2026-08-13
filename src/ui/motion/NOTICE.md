@@ -11,7 +11,11 @@
 | `brand/ShinyBrand.svelte` | TextAnimations/ShinyText（无 motion） |
 | `brand/ClickSpark.svelte` | Animations/ClickSpark |
 | `title/TitleDissolve.svelte` | BlurText 短时变体 |
+| `title/ParticleText.svelte` | TextAnimations/Particle Text |
+| `title/EchoText.svelte` | TextAnimations/Echo Text |
 | `empty/SoftAuroraBackdrop.svelte` | Backgrounds/SoftAurora |
+| `empty/LineWavesBackdrop.svelte` | Backgrounds/LineWaves |
+| `empty/OrbBackdrop.svelte` | Backgrounds/Orb |
 | `empty/GradientWelcome.svelte` | TextAnimations/GradientText |
 | `empty/RotateHint.svelte` | TextAnimations/RotatingText |
 | `empty/NoiseTray.svelte` | Animations/Noise |

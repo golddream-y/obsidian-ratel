@@ -26,6 +26,7 @@
 		z-index: 0;
 		overflow: hidden;
 		border-radius: inherit;
+		mix-blend-mode: overlay;
 	}
 
 	.ratel-noise-tray svg {

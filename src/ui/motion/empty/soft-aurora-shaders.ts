@@ -135,6 +135,25 @@ void main() {
 
   col *= uBrightness;
   float alpha = clamp(length(col), 0.0, 1.0);
+
+  vec2 size = uResolution.xy;
+  vec2 p = gl_FragCoord.xy;
+
+  // 关键路径:CSS 裁不到 Electron 里的 WebGL canvas,顶角圆画在片元里
+  float r = 18.0;
+  float yFromTop = size.y - p.y;
+  float corner = 1.0;
+  float aa = 1.5;
+  if (p.x < r && yFromTop < r) {
+    corner = smoothstep(r + aa, r - aa, length(vec2(p.x - r, yFromTop - r)));
+  }
+  if (p.x > size.x - r && yFromTop < r) {
+    corner *= smoothstep(r + aa, r - aa, length(vec2(p.x - (size.x - r), yFromTop - r)));
+  }
+  col *= corner;
+  alpha *= corner;
+
+  // 与 git SoftAurora 一致:straight alpha，预乘会把柔光压成脏色
   fragColor = vec4(col, alpha);
 }
 `;

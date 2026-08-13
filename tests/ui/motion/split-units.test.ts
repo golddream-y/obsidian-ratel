@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { splitBlurUnits } from '../../../src/ui/motion/empty/blur-split';
+import { splitBlurUnits, shouldGapBlurWords } from '../../../src/ui/motion/empty/blur-split';
 
 describe('splitBlurUnits', () => {
 	it('splitBlurUnits - 英文词 - 按空格', () => {
@@ -34,5 +34,16 @@ describe('splitBlurUnits', () => {
 
 	it('splitBlurUnits - 英文无空格 - 整段一词', () => {
 		expect(splitBlurUnits('Hello', 'words')).toEqual(['Hello']);
+	});
+
+	it('shouldGapBlurWords - 英文欢迎句 - 需要词间距', () => {
+		expect(shouldGapBlurWords('What would you like to look up in your vault?')).toBe(true);
+		expect(splitBlurUnits('What would you like to look up in your vault?', 'words').join(' ')).toBe(
+			'What would you like to look up in your vault?',
+		);
+	});
+
+	it('shouldGapBlurWords - 中文欢迎句 - 不要字间空格', () => {
+		expect(shouldGapBlurWords('想从库里查找什么？')).toBe(false);
 	});
 });

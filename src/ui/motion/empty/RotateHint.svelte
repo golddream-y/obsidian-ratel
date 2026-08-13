@@ -85,29 +85,37 @@
 
 <style>
 	.ratel-rotate-hint {
-		position: relative;
+		display: grid;
+		justify-items: center;
 		margin: 0.5rem 0 0;
-		min-height: 1.4em;
-		max-width: 18rem;
+		width: 100%;
+		min-width: 0;
+		/* 关键路径:两层叠同一格，格子有宽度，中文不会被挤成竖排；窄侧栏可折行 */
+		flex-shrink: 0;
+		text-align: center;
 	}
 
 	.ratel-rotate-hint--static {
+		display: block;
 		margin: 0.5rem 0 0;
 		font-size: 0.8125rem;
 		line-height: 1.4;
 		color: var(--text-muted);
-		max-width: 18rem;
+		width: 100%;
+		max-width: 100%;
 		font-family: var(--font-monospace);
 	}
 
 	.ratel-rotate-hint-layer {
-		position: absolute;
-		inset: 0;
+		grid-area: 1 / 1;
 		margin: 0;
+		width: 100%;
 		font-size: 0.8125rem;
 		line-height: 1.4;
 		color: var(--text-muted);
 		font-family: var(--font-monospace);
+		text-align: center;
+		overflow-wrap: break-word;
 		opacity: 0;
 		transition: opacity 480ms ease;
 	}

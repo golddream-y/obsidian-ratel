@@ -86,9 +86,10 @@
 	import { appearanceRevision } from '../appearance/appearance-store';
 	import { settings$ as settingsStore } from '../settings-store';
 	import TitleDissolve from '../motion/title/TitleDissolve.svelte';
-	import ShinyBrand from '../motion/brand/ShinyBrand.svelte';
+	import EchoText from '../motion/title/EchoText.svelte';
 	import ClickSpark from '../motion/brand/ClickSpark.svelte';
 	import GlareHover from '../motion/chrome/GlareHover.svelte';
+	import OrbBackdrop from '../motion/empty/OrbBackdrop.svelte';
 	import { isChatMotionEnabled } from '../motion/prefs';
 	import { isNearBottom, snapScrollToBottom } from './sticky-scroll';
 
@@ -142,6 +143,8 @@
 	let sessionFullTitle = $state('');
 	/** 标题落定动效令牌 — maybeGenerateTitle / 手改成功后递增 */
 	let titleMotionToken = $state(0);
+	/** 发完第一句：顶栏 Logo Echo 入场 */
+	let echoEnterToken = $state(0);
 	let sessionEntries = $state<SessionIndexEntry[]>([]);
 	let sessionMenuOpen = $state(false);
 	let sessionMenuFloatEl = $state<HTMLDivElement | null>(null);
@@ -1041,6 +1044,7 @@
 		}
 
 		// 关键路径:用 push + 从数组中取出 Proxy 引用,触发细粒度 DOM 更新
+		const wasEmpty = messages.length === 0;
 		messages.push({
 			id: newMessageId(),
 			role: 'user' as const,
@@ -1048,6 +1052,9 @@
 			attachments: currentAttachments.length > 0 ? currentAttachments : undefined,
 		});
 		messages.push({ id: newMessageId(), role: 'assistant' as const, segments: [] });
+		if (wasEmpty) {
+			echoEnterToken += 1;
+		}
 		let am = messages[messages.length - 1] as Message;
 
 		// 关键路径:入队成功后递增令牌触发火花;gate 早退与 Stop 不触发。
@@ -1338,14 +1345,34 @@
 	}
 </script>
 
-<div class="ratel-chat" bind:this={chatRoot}>
+<div class="ratel-chat" class:is-empty-session={messages.length === 0} class:has-empty-motion={messages.length === 0 && chatMotionOn} bind:this={chatRoot}>
+	<div class="ratel-stage">
+	{#if messages.length === 0 && chatMotionOn}
+		<div class="ratel-empty-aurora" aria-hidden="true">
+			<OrbBackdrop color1="#e8c49a" color2="#c9956c" color3="#3a322c" backgroundColor="#000000" />
+		</div>
+	{/if}
 	<!-- Header — 词标 + 副标同行(原型 brand baseline) + 历史菜单 + 静默 model chip -->
 	<div class="ratel-header">
 		<div class="ratel-header-left">
+			{#if messages.length > 0}
 			<div class="ratel-header-brand">
-				<ShinyBrand text={$t('chat.header.title')} motionOn={chatMotionOn} />
+				<EchoText
+					text={`${$t('chat.header.title')}.`}
+					playToken={echoEnterToken > 0 ? echoEnterToken : 1}
+					motionOn={chatMotionOn}
+					echoes={8}
+					offset={28}
+					lag={0.22}
+					fade={0.68}
+					blur={1.4}
+					duration={1100}
+					direction="right"
+					accentLast={true}
+				/>
 				<span class="ratel-header-tagline">{$t('chat.header.tagline')}</span>
 			</div>
+			{/if}
 		</div>
 		<!-- 对齐原型 .header-actions:chip + 编辑标题 + model + 菜单同层定位 -->
 		<div class="ratel-header-right">
@@ -1460,6 +1487,7 @@
 				/>
 			{/if}
 		</div>
+	</div>
 	</div>
 
 	<!-- composer: Strip → Drawer → input(Conversation-first,状态不夹在消息与输入之间) -->
@@ -1630,6 +1658,49 @@
 		);
 	}
 
+	/* 空会话:顶栏浮在舞台上,不占一条实心底;柔光从顶铺下(与 styles.css leaf 同形) */
+	.ratel-stage {
+		position: relative;
+		flex: 1;
+		min-height: 0;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.ratel-empty-aurora {
+		position: absolute;
+		inset: 0;
+		z-index: 0;
+		pointer-events: none;
+	}
+
+	.ratel-chat.is-empty-session .ratel-header {
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		z-index: 2;
+		border-bottom: none;
+		background: transparent;
+		pointer-events: none;
+	}
+
+	.ratel-chat.is-empty-session .ratel-header-right {
+		margin-left: auto;
+		pointer-events: auto;
+	}
+
+	.ratel-chat.is-empty-session .ratel-composer {
+		position: relative;
+		z-index: 2;
+		border-top-color: color-mix(in srgb, var(--background-modifier-border) 45%, transparent);
+	}
+
+	.ratel-chat.is-empty-session .ratel-messages-wrap,
+	.ratel-chat.is-empty-session :global(.ratel-messages) {
+		overflow: visible;
+	}
+
 	/* ==================== Header — 原型极简(无毛玻璃) ==================== */
 	.ratel-header {
 		flex-shrink: 0;
@@ -1640,6 +1711,7 @@
 		justify-content: space-between;
 		gap: 8px;
 		background: transparent;
+		overflow: visible;
 	}
 
 	.ratel-header-left {
@@ -1647,6 +1719,7 @@
 		align-items: center;
 		gap: 8px;
 		min-width: 0;
+		overflow: visible;
 	}
 
 	.ratel-header-right {
@@ -1664,11 +1737,20 @@
 		align-items: baseline;
 		gap: 8px;
 		min-width: 0;
+		overflow: visible;
+	}
+
+	.ratel-header-brand :global(.ratel-echo) {
+		font-size: 15px;
+		font-weight: 650;
+		letter-spacing: -0.02em;
+		color: var(--text-normal);
 	}
 
 	.ratel-header-tagline {
 		font-size: 11px;
 		font-weight: 450;
+		line-height: 1;
 		color: var(--text-faint, var(--text-muted));
 		overflow: hidden;
 		text-overflow: ellipsis;

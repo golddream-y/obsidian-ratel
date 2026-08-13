@@ -505,6 +505,41 @@ body.theme-dark .ratel-session-menu,
 /* Ratel 聊天侧栏最小宽度 — 防止拖太窄挤烂 header / 抽屉入口 */
 .workspace-leaf-content[data-type="ratel-chat"] {
 	min-width: 320px;
+	position: relative;
+}
+
+/*
+ * 自有顶栏,隐藏原生 view-header。空会话背景只走 Orb WebGL,不要再叠 leaf ::before。
+ */
+.workspace-leaf-content[data-type="ratel-chat"] > .view-content {
+	padding: 0 !important;
+}
+
+/* 自有顶栏,隐藏原生 view-header,避免多一条实心底 */
+.workspace-leaf-content[data-type="ratel-chat"] > .view-header {
+	display: none;
+}
+
+.workspace-leaf-content[data-type="ratel-chat"] > .view-header,
+.workspace-leaf-content[data-type="ratel-chat"] > .view-content {
+	position: relative;
+	z-index: 1;
+}
+
+.workspace-leaf-content[data-type="ratel-chat"]:has(.ratel-chat.is-empty-session) {
+	background-color: var(--background-primary);
+}
+
+.workspace-leaf-content[data-type="ratel-chat"]:has(.ratel-chat.is-empty-session) > .view-header,
+.workspace-leaf-content[data-type="ratel-chat"]:has(.ratel-chat.is-empty-session) > .view-content {
+	background: transparent !important;
+	border-bottom-color: transparent !important;
+	box-shadow: none !important;
+}
+
+.workspace-leaf-content[data-type="ratel-chat"] .ratel-chat.is-empty-session .ratel-header {
+	border-bottom: none !important;
+	background: transparent !important;
 }
 
 /*

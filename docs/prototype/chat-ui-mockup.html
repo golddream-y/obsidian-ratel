@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Ratel Chat — Prototype v3.4 · P1–P7 align</title>
+  <title>Ratel Chat — Prototype v3.5 · empty orb</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -76,6 +76,9 @@
       display: flex;
       flex-direction: column;
       width: min(420px, 100vw - 40px);
+      min-width: 280px;
+      max-width: 560px;
+      resize: horizontal;
       border-radius: 16px;
       overflow: hidden;
       border: 1px solid var(--line-strong);
@@ -95,6 +98,153 @@
       border-radius: 0;
       overflow: hidden;
       box-shadow: none;
+    }
+
+    .chat-stage {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ==================== 空会话（对齐现网 Orb + 玻璃托盘） ==================== */
+    .chat.is-empty-session {
+      background: var(--ink);
+    }
+
+    .chat.is-empty-session .chat-stage::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      /* circle：侧栏变宽时球仍是正圆，不随面板拉扁 */
+      background: radial-gradient(
+        circle at 50% 42%,
+        rgba(232, 196, 154, 0.4) 0%,
+        rgba(201, 149, 108, 0.16) 30%,
+        transparent 54%
+      );
+    }
+
+    .chat.is-empty-session .header {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 2;
+      border-bottom: none;
+      background: transparent;
+      justify-content: flex-end;
+      pointer-events: none;
+    }
+
+    .chat.is-empty-session .brand {
+      display: none;
+    }
+
+    .chat.is-empty-session .header-actions {
+      pointer-events: auto;
+    }
+
+    .chat.is-empty-session .messages {
+      overflow: visible;
+      position: relative;
+      z-index: 1;
+    }
+
+    .empty-stage {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
+      padding: 56px 12px 24px;
+      pointer-events: none;
+    }
+
+    .empty-brand {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      justify-content: center;
+      gap: 14px;
+      z-index: 2;
+    }
+
+    .empty-logo {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      line-height: 1;
+      color: var(--paper);
+      padding-right: 0.18em;
+    }
+
+    .empty-tagline {
+      font-size: 12px;
+      font-weight: 450;
+      line-height: 1;
+      color: var(--paper-faint);
+    }
+
+    .empty-glass {
+      box-sizing: border-box;
+      width: min(22rem, 100%);
+      padding: 20px clamp(14px, 5%, 32px) 18px;
+      border-radius: 14px;
+      text-align: center;
+      background:
+        linear-gradient(165deg, rgba(243, 234, 220, 0.14), transparent 42%),
+        rgba(18, 17, 15, 0.34);
+      backdrop-filter: blur(28px) saturate(1.45);
+      -webkit-backdrop-filter: blur(28px) saturate(1.45);
+      border: 1px solid color-mix(in srgb, #e8c49a 32%, var(--line-strong));
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.16),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.14),
+        0 12px 40px rgba(0, 0, 0, 0.28);
+    }
+
+    .empty-welcome {
+      margin: 0;
+      font-size: 1.125rem;
+      font-weight: 600;
+      line-height: 1.45;
+      text-wrap: balance;
+      background: linear-gradient(120deg, var(--paper) 20%, var(--copper) 55%, #8faf8a 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+
+    .empty-hint {
+      display: grid;
+      margin: 0.5rem 0 0;
+      width: 100%;
+      font-family: var(--mono);
+      font-size: 0.8125rem;
+      line-height: 1.4;
+      color: var(--paper-muted);
+    }
+
+    .empty-hint span {
+      grid-area: 1 / 1;
+      opacity: 0;
+      animation: empty-hint-rotate 9.6s ease infinite;
+    }
+
+    .empty-hint span:nth-child(1) { animation-delay: 0s; }
+    .empty-hint span:nth-child(2) { animation-delay: 3.2s; }
+    .empty-hint span:nth-child(3) { animation-delay: 6.4s; }
+
+    @keyframes empty-hint-rotate {
+      0%, 2% { opacity: 0; }
+      6%, 28% { opacity: 1; }
+      33%, 100% { opacity: 0; }
     }
 
     /* 模拟 Obsidian 窗口底栏 — 原型里看得见，composer 已留同高 padding */
@@ -1300,10 +1450,11 @@
 </head>
 <body>
   <div class="stage">
-    <div class="stage-label" onclick="toggleSendStopDemo()" title="点击切换发送↑ / 停止■ 演示">Ratel · Chat</div>
+    <div class="stage-label" onclick="toggleSendStopDemo()" title="点击切换发送↑ / 停止■；＋新对话看空态；拖壳右边改宽度">Ratel · Chat</div>
 
     <div class="chat-shell">
-    <div class="chat">
+    <div class="chat" id="chatRoot">
+      <div class="chat-stage">
       <!-- Header：品牌 + 历史小图标 + 模型 -->
       <header class="header">
         <div class="brand">
@@ -1435,6 +1586,7 @@
           </div>
           </div>
         </div>
+      </div>
       </div>
       </div>
 
@@ -1781,6 +1933,29 @@
       return new Promise((r) => setTimeout(r, ms));
     }
 
+    function emptyStageHtml() {
+      return `
+        <div class="empty-stage">
+          <div class="empty-brand">
+            <span class="empty-logo">Ratel.</span>
+            <span class="empty-tagline">graph-native</span>
+          </div>
+          <div class="empty-glass">
+            <p class="empty-welcome">想从库里查找什么？</p>
+            <div class="empty-hint">
+              <span>直接提问，或输入 / 看命令</span>
+              <span>试试「总结这周笔记」</span>
+              <span>用 @ 引用库里的笔记</span>
+            </div>
+          </div>
+        </div>`;
+    }
+
+    function setEmptySession(on) {
+      const root = document.getElementById('chatRoot');
+      if (root) root.classList.toggle('is-empty-session', !!on);
+    }
+
     async function transitionToHtml(html, { loadLabel, skipDelay }) {
       const messages = document.getElementById('messages');
       const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -1793,7 +1968,8 @@
       setSessionLoading(true, loadLabel);
       if (delay) await wait(delay);
 
-      messages.innerHTML = html || '';
+      messages.innerHTML = html ? html : emptyStageHtml();
+      setEmptySession(!html);
       messages.scrollTop = 0;
       messages.classList.remove('is-exit');
       messages.classList.add('is-enter');

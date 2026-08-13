@@ -37,3 +37,13 @@ export function splitBlurUnits(text: string, mode: BlurSplitMode): string[] {
 
 	return [trimmed];
 }
+
+/**
+ * 英文按词拆开后要用词间距拼回；中文按字则不能插空格。
+ *
+ * @param text - 原文
+ * @returns 为 true 时单元之间应留词间距
+ */
+export function shouldGapBlurWords(text: string): boolean {
+	return /\s/.test(text.trim());
+}

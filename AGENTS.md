@@ -9,6 +9,7 @@
 - ORT WASM:首次 local embedding 时从 jsDelivr 下载到 `pluginDir`(ADR-006)。
 - **商店 release 产物**:`dist/main.js`、`manifest.json`、可选 `styles.css`(Obsidian / BRAT 三文件约束)。
 - **本地开发产物**另含 `dist/worker.js`(InlineWorker 索引);`npm run link:vault` 软链 main/worker/manifest。
+- **本地预览(强制):**本机常同时开 `ObsidianVault` 与 `Obsidian Sandbox`。Sandbox 容易仍链着 `.worktrees/feat-p-chat-motion`。改 UI 后画面完全没变,先 `ls -l <vault>/.obsidian/plugins/ratel-vault/main.js`,必须指向当前仓库 `dist/main.js`;两个窗口都要 `npm run link:vault -- <vault>`,再 **Reload app without saving**。
 
 ## 架构
 

@@ -24,7 +24,7 @@ type ChatViewExports = {
  * Ratel 聊天侧栏的 Obsidian 视图。
  *
  * 设计要点:
- * - `onOpen` 时用 Svelte 5 的 `mount()` 把组件挂到 `containerEl.children[1]`(主内容区)。
+ * - `onOpen` 时用 Svelte 5 的 `mount()` 把组件挂到 `this.contentEl`(官方 ItemView 内容区,即 `.view-content`)。
  * - `onClose` 时调 `unmount()` 释放 Svelte 内部资源,避免内存泄漏。
  * - 关键路径:用 `mount` / `unmount` 而非 Svelte 4 风格 `new Component({...})` + `$destroy()`。
  *   Svelte 5 编译 export let 后的组件函数签名是 `(target, props)` 双参,
@@ -74,11 +74,11 @@ export class ChatView extends ItemView {
 	/**
 	 * 视图打开时挂载 Svelte 组件。
 	 *
-	 * 关键路径:`containerEl.children[1]` 是 Obsidian 分配给 `ItemView` 的内容容器;
-	 * 第一个 child 是视图标题栏,第二个才是放业务内容的地方。
+	 * 关键路径:`this.contentEl` 是 Obsidian 分配给 ItemView 的 `.view-content`;
+	 * 兄弟节点 `.view-header` 是原生顶栏,不在此容器内。
 	 */
 	async onOpen(): Promise<void> {
-		const container = this.containerEl.children[1] as HTMLElement;
+		const container = this.contentEl;
 		container.empty();
 
 		this.component = mount(ChatViewComponent, {
