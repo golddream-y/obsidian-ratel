@@ -137,6 +137,14 @@
 	// ==================== 响应式状态 ====================
 	let messages = $state<Message[]>([]);
 	let input = $state('');
+
+	// 关键路径:空态背景要改 Obsidian leaf 底色，用 class 代替 :has（商店 CSS lint 会警告 :has）
+	$effect(() => {
+		const leaf = chatRoot?.closest('.workspace-leaf-content');
+		if (!leaf) return;
+		leaf.classList.toggle('is-ratel-empty', messages.length === 0);
+		return () => leaf.classList.remove('is-ratel-empty');
+	});
 	let isRunning = $state(false);
 	let sessionId = $state('');
 	let sessionShortTitle = $state('');

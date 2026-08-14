@@ -463,19 +463,19 @@ button.ratel-perm-btn:focus-visible {
 }
 
 /* ==================== Session 历史菜单(全局实色) ==================== */
-.ratel-session-menu {
-	background-color: #ffffff !important;
-	background-image: none !important;
-	opacity: 1 !important;
-	backdrop-filter: none !important;
-	-webkit-backdrop-filter: none !important;
+.workspace-leaf-content[data-type="ratel-chat"] .ratel-session-menu {
+	background-color: #ffffff;
+	background-image: none;
+	opacity: 1;
+	backdrop-filter: none;
+	-webkit-backdrop-filter: none;
 }
-body.theme-dark .ratel-session-menu,
-.theme-dark .ratel-session-menu {
-	background-color: #1e1e1e !important;
+body.theme-dark .workspace-leaf-content[data-type="ratel-chat"] .ratel-session-menu,
+.theme-dark .workspace-leaf-content[data-type="ratel-chat"] .ratel-session-menu {
+	background-color: #1e1e1e;
 }
-.ratel-session-menu-float {
-	z-index: 1000 !important;
+.workspace-leaf-content[data-type="ratel-chat"] .ratel-session-menu-float {
+	z-index: 1000;
 	isolation: isolate;
 }
 
@@ -512,7 +512,7 @@ body.theme-dark .ratel-session-menu,
  * 自有顶栏,隐藏原生 view-header。空会话背景只走 Orb WebGL,不要再叠 leaf ::before。
  */
 .workspace-leaf-content[data-type="ratel-chat"] > .view-content {
-	padding: 0 !important;
+	padding: 0;
 }
 
 /* 自有顶栏,隐藏原生 view-header,避免多一条实心底 */
@@ -526,20 +526,20 @@ body.theme-dark .ratel-session-menu,
 	z-index: 1;
 }
 
-.workspace-leaf-content[data-type="ratel-chat"]:has(.ratel-chat.is-empty-session) {
+.workspace-leaf-content[data-type="ratel-chat"].is-ratel-empty {
 	background-color: var(--background-primary);
 }
 
-.workspace-leaf-content[data-type="ratel-chat"]:has(.ratel-chat.is-empty-session) > .view-header,
-.workspace-leaf-content[data-type="ratel-chat"]:has(.ratel-chat.is-empty-session) > .view-content {
-	background: transparent !important;
-	border-bottom-color: transparent !important;
-	box-shadow: none !important;
+.workspace-leaf-content[data-type="ratel-chat"].is-ratel-empty > .view-header,
+.workspace-leaf-content[data-type="ratel-chat"].is-ratel-empty > .view-content {
+	background: transparent;
+	border-bottom-color: transparent;
+	box-shadow: none;
 }
 
 .workspace-leaf-content[data-type="ratel-chat"] .ratel-chat.is-empty-session .ratel-header {
-	border-bottom: none !important;
-	background: transparent !important;
+	border-bottom: none;
+	background: transparent;
 }
 
 /*
@@ -606,18 +606,18 @@ body.theme-dark .ratel-session-menu,
 
 /* ==================== 状态抽屉低频入口 ==================== */
 /* 关键路径:压过 Obsidian 默认 button(边框/阴影/固定 input 高度),保持静默文字链 */
-button.ratel-drawer-action {
-	display: inline-flex !important;
+.workspace-leaf-content[data-type="ratel-chat"] button.ratel-drawer-action {
+	display: inline-flex;
 	align-items: center;
 	gap: 5px;
-	height: auto !important;
-	min-height: 0 !important;
-	padding: 2px 0 !important;
-	margin: 0 !important;
-	border: none !important;
-	border-radius: 0 !important;
-	background: transparent !important;
-	box-shadow: none !important;
+	height: auto;
+	min-height: 0;
+	padding: 2px 0;
+	margin: 0;
+	border: none;
+	border-radius: 0;
+	background: transparent;
+	box-shadow: none;
 	color: var(--text-muted);
 	font-size: 11.5px;
 	font-weight: inherit;
@@ -628,11 +628,11 @@ button.ratel-drawer-action {
 	appearance: none;
 }
 
-button.ratel-drawer-action:hover,
-button.ratel-drawer-action:active {
-	background: transparent !important;
-	box-shadow: none !important;
-	border: none !important;
+.workspace-leaf-content[data-type="ratel-chat"] button.ratel-drawer-action:hover,
+.workspace-leaf-content[data-type="ratel-chat"] button.ratel-drawer-action:active {
+	background: transparent;
+	box-shadow: none;
+	border: none;
 	color: var(--text-normal);
 }
 
@@ -644,47 +644,47 @@ button.ratel-drawer-action:focus-visible {
 
 /* ==================== 来源折叠开关 ==================== */
 /* 关键路径:Obsidian 默认 button 会盖掉 Svelte scoped 的 border/height/underline，中文被线切穿 */
-button.ratel-cites-toggle {
-	display: inline-flex !important;
+.workspace-leaf-content[data-type="ratel-chat"] button.ratel-cites-toggle {
+	display: inline-flex;
 	align-items: center;
 	align-self: flex-start;
 	gap: 6px;
 	box-sizing: border-box;
-	height: auto !important;
-	min-height: 0 !important;
-	padding: 4px 10px !important;
-	margin: 0 !important;
-	border: 1px solid var(--background-modifier-border) !important;
-	border-radius: 999px !important;
-	background: var(--background-secondary) !important;
-	box-shadow: none !important;
-	color: var(--text-muted) !important;
-	font-size: 11.5px !important;
-	font-weight: 500 !important;
-	font-family: inherit !important;
-	line-height: 1.25 !important;
+	height: auto;
+	min-height: 0;
+	padding: 4px 10px;
+	margin: 0;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 999px;
+	background: var(--background-secondary);
+	box-shadow: none;
+	color: var(--text-muted);
+	font-size: 11.5px;
+	font-weight: 500;
+	font-family: inherit;
+	line-height: 1.25;
 	letter-spacing: 0.01em;
 	cursor: pointer;
-	text-decoration: none !important;
-	-webkit-appearance: none !important;
-	appearance: none !important;
+	text-decoration: none;
+	-webkit-appearance: none;
+	appearance: none;
 }
 
-button.ratel-cites-toggle:hover,
-button.ratel-cites-toggle:active {
-	color: var(--text-normal) !important;
+.workspace-leaf-content[data-type="ratel-chat"] button.ratel-cites-toggle:hover,
+.workspace-leaf-content[data-type="ratel-chat"] button.ratel-cites-toggle:active {
+	color: var(--text-normal);
 	border-color: color-mix(
 		in srgb,
 		var(--ratel-cite, var(--interactive-accent)) 40%,
 		var(--background-modifier-border)
-	) !important;
+	);
 	background: color-mix(
 		in srgb,
 		var(--ratel-cite, var(--interactive-accent)) 10%,
 		var(--background-secondary)
-	) !important;
-	box-shadow: none !important;
-	text-decoration: none !important;
+	);
+	box-shadow: none;
+	text-decoration: none;
 }
 
 button.ratel-cites-toggle:focus-visible {
@@ -693,38 +693,38 @@ button.ratel-cites-toggle:focus-visible {
 }
 
 /* 安全路径:压过 Obsidian 默认 button；刻度宽度由组件内联鱼眼控制，勿写死 width */
-button.ratel-chat-nav-bottom,
-button.ratel-chat-nav-tick {
-	min-height: unset !important;
-	box-shadow: none !important;
-	-webkit-appearance: none !important;
-	appearance: none !important;
-	margin: 0 !important;
+.workspace-leaf-content[data-type="ratel-chat"] button.ratel-chat-nav-bottom,
+.workspace-leaf-content[data-type="ratel-chat"] button.ratel-chat-nav-tick {
+	min-height: unset;
+	box-shadow: none;
+	-webkit-appearance: none;
+	appearance: none;
+	margin: 0;
 }
 
-button.ratel-chat-nav-bottom {
-	width: 22px !important;
-	height: 22px !important;
-	min-width: 22px !important;
-	padding: 0 !important;
-	border: 1px solid var(--background-modifier-border) !important;
-	border-radius: 50% !important;
+.workspace-leaf-content[data-type="ratel-chat"] button.ratel-chat-nav-bottom {
+	width: 22px;
+	height: 22px;
+	min-width: 22px;
+	padding: 0;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 50%;
 }
 
-button.ratel-chat-nav-tick {
-	height: 3px !important;
-	min-width: 6px !important;
-	padding: 0 !important;
-	border: none !important;
-	border-radius: 999px !important;
+.workspace-leaf-content[data-type="ratel-chat"] button.ratel-chat-nav-tick {
+	height: 3px;
+	min-width: 6px;
+	padding: 0;
+	border: none;
+	border-radius: 999px;
 }
 
-button.ratel-chat-nav-tick.is-active {
-	height: 5px !important;
+.workspace-leaf-content[data-type="ratel-chat"] button.ratel-chat-nav-tick.is-active {
+	height: 5px;
 }
 
-button.ratel-chat-nav-tick.is-hover {
-	height: 6px !important;
+.workspace-leaf-content[data-type="ratel-chat"] button.ratel-chat-nav-tick.is-hover {
+	height: 6px;
 }
 
 /* ==================== 正文引用 [n] 悬停路径 tip ==================== */
@@ -746,10 +746,10 @@ button.ratel-chat-nav-tick.is-hover {
 }
 
 /* Obsidian 默认 button 高度会压扁行内 cite,放大命中区 */
-button.ratel-cite {
-	height: auto !important;
-	min-height: 0 !important;
-	padding: 0 2px !important;
-	margin: 0 1px !important;
-	box-shadow: none !important;
+.workspace-leaf-content[data-type="ratel-chat"] button.ratel-cite {
+	height: auto;
+	min-height: 0;
+	padding: 0 2px;
+	margin: 0 1px;
+	box-shadow: none;
 }

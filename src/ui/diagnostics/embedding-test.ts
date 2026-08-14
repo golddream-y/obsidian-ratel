@@ -49,7 +49,7 @@ export function renderEmbeddingTest(container: HTMLElement, plugin: RatelVaultPl
 		attr: { placeholder: tNow('diag.embedding.queryPlaceholder'), rows: '2' },
 	});
 	const topKRow = searchSection.createDiv({ cls: 'ratel-diag-row' });
-	topKRow.createEl('label', { cls: 'ratel-diag-label', text: 'Top-K' });
+	topKRow.createEl('label', { cls: 'ratel-diag-label', text: 'Top-k' });
 	const topKInput = topKRow.createEl('input', {
 		cls: 'ratel-diag-input',
 		type: 'number',

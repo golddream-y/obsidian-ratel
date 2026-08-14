@@ -224,3 +224,36 @@ export class FileSystemAdapter {
 /** 其他常用导出(桩) */
 export const Platform = { isMobile: false, isDesktop: true };
 export const Keymap = { mods: () => '' };
+
+type DomCreateOpts = { cls?: string; text?: string; attr?: Record<string, string> };
+
+function applyDomOpts(el: HTMLElement, o?: DomCreateOpts | string): HTMLElement {
+	const opts = typeof o === 'string' ? { cls: o } : o;
+	if (opts?.cls) el.className = opts.cls;
+	if (opts?.text) el.textContent = opts.text;
+	if (opts?.attr) {
+		for (const [k, v] of Object.entries(opts.attr)) el.setAttribute(k, v);
+	}
+	(el as HTMLElement & { setText: (t: string) => void }).setText = (t: string) => {
+		el.textContent = t;
+	};
+	return el;
+}
+
+/** createEl 桩 — 对齐 Obsidian 全局助手,供商店 prefer-create-el 路径在测试中可跑 */
+export function createEl(tag: string, o?: DomCreateOpts | string): HTMLElement {
+	if (typeof document === 'undefined') {
+		return { getContext: () => null, setText: () => {} } as unknown as HTMLElement;
+	}
+	return applyDomOpts(document.createElement(tag), o);
+}
+
+export function createDiv(o?: DomCreateOpts | string): HTMLDivElement {
+	return createEl('div', o) as HTMLDivElement;
+}
+
+export function setCssProps(el: HTMLElement, props: Record<string, string>): void {
+	for (const [key, value] of Object.entries(props)) {
+		el.style.setProperty(key.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`), value);
+	}
+}

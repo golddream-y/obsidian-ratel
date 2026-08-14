@@ -62,7 +62,7 @@ export function renderRerankTest(container: HTMLElement, plugin: RatelVaultPlugi
 	});
 
 	// ==================== 结果区 ====================
-	const resultEl = container.createEl('div', { cls: 'ratel-rerank-result' });
+	const resultEl = container.createDiv({ cls: 'ratel-rerank-result' });
 
 	createActionButton(container, tNow('diag.rerank.testButton'), async () => {
 		resultEl.empty();
@@ -103,9 +103,9 @@ export function renderRerankTest(container: HTMLElement, plugin: RatelVaultPlugi
 			// 关键路径:ranked 返回 {id, score},需回查原 text 展示
 			ranked.forEach((r, i) => {
 				const originalText = lines[Number(r.id)] ?? '(missing)';
-				const item = resultEl.createEl('div', { cls: 'ratel-rerank-item' });
-				item.createEl('span', { text: `#${i + 1} (score: ${r.score.toFixed(4)})` });
-				item.createEl('span', { text: originalText });
+				const item = resultEl.createDiv({ cls: 'ratel-rerank-item' });
+				item.createSpan({ text: `#${i + 1} (score: ${r.score.toFixed(4)})` });
+				item.createSpan({ text: originalText });
 			});
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);

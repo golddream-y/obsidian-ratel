@@ -26,11 +26,8 @@ export function bindCitePathTooltip(btn: HTMLElement, path: string): () => void 
 
 	const show = () => {
 		hide();
-		tip = document.createElement('div');
-		tip.className = TIP_CLS;
-		tip.setAttribute('role', 'tooltip');
-		tip.textContent = path;
-		document.body.appendChild(tip);
+		tip = document.body.createDiv({ cls: TIP_CLS, attr: { role: 'tooltip' } });
+		tip.setText(path);
 
 		const br = btn.getBoundingClientRect();
 		const tr = tip.getBoundingClientRect();
@@ -38,8 +35,7 @@ export function bindCitePathTooltip(btn: HTMLElement, path: string): () => void 
 		// 优先按钮上方;空间不够则落到下方
 		let top = br.top - tr.height - 6;
 		if (top < 8) top = br.bottom + 6;
-		tip.style.left = `${left}px`;
-		tip.style.top = `${top}px`;
+		tip.setCssProps({ left: `${left}px`, top: `${top}px` });
 	};
 
 	btn.addEventListener('pointerenter', show);

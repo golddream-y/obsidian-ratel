@@ -174,6 +174,10 @@
 		-ms-overflow-style: none;
 	}
 
+	.ratel-messages.ratel-scroll-snap {
+		scroll-behavior: auto;
+	}
+
 	.ratel-messages::-webkit-scrollbar {
 		width: 0;
 		height: 0;

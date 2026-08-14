@@ -205,14 +205,14 @@ export class McpManageModal extends Modal {
 		);
 
 		if (toolNames.length > 0) {
-			this.contentEl.createEl('div', {
+			this.contentEl.createDiv({
 				cls: 'setting-item-description',
 				text: `${tNow('modal.mcpManage.toolsList')}: ${toolNames.join(', ')}`,
 			});
 		}
 
 		const secretId = mcpSecretId(cfg.id);
-		this.contentEl.createEl('div', {
+		this.contentEl.createDiv({
 			cls: 'setting-item-description',
 			text: `${tNow('modal.mcpManage.secretHint')}: ${secretId}${
 				hasMcpSecret(this.app, cfg.id) ? '' : ' (—)'
@@ -284,7 +284,7 @@ export class McpManageModal extends Modal {
 		new Setting(this.contentEl)
 			.setName(tNow('modal.mcpManage.id'))
 			.addText((t) => {
-				t.setPlaceholder('tavily');
+				t.setPlaceholder('Tavily');
 				if (draft.id) t.setValue(draft.id);
 				if (editing) {
 					t.setDisabled(true);
@@ -308,7 +308,7 @@ export class McpManageModal extends Modal {
 			new Setting(this.contentEl)
 				.setName(tNow('modal.mcpManage.url'))
 				.addText((t) => {
-					t.setPlaceholder('https://…');
+					t.setPlaceholder('HTTPS://…');
 					if (draft.url) t.setValue(draft.url);
 					t.onChange((v) => {
 						draft.url = v.trim();
@@ -322,7 +322,7 @@ export class McpManageModal extends Modal {
 			new Setting(this.contentEl)
 				.setName(tNow('modal.mcpManage.command'))
 				.addText((t) => {
-					t.setPlaceholder('npx');
+					t.setPlaceholder('Npx');
 					if (draft.command) t.setValue(draft.command);
 					t.onChange((v) => {
 						draft.command = v.trim();

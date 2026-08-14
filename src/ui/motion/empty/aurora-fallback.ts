@@ -23,8 +23,11 @@ export function shouldUseAuroraFallback(enabled: boolean, webgl2Supported: boole
 export function probeWebGL2Support(): boolean {
 	if (typeof document === 'undefined') return false;
 	try {
-		const canvas = document.createElement('canvas');
-		return !!canvas.getContext('webgl2', { alpha: true });
+		const canvas = document.body.createEl('canvas');
+		const getContext = (canvas as { getContext?: HTMLCanvasElement['getContext'] }).getContext;
+		const ok = typeof getContext === 'function' && !!getContext.call(canvas, 'webgl2', { alpha: true });
+		canvas.remove();
+		return ok;
 	} catch {
 		return false;
 	}

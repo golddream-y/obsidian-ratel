@@ -77,14 +77,17 @@ describe('soft-aurora-fallback', () => {
 		expect(emptySource).not.toContain('<AuroraBackdrop');
 		expect(viewSource).toContain('this.contentEl');
 		expect(stylesSource).not.toContain('ratel-empty-wash');
-		expect(stylesSource).not.toContain(':has(.ratel-chat.is-empty-session)::before');
+		expect(stylesSource).not.toContain(':has(.ratel-chat.is-empty-session)');
+		expect(stylesSource).toContain('is-ratel-empty');
+		expect(chatSource).toContain('is-ratel-empty');
 		expect(chatSource).toContain('EchoText');
 		expect(chatSource).not.toContain('ParticleText');
 		expect(chatSource).toContain('echoEnterToken');
 		expect(chatSource).not.toContain('particleEnterToken');
 		expect(chatSource).not.toContain('chipAnim');
 		expect(stylesSource).toContain('.view-header');
-		expect(stylesSource).toContain('background: transparent !important');
+		expect(stylesSource).toContain('background: transparent');
+		expect(stylesSource).not.toContain('!important');
 	});
 
 	it('EmptyStage - 玻璃托盘 - 强模糊铜边而非实色灰底', () => {

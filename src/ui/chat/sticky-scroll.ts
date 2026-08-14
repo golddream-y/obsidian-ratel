@@ -24,8 +24,11 @@ export function isNearBottom(
 	return scrollHeight - scrollTop - clientHeight <= thresholdPx;
 }
 
+/** 瞬时滚底时挂上，用 CSS 压过主题/Obsidian 的 scroll-behavior:smooth */
+export const SCROLL_SNAP_CLASS = 'ratel-scroll-snap';
+
 /**
- * 临时禁用元素行内平滑滚动，并立即跳到内容底部。
+ * 临时挂瞬时滚底 class，并立即跳到内容底部。
  *
  * @param el - 可滚动的消息容器
  * @returns 无返回值
@@ -33,9 +36,8 @@ export function isNearBottom(
  * snapScrollToBottom(messagesEl);
  */
 export function snapScrollToBottom(el: HTMLElement): void {
-	const previousBehavior = el.style.scrollBehavior;
-	// 修复:Obsidian 或旧样式可能启用 smooth，先覆盖为 auto 才能保证 sticky 滚底无动画。
-	el.style.scrollBehavior = 'auto';
+	// 修复:商店 checker 禁止 element.style 赋值；用 class 压过可能存在的 smooth。
+	el.classList.add(SCROLL_SNAP_CLASS);
 	el.scrollTop = el.scrollHeight;
-	el.style.scrollBehavior = previousBehavior;
+	el.classList.remove(SCROLL_SNAP_CLASS);
 }

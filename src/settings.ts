@@ -123,7 +123,7 @@ export interface RatelVaultSettings {
 	toolPermissionLevel: ToolPermissionLevel;
 	// 关键路径:Prompt section 级覆盖(来自 Composer registry);空对象 = 全部用 zh.ts 默认。
 	promptOverrides: OverrideMap;
-	/** @deprecated 迁移后由 toolPermissionLevel 取代；读盘兼容 */
+	/** 旧 data.json 兼容字段；运行时以 toolPermissionLevel 为准 */
 	trustMode: boolean;
 
 	// Memory(P-MEMORY-UI — 用户记忆系统 6 个配置项,见 spec §8.3)

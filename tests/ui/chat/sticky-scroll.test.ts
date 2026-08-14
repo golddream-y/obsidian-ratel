@@ -3,8 +3,10 @@
  * @description sticky-to-bottom 距离判定与瞬时滚底行为测试
  * @module tests/ui/chat/sticky-scroll
  */
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { isNearBottom, snapScrollToBottom } from '../../../src/ui/chat/sticky-scroll';
+import { isNearBottom, SCROLL_SNAP_CLASS, snapScrollToBottom } from '../../../src/ui/chat/sticky-scroll';
 
 describe('isNearBottom', () => {
 	it('isNearBottom - 距底部不超过默认阈值 - 返回 true', () => {
@@ -19,25 +21,25 @@ describe('isNearBottom', () => {
 });
 
 describe('snapScrollToBottom', () => {
-	it('snapScrollToBottom - 容器启用 smooth - 临时切 auto 后瞬时滚底并恢复', () => {
-		let behavior = 'smooth';
-		let behaviorWhenScrolled = '';
+	it('snapScrollToBottom - 滚底瞬间挂 class - 写完 scrollTop 后去掉', () => {
+		const classes = new Set<string>();
+		let classWhenScrolled = false;
 		let scrollTop = 0;
 		const el = {
 			scrollHeight: 1200,
-			style: {
-				get scrollBehavior() {
-					return behavior;
+			classList: {
+				add(name: string) {
+					classes.add(name);
 				},
-				set scrollBehavior(value: string) {
-					behavior = value;
+				remove(name: string) {
+					classes.delete(name);
 				},
 			},
 			get scrollTop() {
 				return scrollTop;
 			},
 			set scrollTop(value: number) {
-				behaviorWhenScrolled = behavior;
+				classWhenScrolled = classes.has(SCROLL_SNAP_CLASS);
 				scrollTop = value;
 			},
 		} as unknown as HTMLElement;
@@ -45,7 +47,14 @@ describe('snapScrollToBottom', () => {
 		snapScrollToBottom(el);
 
 		expect(scrollTop).toBe(1200);
-		expect(behaviorWhenScrolled).toBe('auto');
-		expect(behavior).toBe('smooth');
+		expect(classWhenScrolled).toBe(true);
+		expect(classes.has(SCROLL_SNAP_CLASS)).toBe(false);
+	});
+
+	it('sticky-scroll - 源码不写 element.style - 满足商店 no-static-styles-assignment', () => {
+		const path = fileURLToPath(new URL('../../../src/ui/chat/sticky-scroll.ts', import.meta.url));
+		const source = readFileSync(path, 'utf8');
+		expect(source).not.toMatch(/\.style\s*\./);
+		expect(source).toContain(SCROLL_SNAP_CLASS);
 	});
 });

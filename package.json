@@ -1,6 +1,6 @@
 {
 	"name": "ratel-vault",
-	"version": "0.2.0",
+	"version": "0.2.1",
 	"description": "Harness-driven knowledge base agent for your Obsidian vault",
 	"main": "main.js",
 	"type": "module",
@@ -31,7 +31,8 @@
 		},
 		"@huggingface/transformers": false,
 		"onnxruntime-node": false,
-		"undici": "^7.28.0"
+		"undici": "^7.28.0",
+		"adm-zip": "^0.6.0"
 	},
 	"devDependencies": {
 		"@eslint/js": "^9.39.4",

@@ -20,8 +20,11 @@ const MCP_CLIENT_VERSION = '0.1.15';
  * 将 tools/call 原始结果归一为文本 content。
  */
 function normalizeCallContent(raw: unknown): McpCallResult {
-	if (!raw || typeof raw !== 'object') {
-		return { content: String(raw ?? ''), isError: true };
+	if (raw == null) {
+		return { content: '', isError: true };
+	}
+	if (typeof raw !== 'object') {
+		return { content: typeof raw === 'string' ? raw : JSON.stringify(raw), isError: true };
 	}
 	const obj = raw as {
 		content?: Array<{ type?: string; text?: string }>;

@@ -65,7 +65,7 @@ export function renderLLMTest(container: HTMLElement, plugin: RatelVaultPlugin):
 
     // Top P
     const topPRow = paramGroup.createDiv({ cls: 'ratel-diag-param-row' });
-    topPRow.createEl('label', { text: 'Top P' });
+    topPRow.createEl('label', { text: 'Top p' });
     const topPInput = topPRow.createEl('input', {
         cls: 'ratel-diag-input',
         type: 'number',
@@ -74,7 +74,7 @@ export function renderLLMTest(container: HTMLElement, plugin: RatelVaultPlugin):
 
     // Max Tokens
     const maxTokensRow = paramGroup.createDiv({ cls: 'ratel-diag-param-row' });
-    maxTokensRow.createEl('label', { text: 'Max Tokens' });
+    maxTokensRow.createEl('label', { text: 'Max tokens' });
     const maxTokensInput = maxTokensRow.createEl('input', {
         cls: 'ratel-diag-input',
         type: 'number',
@@ -256,7 +256,7 @@ function renderLLMStatus(container: HTMLElement, plugin: RatelVaultPlugin): void
     container.empty();
     container.createSpan({ cls: `ratel-diag-status-dot ${hasKey ? 'ratel-diag-status-ok' : 'ratel-diag-status-warn'}` });
     container.createSpan({ text: tNow('diag.llm.configSummary') });
-    container.createEl('code', { text: 'LLM / Chat' });
+    container.createEl('code', { text: 'LLM / chat' });
     container.createSpan({ text: ' | ' });
     // 关键路径:不展示 Key 前缀,避免泄露;按端点类型显示密钥状态。
     const keyLabel = !needsKey ? tNow('diag.localServiceNoKey') : hasKey ? tNow('diag.configured') : tNow('diag.notConfiguredKey');

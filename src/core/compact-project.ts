@@ -181,13 +181,13 @@ export function projectView(
  */
 export function isPromptTooLong(err: unknown): boolean {
 	if (typeof err === 'object' && err !== null && 'status' in err) {
-		if ((err as { status: unknown }).status === 413) return true;
+		if (err.status === 413) return true;
 	}
 	const message =
 		err instanceof Error
 			? err.message
 			: typeof err === 'object' && err !== null && 'message' in err
-				? String((err as { message: unknown }).message)
+				? String(err.message)
 				: String(err);
 	return PTL_PATTERN.test(message);
 }

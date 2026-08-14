@@ -160,7 +160,8 @@ const mainContext = await esbuild.context({
 	],
 	format: 'cjs',
 	target: 'es2021',
-	logLevel: 'verbose',
+	// 修复:verbose 会把每个 external 匹配打到 stdout，商店审核跑 npm run build 会因日志过长判失败。
+	logLevel: 'info',
 	sourcemap: prod ? false : 'inline',
 	treeShaking: true,
 	outfile: 'dist/main.js',

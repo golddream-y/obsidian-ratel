@@ -82,10 +82,6 @@ export class ContextManager {
 	 */
 	private skillsDiscovery = '';
 	/**
-	 * @deprecated ADR-012:Active 段不再作为注入源;保留字段仅为 API 兼容,toMessages 忽略之。
-	 */
-	private skillsActive = '';
-	/**
 	 * 环境时间注入行 — 每次 ask() 由 setEnvContext() 设置,
 	 * 注入位置在 system prompt 之后、memory 之前;空串不注入。
 	 */
@@ -346,7 +342,6 @@ export class ContextManager {
 	 */
 	setSkillsContext(discovery: string, _active: string = ''): void {
 		this.skillsDiscovery = discovery;
-		this.skillsActive = '';
 		void _active;
 	}
 
@@ -430,11 +425,10 @@ export class ContextManager {
 		if (this.memorySystemPrompt) {
 			messages.push({ role: 'system', content: this.memorySystemPrompt });
 		}
-		// 关键路径:ADR-012 — 仅 Discovery;Active 段废弃(skillsActive 恒为空)。
+		// 关键路径:ADR-012 — 仅 Discovery;Active 段废弃,不再注入。
 		if (this.skillsDiscovery) {
 			messages.push({ role: 'system', content: this.skillsDiscovery });
 		}
-		void this.skillsActive;
 		messages.push(...this.searchResultsMessages, ...head, ...trimmedTail);
 		return messages;
 	}

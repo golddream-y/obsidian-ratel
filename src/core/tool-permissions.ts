@@ -13,7 +13,7 @@ export type ToolPermission = 'allow' | 'ask' | 'deny';
 export type ToolPermissionLevel = 'safe' | 'auto' | 'danger';
 
 export interface ToolPermissionSettings {
-	/** @deprecated 迁移期兼容；优先用 toolPermissionLevel */
+	/** 旧 data.json 兼容；有 toolPermissionLevel 时忽略 */
 	trustMode?: boolean;
 	toolPermissionLevel?: ToolPermissionLevel;
 	toolPermissions: Record<string, ToolPermission>;

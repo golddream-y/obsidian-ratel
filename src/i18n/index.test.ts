@@ -15,33 +15,33 @@ describe('i18n 运行时', () => {
 
   describe('detectLang', () => {
     it('zh / zh-CN / zh-TW / zh-Hans 返回 zh', () => {
-      // 关键路径:Node 测试环境用 globalThis 而非 global(避免 obsidianmd/no-global-this 警告)
-      const original = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+      // 关键路径:Node 测试环境用 window 而非 global(避免 obsidianmd/no-global-this 警告)
+      const original = Object.getOwnPropertyDescriptor(window, 'navigator');
       for (const lang of ['zh', 'zh-CN', 'zh-TW', 'zh-Hans']) {
-        Object.defineProperty(globalThis, 'navigator', { value: { language: lang }, configurable: true });
+        Object.defineProperty(window, 'navigator', { value: { language: lang }, configurable: true });
         expect(detectLang()).toBe('zh');
       }
-      if (original) Object.defineProperty(globalThis, 'navigator', original);
+      if (original) Object.defineProperty(window, 'navigator', original);
     });
 
     it('en / en-US / ja / fr / "" 返回 en', () => {
-      const original = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+      const original = Object.getOwnPropertyDescriptor(window, 'navigator');
       for (const lang of ['en', 'en-US', 'ja', 'fr', '']) {
-        Object.defineProperty(globalThis, 'navigator', { value: { language: lang }, configurable: true });
+        Object.defineProperty(window, 'navigator', { value: { language: lang }, configurable: true });
         expect(detectLang()).toBe('en');
       }
-      if (original) Object.defineProperty(globalThis, 'navigator', original);
+      if (original) Object.defineProperty(window, 'navigator', original);
     });
   });
 
   describe('applyLangPreference', () => {
     it("'auto' 走 detectLang()", () => {
-      const original = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
-      Object.defineProperty(globalThis, 'navigator', { value: { language: 'zh-CN' }, configurable: true });
+      const original = Object.getOwnPropertyDescriptor(window, 'navigator');
+      Object.defineProperty(window, 'navigator', { value: { language: 'zh-CN' }, configurable: true });
       const result = applyLangPreference('auto');
       expect(result).toBe('zh');
       expect(get(langStore)).toBe('zh');
-      if (original) Object.defineProperty(globalThis, 'navigator', original);
+      if (original) Object.defineProperty(window, 'navigator', original);
     });
 
     it("显式 'zh' / 'en' 忽略 navigator", () => {
