@@ -2,6 +2,11 @@
 
 本文件记录面向用户的版本说明。格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.2.2] - 2026-08-14
+
+### Fixed
+- **社区商店审核能装上依赖** — 上次卡在审核机装依赖失败。已钉死类型版本并用官方源锁定依赖，审核才能继续跑构建
+
 ## [0.2.1] - 2026-08-14
 
 ### Fixed
