@@ -282,6 +282,9 @@ export interface ChatStrings {
   'chat.cite.sourcesCollapsed': string;
   'chat.cite.sourcesExpandAria': string;
   'chat.cite.sourcesCollapseAria': string;
+  'chat.md.copy': string;
+  'chat.md.copied': string;
+  'chat.md.mermaidFailed': string;
   'chat.tool.mcpBadge': string;
   'chat.session.loading': string;
   'chat.session.loadingNew': string;

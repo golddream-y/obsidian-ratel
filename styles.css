@@ -561,6 +561,98 @@ body.theme-dark .workspace-leaf-content[data-type="ratel-chat"] .ratel-session-m
 	user-select: text;
 }
 
+/*
+ * 富块与表格 — Obsidian 全局 pre/button 会把 Svelte scoped 压成「和正文平铺」。
+ * 提到叶子选择器，底色/边框/顶栏与气泡正文拉开。
+ */
+.workspace-leaf-content[data-type="ratel-chat"] .ratel-md .ratel-md-block {
+	margin: 0.9em 0;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 10px;
+	overflow: hidden;
+	background: var(--background-secondary);
+}
+.workspace-leaf-content[data-type="ratel-chat"] .ratel-md .ratel-md-block-bar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	min-height: 32px;
+	padding: 0 8px 0 12px;
+	border-bottom: 1px solid var(--background-modifier-border);
+	background: color-mix(in srgb, var(--background-primary) 55%, var(--background-secondary));
+}
+.workspace-leaf-content[data-type="ratel-chat"] .ratel-md .ratel-md-block-label {
+	font-size: 11px;
+	font-weight: 500;
+	letter-spacing: 0.04em;
+	text-transform: lowercase;
+	color: var(--text-faint, var(--text-muted));
+	user-select: none;
+}
+.workspace-leaf-content[data-type="ratel-chat"] .ratel-md .ratel-md-block-actions {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+}
+.workspace-leaf-content[data-type="ratel-chat"] .ratel-md .ratel-md-block-body pre {
+	margin: 0;
+	padding: 12px 14px;
+	border-radius: 0;
+	background: transparent;
+	overflow-x: auto;
+}
+.workspace-leaf-content[data-type="ratel-chat"] .ratel-md .ratel-md-block-body svg {
+	max-width: 100%;
+	height: auto;
+	display: block;
+	margin: 12px auto;
+}
+.workspace-leaf-content[data-type="ratel-chat"] button.ratel-md-copy,
+.workspace-leaf-content[data-type="ratel-chat"] button.ratel-md-expand {
+	appearance: none;
+	-webkit-appearance: none;
+	margin: 0;
+	padding: 3px 8px;
+	min-height: unset;
+	height: auto;
+	min-width: unset;
+	border: 1px solid transparent;
+	border-radius: 6px;
+	box-shadow: none;
+	background: transparent;
+	color: var(--text-muted);
+	font-family: inherit;
+	font-size: 11px;
+	line-height: 1.3;
+	cursor: pointer;
+}
+.workspace-leaf-content[data-type="ratel-chat"] button.ratel-md-copy:hover,
+.workspace-leaf-content[data-type="ratel-chat"] button.ratel-md-expand:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+	box-shadow: none;
+}
+.workspace-leaf-content[data-type="ratel-chat"] button.ratel-md-copy.is-copied {
+	color: var(--text-success, var(--interactive-accent));
+}
+.workspace-leaf-content[data-type="ratel-chat"] .ratel-md .ratel-md-table-wrap {
+	margin: 0.9em 0;
+	overflow-x: auto;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 10px;
+}
+.workspace-leaf-content[data-type="ratel-chat"] .ratel-md .ratel-md-table-wrap table {
+	margin: 0;
+	width: max-content;
+	min-width: 100%;
+}
+.workspace-leaf-content[data-type="ratel-chat"] .ratel-md .ratel-md-block-error {
+	padding: 8px 10px;
+	color: var(--text-error);
+	font-size: 11.5px;
+}
+
 /* ==================== 问题反馈 Modal ==================== */
 .ratel-feedback-body {
 	margin: 0 0 12px;

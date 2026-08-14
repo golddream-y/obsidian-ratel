@@ -17,6 +17,7 @@
 
 | ID | 文件 | 状态 | 创建日期 | 备注 |
 |---|---|---|---|---|
+| S-MD-PREVIEW | [2026-08-14-markdown-preview-chrome-design.md](specs/2026-08-14-markdown-preview-chrome-design.md) | Active | 2026-08-14 | v1 富块已归档 P-MD-PREVIEW-1；剩 overlay/灯箱 P-MD-PREVIEW-2；硬约束保留打字机 |
 | S-CHAT-MOTION-v2 | [2026-08-12-chat-motion-v2-design.md](specs/2026-08-12-chat-motion-v2-design.md) | Active | 2026-08-12 | v1 增强：空态 SoftAurora/Gradient/轮换hint；用户 StarBorder；Glare/AnimatedList/CountUp |
 | S-CHAT-MOTION | [2026-08-12-chat-motion-bits-design.md](specs/2026-08-12-chat-motion-bits-design.md) | Active | 2026-08-12 | Bits 源码翻译进聊天；空态/入场/标题/品牌；与 ThinkingOrb 分工；增强见 v2 |
 | S-CHAT-PROTO | [2026-08-10-chat-prototype-align-design.md](specs/2026-08-10-chat-prototype-align-design.md) | Active | 2026-08-10 | P-CHAT-PROTO Completed;原型↔现网对齐;发送↑;三级权限;底栏避让 |
@@ -35,6 +36,7 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
+| P-MD-PREVIEW-2 | [2026-08-14-md-preview-overlay.md](plans/2026-08-14-md-preview-overlay.md) | ⏳ Pending | S-MD-PREVIEW | 依赖已归档的 P-MD-PREVIEW-1；叶子 overlay / 放大 / 灯箱 |
 | P-CHAT-MOTION-v2 | [2026-08-12-chat-motion-v2.md](plans/2026-08-12-chat-motion-v2.md) | ✅ Completed | S-CHAT-MOTION-v2 | 分支 feat/p-chat-motion；已合入 develop |
 | P-CHAT-MOTION | [2026-08-12-chat-motion-bits.md](plans/2026-08-12-chat-motion-bits.md) | ✅ Completed | S-CHAT-MOTION | 分支 feat/p-chat-motion；已合入 develop；待归档 |
 | P-CHAT-PROTO | [2026-08-10-chat-prototype-align.md](plans/2026-08-10-chat-prototype-align.md) | ✅ Completed | S-CHAT-PROTO | 分支 main;发送↑;三档权限;底避让;原型回写;6 Task |
@@ -81,6 +83,7 @@
 
 | ID | 归档目录 | 归档日期 | 备注 |
 |---|---|---|---|
+| S-MD-PREVIEW (P-MD-PREVIEW-1) | [archive/S-MD-PREVIEW/](archive/S-MD-PREVIEW/) | 2026-08-14 | 统一富块+复制+表格；spec 仍 Active（P-MD-PREVIEW-2 overlay 未做） |
 | S-COMPACT-V2 | [archive/S-COMPACT-V2/](archive/S-COMPACT-V2/) | 2026-08-13 | squash → develop `9fbe73c`；投影压缩不删聊天 |
 | S-CHAT-NAV | [archive/S-CHAT-NAV/](archive/S-CHAT-NAV/) | 2026-08-11 | DeepSeek 式点列+悬停摘要；squash → develop |
 | S-SESSION | [archive/S-SESSION/](archive/S-SESSION/) | 2026-07-25 | 发版 0.1.13 |

@@ -10,6 +10,7 @@
 	import { renderMarkdownToHtml, areAllCodeBlocksClosed } from '../../utils/markdown-renderer';
 	import { renderMermaidBlocks } from '../../utils/mermaid-renderer';
 	import { enhanceCiteLinks } from '../chat/cite-enhance';
+	import { enhanceMdBlocks } from '../chat/md-block-enhance';
 	import { bindCitePathTooltip } from '../chat/cite-path-tooltip';
 	import { pathForCiteIndex } from '../chat/open-chat-note';
 	import { tNow } from '../../i18n';
@@ -41,6 +42,8 @@
 	let lastCiteKey = '';
 	let cleanupCites: (() => void) | null = null;
 	let cleanupCiteTips: (() => void) | null = null;
+	let cleanupMdBlocks: (() => void) | null = null;
+	let mdEnhanceGen = 0;
 	/** 有选区时暂存待渲染内容，松手后再写 DOM */
 	let pendingRender: { text: string; force: boolean } | null = null;
 
@@ -122,8 +125,27 @@
 		const html = renderMarkdownToHtml(text);
 		containerEl.innerHTML = html;
 
+		cleanupMdBlocks?.();
+		cleanupMdBlocks = null;
+		const gen = ++mdEnhanceGen;
+		const bindMdBlocks = () => {
+			if (!containerEl || gen !== mdEnhanceGen) return;
+			cleanupMdBlocks?.();
+			cleanupMdBlocks = enhanceMdBlocks(containerEl, {
+				labels: {
+					copy: tNow('chat.md.copy'),
+					copied: tNow('chat.md.copied'),
+				},
+			});
+		};
 		if (areAllCodeBlocksClosed(text)) {
-			renderMermaidBlocks(containerEl).catch(() => {});
+			void renderMermaidBlocks(containerEl, {
+				failed: (message) => tNow('chat.md.mermaidFailed', { message }),
+			})
+				.catch(() => {})
+				.finally(bindMdBlocks);
+		} else {
+			bindMdBlocks();
 		}
 		applyCites();
 	}
@@ -161,6 +183,7 @@
 		cancelAnimationFrame(rafId);
 		cleanupCites?.();
 		cleanupCiteTips?.();
+		cleanupMdBlocks?.();
 		pendingRender = null;
 	});
 </script>
@@ -223,12 +246,73 @@
 		border-radius: 3px;
 		padding: 1px 4px;
 	}
+	.ratel-md :global(.ratel-md-block) {
+		margin: 0.85em 0;
+		border: 1px solid var(--background-modifier-border);
+		border-radius: 10px;
+		overflow: hidden;
+		background: var(--background-secondary);
+	}
+	.ratel-md :global(.ratel-md-block-bar) {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+		min-height: 32px;
+		padding: 0 8px 0 12px;
+		border-bottom: 1px solid var(--background-modifier-border);
+		background: color-mix(in srgb, var(--background-primary) 70%, var(--background-secondary));
+	}
+	.ratel-md :global(.ratel-md-block-label) {
+		font-size: 11px;
+		font-weight: 500;
+		letter-spacing: 0.04em;
+		text-transform: lowercase;
+		color: var(--text-faint, var(--text-muted));
+		user-select: none;
+	}
+	.ratel-md :global(.ratel-md-block-actions) {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+	}
+	.ratel-md :global(.ratel-md-copy),
+	.ratel-md :global(.ratel-md-expand) {
+		flex-shrink: 0;
+		margin: 0;
+		padding: 3px 8px;
+		border: 1px solid transparent;
+		border-radius: 6px;
+		background: transparent;
+		color: var(--text-muted);
+		font-family: inherit;
+		font-size: 11px;
+		line-height: 1.3;
+		cursor: pointer;
+		-webkit-appearance: none;
+		appearance: none;
+		user-select: none;
+	}
+	.ratel-md :global(.ratel-md-copy:hover),
+	.ratel-md :global(.ratel-md-expand:hover) {
+		background: var(--background-modifier-hover);
+		color: var(--text-normal);
+	}
+	.ratel-md :global(.ratel-md-copy.is-copied) {
+		color: var(--text-success, var(--interactive-accent));
+	}
 	.ratel-md :global(pre) {
 		background: var(--background-secondary);
 		border-radius: 6px;
 		padding: 10px 12px;
 		overflow-x: auto;
 		margin: 0.5em 0;
+	}
+	.ratel-md :global(.ratel-md-block-body pre) {
+		margin: 0;
+		border-radius: 0;
+		background: transparent;
+		padding: 12px 14px;
 	}
 	.ratel-md :global(pre code) {
 		background: transparent;
@@ -343,13 +427,10 @@
 		height: auto;
 	}
 
-	.ratel-md :global(.ratel-mermaid-error) {
+	.ratel-md :global(.ratel-md-block-error) {
 		padding: 8px 10px;
-		border-radius: 6px;
-		background: rgba(248, 113, 113, 0.1);
 		color: var(--text-error);
 		font-size: 11.5px;
-		margin: 0.5em 0;
 	}
 
 	.ratel-md :global(input[type="checkbox"]) {

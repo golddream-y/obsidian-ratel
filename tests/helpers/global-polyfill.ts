@@ -53,6 +53,7 @@ if (typeof HTMLElement !== 'undefined') {
 	const proto = HTMLElement.prototype as HTMLElement & {
 		createEl?: (tag: string, o?: { cls?: string; text?: string; attr?: Record<string, string> } | string) => HTMLElement;
 		createDiv?: (o?: { cls?: string; text?: string; attr?: Record<string, string> } | string) => HTMLDivElement;
+		createSpan?: (o?: { cls?: string; text?: string; attr?: Record<string, string> } | string) => HTMLSpanElement;
 		setText?: (t: string) => void;
 		setCssProps?: (props: Record<string, string>) => void;
 	};
@@ -75,6 +76,11 @@ if (typeof HTMLElement !== 'undefined') {
 	if (!proto.createDiv) {
 		proto.createDiv = function (this: HTMLElement, o) {
 			return this.createEl!('div', o) as HTMLDivElement;
+		};
+	}
+	if (!proto.createSpan) {
+		proto.createSpan = function (this: HTMLElement, o) {
+			return this.createEl!('span', o) as HTMLSpanElement;
 		};
 	}
 	if (!proto.setText) {

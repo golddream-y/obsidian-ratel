@@ -14,12 +14,16 @@ import DOMPurify from 'dompurify';
  * 关键路径:
  * - startOnLoad: false — 手动控制渲染时机,不在页面加载时自动扫描
  * - securityLevel: 'strict' — 禁止 mermaid 代码中的 HTML 标签和事件处理器,防 XSS
- * - theme: 'dark' — 首版固定暗色主题,后续可读 Obsidian 主题自适应
+ * - theme 在每次渲染前按 Obsidian body.theme-dark / theme-light 同步(见 syncMermaidTheme)
+ *   首版曾写死 dark,浅色库里图块发黑看不清
  */
 mermaid.initialize({
 	startOnLoad: false,
-	theme: 'dark',
+	theme: 'default',
 	securityLevel: 'strict',
+	// 修复:flowchart 默认 htmlLabels 把节点字放进 foreignObject>div;
+	// DOMPurify 会剥掉 SVG 命名空间里的 HTML,图框还在字没了。改 SVG <text>。
+	htmlLabels: false,
 });
 
 /**
@@ -41,6 +45,8 @@ const MERMAID_SANITIZE_CONFIG = {
 		'x1', 'y1', 'x2', 'y2', 'cx', 'cy', 'r', 'rx', 'ry',
 		'width', 'height', 'transform', 'class', 'id',
 		'marker-end', 'marker-start', 'href', 'target',
+		'font-size', 'font-family', 'text-anchor', 'dominant-baseline',
+		'dx', 'dy', 'points', 'opacity',
 	],
 };
 
@@ -80,30 +86,87 @@ export function extractMermaidBlocks(html: string): string[] {
  *
  * 关键路径:在 innerHTML 注入 DOM 后调用,querySelectorAll 找到所有
  * `code.language-mermaid` 元素,用 mermaid.render() 生成 SVG 替换。
- * 单个块渲染失败不影响其他块(显示原始代码 + 错误提示)。
+ * 单个块渲染失败不影响其他块(显示错误提示,保留块外壳)。
  *
  * @param container - 包含已渲染 HTML 的 DOM 容器
+ * @param labels - 可选 i18n 文案回调
  * @returns Promise,所有 mermaid 块渲染完成后 resolve
  */
-export async function renderMermaidBlocks(container: HTMLElement): Promise<void> {
+export async function renderMermaidBlocks(
+	container: HTMLElement,
+	labels?: { failed: (detail: string) => string },
+): Promise<void> {
 	const mermaidCodeEls = container.querySelectorAll<HTMLElement>('code.language-mermaid');
 	if (mermaidCodeEls.length === 0) return;
 
-	const renderPromises: Promise<void>[] = [];
+	syncMermaidTheme();
+	await Promise.allSettled(
+		Array.from(mermaidCodeEls).map((el) => renderSingleMermaidBlock(el, labels)),
+	);
+}
 
-	mermaidCodeEls.forEach((codeEl) => {
-		renderPromises.push(renderSingleMermaidBlock(codeEl));
+/**
+ * 按当前窗口 body 的明暗同步 mermaid 主题。
+ *
+ * 关键路径:Obsidian 用 body.theme-dark / theme-light;popout 走 activeDocument。
+ * 未知时用 default(浅色图),避免再出现浅色侧栏里一团黑 SVG。
+ */
+function syncMermaidTheme(): void {
+	mermaid.initialize({
+		startOnLoad: false,
+		securityLevel: 'strict',
+		theme: resolveMermaidTheme(),
+		htmlLabels: false,
 	});
+}
 
-	await Promise.allSettled(renderPromises);
+/**
+ * 解析 mermaid 主题 id。
+ *
+ * @returns dark | default
+ */
+export function resolveMermaidTheme(): 'dark' | 'default' {
+	const doc = typeof activeDocument !== 'undefined' ? activeDocument : document;
+	const body = doc?.body ?? null;
+	if (body?.classList.contains('theme-dark')) return 'dark';
+	if (body?.classList.contains('theme-light')) return 'default';
+	if (typeof matchMedia !== 'undefined' && matchMedia('(prefers-color-scheme: dark)').matches) {
+		return 'dark';
+	}
+	return 'default';
+}
+
+/**
+ * 在 md-block body 内替换内容;无 body 时回退到替换 pre 或 code 元素。
+ *
+ * @param codeEl - 原始 `<code class="language-mermaid">` 元素
+ * @param node - 要插入 body 的节点(SVG 容器或错误条)
+ */
+function replaceInBlockBody(codeEl: HTMLElement, node: HTMLElement): void {
+	const block = codeEl.closest('.ratel-md-block');
+	const body = block?.querySelector('.ratel-md-block-body');
+	const pre = codeEl.parentElement;
+	if (body) {
+		body.replaceChildren(node);
+		return;
+	}
+	if (pre && pre.tagName === 'PRE') {
+		pre.replaceWith(node);
+		return;
+	}
+	codeEl.replaceWith(node);
 }
 
 /**
  * 渲染单个 mermaid 代码块。
  *
  * @param codeEl - `<code class="...language-mermaid...">` 元素
+ * @param labels - 可选 i18n 文案回调
  */
-async function renderSingleMermaidBlock(codeEl: HTMLElement): Promise<void> {
+async function renderSingleMermaidBlock(
+	codeEl: HTMLElement,
+	labels?: { failed: (detail: string) => string },
+): Promise<void> {
 	const code = codeEl.textContent ?? '';
 	if (!code.trim()) return;
 
@@ -111,7 +174,6 @@ async function renderSingleMermaidBlock(codeEl: HTMLElement): Promise<void> {
 
 	try {
 		const { svg } = await mermaid.render(id, code);
-		// 关键路径:替换 <pre><code> 结构为 mermaid SVG 容器
 		// 关键路径:用 DOMParser + replaceChildren 替代 innerHTML=,避免触发 no-inner-html 规则;
 		// 即便经 DOMPurify 清洗,linter 仍会拦截 innerHTML 赋值,改用 DOM 解析后插入子节点更安全。
 		// 安全路径:activeDocument.body.createDiv 满足 prefer-create-el,且兼容 popout
@@ -120,24 +182,16 @@ async function renderSingleMermaidBlock(codeEl: HTMLElement): Promise<void> {
 		const sanitized = DOMPurify.sanitize(svg, MERMAID_SANITIZE_CONFIG);
 		const parsed = new DOMParser().parseFromString(sanitized, 'image/svg+xml');
 		wrapper.replaceChildren(parsed.documentElement);
-		const pre = codeEl.parentElement; // <pre> 标签
-		if (pre && pre.tagName === 'PRE') {
-			pre.replaceWith(wrapper);
-		} else {
-			codeEl.replaceWith(wrapper);
-		}
+		replaceInBlockBody(codeEl, wrapper);
 	} catch (err) {
-		// 修复:mermaid 渲染失败时显示原始代码 + 错误提示,不影响其他内容
+		// 修复:mermaid 渲染失败时显示错误条,不影响块外壳与其他内容
+		const detail = err instanceof Error ? err.message : String(err);
+		const text = labels?.failed(detail) ?? detail;
 		const errorDiv = activeDocument.body.createDiv({
-			cls: 'ratel-mermaid-error',
-			text: `Mermaid 渲染失败: ${err instanceof Error ? err.message : String(err)}`,
+			cls: 'ratel-md-block-error',
+			text,
 		});
 		errorDiv.remove();
-		const pre = codeEl.parentElement;
-		if (pre && pre.tagName === 'PRE') {
-			pre.replaceWith(errorDiv);
-		} else {
-			codeEl.replaceWith(errorDiv);
-		}
+		replaceInBlockBody(codeEl, errorDiv);
 	}
 }

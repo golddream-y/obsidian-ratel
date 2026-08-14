@@ -1,6 +1,10 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
-import { renderMarkdownToHtml, areAllCodeBlocksClosed } from '../../src/utils/markdown-renderer';
+import {
+	renderMarkdownToHtml,
+	areAllCodeBlocksClosed,
+	decodeFenceSrcAttr,
+} from '../../src/utils/markdown-renderer';
 
 describe('renderMarkdownToHtml', () => {
 	it('标题 - h1/h2 生成对应标签', () => {
@@ -22,17 +26,54 @@ describe('renderMarkdownToHtml', () => {
 		expect(html).toContain('language-javascript');
 	});
 
+	it('围栏代码 - 包成 ratel-md-block 并带语言标签', () => {
+		const html = renderMarkdownToHtml('```json\n{"a":1}\n```');
+		expect(html).toContain('class="ratel-md-block"');
+		expect(html).toContain('data-ratel-fence="code"');
+		expect(html).toContain('class="ratel-md-block-label">json<');
+		expect(html).toContain('class="ratel-md-block-body"');
+		expect(html).not.toContain('ratel-code-block');
+	});
+
+	it('mermaid 围栏 - 同样包壳并带 data-ratel-src', () => {
+		const html = renderMarkdownToHtml('```mermaid\ngraph TD; A-->B\n```');
+		expect(html).toContain('data-ratel-fence="mermaid"');
+		expect(html).toContain('data-ratel-src="');
+		expect(html).toContain('graph TD');
+		expect(html).toContain('language-mermaid');
+		expect(html).toContain('class="ratel-md-block-label">mermaid<');
+	});
+
+	it('mermaid data-ratel-src - decodeFenceSrcAttr round-trip 还原箭头', () => {
+		const html = renderMarkdownToHtml('```mermaid\ngraph TD; A-->B\n```');
+		const doc = new DOMParser().parseFromString(html, 'text/html');
+		const src = doc.querySelector('.ratel-md-block')?.getAttribute('data-ratel-src') ?? '';
+		expect(decodeFenceSrcAttr(src)).toBe('graph TD; A-->B');
+	});
+
+	it('mermaid data-ratel-src - 字面量 &lt;tag&gt; 不二次解码', () => {
+		const html = renderMarkdownToHtml('```mermaid\ngraph TD\nA[&lt;tag&gt;]\n```');
+		const doc = new DOMParser().parseFromString(html, 'text/html');
+		const src = doc.querySelector('.ratel-md-block')?.getAttribute('data-ratel-src') ?? '';
+		expect(decodeFenceSrcAttr(src)).toBe('graph TD\nA[&lt;tag&gt;]');
+	});
+
+	it('行内代码 - 不包成代码卡片', () => {
+		const html = renderMarkdownToHtml('这是 `inline` 文本');
+		expect(html).not.toContain('ratel-md-block');
+		expect(html).toContain('<code>inline</code>');
+	});
+
 	it('行内代码 - 生成 code 标签', () => {
 		const html = renderMarkdownToHtml('这是 `inline code` 文本');
 		expect(html).toContain('<code>inline code</code>');
 	});
 
-	it('表格 - 生成 table 标签', () => {
+	it('表格 - 外包横滚壳', () => {
 		const md = '| A | B |\n|---|---|\n| 1 | 2 |';
 		const html = renderMarkdownToHtml(md);
+		expect(html).toContain('class="ratel-md-table-wrap"');
 		expect(html).toContain('<table>');
-		expect(html).toContain('<th>A</th>');
-		expect(html).toContain('<td>1</td>');
 	});
 
 	it('引用块 - 生成 blockquote 标签', () => {

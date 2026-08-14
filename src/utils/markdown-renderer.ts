@@ -40,6 +40,7 @@ const SANITIZE_CONFIG = {
 		'x1', 'y1', 'x2', 'y2', 'cx', 'cy', 'r', 'rx', 'ry',
 		'width', 'height', 'transform', 'class', 'id',
 		'marker-end', 'marker-start', 'href', 'target',
+		'data-ratel-src', 'data-ratel-fence',
 	],
 };
 
@@ -72,10 +73,115 @@ markedInstance.setOptions({
 	breaks: false,
 });
 
+const CODE_CLASS_RE = /\bclass="([^"]*)"/i;
+const CODE_LANG_RE = /\blanguage-([a-z0-9_+-]+)/i;
+
+/**
+ * 反转义 HTML 实体文本（用于从 code 内层还原 mermaid 源码）。
+ *
+ * @param text - 含 HTML 实体的文本
+ * @returns 解码后的纯文本
+ */
+export function unescapeHtmlText(text: string): string {
+	return text
+		.replace(/&quot;/g, '"')
+		.replace(/&gt;/g, '>')
+		.replace(/&lt;/g, '<')
+		.replace(/&amp;/g, '&');
+}
+
+/**
+ * 解码 data-ratel-src 属性值（encodeURIComponent 编码；旧 fixture 回退 unescapeHtmlText）。
+ *
+ * @param attr - data-ratel-src 属性原始值
+ * @returns 围栏源码纯文本
+ */
+export function decodeFenceSrcAttr(attr: string): string {
+	try {
+		return decodeURIComponent(attr);
+	} catch {
+		return unescapeHtmlText(attr);
+	}
+}
+
+/**
+ * 从 code 元素 HTML 提取围栏源码（去标签 + 反转义）。
+ *
+ * @param body - code 元素 innerHTML
+ * @returns 围栏原始源码文本
+ */
+function fenceSourceFromCodeHtml(body: string): string {
+	return unescapeHtmlText(body.replace(/<[^>]+>/g, ''));
+}
+
+/**
+ * 把围栏 `<pre><code>` 包成统一 ratel-md-block 外壳（顶栏 + 语言名 + 操作区占位）。
+ *
+ * mermaid 与代码围栏共用壳，mermaid 额外带 data-ratel-src 供后续渲染读取源码。
+ *
+ * @param html - marked 输出的 HTML
+ * @returns 已包外壳的 HTML
+ */
+function wrapFencedCodeHtml(html: string): string {
+	const fencedPreRe = /<pre>\s*<code([^>]*)>([\s\S]*?)<\/code>\s*<\/pre>/gi;
+	return html.replace(fencedPreRe, (_full, attrs: string, body: string) => {
+		const cls = CODE_CLASS_RE.exec(attrs)?.[1] ?? '';
+		const isMermaid = /\blanguage-mermaid\b/i.test(cls);
+		const lang = isMermaid ? 'mermaid' : fencedLangFromClass(cls);
+		const fence = isMermaid ? 'mermaid' : 'code';
+		const srcAttr = isMermaid
+			? ` data-ratel-src="${encodeURIComponent(fenceSourceFromCodeHtml(body).trimEnd())}"`
+			: '';
+		const langHtml = lang
+			? `<span class="ratel-md-block-label">${escapeHtmlText(lang)}</span>`
+			: '<span class="ratel-md-block-label"></span>';
+		return `<div class="ratel-md-block" data-ratel-fence="${fence}"${srcAttr}><div class="ratel-md-block-bar">${langHtml}<div class="ratel-md-block-actions"></div></div><div class="ratel-md-block-body"><pre><code${attrs}>${body}</code></pre></div></div>`;
+	});
+}
+
+/**
+ * 为表格外包横滚容器，避免宽表撑破聊天气泡。
+ *
+ * @param html - 含 table 的 HTML
+ * @returns 已包横滚壳的 HTML
+ */
+function wrapTablesHtml(html: string): string {
+	return html.replace(/<table\b[\s\S]*?<\/table>/gi, (table) => {
+		if (table.includes('ratel-md-table-wrap')) return table;
+		return `<div class="ratel-md-table-wrap">${table}</div>`;
+	});
+}
+
+/**
+ * 从 hljs class 抽出语言 id。
+ *
+ * @param className - code 元素 class
+ * @returns 小写语言 id，或空串
+ */
+function fencedLangFromClass(className: string): string {
+	const raw = CODE_LANG_RE.exec(className)?.[1]?.toLowerCase() ?? '';
+	if (!raw || raw === 'plaintext' || raw === 'text') return '';
+	return raw;
+}
+
+/**
+ * 转义语言标签文本（class 理论上已是安全 token，仍防注入）。
+ *
+ * @param text - 原始文本
+ * @returns HTML 安全文本
+ */
+function escapeHtmlText(text: string): string {
+	return text
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;');
+}
+
 /**
  * 将 Markdown 文本渲染为已 sanitize 的 HTML 字符串。
  *
- * 管线:marked.parse → DOMPurify.sanitize → 返回安全 HTML。
+ * 管线:marked.parse → 包围栏代码卡片 → 表格横滚壳 → DOMPurify.sanitize。
  * 异常时回退为转义纯文本(<pre> 包裹),保证不白屏。
  *
  * @param text - Markdown 源文本
@@ -86,7 +192,7 @@ export function renderMarkdownToHtml(text: string): string {
 
 	try {
 		const rawHtml = markedInstance.parse(text) as string;
-		return DOMPurify.sanitize(rawHtml, SANITIZE_CONFIG);
+		return DOMPurify.sanitize(wrapTablesHtml(wrapFencedCodeHtml(rawHtml)), SANITIZE_CONFIG);
 	} catch {
 		// 修复:marked 解析异常时回退为转义纯文本,避免白屏
 		const escaped = text
