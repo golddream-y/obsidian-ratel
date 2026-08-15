@@ -27,7 +27,7 @@
 
 ### 2.1 直接原因
 
-[confirm-modal.ts](file:///Users/golddream/code/git-public/Ratel-CLI/src/ui/confirm-modal.ts#L40-L51) 三个按钮的 onclick 回调**先调 `this.close()` 再调 `this.settle()`**:
+[confirm-modal.ts](src/ui/confirm-modal.ts#L40-L51) 三个按钮的 onclick 回调**先调 `this.close()` 再调 `this.settle()`**:
 
 ```typescript
 // 修复前(错误):
@@ -59,7 +59,7 @@ onClose(): void {
    - 调 `this.onResolve('deny')` → Promise resolve('deny') → **权限决策变为 deny**
 4. 回到 onclick 第二行 `this.settle('allow')`:
    - `this.settled === true` → 直接 return,`allow` 结果被丢弃
-5. [tool-permissions.ts](file:///Users/golddream/code/git-public/Ratel-CLI/src/core/tool-permissions.ts#L72-L75) 收到 `decision === 'deny'` → `throw new Error('用户拒绝了工具调用')`
+5. [tool-permissions.ts](src/core/tool-permissions.ts#L72-L75) 收到 `decision === 'deny'` → `throw new Error('用户拒绝了工具调用')`
 
 ### 2.3 为什么「拒绝」按钮没暴露问题
 
@@ -86,7 +86,7 @@ onClose(): void {
 
 **原则**:先 settle(确定结果),再 close(触发 onClose 兜底)。利用 `settle()` 的 `this.settled` 防重入,让 onClose 的兜底 deny 在正常按钮路径下被跳过,只在 ESC/点遮罩时生效。
 
-**具体修改**([confirm-modal.ts#L40-L51](file:///Users/golddream/code/git-public/Ratel-CLI/src/ui/confirm-modal.ts#L40-L51)):
+**具体修改**([confirm-modal.ts#L40-L51](src/ui/confirm-modal.ts#L40-L51)):
 
 ```typescript
 // 修复后(正确):

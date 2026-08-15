@@ -34,4 +34,9 @@ data.json
 # 临时 scratch / 会话结论(不进版本库)
 .temp/
 
+# 含本机绝对路径的 Cursor 规则，不进 GitHub
+.cursor/rules/*.local.mdc
+
+# Superpowers brainstorming 可视化会话（仅本机）
+.superpowers/
 

@@ -290,8 +290,8 @@ src/ui/
 
 ## 参考
 
-- [chat-ui-mockup.html](file:///Users/golddream/code/git-public/Ratel-CLI/.superpowers/brainstorm/chat-ui-mockup.html) — 交互式 mockup
-- [obsidian-ui SKILL.md](file:///Users/golddream/code/git-public/Ratel-CLI/.trae/skills/obsidian-ui/SKILL.md) — Obsidian UI 开发规范
-- [ChatView.svelte](file:///Users/golddream/code/git-public/Ratel-CLI/src/ui/ChatView.svelte) — 现有实现
-- [StatusBar.svelte](file:///Users/golddream/code/git-public/Ratel-CLI/src/ui/StatusBar.svelte) — 现有实现（将被删除）
-- [feedback-controller.ts](file:///Users/golddream/code/git-public/Ratel-CLI/src/core/feedback-controller.ts) — 现有 Notice 控制器
+- [chat-ui-mockup.html](.superpowers/brainstorm/chat-ui-mockup.html) — 交互式 mockup
+- [obsidian-ui SKILL.md](.trae/skills/obsidian-ui/SKILL.md) — Obsidian UI 开发规范
+- [ChatView.svelte](src/ui/ChatView.svelte) — 现有实现
+- [StatusBar.svelte](src/ui/StatusBar.svelte) — 现有实现（将被删除）
+- [feedback-controller.ts](src/core/feedback-controller.ts) — 现有 Notice 控制器

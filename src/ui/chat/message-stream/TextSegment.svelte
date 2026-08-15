@@ -1,6 +1,6 @@
 <!--
 	@file src/ui/chat/message-stream/TextSegment.svelte
-	@description 文本段渲染 — 助手 Markdown + 可选引用编号挂钩
+	@description 文本段渲染 — 助手单块 MarkdownView(stable/tail 由 projector 拆分),用户消息纯文本
 	@module ui/chat/message-stream/TextSegment
 	@depends ../components/MarkdownView.svelte
 -->

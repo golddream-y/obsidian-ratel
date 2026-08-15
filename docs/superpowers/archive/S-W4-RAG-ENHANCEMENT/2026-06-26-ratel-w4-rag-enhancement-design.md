@@ -326,4 +326,4 @@ LLM 调 read_note 读全文,引用 [1][2] 回答
 - [S-W3-HYBRID](2026-06-26-ratel-w3-hybrid-search-design.md) — W3 混合搜索 spec(本 spec 的前置依赖)
 - [原 P-W4-IMPL plan](../plans/2026-06-13-ratel-w4-implementation.md) — 被取代的旧 plan(保留作历史参考)
 - [S-KEYCHAIN 归档](../archive/S-KEYCHAIN/) — Reranker 钥匙串密钥已实现
-- [vectra LocalIndex.d.ts](file:///Users/golddream/code/git-public/Ratel-CLI/node_modules/vectra/lib/LocalIndex.d.ts) — `queryItems` API
+- [vectra LocalIndex.d.ts](node_modules/vectra/lib/LocalIndex.d.ts) — `queryItems` API

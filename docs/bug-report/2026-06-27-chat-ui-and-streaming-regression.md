@@ -10,7 +10,7 @@
 
 ## 一、问题全景
 
-本轮共修复 **3 大类问题**,分别位于 [ChatView.svelte](file:///Users/golddream/code/git-public/Ratel-CLI/src/ui/ChatView.svelte)、[StatusLine.svelte](file:///Users/golddream/code/git-public/Ratel-CLI/src/ui/StatusLine.svelte)、[StatusDrawer.svelte](file:///Users/golddream/code/git-public/Ratel-CLI/src/ui/StatusDrawer.svelte) 三个 Svelte 组件中:
+本轮共修复 **3 大类问题**,分别位于 [ChatView.svelte](src/ui/ChatView.svelte)、[StatusLine.svelte](src/ui/StatusLine.svelte)、[StatusDrawer.svelte](src/ui/StatusDrawer.svelte) 三个 Svelte 组件中:
 
 | # | 问题 | 性质 | 现象 |
 |---|------|------|------|
@@ -146,13 +146,13 @@ case 'message.delta':
 
 ### 4.2 根因
 
-[agent-loop.ts#L137](file:///Users/golddream/code/git-public/Ratel-CLI/src/core/agent-loop.ts#L137) 在工具权限检查失败时 yield 的错误码是 `TOOL_DENIED`:
+[agent-loop.ts#L137](src/core/agent-loop.ts#L137) 在工具权限检查失败时 yield 的错误码是 `TOOL_DENIED`:
 
 ```typescript
 yield { type: 'error', payload: { code: 'TOOL_DENIED', message } };
 ```
 
-而 [ChatView.svelte](file:///Users/golddream/code/git-public/Ratel-CLI/src/ui/ChatView.svelte) 的 `handleAgentError` 函数只识别 `TOOL_ERROR` 和 `INDEX_NOT_READY` 两个工具类错误码:
+而 [ChatView.svelte](src/ui/ChatView.svelte) 的 `handleAgentError` 函数只识别 `TOOL_ERROR` 和 `INDEX_NOT_READY` 两个工具类错误码:
 
 ```typescript
 if (code === 'TOOL_ERROR' || code === 'INDEX_NOT_READY') {
@@ -216,9 +216,9 @@ am.chatError = formatChatError(code, message);
 
 | 文件 | 修改性质 |
 |------|----------|
-| [ChatView.svelte](file:///Users/golddream/code/git-public/Ratel-CLI/src/ui/ChatView.svelte) | 视觉样式全面重构 + 流式 Proxy mutation 修复 + TOOL_DENIED 错误码处理 + 自动滚底 + 删除未使用 `toolIcon` |
-| [StatusLine.svelte](file:///Users/golddream/code/git-public/Ratel-CLI/src/ui/StatusLine.svelte) | 状态点脉冲/发光、进度条样式、hover 色 |
-| [StatusDrawer.svelte](file:///Users/golddream/code/git-public/Ratel-CLI/src/ui/StatusDrawer.svelte) | section-title、progress-track、hint-pill、degraded、micro-btn 样式 |
+| [ChatView.svelte](src/ui/ChatView.svelte) | 视觉样式全面重构 + 流式 Proxy mutation 修复 + TOOL_DENIED 错误码处理 + 自动滚底 + 删除未使用 `toolIcon` |
+| [StatusLine.svelte](src/ui/StatusLine.svelte) | 状态点脉冲/发光、进度条样式、hover 色 |
+| [StatusDrawer.svelte](src/ui/StatusDrawer.svelte) | section-title、progress-track、hint-pill、degraded、micro-btn 样式 |
 
 ---
 

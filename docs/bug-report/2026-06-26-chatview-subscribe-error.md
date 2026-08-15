@@ -51,7 +51,7 @@ Svelte 5 的 legacy store compatibility 模式中,`$` 前缀触发自动订阅�
 
 ### 2.3 触发条件
 
-commit `6729fe1` 在 [ChatView.svelte](file:///Users/golddream/code/git-public/Ratel-CLI/src/ui/ChatView.svelte) 中添加了:
+commit `6729fe1` 在 [ChatView.svelte](src/ui/ChatView.svelte) 中添加了:
 
 ```svelte
 $: hasKey = (keyVersion, hasChatApiKey(plugin.app, plugin.settings));
@@ -83,7 +83,7 @@ P-FEEDBACK(commit `201a854`) 引入 `$plugin.userStatus.statusBar$` 时,组件�
 
 **原则**:避免在同一 Svelte 组件中对同一变量混用 `$var.xxx`(store 订阅)和 `var.xxx`(普通属性访问),消除编译器歧义。
 
-**具体修改**([ChatView.svelte#L31-L39](file:///Users/golddream/code/git-public/Ratel-CLI/src/ui/ChatView.svelte#L31-L39)):
+**具体修改**([ChatView.svelte#L31-L39](src/ui/ChatView.svelte#L31-L39)):
 
 把 store 引用提取到局部变量,再对局部变量做 `$` 订阅:
 

@@ -203,6 +203,100 @@ export function renderMarkdownToHtml(text: string): string {
 	}
 }
 
+/** 稳定块拆分结果 — stableBlocks 可冻结富渲染,tail 留作活动轻量尾部 */
+export interface StableMarkdownSplit {
+	stableBlocks: string[];
+	tail: string;
+	hasCrossBlockDependency: boolean;
+}
+
+/**
+ * 引用链接使用检测正则 — 命中时前文不允许冻结。
+ *
+ * 子模式拆解:
+ * - `(^|[^!])` 起始或非 `!` 前缀 — 排除图片 `![alt](...)`
+ * - `\[(?![ xX]\])(?!\d+\])` — 排除 GFM 任务列表 `[ ]`/`[x]` 与数字脚注 `[1]`
+ * - `([^\]\n]+)\]` — 链接文本(不含换行,排除跨行误配)
+ * - `(?!\s*\()` — 排除 inline 链接 `[text](url)`(无跨块依赖)
+ */
+const REFERENCE_USE_RE = /(^|[^!])\[(?![ xX]\])(?!\d+\])([^\]\n]+)\](?!\s*\()/m;
+
+/**
+ * 按 marked lexer 的顶层 token 切出稳定前缀,最后一个语义 token 永远留作活动尾部。
+ *
+ * 关键路径:引用定义会改变前文链接解析,检测到 def token 时整段不拆。
+ * 关键路径:入口先做 CRLF 归一化 — marked 会吃掉 \r 导致 raw 与源码不一致,
+ * startsWith 校验恒失败,稳定块机制在 CRLF 输入下 100% 静默失效(退化为纯 tail)。
+ *
+ * @param text - 尚未冻结的 Markdown 尾部
+ * @param finalize - 是否结束流式并完成全部尾部
+ * @returns 稳定块、活动尾部和跨块依赖标记;hasCrossBlockDependency 为诊断标记,投影层不依赖
+ * @example
+ *   splitStableMarkdownBlocks('第一段\n\n第二段', false);
+ */
+export function splitStableMarkdownBlocks(
+	text: string,
+	finalize: boolean,
+): StableMarkdownSplit {
+	if (!text) return { stableBlocks: [], tail: '', hasCrossBlockDependency: false };
+
+	// 修复:CRLF 归一化 — 保证 raw 拼接可无损还原源码(归一后文本)
+	const normalized = text.replace(/\r\n?/g, '\n');
+	text = normalized;
+
+	const tokens = markedInstance.lexer(text);
+	// 关键路径:定义可能尚未流到;非数字 shortcut/reference link 也必须阻止前文冻结。
+	const hasReferenceUse = REFERENCE_USE_RE.test(text);
+	const hasCrossBlockDependency =
+		hasReferenceUse || tokens.some((token) => token.type === 'def');
+	if (hasCrossBlockDependency) {
+		return finalize
+			? { stableBlocks: [text], tail: '', hasCrossBlockDependency: true }
+			: { stableBlocks: [], tail: text, hasCrossBlockDependency: true };
+	}
+
+	const semanticIndexes = tokens
+		.map((token, index) => token.type === 'space' ? -1 : index)
+		.filter((index) => index >= 0);
+	if (!finalize && semanticIndexes.length < 2) {
+		return { stableBlocks: [], tail: text, hasCrossBlockDependency: false };
+	}
+
+	const cut = finalize ? tokens.length : semanticIndexes[semanticIndexes.length - 1]!;
+	const stableTokens = tokens.slice(0, cut);
+	const stableBlocks: string[] = [];
+	let leadingSpace = '';
+	for (const token of stableTokens) {
+		if (token.type === 'space') {
+			if (stableBlocks.length > 0) {
+				stableBlocks[stableBlocks.length - 1] += token.raw;
+			} else {
+				leadingSpace += token.raw;
+			}
+			continue;
+		}
+		stableBlocks.push(leadingSpace + token.raw);
+		leadingSpace = '';
+	}
+	if (leadingSpace && stableBlocks.length > 0) {
+		stableBlocks[stableBlocks.length - 1] += leadingSpace;
+	}
+	if (finalize && stableBlocks.length === 0) {
+		return { stableBlocks: [text], tail: '', hasCrossBlockDependency: false };
+	}
+
+	const stableText = stableBlocks.join('');
+	// 修复:lexer raw 无法无损覆盖源码时保持轻量尾部,禁止错误截断。
+	if (!text.startsWith(stableText)) {
+		return { stableBlocks: [], tail: text, hasCrossBlockDependency: false };
+	}
+	return {
+		stableBlocks,
+		tail: text.slice(stableText.length),
+		hasCrossBlockDependency: false,
+	};
+}
+
 /**
  * 检测文本中是否所有代码块(用 ``` 分隔)都已闭合。
  *

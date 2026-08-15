@@ -1,5 +1,12 @@
 # Ratel Vault — Obsidian 插件
 
+## 项目记忆入口(mandatory)
+
+- 任何任务、任何模式、任何开发阶段,开始操作前都必须读取并遵守 `.cursor/rules/*.mdc`。
+- 若存在 `.cursor/rules/*.local.mdc`,也必须一并读取;不得因文件被 Git 忽略或任务与本地预览无关而跳过。
+- `.mdc` 中标记 `alwaysApply: true` 的规则始终生效。后续新增的同类规则文件自动纳入本项目记忆,无需再次在本文件逐条登记。
+- `*.local.mdc` 仅用于保存本机私有信息。可以在本机执行时使用,但不得把其中的绝对路径、Vault 名称或其他隐私内容复制到受版本控制的文件、提交信息或对外输出。
+
 ## 项目概述
 
 - 目标平台:Obsidian 社区插件(TypeScript → 打包后 JavaScript)。
@@ -9,7 +16,7 @@
 - ORT WASM:首次 local embedding 时从 jsDelivr 下载到 `pluginDir`(ADR-006)。
 - **商店 release 产物**:`dist/main.js`、`manifest.json`、可选 `styles.css`(Obsidian / BRAT 三文件约束)。
 - **本地开发产物**另含 `dist/worker.js`(InlineWorker 索引);`npm run link:vault` 软链 main/worker/manifest。
-- **本地预览(强制):**本机常同时开 `ObsidianVault` 与 `Obsidian Sandbox`。Sandbox 容易仍链着 `.worktrees/feat-p-chat-motion`。改 UI 后画面完全没变,先 `ls -l <vault>/.obsidian/plugins/ratel-vault/main.js`,必须指向当前仓库 `dist/main.js`;两个窗口都要 `npm run link:vault -- <vault>`,再 **Reload app without saving**。
+- **本地预览(强制):**只链 **Obsidian Sandbox**。日常主库(商店安装那份)**禁止** `link:vault` / 覆盖其插件。Sandbox 容易仍链着 `.worktrees/feat-p-chat-motion`。改 UI 后画面完全没变,先确认 Sandbox 的 `ratel-vault/main.js` 指向当前仓库 `dist/main.js`,再 **Reload app without saving**。本机绝对路径只放 gitignore 的 `.cursor/rules/*.local.mdc`。
 
 ## 架构
 
@@ -98,6 +105,7 @@ src/
 - **构建产物**:`main.js`(含内联 embedding worker)+ `worker.js`(InlineWorker 索引调度,仅本地开发)。
 - **商店 release**:仅 `main.js` + `manifest.json` + `styles.css`(ADR-006)。
 - **网络调用**:只能是模型 API(DeepSeek / Claude / Ollama),必须在 README 中写明。
+- **本机隐私不得进仓库**(见「安全与隐私」):家目录绝对路径、日常库路径、`file://` 本机链接、密钥/密码,禁止写入源码、测试、文档、Cursor 规则(gitignore 的 `*.local.mdc` 除外)。
 
 ## 性能
 
@@ -113,6 +121,19 @@ src/
 - 无遥测、无数据收集。
 - 库内容只发往配置的模型 API 端点。
 - 所有索引数据存在 `.obsidian/plugins/ratel-vault/`。
+
+### 本机信息不进仓库(mandatory)
+
+公开仓库里**禁止**写入维护者本机隐私,包括但不限于:
+
+- 家目录 / 仓库克隆绝对路径(如 `/Users/<name>/...`)
+- 日常 Obsidian 库的绝对路径或本机库名路径
+- Cursor / IDE 生成的 `file:///Users/...` 本地链接
+- API key、密码、token、钥匙串内容、`.env`、`data.json`
+
+需要本机路径时:**只写** gitignore 的 `.cursor/rules/*.local.mdc`(或同等本地配置),不要写进 `AGENTS.md`、`.cursor/rules/` 已跟踪文件、`docs/`、`src/`、`tests/`。
+
+文档与测试用占位:`<repo-root>`、`<sandbox>`、`Users/alice/Notes`。公开身份(GitHub / 赞助页)可以写。提交前 `git grep` 本机用户名与 `/Users/` 确认无泄漏。
 
 ## 版本与发布
 

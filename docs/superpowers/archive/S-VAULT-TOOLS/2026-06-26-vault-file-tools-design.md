@@ -79,7 +79,7 @@ Obsidian 桌面版插件运行在 **Electron renderer 进程**,拥有完整 Node
 
 ### 4.2 VaultPort 扩展
 
-在现有 [vault.ts](file:///Users/golddream/code/git-public/Ratel-CLI/src/ports/vault.ts) 接口上新增方法:
+在现有 [vault.ts](src/ports/vault.ts) 接口上新增方法:
 
 ```typescript
 export interface VaultPort {
@@ -127,7 +127,7 @@ grep 和 glob 作为**工具层逻辑**实现(组合 listFiles + readFile + 正�
 
 ### 4.3 ObsidianVault 适配器实现
 
-[obsidian-vault.ts](file:///Users/golddream/code/git-public/Ratel-CLI/src/adapters/obsidian-vault.ts) 新增方法实现:
+[obsidian-vault.ts](src/adapters/obsidian-vault.ts) 新增方法实现:
 
 ```typescript
 async appendFile(path: string, content: string): Promise<void> {
@@ -671,7 +671,7 @@ LLM 工具调用
 
 - [Claude Code Tool 设计](https://juejin.cn/post/7507991734794911782) — GrepTool/GlobTool/Edit/Replace 的参数与行为参考
 - [Coding Agent 核心机制解析](https://juejin.cn/post/7597258378591617034) — 文件工具集分层模式(read/list/glob/grep/write/edit/delete)
-- [Obsidian API Vault 类](file:///Users/golddream/code/git-public/Ratel-CLI/node_modules/obsidian/obsidian.d.ts#L7321-L7578) — 可用文件操作 API 清单
-- [ObsidianVault 现有实现](file:///Users/golddream/code/git-public/Ratel-CLI/src/adapters/obsidian-vault.ts) — 适配器模式参考
-- [现有工具 read-note.ts](file:///Users/golddream/code/git-public/Ratel-CLI/src/tools/read-note.ts) — 工具实现模式参考
-- [现有工具 search-vault.ts](file:///Users/golddream/code/git-public/Ratel-CLI/src/tools/search-vault.ts) — 工具实现模式参考
+- [Obsidian API Vault 类](node_modules/obsidian/obsidian.d.ts#L7321-L7578) — 可用文件操作 API 清单
+- [ObsidianVault 现有实现](src/adapters/obsidian-vault.ts) — 适配器模式参考
+- [现有工具 read-note.ts](src/tools/read-note.ts) — 工具实现模式参考
+- [现有工具 search-vault.ts](src/tools/search-vault.ts) — 工具实现模式参考

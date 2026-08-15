@@ -5,9 +5,9 @@
 | Spec ID | S-INIT-INDEX |
 | 状态 | Active |
 | 创建 | 2026-06-15 |
-| 取代 | [S-INIT-EMBED](file:///Users/golddream/code/git-public/Ratel-CLI/docs/superpowers/specs/2026-06-15-ratel-init-embedding-design.md) · [S-INDEX-AUTO](file:///Users/golddream/code/git-public/Ratel-CLI/docs/superpowers/specs/2026-06-15-ratel-auto-indexing-design.md) — 两 spec 内容已合并 |
-| 关联 PRD | [`docs/PRD.md` § F6 Worker 后台索引](file:///Users/golddream/code/git-public/Ratel-CLI/docs/PRD.md) · [`docs/PRD.md` § F10 初始化嵌入](file:///Users/golddream/code/git-public/Ratel-CLI/docs/PRD.md) |
-| 关联架构 | [`docs/ARCHITECTURE.md` § 5 索引管线](file:///Users/golddream/code/git-public/Ratel-CLI/docs/ARCHITECTURE.md) · [`docs/architecture/vector-index.md` 向量化与索引架构](file:///Users/golddream/code/git-public/Ratel-CLI/docs/architecture/vector-index.md) · [`docs/architecture/tool-dispatch.md` § 6 嵌入管线复用](file:///Users/golddream/code/git-public/Ratel-CLI/docs/architecture/tool-dispatch.md) |
+| 取代 | [S-INIT-EMBED](docs/superpowers/specs/2026-06-15-ratel-init-embedding-design.md) · [S-INDEX-AUTO](docs/superpowers/specs/2026-06-15-ratel-auto-indexing-design.md) — 两 spec 内容已合并 |
+| 关联 PRD | [`docs/PRD.md` § F6 Worker 后台索引](docs/PRD.md) · [`docs/PRD.md` § F10 初始化嵌入](docs/PRD.md) |
+| 关联架构 | [`docs/ARCHITECTURE.md` § 5 索引管线](docs/ARCHITECTURE.md) · [`docs/architecture/vector-index.md` 向量化与索引架构](docs/architecture/vector-index.md) · [`docs/architecture/tool-dispatch.md` § 6 嵌入管线复用](docs/architecture/tool-dispatch.md) |
 | 调研参考 | [Smart Connections v4 源码](https://github.com/brianpetro/obsidian-smart-connections) — `SmartEnv` 生命周期 · `process_watch` 增量 · `pause_controls` 暂停 · `.scignore` 排除 |
 
 ---
@@ -20,14 +20,14 @@ PRD F6 / F10 已承诺「模型本地化 + 自动索引 + 进度可见」,但**�
 
 | 能力 | 文件 | 状态 |
 |---|---|---|
-| `VectraStore` 适配器 | [src/adapters/vector-vectra.ts](file:///Users/golddream/code/git-public/Ratel-CLI/src/adapters/vector-vectra.ts) | ✅ 接口完整(upsert / search / delete / status) |
-| `EmbeddingLocal` 适配器 | [src/adapters/embedding-local.ts](file:///Users/golddream/code/git-public/Ratel-CLI/src/adapters/embedding-local.ts) | ⚠️ 接口在,但**懒加载**且**不暴露进度** |
-| Worker 消息协议 | [src/types.ts](file:///Users/golddream/code/git-public/Ratel-CLI/src/types.ts#L47-L66) | ✅ 6 个 type 已定义 |
-| **Worker handler 实现** | [src/worker/handler.ts](file:///Users/golddream/code/git-public/Ratel-CLI/src/worker/handler.ts#L30-L34) | ❌ **`NOT_IMPLEMENTED` 占位** |
-| **main.ts 首扫触发** | [src/main.ts](file:///Users/golddream/code/git-public/Ratel-CLI/src/main.ts) | ❌ **没调** `index.full`;装完插件索引为空 |
+| `VectraStore` 适配器 | [src/adapters/vector-vectra.ts](src/adapters/vector-vectra.ts) | ✅ 接口完整(upsert / search / delete / status) |
+| `EmbeddingLocal` 适配器 | [src/adapters/embedding-local.ts](src/adapters/embedding-local.ts) | ⚠️ 接口在,但**懒加载**且**不暴露进度** |
+| Worker 消息协议 | [src/types.ts](src/types.ts#L47-L66) | ✅ 6 个 type 已定义 |
+| **Worker handler 实现** | [src/worker/handler.ts](src/worker/handler.ts#L30-L34) | ❌ **`NOT_IMPLEMENTED` 占位** |
+| **main.ts 首扫触发** | [src/main.ts](src/main.ts) | ❌ **没调** `index.full`;装完插件索引为空 |
 | **FolderWatcher(vault 事件)** | 仓库无此文件 | ❌ **整个模块缺失** |
-| **进度推 UI** | [src/worker/handler.ts](file:///Users/golddream/code/git-public/Ratel-CLI/src/worker/handler.ts#L23-L28) | ❌ `index.status` 返死值 |
-| **VectraStore 注入** | [src/main.ts](file:///Users/golddream/code/git-public/Ratel-CLI/src/main.ts) | ❌ 没构造,`indexDir` 未定 |
+| **进度推 UI** | [src/worker/handler.ts](src/worker/handler.ts#L23-L28) | ❌ `index.status` 返死值 |
+| **VectraStore 注入** | [src/main.ts](src/main.ts) | ❌ 没构造,`indexDir` 未定 |
 | **模型下载管理** | 仓库无此模块 | ❌ 不自动下载 / 无进度 / 无磁盘检测 / 无重试 |
 
 ### 1.2 核心问题(用户能感知)
@@ -783,14 +783,14 @@ case 'index.status':  { /* 返 totalDocs / lastIndexTime */ }
 
 ### 内部参考
 
-- [PRD F6 / F10](file:///Users/golddream/code/git-public/Ratel-CLI/docs/PRD.md) — 需求源头
-- [ARCHITECTURE.md § 5 索引管线](file:///Users/golddream/code/git-public/Ratel-CLI/docs/ARCHITECTURE.md) — 顶层架构
-- [architecture/vector-index.md](file:///Users/golddream/code/git-public/Ratel-CLI/docs/architecture/vector-index.md) — 向量化与索引架构(下钻层)
-- [VectraStore 当前实现](file:///Users/golddream/code/git-public/Ratel-CLI/src/adapters/vector-vectra.ts) — 改造基线
-- [EmbeddingLocal 当前实现](file:///Users/golddream/code/git-public/Ratel-CLI/src/adapters/embedding-local.ts) — 改造基线
-- [Worker handler 当前](file:///Users/golddream/code/git-public/Ratel-CLI/src/worker/handler.ts) — 改造基线
-- [main.ts onload](file:///Users/golddream/code/git-public/Ratel-CLI/src/main.ts) — 加 ModelManager / IndexManager 钩子
-- [已归档 S-MODEL-001](file:///Users/golddream/code/git-public/Ratel-CLI/docs/superpowers/archive/S-MODEL-001/) — 已有模型配置能力,本 spec 接力运行时下载管理
+- [PRD F6 / F10](docs/PRD.md) — 需求源头
+- [ARCHITECTURE.md § 5 索引管线](docs/ARCHITECTURE.md) — 顶层架构
+- [architecture/vector-index.md](docs/architecture/vector-index.md) — 向量化与索引架构(下钻层)
+- [VectraStore 当前实现](src/adapters/vector-vectra.ts) — 改造基线
+- [EmbeddingLocal 当前实现](src/adapters/embedding-local.ts) — 改造基线
+- [Worker handler 当前](src/worker/handler.ts) — 改造基线
+- [main.ts onload](src/main.ts) — 加 ModelManager / IndexManager 钩子
+- [已归档 S-MODEL-001](docs/superpowers/archive/S-MODEL-001/) — 已有模型配置能力,本 spec 接力运行时下载管理
 
 ### 外部参考
 

@@ -132,7 +132,7 @@ export type StringKey = keyof Strings;
 - [ ] **Step 2: 验证编译**
 
 ```bash
-cd /Users/golddream/code/git-public/Ratel-CLI
+cd <repo-root>
 npx tsc --noEmit -p tsconfig.json
 ```
 

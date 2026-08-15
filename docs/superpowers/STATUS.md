@@ -17,18 +17,13 @@
 
 | ID | 文件 | 状态 | 创建日期 | 备注 |
 |---|---|---|---|---|
-| S-MD-PREVIEW | [2026-08-14-markdown-preview-chrome-design.md](specs/2026-08-14-markdown-preview-chrome-design.md) | Active | 2026-08-14 | v1 富块已归档 P-MD-PREVIEW-1；剩 overlay/灯箱 P-MD-PREVIEW-2；硬约束保留打字机 |
-| S-CHAT-MOTION-v2 | [2026-08-12-chat-motion-v2-design.md](specs/2026-08-12-chat-motion-v2-design.md) | Active | 2026-08-12 | v1 增强：空态 SoftAurora/Gradient/轮换hint；用户 StarBorder；Glare/AnimatedList/CountUp |
-| S-CHAT-MOTION | [2026-08-12-chat-motion-bits-design.md](specs/2026-08-12-chat-motion-bits-design.md) | Active | 2026-08-12 | Bits 源码翻译进聊天；空态/入场/标题/品牌；与 ThinkingOrb 分工；增强见 v2 |
-| S-CHAT-PROTO | [2026-08-10-chat-prototype-align-design.md](specs/2026-08-10-chat-prototype-align-design.md) | Active | 2026-08-10 | P-CHAT-PROTO Completed;原型↔现网对齐;发送↑;三级权限;底栏避让 |
-| S-SETTINGS-SYNC | [2026-08-03-settings-sync-design.md](specs/2026-08-03-settings-sync-design.md) | Active | 2026-08-03 | Settings 读入口统一 settings$;消除设置改了 UI 不刷新;与 appearance/UserStatus 分列 |
-| S-MCP-HOST | [2026-08-03-mcp-host-design.md](specs/2026-08-03-mcp-host-design.md) | Active | 2026-08-03 | 平台级 MCP Host;双 transport;入 ToolRegistry;抽屉 Modal+对话 Trace;ADR-014/015;优先于图谱扩邻 |
-| S-MEMORY-MODAL | [2026-07-31-memory-modal-unify-design.md](specs/2026-07-31-memory-modal-unify-design.md) | Active | 2026-07-31 | 记忆并入聊天路径;抽屉入口+MemoryModal;拆除 brain 独立视图 |
+| S-CHAT-PERF | [2026-08-15-chat-render-performance-design.md](specs/2026-08-15-chat-render-performance-design.md) | Active | 2026-08-15 | 一个 spec、三阶段：流式轻渲染 → 稳定块冻结 → 块级虚拟滚动；性能优先 |
+| S-MD-PREVIEW | [2026-08-14-markdown-preview-chrome-design.md](specs/2026-08-14-markdown-preview-chrome-design.md) | Active | 2026-08-14 | v1 富块已归档 P-MD-PREVIEW-1；剩 overlay/灯箱 P-MD-PREVIEW-2；打字体验保留，渲染机制由 S-CHAT-PERF 接管 |
+| S-MCP-HOST | [2026-08-03-mcp-host-design.md](specs/2026-08-03-mcp-host-design.md) | Active | 2026-08-03 | 平台级 MCP Host;双 transport;入 ToolRegistry;ADR-014/015;Core/UI 已归档,剩 P-MCP-HOST-DOCS |
 | S-GRAPH-EXPAND | [2026-08-03-graph-expand-design.md](specs/2026-08-03-graph-expand-design.md) | Active | 2026-08-03 | 检索 1 跳扩邻 + hub 降权 + 引用标注;ADR-013 近端落地;**暂缓**,先做 MCP |
-| S-CITE | [2026-07-29-cite-dual-channel-hardening-design.md](specs/2026-07-29-cite-dual-channel-hardening-design.md) | Active | 2026-07-29 | 引用双通道加固;P-CITE Completed |
 | S-SKILL | [2026-07-06-skill-mechanism-design.md](specs/2026-07-06-skill-mechanism-design.md) | Active | 2026-07-06 | Skill 机制;激活注入见 ADR-012;P-SKILL-2/3 pending |
 | S-SKILL-UX | — | Active | 2026-07-21 | Skill UX;对齐 ADR-010;**spec 文件缺失**(从未入库),需补写或从 STATUS 剔除 |
-| S-EVOLUTION | [2026-07-15-evolution-graph-agent.md](specs/2026-07-15-evolution-graph-agent.md) | Active | 2026-07-15 | 图谱原生 Agent;P-EVO-A-READ Completed;下步 P-EVO-A-FM |
+| S-EVOLUTION | [2026-07-15-evolution-graph-agent.md](specs/2026-07-15-evolution-graph-agent.md) | Active | 2026-07-15 | 图谱原生 Agent;P-EVO-A-READ 已归档(合入核对完毕);下步 P-EVO-A-FM |
 
 ---
 
@@ -36,19 +31,13 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
+| P-CHAT-PERF-1 | [2026-08-15-chat-render-performance-phase-1.md](plans/2026-08-15-chat-render-performance-phase-1.md) | ✅ Completed | S-CHAT-PERF | 流式轻渲染 + 文本段结束富渲染 + 滚动合帧；1044 tests/0 failed;Sandbox 复验并入 P-CHAT-PERF-2/3 终验 |
+| P-CHAT-PERF-2 | [2026-08-15-chat-render-performance-phase-2.md](plans/2026-08-15-chat-render-performance-phase-2.md) | ✅ Completed | S-CHAT-PERF | 稳定 Markdown 块冻结；1064 tests/0 failed;含 CRLF/任务列表审查修复;Sandbox 复验并入 P-CHAT-PERF-3 终验 |
+| P-CHAT-PERF-3 | [2026-08-15-chat-render-performance-phase-3.md](plans/2026-08-15-chat-render-performance-phase-3.md) | ✅ Completed | S-CHAT-PERF | 块级虚拟滚动 + 阅读锚点补偿 + 进度轨虚拟跳转;1081 tests/0 failed;三阶段性能合同全过;待用户 Sandbox 终验 |
 | P-MD-PREVIEW-2 | [2026-08-14-md-preview-overlay.md](plans/2026-08-14-md-preview-overlay.md) | ⏳ Pending | S-MD-PREVIEW | 依赖已归档的 P-MD-PREVIEW-1；叶子 overlay / 放大 / 灯箱 |
-| P-CHAT-MOTION-v2 | [2026-08-12-chat-motion-v2.md](plans/2026-08-12-chat-motion-v2.md) | ✅ Completed | S-CHAT-MOTION-v2 | 分支 feat/p-chat-motion；已合入 develop |
-| P-CHAT-MOTION | [2026-08-12-chat-motion-bits.md](plans/2026-08-12-chat-motion-bits.md) | ✅ Completed | S-CHAT-MOTION | 分支 feat/p-chat-motion；已合入 develop；待归档 |
-| P-CHAT-PROTO | [2026-08-10-chat-prototype-align.md](plans/2026-08-10-chat-prototype-align.md) | ✅ Completed | S-CHAT-PROTO | 分支 main;发送↑;三档权限;底避让;原型回写;6 Task |
-| P-SETTINGS-SYNC | [2026-08-03-settings-sync.md](plans/2026-08-03-settings-sync.md) | ✅ Completed | S-SETTINGS-SYNC | 分支 cursor/p-settings-sync-5933;settings$ 读入口;扇出 maxTokens;Chat/Memory/gate |
-| P-MEMORY-MODAL | [2026-07-31-memory-modal-unify.md](plans/2026-07-31-memory-modal-unify.md) | ✅ Completed | S-MEMORY-MODAL | 分支 feat/p-memory-modal;MemoryModal+拆独立视图;5 Task |
 | P-GRAPH-EXPAND | [2026-08-03-graph-expand.md](plans/2026-08-03-graph-expand.md) | ⏳ Pending | S-GRAPH-EXPAND | 检索 1 跳扩邻;6 Task;**暂缓执行**(优先 S-MCP-HOST) |
-| P-MCP-HOST-CORE | [2026-08-03-mcp-host-core.md](plans/2026-08-03-mcp-host-core.md) | ✅ Completed | S-MCP-HOST | 分支 cursor/s-mcp-host-spec-5933;Port+双 transport+Client+Host+入册;8 Task |
-| P-MCP-HOST-UI | [2026-08-03-mcp-host-ui.md](plans/2026-08-03-mcp-host-ui.md) | ✅ Completed | S-MCP-HOST | 抽屉 Modal+Trace+spawn+动态权限;分支 cursor/s-mcp-host-spec-5933 |
 | P-MCP-HOST-DOCS | [2026-08-03-mcp-host-docs.md](plans/2026-08-03-mcp-host-docs.md) | ⏳ Pending | S-MCP-HOST | README/user-guide/隐私边界;finishing 时确认勾选 |
-| P-CITE | [2026-07-29-cite-dual-channel-hardening.md](plans/2026-07-29-cite-dual-channel-hardening.md) | ✅ Completed | S-CITE | 分支 feat/p-cite;注入+prompt+chip 显隐+hydrate 重建;7 Task |
-| P-EVO-A-READ | [2026-07-15-evo-a-read.md](plans/2026-07-15-evo-a-read.md) | ✅ Completed | S-EVOLUTION | 分支 feat/p-evo-a-read;6 Task + final fix;730 tests;待核对是否已合 main |
-| P-EVO-A-FM | — | ⏳ Pending | S-EVOLUTION | update_frontmatter;依赖 P-EVO-A-READ;plan 待写 |
+| P-EVO-A-FM | — | ⏳ Pending | S-EVOLUTION | update_frontmatter;依赖 P-EVO-A-READ(已归档);plan 待写 |
 | P-SKILL-2-EXECUTION | — | ⏳ Pending | S-SKILL | references+scripts 沙箱;降优先级,plan 待写 |
 | P-SKILL-3-UI | — | ⏳ Pending | S-SKILL | Skill UI;降优先级,plan 待写 |
 
@@ -69,10 +58,10 @@
 
 ## Future execution queue(按顺序)
 
-1. **核对 P-EVO-A-READ 合入状态**— Completed 但备注曾写待合并  
-2. **P-EVO-A-FM**(update_frontmatter)— plan 待写  
-3. **S-EVOLUTION Phase B**(Write Gate + open_note)— plan 待写  
-4. **S-EVOLUTION Phase C**(task_plan + 沉淀)— plan 待写  
+1. **P-CHAT-PERF-1**— 紧急止血,流式渲染性能
+2. **P-EVO-A-FM**(update_frontmatter)— plan 待写
+3. **S-EVOLUTION Phase B**(Write Gate + open_note)— plan 待写
+4. **S-EVOLUTION Phase C**(task_plan + 沉淀)— plan 待写
 5. **P-SKILL-2-EXECUTION** / **P-SKILL-3-UI**— 降优先级;P-SKILL-3 对齐 S-SKILL-UX  
 
 ---
@@ -83,6 +72,14 @@
 
 | ID | 归档目录 | 归档日期 | 备注 |
 |---|---|---|---|
+| S-CHAT-MOTION | [archive/S-CHAT-MOTION/](archive/S-CHAT-MOTION/) | 2026-08-15 | Bits 动效;spec+plan 归档 |
+| S-CHAT-MOTION-v2 | [archive/S-CHAT-MOTION-v2/](archive/S-CHAT-MOTION-v2/) | 2026-08-15 | 动效增强;spec+plan 归档 |
+| S-CHAT-PROTO | [archive/S-CHAT-PROTO/](archive/S-CHAT-PROTO/) | 2026-08-15 | 原型对齐;0.1.18;spec+plan 归档 |
+| S-SETTINGS-SYNC | [archive/S-SETTINGS-SYNC/](archive/S-SETTINGS-SYNC/) | 2026-08-15 | settings$ 统一;spec+plan 归档 |
+| S-MEMORY-MODAL | [archive/S-MEMORY-MODAL/](archive/S-MEMORY-MODAL/) | 2026-08-15 | 记忆 Modal 统一壳;spec+plan 归档 |
+| S-CITE | [archive/S-CITE/](archive/S-CITE/) | 2026-08-15 | 引用双通道;0.1.14;spec+plan 归档 |
+| S-MCP-HOST (P-MCP-HOST-CORE/UI) | [archive/S-MCP-HOST/](archive/S-MCP-HOST/) | 2026-08-15 | 0.1.16;仅 plan 归档,spec 仍 Active(P-MCP-HOST-DOCS) |
+| S-EVOLUTION (P-EVO-A-READ) | [archive/S-EVOLUTION/](archive/S-EVOLUTION/) | 2026-08-15 | 4 读工具+enrich;仅 plan 归档,spec 仍 Active(Phase A-FM/B/C) |
 | S-MD-PREVIEW (P-MD-PREVIEW-1) | [archive/S-MD-PREVIEW/](archive/S-MD-PREVIEW/) | 2026-08-14 | 统一富块+复制+表格；spec 仍 Active（P-MD-PREVIEW-2 overlay 未做） |
 | S-COMPACT-V2 | [archive/S-COMPACT-V2/](archive/S-COMPACT-V2/) | 2026-08-13 | squash → develop `9fbe73c`；投影压缩不删聊天 |
 | S-CHAT-NAV | [archive/S-CHAT-NAV/](archive/S-CHAT-NAV/) | 2026-08-11 | DeepSeek 式点列+悬停摘要；squash → develop |

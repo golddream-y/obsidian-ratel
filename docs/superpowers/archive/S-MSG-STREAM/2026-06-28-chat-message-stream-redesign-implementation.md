@@ -1174,7 +1174,7 @@ completionTokens。search_vault 结果扁平化改用 mapSearchResults,
 - [ ] **Step 1: 创建目录并 git mv 文件**
 
 ```bash
-cd /Users/golddream/code/git-public/Ratel-CLI
+cd <repo-root>
 mkdir -p src/ui/chat/message-stream src/ui/chat/input src/ui/status src/ui/tokens src/ui/components
 git mv src/ui/ChatView.svelte src/ui/chat/ChatView.svelte
 git mv src/ui/ChatView.ts src/ui/chat/ChatView.ts

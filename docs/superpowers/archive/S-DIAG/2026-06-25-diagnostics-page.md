@@ -385,7 +385,7 @@ Expected: 219 tests passed(零回归)
 
 打开 Obsidian → 设置 → 插件设置 → Ratel Vault → 顶部切换到"诊断测试"Tab。
 
-按 [docs/superpowers/specs/2026-06-25-diagnostics-page-design.md](file:///Users/golddream/code/git-public/Ratel-CLI/docs/superpowers/specs/2026-06-25-diagnostics-page-design.md) 的"验收标准"逐项确认:
+按 [docs/superpowers/specs/2026-06-25-diagnostics-page-design.md](docs/superpowers/specs/2026-06-25-diagnostics-page-design.md) 的"验收标准"逐项确认:
 
 | # | 项 | 验证方法 | 通过 |
 |---|----|---------|-----|

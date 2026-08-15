@@ -11,7 +11,7 @@
 	import ThinkSegment from './ThinkSegment.svelte';
 	import ToolSegment from './ToolSegment.svelte';
 	import SearchResults from './SearchResults.svelte';
-	import { groupTraceSegments } from './group-trace-segments';
+	import { groupTraceSegments, isStreamingThinkItem } from './group-trace-segments';
 	import {
 		collectCitedIndexesFromSegments,
 		shouldShowCiteChips,
@@ -26,9 +26,15 @@
 	 * MessageBubble props。
 	 *
 	 * @param msg - 消息对象(含 segments / attachments / searchResults / chatError)
-	 * @param isLast - 是否消息流中最后一条(影响流式 think/text 段的 streaming 标记)
+	 * @param isLast - 是否消息流中最后一条(影响流式 think 段的 streaming 标记)
 	 * @param isRunning - Agent Loop 是否运行中
 	 * @param navFlash - 进度轨跳转后的短暂高亮
+	 * @param segments - 本单元渲染的段切片;虚拟化时由 RenderUnitProjector 提供
+	 * @param position - 本单元在逻辑消息内的位置(附件/-footer 归属)
+	 * @param anchor - 是否逻辑消息首单元(承载 data-msg-id 锚点)
+	 * @param showAttachments - 本单元是否渲染附件图片
+	 * @param showFooter - 本单元是否渲染引用/错误/取消 footer
+	 * @param streaming - 本单元是否活动流式尾部(projector 已保证 tail 独立成单元)
 	 */
 	let {
 		msg,
@@ -40,6 +46,12 @@
 		citeSearchFallback = null,
 		/** 本条是否播 FadeIn（hydrate / 会话切换为 false） */
 		fadePlay = true,
+		segments = msg.segments,
+		position = 'only',
+		anchor = true,
+		showAttachments = true,
+		showFooter = true,
+		streaming = false,
 	}: {
 		msg: Message;
 		isLast: boolean;
@@ -48,11 +60,22 @@
 		navFlash?: boolean;
 		citeSearchFallback?: Message['searchResults'] | null;
 		fadePlay?: boolean;
+		segments?: Message['segments'];
+		position?: 'only' | 'first' | 'middle' | 'last';
+		anchor?: boolean;
+		showAttachments?: boolean;
+		showFooter?: boolean;
+		streaming?: boolean;
 	} = $props();
 
 	const isAssistantStreaming = $derived(isLast && isRunning && msg.role === 'assistant');
+	// 关键路径:修复 — 只有抵达消息末尾的切片里的末尾 think 才算"正在思考";
+	// 被工具/正文打断的历史 think 不再常驻闪烁光标
+	const traceStreaming = $derived(
+		isAssistantStreaming && (position === 'only' || position === 'last'),
+	);
 	// 关键路径:连续 tool/think 收成一块,共享一根左边线(对齐原型 .trace)
-	const blocks = $derived(groupTraceSegments(msg.segments));
+	const blocks = $derived(groupTraceSegments(segments));
 	const validIndexes = $derived(
 		new Set((msg.searchResults ?? []).map((r) => r.index)),
 	);
@@ -68,19 +91,23 @@
 		msg.searchResults?.length ? msg.searchResults : citeSearchFallback ?? undefined,
 	);
 	const motionOn = $derived(isChatMotionEnabled($settingsStore));
-	const fadeInPlay = $derived(motionOn && fadePlay);
+	// 关键路径:FadeIn 只在逻辑消息首单元播 — 分片后避免每个块都闪入
+	const fadeInPlay = $derived(motionOn && fadePlay && (position === 'only' || position === 'first'));
 </script>
 
 <FadeIn play={fadeInPlay}>
 <div
 	class="ratel-msg"
+	class:ratel-msg-unit-first={position === 'first'}
+	class:ratel-msg-unit-middle={position === 'middle'}
+	class:ratel-msg-unit-last={position === 'last'}
 	class:ratel-msg-user={msg.role === 'user'}
 	class:ratel-msg-user--star={msg.role === 'user' && motionOn}
 	class:ratel-msg-assistant={msg.role === 'assistant'}
 	class:ratel-msg-nav-flash={navFlash}
-	data-msg-id={msg.id}
+	data-msg-id={anchor ? msg.id : undefined}
 >
-	{#if msg.attachments && msg.attachments.length > 0}
+	{#if showAttachments && msg.attachments && msg.attachments.length > 0}
 		<div class="ratel-msg-imgs">
 			{#each msg.attachments as att}
 				<img
@@ -93,12 +120,12 @@
 		</div>
 	{/if}
 
-	{#each blocks as block}
+	{#each blocks as block, blockIndex}
 		{#if block.kind === 'text'}
 			<TextSegment
 				text={block.seg.text}
 				isUser={msg.role === 'user'}
-				streaming={isAssistantStreaming}
+				streaming={streaming && blockIndex === blocks.length - 1}
 				searchResults={msg.role === 'assistant' ? citeSearchResults : undefined}
 				{onOpenPath}
 				{motionOn}
@@ -106,11 +133,14 @@
 			/>
 		{:else if block.kind === 'trace'}
 			<div class="ratel-trace">
-				{#each block.items as item}
+				{#each block.items as item, itemIndex}
 					{#if item.kind === 'tool'}
 						<ToolSegment toolCall={item.seg.toolCall} />
 					{:else}
-						<ThinkSegment text={item.seg.text} streaming={isAssistantStreaming} />
+						<ThinkSegment
+							text={item.seg.text}
+							streaming={isStreamingThinkItem(blocks, blockIndex, itemIndex, traceStreaming)}
+						/>
 					{/if}
 				{/each}
 			</div>
@@ -127,7 +157,7 @@
 		/>
 	{/if}
 
-	{#if msg.chatError}
+	{#if showFooter && msg.chatError}
 		<div class="ratel-err">
 			<div class="ratel-err-icon">⚠</div>
 			<div class="ratel-err-body">
@@ -139,7 +169,7 @@
 		</div>
 	{/if}
 
-	{#if msg.cancelled}
+	{#if showFooter && msg.cancelled}
 		<div class="ratel-cancelled">
 			<span class="ratel-cancelled-dot"></span>
 			{$t('chat.error.stopped')}

@@ -92,7 +92,7 @@ P-FEEDBACK 实施时,测试只验证了:
 
 ## 4. 修复方案
 
-在 [feedback-controller.ts](file:///Users/golddream/code/git-public/Ratel-CLI/src/core/feedback-controller.ts#L93-L115) 新增两个方法:
+在 [feedback-controller.ts](src/core/feedback-controller.ts#L93-L115) 新增两个方法:
 
 ```typescript
 /** 本地 ONNX 注入完成后强制设为 ready */
@@ -108,7 +108,7 @@ refreshEmbeddingStatus(): void {
 }
 ```
 
-在 [main.ts](file:///Users/golddream/code/git-public/Ratel-CLI/src/main.ts#L278-L280) 的 `onLayoutReady` 中,`setEmbedding()` 后调用 `notifyEmbeddingReady()`:
+在 [main.ts](src/main.ts#L278-L280) 的 `onLayoutReady` 中,`setEmbedding()` 后调用 `notifyEmbeddingReady()`:
 
 ```typescript
 if (this.embedding instanceof EmbeddingLocal) {
@@ -117,7 +117,7 @@ if (this.embedding instanceof EmbeddingLocal) {
 this.feedbackController?.notifyEmbeddingReady();  // ← 新增
 ```
 
-在 [main.ts](file:///Users/golddream/code/git-public/Ratel-CLI/src/main.ts#L337-L339) 的 `rebuildEmbeddingAdapter()` 末尾调用 `refreshEmbeddingStatus()`:
+在 [main.ts](src/main.ts#L337-L339) 的 `rebuildEmbeddingAdapter()` 末尾调用 `refreshEmbeddingStatus()`:
 
 ```typescript
 rebuildEmbeddingAdapter(): void {

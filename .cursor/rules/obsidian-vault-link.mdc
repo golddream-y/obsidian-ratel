@@ -1,24 +1,26 @@
 ---
-description: 本地预览必须确认当前 Obsidian 窗口链的是哪份 dist，禁止对着旧 worktree 改 UI
+description: 本地预览只链 Obsidian Sandbox；禁止改日常主库的插件
 alwaysApply: true
 ---
 
 # 本地 Obsidian 预览链接
 
-本机经常同时开两个 vault。改聊天 UI 之前、用户说「没变化」时，先核对窗口，不要继续猜 CSS。
+**只动 Obsidian Sandbox。日常主库禁止 `link:vault`、禁止覆盖其 `main.js`。**
 
-| 窗口 | 路径 | 必须链到 |
-|---|---|---|
-| ObsidianVault | `/Users/golddream/ObsidianVault` | 当前仓库 `dist/main.js` |
-| Obsidian Sandbox | `~/Library/Application Support/obsidian/Obsidian Sandbox` | 当前仓库 `dist/main.js` |
+本机绝对路径只写在 gitignore 的 `.cursor/rules/*.local.mdc`，不要写进会进 GitHub 的文件。
+
+| 窗口 | 规则 |
+|---|---|
+| Obsidian Sandbox | 开发预览唯一目标。必须链到当前仓库 `dist/main.js` |
+| 日常主库（商店安装那份） | **不要改。** 即使用户说「没变化」，也别去链、别去拷 `dist` |
 
 Sandbox 曾链到 `.worktrees/feat-p-chat-motion`（旧 SoftAurora 包）。对着那个窗口改 develop，画面永远不变。
 
 ```bash
-ls -l "<vault>/.obsidian/plugins/ratel-vault/main.js"
-# 必须 → …/Ratel-CLI/dist/main.js
-# 若 → …/.worktrees/… 则:
-npm run link:vault -- "<vault>"
+# 具体 vault 路径见 *.local.mdc；只 link Sandbox
+ls -l "<sandbox>/.obsidian/plugins/ratel-vault/main.js"
+# 必须 → 当前仓库 dist/main.js
+npm run link:vault -- "<sandbox>"
 ```
 
-两个开着的窗口都要链。然后命令面板 **Reload app without saving**（只开新对话不够，V8 会缓存旧 `main.js`）。
+然后命令面板 **Reload app without saving**（只开新对话不够，V8 会缓存旧 `main.js`）。

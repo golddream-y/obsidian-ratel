@@ -6,19 +6,107 @@
 [![Obsidian](https://img.shields.io/badge/Obsidian-1.13.0%2B-7c3aed?style=flat-square)](https://obsidian.md)
 [![Desktop only](https://img.shields.io/badge/platform-desktop-0ea5e9?style=flat-square)](https://obsidian.md)
 
-**The graph-native AI agent for your vault.**
+**Make your Obsidian knowledge work proactively.**
 
-Chat, research, and act on your linked notes. Ask what you wrote about a topic; have Ratel pull sources into a draft. Answers cite notes you can open in one click.
+Ratel is a proactive graph knowledge agent. It understands your journals, goals, and linked notes, then brings you sourced reviews, timely suggestions, and knowledge issues worth acting on—inside Obsidian and under your control.
 
 ---
 
-## Why Ratel
+## From waiting for prompts to knowing when to help
 
-- **Graph-native** — built for linked notes, not generic chat over files
-- **Fusion retrieval** — semantic + keyword multi-way recall, automatically pulling in linked related notes; numbered citations open in one click
-- **Highly extensible** — built-in skills & subagents, plus MCP servers (HTTP or stdio) to plug in web search and other external tools
-- **Deeply customizable** — swap chat / embedding / rerank models, override any prompt section, choose your MCP ecosystem
-- **Private & safe by default** — local embeddings; network only to your configured model API and the MCP servers you add; tool calls default to ask, with Safe / Auto / Danger levels in chat
+A typical vault chat starts only after you ask. Ratel is designed to let your knowledge participate at the right time:
+
+1. Heartbeat checks new journals, goals, recent changes, and knowledge relationships.
+2. Local rules decide whether there is anything worth interrupting you for.
+3. Ratel creates a sourced yesterday review, today suggestion, or knowledge-maintenance insight.
+4. Every result enters the insight inbox; high-value items can trigger an Obsidian Notice.
+5. You can inspect sources, ask a follow-up, snooze, ignore, or approve a write to your vault.
+
+Proactive does not mean autonomous modification. Notifications may appear automatically; vault changes remain your decision.
+
+---
+
+## How Ratel makes your knowledge work
+
+### Bring you information worth acting on, at the right time (in progress)
+
+Ratel does not require a second task database. Tell it where your journals, monthly goals, and recurring work live through ordinary Markdown memory.
+
+- Start the day with a sourced review of yesterday.
+- Add today suggestions when both monthly goals and today's journal are available.
+- Ask once when a familiar location is missing; remember “none” instead of asking forever.
+- Keep every proactive result in a reviewable insight inbox.
+- Use the status bar as a stable entry point and reserve Notices for high-value insights.
+- Respect quiet hours, daily limits, snooze, ignore, and follow-up actions.
+
+### Understand relationships, not just files
+
+Ratel combines retrieval, links, citations, maintenance, and knowledge discovery into one workflow.
+
+- **Fusion retrieval:** semantic and keyword recall, enriched by links, backlinks, and properties.
+- **Clickable citations:** numbered sources open the original note in one click.
+- **Knowledge entropy management (in progress):** surface broken links, orphan notes, duplication, stale knowledge, and lingering tasks.
+- **Knowledge mining (in progress):** discover themes, relationships, conflicts, and gaps across notes, then produce sourced syntheses.
+
+### Move from discovery to controlled action
+
+Inspect sources, ask a follow-up, snooze, ignore, or let Ratel organize, link, and write notes. Every vault change continues to follow your permission settings.
+
+---
+
+## What works today
+
+**Recover knowledge when you no longer remember where it lives**
+
+> “What did I write about performance tuning?”
+
+Ratel combines semantic, keyword, and note-relationship signals, then keeps clickable sources in the answer.
+
+**Complete multi-step knowledge work**
+
+> “Turn my product-planning notes into a background document.”
+
+The agent can search, read, synthesize, and write. Changes follow the permission level you choose.
+
+**Understand the current Obsidian context**
+
+> “Summarize this note and relate it to recently edited project notes.”
+
+The active note, daily-note location, recent changes, and outlines are available as first-class context.
+
+**Remember preferences and extend workflows**
+
+> “Remember that I prefer conclusions before evidence.”
+
+Memory stays as Markdown under `.ratel/memory/`. Add a `SKILL.md`, connect an MCP server, or use Subagents for more specialized workflows.
+
+---
+
+## Your agent, your stack
+
+- **Model freedom:** choose chat, embedding, and reranking models independently; use DeepSeek, Claude, Ollama, or compatible custom endpoints.
+- **Skills:** define reusable working methods in Markdown.
+- **MCP:** connect web search and external tools with per-server and per-tool permissions.
+- **Subagents:** delegate complex research to focused retrieval, review, and synthesis roles.
+- **Prompt customization:** override individual prompt sections without forking the plugin.
+
+These capabilities are the foundation. They serve proactive intelligence and graph knowledge management instead of becoming setup work for its own sake.
+
+---
+
+## Privacy and safety
+
+| Data or action | Default behavior |
+|---|---|
+| Vault index | Stored locally |
+| Embeddings | Generated locally by default |
+| Retrieved evidence | Sent only to the model endpoint you configure |
+| MCP parameters | Sent only when an enabled MCP tool is invoked |
+| Proactive insights | Filtered locally before the minimum necessary evidence is assembled |
+| Vault changes | Follow Safe / Auto / Danger permissions; notifications cannot bypass them |
+| Telemetry | None |
+
+Once blacklist controls land, excluded content will never enter the index, candidate detection, model context, MCP parameters, logs, or notifications.
 
 ---
 
@@ -28,34 +116,9 @@ Obsidian → **Settings** → **Community plugins** → **Browse** → search **
 
 Requires **Obsidian 1.13.0+**, **desktop only**.
 
-Then: open **Settings → Ratel → Chat model**, pick a scene preset (DeepSeek / Ollama) or custom Base → wait for the first index → click the 🦡 ribbon (or run **Ratel: Ask vault**).
+Then open **Settings → Ratel → Chat model**, choose a DeepSeek / Ollama scene preset or custom Base, wait for the first index, and click the 🦡 ribbon or run **Ratel: Ask vault**.
 
-Full walkthrough: [User Guide](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/user-guide.md).
-
----
-
-## What you can do
-
-**Ask with citations**  
-“What did I write about performance tuning?” — numbered `[1][2]` sources, click to jump.
-
-**Multi-step work**  
-“Pull product-planning notes into a background doc” — search, read, synthesize, write (confirmation follows your permission level).
-
-**Know the room**  
-Every turn injects local time. “Summarize this note” uses the active file. Daily note path, recent edits, and outlines are first-class tools.
-
-**Remember & extend**  
-Say “remember I prefer Tailwind…” — stored as Markdown under `.ratel/memory/`. Drop a `SKILL.md` into `.ratel/skills/` to teach new workflows, or attach an MCP server (Tavily, Brave…) to give the agent web search and other external tools.
-
----
-
-## Privacy
-
-- Index and default embeddings stay on your machine
-- Network access: by default only the model API you set (DeepSeek / Claude / Ollama)
-- MCP servers: only the MCP endpoints you explicitly add in settings receive requests; tool approval follows your Safe / Auto / Danger level (default Safe asks)
-- No analytics, no phone-home
+See the [User Guide](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/user-guide.md) for the full walkthrough.
 
 ---
 
@@ -63,11 +126,12 @@ Say “remember I prefer Tailwind…” — stored as Markdown under `.ratel/mem
 
 | Doc | Contents |
 |---|---|
-| [User Guide](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/user-guide.md) | Setup, scenarios, slash commands, FAQ |
-| [Changelog](https://github.com/golddream-y/obsidian-ratel/blob/main/CHANGELOG.md) | Full release history (ranges OK for patch bursts) |
-| [Architecture](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/architecture/overview.md) | Ports, agent loop, tools, workers |
+| [Product Vision](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/PRD.md) | Positioning, complete product picture, and direction |
+| [User Guide](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/user-guide.md) | Setup, scenarios, slash commands, and FAQ |
+| [Changelog](https://github.com/golddream-y/obsidian-ratel/blob/main/CHANGELOG.md) | Release history |
+| [Architecture](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/architecture/overview.md) | Ports, agent loop, tools, and workers |
 
-Issues & ideas: [GitHub Issues](https://github.com/golddream-y/obsidian-ratel/issues).
+Issues and ideas: [GitHub Issues](https://github.com/golddream-y/obsidian-ratel/issues).
 
 ---
 

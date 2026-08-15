@@ -427,5 +427,5 @@ Message 接口新增 `searchResults` 字段,在 `search.result` 事件时填充�
 
 - [S-RAG-ARCH](../specs/2026-06-14-ratel-rag-architecture.md) — 最终 RAG 架构
 - [原 P-W3-IMPL plan](../plans/2026-06-13-ratel-w3-implementation.md) — 被取代的旧 plan(保留作历史参考)
-- [vectra LocalIndex.d.ts](file:///Users/golddream/code/git-public/Ratel-CLI/node_modules/vectra/lib/LocalIndex.d.ts) — `queryItems(vector, query, topK, filter?, isBm25?)` API
-- [VectraStore 现有实现](file:///Users/golddream/code/git-public/Ratel-CLI/src/adapters/vector-vectra.ts) — chunk→doc 聚合逻辑可复用
+- [vectra LocalIndex.d.ts](node_modules/vectra/lib/LocalIndex.d.ts) — `queryItems(vector, query, topK, filter?, isBm25?)` API
+- [VectraStore 现有实现](src/adapters/vector-vectra.ts) — chunk→doc 聚合逻辑可复用

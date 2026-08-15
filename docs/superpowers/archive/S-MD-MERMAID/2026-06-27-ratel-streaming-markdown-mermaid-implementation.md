@@ -35,7 +35,7 @@
 - [ ] **Step 1: 安装 4 个 dependencies**
 
 ```bash
-cd /Users/golddream/code/git-public/Ratel-CLI
+cd <repo-root>
 npm install marked dompurify highlight.js mermaid
 ```
 

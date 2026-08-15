@@ -92,6 +92,7 @@
 	import OrbBackdrop from '../motion/empty/OrbBackdrop.svelte';
 	import { isChatMotionEnabled } from '../motion/prefs';
 	import { isNearBottom, snapScrollToBottom } from './sticky-scroll';
+	import { FrameCoalescer } from './frame-coalescer';
 
 	let { plugin }: { plugin: RatelVaultPlugin } = $props();
 
@@ -131,6 +132,7 @@
 	onDestroy(() => {
 		appearanceUnsub?.();
 		if (navFlashTimer) clearTimeout(navFlashTimer);
+		layoutFrame.cancel();
 		void flushCurrentSession();
 	});
 
@@ -178,11 +180,25 @@
 	// 关键路径:sticky-to-bottom — 用户主动上滑时暂停自动滚动,流式输出不打断浏览历史
 	let isUserNearBottom = $state(true);
 	const SCROLL_NEAR_BOTTOM_THRESHOLD = 80;
+	// 关键路径:合帧器 — 贴底写入与进度轨度量共用同一帧,流式期间每帧最多一次布局
+	let wantsBottomScroll = false;
+	const layoutFrame = new FrameCoalescer(() => {
+		// 关键路径:先捕获并复位标志,el 未挂载提前 return 时也不残留到下一帧
+		const shouldScroll = wantsBottomScroll;
+		wantsBottomScroll = false;
+		const el = messagesEl;
+		if (!el) return;
+		if (shouldScroll && isUserNearBottom) snapScrollToBottom(el);
+		updateNavMetrics(el);
+	});
 	// 关键路径:/compact 压缩进行中标志,控制 loading hint 显示
 	let isCompacting = $state(false);
 
 	// ==================== 对话进度轨 ====================
 	let navHighlightId = $state<string | null>(null);
+	/** 虚拟跳转请求 — 目标消息可能未挂载,委托 MessageList 按布局偏移定位 */
+	let navJumpRequest = $state<import('./message-stream/render-unit-projector').VirtualJumpRequest | null>(null);
+	let navJumpToken = 0;
 	let navRatio = $state(0);
 	let railVisible = $state(false);
 	/** 会话内最近一次 search_vault 结果 — 跟进回合 [n] 仍可点 */
@@ -207,9 +223,8 @@
 	// 关键路径:sticky-to-bottom — 用户主动上滑时尊重浏览历史,只在用户处于底部时自动滚动
 	const scrollToBottom = () => {
 		if (!isUserNearBottom) return;
-		requestAnimationFrame(() => {
-			if (messagesEl) snapScrollToBottom(messagesEl);
-		});
+		wantsBottomScroll = true;
+		layoutFrame.request();
 	};
 
 	/** 根据滚动容器度量更新轨显隐与拇指比例。 */
@@ -232,9 +247,8 @@
 	/** 回底：恢复 sticky 并滚到最新。 */
 	function forceScrollToBottom() {
 		isUserNearBottom = true;
-		requestAnimationFrame(() => {
-			if (messagesEl) snapScrollToBottom(messagesEl);
-		});
+		wantsBottomScroll = true;
+		layoutFrame.request();
 	}
 
 	/** 拖拇指：按比例设置 scrollTop。 */
@@ -245,15 +259,12 @@
 		messagesEl.scrollTop = Math.min(1, Math.max(0, r)) * max;
 	}
 
-	/** 点刻度：滚到对应消息并短暂高亮。 */
+	/** 点刻度：请求虚拟跳转到对应消息并短暂高亮。 */
 	function jumpToMessage(id: string) {
-		const node = messagesEl?.querySelector(
-			`[data-msg-id="${CSS.escape(id)}"]`,
-		) as HTMLElement | null;
-		if (!node) return;
 		// 离开贴底，避免流式 scrollToBottom 把用户拽回底部
 		isUserNearBottom = false;
-		node.scrollIntoView({ block: 'start', behavior: 'smooth' });
+		// 关键路径:目标消息可能被虚拟化卸载 — 由 MessageList 按布局偏移挂载后对齐
+		navJumpRequest = { messageId: id, token: ++navJumpToken };
 		navHighlightId = id;
 		if (navFlashTimer) clearTimeout(navFlashTimer);
 		navFlashTimer = setTimeout(() => {
@@ -268,15 +279,13 @@
 		await plugin.saveSettings();
 	}
 
-	// 消息变高 / 开关变更后重算轨度量
+	// 消息变高 / 开关变更后重算轨度量(与贴底写入共用同一合帧器)
 	$effect(() => {
 		void messages;
 		void navEnabled;
 		const el = messagesEl;
 		if (!el) return;
-		requestAnimationFrame(() => {
-			if (messagesEl) updateNavMetrics(messagesEl);
-		});
+		layoutFrame.request();
 	});
 
 	/** 芯片 / 正文 `[n]` 共用打开入口 — 函数体内读 plugin,避免模板闭包捕获初值 */
@@ -1184,7 +1193,9 @@
 							};
 							plugin.userStatus.patchContextUsage({
 								usedTokens: lastTurnApiTokens,
-								maxTokens,
+								// 修复:禁止用回合开始时的闭包快照写回 store — 回合进行中改设置会被旧值盖掉,
+								// 抽屉上限永远反映当前配置(回合预算仍按发送时快照,互不影响)
+								maxTokens: getEffectiveChatModelMaxTokens(plugin.settings),
 								source: 'api',
 							});
 						}
@@ -1480,6 +1491,7 @@
 				onOpenPath={handleOpenPath}
 				highlightId={navHighlightId}
 				citeSearchFallback={lastCiteSearchResults}
+				jumpRequest={navJumpRequest}
 			/>
 			{#if railVisible}
 				<ChatNavRail

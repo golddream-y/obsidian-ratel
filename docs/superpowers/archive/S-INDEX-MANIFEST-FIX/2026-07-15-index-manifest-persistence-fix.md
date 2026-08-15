@@ -3,13 +3,13 @@
 > 日期: 2026-07-15  
 > 状态: Active  
 > Spec ID: **S-INDEX-MANIFEST-FIX**  
-> 关联: ADR-007；用户确认 ObsidianVault 关闭重开后索引全量重建；磁盘证据：有 `.index/`、无 `index-manifest.json`
+> 关联: ADR-007；用户确认日常主库关闭重开后索引全量重建；磁盘证据：有 `.index/`、无 `index-manifest.json`
 
 ---
 
 ## 1. 背景
 
-设计上热启动应走 `smartReindex` → hash diff，未变更文件 `skipped`。用户正式库 `/Users/golddream/ObsidianVault` 实测：
+设计上热启动应走 `smartReindex` → hash diff，未变更文件 `skipped`。日常主库实测：
 
 - `.index/index.json` 存在（数百 chunk）
 - 插件根目录 **没有** `index-manifest.json`
@@ -72,7 +72,7 @@ index 在 && shouldFullRebuild → dropIndex + fullReindex + writeManifest（完
 
 ## 5. 验收
 
-1. ObsidianVault：有 `.index/` 无清单时，重载插件后出现 `.index/ratel-manifest.json`，且 **不** 出现全库 re-embed 进度（或仅极短 Diffing）  
+1. 日常主库：有 `.index/` 无清单时，重载插件后出现 `.index/ratel-manifest.json`，且 **不** 出现全库 re-embed 进度（或仅极短 Diffing）  
 2. 关闭再开 Obsidian：`skipped` 占绝大多数；状态仍就绪  
 3. `/reindex` 仍强制全量并写出新清单  
 4. 单测：迁移函数；参数变更后 entries 非空（或集成测覆盖 writeManifest 路径）
@@ -91,5 +91,5 @@ index 在 && shouldFullRebuild → dropIndex + fullReindex + writeManifest（完
 
 ## 7. 参考
 
-- 磁盘诊断：ObsidianVault 缺清单、Sandbox 有清单  
+- 磁盘诊断：日常主库缺清单、Sandbox 有清单  
 - ADR-007、S-INDEX-STARTUP（已归档）

@@ -36,7 +36,7 @@ describe('isSafeVaultMentionPath', () => {
 	});
 
 	it('isSafeVaultMentionPath - 剥 / 后的假相对 Users/ - false', () => {
-		expect(isSafeVaultMentionPath('Users/golddream/ObsidianVault/a.md')).toBe(false);
+		expect(isSafeVaultMentionPath('Users/alice/Notes/a.md')).toBe(false);
 	});
 
 	it('isSafeVaultMentionPath - 含 .. - false', () => {

@@ -4,6 +4,7 @@ import {
 	renderMarkdownToHtml,
 	areAllCodeBlocksClosed,
 	decodeFenceSrcAttr,
+	splitStableMarkdownBlocks,
 } from '../../src/utils/markdown-renderer';
 
 describe('renderMarkdownToHtml', () => {
@@ -128,5 +129,98 @@ describe('areAllCodeBlocksClosed', () => {
 	it('多个代码块最后一个未闭合 - 返回 false', () => {
 		const text = '```js\na\n```\n中间\n```py\nb\n';
 		expect(areAllCodeBlocksClosed(text)).toBe(false);
+	});
+});
+
+describe('splitStableMarkdownBlocks', () => {
+	it('拆分 - 两个段落 - 冻结第一段并保留最后一段', () => {
+		const input = '第一段。\n\n第二段正在写';
+		const result = splitStableMarkdownBlocks(input, false);
+		expect(result.stableBlocks.join('') + result.tail).toBe(input);
+		expect(result.stableBlocks).toEqual(['第一段。\n\n']);
+		expect(result.tail).toBe('第二段正在写');
+	});
+
+	it('拆分 - 未闭合围栏 - 不提前冻结围栏内容', () => {
+		const input = '```ts\nconst x = 1;\n';
+		expect(splitStableMarkdownBlocks(input, false)).toEqual({
+			stableBlocks: [], tail: input, hasCrossBlockDependency: false,
+		});
+	});
+
+	it('拆分 - 闭合围栏后出现新段落 - 围栏成为稳定块', () => {
+		const input = '```ts\nconst x = 1;\n```\n\n后文';
+		const result = splitStableMarkdownBlocks(input, false);
+		expect(result.stableBlocks).toHaveLength(1);
+		expect(result.stableBlocks[0]).toContain('```ts');
+		expect(result.tail).toBe('后文');
+	});
+
+	it('拆分 - GFM 表格后出现段落 - 表格整体冻结', () => {
+		const input = '| A | B |\n|---|---|\n| 1 | 2 |\n\n后文';
+		const result = splitStableMarkdownBlocks(input, false);
+		expect(result.stableBlocks).toHaveLength(1);
+		expect(result.stableBlocks[0]).toContain('|---|---|');
+		expect(result.tail).toBe('后文');
+	});
+
+	it('拆分 - 宽松列表继续 - 不把同一 list token 拆开', () => {
+		const input = '- A\n\n- B\n\n后文';
+		const result = splitStableMarkdownBlocks(input, false);
+		expect(result.stableBlocks).toHaveLength(1);
+		expect(result.stableBlocks[0]).toContain('- A');
+		expect(result.stableBlocks[0]).toContain('- B');
+	});
+
+	it('拆分 - Markdown 引用定义 - 流式不拆且结束时只生成一个块', () => {
+		const input = '参考 [文档][ref]。\n\n[ref]: https://example.com';
+		expect(splitStableMarkdownBlocks(input, false)).toEqual({
+			stableBlocks: [], tail: input, hasCrossBlockDependency: true,
+		});
+		expect(splitStableMarkdownBlocks(input, true)).toEqual({
+			stableBlocks: [input], tail: '', hasCrossBlockDependency: true,
+		});
+	});
+
+	it('拆分 - 未解析引用使用但定义尚未到达 - 也不提前冻结', () => {
+		const input = '参考 [文档][ref]。\n\n下一段正在写';
+		expect(splitStableMarkdownBlocks(input, false)).toEqual({
+			stableBlocks: [], tail: input, hasCrossBlockDependency: true,
+		});
+	});
+
+	it('拆分 - finalize 普通文本 - 返回所有 token 且源码可重建', () => {
+		const input = '# 标题\n\n正文\n\n- A\n- B';
+		const result = splitStableMarkdownBlocks(input, true);
+		expect(result.stableBlocks.join('') + result.tail).toBe(input);
+		expect(result.tail).toBe('');
+		expect(result.stableBlocks.length).toBeGreaterThan(1);
+	});
+
+	it('拆分 - CRLF 输入 - 归一化后仍可冻结且无跨块依赖', () => {
+		const input = '第一段。\r\n\r\n第二段正在写';
+		const result = splitStableMarkdownBlocks(input, false);
+		// 归一化后 raw 拼接可无损还原,稳定块机制不因 CRLF 静默失效
+		expect(result.stableBlocks).toEqual(['第一段。\n\n']);
+		expect(result.tail).toBe('第二段正在写');
+		expect(result.hasCrossBlockDependency).toBe(false);
+	});
+
+	it('拆分 - GFM 任务列表 - 不触发引用依赖误判', () => {
+		const input = '- [ ] 待办 A\n- [x] 已办 B\n\n后文';
+		const result = splitStableMarkdownBlocks(input, false);
+		expect(result.hasCrossBlockDependency).toBe(false);
+		expect(result.stableBlocks.join('')).toContain('[ ] 待办 A');
+	});
+
+	it('拆分 - 普通块分别渲染 - 可见文本顺序与整段一致', () => {
+		const input = '# 标题\n\n正文。\n\n- A\n- B';
+		const split = splitStableMarkdownBlocks(input, true);
+		const fullDoc = new DOMParser().parseFromString(renderMarkdownToHtml(input), 'text/html');
+		const blockDoc = new DOMParser().parseFromString(
+			split.stableBlocks.map(renderMarkdownToHtml).join(''),
+			'text/html',
+		);
+		expect(blockDoc.body.textContent).toBe(fullDoc.body.textContent);
 	});
 });

@@ -19,6 +19,11 @@
 		shouldStaggerCite,
 	} from '../motion/enter/cite-policy';
 	import { markCiteEnterIfNew } from '../motion/enter/cite-enter-tracker';
+	import {
+		applyLightTextAction,
+		StreamingMarkdownState,
+		type MarkdownRenderAction,
+	} from '../chat/streaming-markdown-state';
 
 	let {
 		content,
@@ -44,6 +49,10 @@
 	let cleanupCiteTips: (() => void) | null = null;
 	let cleanupMdBlocks: (() => void) | null = null;
 	let mdEnhanceGen = 0;
+	/** 流式渲染决策状态机:决定本帧轻量追加 / 轻量替换 / 富渲染 */
+	const renderState = new StreamingMarkdownState();
+	/** 流式轻渲染当前持有的唯一 Text 节点 */
+	let lightTextNode: Text | null = null;
 	/** 有选区时暂存待渲染内容，松手后再写 DOM */
 	let pendingRender: { text: string; force: boolean } | null = null;
 
@@ -122,6 +131,10 @@
 		lastRenderedText = text;
 		lastCiteKey = key;
 
+		// 关键路径:富渲染即将整体替换 innerHTML,先丢弃轻量 Text 节点引用并移除流式样式
+		lightTextNode = null;
+		containerEl.classList.remove('is-streaming-light');
+
 		const html = renderMarkdownToHtml(text);
 		containerEl.innerHTML = html;
 
@@ -150,23 +163,38 @@
 		applyCites();
 	}
 
-	$effect(() => {
-		const text = content;
-		const _sr = searchResults;
-		void _sr;
-		cancelAnimationFrame(rafId);
-		rafId = requestAnimationFrame(() => {
-			renderToDom(text);
-		});
-	});
+	/**
+	 * 执行状态机给出的渲染动作:流式阶段轻量写 Text 节点,结束时一次富渲染。
+	 *
+	 * @param action - 状态机本帧决策出的渲染动作
+	 * @returns 无返回值
+	 * @example
+	 *   applyRenderAction(renderState.next({ content, streaming, citeKey: citeKey() }));
+	 */
+	function applyRenderAction(action: MarkdownRenderAction): void {
+		if (!containerEl || action.kind === 'none') return;
+		if (action.kind === 'render-rich') {
+			renderToDom(action.text, action.force);
+			return;
+		}
+		// 关键路径:流式阶段只写 Text 节点,不运行 marked / highlight / Mermaid / cite enhance。
+		// 轻量内容不含富元素,先清掉上一轮富渲染留下的清理回调,避免悬挂监听。
+		cleanupCites?.();
+		cleanupCites = null;
+		cleanupCiteTips?.();
+		cleanupCiteTips = null;
+		cleanupMdBlocks?.();
+		cleanupMdBlocks = null;
+		containerEl.classList.add('is-streaming-light');
+		lightTextNode = applyLightTextAction(containerEl, lightTextNode, action);
+	}
 
 	$effect(() => {
-		if (!streaming && containerEl && content) {
-			cancelAnimationFrame(rafId);
-			rafId = requestAnimationFrame(() => {
-				renderToDom(content, true);
-			});
-		}
+		const next = { content, streaming, citeKey: citeKey() };
+		cancelAnimationFrame(rafId);
+		rafId = requestAnimationFrame(() => {
+			applyRenderAction(renderState.next(next));
+		});
 	});
 
 	$effect(() => {
@@ -185,6 +213,8 @@
 		cleanupCiteTips?.();
 		cleanupMdBlocks?.();
 		pendingRender = null;
+		renderState.reset();
+		lightTextNode = null;
 	});
 </script>
 
@@ -197,6 +227,12 @@
 		color: var(--text-muted);
 		letter-spacing: 0.01em;
 		word-break: break-word;
+	}
+
+	/* 流式轻渲染:保留源码换行,避免被折叠成空格导致与最终富渲染视觉跳变。
+	   is-streaming-light 由运行时动态添加,Svelte 静态分析无法命中,需 :global() 修饰 */
+	.ratel-md:global(.is-streaming-light) {
+		white-space: pre-wrap;
 	}
 
 	.ratel-md :global(h1) {
