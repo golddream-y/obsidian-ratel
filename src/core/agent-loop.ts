@@ -138,9 +138,11 @@ export async function* agentLoop(
 
 			try {
 				// 让 LLM 流式产出;逐步把 text 投递给 UI,toolCall 全部收集(支持一轮多工具)。
+				// 关键路径:signal 穿透到 HTTP 层 — abort 时销毁 socket,首字节 pending 期也能立即停止
 				const stream = llm.chat({
 					messages: ctx.toMessages(intent),
 					tools: tools.definitions(),
+					signal,
 				});
 
 				for await (const delta of stream) {
@@ -170,6 +172,13 @@ export async function* agentLoop(
 					}
 				}
 			} catch (err) {
+				// 关键路径:abort 销毁 socket 抛出的错走取消语义(已有部分文本入库),不当 LLM_ERROR 展示
+				if (signal?.aborted) {
+					ctx.addAssistantMessage(accumulatedText, accumulatedReasoning || undefined);
+					yield { type: 'error', payload: { code: 'CANCELLED', message: '用户取消' } };
+					loopExitedViaBreak = true;
+					break;
+				}
 				const message = err instanceof Error ? err.message : String(err);
 				// 关键路径:首轮 LLM 尚未产出工具调用时上下文过长 → 交给 ask 压缩重试,不写 Error assistant。
 				if (isPromptTooLong(err) && step === 0 && toolCalls.length === 0) {

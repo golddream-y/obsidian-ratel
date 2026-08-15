@@ -96,8 +96,10 @@ export class DeepSeekLLM implements LLMClient {
 				method: 'POST',
 				headers,
 				body: JSON.stringify(body),
-			}));
-		} catch {
+			}, req.signal));
+		} catch (err) {
+			// 关键路径:用户主动取消导致的失败禁止降级 requestUrl — 降级会再发一个不可取消的请求
+			if (req.signal?.aborted) throw err;
 			// 降级:若原生流式请求失败(如特殊代理/协议问题),回退到 requestUrl 一次性请求。
 			// 这种降级模式下无打字机效果,但保证功能可用。
 			yield* this.chatViaRequestUrl(req);
@@ -269,13 +271,20 @@ export class DeepSeekLLM implements LLMClient {
 	 *
 	 * @param url - 完整请求 URL。
 	 * @param options - 请求方法、头、体。
+	 * @param signal - 可选取消信号;abort 时销毁底层 socket,让 pending 请求与流读取立即失败
 	 * @returns { stream, statusCode } 响应流与 HTTP 状态码。
 	 */
 	private requestStream(
 		url: URL,
 		options: { method: string; headers: Record<string, string>; body: string },
+		signal?: AbortSignal,
 	): Promise<{ stream: NodeJS.ReadableStream; statusCode: number }> {
 		return new Promise((resolve, reject) => {
+			// 关键路径:调用前已 aborted — 不发请求直接失败,避免空跑一次网络往返
+			if (signal?.aborted) {
+				reject(new Error('请求已取消'));
+				return;
+			}
 			const isHttps = url.protocol === 'https:';
 			// 关键路径:静态选择 http/https 模块,避免 require() 动态导入(eslint 禁止)。
 			const lib = isHttps ? https : http;
@@ -293,13 +302,22 @@ export class DeepSeekLLM implements LLMClient {
 				},
 				(res: IncomingMessage) => {
 					// 关键路径:IncomingMessage 实现 NodeJS.ReadableStream,无需双重断言。
+					cleanup();
 					resolve({
 						stream: res,
 						statusCode: res.statusCode ?? 0,
 					});
 				},
 			);
-			req.on('error', reject);
+			req.on('error', (err) => {
+				cleanup();
+				reject(err);
+			});
+			// 关键路径:abort 穿透 — 销毁 req 连带销毁响应流,for-await 立即抛错;
+			// 不只依赖上层循环轮询 aborted(首字节 pending 期间没人轮询,停止钮点了没反应)
+			const onAbort = () => req.destroy(new Error('请求已取消'));
+			const cleanup = () => signal?.removeEventListener('abort', onAbort);
+			signal?.addEventListener('abort', onAbort);
 			req.write(options.body);
 			req.end();
 		});

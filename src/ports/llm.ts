@@ -46,6 +46,8 @@ export interface ChatRequest {
 	tools?: ToolDefinition[];
 	maxSteps?: number;
 	options?: GenerationOptions;
+	/** 取消信号 — 适配器应穿透到 HTTP 层,abort 时销毁请求/socket 立即中断 */
+	signal?: AbortSignal;
 }
 
 /**

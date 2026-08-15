@@ -28,16 +28,25 @@ vi.mock('node:http', () => ({
 }));
 
 // 关键路径:模拟 node http/https request — 返回 mock req,在 end() 时触发 error 降级
+// behavior='pending' 时不触发任何事件(模拟请求挂起),由 destroy() 触发 error — 供 abort 测试用
+let mockHttpBehavior: 'error' | 'pending' = 'error';
 function createMockHttpRequest(_options: unknown, callback: (res: unknown) => void) {
 	const handlers: Record<string, Array<(arg?: unknown) => void>> = {};
 	const req = {
 		write: () => {},
 		end: () => {
 			// 关键路径:0ms 后触发 error,让 requestStream 的 Promise reject,降级到 requestUrl
-			setTimeout(() => {
-				const errorHandler = handlers.error?.[0];
-				if (errorHandler) errorHandler(new Error('mock: forced fallback to requestUrl'));
-			}, 0);
+			if (mockHttpBehavior === 'error') {
+				setTimeout(() => {
+					const errorHandler = handlers.error?.[0];
+					if (errorHandler) errorHandler(new Error('mock: forced fallback to requestUrl'));
+				}, 0);
+			}
+		},
+		// 关键路径:模拟 req.destroy(err) — 立即触发 error handler,模拟 abort 销毁 socket
+		destroy: (err?: Error) => {
+			const errorHandler = handlers.error?.[0];
+			if (errorHandler) errorHandler(err ?? new Error('mock: destroyed'));
 		},
 		on: (event: string, handler: (arg?: unknown) => void) => {
 			if (!handlers[event]) handlers[event] = [];
@@ -406,25 +415,82 @@ describe('DeepSeekLLM', () => {
 	});
 
 	it('parses usage from stream end', async () => {
-		const sseText = buildSseText([
-			'{"choices":[{"delta":{"content":"hi"}}]}',
-			'{"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}',
-			'[DONE]',
-		]);
+			const sseText = buildSseText([
+				'{"choices":[{"delta":{"content":"hi"}}]}',
+				'{"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}',
+				'[DONE]',
+			]);
 
-		mockRequestUrl.mockResolvedValueOnce({ status: 200, text: sseText });
+			mockRequestUrl.mockResolvedValueOnce({ status: 200, text: sseText });
 
-		const llm = new DeepSeekLLM({
-			apiBase: 'http://test',
-			apiKey: 'sk-test',
-			model: 'deepseek-chat',
+			const llm = new DeepSeekLLM({
+				apiBase: 'http://test',
+				apiKey: 'sk-test',
+				model: 'deepseek-chat',
+			});
+
+			let usageDelta: { promptTokens: number; completionTokens: number } | undefined;
+			for await (const delta of llm.chat({ messages: [{ role: 'user', content: 'Hi' }] })) {
+				if (delta.usage) usageDelta = delta.usage;
+			}
+
+			expect(usageDelta).toEqual({ promptTokens: 10, completionTokens: 5 });
 		});
 
-		let usageDelta: { promptTokens: number; completionTokens: number } | undefined;
-		for await (const delta of llm.chat({ messages: [{ role: 'user', content: 'Hi' }] })) {
-			if (delta.usage) usageDelta = delta.usage;
-		}
+		it('请求挂起期间 abort - 立即抛错且不降级 requestUrl', async () => {
+			// 用户报告:刚发请求点停止没反应 — abort 必须穿透到 HTTP 层销毁请求
+			mockHttpBehavior = 'pending';
+			try {
+				const llm = new DeepSeekLLM({
+					apiBase: 'http://test',
+					apiKey: 'sk-test',
+					model: 'deepseek-chat',
+				});
+				const controller = new AbortController();
+				const req: ChatRequest = {
+					messages: [{ role: 'user', content: 'Hi' }],
+					signal: controller.signal,
+				};
 
-		expect(usageDelta).toEqual({ promptTokens: 10, completionTokens: 5 });
-	});
+				const iter = llm.chat(req);
+				// 请求已发出(mock pending),此刻点停止
+				setTimeout(() => controller.abort(), 20);
+
+				await expect(async () => {
+					for await (const _delta of iter) {
+						void _delta;
+					}
+				}).rejects.toThrow();
+				// 关键路径:abort 引发的失败禁止降级 requestUrl(否则再发一个不可取消的请求)
+				expect(mockRequestUrl).not.toHaveBeenCalled();
+			} finally {
+				mockHttpBehavior = 'error';
+			}
+		}, 3000);
+
+		it('signal 已 aborted - 不发请求直接抛错', async () => {
+			mockHttpBehavior = 'pending';
+			try {
+				const llm = new DeepSeekLLM({
+					apiBase: 'http://test',
+					apiKey: 'sk-test',
+					model: 'deepseek-chat',
+				});
+				const controller = new AbortController();
+				controller.abort();
+				const req: ChatRequest = {
+					messages: [{ role: 'user', content: 'Hi' }],
+					signal: controller.signal,
+				};
+
+				await expect(async () => {
+					for await (const _delta of llm.chat(req)) {
+						void _delta;
+					}
+				}).rejects.toThrow();
+				expect(mockRequestUrl).not.toHaveBeenCalled();
+			} finally {
+				mockHttpBehavior = 'error';
+			}
+		}, 3000);
 });
