@@ -31,7 +31,7 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
-| P-CTX-TRIM | [2026-08-16-context-trim-implementation.md](plans/2026-08-16-context-trim-implementation.md) | ⏳ Pending | S-CTX-TRIM | 4 Task；预算函数 + 32k 码点裁剪 + trimHistory 重写 + main 接线 |
+| P-CTX-TRIM | [2026-08-16-context-trim-implementation.md](plans/2026-08-16-context-trim-implementation.md) | 🔄 In Progress | S-CTX-TRIM | 4 Task；分支 feat-p-ctx-trim；预算函数 + 32k 码点裁剪 + trimHistory 重写 + main 接线 |
 | P-MD-PREVIEW-2 | [2026-08-14-md-preview-overlay.md](plans/2026-08-14-md-preview-overlay.md) | ⏳ Pending | S-MD-PREVIEW | 依赖已归档的 P-MD-PREVIEW-1；叶子 overlay / 放大 / 灯箱 |
 | P-GRAPH-EXPAND | [2026-08-03-graph-expand.md](plans/2026-08-03-graph-expand.md) | ⏳ Pending | S-GRAPH-EXPAND | 检索 1 跳扩邻;6 Task;**暂缓执行**(优先 S-MCP-HOST) |
 | P-MCP-HOST-DOCS | [2026-08-03-mcp-host-docs.md](plans/2026-08-03-mcp-host-docs.md) | ⏳ Pending | S-MCP-HOST | README/user-guide/隐私边界;finishing 时确认勾选 |
