@@ -24,6 +24,7 @@
 | S-SKILL | [2026-07-06-skill-mechanism-design.md](specs/2026-07-06-skill-mechanism-design.md) | Active | 2026-07-06 | Skill 机制;激活注入见 ADR-012;P-SKILL-2/3 pending |
 | S-SKILL-UX | — | Active | 2026-07-21 | Skill UX;对齐 ADR-010;**spec 文件缺失**(从未入库),需补写或从 STATUS 剔除 |
 | S-EVOLUTION | [2026-07-15-evolution-graph-agent.md](specs/2026-07-15-evolution-graph-agent.md) | Active | 2026-07-15 | 图谱原生 Agent;P-EVO-A-READ 已归档(合入核对完毕);下步 P-EVO-A-FM |
+| S-CFG | [2026-08-16-open-note-config-skill-design.md](specs/2026-08-16-open-note-config-skill-design.md) | Active | 2026-08-16 | PRD CFG-01/02:open_note 工具 + ratel-config 内置 Skill(构建内联分发,version 随应用)+ 配置 3 工具 + settings-apply 抽取 |
 
 ---
 
