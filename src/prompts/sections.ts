@@ -444,6 +444,74 @@ function buildSections(): SectionMeta[] {
 			placeholders: [],
 			allowOverride: true,
 		},
+		// --- tool.open_note ---
+		{
+			id: 'tool.open_note.description',
+			label: tNow('promptLabel.tool.open_note.description'),
+			description: tNow('promptLabel.tool.open_note.description.desc'),
+			zone: 'tool',
+			placeholders: [],
+			allowOverride: true,
+		},
+		{
+			id: 'tool.open_note.param.path',
+			label: tNow('promptLabel.tool.open_note.param.path'),
+			description: tNow('promptLabel.tool.open_note.param.path.desc'),
+			zone: 'tool',
+			placeholders: [],
+			allowOverride: true,
+		},
+		{
+			id: 'tool.open_note.param.anchor',
+			label: tNow('promptLabel.tool.open_note.param.anchor'),
+			description: tNow('promptLabel.tool.open_note.param.anchor.desc'),
+			zone: 'tool',
+			placeholders: [],
+			allowOverride: true,
+		},
+		// --- tool.open_settings ---
+		{
+			id: 'tool.open_settings.description',
+			label: tNow('promptLabel.tool.open_settings.description'),
+			description: tNow('promptLabel.tool.open_settings.description.desc'),
+			zone: 'tool',
+			placeholders: [],
+			allowOverride: true,
+		},
+		{
+			id: 'tool.open_settings.param.tab',
+			label: tNow('promptLabel.tool.open_settings.param.tab'),
+			description: tNow('promptLabel.tool.open_settings.param.tab.desc'),
+			zone: 'tool',
+			placeholders: [],
+			allowOverride: true,
+		},
+		// --- tool.get_app_config ---
+		{
+			id: 'tool.get_app_config.description',
+			label: tNow('promptLabel.tool.get_app_config.description'),
+			description: tNow('promptLabel.tool.get_app_config.description.desc'),
+			zone: 'tool',
+			placeholders: [],
+			allowOverride: true,
+		},
+		// --- tool.update_app_config ---
+		{
+			id: 'tool.update_app_config.description',
+			label: tNow('promptLabel.tool.update_app_config.description'),
+			description: tNow('promptLabel.tool.update_app_config.description.desc'),
+			zone: 'tool',
+			placeholders: [],
+			allowOverride: true,
+		},
+		{
+			id: 'tool.update_app_config.param.updates',
+			label: tNow('promptLabel.tool.update_app_config.param.updates'),
+			description: tNow('promptLabel.tool.update_app_config.param.updates.desc'),
+			zone: 'tool',
+			placeholders: [],
+			allowOverride: true,
+		},
 	];
 }
 

@@ -68,6 +68,19 @@ describe('resolveToolPermission 档位', () => {
 		expect(confirm).toHaveBeenCalledTimes(1);
 	});
 
+	it('auto - update_app_config - 仍弹窗', async () => {
+		const grants = new ToolPermissionSessionGrants();
+		const confirm = vi.fn().mockResolvedValue('allow' as const);
+		const cfgCall: ToolCall = { id: '4', name: 'update_app_config', args: { updates: {} } };
+		await resolveToolPermission(
+			cfgCall,
+			{ toolPermissionLevel: 'auto', toolPermissions: { update_app_config: 'ask' } },
+			grants,
+			confirm,
+		);
+		expect(confirm).toHaveBeenCalledTimes(1);
+	});
+
 	it('danger - write ask - 不弹窗', async () => {
 		const grants = new ToolPermissionSessionGrants();
 		const confirm = vi.fn();

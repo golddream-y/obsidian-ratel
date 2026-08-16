@@ -211,6 +211,8 @@ flowchart TB
 
 嵌套 key(`toolPermissions.*` / `promptOverrides.*`)与副作用(`rebuildLLM` / `rebuildEmbeddingAdapter` / `applyLangPreference`)集中在 `getControlValue` / `setControlValue`。
 
+**写入路径统一(S-CFG)**:副作用分发收敛到共享模块 `settings/settings-apply.ts` — SettingTab 的 `setControlValue` 与 `update_app_config` 工具共用同一 `applySettingValue`(写 key + 分发对应副作用)+ `saveSettings` 路径,面板手改与 Agent 代改的写入行为永不漂移。
+
 ---
 
 ## 5. 配置热重载链路

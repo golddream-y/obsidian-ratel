@@ -166,6 +166,10 @@ export interface SettingsStrings {
   'settings.toolPermissions.search_by_tag': string;
   'settings.toolPermissions.search_by_property': string;
   'settings.toolPermissions.get_vault_structure': string;
+  'settings.toolPermissions.open_note': string;
+  'settings.toolPermissions.open_settings': string;
+  'settings.toolPermissions.get_app_config': string;
+  'settings.toolPermissions.update_app_config': string;
   'settings.toolPermissions.allow': string;
   'settings.toolPermissions.ask': string;
   'settings.toolPermissions.deny': string;
@@ -366,6 +370,10 @@ export interface ToolNameStrings {
   'tool.name.search_by_tag': string;
   'tool.name.search_by_property': string;
   'tool.name.get_vault_structure': string;
+  'tool.name.open_note': string;
+  'tool.name.open_settings': string;
+  'tool.name.get_app_config': string;
+  'tool.name.update_app_config': string;
   'tool.name.mcp': string;
 }
 
@@ -806,6 +814,22 @@ export interface PromptLabelStrings {
   'promptLabel.tool.get_vault_structure.description.desc': string;
   'promptLabel.tool.get_vault_structure.param.include': string;
   'promptLabel.tool.get_vault_structure.param.include.desc': string;
+  'promptLabel.tool.open_note.description': string;
+  'promptLabel.tool.open_note.description.desc': string;
+  'promptLabel.tool.open_note.param.path': string;
+  'promptLabel.tool.open_note.param.path.desc': string;
+  'promptLabel.tool.open_note.param.anchor': string;
+  'promptLabel.tool.open_note.param.anchor.desc': string;
+  'promptLabel.tool.open_settings.description': string;
+  'promptLabel.tool.open_settings.description.desc': string;
+  'promptLabel.tool.open_settings.param.tab': string;
+  'promptLabel.tool.open_settings.param.tab.desc': string;
+  'promptLabel.tool.get_app_config.description': string;
+  'promptLabel.tool.get_app_config.description.desc': string;
+  'promptLabel.tool.update_app_config.description': string;
+  'promptLabel.tool.update_app_config.description.desc': string;
+  'promptLabel.tool.update_app_config.param.updates': string;
+  'promptLabel.tool.update_app_config.param.updates.desc': string;
   'promptLabel.retrieval.wrapperPrefix': string;
   'promptLabel.retrieval.wrapperSuffix': string;
 }

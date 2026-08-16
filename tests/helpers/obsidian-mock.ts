@@ -148,6 +148,7 @@ export class PluginSettingTab {
 		settings[key] = value;
 	}
 	update(): void {}
+	refreshDomState(): void {}
 }
 
 /**

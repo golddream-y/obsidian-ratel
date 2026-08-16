@@ -50,6 +50,7 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 | 今天几号 / 星期几 | 「今天星期几？」 | **通常不用调工具**（每轮已注入本地时间） |
 | 精确时间 / 三天后 | 「三天后是几号？」 | `get_datetime` |
 | 当前打开的这篇 | 「概括当前这篇」 | `get_active_note` → `read_note` |
+| 打开某一篇 | 「打开那篇读书笔记」「跳到它的第二章」 | `open_note`（可定位标题 / 块，直接在 Obsidian 里翻开） |
 | 最近改过什么 | 「最近改了哪些笔记？」 | `list_recent_notes` |
 | 今天日记在哪 | 「今天日记在哪？」 | `get_daily_note`（只探测，**不自动创建**） |
 | 章节大纲 | 「这篇有哪些标题？」 | `get_note_outline`（走标题缓存，不读全文） |
@@ -58,6 +59,7 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 | 按属性筛选 | 「找 `status: draft` 的笔记」 | `search_by_property`（不传 value 时查键是否存在） |
 | 查看库概览 | 「库里有哪些标签和孤儿笔记？」 | `get_vault_structure`（可按目录 / 标签 / 孤儿笔记选择） |
 | 写综述 / 整理 | 「把产品规划相关笔记整理成背景文档」 | 多步检索 → 读写（写前会按权限询问） |
+| 帮我配置 / 排障 | 「帮我换个模型」「索引怎么不跑了」 | 内置 ratel-config skill → `get_app_config` 诊断 → 代改或 `open_settings` 引导（密钥只会引导去钥匙串，不会代填） |
 
 流式回答时可以看到工具调用过程；支持 reasoning 的模型（如 DeepSeek-R1 / V4）会显示可折叠「思考」块。模型在想、在写、在调工具时，消息流里会用**思考球**（点阵小球）代替原来的小黄点。检索结果在回答下方以「来源 N 篇」折叠条展示，点开可跳转笔记；正文里若已有可点的 `[1][2]`，底部来源条会隐藏以免重复。
 
@@ -222,6 +224,7 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 | 引用 `[n]` 变灰点不开？ | 应沿用本场最近一次检索；悬停应能看到路径。若仍灰，确认本场做过检索后再试 |
 | 「本次会话不再询问」还弹？ | 换工具名仍会问；同工具不同路径不应再问。换场或 `/new` 后授权清空 |
 | 刚开 MCP 显示无工具？ | 等开启完成后再看列表；可点「刷新」强制重连 |
+| 为什么不帮我填 API Key？ | 密钥只存 Obsidian 钥匙串，Agent 只能看到「配没配」，拿不到也填不了明文；照提示去 设置 → 钥匙串 添加对应 secret ID |
 
 更多问题可开 [GitHub Issues](https://github.com/golddream-y/obsidian-ratel/issues)。
 
@@ -233,7 +236,7 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 
 **First run:** Configure chat model (+ Keychain `ratel-chat-openai-compatible`, or local Ollama). Wait for indexing. Open chat via the 🦡 ribbon.
 
-**Ask naturally:** topics → semantic search with citations; “today” → injected local time; “this note” → active file; daily note path is probed only (never auto-created). Memory lives in `.ratel/memory/`. Skills live under `.ratel/skills/` (or `~/.ratel/skills/`).
+**Ask naturally:** topics → semantic search with citations; “today” → injected local time; “this note” → active file; “open that note” → opens it in Obsidian at the heading or block; daily note path is probed only (never auto-created). Config questions go through the built-in config skill (whitelisted changes by chat; keys only via the keychain). Memory lives in `.ratel/memory/`. Skills live under `.ratel/skills/` (or `~/.ratel/skills/`).
 
 **Sessions:** Header chip opens recent chats; ✎ edits / AI-summarizes the title. Switching while generating asks first. “Allow for this session” grants by tool name for the whole chat.
 

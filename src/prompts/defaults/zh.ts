@@ -31,6 +31,7 @@ export const ZH_DEFAULTS: Record<PromptSectionId, string> = {
 - 「今天的日记」:get_daily_note(只探测路径,不自动创建)。
 - 「最近改过哪些」:list_recent_notes。
 - 「这篇有哪些章节」:get_note_outline(走标题缓存,不必读全文)。
+- 检索到笔记后要为用户「打开原文并定位」:用 open_note(path 可省略 .md,anchor 定位标题或 ^块)。
 
 当前可用工具:
 {{toolList}}`,
@@ -186,4 +187,18 @@ export const ZH_DEFAULTS: Record<PromptSectionId, string> = {
 	'tool.get_vault_structure.description':
 		'获取知识库目录、标签统计与孤儿笔记概览。大库全量查询可能返回较多数据,可用 include 只请求需要的部分。',
 	'tool.get_vault_structure.param.include': '要返回的维度: folders、tags、orphans;省略时返回全部',
+
+	'tool.open_note.description':
+		'在 Obsidian 中为用户打开一篇笔记,可定位到标题或块。适合检索到笔记后让用户直接查看原文,而非在对话里贴全文。',
+	'tool.open_note.param.path': 'vault 相对路径,可省略 .md',
+	'tool.open_note.param.anchor': '定位锚点:裸标题名(如 "第二章")或块 ID(如 "^abc123")',
+	'tool.open_settings.description':
+		'打开 Ratel 设置面板并定位到指定 tab。密钥、MCP、prompt 覆盖等白名单外配置 Agent 不能代改时,用本工具把对应 tab 打开到用户眼前,引导用户手动完成,而不是让用户自己翻菜单。',
+	'tool.open_settings.param.tab': '要定位的设置 tab: chat(对话/密钥)、index(索引)、agent(Agent/MCP)、appearance(外观)、advanced(高级);省略时打开默认 chat',
+
+	'tool.get_app_config.description':
+		'读取 Ratel 配置快照、密钥配置状态(boolean 存在性与所需密钥 ID,不含密钥值)与索引状态。排查配置问题、诊断「为什么不工作」的第一步。',
+	'tool.update_app_config.description':
+		'代替用户修改 Ratel 应用设置(需用户确认)。仅白名单内的 key 生效:对话模型(chatModel/chatApiBase/contextLengthPreset/chatModelMaxTokens/autoCompactEnabled)、分块与索引(chunkSize/chunkOverlap/autoIndex/indexPaused)、Embedding 与 Rerank(embedProvider/embedApiBase/embedApiModel/embedApiDimensions/rerankerApiBase/rerankerModel)、记忆(memoryEnabled/memoryAutoWrite/memoryStorageLimitMB/memoryInjectLimitKB/memoryDynamicLimitKB/memoryContextTotalLimitKB)、Skill 与日记(enableSkills/dailyNoteFolder/dailyNoteFormat)、语言外观(language/uiColorScheme/uiAccent/chatNavRailEnabled/chatNavRailSide/chatMotionEnabled)。工具权限、MCP、Prompt 覆盖等敏感项一律拒绝,必须由用户在设置面板亲手修改。格式示例:{"updates":{"chunkSize":800,"autoIndex":false}};返回逐 key 的 ok/reason,被拒的 key 不影响同批其他 key。',
+	'tool.update_app_config.param.updates': '要修改的设置键值对对象;key 必须在白名单内,值类型与取值范围见工具描述',
 };

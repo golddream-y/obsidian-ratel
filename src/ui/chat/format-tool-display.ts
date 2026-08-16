@@ -34,6 +34,10 @@ const TOOL_NAME_KEY: Record<string, StringKey> = {
 	search_by_tag: 'tool.name.search_by_tag',
 	search_by_property: 'tool.name.search_by_property',
 	get_vault_structure: 'tool.name.get_vault_structure',
+	open_note: 'tool.name.open_note',
+	open_settings: 'tool.name.open_settings',
+	get_app_config: 'tool.name.get_app_config',
+	update_app_config: 'tool.name.update_app_config',
 };
 
 /**
@@ -128,6 +132,20 @@ export function formatToolDisplayName(
 		}
 		case 'get_vault_structure':
 			return tNow('tool.name.get_vault_structure');
+		// 关键路径:get_app_config 模板无占位符,直接返回本地化名
+		case 'get_app_config':
+			return tNow('tool.name.get_app_config');
+		// 关键路径:update_app_config 模板无占位符,直接返回本地化名
+		case 'update_app_config':
+			return tNow('tool.name.update_app_config');
+		case 'open_note': {
+			const p = extractPath(obj.path);
+			const key = TOOL_NAME_KEY[name];
+			return p && key ? tNow(key, { path: p }) : name;
+		}
+		// 关键路径:open_settings 模板无占位符,直接返回本地化名
+		case 'open_settings':
+			return tNow('tool.name.open_settings');
 		default:
 			return name;
 	}

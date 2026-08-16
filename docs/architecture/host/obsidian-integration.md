@@ -115,12 +115,16 @@ export interface WorkspacePort {
   getActiveFilePath(): string | null;
   /** 编辑器选中文本;无选区返回 null */
   getActiveSelection(): string | null;
+  /** 打开笔记并滚动定位到锚点;linktext 语法同 wikilink(path / path#标题 / path#^blockId),失败返回 false */
+  openNote(linktext: string): Promise<boolean>;
+  /** 打开 Ratel 设置面板并定位到指定 tab;省略 tab 打开默认 tab,宿主未创建 SettingTab 时返回 false */
+  openPluginSettings(tab?: string): Promise<boolean>;
 }
 ```
 
 实现:`adapters/obsidian-workspace.ts` — `app.workspace.getActiveFile()` + `MarkdownView.editor.getSelection()`。非 `.md` 活动文件返回 null。
 
-消费方:`get_active_note` 工具。装配点:`main.ts` onload 创建 `ObsidianWorkspace(this.app)`。
+消费方:`get_active_note` / `open_note` / `open_settings` 工具。装配点:`main.ts` onload 创建 `ObsidianWorkspace(this.app)`。
 
 ---
 

@@ -265,6 +265,51 @@ export const TOOL_SCHEMA_SKELETONS: Record<string, SchemaSkeleton> = {
 			required: [],
 		},
 	},
+	open_note: {
+		name: 'open_note',
+		parameters: {
+			type: 'object',
+			properties: {
+				path: { type: 'string' },
+				anchor: { type: 'string' },
+			},
+			required: ['path'],
+		},
+	},
+	open_settings: {
+		name: 'open_settings',
+		parameters: {
+			type: 'object',
+			properties: {
+				// 关键路径:enum 与 settings.ts 的 SETTINGS_UI_TABS 同源,LLM 侧直接约束取值
+				tab: { type: 'string', enum: ['chat', 'index', 'agent', 'appearance', 'advanced'] },
+			},
+			required: [],
+		},
+	},
+	get_app_config: {
+		name: 'get_app_config',
+		parameters: {
+			type: 'object',
+			properties: {},
+			required: [],
+		},
+	},
+	update_app_config: {
+		name: 'update_app_config',
+		parameters: {
+			type: 'object',
+			properties: {
+				// 关键路径(P-CFG):仅白名单内 key 生效,提权项由 validateConfigValue 硬拒
+				updates: {
+					type: 'object',
+					description:
+						'要修改的设置键值对;仅白名单内 key 生效(对话模型 / 分块索引 / Embedding / 记忆 / 日记 / 语言外观),工具权限、MCP、Prompt 覆盖等敏感项会被拒绝',
+				},
+			},
+			required: ['updates'],
+		},
+	},
 };
 
 export const ALL_TOOL_NAMES = [
@@ -274,4 +319,8 @@ export const ALL_TOOL_NAMES = [
 	'activate_skill', 'deactivate_skill',
 	'get_datetime', 'get_active_note', 'get_daily_note', 'list_recent_notes', 'get_note_outline',
 	'get_links', 'search_by_tag', 'search_by_property', 'get_vault_structure',
+	'open_note',
+	'open_settings',
+	'get_app_config',
+	'update_app_config',
 ];

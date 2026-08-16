@@ -12,6 +12,12 @@ export default defineConfig({
 				__dirname,
 				'tests/helpers/embedding-worker-code-stub.ts',
 			),
+			// 关键路径:esbuild 虚拟模块(内置 skill 清单)在 vitest 无构建期注入,指向空清单 stub;
+			// 导入 main.ts 的测试(settings-adapter / main-rag-loop 等)只关心装配,不依赖内置 skill 内容。
+			'@ratel/builtin-skills-code': path.resolve(
+				__dirname,
+				'tests/helpers/builtin-skills-code-stub.ts',
+			),
 			// 关键路径:obsidian 包在 Node 测试环境无法解析(package.json 无 main/exports),
 			// 指向最小桩模块,具体行为由各测试用 vi.mock 或 spy 覆盖。
 			obsidian: path.resolve(__dirname, 'tests/helpers/obsidian-mock.ts'),

@@ -19,10 +19,11 @@ export interface ToolPermissionSettings {
 	toolPermissions: Record<string, ToolPermission>;
 }
 
-const DESTRUCTIVE_TOOLS = new Set(['delete_note', 'forget_memory']);
+// 破坏性 / 高影响工具 — auto 档仍需逐次确认;update_app_config 一次可改多项应用配置,影响面大于单篇笔记
+const DESTRUCTIVE_TOOLS = new Set(['delete_note', 'forget_memory', 'update_app_config']);
 
 /**
- * 破坏性工具 — auto 档仍需确认；MCP 一律视为破坏性。
+ * 破坏性 / 高影响工具 — auto 档仍需逐次确认；update_app_config 一次可改多项应用配置，影响面大于单篇笔记；MCP 一律视为破坏性。
  *
  * @param name - 工具名（含 mcp__…）
  */

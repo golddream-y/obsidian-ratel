@@ -89,6 +89,9 @@ graph TB
         GDN["get_daily_note<br/>日记路径<br/>readOnly: true"]
         LR["list_recent_notes<br/>最近修改<br/>readOnly: true"]
         GO["get_note_outline<br/>标题大纲<br/>readOnly: true"]
+        ON["open_note<br/>打开笔记定位<br/>readOnly: true"]
+        OS["open_settings<br/>打开设置面板<br/>readOnly: true"]
+        GAC["get_app_config<br/>脱敏配置快照<br/>readOnly: true"]
     end
 
     subgraph "写入类"
@@ -99,6 +102,7 @@ graph TB
 
     subgraph "管理类"
         DN["delete_note<br/>移到回收站<br/>readOnly: false"]
+        UAC["update_app_config<br/>白名单代改设置<br/>readOnly: false"]
     end
 
     subgraph "记忆 / Skill"
@@ -120,10 +124,14 @@ graph TB
     GDN --> REG
     LR --> REG
     GO --> REG
+    ON --> REG
+    OS --> REG
+    GAC --> REG
     WN --> REG
     AN --> REG
     EN --> REG
     DN --> REG
+    UAC --> REG
     SM --> REG
     SK --> REG
 ```
@@ -284,6 +292,15 @@ sequenceDiagram
 
 `read_note` 仍用于读取全文及单篇元数据；需要跨笔记链接关系或结构化筛选时，应使用上述专用工具。
 
+### 4.12 配置与打开工具(S-CFG)
+
+| 工具 | 作用 | 关键约束 |
+|---|---|---|
+| `open_note` | 在对话中为用户打开笔记并滚动定位标题/块 | 走 `WorkspacePort.openNote`;纯 UI 导航,`readOnly` |
+| `open_settings` | 打开 Ratel 设置面板并定位到指定 tab | 走 `WorkspacePort.openPluginSettings`;纯 UI 导航,`readOnly` |
+| `get_app_config` | 读取脱敏配置快照与密钥配置状态 | 不返回任何密钥值,`readOnly` |
+| `update_app_config` | 白名单(30 key)内代改设置 | 写入走 settings-apply 共享模块;列入破坏性工具清单,auto 档仍逐次确认 |
+
 ---
 
 ## 5. 工具调用流程
@@ -341,6 +358,7 @@ sequenceDiagram
 | **图谱读取类** | get_links, search_by_tag, search_by_property, get_vault_structure | ✅ | ✅(权限;有 path 时校验) | ❌ |
 | **发现类** | grep, glob, list_files | ✅ | ✅(权限 + 路径) | ❌ |
 | **环境感知** | get_datetime, get_active_note, get_daily_note, list_recent_notes, get_note_outline | ✅ | ✅(权限;有 path 时校验) | ❌ |
+| **配置 / UI 导航** | open_note, open_settings, get_app_config;update_app_config | 读写混合 | ✅(权限;有 path 时校验) | ✅(仅 update_app_config,设置面板刷新,无笔记治理) |
 | **记忆类** | search_memory, remember, forget_memory | 读写混合 | ✅ | ❌ |
 | **Skill** | activate_skill, deactivate_skill | ✅ | ✅ | ❌ |
 | **写入类** | write_note, append_note, edit_note | ❌ | ✅(权限 + 路径 + 治理) | ✅(自动标签、索引刷新) |

@@ -1,6 +1,6 @@
 /**
  * @file tests/settings.declarative.test.ts
- * @description 声明式 SettingTab 的 getControlValue / setControlValue 嵌套 key 行为测试
+ * @description 声明式 SettingTab 的 getControlValue 嵌套 key 读取与 getSettingDefinitions 渲染测试(写入/副作用用例已迁至 settings-apply.test.ts)
  * @module tests/settings.declarative
  */
 
@@ -21,7 +21,7 @@ function makeMockPlugin(settings: RatelVaultSettings): RatelVaultPlugin {
 	} as unknown as RatelVaultPlugin;
 }
 
-describe('RatelVaultSettingTab 嵌套 key 读写', () => {
+describe('RatelVaultSettingTab 嵌套 key 读取与声明式定义', () => {
 	let plugin: RatelVaultPlugin;
 	let tab: RatelVaultSettingTab;
 
@@ -44,67 +44,6 @@ describe('RatelVaultSettingTab 嵌套 key 读写', () => {
 	it('getControlValue - 顶层 key - 返回直接字段', () => {
 		plugin.settings.chatModel = 'claude-3-5-sonnet';
 		expect(tab.getControlValue('chatModel')).toBe('claude-3-5-sonnet');
-	});
-
-	it('setControlValue - 嵌套 toolPermissions key - 写入嵌套对象', async () => {
-		await tab.setControlValue('toolPermissions.search_vault', 'allow');
-		expect(plugin.settings.toolPermissions.search_vault).toBe('allow');
-		expect(
-			(plugin.settings as unknown as Record<string, unknown>)['toolPermissions.search_vault'],
-		).toBeUndefined();
-	});
-
-	it('setControlValue - 嵌套 promptOverrides key - 写入嵌套对象', async () => {
-		await tab.setControlValue('promptOverrides.system.role', 'custom text');
-		expect(plugin.settings.promptOverrides['system.role']).toBe('custom text');
-	});
-
-	it('setControlValue - 顶层 key - 写入直接字段', async () => {
-		await tab.setControlValue('chatModel', 'gpt-4');
-		expect(plugin.settings.chatModel).toBe('gpt-4');
-	});
-
-	it('setControlValue - chatModel 变更 - 触发 rebuildLLM', async () => {
-		await tab.setControlValue('chatModel', 'gpt-4');
-		expect(plugin.rebuildLLM).toHaveBeenCalled();
-	});
-
-	it('setControlValue - embedApiBase 变更 - 触发 rebuildEmbeddingAdapter', async () => {
-		await tab.setControlValue('embedApiBase', 'http://new:11434/v1');
-		expect(plugin.rebuildEmbeddingAdapter).toHaveBeenCalled();
-	});
-
-	it('setControlValue - embedLocalModel 变更 - 不触发 rebuildEmbeddingAdapter', async () => {
-		await tab.setControlValue('embedLocalModel', 'Xenova/other');
-		expect(plugin.rebuildEmbeddingAdapter).not.toHaveBeenCalled();
-	});
-
-	it('setControlValue - promptOverrides 变更 - 触发 syncToolDefinitions', async () => {
-		await tab.setControlValue('promptOverrides.system.role', 'custom');
-		expect(plugin.syncToolDefinitions).toHaveBeenCalled();
-	});
-
-	it('setControlValue - chatPreset deepseek - 写入多字段并 rebuildLLM', async () => {
-		plugin.settings.chatModel = 'other';
-		plugin.settings.chatApiBase = 'https://example.com';
-		await tab.setControlValue('chatPreset', 'deepseek');
-		expect(plugin.settings.chatPreset).toBe('deepseek');
-		expect(plugin.settings.chatModel).toBe('deepseek-v4-flash');
-		expect(plugin.settings.chatApiBase).toBe('https://api.deepseek.com');
-		expect(plugin.rebuildLLM).toHaveBeenCalled();
-	});
-
-	it('setControlValue - 手改 chatModel - chatPreset 变为 custom', async () => {
-		plugin.settings.chatPreset = 'deepseek';
-		await tab.setControlValue('chatModel', 'gpt-4');
-		expect(plugin.settings.chatPreset).toBe('custom');
-	});
-
-	it('setControlValue - 手改 chatApiBase - chatPreset 变为 custom', async () => {
-		plugin.settings.chatPreset = 'deepseek';
-		await tab.setControlValue('chatApiBase', 'https://example.com/v1');
-		expect(plugin.settings.chatPreset).toBe('custom');
-		expect(plugin.rebuildLLM).toHaveBeenCalled();
 	});
 
 	it('getSettingDefinitions - 含四 Tab 与 chatPreset key - 非空', () => {
@@ -153,9 +92,53 @@ describe('RatelVaultSettingTab 嵌套 key 读写', () => {
 	});
 });
 
+// 关键路径:open_settings 工具参数来自 LLM 不可信输入,focusTab 三分支契约必须测试锁定
+describe('RatelVaultSettingTab focusTab 三分支契约', () => {
+	let plugin: RatelVaultPlugin;
+	let tab: RatelVaultSettingTab;
+
+	beforeEach(() => {
+		plugin = makeMockPlugin(JSON.parse(JSON.stringify(DEFAULT_SETTINGS)));
+		tab = new RatelVaultSettingTab({} as App, plugin);
+	});
+
+	it('focusTab - 非法 tab - 返回 false 且当前 tab 不变', () => {
+		setActiveTab(tab, 'agent');
+		const ok = tab.focusTab('not-a-tab');
+		expect(ok).toBe(false);
+		expect(getActiveTab(tab)).toBe('agent');
+	});
+
+	it('focusTab - 省略 tab - 返回 true 且当前 tab 不变', () => {
+		setActiveTab(tab, 'index');
+		const ok = tab.focusTab();
+		expect(ok).toBe(true);
+		expect(getActiveTab(tab)).toBe('index');
+	});
+
+	it('focusTab - 合法 tab - 返回 true 且切换 activeSettingsTab', () => {
+		setActiveTab(tab, 'chat');
+		const ok = tab.focusTab('agent');
+		expect(ok).toBe(true);
+		expect(getActiveTab(tab)).toBe('agent');
+		// 关键路径:visible 谓词断言真实门控行为,而非仅读私有字段
+		const group = findGroupWithControlKey(
+			tab.getSettingDefinitions(),
+			'toolPermissions.search_vault',
+		);
+		expect(group).toBeDefined();
+		expect((group!.visible as () => boolean)()).toBe(true);
+	});
+});
+
 /** 测试用:写入私有 activeSettingsTab */
 function setActiveTab(tab: RatelVaultSettingTab, id: string): void {
 	(tab as unknown as { activeSettingsTab: string }).activeSettingsTab = id;
+}
+
+/** 测试用:读取私有 activeSettingsTab */
+function getActiveTab(tab: RatelVaultSettingTab): string {
+	return (tab as unknown as { activeSettingsTab: string }).activeSettingsTab;
 }
 
 /** 在声明式定义中查找含指定 control.key 的 group */

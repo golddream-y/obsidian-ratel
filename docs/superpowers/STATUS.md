@@ -24,8 +24,6 @@
 | S-SKILL | [2026-07-06-skill-mechanism-design.md](specs/2026-07-06-skill-mechanism-design.md) | Active | 2026-07-06 | Skill 机制;激活注入见 ADR-012;P-SKILL-2/3 pending |
 | S-SKILL-UX | — | Active | 2026-07-21 | Skill UX;对齐 ADR-010;**spec 文件缺失**(从未入库),需补写或从 STATUS 剔除 |
 | S-EVOLUTION | [2026-07-15-evolution-graph-agent.md](specs/2026-07-15-evolution-graph-agent.md) | Active | 2026-07-15 | 图谱原生 Agent;P-EVO-A-READ 已归档(合入核对完毕);下步 P-EVO-A-FM |
-| S-CFG | [2026-08-16-open-note-config-skill-design.md](specs/2026-08-16-open-note-config-skill-design.md) | Active | 2026-08-16 | PRD CFG-01/02:open_note 工具 + ratel-config 内置 Skill(构建内联分发,version 随应用)+ 配置 3 工具 + settings-apply 抽取 |
-| S-CFG / P-CFG-IMPL | [2026-08-16-open-note-config-skill.md](plans/2026-08-16-open-note-config-skill.md) | Pending | 2026-08-16 | 实现 S-CFG 全部:8 Task,settings-apply → WorkspacePort → 4 工具 → 内联分发 → 文档 |
 
 ---
 
@@ -74,6 +72,7 @@
 
 | ID | 归档目录 | 归档日期 | 备注 |
 |---|---|---|---|
+| S-CFG | [archive/S-CFG/](archive/S-CFG/) | 2026-08-16 | PRD CFG-01/02:open_note + 配置 3 工具 + ratel-config 内置 Skill + settings-apply;spec+plan 归档;合并回 main(见 git log) |
 | S-CHAT-MOTION | [archive/S-CHAT-MOTION/](archive/S-CHAT-MOTION/) | 2026-08-15 | Bits 动效;spec+plan 归档 |
 | S-CHAT-MOTION-v2 | [archive/S-CHAT-MOTION-v2/](archive/S-CHAT-MOTION-v2/) | 2026-08-15 | 动效增强;spec+plan 归档 |
 | S-CHAT-PROTO | [archive/S-CHAT-PROTO/](archive/S-CHAT-PROTO/) | 2026-08-15 | 原型对齐;0.1.18;spec+plan 归档 |

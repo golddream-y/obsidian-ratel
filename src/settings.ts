@@ -16,9 +16,8 @@ import {
 // 关键路径:RatelVaultPlugin 仅作类型标注使用,用 import type 避免运行时拉起 main.ts
 // (main.ts 会载入 ChatView.svelte,在 vitest 环境无 svelte 插件无法解析)
 import type RatelVaultPlugin from './main';
-import { devLogger } from './logging/dev-logger';
-// 关键路径:声明式 settings 每次渲染重新调用 tNow,无需 store 订阅;applyLangPreference 用于 Language 下拉切换
-import { tNow, applyLangPreference, type LangPreference, type StringKey } from './i18n';
+// 关键路径:声明式 settings 每次渲染重新调用 tNow,无需 store 订阅
+import { tNow, type LangPreference, type StringKey } from './i18n';
 import type { ToolPermission, ToolPermissionLevel } from './core/tool-permissions';
 import {
 	hasChatApiKey,
@@ -27,7 +26,6 @@ import {
 } from './secrets/ratel-secrets';
 import type { ContextLengthPresetId } from './ui/tokens/context-length-presets';
 import {
-	applyContextLengthPreset,
 	applyContextRecommendation,
 	CUSTOM_TOKEN_MAX,
 	CUSTOM_TOKEN_MIN,
@@ -49,18 +47,27 @@ import {
 	renderPromptOverrideSection,
 	renderPromptPreviewButton,
 } from './ui/settings/prompt-override-render';
-import {
-	applyChatPreset,
-	type ChatPresetId,
-} from './settings/chat-preset';
+import type { ChatPresetId } from './settings/chat-preset';
+// 关键路径:setControlValue 写入与副作用统一走 settings-apply(与 update_app_config 工具共享)
+import { applySettingValue } from './settings/settings-apply';
 // 关键路径:外观类型从 presets 导入,避免 appearance-presets ↔ settings 循环依赖
 import type { UiAccentId, UiColorScheme } from './ui/appearance/appearance-presets';
 import { renderAppearanceSettings } from './ui/appearance/appearance-settings-render';
 import type { McpServerConfig } from './ports/mcp';
 import { parseMcpToolName } from './ui/mcp/parse-mcp-tool-name';
 
-/** 设置顶栏 Tab ID(仅 UI 态,不落盘) */
-export type SettingsUiTab = 'chat' | 'index' | 'agent' | 'appearance' | 'advanced';
+/** 设置顶栏 Tab ID 清单(仅 UI 态,不落盘)— focusTab 校验与顶部导航共用的单一事实源 */
+export const SETTINGS_UI_TABS = ['chat', 'index', 'agent', 'appearance', 'advanced'] as const;
+export type SettingsUiTab = (typeof SETTINGS_UI_TABS)[number];
+
+/** 顶部导航 labelKey 本地映射 — Record 保证新增 tab 时编译期强制补齐文案 */
+const SETTINGS_TAB_LABEL_KEYS: Record<SettingsUiTab, StringKey> = {
+	chat: 'settings.tabs.chat',
+	index: 'settings.tabs.index',
+	agent: 'settings.tabs.agent',
+	appearance: 'settings.tabs.appearance',
+	advanced: 'settings.tabs.advanced',
+};
 
 /**
  * 全部用户可配置项。
@@ -242,6 +249,14 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 		search_by_tag: 'allow',
 		search_by_property: 'allow',
 		get_vault_structure: 'allow',
+		// 关键路径(P-CFG):open_note 纯 UI 导航不写文件,只读放行。
+		open_note: 'allow',
+		// 关键路径(P-CFG):open_settings 纯 UI 导航(打开设置面板定位 tab),只读放行。
+		open_settings: 'allow',
+		// 关键路径(P-CFG):get_app_config 只读快照(密钥仅 boolean 存在性),只读放行。
+		get_app_config: 'allow',
+		// 关键路径(P-CFG):update_app_config 代改设置并落盘,默认 ask 由用户逐次确认。
+		update_app_config: 'ask',
 	},
 	// 关键路径:默认无任何 override,使用 zh.ts 内置中文模板。
 	promptOverrides: {},
@@ -338,6 +353,24 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 	constructor(app: App, plugin: RatelVaultPlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
+	}
+
+	/**
+	 * 程序化切换设置 tab — open_settings 工具入口。
+	 *
+	 * @param tab - 目标 tab id;省略保持当前 tab;非法值拒绝
+	 * @returns 合法或省略返回 true;非法 tab 返回 false
+	 */
+	focusTab(tab?: string): boolean {
+		if (tab == null) {
+			this.refreshDomState();
+			return true;
+		}
+		if (!(SETTINGS_UI_TABS as readonly string[]).includes(tab)) return false;
+		this.activeSettingsTab = tab as SettingsUiTab;
+		// 关键路径:与顶部导航点击同路径 — visible 谓词重算用 refreshDomState 而非 update()
+		this.refreshDomState();
+		return true;
 	}
 
 	/**
@@ -464,13 +497,10 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 							}
 							el.show();
 							const bar = el.createDiv({ cls: 'ratel-diag-tabs' });
-							const tabs: Array<{ id: SettingsUiTab; labelKey: StringKey }> = [
-								{ id: 'chat', labelKey: 'settings.tabs.chat' },
-								{ id: 'index', labelKey: 'settings.tabs.index' },
-								{ id: 'agent', labelKey: 'settings.tabs.agent' },
-								{ id: 'appearance', labelKey: 'settings.tabs.appearance' },
-								{ id: 'advanced', labelKey: 'settings.tabs.advanced' },
-							];
+							// 关键路径:id 从 SETTINGS_UI_TABS 派生,消除与 focusTab 校验的手写重复
+							const tabs: Array<{ id: SettingsUiTab; labelKey: StringKey }> = SETTINGS_UI_TABS.map(
+								(id) => ({ id, labelKey: SETTINGS_TAB_LABEL_KEYS[id] }),
+							);
 							for (const tab of tabs) {
 								const active = this.activeSettingsTab === tab.id;
 								const btn = bar.createEl('button', {
@@ -960,6 +990,10 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			search_by_tag: 'settings.toolPermissions.search_by_tag',
 			search_by_property: 'settings.toolPermissions.search_by_property',
 			get_vault_structure: 'settings.toolPermissions.get_vault_structure',
+			open_note: 'settings.toolPermissions.open_note',
+			open_settings: 'settings.toolPermissions.open_settings',
+			get_app_config: 'settings.toolPermissions.get_app_config',
+			update_app_config: 'settings.toolPermissions.update_app_config',
 		};
 		const key = map[toolName];
 		return key ? tNow(key) : toolName;
@@ -971,7 +1005,11 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			'activate_skill', 'deactivate_skill',
 			'get_datetime', 'get_active_note', 'get_daily_note', 'list_recent_notes', 'get_note_outline',
 			'get_links', 'search_by_tag', 'search_by_property', 'get_vault_structure',
-		];
+			'open_note',
+			'open_settings',
+			'get_app_config',
+			'update_app_config',
+	];
 
 		const items: SettingGroupItem[] = [
 			{
@@ -1083,7 +1121,7 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 	/**
 	 * 处理「获取推荐」按钮点击。
 	 *
-	 * 关键路径:发送 probe 请求,成功后 setControlValue + update。
+	 * 关键路径:发送 probe 请求,成功后 setControlValue 落值(saveSettings 统一触发面板重渲染)。
 	 *
 	 * @param btnEl - action 行元素,用于显示「获取中…」加载态
 	 */
@@ -1157,73 +1195,15 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 	}
 
 	/**
-	 * 写入 control 值并触发副作用 — override 处理嵌套 key + rebuild/sync。
-	 *
-	 * 关键路径:
-	 * - 嵌套 key 必须分发到嵌套对象,否则会写入字面量字段 `settings["toolPermissions.xxx"]`
-	 * - chatPreset 变更需 applyChatPreset(多字段)+rebuildLLM
-	 * - contextLengthPreset 变更需同步 chatModelMaxTokens(抽屉读上限)
-	 * - chatModel / chatApiBase 变更需 rebuildLLM
-	 * - embed* 变更(除 embedLocalModel)需 rebuildEmbeddingAdapter
-	 * - promptOverrides.* 变更需 syncToolDefinitions
-	 * - debugLog 变更需 setDebugEnabled
-	 * - 替代原 onChange 回调里散落的 this.display(),改用 this.update()
+	 * 写入 control 值并持久化 + 刷新 UI;写入与副作用逻辑在 settings-apply.ts(与 update_app_config 工具共享)。
 	 *
 	 * @param key - control key
 	 * @param value - 新值
 	 */
 	async setControlValue(key: string, value: unknown): Promise<void> {
-		// 嵌套 key 分发
-		if (key.startsWith('toolPermissions.')) {
-			const toolName = key.slice('toolPermissions.'.length);
-			this.plugin.settings.toolPermissions[toolName] = value as ToolPermission;
-		} else if (key.startsWith('promptOverrides.')) {
-			const sectionId = key.slice('promptOverrides.'.length);
-			// 关键路径:OverrideMap 是 Partial<Record<PromptSectionId, string>>,
-			// sectionId 是运行时 string,需 cast 为 Record<string,...> 才能用任意 string 索引。
-			(this.plugin.settings.promptOverrides as Record<string, string | undefined>)[sectionId] = value as string;
-			this.plugin.syncToolDefinitions();
-		} else if (key === 'chatPreset') {
-			// 关键路径:预设写入多字段,不能只赋 chatPreset 一个 key
-			applyChatPreset(this.plugin.settings, value as ChatPresetId);
-			this.plugin.rebuildLLM();
-		} else if (key === 'contextLengthPreset') {
-			// 修复:下拉只写 preset 时 chatModelMaxTokens 仍是旧值,抽屉上限不跟着变
-			applyContextLengthPreset(this.plugin.settings, value as ContextLengthPresetId);
-		} else if (key === 'toolPermissionLevel') {
-			// 关键路径:仅接受三档枚举,防止 UI 写入非法字符串
-			if (value === 'safe' || value === 'auto' || value === 'danger') {
-				this.plugin.settings.toolPermissionLevel = value;
-			}
-		} else if (key === 'chatNavRailSide') {
-			// 关键路径:仅接受 left|right,防止 UI 写入非法字符串
-			if (value === 'left' || value === 'right') {
-				this.plugin.settings.chatNavRailSide = value;
-			}
-		} else {
-			(this.plugin.settings as unknown as Record<string, unknown>)[key] = value;
-		}
-
-		// 副作用分发
-		if (key === 'chatModel' || key === 'chatApiBase') {
-			// 关键路径:手改模型或 Base → 场景预设自动切到 custom
-			this.plugin.settings.chatPreset = 'custom';
-			this.plugin.rebuildLLM();
-		}
-		// 关键路径:embedLocalModel 当前是只读字段(内置模型),不会触发 setControlValue,
-		// 但保险起见排除,避免未来误触发 rebuild。
-		if (key.startsWith('embed') && key !== 'embedLocalModel') {
-			this.plugin.rebuildEmbeddingAdapter();
-		}
-		if (key === 'debugLog') {
-			devLogger.setDebugEnabled(value as boolean);
-		}
-		// 关键路径:language 切换后立即应用,触发 langStore 更新,Svelte 组件自动重渲染
-		if (key === 'language') {
-			applyLangPreference(value as LangPreference);
-		}
-
+		// 关键路径:写入与副作用统一走 settings-apply(与 update_app_config 工具共享,防止两处漂移)
+		applySettingValue(this.plugin, key, value);
+		// 刷新统一由 saveSettings 触发(面板交互必然 isConnected,此处再调 update 会同 tick 双重渲染)
 		await this.plugin.saveSettings();
-		this.update();
 	}
 }

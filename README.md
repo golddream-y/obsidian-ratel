@@ -74,6 +74,18 @@ The agent can search, read, synthesize, and write. Changes follow the permission
 
 The active note, daily-note location, recent changes, and outlines are available as first-class context.
 
+**Open the note you are talking about**
+
+> “Open that reading note and jump to its second chapter.”
+
+Ask “open that note” and the agent opens it in Obsidian, jumping straight to the heading (or block) you mean.
+
+**Configure and troubleshoot by chat**
+
+> “Switch my chat model.” / “Why isn’t indexing running?”
+
+The built-in config skill reads current settings, applies whitelisted changes, and walks you through keychain setup — keys are guided into the keychain, never filled in for you.
+
 **Remember preferences and extend workflows**
 
 > “Remember that I prefer conclusions before evidence.”

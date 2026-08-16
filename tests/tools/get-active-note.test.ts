@@ -13,6 +13,9 @@ function mockWorkspace(path: string | null, selection: string | null = null): Wo
 	return {
 		getActiveFilePath: () => path,
 		getActiveSelection: () => selection,
+		// 本工具不消费 UI 操作;补齐 WorkspacePort 新增方法的最小桩
+		openNote: () => Promise.resolve(false),
+		openPluginSettings: () => Promise.resolve(false),
 	};
 }
 

@@ -6,6 +6,7 @@
  */
 
 import { EMBEDDING_WORKER_CODE } from '@ratel/embedding-worker-code';
+import { BUILTIN_SKILLS, APP_VERSION } from '@ratel/builtin-skills-code';
 import { FileSystemAdapter, Notice, Plugin, TFile } from 'obsidian';
 import { type RatelVaultSettings, DEFAULT_SETTINGS, RatelVaultSettingTab, normalizeContextLengthSettings } from './settings';
 import { normalizeChatPreset } from './settings/chat-preset';
@@ -74,6 +75,10 @@ import { isSearchReady } from './ui/chat/chat-send-gate';
 import { applyLangPreference, tNow } from './i18n';
 import {
 	hasRerankApiKey,
+	getChatSecretId,
+	getEmbedSecretId,
+	hasChatApiKey,
+	hasEmbedApiKey,
 	resolveChatApiKey,
 	resolveEmbedApiKey,
 	resolveRerankApiKey,
@@ -104,6 +109,7 @@ import { readdirSync } from 'node:fs';
 import { SkillLoader } from './skills/skill-loader';
 import { SkillRegistry } from './skills/skill-registry';
 import { SkillActivator } from './skills/skill-activator';
+import { syncBuiltinSkills } from './skills/builtin-writer';
 import { SkillFsAdapter } from './adapters/skill-fs';
 import { SkillVaultAdapter } from './adapters/skill-vault';
 import { createActivateSkillTool } from './tools/activate-skill';
@@ -117,6 +123,10 @@ import { createGetLinksTool } from './tools/get-links';
 import { createSearchByTagTool } from './tools/search-by-tag';
 import { createSearchByPropertyTool } from './tools/search-by-property';
 import { createGetVaultStructureTool } from './tools/get-vault-structure';
+import { createOpenNoteTool } from './tools/open-note';
+import { createOpenSettingsTool } from './tools/open-settings';
+import { createGetAppConfigTool } from './tools/get-app-config';
+import { createUpdateAppConfigTool } from './tools/update-app-config';
 import { ObsidianWorkspace } from './adapters/obsidian-workspace';
 import type { WorkspacePort } from './ports/workspace';
 import { formatEnvContextLine } from './utils/local-datetime';
@@ -181,6 +191,8 @@ export default class RatelVaultPlugin extends Plugin {
 	private memoryModal: MemoryModal | null = null;
 	/** MCP 管理 Modal 单例 — 已打开则忽略再次 open */
 	private mcpManageModal: McpManageModal | null = null;
+	// 关键路径:SettingTab 实例在 addSettingTab 时保存,ObsidianWorkspace 经 getter 读最新值定位 tab
+	private settingTab: RatelVaultSettingTab | null = null;
 	private workerMode: 'thread' | 'inline' = 'inline';
 
 	/**
@@ -199,7 +211,7 @@ export default class RatelVaultPlugin extends Plugin {
 
 		// ==================== 适配器装配 ====================
 		this.vault = new ObsidianVault(this.app);
-		this.workspacePort = new ObsidianWorkspace(this.app);
+		this.workspacePort = new ObsidianWorkspace(this.app, () => this.settingTab);
 		// 关键路径:Persistence 分文件 sessions 依赖 pluginDir,须在构造前解析绝对路径
 		const adapter = this.app.vault.adapter as FileSystemAdapter;
 		const vaultBase = adapter.getBasePath();
@@ -258,6 +270,13 @@ export default class RatelVaultPlugin extends Plugin {
 		this.skillLoader = new SkillLoader([builtinPort, globalPort, vaultPort]);
 		this.skillRegistry = new SkillRegistry();
 		this.skillActivator = new SkillActivator(this.skillRegistry);
+		// 关键路径:内置 skill 分发(ADR-006 三文件约束) — 构建期内联,启动时幂等落盘;
+		// 无条件执行(enableSkills=false 也落盘,保证开启后立即可用),version 随应用版本,
+		// 升级自动重写;用户在 vault 源放同名 skill 可覆盖内置版(三源合并 vault > builtin)。
+		const builtinSync = syncBuiltinSkills(builtinSkillsDir, BUILTIN_SKILLS, APP_VERSION);
+		if (builtinSync.written.length > 0) {
+			devLogger.info('skill', `内置 skill 已更新: ${builtinSync.written.join(', ')}`);
+		}
 		// 关键路径:onload 异步加载 skills,不阻塞 Obsidian 启动(spec §6.6)。
 		// enableSkills=false 时跳过加载(空 registry,Discovery/Active 段都不注入)。
 		if (this.settings.enableSkills) {
@@ -482,6 +501,40 @@ export default class RatelVaultPlugin extends Plugin {
 		this.tools.register(
 			createGetVaultStructureTool(this.vault, toolDefMap.get('get_vault_structure')!),
 		);
+		// 关键路径(P-CFG):open_note 在对话中为用户打开笔记并定位标题/块,纯 UI 导航。
+		this.tools.register(
+			createOpenNoteTool(this.workspacePort, this.vault, toolDefMap.get('open_note')!),
+		);
+		// 关键路径(P-CFG):open_settings 把设置面板对应 tab 打开到用户眼前,
+		// 密钥 / MCP 等白名单外配置 Agent 不能代改,靠本工具引导用户手动完成。
+		this.tools.register(
+			createOpenSettingsTool(this.workspacePort, toolDefMap.get('open_settings')!),
+		);
+		// 关键路径(P-CFG):get_app_config 读取脱敏配置快照,排查「为什么不工作」的第一步。
+		// SecretProbe 内联绑定 ratel-secrets 散函数(签名一致,method 双变兼容);settings 传 live 引用。
+		this.tools.register(
+			createGetAppConfigTool(
+				{
+					app: this.app,
+					secrets: {
+						hasChatApiKey,
+						hasEmbedApiKey,
+						hasRerankApiKey,
+						getChatSecretId,
+						getEmbedSecretId,
+					},
+				},
+				{ settings: this.settings },
+				this.indexController.indexManager.status$,
+				toolDefMap.get('get_app_config')!,
+			),
+		);
+		// 关键路径(P-CFG):update_app_config 白名单内代改设置;写入走 settings-apply,
+		// 与设置面板同一套副作用(rebuildLLM / rebuildEmbeddingAdapter / preset 联动)。
+		// RatelVaultPlugin 结构兼容 ConfigUpdateHost(SettingApplier + saveSettings),直接传 this。
+		this.tools.register(
+			createUpdateAppConfigTool(this, toolDefMap.get('update_app_config')!),
+		);
 
 		// ==================== MCP Host（ADR-014）====================
 		// 关键路径:stdio 首次 spawn 弹窗确认；已批准 id 直接放行。
@@ -669,7 +722,8 @@ export default class RatelVaultPlugin extends Plugin {
 	});
 
 		// 设置面板
-		this.addSettingTab(new RatelVaultSettingTab(this.app, this));
+		this.settingTab = new RatelVaultSettingTab(this.app, this);
+		this.addSettingTab(this.settingTab);
 
 		devLogger.setDebugEnabled(this.settings.debugLog);
 		this.feedbackController = new FeedbackController({
@@ -1150,6 +1204,11 @@ export default class RatelVaultPlugin extends Plugin {
 		}
 		// 关键路径:通知 Chat / Memory 等视图重跑 applyRatelAppearance(热更新外观)。
 		bumpAppearance();
+		// 关键路径:Agent 工具(update_app_config)改配置后,设置面板若正打开需重渲染 —
+		// 数据层已 mutate 同一 settings 对象,但声明式控件非响应式,显示层会陈旧。
+		if (this.settingTab?.containerEl?.isConnected) {
+			this.settingTab.update();
+		}
 	}
 
 	/**

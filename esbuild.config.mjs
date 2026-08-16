@@ -3,7 +3,7 @@ import process from 'process';
 import { builtinModules } from 'node:module';
 import esbuildSvelte from 'esbuild-svelte';
 import { sveltePreprocess } from 'svelte-preprocess';
-import { mkdirSync, existsSync, readFileSync } from 'node:fs';
+import { mkdirSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -11,6 +11,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 
 const EMBEDDING_WORKER_OUT = path.resolve(__dirname, 'dist/embedding-worker.js');
+
+// 内置 Skill 源目录 — 直接子目录 + SKILL.md,与 SkillFsAdapter 扫描契约一致
+const BUILTIN_SKILLS_DIR = path.resolve(__dirname, 'src/skills/builtin');
 
 /**
  * 将 dist/embedding-worker.js 内容作为字符串常量注入 main.js(ADR-006)。
@@ -31,6 +34,41 @@ function inlineEmbeddingWorkerPlugin() {
 				}
 				return {
 					contents: `export const EMBEDDING_WORKER_CODE = ${JSON.stringify(code)};\n`,
+					loader: 'js',
+				};
+			});
+		},
+	};
+}
+
+/**
+ * 将 src/skills/builtin 下各 skill 目录内的 SKILL.md 与 manifest version 内联进 main.js。
+ * 商店 release 只有 main.js 三文件,内置 skill 靠运行时落盘分发(ADR-006 同思路)。
+ */
+function inlineBuiltinSkillsPlugin() {
+	return {
+		name: 'inline-builtin-skills',
+		setup(build) {
+			build.onResolve({ filter: /^@ratel\/builtin-skills-code$/ }, () => ({
+				path: '@ratel/builtin-skills-code',
+				namespace: 'ratel-builtin-skills',
+			}));
+			build.onLoad({ filter: /.*/, namespace: 'ratel-builtin-skills' }, () => {
+				const skills = {};
+				if (existsSync(BUILTIN_SKILLS_DIR)) {
+					for (const entry of readdirSync(BUILTIN_SKILLS_DIR, { withFileTypes: true })) {
+						if (!entry.isDirectory()) continue;
+						const skillMd = path.join(BUILTIN_SKILLS_DIR, entry.name, 'SKILL.md');
+						if (existsSync(skillMd)) {
+							skills[entry.name] = readFileSync(skillMd, 'utf-8');
+						}
+					}
+				}
+				const manifest = JSON.parse(readFileSync(path.resolve(__dirname, 'manifest.json'), 'utf-8'));
+				return {
+					contents:
+						`export const BUILTIN_SKILLS = ${JSON.stringify(skills)};\n` +
+						`export const APP_VERSION = ${JSON.stringify(manifest.version)};\n`,
 					loader: 'js',
 				};
 			});
@@ -177,6 +215,7 @@ const mainContext = await esbuild.context({
 		}),
 		externalOnnxruntimeNodePlugin(),
 		inlineEmbeddingWorkerPlugin(),
+		inlineBuiltinSkillsPlugin(),
 	],
 });
 

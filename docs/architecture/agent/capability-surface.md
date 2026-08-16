@@ -37,7 +37,7 @@
 │  ┌───────────┐  ┌───────────┐  ┌───────────────────┐ │
 │  │内置工具    │  │ MCP 工具   │  │ 可用 Skill        │ │
 │  │kind=tool │  │kind=mcp   │  │kind=skill         │ │
-│  │23 个     │  │动态注册    │  │Discovery 清单     │ │
+│  │27 个     │  │动态注册    │  │Discovery 清单     │ │
 │  └─────┬─────┘  └─────┬─────┘  └─────────┬─────────┘ │
 │        └──────────────┼──────────────────┘           │
 │                       │ 统一元信息                     │
@@ -90,9 +90,9 @@
 
 | 供给方 | 注册时机 | 机制 | 现状 |
 |---|---|---|---|
-| **内置工具** | 插件 `onload` | `main.ts` 依次 `tools.register(create*Tool(...))` | ✅ 现状(23 个) |
+| **内置工具** | 插件 `onload` | `main.ts` 依次 `tools.register(create*Tool(...))` | ✅ 现状(27 个) |
 | **MCP 工具** | MCP Server 连接成功 + `tools/list` 完成 | 动态 `register`,命名 `mcp__<server>__<tool>` | 📋 ADR-014,待实现 |
-| **Skill** | 三源扫描(builtin / global / vault) | **不进 ToolRegistry**;进 `SkillRegistry`,通过 Discovery 段暴露 | ✅ 现状 |
+| **Skill** | 三源扫描(builtin / global / vault) | **不进 ToolRegistry**;进 `SkillRegistry`,通过 Discovery 段暴露。内置 skill 在构建期经 `inlineBuiltinSkillsPlugin` 虚拟模块把 SKILL.md 内联进 `main.js`,启动幂等落盘 `pluginDir/skills/<name>/`(frontmatter 注入应用版本);三源合并 vault > global > builtin,用户可用同名 skill 覆盖内置 | ✅ 现状 |
 
 **统一约束:**
 - 内置与 MCP 工具共享同一 `Tool` 形状 — `execute` 后端不同(本地 vs `tools/call`),对 Registry 透明
