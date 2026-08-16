@@ -17,7 +17,7 @@
 
 | ID | 文件 | 状态 | 创建日期 | 备注 |
 |---|---|---|---|---|
-| S-CHAT-PERF | [2026-08-15-chat-render-performance-design.md](specs/2026-08-15-chat-render-performance-design.md) | Active | 2026-08-15 | 一个 spec、三阶段：流式轻渲染 → 稳定块冻结 → 块级虚拟滚动；性能优先 |
+| S-CTX-TRIM | [2026-08-16-context-trim-vs-compact-design.md](specs/2026-08-16-context-trim-vs-compact-design.md) | Active | 2026-08-16 | 上送截断对齐 128k–1M；先裁工具再 Layer 1；当前 user 必留；压缩 85% 不动 |
 | S-MD-PREVIEW | [2026-08-14-markdown-preview-chrome-design.md](specs/2026-08-14-markdown-preview-chrome-design.md) | Active | 2026-08-14 | v1 富块已归档 P-MD-PREVIEW-1；剩 overlay/灯箱 P-MD-PREVIEW-2；打字体验保留，渲染机制由 S-CHAT-PERF 接管 |
 | S-MCP-HOST | [2026-08-03-mcp-host-design.md](specs/2026-08-03-mcp-host-design.md) | Active | 2026-08-03 | 平台级 MCP Host;双 transport;入 ToolRegistry;ADR-014/015;Core/UI 已归档,剩 P-MCP-HOST-DOCS |
 | S-GRAPH-EXPAND | [2026-08-03-graph-expand-design.md](specs/2026-08-03-graph-expand-design.md) | Active | 2026-08-03 | 检索 1 跳扩邻 + hub 降权 + 引用标注;ADR-013 近端落地;**暂缓**,先做 MCP |
@@ -31,9 +31,6 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
-| P-CHAT-PERF-1 | [2026-08-15-chat-render-performance-phase-1.md](plans/2026-08-15-chat-render-performance-phase-1.md) | ✅ Completed | S-CHAT-PERF | 流式轻渲染 + 文本段结束富渲染 + 滚动合帧；1044 tests/0 failed;Sandbox 复验并入 P-CHAT-PERF-2/3 终验 |
-| P-CHAT-PERF-2 | [2026-08-15-chat-render-performance-phase-2.md](plans/2026-08-15-chat-render-performance-phase-2.md) | ✅ Completed | S-CHAT-PERF | 稳定 Markdown 块冻结；1064 tests/0 failed;含 CRLF/任务列表审查修复;Sandbox 复验并入 P-CHAT-PERF-3 终验 |
-| P-CHAT-PERF-3 | [2026-08-15-chat-render-performance-phase-3.md](plans/2026-08-15-chat-render-performance-phase-3.md) | ✅ Completed | S-CHAT-PERF | 块级虚拟滚动 + 阅读锚点补偿 + 进度轨虚拟跳转;1081 tests/0 failed;三阶段性能合同全过;待用户 Sandbox 终验 |
 | P-MD-PREVIEW-2 | [2026-08-14-md-preview-overlay.md](plans/2026-08-14-md-preview-overlay.md) | ⏳ Pending | S-MD-PREVIEW | 依赖已归档的 P-MD-PREVIEW-1；叶子 overlay / 放大 / 灯箱 |
 | P-GRAPH-EXPAND | [2026-08-03-graph-expand.md](plans/2026-08-03-graph-expand.md) | ⏳ Pending | S-GRAPH-EXPAND | 检索 1 跳扩邻;6 Task;**暂缓执行**(优先 S-MCP-HOST) |
 | P-MCP-HOST-DOCS | [2026-08-03-mcp-host-docs.md](plans/2026-08-03-mcp-host-docs.md) | ⏳ Pending | S-MCP-HOST | README/user-guide/隐私边界;finishing 时确认勾选 |
@@ -58,7 +55,7 @@
 
 ## Future execution queue(按顺序)
 
-1. **P-CHAT-PERF-1**— 紧急止血,流式渲染性能
+1. **S-CTX-TRIM**— 上送截断对齐模型窗口(spec 已登记,plan 待写)
 2. **P-EVO-A-FM**(update_frontmatter)— plan 待写
 3. **S-EVOLUTION Phase B**(Write Gate + open_note)— plan 待写
 4. **S-EVOLUTION Phase C**(task_plan + 沉淀)— plan 待写
@@ -72,6 +69,7 @@
 
 | ID | 归档目录 | 归档日期 | 备注 |
 |---|---|---|---|
+| S-CHAT-PERF | [archive/S-CHAT-PERF/](archive/S-CHAT-PERF/) | 2026-08-16 | 三阶段聊天渲染性能(流式轻渲染/稳定块冻结/虚拟滚动);spec+3 plan 归档;随 0.2.4 发版 |
 | S-CFG | [archive/S-CFG/](archive/S-CFG/) | 2026-08-16 | PRD CFG-01/02:open_note + 配置 3 工具 + ratel-config 内置 Skill + settings-apply;spec+plan 归档;合并回 main(见 git log) |
 | S-CHAT-MOTION | [archive/S-CHAT-MOTION/](archive/S-CHAT-MOTION/) | 2026-08-15 | Bits 动效;spec+plan 归档 |
 | S-CHAT-MOTION-v2 | [archive/S-CHAT-MOTION-v2/](archive/S-CHAT-MOTION-v2/) | 2026-08-15 | 动效增强;spec+plan 归档 |
