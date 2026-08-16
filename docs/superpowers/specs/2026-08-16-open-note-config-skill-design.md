@@ -58,7 +58,7 @@ export interface WorkspacePort {
 `src/tools/open-note.ts`:
 
 - **参数:** `path`(必填,vault 相对路径,可省略 `.md` 扩展名)+ `anchor`(可选,裸标题名或 `^blockId` 前缀块 ID)。
-- **流程:** 先 `vault.exists()` / 归一化路径验证文件存在 → 不存在返回降级提示(建议改用 search_vault / glob 定位),不抛错;存在则拼 linktext 调 `workspace.openNote()`。
+- **流程:** 先 `vault.fileExists()`(可省略 `.md` 时归一化后验证)→ 不存在返回降级提示(建议改用 search_vault / glob 定位),不抛错;存在则拼 linktext 调 `workspace.openNote()`。
 - **权限:** `readOnly: true`(纯 UI 导航,不写任何文件),默认 `allow`。
 
 ### 4.3 Builtin Skill 内联分发
@@ -67,7 +67,7 @@ export interface WorkspacePort {
 
 **构建内联:** `esbuild.config.mjs` 新增 `inlineBuiltinSkillsPlugin`(仿 `inlineEmbeddingWorkerPlugin`):
 
-- esbuild virtual module `@ratel/builtin-skills-code`,内容为 `src/skills/builtin/**/SKILL.md` 的 JSON 清单(路径 → 文件内容),构建期注入 main.js。
+- esbuild virtual module `@ratel/builtin-skills-code`,内容为 `src/skills/builtin/**/SKILL.md` 的 JSON 清单(**skill 目录名 → 文件全文**,如 `ratel-config` → SKILL.md 内容),构建期注入 main.js。
 - 同时把 `manifest.json` 的 `version` 作为常量注入(供写出时写进 frontmatter)。
 
 **启动写出:** `src/skills/builtin-writer.ts`:
@@ -75,7 +75,7 @@ export interface WorkspacePort {
 ```typescript
 export function syncBuiltinSkills(
 	skillsDir: string,          // pluginDir/skills
-	builtinSkills: Record<string, string>,  // name → SKILL.md 原文
+	builtinSkills: Record<string, string>,  // skill 目录名 → SKILL.md 原文,写出到 <skillsDir>/<目录名>/SKILL.md
 	appVersion: string,
 ): { written: string[]; skipped: string[] };
 ```
@@ -94,7 +94,7 @@ export function syncBuiltinSkills(
 1. 先调 `get_app_config` 看现状(配置快照 + 密钥配置状态 + 索引状态)。
 2. 诊断问题,给出方案;能代改的在白名单内 → 征得用户同意后调 `update_app_config`。
 3. 白名单外(工具权限、MCP、prompt 覆盖)→ 调 `open_settings` 定位 + 文字引导手动改。
-4. API Key 一律不代改:引导用户去 Obsidian 设置 → 钥匙串,列出 secret ID(与 user-guide 的 secret ID 表一致)。
+4. API Key 一律不代改:引导用户去 Obsidian 设置 → 钥匙串,secret ID 以 `get_app_config` 返回的 `requiredSecretId` 为准(不硬编码映射表)。
 5. 红线写死:绝不尝试修改工具权限、MCP 配置、prompt 覆盖;绝不向用户索要或展示 API Key 明文。
 
 ### 4.5 配套 3 工具
@@ -105,7 +105,7 @@ export function syncBuiltinSkills(
 | `update_app_config` | ask | false | `updates: Record<string, unknown>` | 每个 key 的应用结果(成功/拒绝原因) |
 | `open_settings` | allow | true | `tab: chat\|index\|agent\|appearance\|advanced` | 打开结果 |
 
-**脱敏规则(get_app_config):** API Key 一律只返回 `hasChatApiKey: true/false`、`hasEmbedApiKey`、`hasRerankApiKey` 三个 boolean,绝不返回值或前缀;其余配置项为非敏感偏好,原样返回。
+**脱敏规则(get_app_config):** API Key 一律只返回 boolean 存在性(`hasChatApiKey` / `hasEmbedApiKey` / `hasRerankApiKey`),绝不返回值或前缀;同时返回**当前 provider 所需的 secret ID**(复用现有 `resolveChatSecretId` / `resolveEmbedSecretId` 计算,如 DeepSeek/OpenAI 兼容端点 → `ratel-chat-openai-compatible`),LLM 无需记忆映射表;其余配置项为非敏感偏好,原样返回。
 
 **共享设置应用模块(关键架构决定):** 现有设置写入副作用(chatModel→rebuildLLM、embed*→rebuildEmbeddingAdapter、language→applyLangPreference、contextLengthPreset→同步 maxTokens、chatPreset 多字段、嵌套 key 分发)散在 `RatelVaultSettingTab.setControlValue`。抽成 `src/settings/settings-apply.ts`:
 
@@ -151,7 +151,7 @@ language, uiColorScheme, uiAccent, chatNavRailEnabled, chatNavRailSide, chatMoti
   → Discovery 注入 ratel-config skill(auto 激活,LLM 判断相关)
   → LLM 调 get_app_config
       → 返回脱敏快照 + hasChatApiKey:false
-  → LLM:「当前用 DeepSeek 预设但没配密钥,去 Obsidian 设置 → 钥匙串加 ratel-chat-deepseek」
+  → LLM:「当前用 DeepSeek 预设但没配密钥,去 Obsidian 设置 → 钥匙串加 ratel-chat-openai-compatible」
   → LLM 调 open_settings(tab: chat)
   → 用户手动加 Key 后回来说「好了」
   → LLM 调 get_app_config 复查 → hasChatApiKey:true → 引导测试一条消息
@@ -168,6 +168,7 @@ language, uiColorScheme, uiAccent, chatNavRailEnabled, chatNavRailSide, chatMoti
 - **update_app_config 白名单外 key:** 单 key 拒绝不影响同批次其他 key;整个调用在权限系统(ask)确认后才执行。
 - **update_app_config 值非法:** 枚举/范围校验失败,该 key 拒绝并返回原因,其余 key 照常应用。
 - **builtin skill 写出失败(磁盘只读等):** devLogger 记 warning,不阻塞启动;skill 只是不能覆盖升级,vault/global 源照常加载。
+- **open_settings 非法 tab:** 工具层枚举校验(chat/index/agent/appearance/advanced 之外拒绝),非法值返回降级提示;省略 tab 打开默认 tab。
 - **openPluginSettings 失败:** 返回 false,工具层返回提示让用户手动打开设置。
 
 ## 7. 安全与隐私
