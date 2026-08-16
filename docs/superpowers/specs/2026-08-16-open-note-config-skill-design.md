@@ -81,8 +81,10 @@ export function syncBuiltinSkills(
 ```
 
 - onload 时(reloadSkills 之前)执行,幂等:
+  - 写出前 `mkdirSync(<skillsDir>/<目录名>, { recursive: true })` — 首次安装时 skills 目录不存在(SkillFsAdapter 对不存在目录返回空数组,不报错);
   - 磁盘不存在 SKILL.md 或 frontmatter `version` ≠ 应用版本 → 解析原文、注入/覆盖 `version: <应用版本>`、写出;
   - version 相同 → 跳过,零 IO 差异。
+- 目录契约:SkillFsAdapter 只扫 `pluginDir/skills/` 的**直接子目录**且必须含 `SKILL.md`,写出路径 `<pluginDir>/skills/<skill目录名>/SKILL.md` 与之严格对齐;adapter 保持只读,写出走独立 node:fs,不经过 SkillPort。
 - 用户在 vault 源放同名 skill 可覆盖内置版(三源合并既有行为,vault > builtin)。
 
 ### 4.4 ratel-config Skill 内容
@@ -196,6 +198,8 @@ language, uiColorScheme, uiAccent, chatNavRailEnabled, chatNavRailSide, chatMoti
 | `src/main.ts` | 注册 4 工具、onload 调 syncBuiltinSkills、保存 SettingTab 引用 |
 | `src/i18n/zh.ts` / `en.ts` | 工具友好名、错误提示 |
 | `src/prompts/sections.ts` | 4 个工具 schema description |
+| `docs/user-guide.md` | 「日常怎么问」场景表补 2 行(打开这篇 → `open_note`;帮我配置 → ratel-config skill);FAQ 候选(密钥没配怎么引导) |
+| `README.md` / `README.zh-CN.md` | 功能清单 bullet 补 open_note 与内置配置 Skill(用户可见能力) |
 
 不触发架构文档/ADR(无模块边界变更,esbuild 插件沿用既有内联模式)。
 
