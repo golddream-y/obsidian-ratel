@@ -467,7 +467,7 @@ export class ContextManager {
 	 * Layer 1 截断:从最旧历史消息开始裁剪,直到 token 估算落入预算。
 	 *
 	 * 关键路径:
-	 * - 至少保留最后 1 条消息(当前用户输入 / 最近工具结果),避免空上下文。
+	 * - 至少保留最后 1 条 user(当前问题),避免工具结果把问题挤出窗口。
 	 * - 截断只影响发给 LLM 的消息列表,不修改 session.messages 原文(持久化不受影响)。
 	 * - tool 消息如果对应的 assistant tool call 被裁掉,LLM 会忽略孤立 tool result(可接受,Layer 2 再处理配对)。
 	 *
@@ -483,9 +483,25 @@ export class ContextManager {
 		const tokens = countTokens(messages);
 		if (tokens <= this.maxHistoryTokens) return messages;
 
-		// 关键路径:从最旧开始裁剪,保留最后 1 条(当前上下文)。
+		// 关键路径:从最旧裁,但不可丢掉「最后一条 user」——否则工具结果一撑爆,
+		// 下一轮 LLM 只看见 glob/Error,就会回「你还没提出问题」。
 		const trimmed = [...messages];
 		while (trimmed.length > 1 && countTokens(trimmed) > this.maxHistoryTokens) {
+			const lastUserIdx = trimmed.findLastIndex((m) => m.role === 'user');
+			if (lastUserIdx === 0) {
+				const dropIdx = trimmed.findIndex((m, i) => i > 0 && m.role !== 'user');
+				if (dropIdx === -1) break;
+				const drop = trimmed[dropIdx]!;
+				if (drop.role === 'tool' && drop.content.length > 120) {
+					trimmed[dropIdx] = {
+						...drop,
+						content: '[compacted] truncated',
+					};
+					continue;
+				}
+				trimmed.splice(dropIdx, 1);
+				continue;
+			}
 			trimmed.shift();
 		}
 		return trimmed;

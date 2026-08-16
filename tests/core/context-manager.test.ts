@@ -202,6 +202,34 @@ describe('ContextManager', () => {
 		expect(history[history.length - 1]!.content).toBe('E'.repeat(100));
 	});
 
+	it('Layer 1 截断 - 用户问完后工具结果撑爆预算 - 仍保留该条用户问题', async () => {
+		const sessions = new Map<string, Session>();
+		const question = '请整理 AGI 系列笔记的结构';
+		sessions.set('s1', {
+			id: 's1',
+			title: '',
+			messages: [
+				{ role: 'user', content: question },
+				{
+					role: 'assistant',
+					content: '',
+					toolCallId: 'c1',
+					toolName: 'glob',
+					toolArgs: { pattern: 'Work/**/*.md' },
+				},
+				{ role: 'tool', content: 'X'.repeat(400), toolCallId: 'c1' },
+			],
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		});
+		const persistence = createMockPersistence(sessions);
+		const ctx = createCtx(persistence, 50);
+		await ctx.load('s1');
+
+		const history = ctx.toMessages().filter((m) => m.role !== 'system');
+		expect(history.some((m) => m.role === 'user' && m.content === question)).toBe(true);
+	});
+
 	it('Layer 1 截断 - 历史未超预算 - 不裁剪', async () => {
 		const sessions = new Map<string, Session>();
 		sessions.set('s1', {
