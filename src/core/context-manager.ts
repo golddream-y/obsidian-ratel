@@ -24,6 +24,9 @@ import {
 } from './skill-session-messages';
 import type { Skill } from '../skills/types';
 import { projectView } from './compact-project';
+// 关键路径:丢前缀可能切散 tool 配对, sanitize 剔除孤立 tool result(Claude 路径无适配器层兜底)
+import { sanitizeToolMessageOrder } from './tool-message-align';
+import { pruneOverlongText } from './tool-result-prune';
 
 /**
  * ContextManager 依赖注入 — 解耦 settings/工具注册表。
@@ -54,11 +57,12 @@ export interface ContextManagerDeps {
  * - 任何 `add*` 方法都会更新 `session.updatedAt`,便于上层按"最近活跃"排序。
  * - `toMessages()` 返回 Composer 系统段 + 检索结果 + `projectView` 投影后的 head/tail(tail 经 Layer 1 截断);`getTranscript()` 仅返回 `session.messages` 浅拷贝(UI 事实源)。
  * - `load()` 切换 session 时会清空 `searchResultsMessages`,避免旧 session 的检索结果泄漏到新 session。
- * - Layer 1 截断:历史消息超过 `maxHistoryTokens` 时从最旧开始裁剪,保护系统提示词 + 搜索结果 + 最近消息。
+ * - Layer 1 截断:tail 超过 `maxHistoryTokens` 时先丢最后一条 user 之前的更旧轮,再把窗口内 tool 正文压占位(当前问题必留)。
  * - 系统提示词与检索结果外框通过 Composer 组装(direct / rag),解耦具体文案并支持 section 覆盖。
  *
  * @example
- *   const ctx = new ContextManager(persistence, deps);
+ *   // 预算来自 tailBudget(getEffectiveChatModelMaxTokens(settings))
+ *   const ctx = new ContextManager(persistence, deps, 206_400);
  *   await ctx.load('session-1');
  *   ctx.addUserMessage('hello');
  *   const messages = ctx.toMessages();
@@ -87,15 +91,15 @@ export class ContextManager {
 	 */
 	private envContextLine = '';
 	/**
-	 * 历史池 token 预算上限。超出时触发 Layer 1 截断(从最旧消息裁剪)。
-	 * 默认 8000 tokens(~32K 字符),适配 32K 窗口模型的历史池占比。
+	 * 历史池 token 预算上限。超出时触发 Layer 1 截断(丢更旧轮 / 压 tool 占位)。
+	 * 由 tailBudget(getEffectiveChatModelMaxTokens(settings)) 推导,随窗口 128k–1M 缩放。
 	 */
 	private readonly maxHistoryTokens: number;
 
 	/**
 	 * @param persistence - 持久化端口,用于加载/保存 session。
 	 * @param deps - 依赖注入(overrides 与 tools 来源);缺省返回空 overrides 与空工具列表。
-	 * @param maxHistoryTokens - 历史池 token 上限,默认 8000。
+	 * @param maxHistoryTokens - 历史池 token 上限(必传,来自 tailBudget;测试可直接给小值)。
 	 */
 	constructor(
 		private persistence: Persistence,
@@ -103,7 +107,7 @@ export class ContextManager {
 			getOverrides: () => ({}),
 			getTools: () => [],
 		},
-		maxHistoryTokens = 8000,
+		maxHistoryTokens: number,
 	) {
 		this.maxHistoryTokens = maxHistoryTokens;
 	}
@@ -413,7 +417,10 @@ export class ContextManager {
 		const history = this.session?.messages ?? [];
 		const markers = this.session?.compactMarkers;
 		const { head, tail } = projectView(history, markers);
-		const trimmedTail = this.trimHistory(tail);
+		// 关键路径(S-CTX-TRIM):单条工具上限打在投影之后 —
+		// microcompact 已把旧工具换短占位,这里只裁仍超长的 keep-recent 全文。
+		const prunedTail = this.pruneToolContents(tail);
+		const trimmedTail = this.trimHistory(prunedTail);
 
 		// 关键路径:记忆注入位置在 system prompt 之后、检索结果之前,
 		// 让 Agent 在看到检索结果和历史之前先"认识"用户。
@@ -429,8 +436,38 @@ export class ContextManager {
 		if (this.skillsDiscovery) {
 			messages.push({ role: 'system', content: this.skillsDiscovery });
 		}
-		messages.push(...this.searchResultsMessages, ...head, ...trimmedTail);
+		messages.push(...this.pruneSearchBlocks(this.searchResultsMessages), ...head, ...trimmedTail);
 		return messages;
+	}
+
+	/**
+	 * 上送副本内对超长 tool 正文做码点头尾裁。
+	 *
+	 * 关键路径:`Error:` 开头的错误不裁(排障需要完整信息);只改副本不改 session.messages。
+	 *
+	 * @param messages - 投影后的 tail(microcompact 之后)
+	 * @returns 裁剪后的消息数组(未超限的消息保持原引用)
+	 */
+	private pruneToolContents(messages: ChatMessage[]): ChatMessage[] {
+		return messages.map((m) => {
+			if (m.role !== 'tool' || !m.content || m.content.startsWith('Error:')) return m;
+			const pruned = pruneOverlongText(m.content);
+			return pruned === m.content ? m : { ...m, content: pruned };
+		});
+	}
+
+	/**
+	 * 检索注入块同一套 32k 码点裁剪 — 避免 RAG 块绕过 Layer 1 撑爆窗口。
+	 *
+	 * @param messages - searchResultsMessages(system 角色)
+	 * @returns 裁剪后的消息数组(未超限的消息保持原引用)
+	 */
+	private pruneSearchBlocks(messages: ChatMessage[]): ChatMessage[] {
+		return messages.map((m) => {
+			if (!m.content) return m;
+			const pruned = pruneOverlongText(m.content);
+			return pruned === m.content ? m : { ...m, content: pruned };
+		});
 	}
 
 	/**
@@ -464,47 +501,71 @@ export class ContextManager {
 	}
 
 	/**
-	 * Layer 1 截断:从最旧历史消息开始裁剪,直到 token 估算落入预算。
+	 * Layer 1 截断:tail 超预算时先丢最后一条 user 之前的更旧轮,再把窗口内 tool 正文压占位。
 	 *
 	 * 关键路径:
-	 * - 至少保留最后 1 条 user(当前问题),避免工具结果把问题挤出窗口。
-	 * - 截断只影响发给 LLM 的消息列表,不修改 session.messages 原文(持久化不受影响)。
-	 * - tool 消息如果对应的 assistant tool call 被裁掉,LLM 会忽略孤立 tool result(可接受,Layer 2 再处理配对)。
+	 * - 最后一条 user 必留 — 工具结果撑爆窗口时宁可压 tool,不可丢当前问题。
+	 * - assistant tool_call 与对应 tool 的节点保留(只抽空 tool 正文),不拆配对。
+	 *   (步骤 3 丢前缀产生的孤立 tool 由 sanitizeToolMessageOrder 剔除;Error: 豁免仅单条上限层,预算层压占位不豁免)
+	 * - estimateTokens 逐字符分类计数、近似可加(per-msg 之和 ≥ join 估算,误差 ≤ 每条 1 token,方向保守)
+	 *   — 避免 while 里反复 join 全量文本的 O(n²) 扫描(预算 200k+ 时 tail 很大)。
+	 * - 截断只影响发给 LLM 的消息列表,不修改 session.messages 原文。
 	 *
-	 * @param messages - 投影后的 tail 消息(不含 head 摘要段)。
-	 * @returns 裁剪后的消息数组(可能比输入短)。
+	 * @param messages - 投影并经单条上限裁剪后的 tail 消息(不含 head 摘要段)
+	 * @returns 裁剪后的消息数组(可能比输入短、tool 正文可能被压成占位)
 	 */
 	private trimHistory(messages: ChatMessage[]): ChatMessage[] {
 		if (messages.length <= 1) return messages;
 
-		const countTokens = (msgs: ChatMessage[]): number =>
-			estimateTokens(msgs.map((m) => m.content).join(''));
+		const tokensPerMsg = messages.map((m) => estimateTokens(m.content));
+		let total = tokensPerMsg.reduce((sum, n) => sum + n, 0);
+		if (total <= this.maxHistoryTokens) return messages;
 
-		const tokens = countTokens(messages);
-		if (tokens <= this.maxHistoryTokens) return messages;
+		const lastUserIdx = messages.findLastIndex((m) => m.role === 'user');
 
-		// 关键路径:从最旧裁,但不可丢掉「最后一条 user」——否则工具结果一撑爆,
-		// 下一轮 LLM 只看见 glob/Error,就会回「你还没提出问题」。
-		const trimmed = [...messages];
-		while (trimmed.length > 1 && countTokens(trimmed) > this.maxHistoryTokens) {
-			const lastUserIdx = trimmed.findLastIndex((m) => m.role === 'user');
-			if (lastUserIdx === 0) {
-				const dropIdx = trimmed.findIndex((m, i) => i > 0 && m.role !== 'user');
-				if (dropIdx === -1) break;
-				const drop = trimmed[dropIdx]!;
-				if (drop.role === 'tool' && drop.content.length > 120) {
-					trimmed[dropIdx] = {
-						...drop,
-						content: '[compacted] truncated',
-					};
-					continue;
-				}
-				trimmed.splice(dropIdx, 1);
-				continue;
+		// 退化:段内无 user(compact 后边界截断等罕见场景)→ 沿用 FIFO,至少留最后 1 条。
+		if (lastUserIdx === -1) {
+			let start = 0;
+			while (total > this.maxHistoryTokens && messages.length - start > 1) {
+				total -= tokensPerMsg[start]!;
+				start++;
 			}
-			trimmed.shift();
+			// 关键路径:丢前缀可能切散 tool 配对, sanitize 剔除孤立 tool result(Claude 路径无适配器层兜底)
+			return sanitizeToolMessageOrder(messages.slice(start));
 		}
-		return trimmed;
+
+		// 步骤 3:丢最后一条 user 之前的更旧消息(从最旧起),直到不超预算或只剩 u..end。
+		let start = 0;
+		while (total > this.maxHistoryTokens && start < lastUserIdx) {
+			total -= tokensPerMsg[start]!;
+			start++;
+		}
+		// 关键路径:丢前缀可能切散 tool 配对, sanitize 剔除孤立 tool result(Claude 路径无适配器层兜底)
+		if (total <= this.maxHistoryTokens) return sanitizeToolMessageOrder(messages.slice(start));
+
+		// 步骤 4:u..end 仍超 — 把窗口内 tool 正文压成占位(大者先),不删 user、不拆配对。
+		// 上游 pruneToolContents 已做过 32k 码点裁,这里是极端兜底;压完仍超则原样上送,
+		// 交由 PTL 重试 / 85% 自动压缩(compact-v2)兜底。
+		const out = messages.slice(start).map((m) => ({ ...m }));
+		const toolOrder: Array<{ rel: number; n: number }> = [];
+		for (let i = start; i < messages.length; i++) {
+			if (messages[i]!.role === 'tool' && messages[i]!.content.length > 0) {
+				toolOrder.push({ rel: i - start, n: tokensPerMsg[i]! });
+			}
+		}
+		toolOrder.sort((a, b) => b.n - a.n);
+		for (const { rel, n } of toolOrder) {
+			if (total <= this.maxHistoryTokens) break;
+			const msg = out[rel]!;
+			const chars = Array.from(msg.content).length;
+			out[rel] = { ...msg, content: `[truncated] chars=${chars}` };
+			total -= n;
+			// 占位文本自身 token(~3-6/条)忽略不计,PTL/85% 压缩兜底
+		}
+		// 关键路径:三个出口从同一个 start 做 slice,防御须与步骤 3 / FIFO 出口一致;
+		// 本出口的配对完整性依赖「user 之后时序完整」假设,未来中断恢复 / 并行工具可能打破,
+		// 且 Claude 路径无适配器层兜底 — 统一 sanitize 剔除孤立 tool result。
+		return sanitizeToolMessageOrder(out);
 	}
 
 	/**

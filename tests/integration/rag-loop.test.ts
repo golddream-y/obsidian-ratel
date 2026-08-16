@@ -39,7 +39,7 @@ describe('RAG loop integration', () => {
 	it('RAG 链路 - 用户提问 → search_vault → read_note → 回答', async () => {
 		const sessions = new Map<string, Session>();
 		const persistence = createMockPersistence(sessions);
-		const ctx = new ContextManager(persistence);
+		const ctx = new ContextManager(persistence, undefined, 8000);
 
 		const vault: VaultPort = {
 			readFile: vi.fn(async () => '项目使用 TypeScript + esbuild'),

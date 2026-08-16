@@ -49,7 +49,7 @@ describe('loadSessionContextUsage', () => {
 		const persistence = createPersistence(sessions);
 		const inflatedFallback = 999_999;
 		const patch = await loadSessionContextUsage(
-			() => new ContextManager(persistence),
+			() => new ContextManager(persistence, undefined, 8000),
 			's1',
 			32_000,
 			inflatedFallback,

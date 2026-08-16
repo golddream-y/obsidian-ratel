@@ -62,7 +62,7 @@ describe('compactSession', () => {
 		sessions.set('s1', { id: 's1', title: '', messages: oldMessages, createdAt: 0, updatedAt: 0 });
 
 		const persistence = createPersistence(sessions);
-		const ctx = new ContextManager(persistence);
+		const ctx = new ContextManager(persistence, undefined, 8000);
 		const llm = createMockLLM([[{ text: '这是摘要' }]]);
 
 		const result = await compactSession(ctx, llm, 's1');
@@ -91,7 +91,7 @@ describe('compactSession', () => {
 			updatedAt: 0,
 		});
 		const persistence = createPersistence(sessions);
-		const ctx = new ContextManager(persistence);
+		const ctx = new ContextManager(persistence, undefined, 8000);
 		const llm: LLMClient = {
 			async *chat() {
 				throw new Error('LLM 不应被调用');
@@ -120,7 +120,7 @@ describe('compactSession', () => {
 			updatedAt: 0,
 		});
 		const persistence = createPersistence(sessions);
-		const ctx = new ContextManager(persistence);
+		const ctx = new ContextManager(persistence, undefined, 8000);
 		const llm = createMockLLM([[{ text: '   ' }]]);
 
 		await expect(compactSession(ctx, llm, 's1')).rejects.toThrow();
@@ -145,7 +145,7 @@ describe('compactSession', () => {
 			updatedAt: 0,
 		});
 		const persistence = createPersistence(sessions);
-		const ctx = new ContextManager(persistence);
+		const ctx = new ContextManager(persistence, undefined, 8000);
 		const llm: LLMClient = {
 			async *chat() {
 				throw new Error('network');
@@ -188,7 +188,7 @@ describe('compactSession', () => {
 		};
 
 		const persistence = createPersistence(sessions);
-		const ctx = new ContextManager(persistence);
+		const ctx = new ContextManager(persistence, undefined, 8000);
 		const untilIndex = oldMessages.length - 2;
 
 		const result = await compactSession(ctx, llm, 's1', {}, { untilIndex });

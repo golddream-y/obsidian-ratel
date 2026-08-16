@@ -14,6 +14,7 @@ import { normalizeAppearanceSettings } from './ui/appearance/normalize-appearanc
 import { bumpAppearance } from './ui/appearance/appearance-store';
 import { publishSettingsSnapshot } from './ui/settings-store';
 import { getEffectiveChatModelMaxTokens } from './utils/context-window';
+import { tailBudget } from './core/context-budget';
 import { normalizeMcpServerConfig } from './core/mcp-config';
 
 import type { AgentEvent } from './types';
@@ -1302,7 +1303,9 @@ export default class RatelVaultPlugin extends Plugin {
 					? this.skillActivator.composeDiscovery(this.settings.promptOverrides)
 					: '',
 			getSkillsActive: () => '',
-		});
+		},
+		// 关键路径(S-CTX-TRIM):历史上限随窗口推导,替换写死的 8000
+		tailBudget(getEffectiveChatModelMaxTokens(this.settings)));
 
 		// 关键路径(P-BASIC-ENV):每次 ask 注入当前本地时间,零工具成本回答「今天几号」。
 		ctx.setEnvContext(formatEnvContextLine(new Date()));
@@ -1433,10 +1436,15 @@ export default class RatelVaultPlugin extends Plugin {
 	 * @returns 新的 ContextManager 实例(已注入 overrides + tools)
 	 */
 	createContext(): ContextManager {
-		return new ContextManager(this.persistence, {
-			getOverrides: () => this.settings.promptOverrides,
-			getTools: () => this.tools.definitions(),
-		});
+		return new ContextManager(
+			this.persistence,
+			{
+				getOverrides: () => this.settings.promptOverrides,
+				getTools: () => this.tools.definitions(),
+			},
+			// 关键路径(S-CTX-TRIM):历史上限随窗口推导,与 ask() 路径保持一致
+			tailBudget(getEffectiveChatModelMaxTokens(this.settings)),
+		);
 	}
 
 	/**

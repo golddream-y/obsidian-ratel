@@ -717,3 +717,8 @@ git commit -m "feat: 上送历史上限随模型窗口生效 — ask/compact 两
 
 - 分支：feat-p-ctx-trim（worktree）
 - 执行方式：subagent-driven-development
+
+### 执行记录 / 偏差说明
+
+- **Task 1 偏差：** 实施时发现 plan 内嵌公式存在 32k 分界悬崖（outputReserve 8,192 下限 + prefixSlack 固定 24,000 导致 32k 窗口预算暴跌）。按 spec「审查修订」段修正：outputReserve 大窗去下限、prefixSlack 大窗改 `min(24_000, 20%)` 随窗口缩放（commit 67ef399）。**结论：Task 1 内嵌代码与测试期望以 spec 修订为准，后续重放勿按本 plan 字面代码。**
+- **final review 修复：** trimHistory 步骤 4 出口补 `sanitizeToolMessageOrder`（三出口防御一致）+ 端到端测试「FIFO 丢前缀切散 tool 配对 - 剔除孤立 tool 保留配对完整」锁定防线。

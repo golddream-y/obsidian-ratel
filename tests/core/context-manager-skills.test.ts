@@ -58,7 +58,7 @@ describe('ContextManager skills ADR-012', () => {
 
 	beforeEach(async () => {
 		store = new Map();
-		ctx = new ContextManager(makePersistence(store));
+		ctx = new ContextManager(makePersistence(store), undefined, 8000);
 		await ctx.load('s1');
 	});
 

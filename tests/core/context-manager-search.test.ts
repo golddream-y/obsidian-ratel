@@ -36,7 +36,7 @@ function createMockPersistence(sessions: Map<string, Session> = new Map()): Pers
 describe('ContextManager.addSearchResults', () => {
 	it('addSearchResults - 空数组 - 不修改 messages', async () => {
 		const persistence = createMockPersistence();
-		const ctx = new ContextManager(persistence);
+		const ctx = new ContextManager(persistence, undefined, 8000);
 		await ctx.load('session-1');
 		ctx.addUserMessage('hello');
 		ctx.addSearchResults([]);
@@ -49,7 +49,7 @@ describe('ContextManager.addSearchResults', () => {
 
 	it('addSearchResults - 有结果 - 插入 system 之后 user 之前', async () => {
 		const persistence = createMockPersistence();
-		const ctx = new ContextManager(persistence);
+		const ctx = new ContextManager(persistence, undefined, 8000);
 		await ctx.load('session-1');
 		ctx.addUserMessage('项目用什么技术栈?');
 		ctx.addSearchResults([
@@ -67,7 +67,7 @@ describe('ContextManager.addSearchResults', () => {
 
 	it('addSearchResults - 多次调用 - 追加不覆盖', async () => {
 		const persistence = createMockPersistence();
-		const ctx = new ContextManager(persistence);
+		const ctx = new ContextManager(persistence, undefined, 8000);
 		await ctx.load('session-1');
 		ctx.addUserMessage('Q');
 		ctx.addSearchResults([{ path: 'a.md', content: 'A' }]);
@@ -79,7 +79,7 @@ describe('ContextManager.addSearchResults', () => {
 
 	it('addSearchResults - 切换会话 - 不保留旧会话检索结果', async () => {
 		const persistence = createMockPersistence();
-		const ctx = new ContextManager(persistence);
+		const ctx = new ContextManager(persistence, undefined, 8000);
 
 		await ctx.load('session-1');
 		ctx.addUserMessage('Q');
@@ -98,7 +98,7 @@ describe('ContextManager.addSearchResults', () => {
 describe('ContextManager.replaceSearchIndexBlock', () => {
 	it('replaceSearchIndexBlock - 两次调用 - toMessages 仅含最后一批 path', async () => {
 		const persistence = createMockPersistence();
-		const ctx = new ContextManager(persistence);
+		const ctx = new ContextManager(persistence, undefined, 8000);
 		await ctx.load('session-1');
 		ctx.addUserMessage('q');
 		ctx.replaceSearchIndexBlock([{ path: 'old.md', content: '' }]);
@@ -111,7 +111,7 @@ describe('ContextManager.replaceSearchIndexBlock', () => {
 
 	it('replaceSearchIndexBlock - 空数组 - 清空检索注入不追加', async () => {
 		const persistence = createMockPersistence();
-		const ctx = new ContextManager(persistence);
+		const ctx = new ContextManager(persistence, undefined, 8000);
 		await ctx.load('session-1');
 		ctx.addUserMessage('q');
 		ctx.replaceSearchIndexBlock([{ path: 'a.md', content: '' }]);
@@ -127,7 +127,7 @@ describe('ContextManager.replaceSearchIndexBlock', () => {
 
 	it('replaceSearchIndexBlock - 多条结果 - 保持传入顺序', async () => {
 		const persistence = createMockPersistence();
-		const ctx = new ContextManager(persistence);
+		const ctx = new ContextManager(persistence, undefined, 8000);
 		await ctx.load('session-1');
 		ctx.addUserMessage('q');
 		ctx.replaceSearchIndexBlock([
@@ -151,7 +151,7 @@ describe('ContextManager.replaceSearchIndexBlock', () => {
 
 	it('replaceSearchIndexBlock - 稀疏 index - 注入保留真实编号非重排', async () => {
 		const persistence = createMockPersistence();
-		const ctx = new ContextManager(persistence);
+		const ctx = new ContextManager(persistence, undefined, 8000);
 		await ctx.load('session-1');
 		ctx.addUserMessage('q');
 		ctx.replaceSearchIndexBlock([

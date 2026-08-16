@@ -148,6 +148,8 @@ function tailBudget(window: number): number {
 }
 ```
 
+审查修订：outputReserve 大窗去掉 8,192 下限、prefixSlack 大窗改 min(24,000, 窗口 20%) — 消除 32k 分界悬崖(32,000 窗旧公式触 1,024 下限,预算暴跌 95%)；各预设期望值不变,分界处预算单调不减。
+
 单位：与现网 `trimHistory` 相同，用 `estimateTokens`（token），**不是**码点。5.2 的工具上限是码点，两套单位并存，实现里不要拿码点去和 `tailBudget` 比。
 
 `ContextManager` 不得再默认 8000。所有 `new ContextManager(...)`（`ask`、`createContext`，含 compact / 占用估算那条路径）传入 `tailBudget(getEffectiveChatModelMaxTokens(settings))`。改 Context Length 后下一轮 `ask` 生效即可。

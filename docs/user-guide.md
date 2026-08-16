@@ -225,6 +225,7 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 | 「本次会话不再询问」还弹？ | 换工具名仍会问；同工具不同路径不应再问。换场或 `/new` 后授权清空 |
 | 刚开 MCP 显示无工具？ | 等开启完成后再看列表；可点「刷新」强制重连 |
 | 为什么不帮我填 API Key？ | 密钥只存 Obsidian 钥匙串，Agent 只能看到「配没配」，拿不到也填不了明文；照提示去 设置 → 钥匙串 添加对应 secret ID |
+| 工具输出特别长会怎样？ | 发给模型的正文截到 3.2 万字符以内（保留头尾要点）；聊天气泡里仍是全文。长任务续跑时最好带上任务原句 |
 
 更多问题可开 [GitHub Issues](https://github.com/golddream-y/obsidian-ratel/issues)。
 

@@ -48,7 +48,7 @@ function createMockLLM(responses: ChatDelta[][]): LLMClient {
 describe('agentLoop', () => {
 	it('yields message events for a simple response', async () => {
 		const persistence = createMockPersistence();
-		const ctx = new ContextManager(persistence);
+		const ctx = new ContextManager(persistence, undefined, 8000);
 		const llm = createMockLLM([
 			[
 				{ text: 'Hello' },
@@ -76,7 +76,7 @@ describe('agentLoop', () => {
 
 	it('handles tool call and continues loop', async () => {
 		const persistence = createMockPersistence();
-		const ctx = new ContextManager(persistence);
+		const ctx = new ContextManager(persistence, undefined, 8000);
 
 		const toolCall: ToolCall = {
 			id: 'call_1',
@@ -115,7 +115,7 @@ describe('agentLoop', () => {
 
 	it('respects MAX_STEPS limit - 默认 50 步上限 - 不无限循环', async () => {
 		const persistence = createMockPersistence();
-		const ctx = new ContextManager(persistence);
+		const ctx = new ContextManager(persistence, undefined, 8000);
 
 		const infiniteToolCall: ToolCall = {
 			id: 'call_loop',
@@ -155,7 +155,7 @@ describe('agentLoop', () => {
 
 	it('maxSteps 可配置 - 传入 5 - 5 步后强制停止', async () => {
 		const persistence = createMockPersistence();
-		const ctx = new ContextManager(persistence);
+		const ctx = new ContextManager(persistence, undefined, 8000);
 
 		const infiniteToolCall: ToolCall = {
 			id: 'call_loop',
@@ -198,7 +198,7 @@ describe('agentLoop', () => {
 	it('saves session after completion', async () => {
 		const sessions = new Map<string, Session>();
 		const persistence = createMockPersistence(sessions);
-		const ctx = new ContextManager(persistence);
+		const ctx = new ContextManager(persistence, undefined, 8000);
 		const llm = createMockLLM([[{ text: 'Done' }]]);
 		const tools = new ToolRegistry();
 		const hooks = new HookRegistry();
@@ -235,7 +235,7 @@ describe('agentLoop', () => {
 		]);
 
 		const persistence = createMockPersistence();
-		const ctx = new ContextManager(persistence);
+		const ctx = new ContextManager(persistence, undefined, 8000);
 		for await (const _ of agentLoop({ sessionId: 'test', message: 'hi' }, ctx, llm, tools, hooks)) {
 			// consume
 		}
@@ -262,7 +262,7 @@ describe('agentLoop', () => {
 		]);
 
 		const persistence = createMockPersistence();
-		const ctx = new ContextManager(persistence);
+		const ctx = new ContextManager(persistence, undefined, 8000);
 		for await (const _ of agentLoop({ sessionId: 'test', message: 'hi' }, ctx, llm, tools, hooks)) {
 			// consume
 		}
@@ -287,7 +287,7 @@ describe('agentLoop', () => {
 		]);
 
 		const persistence = createMockPersistence();
-		const ctx = new ContextManager(persistence);
+		const ctx = new ContextManager(persistence, undefined, 8000);
 		const events: AgentEvent[] = [];
 
 		for await (const event of agentLoop(
@@ -306,7 +306,7 @@ describe('agentLoop', () => {
 
 	it('handles tool execution error gracefully', async () => {
 		const persistence = createMockPersistence();
-		const ctx = new ContextManager(persistence);
+		const ctx = new ContextManager(persistence, undefined, 8000);
 
 		const toolCall: ToolCall = {
 			id: 'call_1',
@@ -356,7 +356,7 @@ describe('agentLoop', () => {
 				upsert: saveSpy,
 			},
 		} as unknown as Persistence;
-		const ctx = new ContextManager(mockPersistence);
+		const ctx = new ContextManager(mockPersistence, undefined, 8000);
 
 		const llm = {
 			chat: vi.fn().mockImplementation(async function* () {
@@ -382,7 +382,7 @@ describe('agentLoop', () => {
 
 	it('handles multiple rounds of tool calls (2+ steps)', async () => {
 		const persistence = createMockPersistence();
-		const ctx = new ContextManager(persistence);
+		const ctx = new ContextManager(persistence, undefined, 8000);
 
 		const toolCallCount = { count: 0 };
 		const tools = new ToolRegistry();
@@ -422,7 +422,7 @@ describe('agentLoop', () => {
 
 	it('取消 - signal 已 abort - 不调 LLM,直接 yield error + message.end', async () => {
 		const persistence = createMockPersistence();
-		const ctx = new ContextManager(persistence);
+		const ctx = new ContextManager(persistence, undefined, 8000);
 		const llm = createMockLLM([[{ text: 'should not reach' }]]);
 		const tools = new ToolRegistry();
 		const hooks = new HookRegistry();
@@ -451,7 +451,7 @@ describe('agentLoop', () => {
 
 	it('取消 - 流式输出期间 abort - 保留已收到文本,yield error + message.end', async () => {
 		const persistence = createMockPersistence();
-		const ctx = new ContextManager(persistence);
+		const ctx = new ContextManager(persistence, undefined, 8000);
 
 		const controller = new AbortController();
 		const llm: LLMClient = {
@@ -490,7 +490,7 @@ describe('agentLoop', () => {
 	it('取消 - 仍保存 session', async () => {
 		const sessions = new Map<string, Session>();
 		const persistence = createMockPersistence(sessions);
-		const ctx = new ContextManager(persistence);
+		const ctx = new ContextManager(persistence, undefined, 8000);
 
 		const controller = new AbortController();
 		const llm: LLMClient = {
@@ -524,7 +524,7 @@ describe('agentLoop', () => {
 
 	it('agentLoop - 注入 intentClassifier - 调用分类器并按意图选提示词', async () => {
 		const persistence = createMockPersistence();
-		const ctx = new ContextManager(persistence);
+		const ctx = new ContextManager(persistence, undefined, 8000);
 		// 关键路径:LLM 第二轮调用用于真实 chat,第一轮被意图分类器消费
 		const chatSpy = vi.fn();
 		const llm: LLMClient = {
@@ -567,7 +567,7 @@ describe('agentLoop', () => {
 	it('agentLoop - 无 intentClassifier - 不调分类,默认 direct 提示词', async () => {
 		// 关键路径:向后兼容,老调用方不传 intentClassifier 仍能工作
 		const persistence = createMockPersistence();
-		const ctx = new ContextManager(persistence);
+		const ctx = new ContextManager(persistence, undefined, 8000);
 		const llm = createMockLLM([[{ text: 'hi' }]]);
 		const tools = new ToolRegistry();
 		const hooks = new HookRegistry();
@@ -589,7 +589,7 @@ describe('agentLoop', () => {
 
 	it('agentLoop - search_vault 返回后发 search.result 事件', async () => {
 		const persistence = createMockPersistence();
-		const ctx = new ContextManager(persistence);
+		const ctx = new ContextManager(persistence, undefined, 8000);
 
 		const toolCall: ToolCall = {
 			id: 'call_1',
@@ -643,7 +643,7 @@ describe('agentLoop', () => {
 	it('agentLoop - intentClassifier 抛错 - 静默降级 rag,主流程不中断', async () => {
 		// 关键路径:自定义分类器抛错时,agentLoop 应降级 rag 且不向上抛(遵守 @throws 契约)
 		const persistence = createMockPersistence();
-		const ctx = new ContextManager(persistence);
+		const ctx = new ContextManager(persistence, undefined, 8000);
 		const llm = createMockLLM([[{ text: '回答' }]]);
 		const tools = new ToolRegistry();
 		const hooks = new HookRegistry();
@@ -673,7 +673,7 @@ describe('agentLoop', () => {
 
 	it('agentLoop - search_vault 结果含 reranked=true - search.result 事件带 reranked=true', async () => {
 		const persistence = createMockPersistence();
-		const ctx = new ContextManager(persistence);
+		const ctx = new ContextManager(persistence, undefined, 8000);
 
 		const toolCall: ToolCall = {
 			id: 'call_1',
@@ -719,7 +719,7 @@ describe('agentLoop', () => {
 	it('agentLoop - search_vault 结果 reranked=false - search.result 事件带 reranked=false', async () => {
 		// 关键路径:无 Reranker 时 reranked=false,ChatView 不显示精排标记
 		const persistence = createMockPersistence();
-		const ctx = new ContextManager(persistence);
+		const ctx = new ContextManager(persistence, undefined, 8000);
 
 		const toolCall: ToolCall = {
 			id: 'call_1',
@@ -765,7 +765,7 @@ describe('agentLoop', () => {
 	it('agentLoop - search_vault 结果无 reranked 字段 - search.result 降级 reranked=false', async () => {
 		// 关键路径:W3 旧 mock 不带 reranked 字段,W4 agent-loop 应降级为 false
 		const persistence = createMockPersistence();
-		const ctx = new ContextManager(persistence);
+		const ctx = new ContextManager(persistence, undefined, 8000);
 
 		const toolCall: ToolCall = {
 			id: 'call_1',
@@ -812,7 +812,7 @@ describe('agentLoop', () => {
 	it('agentLoop - search_vault 结果混合 reranked - search.result 事件带 reranked=true', async () => {
 		// 关键路径:部分结果 reranked=true、部分 false → 事件级 reranked=true(any 语义)
 		const persistence = createMockPersistence();
-		const ctx = new ContextManager(persistence);
+		const ctx = new ContextManager(persistence, undefined, 8000);
 
 		const toolCall: ToolCall = {
 			id: 'call_1',
@@ -859,7 +859,7 @@ describe('agentLoop', () => {
 	it('agentLoop - search_vault 成功 - 调用 replaceSearchIndexBlock', async () => {
 		const spy = vi.spyOn(ContextManager.prototype, 'replaceSearchIndexBlock');
 		const persistence = createMockPersistence();
-		const ctx = new ContextManager(persistence);
+		const ctx = new ContextManager(persistence, undefined, 8000);
 
 		const toolCall: ToolCall = {
 			id: 'call_1',
@@ -904,7 +904,7 @@ describe('agentLoop', () => {
 	it('agentLoop - search_vault 二次空结果 - 清空注入并 yield 空 search.result', async () => {
 		const spy = vi.spyOn(ContextManager.prototype, 'replaceSearchIndexBlock');
 		const persistence = createMockPersistence();
-		const ctx = new ContextManager(persistence);
+		const ctx = new ContextManager(persistence, undefined, 8000);
 
 		const call1: ToolCall = {
 			id: 'call_1',
@@ -980,7 +980,7 @@ describe('agentLoop', () => {
 
 	it('passes reasoning deltas through as message.delta.reasoning', async () => {
 		const persistence = createMockPersistence();
-		const ctx = new ContextManager(persistence);
+		const ctx = new ContextManager(persistence, undefined, 8000);
 		const llm = createMockLLM([
 			[
 				{ text: '', reasoning: '思考中' },
@@ -1007,7 +1007,7 @@ describe('agentLoop', () => {
 
 	it('工具轮 - 累积 reasoning - 写入 session assistant 消息', async () => {
 		const persistence = createMockPersistence();
-		const ctx = new ContextManager(persistence);
+		const ctx = new ContextManager(persistence, undefined, 8000);
 		const toolCall: ToolCall = {
 			id: 'call_1',
 			name: 'list_files',
@@ -1041,7 +1041,7 @@ describe('agentLoop', () => {
 
 	it('passes usage through to message.end', async () => {
 		const persistence = createMockPersistence();
-		const ctx = new ContextManager(persistence);
+		const ctx = new ContextManager(persistence, undefined, 8000);
 		const llm = createMockLLM([
 			[
 				{ text: 'hi' },
@@ -1067,7 +1067,7 @@ describe('agentLoop', () => {
 
 	it('agentLoop - skipAddUserMessage true - 不重复追加 user', async () => {
 		const persistence = createMockPersistence();
-		const ctx = new ContextManager(persistence);
+		const ctx = new ContextManager(persistence, undefined, 8000);
 		await ctx.load('s1');
 		ctx.addUserMessage('hello');
 		await ctx.save();
@@ -1102,7 +1102,7 @@ describe('agentLoop', () => {
 
 	it('agentLoop - 第一次 llm.chat 抛 prompt too long 且尚未工具 - yield CONTEXT_OVERFLOW 且不写 Error assistant', async () => {
 		const persistence = createMockPersistence();
-		const ctx = new ContextManager(persistence);
+		const ctx = new ContextManager(persistence, undefined, 8000);
 		const llm: LLMClient = {
 			async *chat(): AsyncIterable<ChatDelta> {
 				throw new Error('prompt too long');

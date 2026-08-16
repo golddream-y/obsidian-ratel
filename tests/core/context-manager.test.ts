@@ -251,6 +251,232 @@ describe('ContextManager', () => {
 		expect(msgs).toHaveLength(3);
 	});
 
+	it('Layer 1 截断 - FIFO 丢前缀切散 tool 配对 - 剔除孤立 tool 保留配对完整', async () => {
+		const sessions = new Map<string, Session>();
+		// 关键路径:无 user 消息触发 FIFO 退化分支。
+		// token 估算(ASCII 4 chars/token):asst(c1)=100, tool(c1)=100, asst(c2)=0, tool(c2)=1, 共 201;
+		// 预算 150 → 丢 asst(c1) 后 total=101 ≤ 150,FIFO 停在 start=1,
+		// slice(1)=[tool(c1), asst(c2), tool(c2)] — tool(c1) 成孤立 tool,须被 sanitize 剔除。
+		sessions.set('s1', {
+			id: 's1',
+			title: '',
+			messages: [
+				{ role: 'assistant', content: 'A'.repeat(400), toolCallId: 'c1', toolName: 'read_note', toolArgs: { path: 'a.md' } },
+				{ role: 'tool', content: 'X'.repeat(400), toolCallId: 'c1' },
+				{ role: 'assistant', content: '', toolCallId: 'c2', toolName: 'read_note', toolArgs: { path: 'b.md' } },
+				{ role: 'tool', content: 'ok', toolCallId: 'c2' },
+			],
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		});
+		const persistence = createMockPersistence(sessions);
+		const ctx = createCtx(persistence, 150);
+		await ctx.load('s1');
+
+		const history = ctx.toMessages().filter((m) => m.role !== 'system');
+		// 孤立 tool(c1)(对应 assistant tool_call 已被 FIFO 丢掉)不得出现在上送列表
+		expect(history.some((m) => m.role === 'tool' && m.toolCallId === 'c1')).toBe(false);
+		// 保留最后 2 条,且配对完整:assistant(tool_call c2) 在前、tool(c2) 在后
+		expect(history).toHaveLength(2);
+		expect(history[0]!.role).toBe('assistant');
+		expect(history[0]!.toolCallId).toBe('c2');
+		expect(history[1]!.role).toBe('tool');
+		expect(history[1]!.toolCallId).toBe('c2');
+	});
+
+	// ==================== S-CTX-TRIM:单条工具/检索上限 ====================
+
+	it('toMessages - keep-recent 超长 tool 全文 - 被 32k 码点裁剪且原文不变', async () => {
+		const sessions = new Map<string, Session>();
+		sessions.set('s1', {
+			id: 's1',
+			title: '',
+			messages: [
+				{ role: 'user', content: '列出所有笔记' },
+				{
+					role: 'assistant',
+					content: '',
+					toolCallId: 'c1',
+					toolName: 'glob',
+					toolArgs: { pattern: '**/*.md' },
+				},
+				// 33,000 码点:KEEP_RECENT=5 内不会被 microcompact 折叠 → 走单条上限
+				{ role: 'tool', content: 'X'.repeat(33_000), toolCallId: 'c1' },
+			],
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		});
+		const persistence = createMockPersistence(sessions);
+		const ctx = createCtx(persistence, 8000);
+		await ctx.load('s1');
+
+		const toolMsg = ctx.toMessages().find((m) => m.role === 'tool')!;
+		expect(toolMsg.content).toContain('[truncated ');
+		expect(toolMsg.content.length).toBeLessThan(33_000);
+		// 侧栏事实源不受影响
+		expect(ctx.getTranscript()[2]!.content).toBe('X'.repeat(33_000));
+	});
+
+	it('toMessages - Error: 开头的 tool 结果 - 不裁剪', async () => {
+		const sessions = new Map<string, Session>();
+		const errContent = 'Error: 429 rate limited ' + 'x'.repeat(33_000);
+		sessions.set('s1', {
+			id: 's1',
+			title: '',
+			messages: [
+				{ role: 'user', content: 'q' },
+				{
+					role: 'assistant',
+					content: '',
+					toolCallId: 'c1',
+					toolName: 'search_vault',
+					toolArgs: { query: 'q' },
+				},
+				{ role: 'tool', content: errContent, toolCallId: 'c1' },
+			],
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		});
+		const persistence = createMockPersistence(sessions);
+		// 关键路径:errContent ~8256 tokens,预算须高于它,避免触发 trimHistory 预算层压占位 —
+		// 本用例专测 pruneToolContents 单条上限层的 Error 豁免(预算层仍会压,见 trimHistory 用例)。
+		const ctx = createCtx(persistence, 9000);
+		await ctx.load('s1');
+
+		const toolMsg = ctx.toMessages().find((m) => m.role === 'tool')!;
+		expect(toolMsg.content).toBe(errContent);
+	});
+
+	it('toMessages - 检索块超 32k 码点 - 同套头尾裁', async () => {
+		const persistence = createMockPersistence();
+		const ctx = createCtx(persistence, 8000);
+		await ctx.load('s1');
+		ctx.addUserMessage('查一下');
+		ctx.replaceSearchIndexBlock([{ path: 'big.md', content: 'y'.repeat(40_000) }]);
+
+		const searchBlock = ctx
+			.toMessages()
+			.filter((m) => m.role === 'system')
+			.find((m) => m.content.includes('big.md'))!;
+		expect(searchBlock.content).toContain('[truncated ');
+		expect(searchBlock.content.length).toBeLessThan(40_000);
+	});
+
+	// ==================== S-CTX-TRIM:trimHistory 重写 ====================
+
+	it('trimHistory - 多轮 user 超预算 - 丢更旧轮且保留最后一条 user', async () => {
+		const sessions = new Map<string, Session>();
+		sessions.set('s1', {
+			id: 's1',
+			title: '',
+			messages: [
+				{ role: 'user', content: 'A'.repeat(100) },
+				{ role: 'assistant', content: 'B'.repeat(100) },
+				{ role: 'user', content: 'C'.repeat(100) },
+				{ role: 'assistant', content: 'D'.repeat(100) },
+				{ role: 'user', content: 'E'.repeat(100) },
+			],
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		});
+		const persistence = createMockPersistence(sessions);
+		const ctx = createCtx(persistence, 50);
+		await ctx.load('s1');
+
+		const history = ctx.toMessages().filter((m) => m.role !== 'system');
+		expect(history.some((m) => m.content === 'E'.repeat(100))).toBe(true);
+		expect(history.some((m) => m.content === 'A'.repeat(100))).toBe(false);
+	});
+
+	it('trimHistory - u..end 内 tool 撑爆 - tool 压占位且 user 与配对节点保留', async () => {
+		const sessions = new Map<string, Session>();
+		sessions.set('s1', {
+			id: 's1',
+			title: '',
+			messages: [
+				{ role: 'user', content: '继续整理' },
+				{
+					role: 'assistant',
+					content: '',
+					toolCallId: 'c1',
+					toolName: 'glob',
+					toolArgs: { pattern: '**/*.md' },
+				},
+				{ role: 'tool', content: 'X'.repeat(2_000), toolCallId: 'c1' },
+				{ role: 'assistant', content: 'R'.repeat(100) },
+			],
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		});
+		const persistence = createMockPersistence(sessions);
+		// 预算 100:user ~10 + tool 500 + asst 25 → 步骤 3 丢不动(只有一轮),步骤 4 压 tool
+		const ctx = createCtx(persistence, 100);
+		await ctx.load('s1');
+
+		const history = ctx.toMessages().filter((m) => m.role !== 'system');
+		// user 必在、消息条数不变(tool 节点保留,正文抽空)
+		expect(history.some((m) => m.role === 'user' && m.content === '继续整理')).toBe(true);
+		expect(history).toHaveLength(4);
+		const toolMsg = history.find((m) => m.role === 'tool')!;
+		expect(toolMsg.content).toMatch(/^\[truncated\] chars=\d+$/);
+		expect(toolMsg.toolCallId).toBe('c1');
+	});
+
+	it('trimHistory - 段内无 user - FIFO 退化且至少留 1 条', async () => {
+		const sessions = new Map<string, Session>();
+		sessions.set('s1', {
+			id: 's1',
+			title: '',
+			messages: [
+				{ role: 'assistant', content: 'A'.repeat(100) },
+				{ role: 'assistant', content: 'B'.repeat(100) },
+				{ role: 'assistant', content: 'C'.repeat(100) },
+			],
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		});
+		const persistence = createMockPersistence(sessions);
+		const ctx = createCtx(persistence, 30);
+		await ctx.load('s1');
+
+		const history = ctx.toMessages().filter((m) => m.role !== 'system');
+		expect(history.length).toBeGreaterThanOrEqual(1);
+		expect(history.length).toBeLessThan(3);
+		// FIFO:从最旧丢,留的是最新的
+		expect(history[history.length - 1]!.content).toBe('C'.repeat(100));
+	});
+
+	it('trimHistory - 压完 tool 仍超预算 - user 原样保留不崩', async () => {
+		const sessions = new Map<string, Session>();
+		sessions.set('s1', {
+			id: 's1',
+			title: '',
+			messages: [
+				// user 本身 300 码点(75 tokens)就超过预算 5 — 兜底出口:原样上送
+				{ role: 'user', content: 'Q'.repeat(300) },
+				{
+					role: 'assistant',
+					content: '',
+					toolCallId: 'c1',
+					toolName: 'glob',
+					toolArgs: { pattern: '**/*.md' },
+				},
+				{ role: 'tool', content: 'X'.repeat(2_000), toolCallId: 'c1' },
+			],
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		});
+		const persistence = createMockPersistence(sessions);
+		const ctx = createCtx(persistence, 5);
+		await ctx.load('s1');
+
+		const history = ctx.toMessages().filter((m) => m.role !== 'system');
+		// user 原样保留、tool 已压占位、条数不变
+		expect(history.some((m) => m.role === 'user' && m.content === 'Q'.repeat(300))).toBe(true);
+		expect(history.find((m) => m.role === 'tool')!.content).toMatch(/^\[truncated\] chars=\d+$/);
+		expect(history).toHaveLength(3);
+	});
+
 	it('Layer 1 截断 - 不影响 session.messages 原文', async () => {
 		const sessions = new Map<string, Session>();
 		sessions.set('s1', {
@@ -380,7 +606,7 @@ describe('resetSession', () => {
 			notes: { get: async () => null, upsert: async () => {}, listByPath: async () => [], delete: async () => {} },
 			hooks: { append: async () => {}, list: async () => [] },
 		};
-		const ctx = new ContextManager(failingPersistence as unknown as Persistence);
+		const ctx = new ContextManager(failingPersistence as unknown as Persistence, undefined, 8000);
 		await ctx.load('s1');
 	await expect(ctx.resetSession('s1', '摘要', [])).rejects.toThrow('disk error');
 });
