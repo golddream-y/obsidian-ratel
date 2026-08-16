@@ -17,7 +17,6 @@
 
 | ID | 文件 | 状态 | 创建日期 | 备注 |
 |---|---|---|---|---|
-| S-CTX-TRIM | [2026-08-16-context-trim-vs-compact-design.md](specs/2026-08-16-context-trim-vs-compact-design.md) | Active | 2026-08-16 | 上送截断对齐 128k–1M；先裁工具再 Layer 1；当前 user 必留；压缩 85% 不动 |
 | S-MD-PREVIEW | [2026-08-14-markdown-preview-chrome-design.md](specs/2026-08-14-markdown-preview-chrome-design.md) | Active | 2026-08-14 | v1 富块已归档 P-MD-PREVIEW-1；剩 overlay/灯箱 P-MD-PREVIEW-2；打字体验保留，渲染机制由 S-CHAT-PERF 接管 |
 | S-MCP-HOST | [2026-08-03-mcp-host-design.md](specs/2026-08-03-mcp-host-design.md) | Active | 2026-08-03 | 平台级 MCP Host;双 transport;入 ToolRegistry;ADR-014/015;Core/UI 已归档,剩 P-MCP-HOST-DOCS |
 | S-GRAPH-EXPAND | [2026-08-03-graph-expand-design.md](specs/2026-08-03-graph-expand-design.md) | Active | 2026-08-03 | 检索 1 跳扩邻 + hub 降权 + 引用标注;ADR-013 近端落地;**暂缓**,先做 MCP |
@@ -31,7 +30,6 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
-| P-CTX-TRIM | [2026-08-16-context-trim-implementation.md](plans/2026-08-16-context-trim-implementation.md) | 🔄 In Progress | S-CTX-TRIM | 4 Task；分支 feat-p-ctx-trim；预算函数 + 32k 码点裁剪 + trimHistory 重写 + main 接线 |
 | P-MD-PREVIEW-2 | [2026-08-14-md-preview-overlay.md](plans/2026-08-14-md-preview-overlay.md) | ⏳ Pending | S-MD-PREVIEW | 依赖已归档的 P-MD-PREVIEW-1；叶子 overlay / 放大 / 灯箱 |
 | P-GRAPH-EXPAND | [2026-08-03-graph-expand.md](plans/2026-08-03-graph-expand.md) | ⏳ Pending | S-GRAPH-EXPAND | 检索 1 跳扩邻;6 Task;**暂缓执行**(优先 S-MCP-HOST) |
 | P-MCP-HOST-DOCS | [2026-08-03-mcp-host-docs.md](plans/2026-08-03-mcp-host-docs.md) | ⏳ Pending | S-MCP-HOST | README/user-guide/隐私边界;finishing 时确认勾选 |
@@ -56,11 +54,10 @@
 
 ## Future execution queue(按顺序)
 
-1. **S-CTX-TRIM / P-CTX-TRIM**— 上送截断对齐模型窗口(plan 已就绪,下一步执行)
-2. **P-EVO-A-FM**(update_frontmatter)— plan 待写
-3. **S-EVOLUTION Phase B**(Write Gate + open_note)— plan 待写
-4. **S-EVOLUTION Phase C**(task_plan + 沉淀)— plan 待写
-5. **P-SKILL-2-EXECUTION** / **P-SKILL-3-UI**— 降优先级;P-SKILL-3 对齐 S-SKILL-UX  
+1. **P-EVO-A-FM**(update_frontmatter)— plan 待写
+2. **S-EVOLUTION Phase B**(Write Gate + open_note)— plan 待写
+3. **S-EVOLUTION Phase C**(task_plan + 沉淀)— plan 待写
+4. **P-SKILL-2-EXECUTION** / **P-SKILL-3-UI**— 降优先级;P-SKILL-3 对齐 S-SKILL-UX  
 
 ---
 
@@ -70,6 +67,7 @@
 
 | ID | 归档目录 | 归档日期 | 备注 |
 |---|---|---|---|
+| S-CTX-TRIM | [archive/S-CTX-TRIM/](archive/S-CTX-TRIM/) | 2026-08-17 | 上送截断对齐模型窗口;预算随窗口推导 + 32k 码点裁 + 保当前 user;spec+plan 归档;squash → develop `6e3b692`;1191 tests |
 | S-CHAT-PERF | [archive/S-CHAT-PERF/](archive/S-CHAT-PERF/) | 2026-08-16 | 三阶段聊天渲染性能(流式轻渲染/稳定块冻结/虚拟滚动);spec+3 plan 归档;随 0.2.4 发版 |
 | S-CFG | [archive/S-CFG/](archive/S-CFG/) | 2026-08-16 | PRD CFG-01/02:open_note + 配置 3 工具 + ratel-config 内置 Skill + settings-apply;spec+plan 归档;合并回 main(见 git log) |
 | S-CHAT-MOTION | [archive/S-CHAT-MOTION/](archive/S-CHAT-MOTION/) | 2026-08-15 | Bits 动效;spec+plan 归档 |
