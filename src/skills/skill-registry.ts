@@ -1,6 +1,6 @@
 /**
  * @file src/skills/skill-registry.ts
- * @description SkillRegistry — 内存注册表,管理 enabled/disabled/active 三态
+ * @description SkillRegistry — 内存注册表,管理 skill 的 enabled/active 状态
  * @module skills/skill-registry
  * @depends skills/types, i18n
  */
@@ -12,10 +12,9 @@ import { tNow } from '../i18n';
  * Skill 注册表 — 内存常驻,管理 skill 的加载结果与运行时状态。
  *
  * 设计要点:
- * - 三态管理:
- *   - `enabled`:skill manifest 的 enabled 字段(用户可改),控制是否进入 Discovery
+ * - 状态管理:
+ *   - `enabled`:per-skill 开关,持久化在 settings.skillEnabled,Modal toggle 后立即生效
  *   - `active`:session 内激活态,激活后 instructions 注入 system prompt
- *   - `always`:activation='always' 的 skill 在 Discovery 阶段自动 active
  * - `reload(skills, warnings)` 全量替换内部状态,供 main.ts 重新扫描后调用
  * - 激活态不跨会话持久化(spec §4.5 — session 关闭时全部清空)
  *
@@ -37,8 +36,8 @@ export class SkillRegistry {
 	 *
 	 * 关键路径:
 	 * - 保留当前 activeSkills(若新列表中仍存在同名 skill)
-	 * - 保留 enabledOverrides(用户 toggle 的状态跨 reload 保留)
-	 * - activation='always' 的 skill 自动加入 activeSkills
+	 * - 保留 enabledOverrides(用户 toggle 的状态跨 reload 保留;
+	 *   生产流程由 applyEnabledOverrides 在 reload 后全量收口)
 	 *
 	 * @param skills - Loader 加载合并后的 skill 列表
 	 * @param warnings - Loader 产生的 warning 列表
@@ -52,7 +51,6 @@ export class SkillRegistry {
 				this.activeSkills.delete(name);
 			}
 		}
-		// ADR-012:always 不再写入全局 activeSkills;由 ContextManager.ensureAlwaysSkillsInjected 按场注入。
 	}
 
 	/**
@@ -60,15 +58,6 @@ export class SkillRegistry {
 	 */
 	getAll(): Skill[] {
 		return Array.from(this.skills.values());
-	}
-
-	/**
-	 * `activation: always` 且已启用的 skill — 供每场 ensureAlwaysSkillsInjected。
-	 */
-	getAlwaysSkills(): Skill[] {
-		return this.getAll().filter(
-			(s) => s.manifest.activation === 'always' && this.isEnabled(s.manifest.name),
-		);
 	}
 
 	/**
@@ -114,10 +103,27 @@ export class SkillRegistry {
 	}
 
 	/**
+	 * 从 settings.skillEnabled 全量应用 per-skill 开关(S-SKILL-UX)。
+	 *
+	 * 关键路径:reloadSkills 每次加载后调用,持久化状态覆盖内存 Map;
+	 * settings 里未登记的 skill 走 manifest.enabled 默认值。
+	 *
+	 * @param record - settings.skillEnabled(name → 是否启用)
+	 */
+	applyEnabledOverrides(record: Record<string, boolean>): void {
+		this.enabledOverrides = new Map(Object.entries(record));
+		// 关键路径:禁用条目同步清 active,与 setEnabled 行为对齐,
+		// 避免「已激活又持久化禁用」的 skill 经 getActive 漏出。
+		for (const [name, enabled] of this.enabledOverrides) {
+			if (!enabled) this.activeSkills.delete(name);
+		}
+	}
+
+	/**
 	 * 获取进入 Discovery 段的 skill 列表(enabled 且 activation != 'manual')。
 	 *
 	 * 关键路径:activation='manual' 的 skill 不出现在 Discovery 段(spec §4.5b),
-	 * 仅 `/skill <name>` 可激活。
+	 * 仅 activate_skill 工具可激活。
 	 */
 	getDiscovered(): Skill[] {
 		return this.getAll().filter((s) => {

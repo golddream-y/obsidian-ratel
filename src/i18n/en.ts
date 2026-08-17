@@ -156,8 +156,8 @@ export const en: Strings = {
   'settings.toolPermissions.search_memory': 'Search memory',
   'settings.toolPermissions.remember': 'Remember',
   'settings.toolPermissions.forget_memory': 'Forget memory',
-  'settings.toolPermissions.activate_skill': 'Activate skill',
-  'settings.toolPermissions.deactivate_skill': 'Deactivate skill',
+  'settings.toolPermissions.activate_skill': 'Use skill',
+  'settings.toolPermissions.deactivate_skill': 'Stop using skill',
   'settings.toolPermissions.get_datetime': 'Get datetime',
   'settings.toolPermissions.get_active_note': 'Active note',
   'settings.toolPermissions.get_daily_note': 'Daily note path',
@@ -502,6 +502,7 @@ export const en: Strings = {
   'status.drawer.feedback': 'Send feedback',
   'status.drawer.memory': 'Memory management',
   'status.drawer.sponsor': 'Sponsor',
+  'status.drawer.skill': 'Skills',
   'status.drawer.mcp': 'MCP',
   'status.indexLabel.ready': 'Ready',
   'status.indexLabel.scanning': 'Scanning',
@@ -736,12 +737,12 @@ export const en: Strings = {
   'promptLabel.tool.delete_note.description.desc': 'Move to trash',
   // 关键路径:activate_skill 工具
   'promptLabel.tool.activate_skill.description': 'activate_skill description',
-  'promptLabel.tool.activate_skill.description.desc': 'Activate a skill, inject SKILL.md instructions',
+  'promptLabel.tool.activate_skill.description.desc': 'Use a skill, inject SKILL.md instructions',
   'promptLabel.tool.activate_skill.param.name': 'activate_skill.name',
   'promptLabel.tool.activate_skill.param.name.desc': 'Skill name (kebab-case)',
   // 关键路径:deactivate_skill 工具
   'promptLabel.tool.deactivate_skill.description': 'deactivate_skill description',
-  'promptLabel.tool.deactivate_skill.description.desc': 'Deactivate a skill, remove its instructions',
+  'promptLabel.tool.deactivate_skill.description.desc': 'Stop using a skill, remove its instructions',
   'promptLabel.tool.deactivate_skill.param.name': 'deactivate_skill.name',
   'promptLabel.tool.deactivate_skill.param.name.desc': 'Skill name',
   'promptLabel.tool.get_datetime.description': 'get_datetime description',
@@ -865,23 +866,14 @@ export const en: Strings = {
   'memory.panel.cleared': 'Cleared {count} model-inferred memory entries',
 
   // ==================== SkillStrings ====================
-  // Settings — Skills group
-  'skill.settings.heading': 'Skills',
-  'skill.settings.enableSkills.name': 'Enable Skill mechanism',
-  'skill.settings.enableSkills.desc': 'When off, the Agent loads no skills; Discovery/Activation not injected',
-  // Notice
-  'skill.notice.activating': 'Activating {name}...',
-  'skill.notice.activated': 'Activated {name}',
-  'skill.notice.deactivated': 'Deactivated {name}',
+  // Notice (S-SKILL-UX: user-facing wording drops "activate")
+  'skill.notice.activated': 'Using skill {name}',
+  'skill.notice.deactivated': 'Skill {name} disabled',
   'skill.notice.notFound': 'Skill not found: {name}',
-  'skill.notice.alreadyActive': '{name} already active',
-  'skill.notice.notActive': '{name} not active',
+  'skill.notice.alreadyActive': 'Skill {name} already in effect for this chat',
+  'skill.notice.notActive': 'Skill {name} not in use',
   'skill.notice.reloadDone': 'Reloaded {count} skills',
   'skill.notice.reloadFailed': 'Skill reload failed: {message}',
-  // Slash command descriptions
-  'skill.cmd.skill': 'Activate skill',
-  'skill.cmd.skills': 'List skills',
-  'skill.cmd.reloadSkills': 'Reload skills',
   // addCommand name
   'cmd.reloadSkills': 'Reload skills',
   // Source labels
@@ -891,13 +883,22 @@ export const en: Strings = {
   // Activation mode labels
   'skill.activation.auto': 'auto',
   'skill.activation.manual': 'manual',
-  'skill.activation.always': 'always',
-  // Discovery / Active section
-  'skill.discovery.title': 'Available Skills',
-  'skill.discovery.empty': '(no skills loaded)',
-  'skill.active.title': 'Active Skills',
   // Errors
   'error.skill.invalidName': 'Invalid skill name: {name}',
   'error.skill.notEnabled': 'Skill {name} is not enabled',
   'error.skill.loadFailed': 'Skill load failed: {message}',
+  // SkillManageModal (S-SKILL-UX — skill manage modal)
+  'modal.skillManage.title': 'Manage skills',
+  'modal.skillManage.installedHeading': 'Installed skills ({count})',
+  'modal.skillManage.empty': 'No skills yet',
+  'modal.skillManage.emptyHint': 'Drop a SKILL.md into .ratel/skills/<name>/ inside your vault; global ~/.ratel/skills/ and built-in sources also work. Vault wins on name conflicts.',
+  'modal.skillManage.reload': 'Rescan',
+  'modal.skillManage.viewFull': 'View full text',
+  'modal.skillManage.builtinReadonly': 'Built-in skill; updated with the plugin',
+  'modal.skillManage.edit': 'Edit',
+  'modal.skillManage.delete': 'Delete',
+  'modal.skillManage.confirmDelete': 'Click again to confirm',
+  'modal.skillManage.deleted': 'Deleted skill {name}',
+  'modal.skillManage.deleteFailed': 'Delete failed: {message}',
+  'modal.skillManage.editHint': 'Skill folder: {path}',
 };

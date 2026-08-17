@@ -515,6 +515,7 @@ export interface StatusStrings {
   'status.drawer.memory': string;
   'status.drawer.sponsor': string;
   'status.drawer.mcp': string;
+  'status.drawer.skill': string;
   'status.indexLabel.ready': string;
   'status.indexLabel.scanning': string;
   'status.indexLabel.queued': string;
@@ -899,14 +900,9 @@ export interface MemoryStrings {
 }
 
 // ==================== Skill(Skill 机制 — P-SKILL-1-CORE 消费) ====================
-// 关键路径:SkillStrings 覆盖 settings 面板 / Notice / slash 命令 / 来源标签 / 激活态标签
+// 关键路径:SkillStrings 覆盖 Notice / 命令面板 / 来源标签 / 激活态标签
 export interface SkillStrings {
-  // Settings 面板 — Skills group
-  'skill.settings.heading': string;
-  'skill.settings.enableSkills.name': string;
-  'skill.settings.enableSkills.desc': string;
   // Notice(Toast)
-  'skill.notice.activating': string;
   'skill.notice.activated': string;
   'skill.notice.deactivated': string;
   'skill.notice.notFound': string;
@@ -914,10 +910,6 @@ export interface SkillStrings {
   'skill.notice.notActive': string;
   'skill.notice.reloadDone': string;
   'skill.notice.reloadFailed': string;
-  // Slash 命令描述
-  'skill.cmd.skill': string;
-  'skill.cmd.skills': string;
-  'skill.cmd.reloadSkills': string;
   // addCommand name(命令面板)
   'cmd.reloadSkills': string;
   // 来源标签
@@ -927,15 +919,24 @@ export interface SkillStrings {
   // 激活模式标签
   'skill.activation.auto': string;
   'skill.activation.manual': string;
-  'skill.activation.always': string;
-  // Discovery / Active 段文案(PromptLabelStrings 已覆盖 promptLabel.skill.*)
-  'skill.discovery.title': string;
-  'skill.discovery.empty': string;
-  'skill.active.title': string;
   // 错误
   'error.skill.invalidName': string;
   'error.skill.notEnabled': string;
   'error.skill.loadFailed': string;
+  // SkillManageModal(S-SKILL-UX — 技能管理弹窗)
+  'modal.skillManage.title': string;
+  'modal.skillManage.installedHeading': string;
+  'modal.skillManage.empty': string;
+  'modal.skillManage.emptyHint': string;
+  'modal.skillManage.reload': string;
+  'modal.skillManage.viewFull': string;
+  'modal.skillManage.builtinReadonly': string;
+  'modal.skillManage.edit': string;
+  'modal.skillManage.delete': string;
+  'modal.skillManage.confirmDelete': string;
+  'modal.skillManage.deleted': string;
+  'modal.skillManage.deleteFailed': string;
+  'modal.skillManage.editHint': string;
 }
 
 // ==================== 合并 ====================

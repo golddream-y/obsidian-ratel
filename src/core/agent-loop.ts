@@ -11,9 +11,8 @@ import type { ContextManager } from './context-manager';
 import type { ToolRegistry } from './tool-registry';
 import type { HookRegistry } from './hooks';
 import type { Intent } from './intent-classifier';
-// 关键路径:Skill 激活/反激活后需重组 system prompt 的 skills 段 — 注入 Activator + Registry 类型。
+// 关键路径:Skill 激活/反激活后需重组 system prompt 的 skills 段 — 注入 Activator(Discovery 重组用)。
 import type { SkillActivator } from '../skills/skill-activator';
-import type { SkillRegistry } from '../skills/skill-registry';
 import { devLogger } from '../logging/dev-logger';
 import { isPromptTooLong } from './compact-project';
 import { mapSearchResults } from './search-result-mapper';
@@ -59,7 +58,6 @@ const TRUNCATION_NOTICE = '\n\n---\n⚠️ **回复因长度限制被截断。**
  * @param toolPermissionCheck - 可选的工具权限检查回调
  * @param maxSteps - 可选的最大步数上限,默认 50(见 ADR-004)
  * @param skillActivator - 可选的 Skill 激活器,用于 activate_skill / deactivate_skill 执行后重组 system prompt 的 skills 段
- * @param skillRegistry - 可选的 Skill 注册表,与 skillActivator 配对传入(同时传或同时不传)
  * @param skipAddUserMessage - 为 true 时不追加 user 消息(压缩重试时 transcript 已含该句)
  * @returns AgentEvent 异步可迭代流
  * @throws 不会向上抛错 — 内部错误一律转 `error` 事件
@@ -79,9 +77,8 @@ export async function* agentLoop(
 	intentClassifier?: (message: string) => Promise<Intent>,
 	toolPermissionCheck?: (toolCall: ToolCall) => Promise<void>,
 	maxSteps?: number,
-	// 关键路径:Skill 激活/反激活后需重组 system prompt — 注入 Activator + Registry(两者必须同时传或同时不传)。
+	// 关键路径:Skill 激活/反激活后需重组 system prompt — 注入 Activator(Discovery 重组用)。
 	skillActivator?: SkillActivator,
-	skillRegistry?: SkillRegistry,
 	skipAddUserMessage?: boolean,
 ): AsyncIterable<AgentEvent> {
 	// 关键路径:maxSteps 可配置(见 ADR-004),未传时降级默认值 50。
@@ -91,10 +88,6 @@ export async function* agentLoop(
 	let lastUsage: { promptTokens: number; completionTokens: number } | undefined;
 	// 加载或初始化 session,然后把用户消息压入上下文。
 	await ctx.load(req.sessionId);
-	// ADR-012:always skill 按场一次性写入 messages;Discovery 仍走 setSkillsContext。
-	if (skillRegistry) {
-		ctx.ensureAlwaysSkillsInjected(skillRegistry.getAlwaysSkills());
-	}
 	if (skillActivator) {
 		ctx.setSkillsContext(skillActivator.composeDiscovery(ctx.getOverrides()), '');
 	}
@@ -284,7 +277,6 @@ export async function* agentLoop(
 				// 关键路径:activate/deactivate 后只刷新 Discovery(ADR-012:指令已在 messages)。
 				if (
 					skillActivator &&
-					skillRegistry &&
 					(tc.name === 'activate_skill' || tc.name === 'deactivate_skill') &&
 					!toolFailed
 				) {

@@ -69,7 +69,7 @@ graph TB
         RER["Reranker(可选)<br/>rerankerApiBase / rerankerModel"]
         IDX["Indexing<br/>chunkSize / chunkOverlap / autoIndex / …"]
         TOOLS["Tools & Security<br/>toolPermissions / trustMode"]
-        MEM["Memory / Skills / Daily"]
+        MEM["Memory / Daily"]
         PROMPTS["Prompts<br/>promptOverrides"]
     end
 ```
@@ -199,7 +199,7 @@ flowchart TB
     START["getSettingDefinitions()"] --> STRIP["顶栏 Tab 条 render"]
     STRIP --> CHAT["对话模型:语言 / chatPreset / 模型 / Base / 钥匙串 checklist"]
     STRIP --> IDX["笔记索引:Embedding / 分块 / Rerank"]
-    STRIP --> AGENT["记忆与权限:memory / skills / 日记 / trustMode / toolPermissions"]
+    STRIP --> AGENT["记忆与权限:memory / 日记 / trustMode / toolPermissions"]
     STRIP --> ADV["高级:Context / registry / prompts / 容量 / developer / 诊断 page"]
     CHAT --> VIS{"visible: 当前 Tab 或搜索中?"}
     IDX --> VIS

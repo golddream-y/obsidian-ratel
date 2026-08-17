@@ -26,6 +26,13 @@ class MockSkillPort implements SkillPort {
 	}
 }
 
+/**
+ * 构造只含单个 skill 的单端口 stub(复用 MockSkillPort)。
+ */
+function makePortWithSkill(name: string, skillMd: string): SkillPort {
+	return new MockSkillPort('vault', '/vault', { [name]: skillMd });
+}
+
 describe('SkillLoader', () => {
 	it('loadAll - 三源合并 - vault 覆盖 global 与 builtin 同名', async () => {
 		const builtin = new MockSkillPort('builtin', '/builtin', {
@@ -101,6 +108,22 @@ x`,
 		expect(skills).toHaveLength(1);
 		expect(skills[0]!.manifest.activation).toBe('auto');
 		expect(warnings[0]!.message).toContain('activation 非法值');
+	});
+
+	it('normalizeActivation - always 已废弃 - 降级 auto 并记 warning', async () => {
+		const port = makePortWithSkill(
+			'legacy-skill',
+			`---
+name: legacy-skill
+description: 测试 always 废弃
+activation: always
+---
+正文`,
+		);
+		const loader = new SkillLoader([port]);
+		const { skills, warnings } = await loader.loadAll();
+		expect(skills[0]?.manifest.activation).toBe('auto');
+		expect(warnings.some((w) => w.message.includes('always'))).toBe(true);
 	});
 
 	it('loadAll - enabled 缺省 - 默认 true', async () => {

@@ -43,7 +43,7 @@ describe('activate_skill 工具', () => {
 			},
 		});
 		const result = await tool.execute({ name: 'reviewer' });
-		expect(result).toContain('已激活');
+		expect(result).toContain('已使用技能');
 		expect(injected).toEqual(['reviewer:instr-reviewer']);
 		expect(registry.getActive().map((s) => s.manifest.name)).toContain('reviewer');
 	});
@@ -57,7 +57,8 @@ describe('activate_skill 工具', () => {
 			},
 		});
 		const result = await tool.execute({ name: 'reviewer' });
-		expect(result).toMatch(/已激活/);
+		// S-SKILL-UX:已注入会话时话术为「已在当前会话生效」,不再出现「激活」。
+		expect(result).toMatch(/已在当前会话生效/);
 		expect(appendCount).toBe(0);
 	});
 

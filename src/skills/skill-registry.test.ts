@@ -1,6 +1,6 @@
 /**
  * @file src/skills/skill-registry.test.ts
- * @description SkillRegistry 单元测试 — enabled/active 三态 + reload + activate/deactivate
+ * @description SkillRegistry 单元测试 — enabled/active 状态 + reload + activate/deactivate
  * @module skills/skill-registry.test
  */
 
@@ -32,15 +32,26 @@ describe('SkillRegistry', () => {
 		registry = new SkillRegistry();
 	});
 
-	it('reload - always 类型进入 getAlwaysSkills 但不进 getActive', () => {
-		const skills = [
-			makeSkill('auto-skill', { activation: 'auto' }),
-			makeSkill('always-skill', { activation: 'always' }),
-			makeSkill('manual-skill', { activation: 'manual' }),
-		];
-		registry.reload(skills, []);
+	it('reload - always 类型不再有专属查询 - getAlwaysSkills 已删除', () => {
+		// S-SKILL-UX:always 废弃,Registry 不再暴露 always 查询。
+		expect((registry as unknown as Record<string, unknown>).getAlwaysSkills).toBeUndefined();
+	});
+
+	it('applyEnabledOverrides - 全量应用并影响 isEnabled', () => {
+		registry.reload([makeSkill('a'), makeSkill('b')], []);
+		registry.applyEnabledOverrides({ a: false });
+		expect(registry.isEnabled('a')).toBe(false);
+		expect(registry.isEnabled('b')).toBe(true);
+	});
+
+	it('applyEnabledOverrides - 覆盖此前 setEnabled 的内存值并清 active', () => {
+		registry.reload([makeSkill('a'), makeSkill('b')], []);
+		registry.activate('a');
+		registry.setEnabled('b', false);
+		registry.applyEnabledOverrides({ a: false, b: true });
+		expect(registry.isEnabled('b')).toBe(true);
+		// 关键路径:全量替换时 false 条目同步清 active,与 setEnabled 行为对齐。
 		expect(registry.getActive()).toHaveLength(0);
-		expect(registry.getAlwaysSkills().map((s) => s.manifest.name)).toEqual(['always-skill']);
 	});
 
 	it('getDiscovered - 排除 manual 与 disabled', () => {
@@ -69,9 +80,9 @@ describe('SkillRegistry', () => {
 		expect(registry.getActive().map((s) => s.manifest.name)).toContain('x');
 	});
 
-	it('deactivate - 未激活 - 抛 notActive', () => {
+	it('deactivate - 未在使用 - 抛 notActive', () => {
 		registry.reload([makeSkill('x')], []);
-		expect(() => registry.deactivate('x')).toThrow(/未激活/);
+		expect(() => registry.deactivate('x')).toThrow(/未在使用/);
 	});
 
 	it('setEnabled - false 时清掉 active', () => {

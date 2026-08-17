@@ -157,7 +157,7 @@ const settingsZh: SettingsStrings = {
   'settings.toolPermissions.search_memory': '搜索记忆',
   'settings.toolPermissions.remember': '记住',
   'settings.toolPermissions.forget_memory': '忘掉记忆',
-  'settings.toolPermissions.activate_skill': '激活 Skill',
+  'settings.toolPermissions.activate_skill': '使用 Skill',
   'settings.toolPermissions.deactivate_skill': '关闭 Skill',
   'settings.toolPermissions.get_datetime': '获取时间',
   'settings.toolPermissions.get_active_note': '当前笔记',
@@ -510,6 +510,7 @@ const statusZh: StatusStrings = {
   'status.drawer.memory': '记忆管理',
   'status.drawer.sponsor': '赞助项目',
   'status.drawer.mcp': 'MCP',
+  'status.drawer.skill': '技能',
   'status.indexLabel.ready': '就绪',
   'status.indexLabel.scanning': '扫描中',
   'status.indexLabel.queued': '排队中',
@@ -709,7 +710,7 @@ const promptLabelZh: PromptLabelStrings = {
   'promptLabel.memory.systemPrompt.desc': '启动时注入到 system 与检索结果之间;占位符 {{globalContent}} + {{topicList}}',
   // 关键路径:Skill 机制 Discovery 段
   'promptLabel.agent.skills': 'Skill Discovery 段',
-  'promptLabel.agent.skills.desc': '已加载 skill 的 name+description 列表,供 LLM 自主判断是否激活',
+  'promptLabel.agent.skills.desc': '已加载 skill 的 name+description 列表,供 LLM 自主判断是否使用',
   'promptLabel.internal.intent.system': '意图分类 System',
   'promptLabel.internal.intent.system.desc': '内部 LLM:只回答 rag 或 direct',
   'promptLabel.internal.intent.user': '意图分类 User',
@@ -748,12 +749,12 @@ const promptLabelZh: PromptLabelStrings = {
   'promptLabel.tool.delete_note.description.desc': '移到回收站',
   // 关键路径:activate_skill 工具
   'promptLabel.tool.activate_skill.description': 'activate_skill 描述',
-  'promptLabel.tool.activate_skill.description.desc': '激活指定 Skill,读完整 SKILL.md 注入上下文',
+  'promptLabel.tool.activate_skill.description.desc': '使用指定 Skill,读完整 SKILL.md 注入上下文',
   'promptLabel.tool.activate_skill.param.name': 'activate_skill.name',
   'promptLabel.tool.activate_skill.param.name.desc': 'Skill 名称(kebab-case)',
   // 关键路径:deactivate_skill 工具
   'promptLabel.tool.deactivate_skill.description': 'deactivate_skill 描述',
-  'promptLabel.tool.deactivate_skill.description.desc': '关闭已激活的 Skill,移除其指令段',
+  'promptLabel.tool.deactivate_skill.description.desc': '停用正在使用的 Skill,移除其指令段',
   'promptLabel.tool.deactivate_skill.param.name': 'deactivate_skill.name',
   'promptLabel.tool.deactivate_skill.param.name.desc': 'Skill 名称',
   'promptLabel.tool.get_datetime.description': 'get_datetime 描述',
@@ -881,23 +882,14 @@ const memoryZh: MemoryStrings = {
 };
 
 const skillZh: SkillStrings = {
-  // Settings 面板
-  'skill.settings.heading': 'Skill 管理',
-  'skill.settings.enableSkills.name': '启用 Skill 机制',
-  'skill.settings.enableSkills.desc': '关闭后 Agent 不加载 skill,Discovery/Activation 段不注入',
-  // Notice
-  'skill.notice.activating': '正在激活 {name}...',
-  'skill.notice.activated': '已激活 {name}',
-  'skill.notice.deactivated': '已关闭 {name}',
-  'skill.notice.notFound': '未找到 Skill: {name}',
-  'skill.notice.alreadyActive': '{name} 已激活',
-  'skill.notice.notActive': '{name} 未激活',
-  'skill.notice.reloadDone': '已重新加载 {count} 个 Skill',
-  'skill.notice.reloadFailed': 'Skill 重新加载失败: {message}',
-  // Slash 命令描述
-  'skill.cmd.skill': '激活 Skill',
-  'skill.cmd.skills': '列出 Skill',
-  'skill.cmd.reloadSkills': '重新加载 Skill',
+  // Notice(S-SKILL-UX:用户侧术语用「使用」,不再出现「激活」)
+  'skill.notice.activated': '已使用技能 {name}',
+  'skill.notice.deactivated': '已停用技能 {name}',
+  'skill.notice.notFound': '未找到技能: {name}',
+  'skill.notice.alreadyActive': '技能 {name} 已在当前会话生效',
+  'skill.notice.notActive': '技能 {name} 未在使用',
+  'skill.notice.reloadDone': '已重新加载 {count} 个技能',
+  'skill.notice.reloadFailed': '技能重新加载失败: {message}',
   // addCommand name
   'cmd.reloadSkills': '重新加载 Skill',
   // 来源标签
@@ -907,15 +899,24 @@ const skillZh: SkillStrings = {
   // 激活模式标签
   'skill.activation.auto': '自动',
   'skill.activation.manual': '手动',
-  'skill.activation.always': '常驻',
-  // Discovery / Active 段
-  'skill.discovery.title': '可用 Skills',
-  'skill.discovery.empty': '(暂无已加载的 Skill)',
-  'skill.active.title': '当前激活的 Skill',
   // 错误
   'error.skill.invalidName': 'Skill 名称非法: {name}',
   'error.skill.notEnabled': 'Skill {name} 未启用',
   'error.skill.loadFailed': 'Skill 加载失败: {message}',
+  // SkillManageModal(S-SKILL-UX — 技能管理弹窗)
+  'modal.skillManage.title': '技能管理',
+  'modal.skillManage.installedHeading': '已安装技能({count})',
+  'modal.skillManage.empty': '还没有技能',
+  'modal.skillManage.emptyHint': '把 SKILL.md 放进库内 .ratel/skills/<技能名>/ 即可启用;也支持全局 ~/.ratel/skills/ 与插件内置,库内同名优先。',
+  'modal.skillManage.reload': '重新扫描',
+  'modal.skillManage.viewFull': '查看全文',
+  'modal.skillManage.builtinReadonly': '内置技能,随插件更新',
+  'modal.skillManage.edit': '编辑',
+  'modal.skillManage.delete': '删除',
+  'modal.skillManage.confirmDelete': '再点一次确认删除',
+  'modal.skillManage.deleted': '已删除技能 {name}',
+  'modal.skillManage.deleteFailed': '删除失败: {message}',
+  'modal.skillManage.editHint': '技能目录: {path}',
 };
 
 export const zh: Strings = {

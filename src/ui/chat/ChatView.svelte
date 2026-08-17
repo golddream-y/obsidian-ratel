@@ -922,6 +922,11 @@
 		plugin.openMcpManageModal();
 	}
 
+	/** 状态抽屉「技能」入口 → 打开 SkillManageModal(S-SKILL-UX) */
+	function openSkill(): void {
+		plugin.openSkillManageModal();
+	}
+
 	/** MCP 工具展示名 — 用配置 label 替代裸 server id */
 	function resolveMcpServerLabel(id: string): string {
 		return plugin.settings.mcpServers.find((s) => s.id === id)?.label ?? id;
@@ -1531,6 +1536,7 @@
 			onFeedback={openFeedback}
 			onMemory={openMemory}
 			onMcp={openMcp}
+			onSkill={openSkill}
 			onSponsor={openSponsor}
 		/>
 		<div class="ratel-input">

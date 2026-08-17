@@ -29,7 +29,7 @@ function makeSkill(name: string): Skill {
 describe('deactivate_skill 工具', () => {
 	let registry: SkillRegistry;
 	beforeEach(() => {
-		// 关键路径:工具返回值/错误消息走 i18n,锁定 zh 让正则稳定匹配"已关闭"/"未激活"。
+		// 关键路径:工具返回值/错误消息走 i18n,锁定 zh 让正则稳定匹配"已停用"/"未在使用"。
 		setLang('zh');
 		registry = new SkillRegistry();
 		registry.reload([makeSkill('reviewer')], []);
@@ -44,14 +44,14 @@ describe('deactivate_skill 工具', () => {
 		});
 		registry.activate('reviewer');
 		const result = await tool.execute({ name: 'reviewer' });
-		expect(result).toContain('已关闭');
+		expect(result).toContain('已停用');
 		expect(superseded).toEqual(['reviewer']);
 		expect(registry.getActive()).toHaveLength(0);
 	});
 
-	it('未激活 - 抛 notActive', async () => {
+	it('未在使用 - 抛 notActive', async () => {
 		const tool = createDeactivateSkillTool(registry, fakeDef);
-		await expect(tool.execute({ name: 'reviewer' })).rejects.toThrow(/未激活/);
+		await expect(tool.execute({ name: 'reviewer' })).rejects.toThrow(/未在使用/);
 	});
 
 	it('session hooks 未注入 - 抛 notActive', async () => {
@@ -60,7 +60,7 @@ describe('deactivate_skill 工具', () => {
 			appendToSession: () => {},
 			supersedeInSession: () => {},
 		});
-		await expect(tool.execute({ name: 'reviewer' })).rejects.toThrow(/未激活/);
+		await expect(tool.execute({ name: 'reviewer' })).rejects.toThrow(/未在使用/);
 	});
 
 	it('name 缺失 - 抛 invalidArg', async () => {

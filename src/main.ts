@@ -96,6 +96,7 @@ import { Indexer } from './subagents/indexer';
 import { ChatView, VIEW_TYPE_CHAT } from './ui/chat/ChatView';
 import { MemoryModal, shouldCreateMemoryModal } from './ui/memory-panel/MemoryModal';
 import { McpManageModal, shouldCreateMcpManageModal } from './ui/mcp/McpManageModal';
+import { SkillManageModal, shouldCreateSkillManageModal } from './ui/skills/SkillManageModal';
 import { requestMcpSpawnConfirmation } from './ui/mcp/mcp-spawn-confirm-modal';
 import { applyBadgerEmojiToElement, patchAllChatLeafIcons } from './utils/badger-icon';
 import { get } from 'svelte/store';
@@ -168,7 +169,8 @@ export default class RatelVaultPlugin extends Plugin {
 	private memoryStore!: MemoryStore;
 	// 关键路径:P-SKILL-1-CORE — Skill 三源加载器、注册表、激活器。
 	private skillLoader!: SkillLoader;
-	private skillRegistry!: SkillRegistry;
+	// S-SKILL-UX:SkillManageModal 直接读写注册表(per-skill 开关),故公开。
+	skillRegistry!: SkillRegistry;
 	private skillActivator!: SkillActivator;
 	/** ADR-012:当前 ask 的 ContextManager,供 activate/deactivate 工具写 transcript */
 	private currentAskCtx: ContextManager | null = null;
@@ -192,6 +194,8 @@ export default class RatelVaultPlugin extends Plugin {
 	private memoryModal: MemoryModal | null = null;
 	/** MCP 管理 Modal 单例 — 已打开则忽略再次 open */
 	private mcpManageModal: McpManageModal | null = null;
+	/** Skill 管理 Modal 单例(S-SKILL-UX;已打开则忽略重复打开) */
+	private skillManageModal: SkillManageModal | null = null;
 	// 关键路径:SettingTab 实例在 addSettingTab 时保存,ObsidianWorkspace 经 getter 读最新值定位 tab
 	private settingTab: RatelVaultSettingTab | null = null;
 	private workerMode: 'thread' | 'inline' = 'inline';
@@ -272,17 +276,15 @@ export default class RatelVaultPlugin extends Plugin {
 		this.skillRegistry = new SkillRegistry();
 		this.skillActivator = new SkillActivator(this.skillRegistry);
 		// 关键路径:内置 skill 分发(ADR-006 三文件约束) — 构建期内联,启动时幂等落盘;
-		// 无条件执行(enableSkills=false 也落盘,保证开启后立即可用),version 随应用版本,
+		// 无条件执行,version 随应用版本,
 		// 升级自动重写;用户在 vault 源放同名 skill 可覆盖内置版(三源合并 vault > builtin)。
 		const builtinSync = syncBuiltinSkills(builtinSkillsDir, BUILTIN_SKILLS, APP_VERSION);
 		if (builtinSync.written.length > 0) {
 			devLogger.info('skill', `内置 skill 已更新: ${builtinSync.written.join(', ')}`);
 		}
 		// 关键路径:onload 异步加载 skills,不阻塞 Obsidian 启动(spec §6.6)。
-		// enableSkills=false 时跳过加载(空 registry,Discovery/Active 段都不注入)。
-		if (this.settings.enableSkills) {
-			void this.reloadSkills();
-		}
+		// S-SKILL-UX:技能装了就生效,无条件加载。
+		void this.reloadSkills();
 
 		// ==================== Worker ====================
 		// 关键路径:优先尝试 Node.js Worker Threads;Obsidian 渲染进程不支持时降级到 InlineWorker。
@@ -1111,6 +1113,7 @@ export default class RatelVaultPlugin extends Plugin {
 		// 关键路径:热重载/禁用时若记忆 Modal 仍开,close 走 onClose→unmount,onClosed 清单例引用。
 		this.memoryModal?.close();
 		this.mcpManageModal?.close();
+		this.skillManageModal?.close();
 		// 关键路径:断开全部 MCP Client（stdio kill / HTTP session）
 		void this.mcpHost?.dispose();
 		this.userStatus?.reset();
@@ -1172,6 +1175,8 @@ export default class RatelVaultPlugin extends Plugin {
 		delete legacy.embedApiKey;
 		delete legacy.rerankerApiKey;
 		delete legacy.rerankerProvider;
+		// S-SKILL-UX:enableSkills 总开关已废弃,主动清掉 data.json 残值。
+		delete legacy.enableSkills;
 		normalizeContextLengthSettings(this.settings, loaded);
 		// 关键路径:旧版无 chatPreset 字段时按 Base/模型推断,避免误显示 DeepSeek 预设
 		normalizeChatPreset(this.settings, loaded);
@@ -1299,9 +1304,7 @@ export default class RatelVaultPlugin extends Plugin {
 			getTools: () => this.tools.definitions(),
 			// ADR-012:仅 Discovery;Active 指令写入 Session.messages。
 			getSkillsDiscovery: () =>
-				this.settings.enableSkills
-					? this.skillActivator.composeDiscovery(this.settings.promptOverrides)
-					: '',
+				this.skillActivator.composeDiscovery(this.settings.promptOverrides),
 			getSkillsActive: () => '',
 		},
 		// 关键路径(S-CTX-TRIM):历史上限随窗口推导,替换写死的 8000
@@ -1310,13 +1313,11 @@ export default class RatelVaultPlugin extends Plugin {
 		// 关键路径(P-BASIC-ENV):每次 ask 注入当前本地时间,零工具成本回答「今天几号」。
 		ctx.setEnvContext(formatEnvContextLine(new Date()));
 
-		// 关键路径:会话启动时只注入 Discovery 目录(always / activate 写进 messages)。
-		if (this.settings.enableSkills) {
-			ctx.setSkillsContext(
-				this.skillActivator.composeDiscovery(this.settings.promptOverrides),
-				'',
-			);
-		}
+		// 关键路径:会话启动时注入 Discovery 目录(activate 写进 messages)。
+		ctx.setSkillsContext(
+			this.skillActivator.composeDiscovery(this.settings.promptOverrides),
+			'',
+		);
 
 		// 关键路径:会话启动时加载记忆并注入到 ContextManager,
 		// 让 Agent 从一开始就"认识"用户,并知道何时调 search_memory。
@@ -1365,7 +1366,6 @@ export default class RatelVaultPlugin extends Plugin {
 					toolPermissionCheck,
 					this.settings.agentMaxSteps,
 					this.skillActivator,
-					this.skillRegistry,
 					skipAdd,
 				)) {
 					if (
@@ -1623,19 +1623,34 @@ export default class RatelVaultPlugin extends Plugin {
 	}
 
 	/**
+	 * 打开技能管理 Modal(单例,S-SKILL-UX — 状态抽屉「技能」入口)。
+	 *
+	 * 关键路径:已打开则忽略,避免叠多个管理窗。
+	 */
+	openSkillManageModal(): void {
+		if (!shouldCreateSkillManageModal(this.skillManageModal)) return;
+		const modal = new SkillManageModal(this.app, this);
+		this.skillManageModal = modal;
+		modal.onClosed = () => {
+			if (this.skillManageModal === modal) this.skillManageModal = null;
+		};
+		modal.open();
+	}
+
+	/**
 	 * 重新加载 skills — 扫描三源 + 解析 frontmatter + 合并 + 写入 registry。
 	 *
 	 * 关键路径:
-	 * - enableSkills=false 时直接返回 0(不加载)
 	 * - 加载 warnings 通过 devLogger 输出(非阻塞)
 	 * - 加载完成后 registry 状态全量替换
 	 *
 	 * @returns 加载到的 skill 数量
 	 */
 	async reloadSkills(): Promise<number> {
-		if (!this.settings.enableSkills) return 0;
 		const { skills, warnings } = await this.skillLoader.loadAll();
 		this.skillRegistry.reload(skills, warnings);
+		// S-SKILL-UX:应用持久化的 per-skill 开关(settings.skillEnabled)。
+		this.skillRegistry.applyEnabledOverrides(this.settings.skillEnabled);
 		if (warnings.length > 0) {
 			for (const w of warnings) {
 				devLogger.warn('skill', `${w.path}: ${w.message}`);

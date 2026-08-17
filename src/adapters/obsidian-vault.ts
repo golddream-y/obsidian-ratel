@@ -5,7 +5,7 @@
  * @depends obsidian, ports/vault
  */
 
-import { type App, TFile } from 'obsidian';
+import { type App, TFile, TFolder } from 'obsidian';
 import type { NoteLinks, VaultPort, VaultMetadata, VaultStructureResult } from '../ports/vault';
 import { validateVaultPath } from '../utils/path-safety';
 import { tNow } from '../i18n';
@@ -73,6 +73,22 @@ export class ObsidianVault implements VaultPort {
 		// 关键路径:用 fileManager.trashFile 替代 vault.trash,
 		// 自动尊重用户的删除偏好设置(系统回收站 / Obsidian .trash)。
 		await this.app.fileManager.trashFile(file);
+	}
+
+	/**
+	 * 把整个文件夹移入回收站(S-SKILL-UX 供 SkillManageModal 删库内技能目录)。
+	 *
+	 * @param path - vault 相对文件夹路径(如 `.ratel/skills/<name>`)
+	 * @throws 路径不存在或不是文件夹时抛 i18n 错误
+	 */
+	async trashFolder(path: string): Promise<void> {
+		const normalized = validateVaultPath(path);
+		const folder = this.app.vault.getAbstractFileByPath(normalized);
+		if (!folder || !(folder instanceof TFolder)) {
+			throw new Error(tNow('error.tool.fileNotFound', { path: normalized }));
+		}
+		// 关键路径:fileManager.trashFile 同时接受 TFile|TFolder,自动走系统回收站/.trash。
+		await this.app.fileManager.trashFile(folder);
 	}
 
 	async listFiles(dir: string = ''): Promise<{ files: string[]; folders: string[] }> {

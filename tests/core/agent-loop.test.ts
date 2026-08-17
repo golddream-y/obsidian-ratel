@@ -1087,7 +1087,6 @@ describe('agentLoop', () => {
 			undefined,
 			undefined,
 			undefined,
-			undefined,
 			true,
 		)) {
 			void _;

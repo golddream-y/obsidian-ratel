@@ -7,11 +7,12 @@
 
 import { describe, it, expect } from 'vitest';
 import { getSlashCommands, filterCommands, type SlashCommand } from '../../src/ui/chat/input/slash-commands';
+import { shouldCreateSkillManageModal } from '../../src/ui/skills/SkillManageModal';
 
 describe('slash-commands', () => {
-	it('getSlashCommands - 含 7 个命令(new/compact/model/reindex/skill/skills/skill off)', () => {
+	it('getSlashCommands - 含 4 个命令(new/compact/model/reindex)', () => {
 		const names = getSlashCommands().map((c) => c.name);
-		expect(names).toEqual(['/new', '/compact', '/model', '/reindex', '/skill', '/skills', '/skill off']);
+		expect(names).toEqual(['/new', '/compact', '/model', '/reindex']);
 	});
 
 	it('getSlashCommands - 每个命令含 name/description/icon', () => {
@@ -23,7 +24,7 @@ describe('slash-commands', () => {
 	});
 
 	it('filterCommands - 空串(仅 /) - 返回全部命令', () => {
-		expect(filterCommands('/')).toHaveLength(7);
+		expect(filterCommands('/')).toHaveLength(4);
 	});
 
 	it('filterCommands - /n - 只返回 /new', () => {
@@ -67,5 +68,12 @@ describe('slash-commands', () => {
 		const result = filterCommands('/NEW');
 		expect(result).toHaveLength(1);
 		expect(result[0]!.name).toBe('/new');
+	});
+});
+
+describe('shouldCreateSkillManageModal', () => {
+	it('单例判定 - null 才新建', () => {
+		expect(shouldCreateSkillManageModal(null)).toBe(true);
+		expect(shouldCreateSkillManageModal({} as never)).toBe(false);
 	});
 });

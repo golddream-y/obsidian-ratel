@@ -49,8 +49,8 @@ describe('CONFIG_UPDATE_WHITELIST', () => {
 			// 记忆
 			'memoryEnabled', 'memoryAutoWrite', 'memoryStorageLimitMB',
 			'memoryInjectLimitKB', 'memoryDynamicLimitKB', 'memoryContextTotalLimitKB',
-			// Skill / 日记
-			'enableSkills', 'dailyNoteFolder', 'dailyNoteFormat',
+			// 日记
+			'dailyNoteFolder', 'dailyNoteFormat',
 			// 语言外观
 			'language', 'uiColorScheme', 'uiAccent',
 			'chatNavRailEnabled', 'chatNavRailSide', 'chatMotionEnabled',

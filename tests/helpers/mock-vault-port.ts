@@ -57,6 +57,8 @@ export function createMockVaultPort(state: MockVaultState = { files: {} }): Vaul
 		trashFile: async (path) => {
 			delete state.files[path];
 		},
+		// trashFolder:SkillManageModal 删除流程的 no-op 桩,不维护目录态
+		trashFolder: async () => {},
 		listFiles: async (dir = '') => {
 			const normalized = dir === '.' ? '' : dir;
 			if (state.dirs && normalized in state.dirs) return state.dirs[normalized]!;

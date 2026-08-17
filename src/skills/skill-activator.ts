@@ -1,8 +1,8 @@
 /**
  * @file src/skills/skill-activator.ts
- * @description SkillActivator — 产出 Discovery 段与 Active 段文本,供 ContextManager 注入 system prompt
+ * @description SkillActivator — 产出 Discovery 段文本,供 ContextManager 注入 system prompt
  * @module skills/skill-activator
- * @depends skills/skill-registry, prompts/composer, prompts/interpolate, i18n
+ * @depends skills/skill-registry, prompts/composer, prompts/interpolate
  */
 
 import type { SkillRegistry } from './skill-registry';
@@ -10,19 +10,17 @@ import type { Skill } from './types';
 import type { OverrideMap } from '../prompts/types';
 import { resolveSection } from '../prompts/composer';
 import { interpolate } from '../prompts/interpolate';
-import { tNow } from '../i18n';
 
 /**
- * Skill 激活器 — 产出两段 system prompt 文本:
+ * Skill 激活器 — 产出 Discovery 段 system prompt 文本:
  *
  * 1. Discovery 段:列出 enabled 且非 manual 的 skill 的 name+description,
  *    注入到 system prompt 的 `agent.rag.toolGuide` 之后、检索结果之前(spec §4.4)。
- * 2. Active 段:当前激活的 skill 的 instructions 正文,作为动态指令追加(spec §4.5)。
+ * 2. Active 段(已废弃,S-SKILL-UX 删除;指令经 activate_skill 写入 Session.messages,见 ADR-012)。
  *
  * 设计要点:
  * - 不维护状态,纯函数式产出文本(状态由 Registry 管)
- * - Discovery 段走 `agent.skills` prompt section(支持 override),Active 段不走 section
- *   (instructions 是 skill 作者写的,不进 section 注册表)
+ * - Discovery 段走 `agent.skills` prompt section(支持 override)
  * - 50 个 skill 上限时按 tags 粗筛(spec §4.4 — v2 优化,本 plan 实现简单字面量截断到 50)
  *
  * 关键路径:Activator 由 ContextManager 在 toMessages 时调用,产出文本注入到 system 与
@@ -57,27 +55,6 @@ export class SkillActivator {
 
 		const template = resolveSection('agent.skills', overrides);
 		return interpolate(template, { skillList });
-	}
-
-	/**
-	 * 产出 Active 段文本(当前激活的 skill 的 instructions 正文)。
-	 *
-	 * 关键路径:
-	 * - 无 active skill 时返回空串(不注入)
-	 * - 每个 skill 的 instructions 用标题包裹(`## 当前激活的 Skill: <name>`)
-	 * - 多 skill 激活时累加,空行分隔
-	 *
-	 * @returns Active 段文本;无 active skill 时返回空串
-	 */
-	composeActive(): string {
-		const active = this.registry.getActive();
-		if (active.length === 0) return '';
-
-		const parts = active.map((s) => {
-			const title = tNow('skill.active.title');
-			return `## ${title}: ${s.manifest.name}\n\n${s.instructions}`;
-		});
-		return parts.join('\n\n');
 	}
 
 	/**

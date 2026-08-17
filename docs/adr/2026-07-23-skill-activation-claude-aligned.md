@@ -101,3 +101,11 @@ Claude 文档要点:invoke 后 skill 正文进入会话并留在本场对话;权
 - [Agent Skills — progressive disclosure](https://agentskills.io/home)
 - [OpenAI Codex — Skills](https://developers.openai.com/codex/skills)
 - [ADR-009](2026-07-06-skill-mechanism.md) · [ADR-010](2026-07-21-skill-vs-builtin-capability.md)
+
+---
+
+## 修订记录
+
+| 日期 | 修订 | 来源 |
+|---|---|---|
+| 2026-08-17 | §3 `always` 机制废弃:`activation` 收敛两态后 `always` 按 `auto` 降级加载,按场一次性注入链路(`ensureAlwaysSkillsInjected`)删除;§5「明确不改动的部分」中 `always` frontmatter 语义一条随之失效,`enabled` 开关迁移至 `settings.skillEnabled`(持久化,Registry 加载后 `applyEnabledOverrides` 应用)。Discovery + activate_skill 写会话的核心模型不变;用户侧术语「激活」改「使用」 | [S-SKILL-UX](../superpowers/specs/2026-08-17-skill-ux-claude-aligned-design.md) |

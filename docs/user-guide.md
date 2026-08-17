@@ -125,7 +125,15 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 - 全局：`~/.ratel/skills/`  
 - 或使用插件预置
 
-启动时三源合并。对话里 `/skill <name>` 激活，`/skills` 列表，`/skill off <name>` 关闭。设置里可总开关 `enableSkills`。
+**装了就生效**：启动时三源合并（库内同名优先），无需任何开关；对话里用自然语言点名技能即可。
+
+管理入口：展开聊天侧栏的状态条 → 底部「技能」按钮，打开技能管理弹窗。可以：
+
+- 查看已装技能，带来源徽标（预置 / vault 内 / 全局）
+- 每个技能单独开关 — 立即生效、重启后保持
+- 查看技能全文
+- 编辑：vault 内技能直接打开；全局技能在系统文件管理器打开
+- 删除：两击确认；预置技能只读，随插件更新
 
 `SKILL.md` 需含 frontmatter（`name` / `description` 等）+ 正文指令；文件夹名建议 `kebab-case`。
 
@@ -141,7 +149,6 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 | `/compact` | 压缩发给模型的上下文，聊天记录全部保留；可自动（设置默认开） |
 | `/model` | 查看当前模型配置 |
 | `/reindex` | 强制全量重建索引 |
-| `/skill` / `/skills` / `/skill off` | Skill 激活 / 列表 / 关闭 |
 
 聊天输入 `@`：按文件名/路径补全库内笔记，发送时只保留 `@相对路径` 字面量（不预读全文）。也可在文件资源管理器右键 Markdown → **添加到 Ratel**。
 
@@ -161,7 +168,7 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 |---|---|
 | **对话模型** | 语言、场景预设（DeepSeek / Ollama / 自定义）、模型、API Base、钥匙串状态、自动压缩上下文（默认开） |
 | **笔记索引** | Embedding、分块 / 自动索引、Rerank |
-| **记忆与权限** | 记忆开关与面板、Skills、日记约定、工具权限档位、全部工具权限（含 MCP 工具） |
+| **记忆与权限** | 记忆开关与面板、日记约定、工具权限档位、全部工具权限（含 MCP 工具） |
 | **外观** | 颜色模式（跟随 Obsidian / 浅色 / 深色）、强调色色块（含铜 / Material 色）；仅影响 Ratel 面板，预览即时生效 |
 | **高级** | Context Length、模型 registry、提示词覆盖、记忆容量、开发者选项、诊断 |
 
@@ -237,7 +244,7 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 
 **First run:** Configure chat model (+ Keychain `ratel-chat-openai-compatible`, or local Ollama). Wait for indexing. Open chat via the 🦡 ribbon.
 
-**Ask naturally:** topics → semantic search with citations; “today” → injected local time; “this note” → active file; “open that note” → opens it in Obsidian at the heading or block; daily note path is probed only (never auto-created). Config questions go through the built-in config skill (whitelisted changes by chat; keys only via the keychain). Memory lives in `.ratel/memory/`. Skills live under `.ratel/skills/` (or `~/.ratel/skills/`).
+**Ask naturally:** topics → semantic search with citations; “today” → injected local time; “this note” → active file; “open that note” → opens it in Obsidian at the heading or block; daily note path is probed only (never auto-created). Config questions go through the built-in config skill (whitelisted changes by chat; keys only via the keychain). Memory lives in `.ratel/memory/`. Skills live under `.ratel/skills/` (or `~/.ratel/skills/`) — installed means enabled (vault wins on name conflicts). Manage them via the Skills button in the status drawer: per-skill toggle (persists across restarts), view full text, edit, or delete with double confirmation; built-ins are read-only and update with the plugin.
 
 **Sessions:** Header chip opens recent chats; ✎ edits / AI-summarizes the title. Switching while generating asks first. “Allow for this session” grants by tool name for the whole chat.
 

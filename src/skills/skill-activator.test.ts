@@ -1,6 +1,6 @@
 /**
  * @file src/skills/skill-activator.test.ts
- * @description SkillActivator 单元测试 — composeDiscovery / composeActive
+ * @description SkillActivator 单元测试 — composeDiscovery
  * @module skills/skill-activator.test
  */
 
@@ -29,7 +29,7 @@ describe('SkillActivator', () => {
 	let registry: SkillRegistry;
 	let activator: SkillActivator;
 	beforeEach(() => {
-		// 关键路径:composeActive 内部用 tNow('skill.active.title'),锁定 zh 让输出稳定。
+		// 关键路径:Discovery 模板按当前语言解析,锁定 zh 让输出稳定。
 		setLang('zh');
 		registry = new SkillRegistry();
 		activator = new SkillActivator(registry);
@@ -55,30 +55,5 @@ describe('SkillActivator', () => {
 		const text = activator.composeDiscovery({});
 		expect(text).toContain('auto');
 		expect(text).not.toContain('manual');
-	});
-
-	it('composeActive - 无激活 - 返回空串', () => {
-		registry.reload([makeSkill('x', 'instr')], []);
-		expect(activator.composeActive()).toBe('');
-	});
-
-	it('composeActive - 含激活的 instructions', () => {
-		registry.reload([makeSkill('reviewer', '你是代码审查者')], []);
-		registry.activate('reviewer');
-		const text = activator.composeActive();
-		expect(text).toContain('reviewer');
-		expect(text).toContain('你是代码审查者');
-	});
-
-	it('composeActive - 多 skill 累加', () => {
-		registry.reload([
-			makeSkill('a', 'instr-a'),
-			makeSkill('b', 'instr-b'),
-		], []);
-		registry.activate('a');
-		registry.activate('b');
-		const text = activator.composeActive();
-		expect(text).toContain('instr-a');
-		expect(text).toContain('instr-b');
 	});
 });

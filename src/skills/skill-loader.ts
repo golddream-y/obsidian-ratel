@@ -21,7 +21,7 @@ const SKILL_NAME_REGEX = /^[a-z][a-z0-9-]{0,63}$/;
  * - 三源按 builtin → global → vault 顺序加载,后者覆盖前者同名 skill(spec §4.3)。
  * - frontmatter 解析用 gray-matter,失败时记 warning 跳过,不阻塞其他 skill。
  * - name 校验:正则不匹配 / 为空 → 跳过并记 warning。
- * - activation 非法值降级 'auto'(spec §4.2 字段约束)。
+ * - activation always/非法值降级 'auto'(S-SKILL-UX 两态)。
  * - enabled 缺省 true。
  *
  * 关键路径:Loader 只负责"读 + 解析 + 合并",不维护运行时状态(enabled/active 状态由 Registry 管)。
@@ -109,7 +109,7 @@ export class SkillLoader {
 	 * 关键路径:
 	 * - name 必须匹配正则,否则跳过并记 warning
 	 * - description 必须非空,否则跳过
-	 * - activation 非法值降级 'auto'
+	 * - activation always/非法值降级 'auto'
 	 * - enabled 缺省 true
 	 * - version 解析失败记 warning,不影响加载(不参与兼容判断)
 	 */
@@ -149,14 +149,21 @@ export class SkillLoader {
 	}
 
 	/**
-	 * 规范化 activation 字段,非法值降级 'auto'(spec §4.2)。
+	 * 规范化 activation 字段(S-SKILL-UX:两态)。
+	 *
+	 * 关键路径:`always` 已废弃 — 按 `auto` 降级加载并记 warning,
+	 * 保证旧 frontmatter 不阻塞加载;其余非法值同样降级 auto。
 	 */
 	private normalizeActivation(
 		value: unknown,
 		skillPath: string,
 		warnings: SkillLoadWarning[],
 	): SkillActivation {
-		if (value === 'auto' || value === 'manual' || value === 'always') return value;
+		if (value === 'always') {
+			warnings.push({ path: skillPath, message: 'activation "always" 已废弃,按 auto 加载' });
+			return 'auto';
+		}
+		if (value === 'auto' || value === 'manual') return value;
 		if (value !== undefined) {
 			const shown =
 				typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'

@@ -127,6 +127,12 @@ export interface VaultPort {
 	trashFile(path: string): Promise<void>;
 
 	/**
+	 * 把整个文件夹移入回收站(可恢复;S-SKILL-UX 删库内技能目录用)。
+	 * @param path - vault 相对文件夹路径。
+	 */
+	trashFolder(path: string): Promise<void>;
+
+	/**
 	 * 列出目录内容(非递归)。
 	 * @param dir - vault 相对路径;空串表示根目录
 	 */

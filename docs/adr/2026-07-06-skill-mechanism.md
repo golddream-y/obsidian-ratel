@@ -137,3 +137,11 @@ v1 不做 i18n fallback(`resolveDescription` 直接返回 `manifest.description`
 - [ADR-008:Prompt Registry 设计决策](2026-07-04-prompt-registry.md) — agent.skills section 复用 Prompt Registry 注册表机制
 - [ADR-010:Skill 与内置能力的产品边界](2026-07-21-skill-vs-builtin-capability.md) — 何为标配内核、何为 Skill 扩展面
 - [ADR-012:Skill 激活对齐 Claude](2026-07-23-skill-activation-claude-aligned.md) — 激活写入会话消息;修正本文 §3–§4 注入模型
+
+---
+
+## 修订记录
+
+| 日期 | 修订 | 来源 |
+|---|---|---|
+| 2026-08-17 | §4 三态收敛:`activation` 合法值收敛为 `auto\|manual`,`always` 废弃(loader 按 auto 降级 + warning),`getAlwaysSkills`/`ensureAlwaysSkillsInjected` 链路删除;§4 `enabled` 行「Settings 面板 toggle」从未实现,per-skill 开关实际持久化为 `settings.skillEnabled: Record<string, boolean>`(管理入口为状态抽屉 SkillManageModal);`settings.enableSkills` 总开关删除,loadSettings 主动清理 data.json 残值(spec §4.2 原为「不主动清理」,实现取主动清理,沿用 S-KEYCHAIN 先例) | [S-SKILL-UX](../superpowers/specs/2026-08-17-skill-ux-claude-aligned-design.md) |

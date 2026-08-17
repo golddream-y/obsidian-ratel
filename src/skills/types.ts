@@ -18,11 +18,12 @@ export type SkillSource = 'builtin' | 'global' | 'vault';
 /**
  * Skill 激活模式(来自 SKILL.md frontmatter `activation` 字段)。
  *
- * - `auto`:LLM 自主决定是否激活(默认)
- * - `manual`:仅 `/skill <name>` 斜杠命令可激活,不出现在 Discovery 段
- * - `always`:加载后持续激活(等效全局指令),Discovery 阶段自动激活
+ * - `auto`:LLM 自主判断任务匹配后调用(默认,可省略)
+ * - `manual`:不进 Discovery 段,仅用户点名时由模型调用
+ *
+ * S-SKILL-UX:`always` 已废弃 — loader 按 `auto` 降级加载并记 warning。
  */
-export type SkillActivation = 'auto' | 'manual' | 'always';
+export type SkillActivation = 'auto' | 'manual';
 
 /**
  * 多语言描述(来自 frontmatter `i18n.description`)。
@@ -41,7 +42,7 @@ export interface SkillI18nDescription {
  * - `name` 必须匹配正则 `^[a-z][a-z0-9-]{0,63}$`,加载时校验,非法值跳过并记 warning
  * - `description` 非空,建议 ≤200 字符(Loader 不强制,Discovery 注入时超长截断)
  * - `version` SemVer,解析失败记 warning,不影响加载
- * - `activation` 非法值降级 `auto`
+ * - `activation` always/非法值降级 `auto`
  * - `enabled` 默认 true,可在 settings 内 toggle
  */
 export interface SkillManifest {

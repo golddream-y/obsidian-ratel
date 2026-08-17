@@ -185,6 +185,18 @@
 	max-width: min(90vw, 760px);
 }
 
+/* S-SKILL-UX:技能管理 Modal 同款加宽;技能行含 开关/编辑/删除 + 全文展开 */
+.modal.ratel-skill-manage-modal {
+	width: min(90vw, 760px);
+	max-width: min(90vw, 760px);
+}
+
+/* 查看全文:SKILL.md 正文限高滚动,长技能不撑爆弹窗 */
+.modal.ratel-skill-manage-modal details > pre {
+	max-height: 280px;
+	overflow: auto;
+}
+
 /* 关键路径:JSON 导入 textarea 用 class,禁止 inputEl.style.*（商店 no-static-styles-assignment） */
 .ratel-mcp-json-import-textarea {
 	width: 100%;

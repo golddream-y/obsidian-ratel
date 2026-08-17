@@ -146,8 +146,9 @@ export interface RatelVaultSettings {
 	memoryDynamicLimitKB: number;
 	// 关键路径:memoryContextTotalLimitKB 是基础 + 动态记忆在上下文中的合计硬限制(KB)。
 	memoryContextTotalLimitKB: number;
-	// 关键路径(P-SKILL-1-CORE):Skill 机制总开关,false 时 Agent 不加载 skill。
-	enableSkills: boolean;
+	// 关键路径(S-SKILL-UX):per-skill 开关持久化(name → 是否启用)。
+	// 未登记的 skill 走 manifest.enabled 默认值;Registry 加载后 applyEnabledOverrides 应用。
+	skillEnabled: Record<string, boolean>;
 
 	// 关键路径(P-BASIC-ENV):日记约定路径 — get_daily_note 只探测不创建。
 	dailyNoteFolder: string;
@@ -275,8 +276,8 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 	memoryDynamicLimitKB: 30,
 	// 关键路径:50KB 总记忆上限 ≈ 12.5k tokens,平衡记忆 vs 检索/回复空间。
 	memoryContextTotalLimitKB: 50,
-	// 关键路径:默认启用 skill 机制,让用户零感知 Discovery 注入。
-	enableSkills: true,
+	// 关键路径(S-SKILL-UX):per-skill 开关持久化,默认空(全部走 manifest.enabled)。
+	skillEnabled: {},
 	// 关键路径:日记默认 vault 根 + YYYY-MM-DD.md,与常见 Daily Notes 约定对齐。
 	dailyNoteFolder: '',
 	dailyNoteFormat: 'YYYY-MM-DD',
@@ -733,19 +734,6 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 						name: tNow('memory.settings.viewMemory.name'),
 						desc: tNow('memory.settings.viewMemory.desc'),
 						action: () => this.plugin.openMemoryModal(),
-					},
-				],
-			},
-			{
-				type: 'group',
-				heading: tNow('skill.settings.heading'),
-				cls: agentCls,
-				visible: agentVisible,
-				items: [
-					{
-						name: tNow('skill.settings.enableSkills.name'),
-						desc: tNow('skill.settings.enableSkills.desc'),
-						control: { type: 'toggle', key: 'enableSkills' },
 					},
 				],
 			},

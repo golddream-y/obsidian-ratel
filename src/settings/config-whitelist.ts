@@ -44,8 +44,7 @@ export const CONFIG_UPDATE_WHITELIST: ReadonlySet<string> = new Set<string>([
 	'memoryInjectLimitKB',
 	'memoryDynamicLimitKB',
 	'memoryContextTotalLimitKB',
-	// --- Skill / 日记 ---
-	'enableSkills',
+	// --- 日记 ---
 	'dailyNoteFolder',
 	'dailyNoteFormat',
 	// --- 语言外观 ---
@@ -109,7 +108,6 @@ const BOOLEAN_KEYS: ReadonlySet<string> = new Set<string>([
 	'indexPaused',
 	'memoryEnabled',
 	'memoryAutoWrite',
-	'enableSkills',
 	'chatNavRailEnabled',
 	'chatMotionEnabled',
 ]);

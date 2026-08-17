@@ -291,7 +291,7 @@ function truncateForInjection(content: string): string {
  * 关键路径:
  * - 接收 SkillActivator 已产出的文本,原样返回(v1 恒等包装 — Activator 侧已组合模板 + skillList)
  * - 不做 retrieval wrapper 包裹(Discovery 段是指令,不是检索结果)
- * - enableSkills=false 或无 enabled skill 时上层传入空串(不注入)
+ * - 无 enabled skill 时上层传入空串(不注入)
  *
  * @param discoveryText - SkillActivator 产出的 Discovery 段文本(已含模板)
  * @returns 传入非空则原样返回,空串则返回空串

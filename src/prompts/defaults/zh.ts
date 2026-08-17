@@ -54,10 +54,11 @@ export const ZH_DEFAULTS: Record<PromptSectionId, string> = {
 - 不确定是否需要记忆时 → 宁可多查一次`,
 
 	// 关键路径:Skill Discovery 段 — 注入已加载 skill 的 name+description 列表。
+	// S-SKILL-UX:话术对齐渐进披露 — 任务匹配时读取该技能的完整做法。
 	// 占位符:{{skillList}} = skill 列表行("- name: description" 格式)。
-	'agent.skills': `## 可用 Skills
+	'agent.skills': `## 可用技能
 
-以下 skill 已加载,你可在任务需要时调用 \`activate_skill(name)\` 激活对应指令集。激活后该 skill 的完整指令会注入上下文,直到任务完成或你主动 deactivate。
+以下技能已加载。当任务与某技能的描述匹配时,调用 \`activate_skill(name)\` 读取该技能的完整做法,并按其步骤执行。
 
 {{skillList}}`,
 
@@ -199,6 +200,6 @@ export const ZH_DEFAULTS: Record<PromptSectionId, string> = {
 	'tool.get_app_config.description':
 		'读取 Ratel 配置快照、密钥配置状态(boolean 存在性与所需密钥 ID,不含密钥值)与索引状态。排查配置问题、诊断「为什么不工作」的第一步。',
 	'tool.update_app_config.description':
-		'代替用户修改 Ratel 应用设置(需用户确认)。仅白名单内的 key 生效:对话模型(chatModel/chatApiBase/contextLengthPreset/chatModelMaxTokens/autoCompactEnabled)、分块与索引(chunkSize/chunkOverlap/autoIndex/indexPaused)、Embedding 与 Rerank(embedProvider/embedApiBase/embedApiModel/embedApiDimensions/rerankerApiBase/rerankerModel)、记忆(memoryEnabled/memoryAutoWrite/memoryStorageLimitMB/memoryInjectLimitKB/memoryDynamicLimitKB/memoryContextTotalLimitKB)、Skill 与日记(enableSkills/dailyNoteFolder/dailyNoteFormat)、语言外观(language/uiColorScheme/uiAccent/chatNavRailEnabled/chatNavRailSide/chatMotionEnabled)。工具权限、MCP、Prompt 覆盖等敏感项一律拒绝,必须由用户在设置面板亲手修改。格式示例:{"updates":{"chunkSize":800,"autoIndex":false}};返回逐 key 的 ok/reason,被拒的 key 不影响同批其他 key。',
+		'代替用户修改 Ratel 应用设置(需用户确认)。仅白名单内的 key 生效:对话模型(chatModel/chatApiBase/contextLengthPreset/chatModelMaxTokens/autoCompactEnabled)、分块与索引(chunkSize/chunkOverlap/autoIndex/indexPaused)、Embedding 与 Rerank(embedProvider/embedApiBase/embedApiModel/embedApiDimensions/rerankerApiBase/rerankerModel)、记忆(memoryEnabled/memoryAutoWrite/memoryStorageLimitMB/memoryInjectLimitKB/memoryDynamicLimitKB/memoryContextTotalLimitKB)、日记(dailyNoteFolder/dailyNoteFormat)、语言外观(language/uiColorScheme/uiAccent/chatNavRailEnabled/chatNavRailSide/chatMotionEnabled)。工具权限、MCP、Prompt 覆盖等敏感项一律拒绝,必须由用户在设置面板亲手修改。格式示例:{"updates":{"chunkSize":800,"autoIndex":false}};返回逐 key 的 ok/reason,被拒的 key 不影响同批其他 key。',
 	'tool.update_app_config.param.updates': '要修改的设置键值对对象;key 必须在白名单内,值类型与取值范围见工具描述',
 };

@@ -22,7 +22,6 @@ import {
 	sessionHasSkillInstructions,
 	sessionHasSkillSupersede,
 } from './skill-session-messages';
-import type { Skill } from '../skills/types';
 import { projectView } from './compact-project';
 // 关键路径:丢前缀可能切散 tool 配对, sanitize 剔除孤立 tool result(Claude 路径无适配器层兜底)
 import { sanitizeToolMessageOrder } from './tool-message-align';
@@ -39,7 +38,7 @@ export interface ContextManagerDeps {
 	getTools: () => ToolDefinition[];
 	/**
 	 * 关键路径:返回当前 Skill Discovery 段文本(由 Activator 产出)。
-	 * 空串表示不注入(无 enabled skill 或 enableSkills=false)。
+	 * 空串表示不注入(无 enabled skill 时)。
 	 */
 	getSkillsDiscovery?: () => string;
 	/**
@@ -384,17 +383,6 @@ export class ContextManager {
 			content: formatSkillSupersedeContent(name),
 		});
 		session.updatedAt = Date.now();
-	}
-
-	/**
-	 * 为 `activation: always` 的 skill 各注入一次(本场尚未写入时)。
-	 *
-	 * @param skills - always 且已启用的 Skill 列表
-	 */
-	ensureAlwaysSkillsInjected(skills: Skill[]): void {
-		for (const s of skills) {
-			this.appendSkillInstructions(s.manifest.name, s.instructions);
-		}
 	}
 
 	/**
