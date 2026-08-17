@@ -4,8 +4,8 @@
 **状态**:Active
 **关联**:
 - [S-SKILL](2026-07-06-skill-mechanism-design.md)(机制层 — 本 spec 修订其 activation 三态与 enable 开关结论)
-- [ADR-009](../../../adr/2026-07-06-skill-mechanism.md)(三源加载 — 修订 §5)
-- [ADR-012](../../../adr/2026-07-23-skill-activation-claude-aligned.md)(激活即写会话 — 修订 §3 always)
+- [ADR-009](../../../adr/2026-07-06-skill-mechanism.md)(三源加载 — 修订 §4 三态管理)
+- [ADR-012](../../../adr/2026-07-23-skill-activation-claude-aligned.md)(激活即写会话 — 修订 §3 always 注入与 §5 不改动清单)
 - [S-MCP-HOST](2026-08-03-mcp-host-design.md) §4.11(管理 Modal 模式对齐目标)
 
 ---
@@ -103,12 +103,14 @@
 
 ### 4.5 机制层改动(表达层简化,架构不动)
 
-- **删** `getAlwaysSkills` / `ensureAlwaysSkillsInjected` 链路(always 消亡)
+- **删** `getAlwaysSkills` / `ensureAlwaysSkillsInjected` 全链路(always 消亡):`skill-registry.ts`(定义)→ `agent-loop.ts`(调用点)→ `context-manager.ts`(实现与注入)
+- `skills/types.ts` `SkillActivation` 收敛为 `'auto' | 'manual'`
 - `activate_skill` / `deactivate_skill` 模型侧工具保留;instructions 写 Session 消息(ADR-012)不变
 - `manual` 语义不变:不进 Discovery;用户点名 → 模型调 `activate_skill` 成功(registry 本就不拦)
 - Discovery prompt(`agent.skills` section)话术去「激活」字样,改为「任务匹配时读取该技能的完整做法」
-- `main.ts` 无条件 `reloadSkills()`(原 enableSkills 条件删除)
+- `main.ts` 无条件 `reloadSkills()`(3 处条件删:onload 加载、getSkillsDiscovery、setSkillsContext;`reloadSkills()` 内部短路一并删)
 - 斜杠清单删 3 条命令,ChatView 内对应 handler 清理
+- **保留** 命令面板 `reload-skills` 命令(技能作者手动刷新三源的低频维护入口,与简化无关;i18n `cmd.reloadSkills` 与 `skill.notice.reloadDone/reloadFailed` 随之保留)
 
 ### 4.6 内置 skill 与内置工具的关系(澄清,不改)
 
@@ -131,17 +133,18 @@
 | 设置 | `src/settings.ts`、`src/settings/config-whitelist.ts` | 删 enableSkills 定义+白名单(2 处);删「Skill 管理」组 |
 | UI | `src/ui/skills/SkillManageModal.ts`(新)、`src/ui/status/StatusDrawer.svelte`、`src/ui/chat/ChatView.svelte`、`src/main.ts`(openSkillManageModal 单例+接线) | 对齐 McpManageModal 模式 |
 | 斜杠 | `src/ui/chat/input/slash-commands.ts` + handler | 删 3 命令及处理逻辑 |
-| 术语 | `src/i18n/zh.ts`/`en.ts`/`types.ts`、`src/prompts/defaults/zh.ts` | 「使用技能」话术;删激活类 key;新增 Modal/抽屉 key |
-| core | `src/skills/skill-registry.ts`(always 链路删、enabledOverrides→settings)、`skill-loader.ts`(activation 收敛)、`src/main.ts`(无条件加载) | 简化 |
+| 术语 | `src/i18n/zh.ts`/`en.ts`/`types.ts`、`src/prompts/defaults/zh.ts` | 「使用技能」话术;删激活类 key(`skill.cmd.*` 3 条、`skill.settings.*`、`skill.activation.always`;`skill.notice.activated/alreadyActive` 改「使用」话术);新增 Modal/抽屉 key |
+| core | `src/skills/skill-registry.ts`(always 链路删、enabledOverrides→settings)、`skill-loader.ts`(activation 收敛)、`src/skills/types.ts`(SkillActivation 两态)、`src/core/agent-loop.ts`(ensureAlwaysSkillsInjected 调用点删)、`src/core/context-manager.ts`(ensureAlwaysSkillsInjected 实现删)、`src/main.ts`(无条件加载) | 简化 |
+| 测试 | `src/skills/skill-registry.test.ts`(always 用例删/改)、`skill-activator.test.ts`、`skill-loader.test.ts`(activation 收敛用例)、`src/tools/activate-skill.test.ts`/`deactivate-skill.test.ts`(「已激活」文案断言)、`tests/settings/config-whitelist.test.ts`(enableSkills 移除)、`tests/ui/slash-commands.test.ts`(3 命令删) | 同步改 |
 
 ### 5.2 架构文档(AGENTS.md 触发条件已核对)
 
 | 文档 | 触发 | 动作 |
 |---|---|---|
-| ADR-012 | 推翻 §3 always 结论 | 追加修订记录 |
-| ADR-009 | 推翻 §5「不改 enabled/always 语义」 | 追加修订记录 |
+| ADR-012 | 推翻 §3 always 注入与 §5「不改动 always/enabled frontmatter 语义」结论 | 追加修订记录 |
+| ADR-009 | 推翻 §4 三态管理(enabled/active/always → 两态 activation;enabled 行「Settings 面板 toggle」从未实现,纠正为 settings.skillEnabled) | 追加修订记录 |
 | `architecture/agent/capability-surface.md` | Skill 生命周期变更 | 更新供给方段落与生命周期图 |
-| `architecture/host/settings.md` | 设置项增删 | enableSkills 删、skillEnabled 增 |
+| `architecture/host/settings.md` | 设置分区增删(文档无 enableSkills 键级记录) | 分区图中「Skills」设置区标签随组删除;skillEnabled 为数据键非面板项,不单列 |
 | `architecture/agent/tools.md` | 不触发 | 不动 |
 
 ### 5.3 用户文档(落地后确认)
