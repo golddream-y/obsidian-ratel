@@ -20,8 +20,8 @@
 | S-MD-PREVIEW | [2026-08-14-markdown-preview-chrome-design.md](specs/2026-08-14-markdown-preview-chrome-design.md) | Active | 2026-08-14 | v1 富块已归档 P-MD-PREVIEW-1；剩 overlay/灯箱 P-MD-PREVIEW-2；打字体验保留，渲染机制由 S-CHAT-PERF 接管 |
 | S-MCP-HOST | [2026-08-03-mcp-host-design.md](specs/2026-08-03-mcp-host-design.md) | Active | 2026-08-03 | 平台级 MCP Host;双 transport;入 ToolRegistry;ADR-014/015;Core/UI 已归档,剩 P-MCP-HOST-DOCS |
 | S-GRAPH-EXPAND | [2026-08-03-graph-expand-design.md](specs/2026-08-03-graph-expand-design.md) | Active | 2026-08-03 | 检索 1 跳扩邻 + hub 降权 + 引用标注;ADR-013 近端落地;**暂缓**,先做 MCP |
-| S-SKILL | [2026-07-06-skill-mechanism-design.md](specs/2026-07-06-skill-mechanism-design.md) | Active | 2026-07-06 | Skill 机制;激活注入见 ADR-012;P-SKILL-2/3 pending |
-| S-SKILL-UX | — | Active | 2026-07-21 | Skill UX;对齐 ADR-010;**spec 文件缺失**(从未入库),需补写或从 STATUS 剔除 |
+| S-SKILL | [2026-07-06-skill-mechanism-design.md](specs/2026-07-06-skill-mechanism-design.md) | Active | 2026-07-06 | Skill 机制;激活注入见 ADR-012;activation 三态与 enable 开关结论由 S-SKILL-UX 修订;P-SKILL-2/3 pending |
+| S-SKILL-UX | [2026-08-17-skill-ux-claude-aligned-design.md](specs/2026-08-17-skill-ux-claude-aligned-design.md) | Active | 2026-08-17 | Skill 体验对齐 Claude/Cursor;删总开关+抽屉管理+术语隐形化;修订 ADR-009 §5/ADR-012 §3 always;plan 待写 |
 | S-EVOLUTION | [2026-07-15-evolution-graph-agent.md](specs/2026-07-15-evolution-graph-agent.md) | Active | 2026-07-15 | 图谱原生 Agent;P-EVO-A-READ 已归档(合入核对完毕);下步 P-EVO-A-FM |
 
 ---
