@@ -35,6 +35,7 @@
 | P-MCP-HOST-DOCS | [2026-08-03-mcp-host-docs.md](plans/2026-08-03-mcp-host-docs.md) | ⏳ Pending | S-MCP-HOST | README/user-guide/隐私边界;finishing 时确认勾选 |
 | P-EVO-A-FM | — | ⏳ Pending | S-EVOLUTION | update_frontmatter;依赖 P-EVO-A-READ(已归档);plan 待写 |
 | P-SKILL-2-EXECUTION | — | ⏳ Pending | S-SKILL | references+scripts 沙箱;降优先级,plan 待写 |
+| P-SKILL-UX-V2 | [2026-08-17-skill-ux-v2.md](plans/2026-08-17-skill-ux-v2.md) | ⏳ Pending | S-SKILL-UX | 4 Task:机制收敛→表达清理→管理 Modal→文档修订;spec 自审已修正章节号与影响面 |
 | P-SKILL-3-UI | — | ⏳ Pending | S-SKILL | Skill UI;降优先级,plan 待写 |
 
 ---
