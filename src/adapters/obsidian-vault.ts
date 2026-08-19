@@ -30,15 +30,33 @@ export class ObsidianVault implements VaultPort {
 
 	/**
 	 * 读取文件全文。
+	 *
+	 * 关键路径:点开头目录(如 `.ratel/skills/`)不进 Obsidian 文件索引,
+	 * `getAbstractFileByPath` 对其返回 null;此类文件走 adapter 直读
+	 * (adapter 基于磁盘,与索引无关)。索引未命中且磁盘也不存在才抛错。
 	 */
 	async readFile(path: string): Promise<string> {
-		const file = this.resolveFile(path);
-		return this.app.vault.read(file);
+		const normalized = validateVaultPath(path);
+		const file = this.app.vault.getAbstractFileByPath(normalized);
+		if (file instanceof TFile) return this.app.vault.read(file);
+		// 修复:vault 技能 SKILL.md 位于点目录,索引查不到曾导致技能静默消失。
+		if (await this.app.vault.adapter.exists(normalized)) {
+			return this.app.vault.adapter.read(normalized);
+		}
+		throw new Error(tNow('error.tool.fileNotFound', { path: normalized }));
 	}
 
+	/**
+	 * 读取文件全文(优先走 metadataCache 缓存);点目录文件同 readFile 回退 adapter 直读。
+	 */
 	async cachedRead(path: string): Promise<string> {
-		const file = this.resolveFile(path);
-		return this.app.vault.cachedRead(file);
+		const normalized = validateVaultPath(path);
+		const file = this.app.vault.getAbstractFileByPath(normalized);
+		if (file instanceof TFile) return this.app.vault.cachedRead(file);
+		if (await this.app.vault.adapter.exists(normalized)) {
+			return this.app.vault.adapter.read(normalized);
+		}
+		throw new Error(tNow('error.tool.fileNotFound', { path: normalized }));
 	}
 
 	/**

@@ -29,6 +29,7 @@ const { mockTFile, mockApp } = vi.hoisted(() => {
 			adapter: {
 				list: vi.fn(),
 				exists: vi.fn(),
+				read: vi.fn(),
 			},
 			on: vi.fn((event: string, cb: (file: unknown, oldPath?: string) => void) => {
 				if (!eventListeners.has(event)) eventListeners.set(event, new Set());
@@ -72,7 +73,9 @@ describe('ObsidianVault', () => {
 	let vault: ObsidianVault;
 
 	beforeEach(() => {
-		vi.clearAllMocks();
+		// 关键路径:resetAllMocks 连 mockResolvedValue 实现一起清(clearAllMocks 只清调用记录),
+		// 防止单测里设置的 adapter.exists/read 泄漏到后续用例;vi.fn(impl) 创建期实现不受影响。
+		vi.resetAllMocks();
 		vault = new ObsidianVault(mockApp as never);
 	});
 
@@ -93,6 +96,37 @@ describe('ObsidianVault', () => {
 
 		await expect(vault.readFile('missing.md')).rejects.toThrow('文件不存在: missing.md');
 		expect(mockApp.vault.read).not.toHaveBeenCalled();
+	});
+
+	// 修复:点开头目录(如 .ratel/skills)不进 Obsidian 文件索引,getAbstractFileByPath
+	// 返回 null,导致 vault 技能 SKILL.md 读取失败、技能静默消失 — 索引未命中时回退 adapter 直读。
+	it('readFile - 索引未命中但磁盘存在(点目录)- 回退 adapter.read', async () => {
+		mockApp.vault.getAbstractFileByPath.mockReturnValue(null);
+		mockApp.vault.adapter.exists.mockResolvedValue(true);
+		mockApp.vault.adapter.read.mockResolvedValue('---\nname: timeout-demo\n---\nbody');
+
+		const content = await vault.readFile('.ratel/skills/timeout-demo/SKILL.md');
+
+		expect(content).toContain('timeout-demo');
+		expect(mockApp.vault.adapter.read).toHaveBeenCalledWith('.ratel/skills/timeout-demo/SKILL.md');
+		expect(mockApp.vault.read).not.toHaveBeenCalled();
+	});
+
+	it('readFile - 索引未命中且磁盘也不存在 - 仍抛文件不存在', async () => {
+		mockApp.vault.getAbstractFileByPath.mockReturnValue(null);
+		mockApp.vault.adapter.exists.mockResolvedValue(false);
+
+		await expect(vault.readFile('.ratel/skills/missing/SKILL.md')).rejects.toThrow('文件不存在');
+		expect(mockApp.vault.adapter.read).not.toHaveBeenCalled();
+	});
+
+	it('cachedRead - 索引未命中但磁盘存在(点目录)- 回退 adapter.read', async () => {
+		mockApp.vault.getAbstractFileByPath.mockReturnValue(null);
+		mockApp.vault.adapter.exists.mockResolvedValue(true);
+		mockApp.vault.adapter.read.mockResolvedValue('raw');
+
+		await expect(vault.cachedRead('.ratel/skills/x/references/a.md')).resolves.toBe('raw');
+		expect(mockApp.vault.adapter.read).toHaveBeenCalledWith('.ratel/skills/x/references/a.md');
 	});
 
 	it('readFile - 路径指向文件夹(非 TFile)- 抛错', async () => {
