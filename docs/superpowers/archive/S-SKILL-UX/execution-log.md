@@ -1,6 +1,14 @@
 # S-SKILL-UX — 执行日志(按时间倒序)
 
-> 该 spec 的 plan 实施记录。最新在前。spec 本体保持 Active(P-SKILL-3-UI 待对齐)。
+> 该 spec 的所有 plan 实施记录。最新在前。
+
+---
+
+## 2026-08-19 — spec 归档(使命完成)
+
+- 核心交付 P-SKILL-UX-V2 已落地并随 0.3.0 发版;ADR-009 §5 / ADR-012 §3 修订完成
+- 原挂 Active 的唯一理由是等 P-SKILL-3-UI,该 plan 已废弃(Skill UI 现状已大变:抽屉管理 + SR-LAYERING 相关性注入,真要做应从现状重新 brainstorm)
+- spec 归档
 
 ---
 

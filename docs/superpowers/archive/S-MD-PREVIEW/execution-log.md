@@ -1,6 +1,14 @@
 # S-MD-PREVIEW — 执行日志(按时间倒序)
 
-> 该 spec 的所有 plan 实施记录。最新在前。spec 仍 Active：P-MD-PREVIEW-2（overlay / 灯箱）未做。
+> 该 spec 的所有 plan 实施记录。最新在前。
+
+---
+
+## 2026-08-19 — spec 归档 + P-MD-PREVIEW-2 废弃(Abandoned)
+
+- v1 富块(P-MD-PREVIEW-1)已落地发版,是本 spec 的核心交付
+- P-MD-PREVIEW-2(overlay / 灯箱)**未启动即废弃**:plan 是对着旧渲染管线写的,S-CHAT-PERF(2026-08-16 归档)重构了整条渲染链路,原 Task 落点已失效。体验目标(灯箱/放大)将来若要做,应基于新管线重新 brainstorm
+- spec 使命完成,随废弃的 plan 一并归档
 
 ---
 
