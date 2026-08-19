@@ -149,6 +149,14 @@ export const ZH_DEFAULTS: Record<PromptSectionId, string> = {
 	'tool.deactivate_skill.description': '关闭一个已激活的 Skill,从上下文移除其指令。',
 	'tool.deactivate_skill.param.name': 'Skill 名称',
 
+	'tool.read_skill_reference.description': '读取 Skill 的 references/ 目录内文件(如风格指南、模板、词汇表)。路径限制在该 skill 的 references/ 文件夹内。',
+	'tool.read_skill_reference.param.skillName': 'Skill 名称',
+	'tool.read_skill_reference.param.path': 'references/ 内的相对路径',
+	'tool.run_skill_script.description': '执行 Skill 的 scripts/ 目录内脚本,仅支持 JavaScript(.js/.mjs/.cjs)。首次运行会弹窗请用户授权。脚本在沙箱内执行:无网络、文件访问限于当前 vault 与该 skill 目录、超时自动终止。',
+	'tool.run_skill_script.param.skillName': 'Skill 名称',
+	'tool.run_skill_script.param.scriptPath': 'scripts/ 内的相对路径',
+	'tool.run_skill_script.param.args': '传给脚本的参数(字符串数组)',
+
 	'tool.get_datetime.description':
 		'获取当前本地时间(或相对今天加减日)。系统已注入一行当前时间;仅在需要精确到秒、ISO、或「三天后是几号」时调用本工具。',
 	'tool.get_datetime.param.format': '返回形态:iso / local / full(默认 full)',

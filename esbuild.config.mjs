@@ -11,6 +11,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 
 const EMBEDDING_WORKER_OUT = path.resolve(__dirname, 'dist/embedding-worker.js');
+const SKILL_SCRIPT_WORKER_OUT = path.resolve(__dirname, 'dist/skill-script-worker.js');
 
 // 内置 Skill 源目录 — 直接子目录 + SKILL.md,与 SkillFsAdapter 扫描契约一致
 const BUILTIN_SKILLS_DIR = path.resolve(__dirname, 'src/skills/builtin');
@@ -34,6 +35,33 @@ function inlineEmbeddingWorkerPlugin() {
 				}
 				return {
 					contents: `export const EMBEDDING_WORKER_CODE = ${JSON.stringify(code)};\n`,
+					loader: 'js',
+				};
+			});
+		},
+	};
+}
+
+/**
+ * 将 dist/skill-script-worker.js 内容作为字符串常量注入 main.js(ADR-017)。
+ * 商店 release 只有 main.js 三文件,运行时 new Worker(code, { eval: true })。
+ */
+function inlineSkillScriptWorkerPlugin() {
+	return {
+		name: 'inline-skill-script-worker',
+		setup(build) {
+			build.onResolve({ filter: /^@ratel\/skill-script-worker-code$/ }, () => ({
+				path: '@ratel/skill-script-worker-code',
+				namespace: 'ratel-skill-script-worker',
+			}));
+			build.onLoad({ filter: /.*/, namespace: 'ratel-skill-script-worker' }, () => {
+				// 关键路径:首次 build 时 dist 尚无产物,注入空串;prod 流程先 rebuild 本 worker(见下方时序)
+				let code = '';
+				if (existsSync(SKILL_SCRIPT_WORKER_OUT)) {
+					code = readFileSync(SKILL_SCRIPT_WORKER_OUT, 'utf-8');
+				}
+				return {
+					contents: `export const SKILL_SCRIPT_WORKER_CODE = ${JSON.stringify(code)};\n`,
 					loader: 'js',
 				};
 			});
@@ -215,6 +243,7 @@ const mainContext = await esbuild.context({
 		}),
 		externalOnnxruntimeNodePlugin(),
 		inlineEmbeddingWorkerPlugin(),
+		inlineSkillScriptWorkerPlugin(),
 		inlineBuiltinSkillsPlugin(),
 	],
 });
@@ -280,8 +309,28 @@ const embeddingWorkerContext = await esbuild.context({
 	plugins: [externalOnnxruntimeNodePlugin()],
 });
 
+// Skill script worker bundle (Node worker_threads, CJS eval string)
+// 关键路径:ADR-017 — 脚本沙箱 Worker;platform node(builtins external,运行时在 Worker 内 require);
+// format cjs + eval:true 加载。严禁 import obsidian。
+const skillScriptWorkerContext = await esbuild.context({
+	entryPoints: ['src/worker/skill-script-worker.ts'],
+	bundle: true,
+	platform: 'node',
+	format: 'cjs',
+	target: 'es2021',
+	logLevel: 'info',
+	sourcemap: prod ? false : 'inline',
+	treeShaking: true,
+	outfile: 'dist/skill-script-worker.js',
+	minify: prod,
+	// 关键路径:node builtins 保持 external — 产物作为字符串在 Worker 线程内 require 真实模块。
+	external: [...builtinModules],
+	plugins: [],
+});
+
 if (prod) {
 	await embeddingWorkerContext.rebuild();
+	await skillScriptWorkerContext.rebuild();
 	const mainResult = await mainContext.rebuild();
 	await workerContext.rebuild();
 	if (mainResult.metafile) {
@@ -292,7 +341,9 @@ if (prod) {
 	process.exit(0);
 } else {
 	await embeddingWorkerContext.rebuild();
+	await skillScriptWorkerContext.rebuild();
 	await mainContext.watch();
 	await workerContext.watch();
 	await embeddingWorkerContext.watch();
+	await skillScriptWorkerContext.watch();
 }

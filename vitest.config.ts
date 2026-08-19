@@ -12,6 +12,12 @@ export default defineConfig({
 				__dirname,
 				'tests/helpers/embedding-worker-code-stub.ts',
 			),
+			// 关键路径:esbuild 虚拟模块(skill 脚本沙箱 Worker)在 vitest 无构建期注入,
+			// 指向空 stub;导入 main.ts 的测试只关心装配,不执行真实脚本。
+			'@ratel/skill-script-worker-code': path.resolve(
+				__dirname,
+				'tests/helpers/skill-script-worker-code-stub.ts',
+			),
 			// 关键路径:esbuild 虚拟模块(内置 skill 清单)在 vitest 无构建期注入,指向空清单 stub;
 			// 导入 main.ts 的测试(settings-adapter / main-rag-loop 等)只关心装配,不依赖内置 skill 内容。
 			'@ratel/builtin-skills-code': path.resolve(
@@ -26,8 +32,8 @@ export default defineConfig({
 	test: {
 		// 关键路径:tests/integration 会真实下载模型并跑 ONNX 推理,依赖网络与 wasm,
 		// 默认 npm test 不运行,避免 CI 不稳定;本地手动验证时用 --config 或显式指定路径。
-		// 关键路径:src/skills 与 src/tools 下的测试与源码同目录放置,便于查阅;此处显式纳入。
-		include: ['tests/**/*.test.ts', 'src/i18n/**/*.test.ts', 'src/skills/**/*.test.ts', 'src/tools/**/*.test.ts'],
+		// 关键路径:src/skills、src/tools 与 src/core 下的测试与源码同目录放置,便于查阅;此处显式纳入。
+		include: ['tests/**/*.test.ts', 'src/i18n/**/*.test.ts', 'src/skills/**/*.test.ts', 'src/tools/**/*.test.ts', 'src/core/**/*.test.ts'],
 		exclude: ['tests/integration/**'],
 		environment: 'node',
 		passWithNoTests: true,

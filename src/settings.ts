@@ -151,6 +151,10 @@ export interface RatelVaultSettings {
 	// 关键路径(S-SKILL-UX):per-skill 开关持久化(name → 是否启用)。
 	// 未登记的 skill 走 manifest.enabled 默认值;Registry 加载后 applyEnabledOverrides 应用。
 	skillEnabled: Record<string, boolean>;
+	/** Skill 脚本硬超时(ms;ADR-017 — 软超时固定 10s 不配置) */
+	skillScriptTimeout: number;
+	/** 受信脚本白名单(`skillName/scriptPath`);首次授权 Modal 选「允许并记住」时写入 */
+	trustedScripts: string[];
 
 	// 关键路径(P-BASIC-ENV):日记约定路径 — get_daily_note 只探测不创建。
 	dailyNoteFolder: string;
@@ -241,6 +245,10 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 		// 关键路径:2 个 skill 工具只读放行(不写文件,只改 system prompt)。
 		activate_skill: 'allow',
 		deactivate_skill: 'allow',
+		// 关键路径(P-SKILL-2):read 只读放行;run 默认 allow — per-script 授权由工具内
+		// ScriptTrustGate 负责,通用 'ask' 会对同一脚本双重弹窗(ADR-017 / plan 关键设计)。
+		read_skill_reference: 'allow',
+		run_skill_script: 'allow',
 		// 关键路径(P-BASIC-ENV):环境感知工具只读放行。
 		get_datetime: 'allow',
 		get_active_note: 'allow',
@@ -282,6 +290,8 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 	memoryTopicsAutoInjectK: 3,
 	// 关键路径(S-SKILL-UX):per-skill 开关持久化,默认空(全部走 manifest.enabled)。
 	skillEnabled: {},
+	skillScriptTimeout: 30_000,
+	trustedScripts: [],
 	// 关键路径:日记默认 vault 根 + YYYY-MM-DD.md,与常见 Daily Notes 约定对齐。
 	dailyNoteFolder: '',
 	dailyNoteFormat: 'YYYY-MM-DD',
@@ -978,6 +988,8 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			forget_memory: 'settings.toolPermissions.forget_memory',
 			activate_skill: 'settings.toolPermissions.activate_skill',
 			deactivate_skill: 'settings.toolPermissions.deactivate_skill',
+			read_skill_reference: 'settings.toolPermissions.read_skill_reference',
+			run_skill_script: 'settings.toolPermissions.run_skill_script',
 			get_datetime: 'settings.toolPermissions.get_datetime',
 			get_active_note: 'settings.toolPermissions.get_active_note',
 			get_daily_note: 'settings.toolPermissions.get_daily_note',
@@ -1000,6 +1012,7 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			'write_note', 'append_note', 'edit_note', 'delete_note',
 			'search_memory', 'remember', 'forget_memory',
 			'activate_skill', 'deactivate_skill',
+			'read_skill_reference', 'run_skill_script',
 			'get_datetime', 'get_active_note', 'get_daily_note', 'list_recent_notes', 'get_note_outline',
 			'get_links', 'search_by_tag', 'search_by_property', 'get_vault_structure',
 			'open_note',

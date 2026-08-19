@@ -96,6 +96,13 @@ export function summarizeToolCall(toolCall: ToolCall): string {
 			return path ? tNow('toolPerm.editNote', { path }) : tNow('settings.toolPermissions.edit_note');
 		case 'delete_note':
 			return path ? tNow('toolPerm.deleteNote', { path }) : tNow('settings.toolPermissions.delete_note');
+		case 'run_skill_script': {
+			// 关键路径:展示 skill/script 粒度,用户知道自己在放行什么
+			const skillName = typeof toolCall.args.skillName === 'string' ? toolCall.args.skillName : '';
+			const scriptPath = typeof toolCall.args.scriptPath === 'string' ? toolCall.args.scriptPath : '';
+			const id = skillName && scriptPath ? `${skillName}/${scriptPath}` : toolCall.name;
+			return tNow('toolPerm.runSkillScript', { id });
+		}
 		default: {
 			const parsed = parseMcpToolName(toolCall.name);
 			if (parsed) {

@@ -118,6 +118,13 @@ import { SkillFsAdapter } from './adapters/skill-fs';
 import { SkillVaultAdapter } from './adapters/skill-vault';
 import { createActivateSkillTool } from './tools/activate-skill';
 import { createDeactivateSkillTool } from './tools/deactivate-skill';
+// 关键路径(P-SKILL-2/ADR-017):skill 脚本执行 — 沙箱 + 信任门 + 2 工具接线。
+import { createReadSkillReferenceTool } from './tools/read-skill-reference';
+import { createRunSkillScriptTool } from './tools/run-skill-script';
+import { SkillScriptSandbox } from './skills/skill-script-sandbox';
+import { ScriptTrustGate } from './skills/skill-script-permission';
+import { showScriptTrustModal } from './ui/skills/ScriptTrustModal';
+import { SKILL_SCRIPT_WORKER_CODE } from './adapters/skill-script-worker-code';
 import { createGetDatetimeTool } from './tools/get-datetime';
 import { createGetActiveNoteTool } from './tools/get-active-note';
 import { createGetDailyNoteTool } from './tools/get-daily-note';
@@ -200,6 +207,8 @@ export default class RatelVaultPlugin extends Plugin {
 	private mcpManageModal: McpManageModal | null = null;
 	/** Skill 管理 Modal 单例(S-SKILL-UX;已打开则忽略重复打开) */
 	private skillManageModal: SkillManageModal | null = null;
+	/** Skill 脚本沙箱(P-SKILL-2/ADR-017)— onunload 时 terminateAll 击杀活跃脚本 Worker */
+	private skillScriptSandbox: SkillScriptSandbox | null = null;
 	// 关键路径:SettingTab 实例在 addSettingTab 时保存,ObsidianWorkspace 经 getter 读最新值定位 tab
 	private settingTab: RatelVaultSettingTab | null = null;
 	private workerMode: 'thread' | 'inline' = 'inline';
@@ -493,6 +502,46 @@ export default class RatelVaultPlugin extends Plugin {
 				toolDefMap.get('deactivate_skill')!,
 				skillSessionHooks,
 			),
+		);
+		// 关键路径(P-SKILL-2/ADR-017):脚本沙箱 — Worker 一次性,runner 常驻管理串行与超时。
+		const scriptSandbox = new SkillScriptSandbox(SKILL_SCRIPT_WORKER_CODE);
+		this.skillScriptSandbox = scriptSandbox;
+		const scriptTrustGate = new ScriptTrustGate({
+			isTrusted: (scriptId) => this.settings.trustedScripts.includes(scriptId),
+			confirm: async (scriptId) => {
+				// scriptId = `skillName/scriptPath`,拆回 skillName 取来源标签
+				const skillName = scriptId.split('/')[0] ?? scriptId;
+				const skill = this.skillRegistry.get(skillName);
+				return showScriptTrustModal(this.app, {
+					scriptId,
+					skillName,
+					sourceLabel: skill ? tNow(`skill.source.${skill.source}`) : '—',
+					skillDir: skill?.dir ?? '',
+				});
+			},
+			persistTrust: (scriptId) => {
+				// 关键路径:「允许并记住」= 写白名单 + 清熔断计数(用户显式重确认,ADR-017 恢复路径)
+				if (!this.settings.trustedScripts.includes(scriptId)) {
+					this.settings.trustedScripts.push(scriptId);
+				}
+				this.usageStats.clearScriptFailure(scriptId);
+				void this.saveSettings();
+			},
+		});
+		this.tools.register(
+			createReadSkillReferenceTool(this.skillRegistry, toolDefMap.get('read_skill_reference')!),
+		);
+		this.tools.register(
+			createRunSkillScriptTool(this.skillRegistry, toolDefMap.get('run_skill_script')!, {
+				sandbox: scriptSandbox,
+				trustGate: scriptTrustGate,
+				failures: this.usageStats,
+				// 关键路径:getter 现读 settings,设置面板改 skillScriptTimeout 立即生效
+				timeoutMs: () => this.settings.skillScriptTimeout,
+				vaultRoot: () => this.vault.getRootDir(),
+				onSoftTimeout: () => new Notice(tNow('skill.script.softTimeoutNotice')),
+				onCircuitBreak: (scriptId) => new Notice(tNow('skill.script.circuitNotice', { id: scriptId })),
+			}),
 		);
 		// 关键路径(P-BASIC-ENV):环境感知工具 — 时间 / 活动笔记 / 日记 / 最近修改 / 大纲。
 		this.tools.register(createGetDatetimeTool(toolDefMap.get('get_datetime')!));
@@ -1140,6 +1189,8 @@ export default class RatelVaultPlugin extends Plugin {
 			URL.revokeObjectURL(this.embeddingWorkerUrl);
 			this.embeddingWorkerUrl = undefined;
 		}
+		// 关键路径(ADR-017 兜底三件套之二):unload 击杀活跃脚本 Worker,不留孤儿线程。
+		this.skillScriptSandbox?.terminateAll();
 		this.workerManager?.destroy();
 		// 修复:VectraStore 无显式 close,JS 垃圾回收会释放文件句柄;
 		// 之前的 `void this.vectraStore;` 是空操作,已移除。

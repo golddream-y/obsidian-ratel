@@ -157,6 +157,8 @@ export interface SettingsStrings {
   'settings.toolPermissions.forget_memory': string;
   'settings.toolPermissions.activate_skill': string;
   'settings.toolPermissions.deactivate_skill': string;
+  'settings.toolPermissions.read_skill_reference': string;
+  'settings.toolPermissions.run_skill_script': string;
   'settings.toolPermissions.get_datetime': string;
   'settings.toolPermissions.get_active_note': string;
   'settings.toolPermissions.get_daily_note': string;
@@ -433,6 +435,14 @@ export interface ModalStrings {
   'modal.toolConfirm.allow': string;
   'modal.toolConfirm.allowSession': string;
   'modal.toolConfirm.deny': string;
+  // 关键路径(P-SKILL-2):skill 脚本首次运行授权 Modal
+  'modal.scriptTrust.title': string;
+  'modal.scriptTrust.desc': string;
+  'modal.scriptTrust.sandboxNote': string;
+  'modal.scriptTrust.allowAlways': string;
+  'modal.scriptTrust.allowOnce': string;
+  'modal.scriptTrust.deny': string;
+  'modal.scriptTrust.trustedNotice': string;
   'modal.operationFailed': string;
   'modal.mcpManage.title': string;
   'modal.mcpManage.installedHeading': string;
@@ -769,6 +779,22 @@ export interface PromptLabelStrings {
   'promptLabel.tool.deactivate_skill.description.desc': string;
   'promptLabel.tool.deactivate_skill.param.name': string;
   'promptLabel.tool.deactivate_skill.param.name.desc': string;
+  // 关键路径(P-SKILL-2):read_skill_reference 工具 section 元数据
+  'promptLabel.tool.read_skill_reference.description': string;
+  'promptLabel.tool.read_skill_reference.description.desc': string;
+  'promptLabel.tool.read_skill_reference.param.skillName': string;
+  'promptLabel.tool.read_skill_reference.param.skillName.desc': string;
+  'promptLabel.tool.read_skill_reference.param.path': string;
+  'promptLabel.tool.read_skill_reference.param.path.desc': string;
+  // 关键路径(P-SKILL-2):run_skill_script 工具 section 元数据
+  'promptLabel.tool.run_skill_script.description': string;
+  'promptLabel.tool.run_skill_script.description.desc': string;
+  'promptLabel.tool.run_skill_script.param.skillName': string;
+  'promptLabel.tool.run_skill_script.param.skillName.desc': string;
+  'promptLabel.tool.run_skill_script.param.scriptPath': string;
+  'promptLabel.tool.run_skill_script.param.scriptPath.desc': string;
+  'promptLabel.tool.run_skill_script.param.args': string;
+  'promptLabel.tool.run_skill_script.param.args.desc': string;
   'promptLabel.tool.get_datetime.description': string;
   'promptLabel.tool.get_datetime.description.desc': string;
   'promptLabel.tool.get_datetime.param.format': string;
@@ -853,6 +879,7 @@ export interface ToolPermStrings {
   'toolPerm.appendNote': string;
   'toolPerm.editNote': string;
   'toolPerm.deleteNote': string;
+  'toolPerm.runSkillScript': string;
 }
 
 // ==================== Memory(记忆系统 — P-MEMORY-UI 消费) ====================
@@ -927,6 +954,23 @@ export interface SkillStrings {
   'error.skill.invalidName': string;
   'error.skill.notEnabled': string;
   'error.skill.loadFailed': string;
+  // 关键路径(P-SKILL-2):read_skill_reference 工具
+  'skill.ref.notFound': string;
+  'skill.ref.invalidPath': string;
+  'skill.ref.tooLarge': string;
+  'skill.ref.binary': string;
+  // 关键路径(P-SKILL-2/ADR-017):run_skill_script 工具
+  'skill.script.notFound': string;
+  'skill.script.invalidPath': string;
+  'skill.script.unsupported': string;
+  'skill.script.denied': string;
+  'skill.script.circuitBreak': string;
+  'skill.script.timeout': string;
+  'skill.script.timeoutProgressHint': string;
+  'skill.script.crashed': string;
+  'skill.script.failed': string;
+  'skill.script.softTimeoutNotice': string;
+  'skill.script.circuitNotice': string;
   // SkillManageModal(S-SKILL-UX — 技能管理弹窗)
   'modal.skillManage.title': string;
   'modal.skillManage.installedHeading': string;

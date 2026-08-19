@@ -169,6 +169,29 @@ export const TOOL_SCHEMA_SKELETONS: Record<string, SchemaSkeleton> = {
 			required: ['name'],
 		},
 	},
+	read_skill_reference: {
+		name: 'read_skill_reference',
+		parameters: {
+			type: 'object',
+			properties: {
+				skillName: { type: 'string' },
+				path: { type: 'string' },
+			},
+			required: ['skillName', 'path'],
+		},
+	},
+	run_skill_script: {
+		name: 'run_skill_script',
+		parameters: {
+			type: 'object',
+			properties: {
+				skillName: { type: 'string' },
+				scriptPath: { type: 'string' },
+				args: { type: 'array', items: { type: 'string' } },
+			},
+			required: ['skillName', 'scriptPath'],
+		},
+	},
 	get_datetime: {
 		name: 'get_datetime',
 		parameters: {
@@ -317,6 +340,7 @@ export const ALL_TOOL_NAMES = [
 	'write_note', 'append_note', 'edit_note', 'delete_note',
 	'search_memory', 'remember', 'forget_memory',
 	'activate_skill', 'deactivate_skill',
+	'read_skill_reference', 'run_skill_script',
 	'get_datetime', 'get_active_note', 'get_daily_note', 'list_recent_notes', 'get_note_outline',
 	'get_links', 'search_by_tag', 'search_by_property', 'get_vault_structure',
 	'open_note',

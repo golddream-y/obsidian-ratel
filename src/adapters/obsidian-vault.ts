@@ -5,7 +5,7 @@
  * @depends obsidian, ports/vault
  */
 
-import { type App, TFile, TFolder } from 'obsidian';
+import { type App, FileSystemAdapter, TFile, TFolder } from 'obsidian';
 import type { NoteLinks, VaultPort, VaultMetadata, VaultStructureResult } from '../ports/vault';
 import { validateVaultPath } from '../utils/path-safety';
 import { tNow } from '../i18n';
@@ -328,5 +328,15 @@ export class ObsidianVault implements VaultPort {
 		if (!abstractFile || !('stat' in abstractFile)) return null;
 		const stat = (abstractFile as { stat: { mtime: number; ctime: number; size: number } }).stat;
 		return stat;
+	}
+
+	/**
+	 * 获取 vault 根目录绝对路径(P-SKILL-2/ADR-017 供 skill 脚本沙箱白名单)。
+	 *
+	 * 关键路径:Obsidian 类型上 `getBasePath` 只在 FileSystemAdapter 上,
+	 * DataAdapter 基接口无此方法,须收窄断言;桌面端(isDesktopOnly)恒为文件系统实现。
+	 */
+	getRootDir(): string {
+		return (this.app.vault.adapter as FileSystemAdapter).getBasePath();
 	}
 }
