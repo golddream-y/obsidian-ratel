@@ -9,21 +9,21 @@
 
 ## 统计
 
-**按月归档记录数**(共 61 条,55 个目录)
+**按月归档记录数**(共 63 条,55 个目录)
 
 ```mermaid
 xychart-beta
     title "按月归档记录数"
     x-axis ["2026-06", "2026-07", "2026-08"]
     y-axis "记录数" 0 --> 25
-    bar [17, 23, 21]
+    bar [17, 23, 23]
 ```
 
 **归档形态分布**
 
 ```mermaid
 pie showData title 归档形态分布
-    "完成归档" : 55
+    "完成归档" : 57
     "Abandoned(未实施/中途废弃)" : 4
     "Superseded(被取代)" : 2
 ```
@@ -34,6 +34,8 @@ pie showData title 归档形态分布
 
 | ID | 归档目录 | 日期 | 备注 |
 |---|---|---|---|
+| S-SKILL (P-SKILL-2-TIMEOUT) | [archive/S-SKILL/](archive/S-SKILL/) | 08-19 | ADR-017 v1.1 超时心跳分类:慢→LLM continueRun/killRun,死→自动杀,10min 上限;补设置控件;squash `377d842`;1288 tests;spec 仍 Active |
+| S-SKILL (P-SKILL-2-EXECUTION) | [archive/S-SKILL/](archive/S-SKILL/) | 08-19 | 技能脚本执行层:Worker+vm 沙箱/信任门/熔断/JS-only;8 Task 四波次;squash `fb871f5`;1269 tests;spec 仍 Active |
 | S-EVOLUTION (spec 终止) | [archive/S-EVOLUTION/](archive/S-EVOLUTION/) | 08-19 | **部分完成后终止**:Phase A 读侧 + open_note + 回收站已发版;task 摘出 S-TASK、子代理移出;写侧(update_frontmatter/Write Gate/append_to_daily)未实施,重启开新 spec |
 | S-SKILL-UX (P-SKILL-UX-V2) | [archive/S-SKILL-UX/](archive/S-SKILL-UX/) | 08-19 | 装了就生效+抽屉管理+术语隐形化;squash `764411c` 随 0.3.0 发版;spec 使命完成同日归档 |
 | S-SR-LAYERING | [archive/S-SR-LAYERING/](archive/S-SR-LAYERING/) | 08-19 | PromptInjector+记忆 pinned/topics+Skill 相关性+使用统计;squash `1942ece` 随 0.4.0 发版 |
