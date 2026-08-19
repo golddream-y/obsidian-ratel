@@ -25,7 +25,7 @@
 | 无原生模块、无子进程 | 不做任意 shell;扩展执行只能是受控 JS 沙箱(S-SKILL 范畴) |
 | `isDesktopOnly`(fs/vectra) | 本 spec 的 Phase A 工具全部**不依赖 fs**,为未来移动端降级留口子,但不为其付出当前成本 |
 | 插件随 Obsidian 重载 | 长任务状态必须落盘、可恢复,不能是纯内存态 |
-| 网络仅模型 API | 不做联网搜索/爬虫工具 |
+| 网络仅模型 API(已由 [ADR-014](../../adr/2026-08-03-mcp-host-platform.md) 修订) | 本 spec 不做联网搜索/爬虫**内置**工具;网页搜索等外联能力走 MCP(opt-in,配置后才出站) |
 
 ### 杠杆(Obsidian 独有优势)
 
@@ -44,13 +44,13 @@
 - **Phase A(结构感知)**:Agent 可按 tag / 属性 / 链接关系精确检索与导航;语义检索结果携带结构信号(反链数、tags);可安全地批量维护 frontmatter。
 - **Phase B(行动与信任)**:Agent 可打开/定位笔记;所有写操作有统一 diff 预览与批量确认;删除/覆盖永远可逆(走 `.trash`)。
 - **Phase C(任务闭环)**:多步任务有显式 checklist,状态落盘、重载可恢复;对话产出可一键沉淀到日记 / 新笔记;Curator/Librarian 子代理以「结构化任务模板」形态落地。
-- 全程遵守既有约束:网络仅模型 API、所有 Obsidian API 走 `ObsidianVault` / `ObsidianWorkspace` 外观、i18n 强制、写操作走权限模型。
+- 全程遵守既有约束:网络边界以 ADR-014 为准(默认仅模型 API;MCP opt-in)、所有 Obsidian API 走 `ObsidianVault` / `ObsidianWorkspace` 外观、i18n 强制、写操作走权限模型。
 
 ## 3. 非目标
 
 - 自建图数据库 / 图索引(`metadataCache` 即图,自建即技术债)
 - 任意 shell / 文件系统漫游 / 代码执行(安全与定位双重否决)
-- 联网搜索 / fetch_url(违反「网络仅模型 API」)
+- 联网搜索 / fetch_url 内置工具(外联能力由 MCP Host 承接,见 [ADR-014](../../adr/2026-08-03-mcp-host-platform.md) 与 [host/mcp.md](../../architecture/host/mcp.md))
 - 移动端支持(本期不做;仅要求 Phase A 工具不依赖 fs)
 - Canvas / Bases 深集成(API 未定型,另行评估)
 - Skill references/scripts 沙箱与 Skill UI(属 S-SKILL 的 P-SKILL-2/3,不在本 spec)

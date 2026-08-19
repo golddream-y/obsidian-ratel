@@ -25,7 +25,7 @@
 - **InlineWorker(主线程模拟)**:索引调度(`IndexProcessor`),通过 `setTimeout(0)` 异步触发。vectra 磁盘 IO 与文本分块在主线程执行(需要 `fs`)。
 - **Embedding Web Worker(子线程)**:ONNX WASM 向量推理(`session.run()`)。主线程通过 `EmbeddingWorkerProxy`(实现 `EmbeddingPort`)postMessage 到 Worker,Worker 返回向量。不依赖 `fs`、不依赖 Obsidian API、不发 HTTP。
 - **无原生模块** — 用 vectra(纯 JS)替代 LanceDB,用 JSON 替代 sql.js。
-- **无外部服务** — 模型 API 是唯一的网络调用。
+- **无外部服务** — 网络调用仅:模型 API(默认)+ MCP Server(opt-in,用户显式配置后才出站,见 ADR-014)。
 
 ## 环境与工具
 
@@ -104,7 +104,7 @@ src/
 - **所有 Obsidian API 访问必须走 ObsidianVault 外观**(`adapters/obsidian-vault.ts`)。
 - **构建产物**:`main.js`(含内联 embedding worker)+ `worker.js`(InlineWorker 索引调度,仅本地开发)。
 - **商店 release**:仅 `main.js` + `manifest.json` + `styles.css`(ADR-006)。
-- **网络调用**:只能是模型 API(DeepSeek / Claude / Ollama),必须在 README 中写明。
+- **网络调用**:默认仅模型 API(DeepSeek / Claude / Ollama);MCP 为 opt-in 出站(ADR-014),隐私边界必须在 README 中写明。
 - **本机隐私不得进仓库**(见「安全与隐私」):家目录绝对路径、日常库路径、`file://` 本机链接、密钥/密码,禁止写入源码、测试、文档、Cursor 规则(gitignore 的 `*.local.mdc` 除外)。
 
 ## 性能

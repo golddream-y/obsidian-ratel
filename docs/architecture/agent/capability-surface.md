@@ -5,7 +5,7 @@
 >
 > 决策依据:[ADR-015 能力池](../../adr/2026-08-03-capability-pool.md) · [ADR-014 MCP 平台](../../adr/2026-08-03-mcp-host-platform.md) · [ADR-012 Skill 激活](../../adr/2026-07-23-skill-activation-claude-aligned.md)
 
-本文档回答:**Agent 的「能力」从哪来、模型怎么看见、怎么被选中执行、怎么变更与销毁。** 是所有工具类文档([tools](tools.md)、[skills 相关 ADR](../../adr/2026-07-06-skill-mechanism.md)、未来 MCP 文档)的公共入口。
+本文档回答:**Agent 的「能力」从哪来、模型怎么看见、怎么被选中执行、怎么变更与销毁。** 是所有工具类文档([tools](tools.md)、[skills 相关 ADR](../../adr/2026-07-06-skill-mechanism.md)、[MCP Host](../host/mcp.md))的公共入口。
 
 ---
 

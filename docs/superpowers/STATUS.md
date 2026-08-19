@@ -17,7 +17,6 @@
 
 | ID | 文件 | 状态 | 创建日期 | 备注 |
 |---|---|---|---|---|
-| S-MCP-HOST | [2026-08-03-mcp-host-design.md](specs/2026-08-03-mcp-host-design.md) | Active | 2026-08-03 | 平台级 MCP Host;双 transport;入 ToolRegistry;ADR-014/015;Core/UI 已归档,仅剩 P-MCP-HOST-DOCS(做完即归档 spec) |
 | S-SKILL | [2026-07-06-skill-mechanism-design.md](specs/2026-07-06-skill-mechanism-design.md) | Active | 2026-07-06 | Skill 机制;激活注入见 ADR-012;S-SKILL-UX 已归档(结论并入本 spec 语境);P-SKILL-2 pending |
 | S-EVOLUTION | [2026-07-15-evolution-graph-agent.md](specs/2026-07-15-evolution-graph-agent.md) | Active | 2026-07-15 | 图谱原生 Agent;P-EVO-A-READ 已归档(合入核对完毕);下步 P-EVO-A-FM |
 
@@ -28,7 +27,6 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
-| P-MCP-HOST-DOCS | [2026-08-03-mcp-host-docs.md](plans/2026-08-03-mcp-host-docs.md) | ⏳ Pending | S-MCP-HOST | README/user-guide/隐私边界;finishing 时确认勾选 |
 | P-EVO-A-FM | — | ⏳ Pending | S-EVOLUTION | update_frontmatter;依赖 P-EVO-A-READ(已归档);plan 待写 |
 | P-SKILL-2-EXECUTION | — | ⏳ Pending | S-SKILL | references+scripts 沙箱;降优先级,plan 待写 |
 
@@ -120,3 +118,4 @@
 | S-SR-LAYERING | [archive/S-SR-LAYERING/](archive/S-SR-LAYERING/) | 2026-08-19 | PromptInjector+记忆 pinned/topics+Skill 相关性+使用统计;squash `1942ece` 随 0.4.0 发版 |
 | S-GRAPH-EXPAND | [archive/S-GRAPH-EXPAND/](archive/S-GRAPH-EXPAND/) | 2026-08-19 | **Abandoned 未实施**;挂起一月无进展+与 S-EVOLUTION 方向重叠;ADR-013 结论仍有效 |
 | S-MD-PREVIEW (P-MD-PREVIEW-2) | [archive/S-MD-PREVIEW/](archive/S-MD-PREVIEW/) | 2026-08-19 | v1 富块已发版;overlay/灯箱 plan **Abandoned**(旧管线作废,S-CHAT-PERF 已重构);spec 同日归档 |
+| S-MCP-HOST | [archive/S-MCP-HOST/](archive/S-MCP-HOST/) | 2026-08-19 | Core+UI+DOCS 三 plan 全完成;host/mcp.md 架构页补齐,AGENTS.md/S-EVOLUTION 网络边界表述与 ADR-014 对齐;spec 归档 |

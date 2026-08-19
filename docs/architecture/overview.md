@@ -241,6 +241,7 @@ graph TB
 | **Host** | index-controller | 索引控制器:聚合 Vault 事件 + 去抖 + 过滤 + 队列 | [host/index-controller.md](host/index-controller.md) |
 | **Host** | folder-watcher | 文件去抖:单文件 5s 计时,delete 立即触发 | [host/folder-watcher.md](host/folder-watcher.md) |
 | **Host** | worker-protocol | Worker 通信:postMessage 协议、请求/响应关联、超时控制 | [host/worker-protocol.md](host/worker-protocol.md) |
+| **Host** | mcp | MCP Host:多 Server 编排、双 transport、工具入册与权限 | [host/mcp.md](host/mcp.md) |
 
 ---
 

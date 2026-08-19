@@ -180,6 +180,7 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 
 | secret ID | 用途 |
 |---|---|
+| `ratel-mcp-<serverId>` | stdio MCP Server 的环境变量(如 API token);serverId 为管理页里的服务器 ID |
 | `ratel-chat-openai-compatible` | 对话（DeepSeek / OpenAI 兼容等）；Ollama 通常不需要 |
 | `ratel-embed-openai-compatible` | 仅嵌入 provider = API 时 |
 | `ratel-rerank-bailian` | 可选百炼重排 |
