@@ -20,7 +20,8 @@
 | ID | 文件 | 状态 | 创建日期 | 备注 |
 |---|---|---|---|---|
 | S-SKILL | [2026-07-06-skill-mechanism-design.md](specs/2026-07-06-skill-mechanism-design.md) | Active | 2026-07-06 | Skill 机制;激活注入见 ADR-012;S-SKILL-UX 已归档(结论并入本 spec 语境);P-SKILL-2 pending |
-| S-EVOLUTION | [2026-07-15-evolution-graph-agent.md](specs/2026-07-15-evolution-graph-agent.md) | Active | 2026-07-15 | 图谱原生 Agent;P-EVO-A-READ 已归档(合入核对完毕);下步 P-EVO-A-FM |
+| S-EVOLUTION | [2026-07-15-evolution-graph-agent.md](specs/2026-07-15-evolution-graph-agent.md) | Active | 2026-07-15 | 图谱原生 Agent;P-EVO-A-READ 已归档(合入核对完毕);task 机制已摘出为 S-TASK;下步 P-EVO-A-FM |
+| S-TASK | [2026-08-19-agent-task-store.md](specs/2026-08-19-agent-task-store.md) | Active | 2026-08-19 | Agent 任务机制(task_plan/落盘恢复/GC/全局单活);从 S-EVOLUTION Phase C 摘出,通用基建独立排期;plan 待写 |
 
 
 ---

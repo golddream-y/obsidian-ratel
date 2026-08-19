@@ -103,10 +103,9 @@
 
 | 能力 | 设计 |
 |---|---|
-| **`task_plan` 工具** | Agent 为多步任务显式建 checklist(创建/更新/勾选);状态渲染进 chat work-bar(复用 StatusLine 基建);**落盘**到 `.obsidian/plugins/ratel-vault/tasks/<id>.json` |
-| **重载恢复** | 插件 onload 扫描未完成任务,状态条提示「有未完成任务,是否继续」;继续 = 将计划 + 已完成步骤注入新会话上下文 |
+| **任务机制** | 已摘出为独立 spec [S-TASK](2026-08-19-agent-task-store.md)(task_plan 工具、落盘恢复、GC——通用 Agent 基建,非图谱能力,独立排期) |
 | **沉淀通道** | `append_to_daily`(补 `get_daily_note` 的写入端,不存在时按 Daily Notes 插件模板创建,走 Write Gate);chat 消息级「存为笔记」一键操作 |
-| **子代理模板化** | Curator/Librarian 落地为「结构化任务模板」而非自由 prompt:如「周度库维护」= `get_vault_structure`(orphans) → `get_links`(unresolved) → 提议 MOC 更新 → Write Gate 确认。模板本质是预置 task_plan + 工具序列约束 |
+| **子代理模板化** | Curator/Librarian 落地为「结构化任务模板」而非自由 prompt:如「周度库维护」= `get_vault_structure`(orphans) → `get_links`(unresolved) → 提议 MOC 更新 → Write Gate 确认。模板本质是预置 task_plan(消费 S-TASK 机制)+ 工具序列约束 |
 
 **设计决策:**
 
@@ -119,13 +118,14 @@
 ### 4.4 执行顺序
 
 ```
-Phase A(P-EVO-A-READ → P-EVO-A-FM) → Phase B → Phase C
-S-SKILL P-SKILL-2/3 降优先级,不挡图谱原生落地
+Phase A(P-EVO-A-READ → P-EVO-A-FM) → Phase B → Phase C(沉淀 + 子代理模板)
+S-TASK(task 机制)独立排期,不阻塞图谱线;Phase C 子代理模板消费其成果
+S-SKILL P-SKILL-2 降优先级,不挡图谱原生落地
 ```
 
 - A 先于 B:全读操作、零风险、见效最快;且 B 要保护的批量 frontmatter 操作来自 A。
 - C 最后:依赖 A 的工具做原料、B 的确认机制做安全网。
-- 每 Phase 对应 1-2 个 plan:`P-EVO-A-READ`(读工具 + 检索增强)、`P-EVO-A-FM`(`update_frontmatter`)、`P-EVO-B-GATE`、`P-EVO-B-OPEN`、`P-EVO-C-TASK`、`P-EVO-C-SINK`。
+- 每 Phase 对应 1-2 个 plan:`P-EVO-A-READ`(已归档)、`P-EVO-A-FM`(`update_frontmatter`)、`P-EVO-B-GATE`、`P-EVO-B-OPEN`、`P-EVO-C-SINK`。task 机制原 `P-EVO-C-TASK` 移交 S-TASK。
 
 ---
 
@@ -135,8 +135,8 @@ S-SKILL P-SKILL-2/3 降优先级,不挡图谱原生落地
 |---|---|
 | `src/adapters/obsidian-vault.ts` / `obsidian-workspace.ts` | 扩展外观:resolvedLinks 反向查询、tag/属性枚举、`processFrontMatter`、`openLinkText`、`vault.trash` |
 | `src/tools/` | 新增约 8 个工具文件 + 对应测试;`search_vault` 输出结构增强 |
-| `src/core/`(tool 执行层) | Write Gate pending-changes 队列(B);task 状态管理(C) |
-| `src/ui/` | 变更聚合面板(B)、work-bar 任务 checklist(C)、「存为笔记」操作(C) |
+| `src/core/`(tool 执行层) | Write Gate pending-changes 队列(B);task 状态管理归 S-TASK |
+| `src/ui/` | 变更聚合面板(B)、work-bar 任务 checklist(归 S-TASK)、「存为笔记」操作(C) |
 | `src/i18n/` | 新增 namespace(工具显示名、面板文案、Notice) |
 | 权限模型 | 新工具注册默认权限;不改模型本身 |
 | 文档 | ARCHITECTURE(端口契约变更时)、user-guide(新工具与面板)、README(能力清单) |
