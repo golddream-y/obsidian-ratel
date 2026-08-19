@@ -1,6 +1,6 @@
 <!--
 	@file src/ui/chat/session/SessionMenu.svelte
-	@description Header 会话历史小菜单 — 最近列表 / 新对话 / 删除
+	@description Header 会话历史小菜单 — 最近列表,行内编辑标题 / 删除(新对话为顶栏独立按钮)
 	@module ui/chat/session/SessionMenu
 -->
 <script lang="ts">
@@ -16,7 +16,7 @@
 		open = false,
 		motionOn = false,
 		onSelect,
-		onNew,
+		onRename,
 		onDelete,
 	}: {
 		entries: SessionIndexEntry[];
@@ -25,7 +25,7 @@
 		open?: boolean;
 		motionOn?: boolean;
 		onSelect: (id: string) => void;
-		onNew: () => void;
+		onRename: (id: string) => void;
 		onDelete: (id: string) => void;
 	} = $props();
 
@@ -61,16 +61,6 @@
 	>
 		<div class="ratel-session-menu-head">
 			<span class="ratel-session-menu-label">{$t('chat.session.menuRecent')}</span>
-			<button
-				type="button"
-				class="ratel-session-new"
-				onclick={(e) => {
-					e.stopPropagation();
-					onNew();
-				}}
-			>
-				＋ {$t('chat.session.new')}
-			</button>
 		</div>
 		<div class="ratel-session-list">
 			{#each entries as e, i (e.id)}
@@ -98,15 +88,28 @@
 					}}
 				>
 					<div class="ratel-session-row-body">
-						<div class="ratel-session-title-short">{short}</div>
-						{#if full !== short}
-							<div class="ratel-session-title-full">{full}</div>
-						{/if}
-						<div class="ratel-session-when">{formatWhen(e.updatedAt)}</div>
-					</div>
+					<div class="ratel-session-title-short">{short}</div>
+					{#if full !== short}
+						<div class="ratel-session-title-full">{full}</div>
+					{/if}
+					<div class="ratel-session-when">{formatWhen(e.updatedAt)}</div>
+				</div>
+				<div class="ratel-session-row-actions">
 					<button
 						type="button"
-						class="ratel-session-del"
+						class="ratel-session-act"
+						title={$t('chat.session.rename')}
+						aria-label={$t('chat.session.rename')}
+						onclick={(ev) => {
+							ev.stopPropagation();
+							onRename(e.id);
+						}}
+					>
+						✎
+					</button>
+					<button
+						type="button"
+						class="ratel-session-act ratel-session-del"
 						title={$t('chat.session.delete')}
 						aria-label={$t('chat.session.delete')}
 						onclick={(ev) => {
@@ -116,6 +119,7 @@
 					>
 						×
 					</button>
+				</div>
 				</div>
 			{/each}
 		</div>
@@ -162,18 +166,6 @@
 		text-transform: uppercase;
 		color: var(--text-muted);
 		font-weight: 550;
-	}
-
-	.ratel-session-new {
-		font-size: 12px;
-		font-weight: 500;
-		color: var(--text-accent, #c9956c);
-		background: transparent;
-		border: none;
-		cursor: pointer;
-		padding: 2px 4px;
-		height: auto;
-		min-height: 0;
 	}
 
 	.ratel-session-list {
@@ -259,7 +251,15 @@
 		min-height: 1.3em;
 	}
 
-	.ratel-session-del {
+	.ratel-session-row-actions {
+		display: inline-flex;
+		align-items: center;
+		gap: 2px;
+		flex-shrink: 0;
+	}
+
+	/* 行内操作(编辑/删除):悬停行才现身,与原删除交互一致 */
+	.ratel-session-act {
 		width: 22px;
 		height: 22px;
 		min-height: 22px;
@@ -275,8 +275,14 @@
 		flex-shrink: 0;
 	}
 
-	.ratel-session-row:hover .ratel-session-del {
+	.ratel-session-row:hover .ratel-session-act,
+	.ratel-session-act:focus-visible {
 		opacity: 1;
+	}
+
+	.ratel-session-act:hover {
+		color: var(--text-normal);
+		background: color-mix(in srgb, var(--background-modifier-hover, #000) 8%, transparent);
 	}
 
 	.ratel-session-del:hover {

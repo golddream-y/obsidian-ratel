@@ -557,22 +557,26 @@
 		);
 	}
 
-	/** 编辑当前会话标题；弹窗内可选手改或 AI 总结。 */
-	async function editCurrentSessionTitle(): Promise<void> {
+	/**
+	 * 编辑指定会话标题(菜单行内 ✎);弹窗内可选手改或 AI 总结。
+	 * 编辑对象不一定是当前会话,seed 以磁盘记录为准;当前会话才用芯片同源值。
+	 */
+	async function editSessionTitle(id: string): Promise<void> {
 		sessionMenuOpen = false;
-		// 关键路径:在任何 await 之前拍下 Header 正在显示的标题,弹框初值与芯片严格同源
-		const seedFromUi =
-			sessionFullTitle.trim() || sessionShortTitle.trim();
-		const id = sessionId;
 		const s = await plugin.persistence.sessions.get(id);
 		if (!s) {
 			new Notice(tNow('chat.session.loadFailed'), 4000);
 			return;
 		}
 		const empty = emptyTitle();
+		// 关键路径:当前会话用 Header 正在显示的标题,弹框初值与芯片严格同源
+		const seed =
+			id === sessionId
+				? sessionFullTitle.trim() || sessionShortTitle.trim()
+				: '';
 		const result = await showSessionRenameModal(
 			plugin.app,
-			seedFromUi || s.title?.trim() || s.shortTitle?.trim() || empty,
+			seed || s.title?.trim() || s.shortTitle?.trim() || empty,
 		);
 		if (!result) return;
 		if (result.kind === 'retitle') {
@@ -1398,8 +1402,32 @@
 			</div>
 			{/if}
 		</div>
-		<!-- 对齐原型 .header-actions:chip + 编辑标题 + model + 菜单同层定位 -->
+		<!-- 对齐原型 .header-actions:chip + model + 菜单同层定位(编辑标题在菜单行内) -->
 		<div class="ratel-header-right">
+			<!-- 新对话:会话 chip 左侧;空态本身就是新会话,隐藏避免冗余 -->
+			{#if messages.length > 0}
+				<button
+					type="button"
+					class="ratel-header-new-chat"
+					title={$t('chat.session.new')}
+					aria-label={$t('chat.session.new')}
+					disabled={switching}
+					onclick={(e) => {
+						e.stopPropagation();
+						void createNewSession();
+					}}
+				>
+					<svg viewBox="0 0 24 24" aria-hidden="true">
+						<path
+							d="M12 5v14M5 12h14"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="1.75"
+							stroke-linecap="round"
+						></path>
+					</svg>
+				</button>
+			{/if}
 			<div class="ratel-session-chip-group">
 				<button
 					bind:this={historyBtnEl}
@@ -1438,20 +1466,6 @@
 						></path>
 					</svg>
 				</button>
-				<button
-					type="button"
-					class="ratel-session-edit"
-					title={$t('chat.session.rename')}
-					aria-label={$t('chat.session.rename')}
-					disabled={switching || sessionLoading}
-					onclick={(e) => {
-						e.stopPropagation();
-						sessionMenuOpen = false;
-						void editCurrentSessionTitle();
-					}}
-				>
-					✎
-				</button>
 			</div>
 			<button
 				type="button"
@@ -1468,7 +1482,7 @@
 						open={true}
 						motionOn={chatMotionOn}
 						onSelect={(id) => void switchToSession(id)}
-						onNew={() => void createNewSession()}
+						onRename={(id) => void editSessionTitle(id)}
 						onDelete={(id) => void deleteSessionFromMenu(id)}
 					/>
 				</div>
@@ -1757,6 +1771,40 @@
 		flex-shrink: 1;
 	}
 
+	/* 新对话主操作:与会话 chip 同高同风格,铜色悬停反馈 */
+	.ratel-header-new-chat {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 28px;
+		height: 28px;
+		min-height: 28px;
+		padding: 0;
+		border-radius: 999px;
+		border: 1px solid var(--background-modifier-border);
+		background: transparent;
+		color: var(--text-muted);
+		cursor: pointer;
+		flex-shrink: 0;
+		transition: color 0.15s, border-color 0.15s, background 0.15s;
+	}
+
+	.ratel-header-new-chat svg {
+		width: 14px;
+		height: 14px;
+	}
+
+	.ratel-header-new-chat:hover:not(:disabled) {
+		color: var(--ratel-cite, var(--interactive-accent));
+		border-color: var(--ratel-copper-glow);
+		background: var(--ratel-copper-soft);
+	}
+
+	.ratel-header-new-chat:disabled {
+		opacity: 0.45;
+		cursor: not-allowed;
+	}
+
 	/* 安全路径:原型 brand 用 baseline 横排,不是上下堆叠 */
 	.ratel-header-brand {
 		display: flex;
@@ -1849,42 +1897,6 @@
 
 	.ratel-session-chip:disabled {
 		opacity: 0.45;
-		cursor: not-allowed;
-	}
-
-	.ratel-session-edit {
-		width: 28px;
-		height: 28px;
-		min-height: 28px;
-		padding: 0;
-		border: 1px solid transparent;
-		border-radius: 999px;
-		background: transparent;
-		color: var(--text-faint, var(--text-muted));
-		cursor: pointer;
-		font-size: 13px;
-		line-height: 1;
-		opacity: 0.55;
-		flex-shrink: 0;
-		transition: color 0.15s, opacity 0.15s, background 0.15s, border-color 0.15s;
-	}
-
-	.ratel-session-chip-group:hover .ratel-session-edit,
-	.ratel-session-edit:hover:not(:disabled),
-	.ratel-session-edit:focus-visible:not(:disabled) {
-		opacity: 1;
-		color: var(--text-muted);
-	}
-
-	.ratel-session-edit:hover:not(:disabled),
-	.ratel-session-edit:focus-visible:not(:disabled) {
-		color: var(--ratel-cite, var(--interactive-accent));
-		border-color: var(--background-modifier-border);
-		background: var(--ratel-copper-soft);
-	}
-
-	.ratel-session-edit:disabled {
-		opacity: 0.3;
 		cursor: not-allowed;
 	}
 
