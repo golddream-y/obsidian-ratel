@@ -267,11 +267,14 @@ i18n:
   - 网络访问:**禁用**(AGENTS.md 约束 — 只有模型 API 能发网络)
   - 子进程:禁止 `child_process.spawn/exec`
   - 全局对象:禁止 `globalThis.fetch` / `XMLHttpRequest`
-- **检测:双层超时区分「慢」与「死」**(ADR-017):
+- **检测:按心跳分类处置「慢」「死」「赖」**(ADR-017 v1.1):
   - 软超时(心跳):注入 `reportProgress()` API,脚本主动报进度;10s 无心跳 → UI 警告(慢,可继续等)
-  - 硬超时:30s 无条件到期(settings `skillScriptTimeout` 可调)→ 判定卡死,立即 `terminate()`;有心跳但到硬超时照样杀,错误信息注明「持续报进度,建议优化或调大超时」
-- **卡死处理**:击杀 → pending Promise reject(错误作为**工具结果**返回,LLM 可自行换路,不崩回合)→ Worker 一次性无残留
-- **多次失败熔断**(ADR-017):不自动重试(脚本有写副作用);同一脚本连续 3 次异常终止 → 熔断,再调用直接返回「需用户重新确认」+ Notice;成功清零;计数存 usage-stats
+  - **无心跳超时**:`skillScriptTimeout`(默认 30s,可调)内零心跳 → 判定卡死(同步死循环里 vm 发不出消息),立即 `terminate()`
+  - **有心跳超时**:到时仍在持续报进度 → **不终止**,工具返回 `still-running`(附已运行时长 + 最近进度),LLM 决定 `continueRun`(再等一轮,可多轮)或 `killRun`(终止)
+  - **绝对上限**:累计 10min(硬编码)仍在跑 → 兜底击杀(forever-progress 防护)
+  - 同步长计算(无打点)与死循环在 vm 单线程内不可区分,会被无心跳超时杀 — 接受,长任务脚本必须打点
+- **异常终止处理**:击杀 → pending Promise 以**工具结果** resolve(LLM 可自行换路,不崩回合)→ Worker 一次性无残留;`still-running` 与主动 `killRun` 不算异常终止
+- **多次失败熔断**(ADR-017):不自动重试(脚本有写副作用);同一脚本连续 3 次异常终止(无心跳超时/绝对上限/崩溃,不含 still-running 与主动 kill)→ 熔断,再调用直接返回「需用户重新授权」+ Notice;成功清零;计数存 usage-stats
 - **兜底**:并发 = 1(信号量串行);插件 unload → terminateAll;Worker exit 监听保证 Promise 不悬空
 - **权限询问**:首次运行某 script 弹 Modal 询问用户授权(类 Obsidian plugin 权限模型)
 - **白名单**:用户可在 settings 加 `trustedScripts: string[]`(格式 `<skillName>/<scriptPath>`)跳过询问
@@ -332,13 +335,15 @@ i18n:
 // run_skill_script
 {
   name: 'run_skill_script',
-  description: '执行 Skill 的 scripts/ 目录内脚本。首次运行会询问用户授权。脚本在沙箱内执行:无网络、fs 限制在 vault 与 skill 文件夹、超时 30s。',
+  description: '执行 Skill 的 scripts/ 目录内脚本(仅 .js/.mjs/.cjs)。首次运行会询问用户授权。脚本在沙箱内执行:无网络、fs 限制在 vault 与 skill 文件夹。超时按心跳分类:持续报进度的脚本超时不终止,返回 still-running 由你决定继续等(continueRun)或终止(killRun);无心跳超时判定卡死自动终止。',
   parameters: {
     type: 'object',
     properties: {
       skillName: { type: 'string', description: 'Skill 名称' },
       scriptPath: { type: 'string', description: 'scripts/ 内的相对路径' },
-      args: { type: 'array', items: { type: 'string' }, description: '传给脚本的命令行参数' }
+      args: { type: 'array', items: { type: 'string' }, description: '传给脚本的命令行参数' },
+      continueRun: { type: 'boolean', description: '对 still-running 的脚本继续等待一轮(当前只有一个在跑的脚本时生效)' },
+      killRun: { type: 'boolean', description: '终止仍在运行的脚本' }
     },
     required: ['skillName', 'scriptPath']
   }
@@ -379,7 +384,7 @@ i18n:
 新增 "Skills" group / sub-page:
 
 - **总开关**:`enableSkills: boolean`(toggle,默认 true)
-- **脚本超时**:`skillScriptTimeout: number`(slider,5-120s,默认 30)
+- **脚本超时**:`skillScriptTimeout: number`(slider,5-120s,默认 30;语义 = 无心跳判定窗口:零心跳超此值判卡死终止,持续报进度的脚本超此值返回 still-running 交 LLM 决策)
 - **可信脚本**:`trustedScripts: string[]`(render 自定义,列表 + 添加/删除)
 - **Skills 总览页**(sub-page):列出所有 skill
   - 每行:`name` + 来源标签(预置/全局/vault)+ `enabled` toggle + 当前激活态(只读显示)
