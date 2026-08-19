@@ -29,7 +29,7 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
-| P-SKILL-2-EXECUTION | — | ⏳ Pending | S-SKILL | references+scripts 沙箱;降优先级,plan 待写 |
+| P-SKILL-2-EXECUTION | [2026-08-19-skill-execution.md](plans/2026-08-19-skill-execution.md) | 🔄 In Progress | S-SKILL | references+scripts 沙箱;运行时定案 ADR-017(Worker+vm 双层,JS-only);分支 feat/p-skill-2-execution;8 Task 并行波次执行 |
 
 ---
 
@@ -49,7 +49,7 @@
 ## Future execution queue(按顺序)
 
 1. **S-TASK**(task_plan / 落盘恢复 / GC)— spec 已定,plan 待写
-2. **P-SKILL-2-EXECUTION** — 降优先级,plan 待写
+2. **P-SKILL-2-EXECUTION** — plan 已就绪(ADR-017 定案),待启动执行
 3. 候选(无 spec,重启时新开):update_frontmatter / Write Gate / append_to_daily(S-EVOLUTION 写侧,见 archive/S-EVOLUTION/)  
 
 

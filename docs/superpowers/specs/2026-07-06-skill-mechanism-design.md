@@ -259,13 +259,20 @@ i18n:
 **c. scripts 脚本执行**:
 
 - `run_skill_script(skillName, scriptPath, args)` 工具
-- **沙箱限制**:
+- **语言边界:仅 JavaScript**(`.js` / `.mjs` / `.cjs`,ADR-017)— vm 运行时天然只懂 JS;其他语言(`.py` / `.sh` 等)在工具层按扩展名直接拒绝,返回「不支持 + 引导 MCP(ADR-014)」的工具结果,LLM 可换路告知用户,不弹授权、不执行
+- **沙箱限制**(运行时 = **Worker Thread + vm 双层**,ADR-017):
+  - 每次执行新起一个 Worker Thread,跑完即弃;死循环只卡 worker,`terminate()` 毫秒级击杀,主线程 UI 零影响
+  - Worker 内用 `vm` context 砍能力面:无 `require` / `fetch` / `child_process` / `process`;fs 白名单只开 vault 根 + 该 skill 目录(受限包装)
   - 工作目录:skill 文件夹
-  - fs 访问:仅 vault 内 + skill 文件夹(通过受限 `require('fs')` 包装)
   - 网络访问:**禁用**(AGENTS.md 约束 — 只有模型 API 能发网络)
-  - 执行超时:30s(可在 settings 配置 `skillScriptTimeout`)
   - 子进程:禁止 `child_process.spawn/exec`
   - 全局对象:禁止 `globalThis.fetch` / `XMLHttpRequest`
+- **检测:双层超时区分「慢」与「死」**(ADR-017):
+  - 软超时(心跳):注入 `reportProgress()` API,脚本主动报进度;10s 无心跳 → UI 警告(慢,可继续等)
+  - 硬超时:30s 无条件到期(settings `skillScriptTimeout` 可调)→ 判定卡死,立即 `terminate()`;有心跳但到硬超时照样杀,错误信息注明「持续报进度,建议优化或调大超时」
+- **卡死处理**:击杀 → pending Promise reject(错误作为**工具结果**返回,LLM 可自行换路,不崩回合)→ Worker 一次性无残留
+- **多次失败熔断**(ADR-017):不自动重试(脚本有写副作用);同一脚本连续 3 次异常终止 → 熔断,再调用直接返回「需用户重新确认」+ Notice;成功清零;计数存 usage-stats
+- **兜底**:并发 = 1(信号量串行);插件 unload → terminateAll;Worker exit 监听保证 Promise 不悬空
 - **权限询问**:首次运行某 script 弹 Modal 询问用户授权(类 Obsidian plugin 权限模型)
 - **白名单**:用户可在 settings 加 `trustedScripts: string[]`(格式 `<skillName>/<scriptPath>`)跳过询问
 - v1 实现范围:P-SKILL-2-EXECUTION
@@ -536,6 +543,7 @@ src/
 - 脚本内 `fetch('https://...')` 抛错(网络禁用)
 - 脚本内 `fs.readFile('../secret')` 抛错(path traversal)
 - 脚本执行超 30s 自动终止
+- 脚本为 `.py` 等非 JS 语言 → 返回明确「不支持」提示并引导 MCP(不弹授权、不执行)
 - 首次运行弹 Modal,用户拒绝则不执行
 - 加入白名单后下次直接执行
 
@@ -597,7 +605,7 @@ src/
 - **user-guide**:需要更新(斜杠命令 `/skill` / `/skills` / `/skill off` / `Reload skills` + skill 编写指南)
 - **CHANGELOG**:由 release 工作流处理
 - **ARCHITECTURE.md**:需要更新(新增 `skills/` 子系统目录 + 跨线程通信无变化但新增 Skill 注入 system prompt 的数据流)
-- **adr/**:可能新增 ADR(若 skill 沙箱用 Node vm 的决策非显然)
+- **adr/**:[ADR-017](../../adr/2026-08-19-skill-script-sandbox-worker-vm.md) 已定(Worker Thread + vm 双层 / 防手滑不防黑客 / 熔断不重试)
 
 ### 6.4 依赖
 
@@ -615,7 +623,7 @@ src/
 - Discovery 扫描在 onload 异步执行,不阻塞 Obsidian 启动
 - 三源合并后内存常驻 manifest(每个 skill ~1KB,100 个 = 100KB,可接受)
 - 文件变更去抖 500ms,避免频繁重载
-- 脚本执行在主线程之外(用 InlineWorker 模式或 child_process 隔离,具体在 P-SKILL-2 决策)
+- 脚本执行在主线程之外 — **已决策(ADR-017)**:Worker Thread + vm 双层;不用 child_process(威胁模型内无进程级对手)、不用 WASM 解释器(慢 10-50 倍)。威胁模型 = 防手滑不防黑客(skill 是用户自己装的)
 
 ### 6.7 安全
 
