@@ -21,9 +21,9 @@
 | S-MCP-HOST | [2026-08-03-mcp-host-design.md](specs/2026-08-03-mcp-host-design.md) | Active | 2026-08-03 | 平台级 MCP Host;双 transport;入 ToolRegistry;ADR-014/015;Core/UI 已归档,剩 P-MCP-HOST-DOCS |
 | S-GRAPH-EXPAND | [2026-08-03-graph-expand-design.md](specs/2026-08-03-graph-expand-design.md) | Active | 2026-08-03 | 检索 1 跳扩邻 + hub 降权 + 引用标注;ADR-013 近端落地;**暂缓**,先做 MCP |
 | S-SKILL | [2026-07-06-skill-mechanism-design.md](specs/2026-07-06-skill-mechanism-design.md) | Active | 2026-07-06 | Skill 机制;激活注入见 ADR-012;activation 三态与 enable 开关结论由 S-SKILL-UX 修订;P-SKILL-2/3 pending |
-| S-SKILL-UX | [2026-08-17-skill-ux-claude-aligned-design.md](specs/2026-08-17-skill-ux-claude-aligned-design.md) | Active | 2026-08-17 | Skill 体验对齐 Claude/Cursor;删总开关+抽屉管理+术语隐形化;修订 ADR-009 §5/ADR-012 §3 always;plan 待写 |
+| S-SKILL-UX | [2026-08-17-skill-ux-claude-aligned-design.md](specs/2026-08-17-skill-ux-claude-aligned-design.md) | Active | 2026-08-17 | Skill 体验对齐 Claude/Cursor;P-SKILL-UX-V2 已归档(装了就生效+抽屉管理);P-SKILL-3-UI 待对齐本 spec |
 | S-EVOLUTION | [2026-07-15-evolution-graph-agent.md](specs/2026-07-15-evolution-graph-agent.md) | Active | 2026-07-15 | 图谱原生 Agent;P-EVO-A-READ 已归档(合入核对完毕);下步 P-EVO-A-FM |
-| S-SR-LAYERING | [2026-08-19-sr-layering-design.md](specs/2026-08-19-sr-layering-design.md) | Active | 2026-08-19 | PRD 7.5 落地:PromptInjector 统一注入管理器+记忆 pinned/topics top-K+Skill 相关性注入+使用统计;ADR-016;plan 已完成(squash `6b00d31`) |
+
 
 ---
 
@@ -36,8 +36,6 @@
 | P-MCP-HOST-DOCS | [2026-08-03-mcp-host-docs.md](plans/2026-08-03-mcp-host-docs.md) | ⏳ Pending | S-MCP-HOST | README/user-guide/隐私边界;finishing 时确认勾选 |
 | P-EVO-A-FM | — | ⏳ Pending | S-EVOLUTION | update_frontmatter;依赖 P-EVO-A-READ(已归档);plan 待写 |
 | P-SKILL-2-EXECUTION | — | ⏳ Pending | S-SKILL | references+scripts 沙箱;降优先级,plan 待写 |
-| P-SKILL-UX-V2 | [2026-08-17-skill-ux-v2.md](plans/2026-08-17-skill-ux-v2.md) | ✅ Completed | S-SKILL-UX | 4 Task 全完成;worktree/分支已清理;squash → develop `64fec82`;1191 tests + build 过;待归档 |
-| P-SR-LAYERING | [2026-08-19-sr-layering.md](plans/2026-08-19-sr-layering.md) | ✅ Completed | S-SR-LAYERING | 6 Task 全完成+终审修复;worktree/分支已清理;squash → develop `6b00d31`;1221 tests + build 过;待归档;文档同步已补(CHANGELOG/README/user-guide) |
 | P-SKILL-3-UI | — | ⏳ Pending | S-SKILL | Skill UI;降优先级,plan 待写 |
 
 ---
@@ -124,3 +122,5 @@
 | S-TOOL-HISTORY-400 | [archive/S-TOOL-HISTORY-400/](archive/S-TOOL-HISTORY-400/) | 2026-07-15 | compact/上送孤立 tool 对齐 |
 | S-BASIC-ENV | [archive/S-BASIC-ENV/](archive/S-BASIC-ENV/) | 2026-07-15 | Phase1+2 已随 0.1.5 发版;Phase3 非目标另开 |
 | S-I18N | [archive/S-I18N/](archive/S-I18N/) | 2026-07-15 | Superseded by S-I18N-V2;v1 未落地 |
+| S-SKILL-UX (P-SKILL-UX-V2) | [archive/S-SKILL-UX/](archive/S-SKILL-UX/) | 2026-08-19 | 装了就生效+抽屉管理+术语隐形化;squash `764411c` 随 0.3.0 发版;spec 仍 Active |
+| S-SR-LAYERING | [archive/S-SR-LAYERING/](archive/S-SR-LAYERING/) | 2026-08-19 | PromptInjector+记忆 pinned/topics+Skill 相关性+使用统计;squash `1942ece` 随 0.4.0 发版 |
