@@ -151,7 +151,7 @@ export interface RatelVaultSettings {
 	// 关键路径(S-SKILL-UX):per-skill 开关持久化(name → 是否启用)。
 	// 未登记的 skill 走 manifest.enabled 默认值;Registry 加载后 applyEnabledOverrides 应用。
 	skillEnabled: Record<string, boolean>;
-	/** Skill 脚本硬超时(ms;ADR-017 — 软超时固定 10s 不配置) */
+	/** 无心跳判定窗口(ms;ADR-017 v1.1)— 零心跳超此值判卡死;持续报进度超此值返回 still-running 交 LLM 决策 */
 	skillScriptTimeout: number;
 	/** 受信脚本白名单(`skillName/scriptPath`);首次授权 Modal 选「允许并记住」时写入 */
 	trustedScripts: string[];
@@ -940,16 +940,31 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 						control: { type: 'toggle', key: 'debugLog' },
 					},
 					{
-						name: tNow('settings.developer.agentMaxSteps.name'),
-						desc: tNow('settings.developer.agentMaxSteps.desc'),
-						control: {
-							type: 'slider',
-							key: 'agentMaxSteps',
-							min: 5,
-							max: 200,
-							step: 5,
-						},
+					name: tNow('settings.developer.agentMaxSteps.name'),
+					desc: tNow('settings.developer.agentMaxSteps.desc'),
+					control: {
+						type: 'slider',
+						key: 'agentMaxSteps',
+						min: 5,
+						max: 200,
+						step: 5,
 					},
+				},
+				{
+					name: tNow('settings.skill.scriptTimeout.name'),
+					desc: tNow('settings.skill.scriptTimeout.desc'),
+					control: {
+						type: 'slider',
+						key: 'skillScriptTimeout',
+						// 关键路径:存储单位是 ms,但用户心智是秒 — 滑块范围 5s-120s。
+						// displayFormat(Obsidian 1.13.1 API)把 ms 值换算为秒显示;
+						// 1.13.0 上该字段被忽略,降级显示 ms 裸值,滑块功能不受损。
+						displayFormat: (ms) => `${ms / 1000} ${tNow('settings.skill.scriptTimeout.unit')}`,
+						min: 5000,
+						max: 120000,
+						step: 5000,
+					},
+				},
 				],
 			},
 			{

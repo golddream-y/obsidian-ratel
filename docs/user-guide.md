@@ -148,7 +148,7 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 | `scripts/` | JavaScript 脚本（仅 `.js` / `.mjs` / `.cjs`） | 需要时自动运行，结果带回对话 |
 | `references/` | 参考文档（模板、清单等文本文件） | 按需读取（单文件上限 100KB） |
 
-**沙箱隔离**：脚本在隔离环境中运行——无网络、不能加载外部模块，文件访问限于当前 vault 与该技能目录，超时自动终止。只支持 JavaScript；需要 Python、Shell 等其他语言的能力时，请配置对应的 MCP server（非 JavaScript 脚本一律不执行，AI 会说明原因并引导）。
+**沙箱隔离**：脚本在隔离环境中运行——无网络、不能加载外部模块，文件访问限于当前 vault 与该技能目录，卡死自动终止。只支持 JavaScript；需要 Python、Shell 等其他语言的能力时，请配置对应的 MCP server（非 JavaScript 脚本一律不执行，AI 会说明原因并引导）。
 
 **首次运行需授权**：每个脚本第一次被运行时弹出「运行 Skill 脚本」确认框，写明技能名、脚本与来源目录。三个选择：
 
@@ -156,9 +156,9 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 - **仅此次** — 只放行这一次
 - **拒绝**（ESC 或点遮罩关闭同拒绝）— 本次不运行，AI 会换一种方式
 
-**超时**：脚本最长运行 30 秒（默认），到时强制终止；运行超过 10 秒没有上报进度，会先提示「技能脚本运行超过 10 秒未上报进度，仍在运行中（可继续等待）」。
+**超时分两种情况**：持续上报进度的长任务脚本不会被一刀切杀掉——到超时时限（默认 30 秒）AI 会收到运行进度，由它判断继续等待还是终止，并告知你；完全无进展（无进度心跳）超过该时限则判定卡死、立即终止。运行超过 10 秒没有上报进度会先提示「仍在运行中（可继续等待）」；任何脚本最长运行 10 分钟（绝对上限）。超时时限可在 设置 → 高级 → 脚本无响应超时 调整（5–120 秒，AI 也可以代改）。
 
-**熔断**：同一脚本连续失败 3 次（超时或崩溃）后不再执行，并弹出提醒，AI 会改用其他方式完成；恢复需重新确认授权——在授权框中选择「允许并记住」会同时清除失败计数。
+**熔断**：同一脚本连续失败 3 次（卡死终止、超过 10 分钟上限或崩溃；AI 主动终止不算）后不再执行，并弹出提醒，AI 会改用其他方式完成；恢复需重新确认授权——在授权框中选择「允许并记住」会同时清除失败计数。
 
 ---
 
@@ -268,7 +268,7 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 
 **First run:** Configure chat model (+ Keychain `ratel-chat-openai-compatible`, or local Ollama). Wait for indexing. Open chat via the 🦡 ribbon.
 
-**Ask naturally:** topics → semantic search with citations; “today” → injected local time; “this note” → active file; “open that note” → opens it in Obsidian at the heading or block; daily note path is probed only (never auto-created). Config questions go through the built-in config skill (whitelisted changes by chat; keys only via the keychain). Memory lives in `.ratel/memory/`. Skills live under `.ratel/skills/` (or `~/.ratel/skills/`) — installed means enabled (vault wins on name conflicts). Manage them via the Skills button in the status drawer: per-skill toggle (persists across restarts), view full text, edit, or delete with double confirmation; built-ins are read-only and update with the plugin. A skill folder may also ship `scripts/` (sandboxed JavaScript — no network, file access limited to the vault and the skill folder) and `references/` docs the agent runs or reads on demand; each script asks approval on first run (“Always allow” remembers), is force-terminated after 30 seconds by default (with a “still running” notice after 10), and a script failing 3 times in a row is circuit-broken until re-approved.
+**Ask naturally:** topics → semantic search with citations; “today” → injected local time; “this note” → active file; “open that note” → opens it in Obsidian at the heading or block; daily note path is probed only (never auto-created). Config questions go through the built-in config skill (whitelisted changes by chat; keys only via the keychain). Memory lives in `.ratel/memory/`. Skills live under `.ratel/skills/` (or `~/.ratel/skills/`) — installed means enabled (vault wins on name conflicts). Manage them via the Skills button in the status drawer: per-skill toggle (persists across restarts), view full text, edit, or delete with double confirmation; built-ins are read-only and update with the plugin. A skill folder may also ship `scripts/` (sandboxed JavaScript — no network, file access limited to the vault and the skill folder) and `references/` docs the agent runs or reads on demand; each script asks approval on first run (“Always allow” remembers); scripts that keep reporting progress are not killed at the timeout — the agent gets their progress and decides to keep waiting or stop them (stalled scripts with no progress heartbeat are terminated after the timeout, default 30s, configurable 5–120s; absolute cap 10 minutes), and a script failing 3 times in a row (stalled, over the cap, or crashed) is circuit-broken until re-approved.
 
 **Sessions:** Header chip opens recent chats; ✎ edits / AI-summarizes the title. Switching while generating asks first. “Allow for this session” grants by tool name for the whole chat.
 

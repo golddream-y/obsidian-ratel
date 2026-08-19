@@ -1,6 +1,6 @@
 /**
  * @file src/skills/skill-script-sandbox.test.ts
- * @description SkillScriptSandbox 测试 — 真实 worker_threads:协议 / 死循环击杀 / 串行 / exit 兜底
+ * @description SkillScriptSandbox 测试 — 真实 worker_threads:协议 / 心跳分类超时状态机 / 串行 / exit 兜底(ADR-017 v1.1)
  * @module skills/skill-script-sandbox.test
  * @depends esbuild(仅测试内现场打包,write:false)
  */
@@ -107,5 +107,137 @@ describe('SkillScriptSandbox(真实 worker_threads)', () => {
 		const sandbox = new SkillScriptSandbox(bareCode);
 		const out = await sandbox.run({ code: `'x'`, args: [], allowedDirs: [], timeoutMs: 5_000 });
 		expect(out.status).toBe('crashed');
+	});
+});
+
+describe('SkillScriptSandbox 心跳分类超时状态机(ADR-017 v1.1)', () => {
+	let workerCode: string;
+	beforeAll(async () => {
+		workerCode = await buildRealWorkerCode();
+	});
+
+	it('有心跳 + 窗口到点 - stillRunning 含时长与最近进度 - worker 不终止', async () => {
+		const sandbox = new SkillScriptSandbox(workerCode);
+		const out = await sandbox.run({
+			// 每 150ms 打一次点的长任务:窗口到点时心跳活跃
+			code: `for (let i = 0; i < 8; i++) { reportProgress('tick'); const t = Date.now(); while (Date.now() - t < 150) {} } 'late'`,
+			args: [], allowedDirs: [], timeoutMs: 500,
+		});
+		expect(out.status).toBe('stillRunning');
+		if (out.status !== 'stillRunning') return;
+		expect(out.elapsedMs).toBeGreaterThanOrEqual(500);
+		expect(out.hadProgress).toBe(true);
+		expect(out.lastProgress).toContain('tick');
+		// worker 未被 terminate 的证明:pending 仍在,killRun 得到 killed 而非 noRunning
+		expect(await sandbox.killRun()).toEqual({ status: 'killed' });
+	});
+
+	it('stillRunning 后脚本完成 - continueRun - resolve ok', async () => {
+		const sandbox = new SkillScriptSandbox(workerCode);
+		const out1 = await sandbox.run({
+			// 总时长约 1s 的打点任务,窗口 700ms → 先 stillRunning 再完成
+			code: `for (let i = 0; i < 4; i++) { reportProgress('tick'); const t = Date.now(); while (Date.now() - t < 250) {} } 'done'`,
+			args: [], allowedDirs: [], timeoutMs: 700,
+		});
+		expect(out1.status).toBe('stillRunning');
+		const out2 = await sandbox.continueRun();
+		expect(out2).toEqual({ status: 'ok', result: '"done"' });
+	});
+
+	it('stillRunning 后 killRun - killed 且 worker 已 terminate', async () => {
+		const sandbox = new SkillScriptSandbox(workerCode);
+		const out1 = await sandbox.run({
+			// forever-progress:持续打点永不结束
+			code: `for (;;) { reportProgress('forever'); const t = Date.now(); while (Date.now() - t < 100) {} }`,
+			args: [], allowedDirs: [], timeoutMs: 400,
+		});
+		expect(out1.status).toBe('stillRunning');
+		expect(await sandbox.killRun()).toEqual({ status: 'killed' });
+		// worker 已 terminate、pending 已清:后续操作均 noRunning
+		expect(await sandbox.continueRun()).toEqual({ status: 'noRunning' });
+		expect(await sandbox.killRun()).toEqual({ status: 'noRunning' });
+	});
+
+	it('零心跳 + 窗口到点 - timeout/stalled - worker 已 terminate', async () => {
+		const sandbox = new SkillScriptSandbox(workerCode);
+		const out = await sandbox.run({ code: `while (true) { }`, args: [], allowedDirs: [], timeoutMs: 300 });
+		// vm 单线程死循环发不出任何消息 → 无心跳判卡死(ADR-017 §3「死」)
+		expect(out).toEqual({ status: 'timeout', kind: 'stalled', hadProgress: false });
+	});
+
+	it('中途停跳(先打点后死循环)- stalled 巡检停跳满窗口即杀 - 不等重置后的 window', async () => {
+		const sandbox = new SkillScriptSandbox(workerCode);
+		// 打点一次后死循环:窗口到点时"停跳未满窗口"→ stillRunning
+		const out1 = await sandbox.run({
+			code: `const s = Date.now(); while (Date.now() - s < 200) {} reportProgress('once'); while (true) { }`,
+			args: [], allowedDirs: [], timeoutMs: 1_000,
+		});
+		expect(out1.status).toBe('stillRunning');
+		// 停跳窗口过半后续等:重置后的 window 在 +1000ms,巡检杀点在 lastBeat+1000ms(更早)
+		await new Promise((r) => setTimeout(r, 500));
+		const start = Date.now();
+		const out2 = await sandbox.continueRun();
+		expect(out2).toEqual({ status: 'timeout', kind: 'stalled', hadProgress: true });
+		// 早于重置窗口(1000ms)返回,证明是巡检判死而非 window 到点
+		expect(Date.now() - start).toBeLessThan(900);
+	});
+
+	it('continueRun 多轮 - 连续超时再 stillRunning - 最终完成 ok', async () => {
+		const sandbox = new SkillScriptSandbox(workerCode);
+		const out1 = await sandbox.run({
+			// 总时长约 1.4s 的打点任务,窗口 600ms → 两轮 stillRunning 后完成
+			code: `for (let i = 0; i < 7; i++) { reportProgress('tick'); const t = Date.now(); while (Date.now() - t < 200) {} } 'done'`,
+			args: [], allowedDirs: [], timeoutMs: 600,
+		});
+		expect(out1.status).toBe('stillRunning');
+		const out2 = await sandbox.continueRun();
+		expect(out2.status).toBe('stillRunning');
+		const out3 = await sandbox.continueRun();
+		expect(out3).toEqual({ status: 'ok', result: '"done"' });
+	});
+
+	it('绝对上限 - 累计超 maxRunMs - maxDuration 击杀且 continue 不重置计时', async () => {
+		const sandbox = new SkillScriptSandbox(workerCode);
+		const out1 = await sandbox.run({
+			code: `for (;;) { reportProgress('tick'); const t = Date.now(); while (Date.now() - t < 100) {} }`,
+			args: [], allowedDirs: [], timeoutMs: 400, maxRunMs: 1_100,
+		});
+		expect(out1.status).toBe('stillRunning');
+		const out2 = await sandbox.continueRun();
+		expect(out2.status).toBe('stillRunning');
+		// 若 continueRun 重置计时,此处应仍 stillRunning;累计口径下第三轮到 1100ms → maxDuration
+		const out3 = await sandbox.continueRun();
+		expect(out3).toEqual({ status: 'timeout', kind: 'maxDuration', hadProgress: true });
+	});
+
+	it('pending 存在时新 run - 隐含终止旧脚本 - 新脚本正常执行', async () => {
+		const sandbox = new SkillScriptSandbox(workerCode);
+		const out1 = await sandbox.run({
+			code: `for (;;) { reportProgress('forever'); const t = Date.now(); while (Date.now() - t < 100) {} }`,
+			args: [], allowedDirs: [], timeoutMs: 400,
+		});
+		expect(out1.status).toBe('stillRunning');
+		const out2 = await sandbox.run({ code: `'fresh'`, args: [], allowedDirs: [], timeoutMs: 5_000 });
+		expect(out2).toEqual({ status: 'ok', result: '"fresh"' });
+		// 旧 pending 已被隐含终止清理:后续 continueRun 无可等待对象
+		expect(await sandbox.continueRun()).toEqual({ status: 'noRunning' });
+	});
+
+	it('continueRun/killRun - 无 pending - noRunning 不抛错', async () => {
+		const sandbox = new SkillScriptSandbox(workerCode);
+		expect(await sandbox.continueRun()).toEqual({ status: 'noRunning' });
+		expect(await sandbox.killRun()).toEqual({ status: 'noRunning' });
+	});
+
+	it('terminateAll - pending 挂起中 unload - deferred 被 resolve 不悬空', async () => {
+		const sandbox = new SkillScriptSandbox(workerCode);
+		const out1 = await sandbox.run({
+			code: `for (;;) { reportProgress('forever'); const t = Date.now(); while (Date.now() - t < 100) {} }`,
+			args: [], allowedDirs: [], timeoutMs: 400,
+		});
+		expect(out1.status).toBe('stillRunning');
+		const pending = sandbox.continueRun();
+		sandbox.terminateAll();
+		expect(await pending).toEqual({ status: 'killed' });
 	});
 });

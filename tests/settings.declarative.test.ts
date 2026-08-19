@@ -7,6 +7,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { App } from 'obsidian';
 import { RatelVaultSettingTab, DEFAULT_SETTINGS } from '../src/settings';
+import { setLang } from '../src/i18n';
 import type RatelVaultPlugin from '../src/main';
 import type { RatelVaultSettings } from '../src/settings';
 
@@ -90,6 +91,28 @@ describe('RatelVaultSettingTab 嵌套 key 读取与声明式定义', () => {
 		expect(page).toBeDefined();
 		expect((page!.visible as () => boolean)()).toBe(false);
 	});
+
+	it('getSettingDefinitions - advanced Tab - skillScriptTimeout slider 绑 ms 且 displayFormat 显示秒', () => {
+		setLang('zh');
+		setActiveTab(tab, 'advanced');
+		const control = findControlByKey(tab.getSettingDefinitions(), 'skillScriptTimeout') as {
+			type: string;
+			min: number;
+			max: number;
+			step: number;
+			displayFormat?: (value: number) => string;
+		};
+		expect(control).toBeDefined();
+		expect(control.type).toBe('slider');
+		// 关键路径:存储单位是 ms(默认 30_000),滑块范围 5s-120s、步进 5s
+		expect(control.min).toBe(5000);
+		expect(control.max).toBe(120000);
+		expect(control.step).toBe(5000);
+		// 关键路径:displayFormat 把 ms 换算为秒显示(用户心智单位),随当前语言出单位文案
+		expect(typeof control.displayFormat).toBe('function');
+		expect(control.displayFormat!(30_000)).toBe('30 秒');
+		expect(control.displayFormat!(5000)).toBe('5 秒');
+	});
 });
 
 // 关键路径:open_settings 工具参数来自 LLM 不可信输入,focusTab 三分支契约必须测试锁定
@@ -139,6 +162,27 @@ function setActiveTab(tab: RatelVaultSettingTab, id: string): void {
 /** 测试用:读取私有 activeSettingsTab */
 function getActiveTab(tab: RatelVaultSettingTab): string {
 	return (tab as unknown as { activeSettingsTab: string }).activeSettingsTab;
+}
+
+/** 在声明式定义中查找含指定 control.key 的 item 的 control 对象 */
+function findControlByKey(
+	defs: ReturnType<RatelVaultSettingTab['getSettingDefinitions']>,
+	key: string,
+): { type?: string; key?: string } | undefined {
+	for (const d of defs) {
+		// 关键路径:SettingDefinitionItem 是 union,普通 item 无 type/items 字段;
+		// cast 为宽松形状绕过窄化(既有 findGroupWithControlKey 同款访问方式)
+		const def = d as { type?: string; items?: Array<{ control?: { key?: string } }> };
+		if (def.type !== 'group' && def.type !== 'list') {
+			continue;
+		}
+		for (const item of def.items ?? []) {
+			if (item.control?.key === key) {
+				return item.control as { type?: string; key?: string };
+			}
+		}
+	}
+	return undefined;
 }
 
 /** 在声明式定义中查找含指定 control.key 的 group */

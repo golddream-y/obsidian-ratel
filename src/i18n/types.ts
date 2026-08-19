@@ -128,6 +128,10 @@ export interface SettingsStrings {
   'settings.developer.agentMaxSteps.desc': string;
   'settings.developer.trustMode.name': string;
   'settings.developer.trustMode.desc': string;
+  // 关键路径(P-SKILL-2-TIMEOUT T3):skillScriptTimeout slider(高级组;存储 ms,显示秒)
+  'settings.skill.scriptTimeout.name': string;
+  'settings.skill.scriptTimeout.desc': string;
+  'settings.skill.scriptTimeout.unit': string;
   'settings.toolPermissionLevel.name': string;
   'settings.toolPermissionLevel.desc': string;
   'settings.toolPermissionLevel.safe': string;
@@ -965,8 +969,13 @@ export interface SkillStrings {
   'skill.script.unsupported': string;
   'skill.script.denied': string;
   'skill.script.circuitBreak': string;
-  'skill.script.timeout': string;
-  'skill.script.timeoutProgressHint': string;
+  // 关键路径(P-SKILL-2-TIMEOUT/ADR-017 v1.1):超时按心跳分类,still-running 交 LLM 决策
+  'skill.script.stillRunning': string;
+  'skill.script.killed': string;
+  'skill.script.noRunning': string;
+  'skill.script.stalled': string;
+  'skill.script.maxDuration': string;
+  'skill.script.noProgressDesc': string;
   'skill.script.crashed': string;
   'skill.script.failed': string;
   'skill.script.softTimeoutNotice': string;

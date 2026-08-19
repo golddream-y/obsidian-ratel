@@ -30,7 +30,7 @@
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
 | P-SKILL-2-EXECUTION | [2026-08-19-skill-execution.md](plans/2026-08-19-skill-execution.md) | ✅ Completed | S-SKILL | references+scripts 沙箱;ADR-017(Worker+vm 双层,JS-only);8 Task 并行波次执行,squash 合并 `fb871f5`,1269 tests;待归档确认 |
-| P-SKILL-2-TIMEOUT | [2026-08-19-skill-timeout-v2.md](plans/2026-08-19-skill-timeout-v2.md) | 🔄 In Progress | S-SKILL | ADR-017 v1.1 超时语义修订:心跳分类(慢→LLM 决策 continueRun/killRun,死→自动杀,赖→10min 上限)+ 熔断口径修正 + 补 skillScriptTimeout 设置控件;3 Task,T1∥T3 → T2 |
+| P-SKILL-2-TIMEOUT | [2026-08-19-skill-timeout-v2.md](plans/2026-08-19-skill-timeout-v2.md) | ✅ Completed | S-SKILL | ADR-017 v1.1:心跳分类超时(stalled 杀/still-running 交 LLM continueRun/killRun/10min 上限)+ 熔断口径修正 + 设置控件;3 Task(T1∥T3→T2)1288 tests;待归档 |
 
 ---
 

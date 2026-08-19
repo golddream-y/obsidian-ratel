@@ -188,6 +188,9 @@ export const TOOL_SCHEMA_SKELETONS: Record<string, SchemaSkeleton> = {
 				skillName: { type: 'string' },
 				scriptPath: { type: 'string' },
 				args: { type: 'array', items: { type: 'string' } },
+				// ADR-017 v1.1:still-running 决策参数 — 续等或终止挂起脚本
+				continueRun: { type: 'boolean' },
+				killRun: { type: 'boolean' },
 			},
 			required: ['skillName', 'scriptPath'],
 		},

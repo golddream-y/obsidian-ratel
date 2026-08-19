@@ -27,13 +27,28 @@ const DEF: ToolDefinition = {
 	parameters: { type: 'object', properties: {}, required: [] },
 };
 
-/** 可编程假沙箱:记录请求,返回预设 outcome */
+/** 可编程假沙箱:记录请求与调用序列,返回预设 outcome */
 class FakeSandbox implements ScriptSandboxLike {
 	lastReq: ScriptRunRequest | null = null;
 	outcome: ScriptRunOutcome = { status: 'ok', result: '"done"' };
+	/** continueRun() 的预设返回(默认 noRunning — 无挂起) */
+	continueOutcome: ScriptRunOutcome = { status: 'noRunning' };
+	/** killRun() 的预设返回(默认 noRunning — 无挂起) */
+	killOutcome: ScriptRunOutcome = { status: 'noRunning' };
+	/** 调用序列(run / continueRun / killRun)— 钉死分流优先级 */
+	calls: string[] = [];
 	async run(req: ScriptRunRequest): Promise<ScriptRunOutcome> {
 		this.lastReq = req;
+		this.calls.push('run');
 		return this.outcome;
+	}
+	async continueRun(): Promise<ScriptRunOutcome> {
+		this.calls.push('continueRun');
+		return this.continueOutcome;
+	}
+	async killRun(): Promise<ScriptRunOutcome> {
+		this.calls.push('killRun');
+		return this.killOutcome;
 	}
 }
 
@@ -118,13 +133,95 @@ describe('run_skill_script 工具', () => {
 		expect(out).toContain('拒绝');
 	});
 
-	it('超时 - 计数 +1 并返回超时结果', async () => {
+	it('无心跳超时(stalled)- 计数 +1 并返回卡死文案', async () => {
 		trusted = ['data-cleaner/clean.js'];
-		sandbox.outcome = { status: 'timeout', hadProgress: true };
+		sandbox.outcome = { status: 'timeout', kind: 'stalled', hadProgress: false };
 		const tool = makeTool();
 		const out = await tool.execute({ skillName: 'data-cleaner', scriptPath: 'clean.js' });
-		expect(out).toContain('强制终止');
+		expect(out).toContain('无任何进度心跳');
+		expect(out).toContain('卡死');
 		expect(failures.bumped).toEqual(['data-cleaner/clean.js']);
+	});
+
+	it('绝对上限超时(maxDuration)- 计数 +1 并返回绝对上限文案', async () => {
+		trusted = ['data-cleaner/clean.js'];
+		sandbox.outcome = { status: 'timeout', kind: 'maxDuration', hadProgress: true };
+		const tool = makeTool();
+		const out = await tool.execute({ skillName: 'data-cleaner', scriptPath: 'clean.js' });
+		expect(out).toContain('绝对上限');
+		expect(out).toContain('10 分钟');
+		expect(failures.bumped).toEqual(['data-cleaner/clean.js']);
+	});
+
+	it('still-running - 不计熔断不 bump - 文案含时长/最近进度/continueRun 引导', async () => {
+		trusted = ['data-cleaner/clean.js'];
+		sandbox.outcome = { status: 'stillRunning', elapsedMs: 32_400, lastProgress: '已清洗 50%', hadProgress: true };
+		const tool = makeTool();
+		const out = await tool.execute({ skillName: 'data-cleaner', scriptPath: 'clean.js' });
+		expect(out).toContain('仍在运行');
+		expect(out).toContain('32');
+		expect(out).toContain('已清洗 50%');
+		// 关键路径:LLM 决策引导 — 续等与终止两个动作都必须出现在文案里
+		expect(out).toContain('continueRun');
+		expect(out).toContain('killRun');
+		// 熔断口径(ADR-017 v1.1 §5):still-running 未终止,不计数
+		expect(failures.bumped).toEqual([]);
+	});
+
+	it('still-running 无 lastProgress - 进度占位兜底为「无进度描述」', async () => {
+		trusted = ['data-cleaner/clean.js'];
+		sandbox.outcome = { status: 'stillRunning', elapsedMs: 30_000, hadProgress: true };
+		const tool = makeTool();
+		const out = await tool.execute({ skillName: 'data-cleaner', scriptPath: 'clean.js' });
+		expect(out).toContain('无进度描述');
+	});
+
+	it('killRun 分支 - 不走信任门/熔断/语言边界(脚本已在跑,授权在启动时已过)', async () => {
+		// 关键路径:三重不利条件 — 未 trusted + 用户 decision 'deny' + 熔断计数已满;
+		// 若 killRun 分支误走任何一道检查,会分别返回「拒绝」或「熔断」而非终止结果。
+		failures.counts.set('data-cleaner/clean.js', SCRIPT_FAILURE_THRESHOLD);
+		sandbox.killOutcome = { status: 'killed' };
+		const tool = makeTool({ decision: 'deny' });
+		const out = await tool.execute({ skillName: 'data-cleaner', scriptPath: 'clean.js', killRun: true });
+		expect(out).toContain('已按指示终止');
+		expect(sandbox.calls).toEqual(['killRun']);
+		// killRun 不进沙箱跑新脚本
+		expect(sandbox.lastReq).toBeNull();
+		// 熔断口径:主动终止是有意决策,不计数
+		expect(failures.bumped).toEqual([]);
+	});
+
+	it('continueRun 分支 - 不走信任门/熔断 - 挂起脚本完成后返回结果', async () => {
+		sandbox.continueOutcome = { status: 'ok', result: '"done-after-wait"' };
+		const tool = makeTool({ decision: 'deny' });
+		const out = await tool.execute({ skillName: 'data-cleaner', scriptPath: 'clean.js', continueRun: true });
+		expect(out).toBe('"done-after-wait"');
+		expect(sandbox.calls).toEqual(['continueRun']);
+		expect(sandbox.lastReq).toBeNull();
+		expect(failures.bumped).toEqual([]);
+	});
+
+	it('continueRun 与 killRun 同真 - killRun 优先', async () => {
+		sandbox.continueOutcome = { status: 'ok', result: '"done"' };
+		sandbox.killOutcome = { status: 'killed' };
+		const tool = makeTool();
+		const out = await tool.execute({ skillName: 'data-cleaner', scriptPath: 'clean.js', continueRun: true, killRun: true });
+		expect(out).toContain('已按指示终止');
+		expect(sandbox.calls).toEqual(['killRun']);
+	});
+
+	it('continueRun 无挂起脚本 - 返回 noRunning 文案(action=continueRun)', async () => {
+		const tool = makeTool();
+		const out = await tool.execute({ skillName: 'data-cleaner', scriptPath: 'clean.js', continueRun: true });
+		expect(out).toContain('没有正在运行的脚本');
+		expect(out).toContain('continueRun');
+	});
+
+	it('killRun 无挂起脚本 - 返回 noRunning 文案(action=killRun)', async () => {
+		const tool = makeTool();
+		const out = await tool.execute({ skillName: 'data-cleaner', scriptPath: 'clean.js', killRun: true });
+		expect(out).toContain('没有正在运行的脚本');
+		expect(out).toContain('killRun');
 	});
 
 	it('崩溃 - 计数 +1 并返回 crashed 结果', async () => {

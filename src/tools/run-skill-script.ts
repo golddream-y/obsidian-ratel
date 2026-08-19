@@ -1,6 +1,6 @@
 /**
  * @file src/tools/run-skill-script.ts
- * @description `run_skill_script` 工具 — 熔断 + 信任门 + Worker/vm 沙箱编排(ADR-017)
+ * @description `run_skill_script` 工具 — 熔断 + 信任门 + Worker/vm 沙箱编排 + still-running 决策接线(ADR-017 v1.1)
  * @module tools/run-skill-script
  * @depends core/tool-registry, skills/skill-registry, skills/skill-script-permission,
  *          skills/skill-script-sandbox(接口), i18n, node:fs, node:path
@@ -24,6 +24,10 @@ const SCRIPT_EXTENSIONS = ['.js', '.mjs', '.cjs'];
 /** 沙箱接口子集 — main 注入 SkillScriptSandbox;测试注入 fake */
 export interface ScriptSandboxLike {
 	run(req: ScriptRunRequest): Promise<ScriptRunOutcome>;
+	/** 续等挂起脚本(ADR-017 v1.1 §3)— 无挂起时返回 noRunning */
+	continueRun(): Promise<ScriptRunOutcome>;
+	/** 终止挂起脚本(ADR-017 v1.1 §3)— 无挂起时返回 noRunning */
+	killRun(): Promise<ScriptRunOutcome>;
 }
 
 /**
@@ -60,6 +64,50 @@ function assertRelativeSubPath(p: string): void {
 }
 
 /**
+ * outcome → 工具结果文案(单一出口,run 分支与 continueRun/killRun 分支共用)。
+ *
+ * 设计要点(ADR-017 v1.1):
+ * - 只做文案映射,不含熔断副作用 — 计数口径由调用方决定(run 分支按 §5 计数,
+ *   control 分支不碰:脚本已在跑,授权与计数在启动时已过)
+ * - still-running 附时长与最近进度,并把 continueRun/killRun 两个决策动作写进文案引导 LLM
+ * - timeout 按 kind 分开表述:stalled(无心跳卡死)与 maxDuration(绝对上限)
+ *
+ * @param outcome - 沙箱返回的执行结果
+ * @param ctx - scriptId(超时文案用)、windowSeconds(卡死判定窗口秒数)、action(noRunning 文案用)
+ * @returns 面向 LLM 的工具结果文案
+ */
+function renderScriptOutcome(
+	outcome: ScriptRunOutcome,
+	ctx: { scriptId: string; windowSeconds: number; action?: 'killRun' | 'continueRun' },
+): string {
+	switch (outcome.status) {
+		case 'ok':
+			return outcome.result;
+		case 'scriptError':
+			// 关键路径:脚本自己 throw 是正常失败,不计熔断(ADR-017 §5)
+			return tNow('skill.script.failed', { message: outcome.error });
+		case 'stillRunning':
+			return tNow('skill.script.stillRunning', {
+				seconds: Math.round(outcome.elapsedMs / 1000),
+				// 关键路径:progress 为空串/缺失时兜底占位(i18n 硬约束,不硬编码字面量)
+				progress: outcome.lastProgress || tNow('skill.script.noProgressDesc'),
+			});
+		case 'timeout':
+			// 关键路径:按心跳分类终止文案(ADR-017 v1.1 §3)— 卡死与绝对上限分开表述
+			return outcome.kind === 'maxDuration'
+				? tNow('skill.script.maxDuration', { id: ctx.scriptId })
+				: tNow('skill.script.stalled', { id: ctx.scriptId, seconds: ctx.windowSeconds });
+		case 'killed':
+			return tNow('skill.script.killed');
+		case 'crashed':
+			return tNow('skill.script.crashed', { detail: outcome.detail ?? 'unknown' });
+		case 'noRunning':
+			// run() 不会返回 noRunning;control 分支已单独映射,此处兜底满足 switch 穷尽
+			return tNow('skill.script.noRunning', { action: ctx.action ?? 'continueRun' });
+	}
+}
+
+/**
  * 构造 `run_skill_script` 工具实例。
  *
  * 设计要点(ADR-017):
@@ -87,6 +135,19 @@ export function createRunSkillScriptTool(
 				throw new Error(tNow('error.tool.invalidArg', { label: 'scriptPath', type: typeof args.scriptPath }));
 			}
 			const scriptArgs = Array.isArray(args.args) ? args.args.map(String) : [];
+
+			// 关键路径(ADR-017 v1.1 §3):continueRun/killRun 分流 — 对挂起脚本的显式决策。
+			// 脚本已在跑,信任门/熔断/语言边界在启动时已过,此处不再检查;
+			// 同真时 killRun 优先(终止是更明确的决策)。
+			if (args.killRun === true || args.continueRun === true) {
+				const action: 'killRun' | 'continueRun' = args.killRun === true ? 'killRun' : 'continueRun';
+				const outcome = action === 'killRun' ? await deps.sandbox.killRun() : await deps.sandbox.continueRun();
+				return renderScriptOutcome(outcome, {
+					scriptId: `${args.skillName}/${args.scriptPath}`,
+					windowSeconds: Math.round(deps.timeoutMs() / 1000),
+					action,
+				});
+			}
 
 			const skill = registry.get(args.skillName);
 			if (!skill) throw new Error(tNow('skill.notice.notFound', { name: args.skillName }));
@@ -133,22 +194,21 @@ export function createRunSkillScriptTool(
 				onSoftTimeout: () => deps.onSoftTimeout?.(scriptId),
 			});
 
+			// 关键路径:熔断副作用(ADR-017 v1.1 §5)— 仅 无心跳超时(stalled)/ 绝对上限(maxDuration)/
+			// 崩溃 计数;still-running 未终止、killed 是有意决策,均不数;成功清零。文案渲染单一出口。
 			switch (outcome.status) {
 				case 'ok':
 					deps.failures.clearScriptFailure(scriptId);
-					return outcome.result;
-				case 'scriptError':
-					// 关键路径:脚本自己 throw 是正常失败,不计熔断(ADR-017 §5)
-					return tNow('skill.script.failed', { message: outcome.error });
-				case 'timeout': {
-					deps.failures.bumpScriptFailure(scriptId);
-					const hint = outcome.hadProgress ? tNow('skill.script.timeoutProgressHint') : '';
-					return tNow('skill.script.timeout', { id: scriptId, seconds: Math.round(deps.timeoutMs() / 1000) }) + (hint ? ' ' + hint : '');
-				}
+					break;
+				case 'timeout':
 				case 'crashed':
 					deps.failures.bumpScriptFailure(scriptId);
-					return tNow('skill.script.crashed', { detail: outcome.detail ?? 'unknown' });
+					break;
 			}
+			return renderScriptOutcome(outcome, {
+				scriptId,
+				windowSeconds: Math.round(deps.timeoutMs() / 1000),
+			});
 		},
 	};
 }
