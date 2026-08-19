@@ -113,7 +113,8 @@ function renderScriptOutcome(
  * 设计要点(ADR-017):
  * - 错误作为工具结果返回而非抛异常 — LLM 看到「超时被终止」可自行换路,不崩回合(§4)
  * - 熔断只数 timeout/crashed;scriptError 是正常失败,LLM 可修参重试(§5)
- * - 检查顺序:语言边界 → 信任门 → 熔断 → 执行(熔断的恢复路径 = 重新授权「允许并记住」时清计数)
+ * - 检查顺序:语言边界 → 路径解析(scripts/ 内且存在) → 信任门 → 熔断 → 执行
+ *   (熔断的恢复路径 = 重新授权「允许并记住」时清计数)
  *
  * @param registry - SkillRegistry 实例
  * @param definition - LLM 侧 schema
@@ -164,8 +165,25 @@ export function createRunSkillScriptTool(
 				return tNow('skill.script.unsupported', { path: args.scriptPath, ext: ext || '无扩展名' });
 			}
 
+			// 关键路径(冒烟修复):vault 源技能的 dir 是 vault 相对路径(如 .ratel/skills/x),
+			// 必须先拼 vault 根再 resolve — 否则 path.resolve 拿 process.cwd() 拼出错误绝对路径,
+			// 与相对前缀做包含校验必败,任何 scriptPath 都被判「路径非法」。
+			// builtin/global 源的 dir 已是绝对路径,直接用。
+			const skillBase = skill.source === 'vault'
+				? path.resolve(deps.vaultRoot(), skill.dir)
+				: skill.dir;
+			const scriptsRoot = path.join(skillBase, 'scripts');
+			const abs = path.resolve(scriptsRoot, args.scriptPath);
+			// 关键路径:resolve 后仍必须落在 scripts/ 内(双保险,防 'a/../../b' 类拼凑)
+			if (abs !== scriptsRoot && !abs.startsWith(scriptsRoot + path.sep)) {
+				throw new Error(tNow('skill.script.invalidPath', { path: args.scriptPath }));
+			}
+			if (!fs.existsSync(abs)) throw new Error(tNow('skill.script.notFound', { path: args.scriptPath }));
+			const code = fs.readFileSync(abs, 'utf-8');
+
 			// 关键路径:先信任门后熔断 — untrusted 脚本先过 Modal,选「允许并记住」时
 			// main 的 persistTrust 回调会同时清计数,给熔断脚本一条用户主导的恢复路径。
+			// 路径解析与存在性检查已提前至此:不存在的脚本不该让用户授权(避免垃圾信任记录)。
 			if ((await deps.trustGate.check(scriptId)) === 'deny') {
 				return tNow('skill.script.denied', { id: scriptId });
 			}
@@ -176,20 +194,11 @@ export function createRunSkillScriptTool(
 				return tNow('skill.script.circuitBreak', { id: scriptId, count: SCRIPT_FAILURE_THRESHOLD });
 			}
 
-			const scriptsRoot = path.join(skill.dir, 'scripts');
-			const abs = path.resolve(scriptsRoot, args.scriptPath);
-			// 关键路径:resolve 后仍必须落在 scripts/ 内(双保险,防 'a/../../b' 类拼凑)
-			if (abs !== scriptsRoot && !abs.startsWith(scriptsRoot + path.sep)) {
-				throw new Error(tNow('skill.script.invalidPath', { path: args.scriptPath }));
-			}
-			if (!fs.existsSync(abs)) throw new Error(tNow('skill.script.notFound', { path: args.scriptPath }));
-			const code = fs.readFileSync(abs, 'utf-8');
-
 			const outcome = await deps.sandbox.run({
 				code,
 				args: scriptArgs,
-				// 关键路径:fs 白名单 = vault 根 + 该 skill 目录(ADR-017 §1)
-				allowedDirs: [deps.vaultRoot(), skill.dir],
+				// 关键路径:fs 白名单 = vault 根 + 该 skill 目录(绝对路径,ADR-017 §1)
+				allowedDirs: [deps.vaultRoot(), skillBase],
 				timeoutMs: deps.timeoutMs(),
 				onSoftTimeout: () => deps.onSoftTimeout?.(scriptId),
 			});

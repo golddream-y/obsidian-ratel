@@ -299,3 +299,78 @@ describe('run_skill_script 工具', () => {
 		expect(sandbox.lastReq?.args).toEqual([]);
 	});
 });
+
+// ==================== vault 相对 dir 回归(冒烟实测 bug) ====================
+
+describe('run_skill_script 工具 - vault 相对 dir', () => {
+	let vaultRoot: string;
+	let registry: SkillRegistry;
+	let sandbox: FakeSandbox;
+	let failures: FakeFailures;
+	let trusted: string[];
+
+	beforeEach(() => {
+		setLang('zh');
+		vaultRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ratel-skillvault-'));
+		const skillRelDir = '.ratel/skills/timeout-demo';
+		fs.mkdirSync(path.join(vaultRoot, skillRelDir, 'scripts'), { recursive: true });
+		fs.writeFileSync(path.join(vaultRoot, skillRelDir, 'scripts', 'slow-task.js'), 'result = 45');
+		registry = new SkillRegistry();
+		// 关键路径:真实 loader 给 vault 技能的 dir 是 vault 相对路径(非绝对),
+		// 旧实现 path.resolve 拿 CWD 拼 + 相对前缀字符串包含校验,任何 scriptPath 都被判「路径非法」。
+		registry.reload(
+			[{
+				manifest: { name: 'timeout-demo', description: 'd', enabled: true, activation: 'auto', tags: [] },
+				instructions: 'body',
+				source: 'vault',
+				dir: skillRelDir,
+			}],
+			[],
+		);
+		sandbox = new FakeSandbox();
+		failures = new FakeFailures();
+		trusted = [];
+	});
+	afterEach(() => fs.rmSync(vaultRoot, { recursive: true, force: true }));
+
+	function makeTool(opts: { decision?: 'always' | 'once' | 'deny' } = {}) {
+		const gate = new ScriptTrustGate({
+			isTrusted: (id) => trusted.includes(id),
+			confirm: async () => opts.decision ?? 'once',
+			persistTrust: (id) => trusted.push(id),
+		});
+		return createRunSkillScriptTool(registry, DEF, {
+			sandbox,
+			trustGate: gate,
+			failures,
+			timeoutMs: () => 30_000,
+			vaultRoot: () => vaultRoot,
+		});
+	}
+
+	it('vault 技能 dir 为相对路径 - 拼 vault 根解析 - 能执行且 allowedDirs 含绝对技能目录', async () => {
+		trusted = ['timeout-demo/slow-task.js'];
+		const tool = makeTool();
+		const out = await tool.execute({ skillName: 'timeout-demo', scriptPath: 'slow-task.js' });
+		expect(out).toBe('"done"');
+		// 关键路径:allowedDirs 必须是绝对路径(沙箱 fs 白名单按绝对路径校验)
+		expect(sandbox.lastReq?.allowedDirs).toEqual([vaultRoot, path.join(vaultRoot, '.ratel/skills/timeout-demo')]);
+	});
+
+	it('子目录脚本(scripts/ 子路径)- 同样可执行', async () => {
+		fs.mkdirSync(path.join(vaultRoot, '.ratel/skills/timeout-demo/scripts/sub'), { recursive: true });
+		fs.writeFileSync(path.join(vaultRoot, '.ratel/skills/timeout-demo/scripts/sub/deep.js'), 'result = 1');
+		trusted = ['timeout-demo/sub/deep.js'];
+		const tool = makeTool();
+		const out = await tool.execute({ skillName: 'timeout-demo', scriptPath: 'sub/deep.js' });
+		expect(out).toBe('"done"');
+	});
+
+	it('脚本不存在 - 不咨询信任门(不产生垃圾 trusted 记录)后抛 notFound', async () => {
+		// 关键路径:修复前 notFound 检查在信任门之后 — 不存在的路径也会弹授权框并可能被
+		// 「允许并记住」持久化,冒烟实测 trustedScripts 里混进三种怪路径即此根因。
+		const tool = makeTool({ decision: 'always' });
+		await expect(tool.execute({ skillName: 'timeout-demo', scriptPath: 'nope.js' })).rejects.toThrow(/未找到/);
+		expect(trusted).toEqual([]);
+	});
+});
