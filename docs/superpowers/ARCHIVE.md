@@ -9,14 +9,14 @@
 
 ## 统计
 
-**按月归档记录数**(共 60 条,55 个目录)
+**按月归档记录数**(共 61 条,55 个目录)
 
 ```mermaid
 xychart-beta
     title "按月归档记录数"
     x-axis ["2026-06", "2026-07", "2026-08"]
     y-axis "记录数" 0 --> 25
-    bar [17, 23, 20]
+    bar [17, 23, 21]
 ```
 
 **归档形态分布**
@@ -24,7 +24,7 @@ xychart-beta
 ```mermaid
 pie showData title 归档形态分布
     "完成归档" : 55
-    "Abandoned(未实施/中途废弃)" : 3
+    "Abandoned(未实施/中途废弃)" : 4
     "Superseded(被取代)" : 2
 ```
 
@@ -34,6 +34,7 @@ pie showData title 归档形态分布
 
 | ID | 归档目录 | 日期 | 备注 |
 |---|---|---|---|
+| S-EVOLUTION (spec 终止) | [archive/S-EVOLUTION/](archive/S-EVOLUTION/) | 08-19 | **部分完成后终止**:Phase A 读侧 + open_note + 回收站已发版;task 摘出 S-TASK、子代理移出;写侧(update_frontmatter/Write Gate/append_to_daily)未实施,重启开新 spec |
 | S-SKILL-UX (P-SKILL-UX-V2) | [archive/S-SKILL-UX/](archive/S-SKILL-UX/) | 08-19 | 装了就生效+抽屉管理+术语隐形化;squash `764411c` 随 0.3.0 发版;spec 使命完成同日归档 |
 | S-SR-LAYERING | [archive/S-SR-LAYERING/](archive/S-SR-LAYERING/) | 08-19 | PromptInjector+记忆 pinned/topics+Skill 相关性+使用统计;squash `1942ece` 随 0.4.0 发版 |
 | S-GRAPH-EXPAND | [archive/S-GRAPH-EXPAND/](archive/S-GRAPH-EXPAND/) | 08-19 | **Abandoned 未实施**;挂起一月无进展+与 S-EVOLUTION 方向重叠;ADR-013 结论仍有效 |
@@ -49,7 +50,7 @@ pie showData title 归档形态分布
 | S-MEMORY-MODAL | [archive/S-MEMORY-MODAL/](archive/S-MEMORY-MODAL/) | 08-15 | 记忆 Modal 统一壳;spec+plan 归档 |
 | S-CITE | [archive/S-CITE/](archive/S-CITE/) | 08-15 | 引用双通道;0.1.14;spec+plan 归档 |
 | S-MCP-HOST (P-MCP-HOST-CORE/UI) | [archive/S-MCP-HOST/](archive/S-MCP-HOST/) | 08-15 | 0.1.16;Core/UI plan 归档(DOCS 后于 08-19 补齐,spec 已归档) |
-| S-EVOLUTION (P-EVO-A-READ) | [archive/S-EVOLUTION/](archive/S-EVOLUTION/) | 08-15 | 4 读工具+enrich;仅 plan 归档,spec 仍 Active(Phase A-FM/B/C) |
+| S-EVOLUTION (P-EVO-A-READ) | [archive/S-EVOLUTION/](archive/S-EVOLUTION/) | 08-15 | 4 读工具+enrich;spec 后于 08-19 终止归档 |
 | S-MD-PREVIEW (P-MD-PREVIEW-1) | [archive/S-MD-PREVIEW/](archive/S-MD-PREVIEW/) | 08-14 | 统一富块+复制+表格;spec 后于 08-19 归档 |
 | S-COMPACT-V2 | [archive/S-COMPACT-V2/](archive/S-COMPACT-V2/) | 08-13 | squash → develop `9fbe73c`;投影压缩不删聊天 |
 | S-CHAT-NAV | [archive/S-CHAT-NAV/](archive/S-CHAT-NAV/) | 08-11 | DeepSeek 式点列+悬停摘要;squash → develop |

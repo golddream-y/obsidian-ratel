@@ -1,7 +1,8 @@
 # Ratel 下一步进化:图谱原生 Agent(S-EVOLUTION)
 
 > 日期: 2026-07-15  
-> 状态: Active  
+> 状态: **Terminated(2026-08-19 部分完成后终止归档)**  
+> 终止原因: Phase A 读侧 + open_note + 回收站语义已发版(核心价值交付);任务机制摘出 S-TASK、子代理模板化移出(依赖不存在);写侧三件套(update_frontmatter / Write Gate / append_to_daily)未实施,重启时开轻量 spec 单独立项。详见 archive/S-EVOLUTION/execution-log.md  
 > 作者: Erwin(0.1.6 发版后,对「合格 Agent × Obsidian 知识系统」的系统性缺口分析)  
 > 关联: S-BASIC-ENV(已归档,Phase 3 缺口在此收编)、S-SKILL(Phase D 执行层,独立推进)、S-RAG-ARCH(检索管线基座)
 
@@ -87,7 +88,7 @@
 
 | 能力 | 设计 |
 |---|---|
-| **`open_note`** | `Workspace.openLinkText`,支持 `heading?` / `block?` 定位与 `split?` 分屏;默认 ask(改用户焦点) |
+| **`open_note`** | ✅ 已落地(P-CFG,随 0.3.0 发版):`Workspace.openLinkText` + 标题/^block 锚点定位(锚点内嵌 path 自动拆分);readOnly + 默认 allow(纯 UI 导航不改库)。**修订**:原设计的 `split?` 分屏与默认 ask 落地时判定为过度设计——导航无破坏性,ask 反而打断「AI 打开笔记给我看」的核心体验;split? 标记为非目标 |
 | **Write Gate(统一写入预览层)** | 工具执行层新增 pending-changes 队列:`write/edit/delete/append/update_frontmatter` 先生成 diff,聚合到「本轮变更」面板(Svelte);单笔操作沿用现有 ask 流,**批量操作(≥ N 笔)强制聚合确认**,一次通过、失败即停并报告已完成部分。不改 Agent Loop 协议,只在 tool 执行前插一层 |
 | **回收站语义** | 删除/整篇覆盖一律走 `app.vault.trash`(Obsidian 原生 `.trash`),对用户承诺 every change is reversible |
 
@@ -105,7 +106,7 @@
 |---|---|
 | **任务机制** | 已摘出为独立 spec [S-TASK](2026-08-19-agent-task-store.md)(task_plan 工具、落盘恢复、GC——通用 Agent 基建,非图谱能力,独立排期) |
 | **沉淀通道** | `append_to_daily`(补 `get_daily_note` 的写入端,不存在时按 Daily Notes 插件模板创建,走 Write Gate);chat 消息级「存为笔记」一键操作 |
-| **子代理模板化** | Curator/Librarian 落地为「结构化任务模板」而非自由 prompt:如「周度库维护」= `get_vault_structure`(orphans) → `get_links`(unresolved) → 提议 MOC 更新 → Write Gate 确认。模板本质是预置 task_plan(消费 S-TASK 机制)+ 工具序列约束 |
+| **子代理模板化** | **已移出本 spec**(2026-08-19):Curator/Librarian 尚不存在(subagents/ 仅 indexer),且模板化依赖 S-TASK 的 task_plan 机制;移交 S-TASK 消费侧或未来 spec,S-EVOLUTION 以 A-FM + B-GATE + C-SINK 收口 |
 
 **设计决策:**
 
