@@ -41,6 +41,8 @@
 5. 检索结果块(`addSearchResults`)
 6. 裁剪后的对话历史
 
+**注入流程(S-SR-LAYERING / [ADR-016](../../adr/2026-08-19-layered-injection.md)):** 旁路动态段不再是「setter 存字段 → `toMessages()` 逐段 push」— setter 只写状态,env / memory / skills 三源在 ContextManager **构造期**注册进 `PromptInjector`,`toMessages()` 从 `PromptInjector.buildSections()` 按注册序拉段,注入顺序与历史实现一致。`setMemoryContext` 追加可选 `layering` 参数(pinned 恒注入 + relatedTopics top-K + 总预算裁剪,分层细节见 [prompt-management §3.1](prompt-management.md#31-动态注入管理器promptinjector))。
+
 **原因**:
 - LLM 对上下文开头的信息权重更高;「今天几号」零工具成本即可答对
 - 固定位置便于测试和调试

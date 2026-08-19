@@ -109,10 +109,13 @@ export class SkillManageModal extends Modal {
 		const skill = registry.get(name);
 		if (!skill) return;
 
+		// 统计口径:activate_skill 激活时按 manifest.name 计数(usage-stats.json)。
+		const usedCount = this.plugin.usageStats.getAll().skills[name] ?? 0;
 		const desc =
 			tNow(`skill.source.${source}`) +
 			(skill.manifest.version ? ` · v${skill.manifest.version}` : '') +
-			(source === 'builtin' ? ` · ${tNow('modal.skillManage.builtinReadonly')}` : '');
+			(source === 'builtin' ? ` · ${tNow('modal.skillManage.builtinReadonly')}` : '') +
+			` · ${tNow('modal.skillManage.usedTimes', { count: usedCount })}`;
 
 		const row = new Setting(this.contentEl).setName(name).setDesc(desc);
 

@@ -90,13 +90,14 @@ Agent 可以检索、阅读、归纳并写入；改删操作遵循当前权限�
 
 > 「记住我更喜欢先给结论，再列证据。」
 
-记忆以普通 Markdown 保存在 `.ratel/memory/`。你还可以添加 `SKILL.md`、MCP Server 或使用 Subagent 扩展复杂工作流。
+记忆以普通 Markdown 保存在 `.ratel/memory/`——重要偏好加 `[pinned]` 永不被截断，最相关的主题记忆每轮自动带入。你还可以添加 `SKILL.md`、MCP Server 或使用 Subagent 扩展复杂工作流。
 
 ---
 
 ## 开放 Agent 底座
 
 - **模型自由**：对话、嵌入与重排模型可以独立选择；支持 DeepSeek、Claude、Ollama 和自定义兼容端点。
+- **记忆分层**：钉住的偏好永不被截断，相关主题记忆每轮自动带入对话。
 - **Skill**：用 Markdown 定义可复用的工作方法。
 - **MCP**：接入网页搜索和其他外部工具，Server 与工具分别授权。
 - **Subagent**：把复杂研究拆给检索、审查和整理角色。

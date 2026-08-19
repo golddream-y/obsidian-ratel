@@ -266,6 +266,15 @@ AI 读 `git log <plan-start-commit>..HEAD`,判断这些 commit 是否改变用�
 - Plugin 类里用 `this.register*` 帮助函数管理清理。
 - 每个文件只承担一个明确职责。
 
+### 枚举与 ID 集中管理(mandatory)
+
+架构级机制与骨架管理(注入源、Hook phase、Worker 消息类型、prompt zone 等 ID 清单 / 登记表)必须集中声明,按需求选型:
+
+- **需要运行时遍历 / 校验**(登记表、白名单、防字面量散落)→ 用 `as const` 元组 + `(typeof X)[number]` 类型推导(强类型枚举的 TS 惯用法):一份声明同时得到可遍历的值清单与字面量联合类型,零运行时产物,esbuild 友好。范例见 `src/prompts/injection/ids.ts`。
+- **仅做类型约束、无运行时需求** → 用字符串字面量联合(弱类型枚举,最轻)。范例见 `ToolPermission` / `ToolPermissionLevel`(`src/core/tool-permissions.ts`)。
+- **禁止 TS `enum` / `const enum`**:enum 生成运行时对象(数字枚举含双向映射),类型与值列表两份维护;`const enum` 跨文件在 esbuild / isolatedModules 下退化。
+- **禁止裸字符串字面量散落各调用点**:新增架构级 ID 时必须登记到对应集中声明处,不在线上硬编码。
+
 ## 文档与注释规范(mandatory)
 
 > 这是硬规矩 — 非协商。所有后续创建的文档、代码注释必须遵守。

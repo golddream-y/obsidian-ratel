@@ -7,5 +7,7 @@
 export * from './types';
 export * from './sections';
 export * from './composer';
+export * from './injection/ids';
+export * from './injection/injector';
 export { validatePlaceholders } from './interpolate';
 export { listEditableSections } from './sections';

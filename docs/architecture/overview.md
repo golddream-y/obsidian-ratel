@@ -448,7 +448,7 @@ src/
     types.ts                       #   Skill/SkillManifest/SkillSource/SkillActivation
     skill-loader.ts                #   三源扫描 + gray-matter frontmatter 解析 + 合并
     skill-registry.ts              #   enabled/disabled/active 三态管理 (会话级 active)
-    skill-activator.ts             #   产出 Discovery 段 (skillList) + Active 段 (拼接 instructions)
+    skill-activator.ts             #   产出 Discovery 段 (相关性排序 + 截断 50, S-SR-LAYERING)
 
   tools/                           # Vault 工具集 (23 个)
     read-note.ts                   #   读取笔记全文 + metadata + backlinks
@@ -499,6 +499,9 @@ src/
     interpolate.ts                 #   {{var}} 占位符引擎 + 校验
     tool-schemas.ts                #   工具 JSON schema 骨架(23 个)
     composer.ts                    #   Composer 装配 API(5 个出口函数,含 composeMemorySystemPrompt)
+    injection/                     #   动态注入管理器 (S-SR-LAYERING / ADR-016)
+      ids.ts                       #     INJECTION_SOURCE_IDS(as const 元组)— env/memory/skills
+      injector.ts                  #     PromptInjector(buildSections 组装 + ownBudgetBytes 兜底)
     index.ts                       #   模块 re-export 入口
 
   utils/                           # 工具函数

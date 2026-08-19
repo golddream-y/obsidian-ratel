@@ -23,6 +23,7 @@
 | S-SKILL | [2026-07-06-skill-mechanism-design.md](specs/2026-07-06-skill-mechanism-design.md) | Active | 2026-07-06 | Skill 机制;激活注入见 ADR-012;activation 三态与 enable 开关结论由 S-SKILL-UX 修订;P-SKILL-2/3 pending |
 | S-SKILL-UX | [2026-08-17-skill-ux-claude-aligned-design.md](specs/2026-08-17-skill-ux-claude-aligned-design.md) | Active | 2026-08-17 | Skill 体验对齐 Claude/Cursor;删总开关+抽屉管理+术语隐形化;修订 ADR-009 §5/ADR-012 §3 always;plan 待写 |
 | S-EVOLUTION | [2026-07-15-evolution-graph-agent.md](specs/2026-07-15-evolution-graph-agent.md) | Active | 2026-07-15 | 图谱原生 Agent;P-EVO-A-READ 已归档(合入核对完毕);下步 P-EVO-A-FM |
+| S-SR-LAYERING | [2026-08-19-sr-layering-design.md](specs/2026-08-19-sr-layering-design.md) | Active | 2026-08-19 | PRD 7.5 落地:PromptInjector 统一注入管理器+记忆 pinned/topics top-K+Skill 相关性注入+使用统计;ADR-016;plan 已完成(squash `6b00d31`) |
 
 ---
 
@@ -36,6 +37,7 @@
 | P-EVO-A-FM | — | ⏳ Pending | S-EVOLUTION | update_frontmatter;依赖 P-EVO-A-READ(已归档);plan 待写 |
 | P-SKILL-2-EXECUTION | — | ⏳ Pending | S-SKILL | references+scripts 沙箱;降优先级,plan 待写 |
 | P-SKILL-UX-V2 | [2026-08-17-skill-ux-v2.md](plans/2026-08-17-skill-ux-v2.md) | ✅ Completed | S-SKILL-UX | 4 Task 全完成;worktree/分支已清理;squash → develop `64fec82`;1191 tests + build 过;待归档 |
+| P-SR-LAYERING | [2026-08-19-sr-layering.md](plans/2026-08-19-sr-layering.md) | ✅ Completed | S-SR-LAYERING | 6 Task 全完成+终审修复;worktree/分支已清理;squash → develop `6b00d31`;1221 tests + build 过;待归档;文档同步已补(CHANGELOG/README/user-guide) |
 | P-SKILL-3-UI | — | ⏳ Pending | S-SKILL | Skill UI;降优先级,plan 待写 |
 
 ---

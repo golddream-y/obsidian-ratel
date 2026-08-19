@@ -146,6 +146,8 @@ export interface RatelVaultSettings {
 	memoryDynamicLimitKB: number;
 	// 关键路径:memoryContextTotalLimitKB 是基础 + 动态记忆在上下文中的合计硬限制(KB)。
 	memoryContextTotalLimitKB: number;
+	// 关键路径(S-SR-LAYERING):topics 自动注入条数;0 = 关闭,默认 3。
+	memoryTopicsAutoInjectK: number;
 	// 关键路径(S-SKILL-UX):per-skill 开关持久化(name → 是否启用)。
 	// 未登记的 skill 走 manifest.enabled 默认值;Registry 加载后 applyEnabledOverrides 应用。
 	skillEnabled: Record<string, boolean>;
@@ -276,6 +278,8 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 	memoryDynamicLimitKB: 30,
 	// 关键路径:50KB 总记忆上限 ≈ 12.5k tokens,平衡记忆 vs 检索/回复空间。
 	memoryContextTotalLimitKB: 50,
+	// 关键路径(S-SR-LAYERING):每轮提问自动检索注入 top-K 相关主题(名称+摘要);0 = 关闭。
+	memoryTopicsAutoInjectK: 3,
 	// 关键路径(S-SKILL-UX):per-skill 开关持久化,默认空(全部走 manifest.enabled)。
 	skillEnabled: {},
 	// 关键路径:日记默认 vault 根 + YYYY-MM-DD.md,与常见 Daily Notes 约定对齐。
@@ -907,6 +911,11 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 						name: tNow('memory.settings.contextTotalLimit.name'),
 						desc: tNow('memory.settings.contextTotalLimit.desc'),
 						control: { type: 'number', key: 'memoryContextTotalLimitKB', min: 1, max: 500 },
+					},
+					{
+						name: tNow('memory.settings.topicsAutoInject.name'),
+						desc: tNow('memory.settings.topicsAutoInject.desc'),
+						control: { type: 'number', key: 'memoryTopicsAutoInjectK', min: 0, max: 10 },
 					},
 				],
 			},

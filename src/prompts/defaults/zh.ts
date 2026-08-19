@@ -40,10 +40,11 @@ export const ZH_DEFAULTS: Record<PromptSectionId, string> = {
 {{content}}`,
 
 	// 关键路径:记忆系统注入提示 — 启动时注入到 system 与检索结果之间。
-	// 占位符:{{globalContent}} = global.md 全文(已截断到 20KB),{{topicList}} = 主题列表行。
+	// 占位符:{{globalContent}} = global.md 分层正文(pinned + 预算内 normal),
+	// {{relatedTopics}} = 相关主题记忆块(S-SR-LAYERING,空串时不出现),{{topicList}} = 主题列表行。
 	'memory.systemPrompt': `以下是关于用户的已知信息:
 {{globalContent}}
-
+{{relatedTopics}}
 用户已建立以下主题记忆,当对话涉及相关领域时,请先用 search_memory 查询:
 {{topicList}}
 

@@ -113,6 +113,12 @@ composeAgentSystem(overrides)
         └── ToolRegistry.definitions() = 内置 + MCP 的 ToolDefinition
 ```
 
+**Skill 注入分层(S-SR-LAYERING / [ADR-016](../../adr/2026-08-19-layered-injection.md)):**
+
+- Discovery 按 tags / 描述与**当前提问**的相关性排序后截断 50(query 由调用方传入 `composeDiscovery`)
+- `activate_skill` 注入单条 instructions 上限 8KB(超限尾部截断加尾注)
+- 激活计数落 `pluginDir/usage-stats.json`(按 `manifest.name`),技能管理面板可见「使用 N 次」
+
 **当前分裂点(ADR-015 要收敛的):**
 - `tools[]`(FC)与「## 可用 Skills」清单是两套话术 — 模型要在两种描述格式间切换
 - **目标态:** 池描述统一(name + description + kind),无论走 FC 还是 Skill Discovery,模型看到的能力描述出自同一装配层

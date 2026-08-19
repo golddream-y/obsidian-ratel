@@ -89,7 +89,8 @@ export async function* agentLoop(
 	// 加载或初始化 session,然后把用户消息压入上下文。
 	await ctx.load(req.sessionId);
 	if (skillActivator) {
-		ctx.setSkillsContext(skillActivator.composeDiscovery(ctx.getOverrides()), '');
+		// 关键路径(S-SR-LAYERING):传当前提问做相关性排序,与 main.ask() 注入路径行为一致。
+		ctx.setSkillsContext(skillActivator.composeDiscovery(ctx.getOverrides(), req.message), '');
 	}
 	if (!skipAddUserMessage) {
 		ctx.addUserMessage(req.message);
@@ -281,7 +282,9 @@ export async function* agentLoop(
 					!toolFailed
 				) {
 					const overrides = ctx.getOverrides();
-					const discovery = skillActivator.composeDiscovery(overrides);
+					// 关键路径(S-SR-LAYERING):与回合入口注入路径一致传 req.message,
+					// 避免刷新后相关 skill 因无 query 排序掉出前 50 截断窗口。
+					const discovery = skillActivator.composeDiscovery(overrides, req.message);
 					ctx.setSkillsContext(discovery, '');
 				}
 

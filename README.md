@@ -90,13 +90,14 @@ The built-in config skill reads current settings, applies whitelisted changes, a
 
 > “Remember that I prefer conclusions before evidence.”
 
-Memory stays as Markdown under `.ratel/memory/`. Add a `SKILL.md`, connect an MCP server, or use Subagents for more specialized workflows.
+Memory stays as Markdown under `.ratel/memory/` — pin must-keep preferences with `[pinned]`, and the most related topic memories join each turn automatically. Add a `SKILL.md`, connect an MCP server, or use Subagents for more specialized workflows.
 
 ---
 
 ## Your agent, your stack
 
 - **Model freedom:** choose chat, embedding, and reranking models independently; use DeepSeek, Claude, Ollama, or compatible custom endpoints.
+- **Layered memory:** pinned preferences never get truncated; related topic memories join each turn automatically.
 - **Skills:** define reusable working methods in Markdown.
 - **MCP:** connect web search and external tools with per-server and per-tool permissions.
 - **Subagents:** delegate complex research to focused retrieval, review, and synthesis roles.

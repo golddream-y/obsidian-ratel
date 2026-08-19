@@ -840,6 +840,8 @@ export const en: Strings = {
   'memory.settings.dynamicLimit.desc': 'Hard limit for content returned by a single search_memory call; default 30 KB',
   'memory.settings.contextTotalLimit.name': 'Context total memory limit (KB)',
   'memory.settings.contextTotalLimit.desc': 'Hard limit for base + dynamic memory combined in context; default 50 KB',
+  'memory.settings.topicsAutoInject.name': 'Auto-inject related topics',
+  'memory.settings.topicsAutoInject.desc': 'Automatically retrieve the most relevant topic memories (name + summary) into each conversation; 0 disables. Full content is still fetched on demand by the AI.',
   'memory.settings.viewMemory.name': 'View memory',
   'memory.settings.viewMemory.desc': 'Open the memory manager',
   // Memory panel (Svelte)
@@ -864,6 +866,8 @@ export const en: Strings = {
   'memory.panel.delete': 'Delete',
   'memory.panel.noModelMemories': 'No model-inferred memory found',
   'memory.panel.cleared': 'Cleared {count} model-inferred memory entries',
+  // Topic row hit count (S-SR-LAYERING SR-03 — topics auto-inject stats)
+  'memory.panel.usedTimes': 'Hit {count} times',
 
   // ==================== SkillStrings ====================
   // Notice (S-SKILL-UX: user-facing wording drops "activate")
@@ -901,4 +905,6 @@ export const en: Strings = {
   'modal.skillManage.deleted': 'Deleted skill {name}',
   'modal.skillManage.deleteFailed': 'Delete failed: {message}',
   'modal.skillManage.editHint': 'Skill folder: {path}',
+  // Skill row usage count (S-SR-LAYERING SR-03 — activate_skill counting)
+  'modal.skillManage.usedTimes': 'Used {count} times',
 };

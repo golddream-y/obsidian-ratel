@@ -44,6 +44,7 @@ export const CONFIG_UPDATE_WHITELIST: ReadonlySet<string> = new Set<string>([
 	'memoryInjectLimitKB',
 	'memoryDynamicLimitKB',
 	'memoryContextTotalLimitKB',
+	'memoryTopicsAutoInjectK',
 	// --- 日记 ---
 	'dailyNoteFolder',
 	'dailyNoteFormat',
@@ -99,6 +100,7 @@ const NUMBER_CONSTRAINTS: Readonly<Record<string, { min: number; max: number }>>
 	memoryInjectLimitKB: { min: 1, max: 500 },
 	memoryDynamicLimitKB: { min: 1, max: 500 },
 	memoryContextTotalLimitKB: { min: 1, max: 500 },
+	memoryTopicsAutoInjectK: { min: 0, max: 10 },
 };
 
 /** 布尔开关 key — 严格 boolean,拒绝字符串 "true" */

@@ -65,6 +65,8 @@
 	let filter = $state<'all' | 'user' | 'model'>('all');
 	let globalEntries = $state<MemoryEntry[]>([]);
 	let topicIndex = $state<TopicIndexEntry[]>([]);
+	// 统计口径:topics 自动注入命中按 topic name 计数(usage-stats.json);打开面板时取一次快照。
+	let topicHitCounts = $state<Record<string, number>>({});
 	// 关键路径:topicEntries 缓存按 topic name 索引的已解析条目,展开时直接读,避免重复解析。
 	let topicEntries = $state<Record<string, MemoryEntry[]>>({});
 	let totalSize = $state(0);
@@ -92,6 +94,8 @@
 
 			globalEntries = parseEntries(globalContent);
 			topicIndex = topics;
+			// 性能:快照取一次,避免 each 循环内每行重复 getAll()(两层浅拷贝)。
+			topicHitCounts = plugin.usageStats.getAll().memoryTopics;
 			totalSize = size;
 
 			// 关键路径:遍历 topic 并读取内容,缓存到 topicEntries。
@@ -476,7 +480,11 @@
 			{:else}
 				{#each topicIndex as topic}
 				<details>
-					<summary>📂 {topic.name} <span class="ratel-memory-summary">{topic.summary}</span></summary>
+					<summary>📂 {topic.name} <span class="ratel-memory-summary">{topic.summary}</span>
+				<span class="ratel-memory-summary">
+					{$t('memory.panel.usedTimes', { count: topicHitCounts[topic.name] ?? 0 })}
+				</span>
+			</summary>
 						{#if (topicEntries[topic.name] ?? []).length === 0}
 							<div class="ratel-memory-empty">{$t('memory.panel.topicEmpty')}</div>
 						{:else}

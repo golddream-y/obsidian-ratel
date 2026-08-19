@@ -66,6 +66,36 @@ src/prompts/
 
 **覆盖语义(v1):** 整段 **replace**;不做 Canopy 式 `extends` / `mixins`。
 
+### 3.1 动态注入管理器(PromptInjector)
+
+> 决策依据:[ADR-016 分层注入](../../adr/2026-08-19-layered-injection.md)(S-SR-LAYERING)。
+
+静态段(`zone: static`)走上面的 sections 注册表;**动态 system 段**(env / memory / skills)不拼进 `composeAgentSystem` 静态组装管线,由 `src/prompts/injection/` 的 PromptInjector 组装为独立 system 消息(段内容仍由 Composer / SkillActivator 的模板函数生成):
+
+```
+src/prompts/injection/
+├── ids.ts        INJECTION_SOURCE_IDS(as const 元组)— env / memory / skills
+└── injector.ts   PromptInjector — buildSections() 按注册序组装 + ownBudgetBytes 兜底截断
+```
+
+**职责划分:**
+
+- **源负责构建** — 状态由 ContextManager 既有 setter(`setEnvContext` / `setMemoryContext` / `setSkillsContext`)写入,refresh 时机不变
+- **PromptInjector 负责组装与预算兜底** — `buildSections()` 按注册序产出 `{id, content}`,超 `ownBudgetBytes` 的段尾部截断(UTF-8 字节)
+- **searchResults 不入 ID 表** — 它是消息数组路径(`pruneSearchBlocks` 逐条 push),非单段 system 文本,保持既有路径(ADR-016 决策 4)
+
+**记忆分层(memory 源内部,ADR-016):**
+
+- global.md `## 标题 [pinned]` 段恒注入、不截断;其余段落走 `memoryInjectLimitKB` 预算
+- topics 按当前提问检索 top-K(`memoryTopicsAutoInjectK`),只注入「名称 + 摘要」;全文仍由模型按需调 `search_memory`
+- 总预算 `memoryContextTotalLimitKB` 超限时裁剪顺序:pinned 永不砍 → relatedTopics 尾条往上砍 → normal 段减半;只剩 pinned 时接受超出
+
+**Skill 分层(skills 源 + 激活路径,ADR-016):**
+
+- Discovery 段按 tags / 描述与**当前提问**的相关性排序后截断 50(`composeDiscovery(overrides, query)`)
+- `activate_skill` 注入单条 instructions 上限 8KB(超限尾部截断加尾注)
+- 激活指令写 `Session.messages`(ADR-012 消息路径),**不经 injector**;激活计数落 `pluginDir/usage-stats.json`,技能管理面板可见「使用 N 次」
+
 ---
 
 ## 4. 组装管线

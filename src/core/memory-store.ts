@@ -22,7 +22,7 @@ import { tNow } from '../i18n';
 import { bumpMemory } from './memory-revision';
 
 // 关键路径:spec §7 容量上限 — 记忆目录总大小上限,超出拒绝写入。
-// 注:globalContent 注入到 system prompt 前的 20KB 截断由 composer.ts 的 truncateForInjection 负责。
+// 注:globalContent 注入到 system prompt 前的字节预算由 composer.ts 分层处理(truncateUtf8Bytes)。
 const MEMORY_STORAGE_MAX_BYTES = 10 * 1024 * 1024;
 
 /**
@@ -471,4 +471,46 @@ updated: ${now}
 ## 主题列表
 `;
 	}
+}
+
+/** splitGlobalSections 的返回结构 — pinned 与 normal 两桶正文 */
+export interface GlobalSections {
+	/** 带 [pinned] 标记的段落全文(标题 + 正文,按出现顺序拼接) */
+	pinned: string;
+	/** 其余内容(frontmatter + 非 pinned 段落),沿用全文注入的既有行为 */
+	normal: string;
+}
+
+/** 识别段落标题行尾 [pinned] 标记;如 `## 偏好 [pinned]` */
+const PINNED_HEADING_REGEX = /^(#{1,6}\s+.+?)\s+\[pinned\]\s*$/;
+
+/**
+ * 拆分 global.md 为 pinned / normal 两桶(S-SR-LAYERING 分层注入)。
+ *
+ * 关键路径:
+ * - 事实源就在正文里 — 用户手编 `[pinned]` 后缀即生效,无独立 contract 数据结构(ADR-016 ①)。
+ * - 标记被误删时该段降级进 normal 桶,无功能损坏(向后兼容)。
+ * - frontmatter 归 normal 桶 — 现状即全文注入,不改变既有行为。
+ *
+ * @param content - global.md 全文
+ * @returns 两桶正文;pinned 为空串表示无任何标记段落
+ */
+export function splitGlobalSections(content: string): GlobalSections {
+	const lines = content.split('\n');
+	const pinnedParts: string[] = [];
+	const normalParts: string[] = [];
+	let inPinned = false;
+	let inCodeFence = false;
+	for (const line of lines) {
+		// 修复:代码块围栏内的 `#` 行(shell 注释等)不是标题,不重算 inPinned,防止 pinned 正文误入 normal 桶。
+		if (line.startsWith('```')) {
+			inCodeFence = !inCodeFence;
+		}
+		if (!inCodeFence && line.startsWith('#')) {
+			inPinned = PINNED_HEADING_REGEX.test(line);
+		}
+		// 关键路径:frontmatter(--- 围栏)与无标题前导行都归 normal。
+		(inPinned ? pinnedParts : normalParts).push(line);
+	}
+	return { pinned: pinnedParts.join('\n').trim(), normal: normalParts.join('\n').trim() };
 }

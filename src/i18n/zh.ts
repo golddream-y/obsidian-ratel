@@ -855,6 +855,8 @@ const memoryZh: MemoryStrings = {
   'memory.settings.dynamicLimit.desc': '单次 search_memory 返回内容硬限制,默认 30 KB',
   'memory.settings.contextTotalLimit.name': '上下文总记忆上限(KB)',
   'memory.settings.contextTotalLimit.desc': '基础 + 动态记忆在上下文中的合计硬限制,默认 50 KB',
+  'memory.settings.topicsAutoInject.name': '自动注入相关主题数',
+  'memory.settings.topicsAutoInject.desc': '每轮提问自动检索最相关的主题记忆(名称+摘要)注入对话;0 表示关闭。完整内容仍由 AI 按需查询。',
   'memory.settings.viewMemory.name': '查看记忆',
   'memory.settings.viewMemory.desc': '打开记忆管理窗口',
   // Memory 面板(Svelte)
@@ -879,6 +881,8 @@ const memoryZh: MemoryStrings = {
   'memory.panel.delete': '删除',
   'memory.panel.noModelMemories': '未找到模型推断的记忆',
   'memory.panel.cleared': '已清理 {count} 条模型推断的记忆',
+  // 主题行命中次数(S-SR-LAYERING SR-03 — topics 自动注入统计)
+  'memory.panel.usedTimes': '命中 {count} 次',
 };
 
 const skillZh: SkillStrings = {
@@ -917,6 +921,8 @@ const skillZh: SkillStrings = {
   'modal.skillManage.deleted': '已删除技能 {name}',
   'modal.skillManage.deleteFailed': '删除失败: {message}',
   'modal.skillManage.editHint': '技能目录: {path}',
+  // 技能行使用次数(S-SR-LAYERING SR-03 — activate_skill 计数)
+  'modal.skillManage.usedTimes': '使用 {count} 次',
 };
 
 export const zh: Strings = {

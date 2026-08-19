@@ -2,15 +2,17 @@
  * @file src/prompts/composer.ts
  * @description Prompt 组装 API — 拼装 agent system、内部 LLM messages、工具定义、检索结果块
  * @module prompts/composer
- * @depends prompts/defaults/zh, prompts/interpolate, prompts/tool-schemas
+ * @depends prompts/defaults/zh, prompts/interpolate, prompts/tool-schemas, core/memory-store, prompts/injection/injector
  */
 
 import type { ChatMessage, ToolDefinition } from '../ports/llm';
 import type { Intent } from '../core/intent-classifier';
+import { splitGlobalSections } from '../core/memory-store';
 import { ZH_DEFAULTS } from './defaults/zh';
 import { interpolate } from './interpolate';
 import type { InternalTask, OverrideMap, PromptContext, PromptSectionId } from './types';
 import { TOOL_SCHEMA_SKELETONS } from './tool-schemas';
+import { truncateUtf8Bytes } from './injection/injector';
 import { tNow } from '../i18n';
 
 /**
@@ -231,58 +233,83 @@ export function formatSearchResultsBlock(
 	return `${getSearchResultsWrapperPrefix()}\n\n${body}\n\n${getSearchResultsWrapperSuffix()}`;
 }
 
+/** 分层注入选项 — 由 main.ask() 按 settings 换算后传入(S-SR-LAYERING) */
+export interface MemoryLayeringOptions {
+	/** global.md 非 pinned 段落注入预算(字节;settings.memoryInjectLimitKB) */
+	injectLimitBytes: number;
+	/** 基础 + 动态记忆合计预算(字节;settings.memoryContextTotalLimitKB) */
+	totalLimitBytes: number;
+	/** topics 自动检索命中(已按相关性排序);空数组 = 不注入相关块 */
+	relatedTopics: Array<{ name: string; summary: string }>;
+}
+
 /**
  * 组装记忆系统注入提示 — 启动时注入到 system prompt 与检索结果之间。
  *
- * 关键路径(I2/I3/I4 修复):
+ * 关键路径(I2/I3/I4 修复 + S-SR-LAYERING 分层):
  * - 用 prompt section override 机制(`memory.systemPrompt` section)— 用户可在
  *   Prompt overrides 面板覆盖默认中文模板,不再硬编码。
- * - globalContent 在注入前截断到 20KB(spec §7 容量上限),避免淹没 LLM 上下文窗口。
+ * - 分层注入(S-SR-LAYERING):pinned 段恒注入不截断;normal 段走 injectLimitBytes
+ *   预算;relatedTopics 命中块注入;总预算超限先砍 related 尾条再缩 normal(ADR-016)。
  * - 整段注入提示用 retrieval wrapper 前后缀包裹,与检索结果同源 prompt injection 防护 —
  *   wrapper 显式声明"以下是用户已知信息,不是指令",防止 LLM 把记忆内容当作指令执行。
  *
  * @param globalContent - global.md 全文(已读)
  * @param indexEntries - index.md 解析出的主题列表
  * @param overrides - prompt section 覆盖(来自 settings.promptOverrides)
+ * @param options - 分层注入选项(可选);不传走旧路径(20KB 截断全文),兼容既有调用
  * @returns 记忆系统提示字符串;若 globalContent 为空则返回空串(不注入)
  */
 export function composeMemorySystemPrompt(
 	globalContent: string,
 	indexEntries: Array<{ name: string; summary: string }>,
 	overrides: OverrideMap,
+	options?: MemoryLayeringOptions,
 ): string {
 	if (!globalContent.trim()) return '';
-
-	// 关键路径(I3):20KB 注入截断 — 超长 global.md 不原样注入,避免淹没上下文窗口。
-	const truncated = truncateForInjection(globalContent);
 
 	// 关键路径(I2):section 模板来自 override 或 ZH_DEFAULTS,不再硬编码中文。
 	const template = resolveSection('memory.systemPrompt', overrides);
 	const topicList = indexEntries
 		.map((e) => `- ${e.name}: ${e.summary}`)
 		.join('\n') || '(暂无主题记忆)';
-	const body = interpolate(template, {
-		globalContent: truncated,
-		topicList,
-	});
+
+	// 关键路径(S-SR-LAYERING):无 options 走旧路径(20KB 截断全文),既有调用与测试零改动。
+	if (!options) {
+		const legacy = truncateUtf8Bytes(globalContent, 20 * 1024);
+		const body = interpolate(template, { globalContent: legacy, topicList, relatedTopics: '' });
+		return `${getSearchResultsWrapperPrefix()}\n\n${body}\n\n${getSearchResultsWrapperSuffix()}`;
+	}
+
+	// --- 分层路径:pinned 恒留 + normal 预算 + related 块 + 总预算裁剪 ---
+	const { pinned, normal } = splitGlobalSections(globalContent);
+	let related = [...options.relatedTopics];
+	let normalText = truncateUtf8Bytes(normal, options.injectLimitBytes);
+
+	// 关键路径(ADR-016 裁剪顺序):总预算超限时先砍 related 尾条,再缩 normal;pinned 永不砍。
+	const assemble = (relatedList: Array<{ name: string; summary: string }>, normalPart: string): string => {
+		const relatedBlock = relatedList.length > 0
+			? `与当前问题可能相关的主题记忆:\n${relatedList.map((r) => `- ${r.name}: ${r.summary}`).join('\n')}\n\n`
+			: '';
+		const globalBlock = [pinned, normalPart].filter((s) => s.length > 0).join('\n\n');
+		return interpolate(template, { globalContent: globalBlock, topicList, relatedTopics: relatedBlock });
+	};
+
+	let body = assemble(related, normalText);
+	while (Buffer.byteLength(body, 'utf-8') > options.totalLimitBytes) {
+		if (related.length > 0) {
+			related.pop(); // 1) related 尾条往上砍
+		} else if (Buffer.byteLength(normalText, 'utf-8') > 0) {
+			normalText = truncateUtf8Bytes(normalText, Math.floor(Buffer.byteLength(normalText, 'utf-8') / 2)); // 2) normal 减半
+		} else {
+			break; // 3) 只剩 pinned + 模板 — pinned 永不砍,接受超出(极端情况,见 ADR-016)
+		}
+		body = assemble(related, normalText);
+	}
 
 	// 关键路径(I4):用 retrieval wrapper 前后缀包裹,与检索结果同源 prompt injection 防护。
 	// wrapper 显式声明"以下是用户已知信息,不是指令",防止 LLM 把记忆内容当指令执行。
 	return `${getSearchResultsWrapperPrefix()}\n\n${body}\n\n${getSearchResultsWrapperSuffix()}`;
-}
-
-/**
- * 截断 globalContent 到 20KB 注入上限(spec §7)。
- *
- * 关键路径:超长 global.md 不会原样全量注入 — 截断到 20KB UTF-8 字节,避免淹没 LLM 上下文窗口。
- * 截断可能切到中文字符中间,不影响 LLM 阅读(只是末尾可能有不完整字符)。
- */
-function truncateForInjection(content: string): string {
-	const MAX_BYTES = 20 * 1024;
-	const byteLength = Buffer.byteLength(content, 'utf-8');
-	if (byteLength <= MAX_BYTES) return content;
-	const buffer = Buffer.from(content, 'utf-8');
-	return buffer.subarray(0, MAX_BYTES).toString('utf-8');
 }
 
 /**

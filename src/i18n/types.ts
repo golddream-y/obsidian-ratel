@@ -873,6 +873,8 @@ export interface MemoryStrings {
   'memory.settings.dynamicLimit.desc': string;
   'memory.settings.contextTotalLimit.name': string;
   'memory.settings.contextTotalLimit.desc': string;
+  'memory.settings.topicsAutoInject.name': string;
+  'memory.settings.topicsAutoInject.desc': string;
   'memory.settings.viewMemory.name': string;
   'memory.settings.viewMemory.desc': string;
   // Memory 面板(Svelte)
@@ -897,6 +899,8 @@ export interface MemoryStrings {
   'memory.panel.delete': string;
   'memory.panel.noModelMemories': string;
   'memory.panel.cleared': string;
+  /** 主题行命中次数(S-SR-LAYERING SR-03 — topics 自动注入统计) */
+  'memory.panel.usedTimes': string;
 }
 
 // ==================== Skill(Skill 机制 — P-SKILL-1-CORE 消费) ====================
@@ -937,6 +941,8 @@ export interface SkillStrings {
   'modal.skillManage.deleted': string;
   'modal.skillManage.deleteFailed': string;
   'modal.skillManage.editHint': string;
+  /** 技能行使用次数(S-SR-LAYERING SR-03 — activate_skill 计数) */
+  'modal.skillManage.usedTimes': string;
 }
 
 // ==================== 合并 ====================

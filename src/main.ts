@@ -47,6 +47,8 @@ import { createDeleteNoteTool } from './tools/delete-note';
 // 关键路径:用户记忆系统 — MemoryStore 管理 .ratel/memory/ 文件 + .memory-index/ vectra 索引,
 // 3 个工具(search_memory / remember / forget_memory)复用 memoryStore 与 embeddingPort。
 import { MemoryStore } from './core/memory-store';
+// 关键路径(S-SR-LAYERING):使用统计 — Skill 激活与记忆 topics 自动注入命中计数
+import { UsageStatsStore } from './core/usage-stats';
 import { createSearchMemoryTool } from './tools/search-memory';
 import { createRememberTool } from './tools/remember';
 import { createForgetMemoryTool } from './tools/forget-memory';
@@ -167,6 +169,8 @@ export default class RatelVaultPlugin extends Plugin {
 	private indexDir!: string;
 	// 关键路径:用户记忆存储,管理 .ratel/memory/ 下的 markdown 文件与 .memory-index/ vectra 索引
 	private memoryStore!: MemoryStore;
+	// 关键路径(S-SR-LAYERING):使用统计存储(pluginDir/usage-stats.json);UI 管理面板读取展示
+	usageStats!: UsageStatsStore;
 	// 关键路径:P-SKILL-1-CORE — Skill 三源加载器、注册表、激活器。
 	private skillLoader!: SkillLoader;
 	// S-SKILL-UX:SkillManageModal 直接读写注册表(per-skill 开关),故公开。
@@ -261,6 +265,8 @@ export default class RatelVaultPlugin extends Plugin {
 		const memoryVectraStore = new VectraStore(memoryIndexDir, { autoInit: false });
 		this.memoryStore = new MemoryStore(memoryDir, memoryVectraStore, this.embedding);
 		this.memoryStore.ensureDir();
+		// 关键路径(S-SR-LAYERING):使用统计与记忆索引同域放 pluginDir,不进 data.json / vault(spec §4)。
+		this.usageStats = new UsageStatsStore(path.join(pluginDir, 'usage-stats.json'));
 
 		// ==================== Skills(P-SKILL-1-CORE) ====================
 		// 关键路径:三源路径 — builtin(pluginDir/skills 只读)/ global(~/.ratel/skills)/
@@ -452,7 +458,13 @@ export default class RatelVaultPlugin extends Plugin {
 		// 关键路径:记忆工具 — 3 个新工具,复用 memoryStore 与主线程 embeddingPort。
 		// search_memory 是只读工具(查询记忆);remember / forget_memory 是写工具(触发 pre/post write hook)。
 		this.tools.register(
-			createSearchMemoryTool(this.memoryStore, this.embedding, toolDefMap.get('search_memory')!),
+			createSearchMemoryTool(
+				this.memoryStore,
+				this.embedding,
+				toolDefMap.get('search_memory')!,
+				// 关键路径:传 getter 现读 settings,设置面板改 memoryDynamicLimitKB 后立即生效,无需重载插件。
+				() => this.settings.memoryDynamicLimitKB * 1024,
+			),
 		);
 		this.tools.register(createRememberTool(this.memoryStore, toolDefMap.get('remember')!));
 		this.tools.register(createForgetMemoryTool(this.memoryStore, toolDefMap.get('forget_memory')!));
@@ -471,6 +483,8 @@ export default class RatelVaultPlugin extends Plugin {
 				this.skillRegistry,
 				toolDefMap.get('activate_skill')!,
 				skillSessionHooks,
+				// 关键路径(S-SR-LAYERING):激活成功后计数到 pluginDir/usage-stats.json
+				this.usageStats,
 			),
 		);
 		this.tools.register(
@@ -1303,8 +1317,9 @@ export default class RatelVaultPlugin extends Plugin {
 			getOverrides: () => this.settings.promptOverrides,
 			getTools: () => this.tools.definitions(),
 			// ADR-012:仅 Discovery;Active 指令写入 Session.messages。
+			// 关键路径(S-SR-LAYERING):传当前提问做相关性排序(两处 composeDiscovery 同步)。
 			getSkillsDiscovery: () =>
-				this.skillActivator.composeDiscovery(this.settings.promptOverrides),
+				this.skillActivator.composeDiscovery(this.settings.promptOverrides, message),
 			getSkillsActive: () => '',
 		},
 		// 关键路径(S-CTX-TRIM):历史上限随窗口推导,替换写死的 8000
@@ -1314,8 +1329,9 @@ export default class RatelVaultPlugin extends Plugin {
 		ctx.setEnvContext(formatEnvContextLine(new Date()));
 
 		// 关键路径:会话启动时注入 Discovery 目录(activate 写进 messages)。
+		// 关键路径(S-SR-LAYERING):传当前提问做 Discovery 相关性排序。
 		ctx.setSkillsContext(
-			this.skillActivator.composeDiscovery(this.settings.promptOverrides),
+			this.skillActivator.composeDiscovery(this.settings.promptOverrides, message),
 			'',
 		);
 
@@ -1326,7 +1342,40 @@ export default class RatelVaultPlugin extends Plugin {
 			const globalContent = this.memoryStore.readGlobal();
 			const indexEntries = this.memoryStore.readIndex();
 			if (globalContent.trim()) {
-				ctx.setMemoryContext(globalContent, indexEntries);
+				// 关键路径(S-SR-LAYERING):topics 自动检索 — 当前用户消息 embed 一次,
+				// 命中的主题只注入「名称 + 摘要」,全文仍走 search_memory(两种供给不重复)。
+				let relatedTopics: Array<{ name: string; summary: string }> = [];
+				const K = this.settings.memoryTopicsAutoInjectK;
+				if (K > 0 && message.trim()) {
+					try {
+						const vectors = await this.embedding.embed([message]);
+						const queryVector = vectors[0];
+						if (queryVector) {
+							const hits = await this.memoryStore.searchIndex(message, queryVector, K);
+							const summaryByName = new Map(indexEntries.map((e) => [e.name, e.summary]));
+							// 性能:先凑齐本轮命中,批量计数只落盘一次(逐条 bump 会同步写盘 K 次)。
+							const hitNames: string[] = [];
+							for (const hit of hits) {
+								const name = hit.docId.replace(/^topics\//, '').replace(/\.md$/, '');
+								const summary = summaryByName.get(name);
+								if (summary !== undefined) {
+									relatedTopics.push({ name, summary });
+									hitNames.push(name);
+								}
+							}
+							// 统计口径:自动注入命中才计数,search_memory 手动检索不计。
+							this.usageStats.bumpMemoryTopicsBatch(hitNames);
+						}
+					} catch (embedErr) {
+						// 修复:检索失败静默降级为无相关主题,不阻断会话(spec §2)。
+						devLogger.warn('memory', 'topics 自动注入检索失败,降级为无相关主题', embedErr);
+					}
+				}
+				ctx.setMemoryContext(globalContent, indexEntries, this.settings.promptOverrides, {
+					injectLimitBytes: this.settings.memoryInjectLimitKB * 1024,
+					totalLimitBytes: this.settings.memoryContextTotalLimitKB * 1024,
+					relatedTopics,
+				});
 			}
 		} catch (err) {
 			devLogger.error('memory', '记忆加载失败,会话继续无记忆注入', err);

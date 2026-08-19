@@ -13,6 +13,10 @@ import type { Intent } from './intent-classifier';
 import { estimateTokens } from '../ui/tokens/token-estimator';
 // 关键路径:系统提示词与检索结果外框统一由 Composer 组装,保证 prompt 注入防护(外框不可删)与 section 覆盖机制生效
 import { composeAgentSystem, composeMemorySystemPrompt, formatSearchResultsBlock } from '../prompts/composer';
+// 关键路径(S-SR-LAYERING):记忆分层注入选项(pinned 恒留 + normal 预算 + relatedTopics 块)
+import type { MemoryLayeringOptions } from '../prompts/composer';
+// 关键路径(S-SR-LAYERING):动态 system 段(env/memory/skills)统一走 PromptInjector 组装
+import { PromptInjector } from '../prompts/injection/injector';
 import type { OverrideMap } from '../prompts/types';
 // 关键路径:TopicIndexEntry 用于 setMemoryContext 接收记忆索引主题列表的类型契约
 import type { TopicIndexEntry } from '../types';
@@ -94,6 +98,8 @@ export class ContextManager {
 	 * 由 tailBudget(getEffectiveChatModelMaxTokens(settings)) 推导,随窗口 128k–1M 缩放。
 	 */
 	private readonly maxHistoryTokens: number;
+	/** 统一注入管理器 — env/memory/skills 三段唯一组装出口(S-SR-LAYERING) */
+	private readonly injector = new PromptInjector();
 
 	/**
 	 * @param persistence - 持久化端口,用于加载/保存 session。
@@ -109,6 +115,10 @@ export class ContextManager {
 		maxHistoryTokens: number,
 	) {
 		this.maxHistoryTokens = maxHistoryTokens;
+		// 关键路径(S-SR-LAYERING):动态段统一走 injector;setter 签名不变,仅内部状态写入。
+		this.injector.register({ id: 'env', build: () => this.envContextLine || null });
+		this.injector.register({ id: 'memory', build: () => this.memorySystemPrompt || null });
+		this.injector.register({ id: 'skills', build: () => this.skillsDiscovery || null });
 	}
 
 	/**
@@ -305,10 +315,23 @@ export class ContextManager {
 	 *
 	 * @param globalContent - global.md 全文
 	 * @param indexEntries - index.md 解析出的主题列表
+	 * @param overrides - 可选 prompt section 覆盖;缺省用 deps.getOverrides()
+	 * @param layering - 可选分层注入选项(S-SR-LAYERING);不传走旧路径(20KB 截断全文)
 	 */
-	setMemoryContext(globalContent: string, indexEntries: TopicIndexEntry[]): void {
-		const overrides = this.deps.getOverrides();
-		this.memorySystemPrompt = composeMemorySystemPrompt(globalContent, indexEntries, overrides);
+	setMemoryContext(
+		globalContent: string,
+		indexEntries: TopicIndexEntry[],
+		overrides?: Parameters<typeof composeMemorySystemPrompt>[2],
+		layering?: MemoryLayeringOptions,
+	): void {
+		// 关键路径(S-SR-LAYERING):layering 由 main.ask() 按 settings + 当前消息检索结果换算;
+		// 不传时 composeMemorySystemPrompt 走旧路径(20KB 截断全文)。
+		this.memorySystemPrompt = composeMemorySystemPrompt(
+			globalContent,
+			indexEntries,
+			overrides ?? this.deps.getOverrides(),
+			layering,
+		);
 	}
 
 	/**
@@ -414,15 +437,9 @@ export class ContextManager {
 		// 让 Agent 在看到检索结果和历史之前先"认识"用户。
 		const messages: ChatMessage[] = [{ role: 'system', content: systemPrompt }];
 		// 关键路径:环境时间紧跟主 system,零工具成本回答「今天几号」。
-		if (this.envContextLine) {
-			messages.push({ role: 'system', content: this.envContextLine });
-		}
-		if (this.memorySystemPrompt) {
-			messages.push({ role: 'system', content: this.memorySystemPrompt });
-		}
-		// 关键路径:ADR-012 — 仅 Discovery;Active 段废弃,不再注入。
-		if (this.skillsDiscovery) {
-			messages.push({ role: 'system', content: this.skillsDiscovery });
+		// 关键路径(S-SR-LAYERING):动态段从 injector 拉取;顺序 env → memory → skills 与原实现一致。
+		for (const section of this.injector.buildSections()) {
+			messages.push({ role: 'system', content: section.content });
 		}
 		messages.push(...this.pruneSearchBlocks(this.searchResultsMessages), ...head, ...trimmedTail);
 		return messages;

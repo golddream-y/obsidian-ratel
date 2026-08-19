@@ -57,7 +57,7 @@ function buildSections(): SectionMeta[] {
 			label: tNow('promptLabel.memory.systemPrompt'),
 			description: tNow('promptLabel.memory.systemPrompt.desc'),
 			zone: 'dynamic',
-			placeholders: ['globalContent', 'topicList'],
+			placeholders: ['globalContent', 'relatedTopics', 'topicList'],
 			allowOverride: true,
 		},
 		// 关键路径:Skill 机制 Discovery 段 — 注入已加载 skill 的 name+description 列表。
