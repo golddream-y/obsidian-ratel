@@ -19,7 +19,7 @@
 
 | ID | 文件 | 状态 | 创建日期 | 备注 |
 |---|---|---|---|---|
-| S-SKILL | [2026-07-06-skill-mechanism-design.md](specs/2026-07-06-skill-mechanism-design.md) | Active | 2026-07-06 | Skill 机制;激活注入见 ADR-012;S-SKILL-UX 已归档(结论并入本 spec 语境);P-SKILL-2 pending |
+| S-SKILL | [2026-07-06-skill-mechanism-design.md](specs/2026-07-06-skill-mechanism-design.md) | Active | 2026-07-06 | Skill 机制;激活注入见 ADR-012;执行层落地完成(P-SKILL-2,ADR-017 沙箱) |
 | S-TASK | [2026-08-19-agent-task-store.md](specs/2026-08-19-agent-task-store.md) | Active | 2026-08-19 | Agent 任务机制(task_plan/落盘恢复/GC/全局单活);从 S-EVOLUTION Phase C 摘出,通用基建独立排期;plan 待写 |
 
 
@@ -29,7 +29,7 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
-| P-SKILL-2-EXECUTION | [2026-08-19-skill-execution.md](plans/2026-08-19-skill-execution.md) | 🔄 In Progress | S-SKILL | references+scripts 沙箱;运行时定案 ADR-017(Worker+vm 双层,JS-only);分支 feat/p-skill-2-execution;8 Task 并行波次执行 |
+| P-SKILL-2-EXECUTION | [2026-08-19-skill-execution.md](plans/2026-08-19-skill-execution.md) | ✅ Completed | S-SKILL | references+scripts 沙箱;ADR-017(Worker+vm 双层,JS-only);8 Task 并行波次执行,squash 合并 `fb871f5`,1269 tests;待归档确认 |
 
 ---
 
@@ -49,8 +49,7 @@
 ## Future execution queue(按顺序)
 
 1. **S-TASK**(task_plan / 落盘恢复 / GC)— spec 已定,plan 待写
-2. **P-SKILL-2-EXECUTION** — plan 已就绪(ADR-017 定案),待启动执行
-3. 候选(无 spec,重启时新开):update_frontmatter / Write Gate / append_to_daily(S-EVOLUTION 写侧,见 archive/S-EVOLUTION/)  
+2. 候选(无 spec,重启时新开):update_frontmatter / Write Gate / append_to_daily(S-EVOLUTION 写侧,见 archive/S-EVOLUTION/)  
 
 
 ---
