@@ -440,7 +440,7 @@ it('SearchVault 工具 - 嵌入失败 - 返回空结果', () => { ... });
 
 每次 brainstorming、spec、plan 都要登记。这是硬规矩 — 不登记就找不到。
 
-**唯一注册表:** [`docs/superpowers/STATUS.md`](docs/superpowers/STATUS.md) 是本项目所有 spec 与 plan 的唯一事实源。
+**唯一注册表:** [`docs/superpowers/STATUS.md`](docs/superpowers/STATUS.md) 是本项目所有 spec 与 plan 的唯一事实源(活跃项);归档记录在 [`docs/superpowers/ARCHIVE.md`](docs/superpowers/ARCHIVE.md)(含统计图与按月索引)。
 
 **更新规则:**
 
@@ -507,17 +507,17 @@ git mv docs/superpowers/plans/<plan>.md docs/superpowers/archive/<spec-id>/
 #    - 按时间倒序(最新在前)
 #    - 标题格式: ## YYYY-MM-DD — <PLAN-ID>(<简短描述>)
 
-# 5. 更新 STATUS.md「已归档」区(极简)
-#    - 加 1 行:<id> | archive/<id>/ | YYYY-MM-DD
-#    - **不**列「含文件」「备注」等可从子目录推出来的信息
-#    - 主表**移除**该 spec / plan 行(归档的不再列在主表)
+# 5. 更新 ARCHIVE.md(归档索引,极简)
+#    - 对应月份表加 1 行:<id> | archive/<id>/ | MM-DD | 备注(一句话,写 squash commit/发版版本/废弃原因)
+#    - 顶部统计数字同步(按月柱状 / 形态分布 pie / 总数)
+# 6. 主表(STATUS.md)**移除**该 spec / plan 行(归档的不再列在主表)
 ```
 
 **STATUS.md 主表移除原则:**
 
 - 归档的 spec / plan **不**保留在主表
 - 主表只显示**当前 active / pending / in_progress** 的项
-- 历史归档通过「已取代 / 归档」区的汇总行 + `archive/` 文件夹追溯
+- 历史归档通过 [ARCHIVE.md](docs/superpowers/ARCHIVE.md) 的按月索引 + `archive/` 文件夹追溯
 - 原因:主表要简洁,完成细节(包括执行日志)都下沉到 `archive/<id>/execution-log.md`
 
 **execution-log.md 形态:**
@@ -547,12 +547,12 @@ git mv docs/superpowers/plans/<plan>.md docs/superpowers/archive/<spec-id>/
 
 **与 `Superseded` 的区别:**
 
-- `Superseded` = 被新版本取代(如 S-RAG-ROADMAP → S-RAG-ARCH),写到「已取代 / 归档」区,链接替代者
+- `Superseded` = 被新版本取代(如 S-RAG-ROADMAP → S-RAG-ARCH),登记到 ARCHIVE.md,链接替代者
 - `Archived` = 实施完成、不是被取代,而是「开发指导已落地,转历史档案」
 
 **归档后:**
 
 - 主表不再出现该 spec / plan
-- 「已取代 / 归档」区有汇总行指向 `archive/<id>/`
+- ARCHIVE.md 有对应月份表行指向 `archive/<id>/`
 - `archive/<id>/execution-log.md` 包含完整执行历史(commit SHA / 偏差 / 测试数据)
 - 后续若该 spec 衍生了 v2(例:新决策),开新 spec `S-XXX-XXX-v2`,旧 spec 保持 Archived 状态,新 spec 状态 `Active`
