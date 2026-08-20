@@ -4,6 +4,12 @@
 
 ---
 
+## 2026-08-20 — spec 归档(S-SKILL 全部范围交付)
+
+三个实施 plan 全部收官:P-SKILL-1-CORE(机制基础层,07-06 归档)、P-SKILL-2-EXECUTION(脚本执行层)、P-SKILL-2-TIMEOUT(超时语义 v1.1)均于 08-19 归档;UI 侧由 S-SKILL-UX(P-SKILL-UX-V2,随 0.3.0 发版)交付,原 P-SKILL-3-UI 撤销。执行层随 0.5.0 发版,spec 使命完成,整体归档。
+
+---
+
 ## 2026-08-19 — P-SKILL-2-TIMEOUT(超时语义 v1.1:心跳分类 + LLM 决策)
 
 | Task / Group | 文件 | 状态 | Commit(波次分支) | 备注 |

@@ -19,7 +19,6 @@
 
 | ID | 文件 | 状态 | 创建日期 | 备注 |
 |---|---|---|---|---|
-| S-SKILL | [2026-07-06-skill-mechanism-design.md](specs/2026-07-06-skill-mechanism-design.md) | Active | 2026-07-06 | Skill 机制;激活注入见 ADR-012;执行层落地完成(P-SKILL-2,ADR-017 沙箱) |
 | S-TASK | [2026-08-19-agent-task-store.md](specs/2026-08-19-agent-task-store.md) | Active | 2026-08-19 | Agent 任务机制(task_plan/落盘恢复/GC/全局单活);从 S-EVOLUTION Phase C 摘出,通用基建独立排期;plan 待写 |
 
 
@@ -29,8 +28,6 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
-
-> S-SKILL 的两个实施 plan(P-SKILL-2-EXECUTION / P-SKILL-2-TIMEOUT)已归档至 [archive/S-SKILL/](archive/S-SKILL/),spec 保持 Active。
 
 ---
 
@@ -57,4 +54,4 @@
 
 ## 已归档
 
-见 [ARCHIVE.md](ARCHIVE.md) — 含按月统计图与全部归档记录(60 条 / 55 目录)。
+见 [ARCHIVE.md](ARCHIVE.md) — 含按月统计图与全部归档记录(64 条 / 55 目录)。
