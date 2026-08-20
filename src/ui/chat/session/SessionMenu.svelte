@@ -141,7 +141,7 @@
 		background-color: #ffffff;
 		border: 1px solid var(--background-modifier-border);
 		border-radius: 12px;
-		box-shadow: 0 12px 40px rgba(0, 0, 0, 0.28);
+		/* 修复:项目硬约束禁 box-shadow — 层次由 border + 实色底承担,去掉 40px 大投影 */
 		z-index: 1;
 		isolation: isolate;
 	}

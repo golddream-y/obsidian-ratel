@@ -845,7 +845,6 @@ button.ratel-cites-toggle:focus-visible {
 	font-size: 12px;
 	line-height: 1.4;
 	word-break: break-all;
-	box-shadow: 0 4px 16px color-mix(in srgb, black 25%, transparent);
 	pointer-events: none;
 }
 

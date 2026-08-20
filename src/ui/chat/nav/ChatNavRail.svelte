@@ -298,7 +298,6 @@
 		border-radius: 6px;
 		background: color-mix(in srgb, var(--background-primary) 88%, var(--background-secondary));
 		border: 1px solid var(--background-modifier-border);
-		box-shadow: 0 2px 10px color-mix(in srgb, var(--background-primary) 35%, transparent);
 		color: var(--text-muted);
 		font-size: 11px;
 		line-height: 1.35;
@@ -374,7 +373,6 @@
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		box-shadow: 0 1px 4px color-mix(in srgb, var(--background-primary) 40%, transparent);
 	}
 
 	.ratel-chat-nav[data-side='right'] .ratel-chat-nav-bottom {
