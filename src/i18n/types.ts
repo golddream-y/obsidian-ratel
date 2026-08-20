@@ -254,6 +254,7 @@ export interface ChatStrings {
   'chat.thinking': string;
   'chat.thinking.done': string;
   'chat.tool.executing': string;
+  'chat.tool.executingScript': string;
   'chat.tool.params': string;
   'chat.tool.result': string;
   'chat.tool.noResult': string;
@@ -380,6 +381,7 @@ export interface ToolNameStrings {
   'tool.name.open_settings': string;
   'tool.name.get_app_config': string;
   'tool.name.update_app_config': string;
+  'tool.name.run_skill_script': string;
   'tool.name.mcp': string;
 }
 

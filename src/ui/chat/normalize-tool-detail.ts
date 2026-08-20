@@ -26,6 +26,13 @@ export function normalizeToolDetail(input: NormalizeToolDetailInput): ToolDetail
 		return { kind: 'error', message: input.errorMessage };
 	}
 	if (input.status === 'calling') {
+		const args = asRecord(input.args);
+		// 关键路径:run_skill_script 显示脚本名,而非笼统"执行中"
+		if (input.name === 'run_skill_script') {
+			const scriptName = str(args.scriptPath) || str(args.skillName) || '';
+			const base = scriptName.split('/').pop() || scriptName;
+			return { kind: 'busy', label: base || undefined };
+		}
 		return { kind: 'busy' };
 	}
 

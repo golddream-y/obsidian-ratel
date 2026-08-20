@@ -253,6 +253,7 @@ export const en: Strings = {
   'chat.thinking': 'Thinking…',
   'chat.thinking.done': 'Thoughts',
   'chat.tool.executing': 'Executing…',
+  'chat.tool.executingScript': 'Running {script}…',
   'chat.tool.params': 'Params',
   'chat.tool.result': 'Result',
   'chat.tool.noResult': '(no result)',
@@ -376,6 +377,7 @@ export const en: Strings = {
   'tool.name.open_settings': 'Open settings',
   'tool.name.get_app_config': 'Read app config',
   'tool.name.update_app_config': 'Update app config',
+  'tool.name.run_skill_script': 'Run script {script}',
   'tool.name.mcp': 'MCP · {server} · {tool}',
 
   // ==================== SlashStrings ====================

@@ -11,7 +11,7 @@ export const TOOL_DETAIL_LIST_PREVIEW = 12;
  * 工具展开旁注的稳定形态 — 种类封闭,新增须改 S-CHAT-TRACE。
  */
 export type ToolDetailModel =
-	| { kind: 'busy' }
+	| { kind: 'busy'; label?: string }
 	| { kind: 'error'; message: string }
 	| {
 			kind: 'listing';

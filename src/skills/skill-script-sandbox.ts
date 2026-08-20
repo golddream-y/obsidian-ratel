@@ -2,10 +2,10 @@
  * @file src/skills/skill-script-sandbox.ts
  * @description Skill 脚本沙箱主线程运行器 — Worker 生命周期 / 心跳分类超时状态机 / 并发=1(ADR-017 v1.1)
  * @module skills/skill-script-sandbox
- * @depends node:worker_threads
+ * @depends node:worker_threads(Node 环境兜底), DOM Worker(浏览器环境)
  */
 
-import { Worker } from 'node:worker_threads';
+import { Worker as NodeWorker } from 'node:worker_threads';
 
 /** 软超时:10s 无心跳 → onSoftTimeout 警告(慢,可继续等)— ADR-017 §3 */
 export const SOFT_TIMEOUT_MS = 10_000;
@@ -40,7 +40,81 @@ export type ScriptRunOutcome =
 	| { status: 'noRunning' };
 
 /** Worker 构造工厂签名 — 测试可注入裸 JS worker(协议兼容) */
-export type WorkerFactory = (code: string) => Worker;
+export type WorkerFactory = (code: string) => SandboxWorkerHandle;
+
+/** Worker → 主线程消息的最小结构(与 skill-script-worker 协议一致) */
+interface WorkerInboundMessage {
+	type?: string;
+	message?: string;
+	level?: string;
+	result?: { ok: boolean; result?: string; error?: string; stack?: string };
+}
+
+/**
+ * 沙箱 Worker 统一句柄 — 屏蔽浏览器 Web Worker 与 Node worker_threads 的 API 差异。
+ *
+ * 关键路径(冒烟实测):Obsidian Electron 渲染进程不支持创建 node:worker_threads
+ * ("The V8 platform used by this instance of Node does not support creating Workers"),
+ * 生产环境必须走浏览器 Web Worker(Obsidian 开启 nodeIntegrationInWorker,
+ * Worker 内 require('vm')/require('fs') 可用);vitest/本地 Node 走 worker_threads。
+ * 两种环境下 Worker 消息协议完全一致(run/progress/log/done)。
+ */
+export interface SandboxWorkerHandle {
+	postMessage(msg: unknown): void;
+	terminate(): void;
+	onMessage(handler: (msg: WorkerInboundMessage) => void): void;
+	onError(handler: (message: string) => void): void;
+	onExit(handler: () => void): void;
+}
+
+/**
+ * 适配浏览器 Web Worker(DOM addEventListener 协议)为统一句柄。
+ *
+ * @param worker - 浏览器 Worker 实例
+ * @param objectUrl - 创建该 Worker 的 Blob URL;terminate 时回收(每次 run 一个 URL,防泄漏)
+ */
+export function wrapBrowserWorker(worker: Worker, objectUrl?: string): SandboxWorkerHandle {
+	return {
+		postMessage: (msg) => worker.postMessage(msg),
+		terminate: () => {
+			worker.terminate();
+			if (objectUrl) URL.revokeObjectURL(objectUrl);
+		},
+		// 关键路径:浏览器 message 事件载荷包在 MessageEvent.data 里,此处解包
+		onMessage: (h) => worker.addEventListener('message', (e) => h(e.data as WorkerInboundMessage)),
+		// 脚本自身错误由 worker 内 vm 捕获后经 done 回传;此处仅兜底 worker 加载失败/harness 崩溃
+		onError: (h) => worker.addEventListener('error', (e) => h(e.message || 'worker 异常')),
+		// 浏览器 Worker 无 exit 事件;终止均由本端先 finish 后 terminate 发起,无需兜底
+		onExit: () => {},
+	};
+}
+
+/** 适配 Node worker_threads(EventEmitter 协议)为统一句柄 — vitest/本地环境路径 */
+function wrapNodeWorker(worker: NodeWorker): SandboxWorkerHandle {
+	return {
+		postMessage: (msg) => worker.postMessage(msg),
+		// 关键路径:worker_threads terminate 返回 Promise,void 抑制 floating-promise
+		terminate: () => { void worker.terminate(); },
+		onMessage: (h) => worker.on('message', (msg) => h(msg as WorkerInboundMessage)),
+		onError: (h) => worker.on('error', (err: Error) => h(err.message)),
+		onExit: (h) => worker.on('exit', () => h()),
+	};
+}
+
+/**
+ * 默认 Worker 工厂 — 按运行环境自动选择:
+ * - 浏览器(Obsidian 渲染进程):Blob URL 起 Web Worker(同 embedding worker 模式,ADR-006);
+ *   Node 分支的双重守卫:全局 Worker 与 URL.createObjectURL 任一缺失即视为 Node 环境
+ *   (Node 的 URL 无 createObjectURL)。
+ * - Node(vitest/本地):worker_threads eval 模式加载内联代码。
+ */
+const defaultCreateWorker: WorkerFactory = (code) => {
+	if (typeof Worker !== 'undefined' && typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
+		const url = URL.createObjectURL(new Blob([code], { type: 'application/javascript' }));
+		return wrapBrowserWorker(new Worker(url), url);
+	}
+	return wrapNodeWorker(new NodeWorker(code, { eval: true }));
+};
 
 /** deferred(promise + resolve)— pending 轮次管理的等待句柄 */
 interface Deferred<T> {
@@ -56,10 +130,10 @@ const withResolvers = <T>(): Deferred<T> =>
 
 /** 挂起的运行:窗口到点且有心跳 → worker 不杀,deferred 等待 continueRun/killRun 的后续轮次 */
 interface PendingRun {
-	worker: Worker;
+	worker: SandboxWorkerHandle;
 	/** 当前轮的等待句柄;每次 stillRunning 轮次推进时换新 */
 	deferred: Deferred<ScriptRunOutcome>;
-	/** 终态收尾(清定时器 + resolve 当前轮 + 清 pending) */
+	/** 终态收尾(清定时器 + resolve 当前轮 + terminate worker + 清 pending) */
 	finish: (outcome: ScriptRunOutcome) => void;
 	/** 重置无心跳窗口定时器(continueRun 调用;startMs/lastBeat 均不重置) */
 	rearmWindow: () => void;
@@ -69,7 +143,8 @@ interface PendingRun {
  * Skill 脚本沙箱运行器。
  *
  * 设计要点(ADR-017 v1.1):
- * - 每次执行 new Worker(code, { eval: true }),跑完即弃;死循环由 terminate() 毫秒级击杀
+ * - 每次执行新起一次性 Worker(Obsidian 渲染进程:Blob URL 浏览器 Web Worker;Node:worker_threads eval),
+ *   终态(ok/scriptError/timeout/killed/crashed)即 terminate 回收;死循环由 terminate() 毫秒级击杀
  * - 并发 = 1:内部 promise 链串行,防 LLM 连环调用起一堆 Worker
  * - 超时按心跳分类:窗口到点有心跳 → stillRunning 挂起(worker 不杀),LLM 决定 continueRun/killRun;
  *   零心跳满窗口(kind='stalled')或累计超绝对上限(kind='maxDuration')→ 自动击杀
@@ -89,13 +164,13 @@ export class SkillScriptSandbox {
 	/** 串行链 — 并发 = 1(ADR-017 兜底三件套之一) */
 	private chain: Promise<unknown> = Promise.resolve();
 	/** 当前活跃 worker(terminateAll 目标;含挂起中的 worker) */
-	private activeWorker: Worker | null = null;
+	private activeWorker: SandboxWorkerHandle | null = null;
 	/** 挂起的运行(stillRunning 后);全局单个 — 不做后台多脚本并行 */
 	private pending: PendingRun | null = null;
 
 	constructor(
 		private readonly workerCode: string,
-		private readonly createWorker: WorkerFactory = (code) => new Worker(code, { eval: true }),
+		private readonly createWorker: WorkerFactory = defaultCreateWorker,
 	) {}
 
 	/** 串行执行一次脚本;前序未完成时自动排队;挂起中的旧脚本会被隐含终止 */
@@ -132,20 +207,18 @@ export class SkillScriptSandbox {
 
 	/** 插件 unload 时击杀活跃 Worker(孤儿线程兜底);挂起轮次同步 resolve killed,不悬空 */
 	terminateAll(): void {
-		// 关键路径:pending 先 finish(killed) 再 terminate,防 exit 兜底覆盖 outcome
+		// 关键路径:pending 先 finish(killed,内含 terminate),防 exit 兜底覆盖 outcome
 		if (this.pending) this.killPending();
-		// 关键路径:terminate 返回 Promise,void 抑制 floating-promise;失败无需善后(线程已死)
-		void this.activeWorker?.terminate();
+		this.activeWorker?.terminate();
 		this.activeWorker = null;
 	}
 
-	/** 隐含终止挂起的运行(新 run 进入 / unload):terminate + resolve killed */
+	/** 隐含终止挂起的运行(新 run 进入 / unload):finish(killed) 内含 terminate 回收 */
 	private killPending(): void {
 		const p = this.pending;
 		if (!p) return;
-		// 先 finish(killed) 再 terminate:finish 置 done 后,旧 worker 的 exit 兜底不会二次 resolve
+		// finish 置 done 后 terminate;旧 worker 的 exit 兜底因 done=true 不会二次 resolve
 		p.finish({ status: 'killed' });
-		void p.worker.terminate();
 	}
 
 	private runExclusive(req: ScriptRunRequest): Promise<ScriptRunOutcome> {
@@ -177,6 +250,9 @@ export class SkillScriptSandbox {
 				if (this.pending?.worker === worker) this.pending = null;
 				if (this.activeWorker === worker) this.activeWorker = null;
 				resolveCurrent(outcome);
+				// 关键路径(修复):一次性 Worker 终态即回收 — 旧实现 ok/scriptError 后不 terminate,
+				// 每次成功执行都漏一个闲置线程(浏览器 Worker 与 worker_threads 均如此)。
+				worker.terminate();
 			};
 
 			// ==================== 巡检:软超时警告 + stalled 判死 + 绝对上限 ====================
@@ -233,7 +309,7 @@ export class SkillScriptSandbox {
 			};
 
 			// ==================== worker 消息与兜底 ====================
-			worker.on('message', (msg: { type?: string; message?: string; level?: string; result?: { ok: boolean; result?: string; error?: string; stack?: string } }) => {
+			worker.onMessage((msg) => {
 				if (done) return;
 				lastBeat = Date.now();
 				if (msg?.type === 'progress') {
@@ -247,9 +323,10 @@ export class SkillScriptSandbox {
 					finish(r.ok ? { status: 'ok', result: r.result ?? '' } : { status: 'scriptError', error: r.error ?? 'unknown', stack: r.stack });
 				}
 			});
-			worker.on('error', (err: Error) => finish({ status: 'crashed', detail: err.message }));
-			// 关键路径:exit 兜底 — terminate/崩溃后保证 Promise 不悬空(ADR-017 兜底三件套之三)
-			worker.on('exit', () => {
+			worker.onError((message) => finish({ status: 'crashed', detail: message }));
+			// 关键路径:exit 兜底 — terminate/崩溃后保证 Promise 不悬空(ADR-017 兜底三件套之三);
+			// 浏览器 Worker 无 exit 事件(适配层空实现),Node worker_threads 保留此兜底
+			worker.onExit(() => {
 				if (!done) finish({ status: 'crashed', detail: 'worker exited unexpectedly' });
 			});
 

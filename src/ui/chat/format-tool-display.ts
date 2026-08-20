@@ -38,6 +38,7 @@ const TOOL_NAME_KEY: Record<string, StringKey> = {
 	open_settings: 'tool.name.open_settings',
 	get_app_config: 'tool.name.get_app_config',
 	update_app_config: 'tool.name.update_app_config',
+	run_skill_script: 'tool.name.run_skill_script',
 };
 
 /**
@@ -146,6 +147,11 @@ export function formatToolDisplayName(
 		// 关键路径:open_settings 模板无占位符,直接返回本地化名
 		case 'open_settings':
 			return tNow('tool.name.open_settings');
+		case 'run_skill_script': {
+			const script = extractScriptName(obj.scriptPath);
+			const key = TOOL_NAME_KEY[name];
+			return script && key ? tNow(key, { script }) : name;
+		}
 		default:
 			return name;
 	}
@@ -168,4 +174,14 @@ function extractPath(raw: unknown): string {
 function extractShort(raw: unknown): string {
 	if (typeof raw !== 'string' || raw.length === 0) return '';
 	return raw.length > 30 ? raw.slice(0, 30) + '…' : raw;
+}
+
+/**
+ * 提取脚本显示名 — 取 scriptPath 的 basename(如 "scripts/slow-task.js" → "slow-task.js"),
+ * 截断到 30 字符。用于 run_skill_script 工具展示名。
+ */
+function extractScriptName(raw: unknown): string {
+	if (typeof raw !== 'string' || raw.length === 0) return '';
+	const base = raw.split('/').pop() || raw;
+	return base.length > 30 ? base.slice(0, 30) + '…' : base;
 }

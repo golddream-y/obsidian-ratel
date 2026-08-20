@@ -255,6 +255,7 @@ const chatZh: ChatStrings = {
   'chat.thinking': '思考过程…',
   'chat.thinking.done': '思考过程',
   'chat.tool.executing': '执行中…',
+  'chat.tool.executingScript': '执行 {script}…',
   'chat.tool.params': '参数',
   'chat.tool.result': '结果',
   'chat.tool.noResult': '(无结果)',
@@ -379,6 +380,7 @@ const toolNameZh: ToolNameStrings = {
   'tool.name.open_settings': '打开设置面板',
   'tool.name.get_app_config': '读取应用配置',
   'tool.name.update_app_config': '修改应用配置',
+  'tool.name.run_skill_script': '运行脚本 {script}',
   'tool.name.mcp': 'MCP · {server} · {tool}',
 };
 

@@ -15,7 +15,9 @@ import { TOOL_DETAIL_LIST_PREVIEW } from './tool-detail-model';
 export function renderToolDetail(model: ToolDetailModel): string {
 	switch (model.kind) {
 		case 'busy':
-			return tNow('chat.tool.executing');
+			return model.label
+				? tNow('chat.tool.executingScript', { script: model.label })
+				: tNow('chat.tool.executing');
 		case 'error':
 			return model.message;
 		case 'empty':
@@ -45,7 +47,7 @@ export function renderToolDetail(model: ToolDetailModel): string {
 export function metaShortFromModel(model: ToolDetailModel): string {
 	switch (model.kind) {
 		case 'busy':
-			return '…';
+			return model.label ? `… ${model.label}` : '…';
 		case 'error':
 			return tNow('chat.tool.failed');
 		case 'listing': {

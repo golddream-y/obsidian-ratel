@@ -8,7 +8,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import * as esbuild from 'esbuild';
 import { fileURLToPath } from 'node:url';
-import { SkillScriptSandbox } from './skill-script-sandbox';
+import { SkillScriptSandbox, wrapBrowserWorker } from './skill-script-sandbox';
 
 /**
  * 现场把真实 worker 入口打成 CJS 字符串(与 esbuild.config.mjs 产物同构)。
@@ -239,5 +239,72 @@ describe('SkillScriptSandbox 心跳分类超时状态机(ADR-017 v1.1)', () => {
 		const pending = sandbox.continueRun();
 		sandbox.terminateAll();
 		expect(await pending).toEqual({ status: 'killed' });
+	});
+});
+
+// ==================== 浏览器 Worker 适配(Obsidian 渲染进程路径) ====================
+
+/**
+ * 浏览器 Worker 协议桩 — addEventListener / MessageEvent 风格,
+ * 模拟 Obsidian Electron 渲染进程的 Web Worker(nodeIntegrationInWorker)消息边界。
+ * 关键路径:Obsidian 里 node:worker_threads 不可用(V8 platform 限制),生产走浏览器 Worker;
+ * 此桩钉住 wrapBrowserWorker 的协议胶水(e.data 解包 / error 映射 / 终态回收)。
+ */
+class FakeBrowserWorker {
+	private listeners = new Map<string, Array<(e: unknown) => void>>();
+	posted: unknown[] = [];
+	terminated = false;
+	addEventListener(type: string, cb: (e: unknown) => void) {
+		const list = this.listeners.get(type) ?? [];
+		list.push(cb);
+		this.listeners.set(type, list);
+	}
+	postMessage(msg: unknown) {
+		this.posted.push(msg);
+	}
+	terminate() {
+		this.terminated = true;
+	}
+	/** 测试驱动:以浏览器事件语义派发(worker → 主线程);message 包 MessageEvent.data,error 裸载荷 */
+	emit(type: 'message' | 'error', payload: unknown) {
+		for (const cb of this.listeners.get(type) ?? []) {
+			cb(type === 'message' ? { data: payload } : payload);
+		}
+	}
+}
+
+describe('SkillScriptSandbox 浏览器 Worker 适配(Obsidian 渲染进程路径)', () => {
+	it('浏览器协议 - message 解包 e.data - done 正常返回 - 终态后 worker 被 terminate 回收', async () => {
+		const fake = new FakeBrowserWorker();
+		const sandbox = new SkillScriptSandbox('code', () => wrapBrowserWorker(fake as unknown as Worker));
+		const pending = sandbox.run({ code: 'x', args: [], allowedDirs: [], timeoutMs: 5_000 });
+		// 让 run 的微任务链先跑:postMessage({type:'run'}) 已发出
+		await new Promise((r) => setTimeout(r, 0));
+		expect(fake.posted[0]).toMatchObject({ type: 'run', code: 'x' });
+		fake.emit('message', { type: 'done', result: { ok: true, result: '"ok"' } });
+		expect(await pending).toEqual({ status: 'ok', result: '"ok"' });
+		// 关键路径(修复):一次性 worker 终态必须 terminate,否则线程闲置泄漏
+		expect(fake.terminated).toBe(true);
+	});
+
+	it('浏览器协议 - progress 心跳更新 lastProgress - error 事件映射 crashed', async () => {
+		const fake = new FakeBrowserWorker();
+		const sandbox = new SkillScriptSandbox('code', () => wrapBrowserWorker(fake as unknown as Worker));
+		// 关键路径:窗口 300ms,发完心跳即到点 → stillRunning(不真等 5s)
+		const pending = sandbox.run({ code: 'x', args: [], allowedDirs: [], timeoutMs: 300 });
+		await new Promise((r) => setTimeout(r, 0));
+		fake.emit('message', { type: 'progress', message: '已处理 3/45' });
+		// 窗口到点(有心跳)→ stillRunning,worker 不 terminate
+		fake.emit('message', { type: 'progress', message: '已处理 4/45' });
+		const out = await pending;
+		expect(out.status).toBe('stillRunning');
+		if (out.status !== 'stillRunning') return;
+		expect(out.lastProgress).toBe('已处理 4/45');
+		expect(fake.terminated).toBe(false);
+		// 挂起中 error → crashed 且 worker 回收
+		const next = sandbox.continueRun();
+		fake.emit('error', { message: 'harness boom' });
+		await expect(next).resolves.toMatchObject({ status: 'crashed', detail: 'harness boom' });
+		expect(fake.terminated).toBe(true);
 	});
 });
