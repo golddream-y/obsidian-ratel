@@ -19,6 +19,7 @@
 
 | ID | 文件 | 状态 | 创建日期 | 备注 |
 |---|---|---|---|---|
+| S-ECOSYSTEM | [2026-08-20-ecosystem-management-design.md](specs/2026-08-20-ecosystem-management-design.md) | Active | 2026-08-20 | 插件生态管理(PRD 支柱 C):商店探索/安装/配置/更新/回滚;EcosystemChange 变更日志为核心;需 ADR-018(网络出站扩展);plan 待写 |
 | S-TASK | [2026-08-19-agent-task-store.md](specs/2026-08-19-agent-task-store.md) | Active | 2026-08-19 | Agent 任务机制(task_plan/落盘恢复/GC/全局单活);从 S-EVOLUTION Phase C 摘出,通用基建独立排期;plan 待写 |
 
 
