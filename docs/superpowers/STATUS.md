@@ -20,7 +20,7 @@
 | ID | 文件 | 状态 | 创建日期 | 备注 |
 |---|---|---|---|---|
 | S-ECOSYSTEM | [2026-08-20-ecosystem-management-design.md](specs/2026-08-20-ecosystem-management-design.md) | Active | 2026-08-20 | 插件生态管理(PRD 支柱 C):商店探索/安装/配置/更新/回滚;EcosystemChange 变更日志为核心;需 ADR-018(网络出站扩展);plan 待写 |
-| S-TASK | [2026-08-19-agent-task-store.md](specs/2026-08-19-agent-task-store.md) | Active | 2026-08-19 | Agent 任务机制(task_plan/落盘恢复/GC/全局单活);从 S-EVOLUTION Phase C 摘出,通用基建独立排期;plan 待写 |
+| S-GOAL | [2026-08-22-agent-goal-mode.md](specs/2026-08-22-agent-goal-mode.md) | Active | 2026-08-22 | Agent 目标模式(意图+完成标准+预算,动态工作流续跑);取代 S-TASK(archive/S-TASK/);plan 待写 |
 
 
 ---
@@ -47,12 +47,13 @@
 
 ## Future execution queue(按顺序)
 
-1. **S-TASK**(task_plan / 落盘恢复 / GC)— spec 已定,plan 待写
+1. **S-GOAL**(goal 模式)— spec 已定,plan 待写;成果沉淀依赖写侧 `append_to_daily`,建议与写侧轻量 spec 同版本推进
 2. 候选(无 spec,重启时新开):update_frontmatter / Write Gate / append_to_daily(S-EVOLUTION 写侧,见 archive/S-EVOLUTION/)  
+3. S-ECOSYSTEM(差异化主打,动工前先确认商店审核口径 + 立 ADR-018)
 
 
 ---
 
 ## 已归档
 
-见 [ARCHIVE.md](ARCHIVE.md) — 含按月统计图与全部归档记录(64 条 / 55 目录)。
+见 [ARCHIVE.md](ARCHIVE.md) — 含按月统计图与全部归档记录(65 条 / 56 目录)。
