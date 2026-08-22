@@ -2,6 +2,7 @@
 
 > 日期: 2026-08-22
 > 修订: 2026-08-22 **v1.1** — 按外部评审修订:补 session 占用、grant 白名单、打断状态机(对齐现网 AbortSignal)、锚定 ephemeral 注入通道、预算闭环等 13 项
+> 修订: 2026-08-22 **v1.2** — 4.11 扩为五面 UI 状态×界面矩阵(UserStatus chip / StatusStrip 三态 / 继续 chip / create 可编辑 Modal / 设置页区块),补计轮语义(4.4)、停止≠暂停(4.6)、软上限回合后检查(4.7)
 > 状态: Active
 > Spec ID: **S-GOAL**
 > 取代: [S-TASK](../archive/S-TASK/2026-08-19-agent-task-store.md)(未实施即被取代,继承其合理内核)
@@ -207,12 +208,53 @@ interface AgentGoal {
 | cancel | ask | 终态变更需确认 |
 | complete | ask(仅自检型) | predicate 型由 runner 收口,模型调用直接拒绝 |
 
-### 4.11 UI 与 i18n
+### 4.11 UI 设计(状态 × 界面矩阵)
 
-- **状态条(现 StatusStrip)**:复用忙态文案通道(评审 Important 11 采纳,原 work-bar 已并入 StatusStrip)——goal 推进中显示「目标:<objective> · 步 x/y」;停止按钮;待归档/未完成提示
-- chat 协商卡与进度卡、goal 用量显示
-- 本轮动态步骤明细若做,是**新的轻量步骤条组件**(不复用不存在的 work-bar),plan 阶段单独估算,可降级为 v1.1 不做
-- 全部字符串走 `src/i18n/zh.ts` / `en.ts`,新增 goal namespace;工具显示名友好化(如「推进目标:补全 frontmatter」)
+现网事实约束:`StatusLine` 整行点击 = 开诊断抽屉(goal 忙态**不改**点击语义);停止复用现有 `abortActiveGeneration` 按钮;设置页为 TS 构建函数模式(`diagnostics-setting-page.ts` 先例)。
+
+**面 1 · Obsidian 状态栏(UserStatus,全局常驻;零目标不显示,状态栏空间稀缺只出一条 chip)**
+
+| 条件(按优先级取一) | 文案 | 点击 |
+|---|---|---|
+| blocked ≥ 1 | ⛔ 目标受阻 N | 打开 chat |
+| active 存在 | 🎯 进行 1 · 排队 M · 暂停 P | 打开 chat |
+| 仅 paused/pending | 🎯 目标暂停 P · 排队 M | 打开 chat |
+| 无未完成但待归档 ≥ 1 | 🎯 K 个已完结待归档 | 打开设置页 Goal 区块 |
+
+**面 2 · chat StatusStrip(忙态行,仅本会话绑定且 chat 已开)**
+
+| 时机 | busyOverride 文案 | 点色 |
+|---|---|---|
+| 回合执行中 | 🎯 \<objective 截断\> · 回合 r/R · 步 s/S | busy |
+| 打断后等待输入 | 🎯 目标挂起,等待你的输入 | busy |
+| blocked | ⛔ 目标受阻:\<reason 截断\> | error |
+
+停止 = 复用现有生成停止按钮,不新增控件;整行点击保持开抽屉。
+
+**面 3 · 输入区「继续」chip**
+
+- 显示条件:active 绑定本会话且未在跑,或 pending 存在
+- 文案:「▶ 继续推进:\<objective 截断\>」;active 绑定**其他**会话时显示「▶ 接管并继续」,点击先 confirm 转移绑定
+- 点击 → `ask(sessionId, composeContinueMessage(), { goalRound: true })`
+
+**面 4 · 动作 Modal(复用 confirm-modal 基建,即「协商卡」的落地形态)**
+
+- **create**:可编辑表单——objective / criteriaText(textarea)、predicate glob + property(可选)、maxRounds(number)、grant globs;底部预估行「将授权写入 ~N 个文件」;主按钮按上下文 [创建并开始] / [仅排队](已有 active 时)
+- **resume**:只读展示 objective + progressNote + grant → [继续推进]
+- **cancel**:[确认放弃];**complete(仅自检型)**:证据清单 → [确认完成]
+- **pause**:无 Modal(安全方向直接执行)
+
+**面 5 · 设置页 Goal 区块(`ui/settings/goal-setting-page.ts`,仿 diagnostics 先例)**
+
+- 列表行:状态点色 · objective 截断 · 轮次 r/R · 用量(in/out tokens)· 更新时间;blocked 行展开显示 reason
+- 行内操作(**直走 store API,不经模型**——撤权的安全非对话入口):active→[暂停];paused/blocked→[恢复][放弃];终态超期→[归档]
+- 待归档汇总行 + [全部归档]
+
+**通知(Notice)**:corrupt 隔离必发;completed 收口发一条简短(✅ 目标完成 · 用量);blocked 不发 Notice(Strip + chat 已覆盖,避免打扰升级)。
+
+**明确不做(v1)**:诊断抽屉内 goal 区块(v1.2 候选——抽屉是「回合步骤明细」的天然归宿)、独立进度卡组件、状态栏多 chip。
+
+全部字符串走 `src/i18n/zh.ts` / `en.ts`,新增 goal namespace;工具显示名友好化(如「推进目标:补全 frontmatter」)。
 
 ---
 
