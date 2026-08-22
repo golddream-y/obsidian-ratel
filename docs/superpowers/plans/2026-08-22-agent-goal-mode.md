@@ -3,10 +3,11 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 >
 > **修订:** 2026-08-22 自审修订 — F1 usage 跨步累计(message.end 新增字段)、F2 成功写判定写死、F3 UserStatus/StatusStrip 两面区分、F4 现网优先级链说明、F5 拒裸 `*`、F6 迁移表枚举、F7 绑定悬空惰性比较。
+> **修订 2:** 2026-08-22 外审修订 — **C1 记账挂 `plugin.ask()` 尾部统一 finalizeRound**(闲聊/继续/同回合续写全覆盖,runner 不再是唯一入口);锚定 provider 热读(每轮 toMessages 现查 store,不拍死快照);composeRoundMessage 缩为可见短句;协商卡=动作内 Modal 入偏差表;types.ts / tests 路径补齐;evaluateFrontmatterAll 钉死外观方法名。
 
 **Goal:** 落地 S-GOAL v1.1 — goal 落盘存储(单活 + 会话绑定 + 损坏隔离)、目标级 grant 白名单权限、锚定 ephemeral 注入、`manage_goal` 工具面、GoalRunner 回合编排(usage 累加 / predicate 收口 / 无进展守卫 / 预算闭环)、StatusStrip 与 onload 集成。
 
-**Architecture:** 四层分离 — ① `goal-store.ts` 纯存储(原子写 tmp+rename,单活仲裁,corrupt 隔离,可直测);② `goal-guard.ts` 纯函数守卫(无进展主信号 + 三层预算,无 IO 可直测);③ 权限与注入两个薄钩子(`goal-grant.ts` 插入 `resolveToolPermission` deny 检查之后;injector 注册 `goal` 段,复用 S-SR-LAYERING 通道);④ `goal-runner.ts` 回合编排,**包装 `plugin.ask()`** 而非另起循环——复用现有压缩重试 / 权限门 / 钩子 / session 保存管线,消费 `AgentEvent` 流做记账与收口。
+**Architecture:** 四层分离 — ① `goal-store.ts` 纯存储(原子写 tmp+rename,单活仲裁,corrupt 隔离,可直测);② `goal-guard.ts` 纯函数守卫(无进展主信号 + 三层预算,无 IO 可直测);③ 权限与注入两个薄钩子(`goal-grant.ts` 插入 `resolveToolPermission` deny 检查之后;injector 注册 `goal` 段,复用 S-SR-LAYERING 通道);④ `goal-runner.ts` 回合记账与收口,**挂点在 `plugin.ask()` 尾部统一跑 `finalizeRound`**(外审 C1:闲聊、点「继续」、create 后同回合续写走的都是 ChatView→ask 直连,runner 若自成入口则记账全空)——ask 内消费自己 yield 的事件流做统计,收尾按计轮语义(spec 4.4)决定是否 roundsDone/校验/守卫/收口。
 
 **Tech Stack:** TypeScript strict / node:fs(promises)(主线程桌面端,goal 文件在 pluginDir)/ vitest / Svelte 5(仅 StatusStrip 文案与提示条)/ 无新 npm 依赖(glob 用现成 `globToRegex`)。
 
@@ -21,10 +22,11 @@
 | spec 原文 | 实际 | 原因 |
 |---|---|---|
 | 4.10 `manage_goal` 动作级 ask | 工具级默认 `allow` + 动作内 Modal | 通用权限门按工具名决策,无法动作级 ask;复用 `run_skill_script` 先例(P-SKILL-2:工具 allow + 工具内 TrustGate,避免双弹窗)。用户仍可在设置中把工具整体设为 ask/deny |
-| 4.4/4.5 runner 驱动回合 | runner 包装 `plugin.ask()` | ask 已含 overflow 压缩重试、权限、钩子、finally 落盘;另起循环必然复制这些管线 |
-| 4.8 predicate 数据源 | `metadataCache.frontmatter` | 千级库逐文件全文读不可行;经 ObsidianVault 外观取缓存 |
+| 4.4/4.5 runner 驱动回合 | 记账与收口挂在 `plugin.ask()` **尾部**统一跑(`finalizeRound`);无独立 runner 入口 | 外审 C1:用户「继续」/插话/create 同回合续写走 ChatView→ask 直连,不经过任何 runner;只有 ask 尾部是所有路径的必经点。计轮语义见 spec 4.4(显式续跑入口 或 发生 ≥1 次 grant 成功写入) |
+| 4.3 协商卡 / 4.11 进度卡(chat 卡片组件) | 协商 = `create` 动作内 Modal;进度 = StatusStrip 忙态文案 | 不做两套 chat 卡片组件;Modal 已能保证「先确认后落盘」,且复用 confirm-modal 基建(外审 Important 5) |
+| 4.8 predicate 数据源 | `metadataCache.frontmatter`,方法名钉死:`listMarkdownFiles()` + `getMetadata(path)` | 千级库逐文件全文读不可行;外观无「按 glob 扫 frontmatter」能力,用现有两方法组合(外审 Important 7) |
 | 4.11 本轮动态步骤条 | v1.1 降级不做,仅 StatusStrip 忙态 | spec 已预留降级;先验证核心循环,UI 明细条待核心稳定后评估 |
-| 4.7 单回合 token 软上限 | settings 字段就绪,默认 `0`(关) | 首版由 `maxSteps`(默认 50)硬顶兜底;字段与检查逻辑就位后开默认值 |
+| 4.7 单回合 token 软上限 | settings 字段就绪,默认 `0`(关);**开启时也只做回合结束后 endRound,不做 ask 中途截停** | `maxSteps` 在 loop 内能硬顶;token cap 若只在 ask 返回后检查则天然滞后——中途截停必须把 cap 传入 agentLoop,后置评估(外审 Important 4 / spec 4.7 已同步) |
 | 4.1 `GoalPredicate` 仅 frontmatter-all | 同左,`path-covered` 不实现 | 评审 Important 7 已删 |
 | 4.7 usage「自 message.end 真值累加」 | agent-loop `message.end` payload **新增可选跨步累计字段** `stepPromptTokens` / `stepCompletionTokens` | 现有 `promptTokens/completionTokens` 取自 `lastUsage`,每步覆盖、只余最后一步(F1);直接累加会系统性少算 completion。新增字段向后兼容,旧字段不动;runner 优先读新字段,缺失时降级旧字段并 devLogger.warn |
 | 现网优先级链说明 | 会话 grant 实际位于破坏性检查之前(`grants.has` 先返回),本 plan **不改变**该既有行为 | spec 4.6 的链是目标态文档;goal grant 与破坏性的相对顺序因白名单排除而恒等价,无需重排现有代码(F4) |
@@ -41,13 +43,14 @@ src/
   core/goal-guard.test.ts              [新] 剩余集合不降 → blocked / 写入计数零 → blocked / 预算触达动作
   core/goal-grant.ts                   [新] grant 白名单评估:工具白名单 × glob × 在场条件
   core/goal-grant.test.ts              [新] grant × deny × 破坏性 × MCP × 跨会话矩阵 / 裸 ** 拒绝
-  core/goal-runner.ts                  [新] 回合编排:包装 ask、事件记账、predicate 校验、runner 收口
-  core/goal-runner.test.ts             [新] 假 ask 流:usage 累加 / CANCELLED 不计轮 / predicate 收口唯一 / 守卫触发
+  core/goal-runner.ts                  [新] finalizeRound(记账/计轮/predicate 收口/守卫)+ composeGoalAnchor + evaluateFrontmatterAll
+  core/goal-runner.test.ts             [新] 假事件流:usage 跨步累加 / 计轮语义(显式入口 vs 零写入插话)/ CANCELLED / predicate 收口唯一 / 守卫触发
   core/tool-permissions.ts             [改] resolveToolPermission +goalGrantCheck 参数(deny 后插入);summarizeToolCall +manage_goal 分支
   core/tool-permissions.test.ts        [新/改] grant 插入点顺序测试
-  core/context-manager.ts              [改] +goalAnchor 字段 + setGoalAnchor();injector 注册 'goal' 源
-  core/context-manager.test.ts         [改] 锚定段在 toMessages / 不在 getTranscript / 投影后仍在
+  core/context-manager.ts              [改] +goalAnchorProvider(getter)注入;injector 注册 'goal' 源,build 每轮现读
+  core/context-manager.test.ts         [改] 锚定段在 toMessages / 不在 getTranscript / 投影后仍在 / provider 热读(progressNote 更新后锚定随之变)
   core/agent-loop.ts                   [改] message.end payload +stepPromptTokens / stepCompletionTokens(跨步累计,向后兼容,F1)
+  types.ts                             [改] AgentEvent message.end payload 类型扩展(F1 新字段;ChatView 读旧字段不受影响)
   prompts/injection/ids.ts             [改] INJECTION_SOURCE_IDS +'goal'
   tools/manage-goal.ts                 [新] 单工具多 action(create/update/list/pause/resume/cancel/complete)
   tools/manage-goal.test.ts            [新] 动作×确认矩阵 / create 本地兜底 / predicate 型 complete 拒绝 / glob 校验
@@ -55,11 +58,13 @@ src/
   prompts/sections.ts                  [改] +manage_goal description / param sections
   prompts/defaults/zh.ts               [改] +新 section 默认文案
   settings.ts                          [改] +goalMaxRounds / goalRoundTokenSoftCap / goalArchiveDays;toolPermissions 默认 +manage_goal:'allow'
-  settings.test.ts                     [改] 默认值迁移
+  settings.ts                          [改] +goalMaxRounds / goalRoundTokenSoftCap / goalArchiveDays;toolPermissions 默认 +manage_goal:'allow'
+  tests/settings.test.ts               [改] 默认值迁移(注意:settings 测试在 tests/ 下,非 src/ 同目录——外审 Important 7)
+  tests/settings-migration.test.ts     [改] 旧 data.json 无新字段时的迁移
   i18n/types.ts                        [改] +GoalI18n namespace
   i18n/zh.ts / en.ts                   [改] +goal namespace 全部 key
-  ui/chat/ChatView.svelte              [改] busyOverride +goal 忙态;onload 未完成目标提示条;停止按钮复用现有 abort 通道
-  main.ts                              [改] 装配 GoalStore/GoalRunner;onload 扫描(corrupt 隔离 + Notice);注册工具;ask() 闭包接 grant 与锚定
+  ui/chat/ChatView.svelte              [改] busyOverride +goal 忙态;「继续」入口传 goalRound 标志;停止按钮复用现有 abort 通道
+  main.ts                              [改] 装配 GoalStore/GoalRunner;onload 扫描(UserStatus 提示 + corrupt 隔离 Notice);注册工具;ask() 闭包接 grant 与锚定 provider;**ask() 尾部挂 finalizeRound**(外审 C1)
 tests/
   integration/goal-round.test.ts       [新] 端到端:建目标→假回合→收口/守卫(视 integration 基建成本,可降为 runner 大用例)
 ```
@@ -89,47 +94,52 @@ export async function resolveToolPermission(
 }
 ```
 
-**2. 锚定注入(ephemeral 通道,复用 S-SR-LAYERING injector):**
+**2. 锚定注入(ephemeral 通道,复用 S-SR-LAYERING injector;provider 热读):**
 
 ```typescript
 // context-manager.ts 构造器内(与 env/memory/skills 并列):
 this.injector.register({
 	id: 'goal',
-	build: () => this.goalAnchor || null,
+	// 关键路径(外审 Important 2):build 每轮 toMessages() 都会执行 → 每次现查 provider,
+	// 模型中途 update(progressNote) 后,同 ask 后续步骤的锚定立即反映新游标;禁止拍死快照
+	build: () => this.goalAnchorProvider?.() || null,
 	ownBudgetBytes: 2048, // 兜底;composeGoalAnchor 内部已自限
 });
-/** 设置 goal 锚定段 — 每轮 toMessages() 现拼,不入 session.messages(D6) */
-setGoalAnchor(text: string): void { this.goalAnchor = text; }
+/** 注入 goal 锚定 provider — getter 每轮现读,不入 session.messages(D6) */
+setGoalAnchorProvider(provider: () => string | null): void { this.goalAnchorProvider = provider; }
 ```
 
-锚定文本由 `composeGoalAnchor(goal)` 生成(objective + 完成标准 + progressNote 三行),在 `main.ask()` 入口设置:`goalStore.getBoundActive(sessionId)` 命中时注入,否则置空串。**禁止**任何往 `session.messages` 塞锚定消息的路径(D6,评审 Critical 4)。
+`main.ask()` 装配:`ctx.setGoalAnchorProvider(() => { const g = goalStore.getBoundActive(sessionId); return g ? composeGoalAnchor(g) : null; })`。**禁止**任何往 `session.messages` 塞锚定消息的路径(D6,评审 Critical 4)。
 
-**3. GoalRunner 与 ask 的关系(回合 = 一次 ask 调用):**
+**3. 记账与收口(finalizeRound 挂 plugin.ask() 尾部,外审 C1):**
+
+ask 是所有路径(ChatView 直连 / 「继续」/ create 同回合续写)的必经点——它在 yield 事件给调用方的同时自己也在消费,天然能统计:
 
 ```
-startRound(goal, signal):
-  roundMsg = composeRoundMessage(goal)   // 指令:从库重推导剩余 → 执行 → 末尾 update(progress)
-  for await (ev of plugin.ask(goal.activeSessionId, roundMsg, signal)):
-    ev.type === 'tool.result'
-      && GOAL_GRANTABLE_TOOLS.has(ev.name)
-      // 关键路径(F2):成功判定写死 —— 失败工具的 result 是 'Error: ' 前缀字符串;
-      // 被权限拒绝的工具不产生 tool.result(agent-loop 拒绝分支 continue 前无 yield),天然不计入
-      && !(typeof ev.result === 'string' && ev.result.startsWith('Error:'))
-      → writesThisRound++
-    ev.type === 'message.end'
-      // 关键路径(F1):优先读新增的跨步累计字段(见偏差表);旧字段仅最后一步的值,只作降级回退
-      → usage += {promptTokens: ev.stepPromptTokens ?? ev.promptTokens,
-                  completionTokens: ev.stepCompletionTokens ?? ev.completionTokens}
-    ev.type === 'error' && code === 'CANCELLED' → interrupted = true
-  回合收尾(仅 !interrupted):
-    roundsDone++ → 落盘
-    predicate 型 → evaluateFrontmatterAll():
-      通过 → runner 收口 complete(status=completed, 附证据)   // D10 单一收口
-      未过 → goal-guard.evaluateNoProgress(...) → blocked? 继续
-    自检型 → 不收口,等模型提议 complete(工具内 Modal)
+// main.ask() 内部,agentLoop 的 for-await 结束后、generator 返回前:
+await this.goalRunner.finalizeRound({
+	sessionId,
+	signal,                       // 判断 CANCELLED
+	goalRoundFlag,                // 显式续跑入口传入(见下);普通 chat 为 false
+	collected: { grantWrites, stepUsage }, // ask 在 yield 循环中顺手统计(F1/F2 规则见下)
+});
+
+// finalizeRound(goal-runner.ts):
+usage 累加落盘(每次都做,便宜且准确)
+计轮判定(spec 4.4):!aborted && (goalRoundFlag || grantWrites > 0)?
+  否 → 到此为止(零写入插话不计轮、不烧守卫)
+  是 → roundsDone++ → predicate 型跑 evaluateFrontmatterAll():
+        通过 → 收口 complete(status=completed, 附证据清单,D10 单一收口)
+        未过 → goal-guard.evaluateNoProgress(prev vs now) → blocked? 继续
+      自检型 → 不自动收口,等模型提议 complete(工具内 Modal)
 ```
 
-**4. 打断映射(spec 4.7,实现要点):** 三种打断全部复用现有 `AbortSignal` 路径(agent-loop 已在流中掐断);runner 捕获 `CANCELLED` 后**只落盘 usage,不改 status、不动 grant**;`roundsDone` 仅在本回合发生过 ≥1 次 grant 范围成功写入时 +1;progressNote 未 update 就保持旧值——下一轮锚定注入旧游标 + 指令「先重扫库核实」,不阻塞任何事(D9:库是真相)。**绑定悬空无需清理钩子**(F7):grant 判定与续跑入口都做 `goal.activeSessionId === 当前 sessionId` 惰性比较,切走后旧绑定自然失配即「不在场失效」,resume 时重新绑定覆盖。
+- **成功写计数(F2,写死)**:`ev.type === 'tool.result' && GOAL_GRANTABLE_TOOLS.has(ev.name) && !(typeof ev.result === 'string' && ev.result.startsWith('Error:'))`;被权限拒绝的工具不产生 tool.result(agent-loop 拒绝分支 continue 前无 yield),天然不计入
+- **usage(F1)**:优先读 `stepPromptTokens / stepCompletionTokens`(跨步累计新字段);缺失降级旧字段并 devLogger.warn
+- **goalRoundFlag 来源**:ChatView「继续」按钮与 onload 续跑提示传 true;普通输入框消息传 false。`plugin.ask()` 加第 4 可参 `opts?: { goalRound?: boolean }`(向后兼容)
+- create 动作内 activate 成功后,**当前这个 ask 必然含后续 grant 写入或自然结束**——若模型当回合写完,grantWrites > 0 命中计轮,predicate 收口照常触发(C1 场景闭环)
+
+**4. 打断映射(spec 4.7,实现要点):** 三种打断全部复用现有 `AbortSignal` 路径(agent-loop 已在流中掐断);`finalizeRound` 检测 `signal.aborted` 后**只落盘 usage,不改 status、不动 grant、不计轮、不触发守卫**;progressNote 未 update 就保持旧值——下一轮锚定注入旧游标 + 指令「先重扫库核实」,不阻塞任何事(D9:库是真相)。**绑定悬空无需清理钩子**(F7):grant 判定与续跑入口都做 `goal.activeSessionId === 当前 sessionId` 惰性比较,切走后旧绑定自然失配即「不在场失效」,resume 时重新绑定覆盖。
 
 **5. 损坏隔离与归档路径:** `goals/<id>.json` 解析失败 → `fs.rename` 到 `goals/corrupt/<id>.json` + Notice;归档 = rename 到 `goals/archive/`;两者都退出 `list()` 扫描。原子写沿用 index-manifest 的 tmp+rename 模式。
 
@@ -206,8 +216,8 @@ startRound(goal, signal):
 
 **Steps:**
 - [ ] `INJECTION_SOURCE_IDS` 追加 `'goal'`(注释注明:S-GOAL 复述锚定,ephemeral 不入 transcript)
-- [ ] ContextManager:+`private goalAnchor = ''`;构造器注册 injector 源(速查 2);`setGoalAnchor(text)` 公开方法
-- [ ] 测试:`setGoalAnchor('X')` 后 `toMessages()` 含 X 且位于 system 段;`getTranscript()` 不含 X;构造 compact markers 投影后 `toMessages()` 仍含 X;未设置时 buildSections 无 goal 段
+- [ ] ContextManager:+`private goalAnchorProvider?: () => string | null`;构造器注册 injector 源(速查 2);`setGoalAnchorProvider(provider)` 公开方法
+- [ ] 测试:provider 返回 'X' 时 `toMessages()` 含 X 且位于 system 段;`getTranscript()` 不含 X;构造 compact markers 投影后 `toMessages()` 仍含 X;**provider 热读**——先返回 'A' 断言出现,切换 provider 返回 'B' 后再次 `toMessages()` 含 B(模拟 progressNote 更新);未设置时 buildSections 无 goal 段
 
 **Verification:** `npx vitest run src/core/context-manager.test.ts`。
 
@@ -220,27 +230,26 @@ startRound(goal, signal):
 **Steps:**
 - [ ] settings:`goalMaxRounds=10`、`goalRoundTokenSoftCap=0`(0=关)、`goalArchiveDays=7`;`toolPermissions` 默认 +`manage_goal:'allow'`
 - [ ] schema skeleton:`action`(enum 七值)+ `goalId` + `objective` + `criteriaText` + `predicate{pathGlob,property}` + `maxRounds` + `grant[]` + `progressNote`
-- [ ] 工具实现:按速查 6 矩阵;Modal 复用现有 confirm-modal 基建;create 调 `goalStore.create` + 可选直接 `activate`
+- [ ] 工具实现:按速查 6 矩阵;Modal 复用现有 confirm-modal 基建;create 调 `goalStore.create` + `activate`(已有其他 active → store 层抛 `GOAL_ACTIVE_ELSEWHERE`,工具转 i18n 文案「目标正在另一场对话推进」——外审 Important 7 抛错点钉在 **store.activate**,resume 走同一路径)
 - [ ] `summarizeToolCall` +manage_goal 分支(`tNow('tool.goal.*', { action, objective 截断 })`)
-- [ ] i18n:GoalI18n namespace 全量 key(zh/en 同步,含 Modal 文案、Notice、Strip 文案)
+- [ ] i18n:GoalI18n namespace 全量 key(zh/en 同步,含 Modal 文案、Notice、Strip 文案、`goal.error.activeElsewhere`)
 - [ ] 测试:动作矩阵逐格 / create 兜底(criteria 空或同 objective → 抛错)/ complete 对 predicate 型抛错 / validateGrantGlobs 拒绝裸 `**`
 
 **Verification:** `npx vitest run src/tools/manage-goal.test.ts`;`npm run typecheck`。
 
 ---
 
-### Task 6:GoalRunner 回合编排
+### Task 6:GoalRunner — finalizeRound + 锚定/谓词助手
 
-**文件:** `src/core/goal-runner.ts` [新]、`src/core/goal-runner.test.ts` [新]
+**文件:** `src/core/goal-runner.ts` [新]、`src/core/goal-runner.test.ts` [新]、`src/core/agent-loop.ts` [改]、`src/types.ts` [改]
 
 **Steps:**
-- [ ] agent-loop(F1):`for` 循环内累加 `stepPromptTokensSum += delta.usage.promptTokens`、`stepCompletionTokensSum += delta.usage.completionTokens`;`message.end` payload 增加这两个可选字段(现字段不动,向后兼容)
-- [ ] `composeRoundMessage(goal): string` — 中文指令:目标重述 + 「从库重扫剩余工作,勿信旧游标」+ 末尾要求「回合结束前调 manage_goal(update) 写 progressNote」
-- [ ] `composeGoalAnchor(goal): string` — 三行锚定文本(≤2048 字节自限)
-- [ ] `evaluateFrontmatterAll(vault, pathGlob, property)` — 经 ObsidianVault 外观取 metadataCache,返回 `{ total, missing: string[] }`
-- [ ] `startGoalRound(deps, goalId, signal)` — 速查 3 流程;deps 注入 `ask` 函数(便于测试注入假流);事件消费按速查 3 写死的判定:`tool.result` 成功写计数(F2 规则)、`message.end` usage 累加(F1 新字段优先)、`CANCELLED` 置 interrupted
-- [ ] 收尾逻辑(速查 3):roundsDone/usage 落盘 → predicate 收口 → 无进展守卫 → blocked/继续
-- [ ] 测试(假 ask generator):usage 跨步累加正确(**多步流总和,非最后一步值**)/ CANCELLED 回合不计轮不触发守卫 / predicate 通过时 complete 恰好一次(D10)/ 守卫两轮零进展 → blocked 附原因 / 自检型不自动 complete / 失败写入(`Error:` 前缀)不计入成功写计数
+- [ ] agent-loop(F1):`for` 循环内累加 `stepPromptTokensSum += delta.usage.promptTokens`、`stepCompletionTokensSum += delta.usage.completionTokens`;`message.end` payload 增加这两个可选字段(现字段不动,向后兼容);`types.ts` 同步扩展 payload 类型;`tests/core/agent-loop.test.ts` 补断言(多步流 → 新字段为总和;既有「passes usage through to message.end」用例保持绿)
+- [ ] `composeGoalAnchor(goal): string` — 三行锚定文本(objective / 完成标准 / progressNote,≤2048 字节自限)
+- [ ] `composeContinueMessage(): string` — 可见用户句仅一句「继续推进当前目标」(外审 Important 6:长指令会经 addUserMessage 变成用户气泡);细则全部在 ephemeral 锚定段
+- [ ] `evaluateFrontmatterAll(vault, pathGlob, property)` — 方法名钉死(外审 Important 7):`vault.listMarkdownFiles()` 过滤 globToRegex 命中 → `vault.getMetadata(path)?.frontmatter?.[property]` 判存在,返回 `{ total, missing: string[] }`;**缓存滞后处理**:本回合刚写入的文件 metadataCache 可能未刷新——missing 中若含「本回合 grant 写过的路径」则以 readFile 头部轻量校验兜底(只查属性行,不全文),避免收口被缓存延迟卡住
+- [ ] `finalizeRound(input)` — 速查 3 流程:usage 落盘(每次)→ 计轮判定(goalRoundFlag || grantWrites>0)→ predicate 收口 / 守卫 / blocked
+- [ ] 测试(假事件流):usage 跨步累加正确(**多步流总和,非最后一步值**)/ 零写入插话不计轮不触发守卫 / goalRoundFlag 计轮 / CANCELLED 不计轮 / predicate 通过时 complete 恰好一次(D10)/ 守卫两轮零进展 → blocked 附原因 / 自检型不自动 complete / 失败写入(`Error:` 前缀)不计入成功写计数 / 刚写文件的 metadata 滞后走 readFile 兜底
 
 **Verification:** `npx vitest run src/core/goal-runner.test.ts`。
 
@@ -252,19 +261,20 @@ startRound(goal, signal):
 
 **Steps:**
 - [ ] main.onload:`goalStore = new GoalStore(pluginDir)` → 扫描(corrupt 隔离自动发生)→ 有未完成目标时经 **`UserStatus`(Obsidian 插件状态栏,F3:onload 时 ChatView 多半未开)** 提示「N 进行 / M 排队 / K 挂起 / J 受阻」,点击打开 chat
-- [ ] main.ask():闭包内 `setGoalAnchor`(绑定会话命中时)/ `toolPermissionCheck` 传入 `createGoalGrantCheck`
-- [ ] main:注册 `createManageGoalTool(...)`;装配 `GoalRunner` 单例;ChatView「继续」入口调 `runner.startGoalRound`(复用现有 AbortController 供停止按钮)
+- [ ] main.ask():`ctx.setGoalAnchorProvider(...)`(速查 2)/ `toolPermissionCheck` 传入 `createGoalGrantCheck` / **generator 收尾挂 `finalizeRound`**(速查 3);签名加第 4 可参 `opts?: { goalRound?: boolean }`
+- [ ] main:注册 `createManageGoalTool(...)`;装配 GoalRunner;ChatView「继续」按钮与 onload 续跑入口调 `ask(sessionId, composeContinueMessage(), signal, { goalRound: true })`(复用现有 AbortController 供停止按钮);普通输入框消息不传 flag
 - [ ] chat 内 StatusStrip busyOverride(仅回合进行中、chat 已打开):goal 推进文案「目标:<objective 截断> · 步 x/y」,优先级插入现有 deriveBusyOverride 链(indexing 之后);与 UserStatus 提示是**两个面**(F3),不复用同一通道
 - [ ] i18n 全部新 key 落位;无硬编码文案
 - [ ] 验证:`npm run typecheck` + `npm run svelte-check`;手动:`npm run link:vault` 链 Sandbox → Reload app without saving
 
 **Verification(手动脚本,Sandbox):**
-1. 对话「立个目标:把 projects/ 下所有笔记补 status 属性」→ 协商卡 → 确认 → 回合推进,Strip 显示目标忙态
-2. 回合中点停止 → 立即断;goal 仍 active;再「继续」→ 从库重扫接着干
-3. 执行中插话 → 打断 + 插话被正常回答
-4. `/new` 后 onload 提示未完成目标 → 点继续 → 绑定转移,grant 生效
-5. 另一会话尝试推进 → 收到「正在另一场对话推进」
-6. predicate 全满足 → 自动 completed + 证据;7 天后(改 goalArchiveDays=0 加速)出现归档提示
+1. 对话「立个目标:把 projects/ 下所有笔记补 status 属性」→ create Modal → 确认 → 同回合模型接着写;即使当回合写完也自动 completed(C1 场景)
+2. 点「继续」→ 短用户句上屏,回合推进,Strip 显示目标忙态
+3. 回合中点停止 → 立即断;goal 仍 active;再「继续」→ 从库重扫接着干
+4. 执行中插话(普通消息)→ 打断 + 插话被正常回答 + 不计轮
+5. `/new` 后 UserStatus 提示未完成目标 → 点继续 → 绑定转移,grant 生效
+6. 另一会话 create/resume 撞双活 → 「目标正在另一场对话推进」
+7. predicate 全满足 → 自动 completed + 证据;改 goalArchiveDays=0 加速验证归档提示
 
 ---
 
@@ -280,6 +290,7 @@ startRound(goal, signal):
 
 ## 自审
 
-- **风险最高点**:Task 3 权限插入点——已有测试必须零回归;插入顺序在 deny 之后有白名单前提保证等价性,测试矩阵覆盖。
-- **风险次高**:Task 6 runner 对 `CANCELLED` 的语义(不计轮、不触发守卫、usage 照记)——用假流显式用例钉死。
-- **明确不做**(本 plan):UI 步骤明细条、token 软上限默认开启、append_to_daily 依赖、定时触发。
+- **风险最高点**:C1 记账挂点——finalizeRound 必须在 ask 尾部对所有路径生效;计轮语义(flag ∨ grantWrites>0)用假事件流用例逐格钉死,防止「有 grant、没有回合」回归。
+- **风险次高**:Task 3 权限插入点——已有测试必须零回归;插入顺序在 deny 之后有白名单前提保证等价性,测试矩阵覆盖。
+- **其三**:Task 6 对 `CANCELLED` 的语义(不计轮、不触发守卫、usage 照记)与 metadataCache 滞后兜底——假流显式用例覆盖。
+- **明确不做**(本 plan):chat 协商卡/进度卡组件(= 动作内 Modal + StatusStrip)、UI 步骤明细条、token 软上限默认开启与中途截停、append_to_daily 依赖、定时触发。

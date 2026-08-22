@@ -130,6 +130,7 @@ interface AgentGoal {
 ```
 
 - 回合之间不弹确认——授权创建时已给,状态条常驻可见、随时可停
+- **计轮语义(外审修订)**:绑定会话**每一次 `ask()` 收尾都跑 finalizeRound**(累计 usage、统计 grant 范围成功写入);但仅当(显式续跑入口发起)**或**(本次 ask 发生 ≥1 次 grant 范围成功写入)才计 `roundsDone` 并触发完成校验与无进展守卫——普通插话零写入不计轮、不烧守卫;「create 后同一回合接着写完」因有 grant 写入而必然被收口
 
 ### 4.5 复述锚定的注入通道(ephemeral,不入库)
 
@@ -148,6 +149,7 @@ interface AgentGoal {
 - **优先级链**:`deny` > 破坏性逐次确认 > **goal grant** > 会话 grant(「本次不再询问」)> 档位。deny 全链最高,grant 撬不开 deny
 - **glob 下限**:必须含具体目录前缀(如 `projects/**` 合法;裸 `**`、vault 根、空 glob 拒绝);协商卡展示预估覆盖文件数
 - **生效条件**:`status === 'active'` **且** 当前会话 === `activeSessionId`——不在场(切走、挂起、paused)即失效,无需主动清理
+- **v1 撤权入口只有对话**:状态条按钮仅「停止」(abort,grant 不动、goal 保持 active);撤权必须对话发起 `manage_goal pause`(status→`paused`、grant 失效)。v1 不做独立暂停按钮(外审修订)
 
 ### 4.7 打断状态机与预算闭环
 
@@ -168,7 +170,7 @@ interface AgentGoal {
 | 层 | 上限 | 触达行为 |
 |---|---|---|
 | 回合内步数 | `maxSteps`(沿用 Agent Loop 默认 50,ADR-004) | 硬顶,强制收尾本回合 |
-| 回合内 token | 单回合软上限(设置可调) | 不再发起新工具调用,优雅收尾,**不算 blocked** |
+| 回合内 token | 单回合软上限(设置可调,默认 0=关) | **仅回合结束后检查**(外审修订):触达则本回合收尾、不再续轮,**不算 blocked**;v1 不做 ask 中途截停——那需要把 cap 传入 agentLoop,后置评估 |
 | 跨回合轮数 | `maxRounds`(默认 10) | 问用户「加轮还是收尾」 |
 
 **无进展守卫(评审 Important 6 采纳,换主信号):**
