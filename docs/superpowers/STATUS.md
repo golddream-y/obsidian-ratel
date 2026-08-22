@@ -29,6 +29,7 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
+| P-GOAL-1 | [2026-08-22-agent-goal-mode.md](plans/2026-08-22-agent-goal-mode.md) | Pending | S-GOAL | 8 Task 四波次:store/guard 纯逻辑 → grant+锚定钩子 → 工具+runner → UI 装配;工具级 allow+动作内 Modal 等偏差见 plan 偏差表 |
 
 ---
 
@@ -47,7 +48,7 @@
 
 ## Future execution queue(按顺序)
 
-1. **S-GOAL**(goal 模式)— spec 已定,plan 待写;成果沉淀依赖写侧 `append_to_daily`,建议与写侧轻量 spec 同版本推进
+1. **S-GOAL**(goal 模式)— spec v1.1 + plan P-GOAL-1 已定,待启动实施;成果沉淀依赖写侧 `append_to_daily`,建议与写侧轻量 spec 同版本推进
 2. 候选(无 spec,重启时新开):update_frontmatter / Write Gate / append_to_daily(S-EVOLUTION 写侧,见 archive/S-EVOLUTION/)  
 3. S-ECOSYSTEM(差异化主打,动工前先确认商店审核口径 + 立 ADR-018)
 
