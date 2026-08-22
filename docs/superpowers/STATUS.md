@@ -20,6 +20,7 @@
 | ID | 文件 | 状态 | 创建日期 | 备注 |
 |---|---|---|---|---|
 | S-ECOSYSTEM | [2026-08-20-ecosystem-management-design.md](specs/2026-08-20-ecosystem-management-design.md) | Active | 2026-08-20 | 插件生态管理(PRD 支柱 C):商店探索/安装/配置/更新/回滚;EcosystemChange 变更日志为核心;需 ADR-018(网络出站扩展);plan 待写 |
+| S-VISION | [2026-08-20-vision-image-messages.md](specs/2026-08-20-vision-image-messages.md) | Active | 2026-08-20 | 图片消息真正发给模型:UI 上传已完整但协议层断链;MessageSegment 扩 image 段+三适配器 vision 格式+不支持时模态报错(不静默丢图);plan 待写 |
 | S-GOAL | [2026-08-22-agent-goal-mode.md](specs/2026-08-22-agent-goal-mode.md) | Active | 2026-08-22 | Agent 目标模式(意图+完成标准+预算,动态工作流续跑);取代 S-TASK(archive/S-TASK/);spec v1.1 + plan P-GOAL-1(Pending)已定,经自审+外审两轮修订 |
 
 
