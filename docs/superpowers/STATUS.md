@@ -31,6 +31,7 @@
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
 | P-GOAL-1 | [2026-08-22-agent-goal-mode.md](plans/2026-08-22-agent-goal-mode.md) | Pending | S-GOAL | 8 Task 四波次:store/guard 纯逻辑 → grant+锚定钩子 → 工具+runner → UI 装配;工具级 allow+动作内 Modal 等偏差见 plan 偏差表 |
+| P-VISION-1 | [2026-08-20-vision-image-messages.md](plans/2026-08-20-vision-image-messages.md) | Pending | S-VISION | 6 Task:端口类型 → context-manager 入库 → agent-loop 探测(VISION_UNSUPPORTED)→ 适配器 localhost 透传 → UI 链路+i18n → 端到端;4 项偏差见 plan 偏差表(content 不扩联合/无 Anthropic 适配器等) |
 
 ---
 
