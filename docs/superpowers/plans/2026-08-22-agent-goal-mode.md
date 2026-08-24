@@ -4,16 +4,17 @@
 >
 > **修订:** 2026-08-22 自审修订 — F1 usage 跨步累计(message.end 新增字段)、F2 成功写判定写死、F3 UserStatus/StatusStrip 两面区分、F4 现网优先级链说明、F5 拒裸 `*`、F6 迁移表枚举、F7 绑定悬空惰性比较。
 > **修订 2:** 2026-08-22 外审修订 — **C1 记账挂 `plugin.ask()` 尾部统一 finalizeRound**(闲聊/继续/同回合续写全覆盖,runner 不再是唯一入口);锚定 provider 热读(每轮 toMessages 现查 store,不拍死快照);composeRoundMessage 缩为可见短句;协商卡=动作内 Modal 入偏差表;types.ts / tests 路径补齐;evaluateFrontmatterAll 钉死外观方法名。
-> **修订 3:** 2026-08-22 UI 设计补全 — Task 7 扩为五面集成(UserStatus chip / Strip 三态 / 继续 chip / create 可编辑 Modal / 设置页 goal-setting-page.ts),对照 spec v1.2 §4.11 矩阵;手动脚本加设置页与状态栏检查。
+> **修订 3:** 2026-08-22 UI 设计补全 — Task 7 扩为五面(对照当时 spec v1.2)
+> **修订 4:** 2026-08-22 指示器评审补完 v1.3 — 面 1=`addStatusBarItem`;文案去 emoji、停止≠挂起;继续 chip 唯一目标+输入中隐藏;create=`GoalCreateModal`;撤权=设置页暂停或对话 pause;Task 7 与手动脚本对齐 spec v1.3
 
-**Goal:** 落地 S-GOAL v1.1 — goal 落盘存储(单活 + 会话绑定 + 损坏隔离)、目标级 grant 白名单权限、锚定 ephemeral 注入、`manage_goal` 工具面、GoalRunner 回合编排(usage 累加 / predicate 收口 / 无进展守卫 / 预算闭环)、StatusStrip 与 onload 集成。
+**Goal:** 落地 S-GOAL **v1.3** — goal 落盘(单活 + 会话绑定 + 损坏隔离)、grant 白名单、锚定 ephemeral 注入、`manage_goal`、`finalizeRound`、五面 UI(底栏 / Strip / 继续 chip / 表单 Modal / 设置页)。
 
 **Architecture:** 四层分离 — ① `goal-store.ts` 纯存储(原子写 tmp+rename,单活仲裁,corrupt 隔离,可直测);② `goal-guard.ts` 纯函数守卫(无进展主信号 + 三层预算,无 IO 可直测);③ 权限与注入两个薄钩子(`goal-grant.ts` 插入 `resolveToolPermission` deny 检查之后;injector 注册 `goal` 段,复用 S-SR-LAYERING 通道);④ `goal-runner.ts` 回合记账与收口,**挂点在 `plugin.ask()` 尾部统一跑 `finalizeRound`**(外审 C1:闲聊、点「继续」、create 后同回合续写走的都是 ChatView→ask 直连,runner 若自成入口则记账全空)——ask 内消费自己 yield 的事件流做统计,收尾按计轮语义(spec 4.4)决定是否 roundsDone/校验/守卫/收口。
 
-**Tech Stack:** TypeScript strict / node:fs(promises)(主线程桌面端,goal 文件在 pluginDir)/ vitest / Svelte 5(仅 StatusStrip 文案与提示条)/ 无新 npm 依赖(glob 用现成 `globToRegex`)。
+**Tech Stack:** TypeScript strict / node:fs(promises)(主线程桌面端,goal 文件在 pluginDir)/ vitest / Svelte 5(StatusStrip + 继续 chip)/ Obsidian `addStatusBarItem` + 独立 Modal / 无新 npm 依赖(glob 用现成 `globToRegex`)。
 
 **关联文档:**
-- Spec: [S-GOAL v1.1](../specs/2026-08-22-agent-goal-mode.md) — 本 plan 全部语义以它为准
+- Spec: [S-GOAL v1.3](../specs/2026-08-22-agent-goal-mode.md) — 本 plan 全部语义以它为准
 - 被取代设计: [S-TASK(归档)](../archive/S-TASK/2026-08-19-agent-task-store.md)
 
 ---
@@ -24,7 +25,7 @@
 |---|---|---|
 | 4.10 `manage_goal` 动作级 ask | 工具级默认 `allow` + 动作内 Modal | 通用权限门按工具名决策,无法动作级 ask;复用 `run_skill_script` 先例(P-SKILL-2:工具 allow + 工具内 TrustGate,避免双弹窗)。用户仍可在设置中把工具整体设为 ask/deny |
 | 4.4/4.5 runner 驱动回合 | 记账与收口挂在 `plugin.ask()` **尾部**统一跑(`finalizeRound`);无独立 runner 入口 | 外审 C1:用户「继续」/插话/create 同回合续写走 ChatView→ask 直连,不经过任何 runner;只有 ask 尾部是所有路径的必经点。计轮语义见 spec 4.4(显式续跑入口 或 发生 ≥1 次 grant 成功写入) |
-| 4.3 协商卡 / 4.11 进度卡(chat 卡片组件) | 协商 = `create` 动作内 Modal;进度 = StatusStrip 忙态文案 | 不做两套 chat 卡片组件;Modal 已能保证「先确认后落盘」,且复用 confirm-modal 基建(外审 Important 5) |
+| 4.3 协商卡 / 4.11 进度卡(chat 卡片组件) | 协商 = `GoalCreateModal`;进度 = StatusStrip 忙态;用量 = 设置页列表 | 不做 chat 卡片;`ToolConfirmModal` 只有允许/本会话/拒绝,撑不起创建表单(v1.3) |
 | 4.8 predicate 数据源 | `metadataCache.frontmatter`,方法名钉死:`listMarkdownFiles()` + `getMetadata(path)` | 千级库逐文件全文读不可行;外观无「按 glob 扫 frontmatter」能力,用现有两方法组合(外审 Important 7) |
 | 4.11 本轮动态步骤条 | v1.1 降级不做,仅 StatusStrip 忙态 | spec 已预留降级;先验证核心循环,UI 明细条待核心稳定后评估 |
 | 4.7 单回合 token 软上限 | settings 字段就绪,默认 `0`(关);**开启时也只做回合结束后 endRound,不做 ask 中途截停** | `maxSteps` 在 loop 内能硬顶;token cap 若只在 ask 返回后检查则天然滞后——中途截停必须把 cap 传入 agentLoop,后置评估(外审 Important 4 / spec 4.7 已同步) |
@@ -59,14 +60,14 @@ src/
   prompts/sections.ts                  [改] +manage_goal description / param sections
   prompts/defaults/zh.ts               [改] +新 section 默认文案
   settings.ts                          [改] +goalMaxRounds / goalRoundTokenSoftCap / goalArchiveDays;toolPermissions 默认 +manage_goal:'allow'
-  settings.ts                          [改] +goalMaxRounds / goalRoundTokenSoftCap / goalArchiveDays;toolPermissions 默认 +manage_goal:'allow'
   tests/settings.test.ts               [改] 默认值迁移(注意:settings 测试在 tests/ 下,非 src/ 同目录——外审 Important 7)
   tests/settings-migration.test.ts     [改] 旧 data.json 无新字段时的迁移
   i18n/types.ts                        [改] +GoalI18n namespace
   i18n/zh.ts / en.ts                   [改] +goal namespace 全部 key
-  ui/chat/ChatView.svelte              [改] busyOverride +goal 忙态(面 2);输入区「继续」chip(面 3);停止复用现有 abort 通道
-  ui/settings/goal-setting-page.ts     [新] 设置页 Goal 区块(面 5,仿 diagnostics-setting-page.ts):列表/行内操作/待归档
-  main.ts                              [改] 装配 GoalStore/GoalRunner;onload 扫描 + UserStatus chip(面 1)+ corrupt Notice;注册工具;ask() 闭包接 grant 与锚定 provider;**ask() 尾部挂 finalizeRound**(外审 C1)
+  ui/chat/ChatView.svelte              [改] busyOverride 三态(面 2);输入区继续 chip 唯一目标+输入中隐藏(面 3);停止复用 abort
+  ui/goal/GoalCreateModal.ts           [新] create 可编辑表单(面 4);resume/cancel/complete 用小确认 Modal,不套 ToolConfirmModal
+  ui/settings/goal-setting-page.ts     [新] 设置页 Goal 区块(面 5):列表/行内暂停恢复放弃归档/待归档
+  main.ts                              [改] GoalStore/GoalRunner;addStatusBarItem(面 1);corrupt Notice;ask 接 grant/锚定/finalizeRound
 tests/
   integration/goal-round.test.ts       [新] 端到端:建目标→假回合→收口/守卫(视 integration 基建成本,可降为 runner 大用例)
 ```
@@ -232,7 +233,7 @@ usage 累加落盘(每次都做,便宜且准确)
 **Steps:**
 - [ ] settings:`goalMaxRounds=10`、`goalRoundTokenSoftCap=0`(0=关)、`goalArchiveDays=7`;`toolPermissions` 默认 +`manage_goal:'allow'`
 - [ ] schema skeleton:`action`(enum 七值)+ `goalId` + `objective` + `criteriaText` + `predicate{pathGlob,property}` + `maxRounds` + `grant[]` + `progressNote`
-- [ ] 工具实现:按速查 6 矩阵;Modal 复用现有 confirm-modal 基建;create 调 `goalStore.create` + `activate`(已有其他 active → store 层抛 `GOAL_ACTIVE_ELSEWHERE`,工具转 i18n 文案「目标正在另一场对话推进」——外审 Important 7 抛错点钉在 **store.activate**,resume 走同一路径)
+- [ ] 工具实现:按速查 6 矩阵;create 走 `GoalCreateModal`(确认后才 `goalStore.create` + 可选 `activate`);resume/cancel/complete 走小确认框。已有其他 active → store 层抛 `GOAL_ACTIVE_ELSEWHERE`,工具转 i18n「目标正在另一场对话推进」(抛错点钉在 **store.activate**,resume 同一路径)
 - [ ] `summarizeToolCall` +manage_goal 分支(`tNow('tool.goal.*', { action, objective 截断 })`)
 - [ ] i18n:GoalI18n namespace 全量 key(zh/en 同步,含 Modal 文案、Notice、Strip 文案、`goal.error.activeElsewhere`)
 - [ ] 测试:动作矩阵逐格 / create 兜底(criteria 空或同 objective → 抛错)/ complete 对 predicate 型抛错 / validateGrantGlobs 拒绝裸 `**`
@@ -257,30 +258,32 @@ usage 累加落盘(每次都做,便宜且准确)
 
 ---
 
-### Task 7:五面 UI 集成(ChatView / UserStatus / 设置页 / onload)
+### Task 7:五面 UI 集成(底栏 / Strip / 继续 chip / Modal / 设置页)
 
-**文件:** `src/ui/chat/ChatView.svelte` [改]、`src/ui/settings/goal-setting-page.ts` [新]、`src/main.ts` [改]
+**文件:** `src/ui/chat/ChatView.svelte` [改]、`src/ui/goal/GoalCreateModal.ts` [新]、`src/ui/settings/goal-setting-page.ts` [新]、`src/main.ts` [改]
 
-**Steps(spec 4.11 五面,逐面对照):**
+**Steps(spec v1.3 §4.11,逐面对照):**
 - [ ] main.ask() 装配(核心,先于各面):`ctx.setGoalAnchorProvider(...)`(速查 2)/ `toolPermissionCheck` 传 `createGoalGrantCheck` / generator 收尾挂 `finalizeRound`(速查 3);签名加第 4 可参 `opts?: { goalRound?: boolean }`
-- [ ] 面 1 · main.onload:`goalStore = new GoalStore(pluginDir)` → 扫描(corrupt 隔离自动发生 + Notice)→ `UserStatus` chip 按 spec 优先级文案(blocked > active > paused/pending > 待归档);点击:未完成→开 chat,待归档→开设置页
-- [ ] 面 2 · ChatView busyOverride 三态(执行中 r/R·s/S / 挂起等待输入 / blocked+reason 截断 error 色),插入现有 deriveBusyOverride 链(indexing 之后);整行点击语义不动;停止复用 abortActiveGeneration
-- [ ] 面 3 · 输入区「继续」chip:显示条件与「接管并继续」转移 confirm(spec 4.11);点击传 `{ goalRound: true }`
-- [ ] 面 4 · Modal 接线:create 可编辑表单(含预估行「将授权写入 ~N 个文件」,主按钮 [创建并开始]/[仅排队])/ resume 只读 / cancel / complete 证据清单;pause 无 Modal
-- [ ] 面 5 · 设置页区块:列表行(状态点/objective/轮次/用量/更新时间)+ 行内操作(直走 store API)+ 待归档汇总[全部归档];blocked 行展开 reason
-- [ ] completed 收口 Notice 一条(简短带用量)
-- [ ] i18n 全部新 key 落位;无硬编码文案
-- [ ] 验证:`npm run typecheck` + `npm run svelte-check`;手动:`npm run link:vault` 链 Sandbox → Reload app without saving
+- [ ] 面 1 · `this.addStatusBarItem()`(不是 UserStatus):零目标 `hide()`;优先级文案按 spec(受阻 N / 目标进行中 / 暂停·排队短拼 / 待归档 K),无 emoji;点击未完成→开 chat,待归档→开设置页 Goal 区块
+- [ ] 面 2 · ChatView busyOverride 三态(执行中 objective·回合 r/R·步 s/S / 「目标已停止,等待你的输入」 / 受阻+reason 截断 + `busyHard`);插入 deriveBusyOverride 链(indexing 之后);整行点击仍开抽屉;停止复用 abortActiveGeneration
+- [ ] 面 3 · 继续 chip:唯一目标规则 + 接管 confirm + pending≥2 打开设置页;输入非空或 isRunning 时隐藏;点击传 `{ goalRound: true }`
+- [ ] 面 4 · `GoalCreateModal` 可编辑表单(预估 N 文件,[创建并开始]/[仅排队]);resume/cancel/complete 小确认框;pause 无 Modal
+- [ ] 面 5 · 设置页:列表行(点色/objective/轮次/用量/时间)+ 行内[暂停][恢复][放弃][归档]走 store + 待归档[全部归档];blocked 展开 reason
+- [ ] completed Notice 一条(无 emoji,带用量)
+- [ ] i18n 全部新 key;无硬编码、无 emoji
+- [ ] 验证:`npm run typecheck` + `npm run svelte-check`;手动:`npm run link:vault` 只链 Sandbox → Reload app without saving
 
 **Verification(手动脚本,Sandbox):**
-1. 对话「立个目标:把 projects/ 下所有笔记补 status 属性」→ create Modal(可编辑表单 + 授权预估行)→ 确认 → 同回合模型接着写;即使当回合写完也自动 completed(C1 场景)
-2. 状态栏出现「🎯 进行 1」chip;点「继续」chip → 短用户句上屏,回合推进,Strip 显示「回合 r/R · 步 s/S」
-3. 回合中点停止 → 立即断;goal 仍 active;Strip 变「目标挂起,等待你的输入」;再点继续 → 从库重扫接着干
-4. 执行中插话(普通消息)→ 打断 + 插话被正常回答 + 不计轮
-5. `/new` 后状态栏仍显示 chip → 点击开 chat → 点继续 → 绑定转移,grant 生效
-6. 另一会话 create/resume 撞双活 → 「目标正在另一场对话推进」
-7. 设置页 Goal 区块:列表行数据正确;[暂停] 后 grant 失效(写入恢复弹窗);[恢复] 重启
-8. predicate 全满足 → 自动 completed + Notice(带用量);设置页待归档区出现,[全部归档] 后从列表消失
+1. 对话立目标 → GoalCreateModal(可编辑 + 授权预估)→ 确认 → 同回合接着写;写完自动 completed(C1)
+2. 窗口底栏出现「目标进行中」(无 emoji);点「继续推进」chip → 短用户句上屏,Strip 显示回合 r/R · 步 s/S
+3. 回合中点停止 → 立即断;goal 仍 active、grant 仍有效;Strip 为「目标已停止,等待你的输入」(不是「挂起」);再点继续 → 从库重扫
+4. 输入框有字时继续 chip 消失;清空后回来
+5. 执行中插话 → 打断 + 正常回答 + 不计轮
+6. `/new` 后底栏仍在 → 开 chat → 「接管并继续」confirm → 绑定转移,grant 生效
+7. 两条 pending、无 active → chip「2 个目标排队」→ 进设置页,不自动激活
+8. 另一会话撞双活 → 「目标正在另一场对话推进」
+9. 设置页[暂停] 后 grant 失效(写入再弹窗);[恢复] 重启
+10. predicate 全满足 → completed Notice 带用量;待归档出现,[全部归档] 后列表消失
 
 ---
 
@@ -299,4 +302,4 @@ usage 累加落盘(每次都做,便宜且准确)
 - **风险最高点**:C1 记账挂点——finalizeRound 必须在 ask 尾部对所有路径生效;计轮语义(flag ∨ grantWrites>0)用假事件流用例逐格钉死,防止「有 grant、没有回合」回归。
 - **风险次高**:Task 3 权限插入点——已有测试必须零回归;插入顺序在 deny 之后有白名单前提保证等价性,测试矩阵覆盖。
 - **其三**:Task 6 对 `CANCELLED` 的语义(不计轮、不触发守卫、usage 照记)与 metadataCache 滞后兜底——假流显式用例覆盖。
-- **明确不做**(本 plan):chat 协商卡/进度卡组件(= 动作内 Modal + StatusStrip)、UI 步骤明细条、token 软上限默认开启与中途截停、append_to_daily 依赖、定时触发。
+- **明确不做**(本 plan):chat 协商卡/进度卡、UI 步骤明细条、token 软上限默认开启与中途截停、append_to_daily、定时触发、UserStatus 充当窗口底栏、Strip/底栏暂停钮。

@@ -21,7 +21,7 @@
 |---|---|---|---|---|
 | S-ECOSYSTEM | [2026-08-20-ecosystem-management-design.md](specs/2026-08-20-ecosystem-management-design.md) | Active | 2026-08-20 | 插件生态管理(PRD 支柱 C):商店探索/安装/配置/更新/回滚;EcosystemChange 变更日志为核心;需 ADR-018(网络出站扩展);plan 待写 |
 | S-VISION | [2026-08-20-vision-image-messages.md](specs/2026-08-20-vision-image-messages.md) | Active | 2026-08-20 | 图片消息真正发给模型:UI 上传已完整但协议层断链;MessageSegment 扩 image 段+三适配器 vision 格式+不支持时模态报错(不静默丢图);plan 待写 |
-| S-GOAL | [2026-08-22-agent-goal-mode.md](specs/2026-08-22-agent-goal-mode.md) | Active | 2026-08-22 | Agent 目标模式(意图+完成标准+预算,动态工作流续跑);取代 S-TASK(archive/S-TASK/);spec v1.1 + plan P-GOAL-1(Pending)已定,经自审+外审两轮修订 |
+| S-GOAL | [2026-08-22-agent-goal-mode.md](specs/2026-08-22-agent-goal-mode.md) | Active | 2026-08-22 | Agent 目标模式;取代 S-TASK;spec **v1.3** + P-GOAL-1 Pending(指示器:底栏 StatusBarItem、去 emoji、停止≠挂起、继续 chip 唯一目标、GoalCreateModal、撤权=设置页或 pause) |
 
 
 ---
@@ -30,8 +30,8 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
-| P-GOAL-1 | [2026-08-22-agent-goal-mode.md](plans/2026-08-22-agent-goal-mode.md) | Pending | S-GOAL | 8 Task 四波次:store/guard 纯逻辑 → grant+锚定钩子 → 工具+runner → UI 装配;工具级 allow+动作内 Modal 等偏差见 plan 偏差表 |
-| P-VISION-1 | [2026-08-20-vision-image-messages.md](plans/2026-08-20-vision-image-messages.md) | Pending | S-VISION | 6 Task:端口类型 → context-manager 入库 → agent-loop 探测(VISION_UNSUPPORTED)→ 适配器 localhost 透传 → UI 链路+i18n → 端到端;4 项偏差见 plan 偏差表(content 不扩联合/无 Anthropic 适配器等) |
+| P-GOAL-1 | [2026-08-22-agent-goal-mode.md](plans/2026-08-22-agent-goal-mode.md) | Pending | S-GOAL | 8 Task;对齐 spec v1.3 五面 UI;偏差见 plan |
+| P-VISION-1 | [2026-08-20-vision-image-messages.md](plans/2026-08-20-vision-image-messages.md) | Pending | S-VISION | 6 Task:端口类型 → context-manager 入库 → agent-loop 探测(VISION_UNSUPPORTED)→ 适配器 localhost 透传 → UI 链路+i18n → 端到端;5 项偏差见 plan 偏差表(已回写 spec v1.2) |
 
 ---
 
@@ -50,7 +50,7 @@
 
 ## Future execution queue(按顺序)
 
-1. **S-GOAL**(goal 模式)— spec v1.1 + plan P-GOAL-1 已定,待启动实施;成果沉淀 v1 用现有 `write_note` 对话确认,不依赖写侧(`append_to_daily` 由写侧轻量 spec 另行立项)
+1. **S-GOAL**(goal 模式)— spec **v1.3** + P-GOAL-1 已定,待启动实施;成果沉淀 v1 用现有 `write_note` 对话确认,不依赖写侧
 2. 候选(无 spec,重启时新开):update_frontmatter / Write Gate / append_to_daily(S-EVOLUTION 写侧,见 archive/S-EVOLUTION/)  
 3. S-ECOSYSTEM(差异化主打,动工前先确认商店审核口径 + 立 ADR-018)
 

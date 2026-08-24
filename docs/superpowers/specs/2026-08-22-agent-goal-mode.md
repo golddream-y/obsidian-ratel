@@ -2,7 +2,8 @@
 
 > 日期: 2026-08-22
 > 修订: 2026-08-22 **v1.1** — 按外部评审修订:补 session 占用、grant 白名单、打断状态机(对齐现网 AbortSignal)、锚定 ephemeral 注入通道、预算闭环等 13 项
-> 修订: 2026-08-22 **v1.2** — 4.11 扩为五面 UI 状态×界面矩阵(UserStatus chip / StatusStrip 三态 / 继续 chip / create 可编辑 Modal / 设置页区块),补计轮语义(4.4)、停止≠暂停(4.6)、软上限回合后检查(4.7)
+> 修订: 2026-08-22 **v1.2** — 4.11 五面 UI;计轮语义;停止≠暂停;软上限回合后检查
+> 修订: 2026-08-22 **v1.3** — 指示器评审落地:面 1 用窗口底栏 StatusBarItem(不是 UserStatus store);文案去 emoji、停止≠挂起;继续 chip 唯一目标+输入中隐藏;create 用独立表单 Modal;撤权=设置页暂停或对话 pause
 > 状态: Active
 > Spec ID: **S-GOAL**
 > 取代: [S-TASK](../archive/S-TASK/2026-08-19-agent-task-store.md)(未实施即被取代,继承其合理内核)
@@ -100,16 +101,17 @@ interface AgentGoal {
 
 两个入口殊途同归:Agent 从对话识别批量意图主动提议,或用户显式说「立个目标」。
 
-**时序:协商卡先行,确认后才落盘。** 模型先在对话中出卡(纯对话,不调工具),用户确认后模型才调 `create` 写入——避免「先落盘再协商」产生需回滚的脏状态。
+**时序:模型调 `create` → 独立表单 Modal 弹出 → 用户改完点确认才落盘。** 不在对话里先出卡片、也不先写盘再弹窗(避免脏状态)。Modal 字段与校验见 4.11 面 4。
 
 ```
-→ 协商卡:目标陈述 / 范围 / 完成标准 / 回合预算估算 / 授权范围(glob + 预估覆盖文件数),全部可改
-→ 完成标准含糊(如「整理干净点」)由模型负责追问细化;create 工具本地兜底:
+→ 模型在对话里谈清意图后调 create(带建议字段)
+→ Modal:目标陈述 / 完成标准 / 回合预算 / 授权 glob(预估覆盖文件数),全部可改
+→ 完成标准含糊(如「整理干净点」)由模型负责追问细化;create 本地兜底:
    criteria.text 为空、或与 objective 相同 → 拒绝创建
-→ 回合预算估算 > maxRounds 默认值 → 卡上建议拆成多个 pending goals 入队
+→ 回合预算估算 > maxRounds 默认值 → Modal 建议拆成多个 pending 入队
 → objective 创建后不可变;要改意图 = cancel + 重建新 goal(进度游标可人工带入)
-→ 已有 active 时明示「将排队执行」,用户可选「先挂起当前的再激活新的」
-→ 用户确认 → create 落盘(pending 或 active)
+→ 已有 active 时主按钮为[仅排队];用户可先在设置页暂停当前再[创建并开始]
+→ 用户确认 → 落盘(pending 或 active)
 ```
 
 `GoalPredicate` v0 仅一类,其余降级 LLM 自检:
@@ -120,7 +122,7 @@ interface AgentGoal {
 ### 4.4 续跑协议(核心循环)
 
 ```
-触发:onload 状态条提示(列明细:N active / M pending / K paused / J blocked)/ 对话里说「继续」
+触发:窗口底栏 StatusBarItem(未完成/待归档)/ 输入区继续 chip / 对话里说「继续」
 排队仲裁:无 active 但有 pending → 模型按意图建议先做哪个,用户点头才激活(模型建议,用户落锤)
 回合开始:
   复述锚定注入(见 4.5)→ 扫库重推导剩余工作 → StatusStrip 显示目标忙态
@@ -148,9 +150,9 @@ interface AgentGoal {
 - **覆盖面(白名单)**:仅 `write_note` / `edit_note` / `append_note`(将来 + `update_frontmatter`),且目标路径命中 grant glob 且通过 `validateVaultPath`
 - **永不覆盖**:`delete_note` / `forget_memory` / `update_app_config`(`DESTRUCTIVE_TOOLS` 全集)、所有 `mcp__*`、`run_skill_script`(独立信任门)、`open_settings`、一切 configDir 路径
 - **优先级链**:`deny` > 破坏性逐次确认 > **goal grant** > 会话 grant(「本次不再询问」)> 档位。deny 全链最高,grant 撬不开 deny
-- **glob 下限**:必须含具体目录前缀(如 `projects/**` 合法;裸 `**`、vault 根、空 glob 拒绝);协商卡展示预估覆盖文件数
-- **生效条件**:`status === 'active'` **且** 当前会话 === `activeSessionId`——不在场(切走、挂起、paused)即失效,无需主动清理
-- **v1 撤权入口只有对话**:状态条按钮仅「停止」(abort,grant 不动、goal 保持 active);撤权必须对话发起 `manage_goal pause`(status→`paused`、grant 失效)。v1 不做独立暂停按钮(外审修订)
+- **glob 下限**:必须含具体目录前缀(如 `projects/**` 合法;裸 `**`、vault 根、空 glob 拒绝);创建 Modal 展示预估覆盖文件数
+- **生效条件**:`status === 'active'` **且** 当前会话 === `activeSessionId`——不在场(切走、`paused`)即失效,无需主动清理
+- **停止 ≠ 暂停**:chat 停止钮只 abort 本回合(grant 不动、goal 保持 `active`)。**撤权两条入口**(v1.3):设置页 Goal 区块行内[暂停](直走 store,不经模型);或对话里 `manage_goal pause`。二者都把 status→`paused`、grant 失效。窗口底栏与 StatusStrip **不**做暂停按钮
 
 ### 4.7 打断状态机与预算闭环
 
@@ -164,7 +166,7 @@ interface AgentGoal {
 | 显式暂停/撤权 | 停止 + 撤权 | 不回滚 | `paused` | 失效 | — | — |
 
 - **打断不依赖 progressNote**:下一轮从库重扫(库是真相);回合结束钩子来得及就 update,来不及就丢弃,不阻塞停止
-- 「已暂停但 status=active、grant 仍有效」的隐式第四态取消:插话打断后 StatusStrip 显示「目标挂起,等待输入」,状态语义仍是 active
+- 打断后 status 仍是 `active`、grant 仍有效。StatusStrip 文案用「已停止,等待你的输入」,**禁止**写「挂起」(与 `paused` 撤权混淆)
 
 **三层预算闭环(各管一段,不重叠):**
 
@@ -190,7 +192,7 @@ interface AgentGoal {
 
 ### 4.9 GC 与归档
 
-- 终态目标永不自动删除;超 7 天(阈值可调)进入「待归档」提示(状态条轻提示或设置页列出)
+- 终态目标永不自动删除;超 7 天(阈值可调)进入「待归档」(底栏短文案或设置页列出)
 - 用户确认后才移入 `goals/archive/`;取消原 S-TASK「总数上限 50 兜底淘汰」
 - 待归档堆积时提高提示显著度,不偷跑删除
 
@@ -200,7 +202,7 @@ interface AgentGoal {
 
 | action | 默认权限 | 说明 |
 |---|---|---|
-| create | ask | 协商卡确认后才允许调用;本地兜底校验(见 4.3) |
+| create | ask | 独立表单 Modal 确认后才落盘;本地兜底校验(见 4.3) |
 | update(progress) | allow | 进度游标/用量回写 |
 | list | allow | 队列查询(含状态明细) |
 | pause | allow | 安全方向,随时可停 |
@@ -210,49 +212,63 @@ interface AgentGoal {
 
 ### 4.11 UI 设计(状态 × 界面矩阵)
 
-现网事实约束:`StatusLine` 整行点击 = 开诊断抽屉(goal 忙态**不改**点击语义);停止复用现有 `abortActiveGeneration` 按钮;设置页为 TS 构建函数模式(`diagnostics-setting-page.ts` 先例)。
+现网事实约束:
 
-**面 1 · Obsidian 状态栏(UserStatus,全局常驻;零目标不显示,状态栏空间稀缺只出一条 chip)**
+- `UserStatus` store **只喂 chat 内** `StatusLine` / `StatusDrawer`,不是窗口底栏。面 1 必须用 `Plugin.addStatusBarItem()`,不要往 UserStatus 塞 goal 字段
+- `StatusLine` 整行点击 = 开诊断抽屉(goal 忙态**不改**点击语义)。目标操作走继续 chip 与设置页,不指望点 Strip
+- 停止复用现有 `abortActiveGeneration`;设置页为 TS 构建函数(`diagnostics-setting-page.ts` 先例)
+- 用户可见文案**不用 emoji**(Strip 已有点/orb;底栏空间紧。i18n 纯文字)
 
-| 条件(按优先级取一) | 文案 | 点击 |
+**面 1 · 窗口底栏 StatusBarItem(全局常驻,chat 关着也看得到;零目标不显示;只一条短文案)**
+
+| 条件(按优先级取一) | 文案(宜短) | 点击 |
 |---|---|---|
-| blocked ≥ 1 | ⛔ 目标受阻 N | 打开 chat |
-| active 存在 | 🎯 进行 1 · 排队 M · 暂停 P | 打开 chat |
-| 仅 paused/pending | 🎯 目标暂停 P · 排队 M | 打开 chat |
-| 无未完成但待归档 ≥ 1 | 🎯 K 个已完结待归档 | 打开设置页 Goal 区块 |
+| blocked ≥ 1 | 目标受阻 N | 打开 chat |
+| active 存在 | 目标进行中 | 打开 chat |
+| 仅 paused/pending | 目标暂停 P / 排队 M(有则拼接,尽量短) | 打开 chat |
+| 无未完成但待归档 ≥ 1 | 待归档 K | 打开设置页 Goal 区块 |
 
-**面 2 · chat StatusStrip(忙态行,仅本会话绑定且 chat 已开)**
+底栏不写 objective、不加 进行/排队/暂停三计数堆在一行(空间不够)。细节在 chat Strip 与设置页。
+
+**面 2 · chat StatusStrip(busyOverride,仅本会话绑定且 chat 已开)**
 
 | 时机 | busyOverride 文案 | 点色 |
 |---|---|---|
-| 回合执行中 | 🎯 \<objective 截断\> · 回合 r/R · 步 s/S | busy |
-| 打断后等待输入 | 🎯 目标挂起,等待你的输入 | busy |
-| blocked | ⛔ 目标受阻:\<reason 截断\> | error |
+| 回合执行中 | \<objective 截断\> · 回合 r/R · 步 s/S | busy(现有 orb) |
+| 打断后等待输入 | 目标已停止,等待你的输入 | busy |
+| blocked | 目标受阻:\<reason 截断\> | error(`busyHard`) |
 
-停止 = 复用现有生成停止按钮,不新增控件;整行点击保持开抽屉。
+停止 = 复用生成停止钮,不新增控件。整行仍开抽屉——用户要暂停/归档去设置页。
 
-**面 3 · 输入区「继续」chip**
+**面 3 · 输入区「继续」chip(放在 MentionStrip 一类预览条位置)**
 
-- 显示条件:active 绑定本会话且未在跑,或 pending 存在
-- 文案:「▶ 继续推进:\<objective 截断\>」;active 绑定**其他**会话时显示「▶ 接管并继续」,点击先 confirm 转移绑定
-- 点击 → `ask(sessionId, composeContinueMessage(), { goalRound: true })`
+唯一继续目标(只显示一个 chip):
 
-**面 4 · 动作 Modal(复用 confirm-modal 基建,即「协商卡」的落地形态)**
+1. 本会话绑定的 `active` 且当前未在跑 → 「继续推进:\<objective 截断\>」
+2. `active` 绑在**其他**会话 → 「接管并继续:\<objective 截断\>」,点击先 confirm 再转移绑定
+3. 无 active、恰好 **1** 条 pending → 「继续排队中的目标:\<objective 截断\>」
+4. 无 active、pending ≥ 2 → 「N 个目标排队」,点击打开设置页 Goal 区块(不擅自激活哪一条)
+5. 仅 paused / 仅 blocked、无上述目标 → **不显示 chip**(去设置页恢复)
 
-- **create**:可编辑表单——objective / criteriaText(textarea)、predicate glob + property(可选)、maxRounds(number)、grant globs;底部预估行「将授权写入 ~N 个文件」;主按钮按上下文 [创建并开始] / [仅排队](已有 active 时)
-- **resume**:只读展示 objective + progressNote + grant → [继续推进]
-- **cancel**:[确认放弃];**complete(仅自检型)**:证据清单 → [确认完成]
-- **pause**:无 Modal(安全方向直接执行)
+隐藏:输入框非空、或 `isRunning`。避免误点继续把正在打的字冲掉。
 
-**面 5 · 设置页 Goal 区块(`ui/settings/goal-setting-page.ts`,仿 diagnostics 先例)**
+点击(1)(2)(3) → `ask(sessionId, composeContinueMessage(), { goalRound: true })`。
 
-- 列表行:状态点色 · objective 截断 · 轮次 r/R · 用量(in/out tokens)· 更新时间;blocked 行展开显示 reason
-- 行内操作(**直走 store API,不经模型**——撤权的安全非对话入口):active→[暂停];paused/blocked→[恢复][放弃];终态超期→[归档]
-- 待归档汇总行 + [全部归档]
+**面 4 · 动作 Modal(`ToolConfirmModal` 不够用:它只有允许/本会话/拒绝,没有表单)**
 
-**通知(Notice)**:corrupt 隔离必发;completed 收口发一条简短(✅ 目标完成 · 用量);blocked 不发 Notice(Strip + chat 已覆盖,避免打扰升级)。
+- **create**:独立 `GoalCreateModal`——objective / criteriaText(textarea)、predicate glob + property(可选)、maxRounds、grant globs;底部「将授权写入约 N 个文件」;主按钮 [创建并开始] / [仅排队](已有 active 时)
+- **resume / cancel / complete**:小确认 Modal(只读摘要 + 主按钮),不要套工具权限三键
+- **pause**:无 Modal(设置页或工具直接执行)
 
-**明确不做(v1)**:诊断抽屉内 goal 区块(v1.2 候选——抽屉是「回合步骤明细」的天然归宿)、独立进度卡组件、状态栏多 chip。
+**面 5 · 设置页 Goal 区块(`ui/settings/goal-setting-page.ts`)**
+
+- 列表行:状态点色 · objective 截断 · 轮次 r/R · 用量(in/out tokens)· 更新时间;blocked 行展开 reason。v1 用量只在这里看,chat 不做进度卡
+- 行内操作(**直走 store,不经模型**):active→[暂停];paused/blocked→[恢复][放弃];终态超期→[归档]
+- 待归档汇总 + [全部归档]
+
+**通知(Notice)**:corrupt 隔离必发;completed 收口一条「目标完成 · 用量 …」(无 emoji);blocked 不发 Notice(底栏 + Strip 已覆盖)。
+
+**明确不做(v1)**:诊断抽屉内 goal 区块(后续候选)、独立 chat 进度卡、底栏多条 item、Strip 上的暂停钮。
 
 全部字符串走 `src/i18n/zh.ts` / `en.ts`,新增 goal namespace;工具显示名友好化(如「推进目标:补全 frontmatter」)。
 
@@ -268,8 +284,10 @@ interface AgentGoal {
 | `src/core/tool-permissions.ts` | grant 评估钩子(白名单工具 × glob × 在场条件,插在 deny/破坏性检查之后) |
 | `src/core/agent-loop.ts` | AbortSignal 打断钩子、`message.end` token 累加到 `AgentGoal.usage`(**不进** UsageStatsStore——它只计 skills/memoryTopics/scriptFailures,无 LLM token) |
 | `src/core/context-manager.ts`(投影层) | 锚定段 ephemeral 拼接点 |
-| `src/ui/chat/` `src/ui/status/` | StatusStrip 忙态复用、协商卡、进度卡 |
-| `onload` | 扫描 goals/(含 corrupt 隔离)→ 状态条明细提示 |
+| `src/ui/chat/` `src/ui/status/` | StatusStrip busyOverride;输入区继续 chip |
+| `src/ui/goal/GoalCreateModal.ts`(新) | create 表单 Modal |
+| `src/ui/settings/goal-setting-page.ts`(新) | Goal 列表/暂停/归档 |
+| `main.ts` | `addStatusBarItem` 面 1;onload 扫描 corrupt;ask 尾部 finalizeRound |
 | `src/i18n/` | 新 namespace |
 | 测试 | 单活仲裁 / 会话绑定转移 / grant × deny × 破坏性交叉矩阵 / **打断时未 update 的 progressNote 不阻塞重扫** / **锚定段不被 compact 吞** / 切会话不丢 goal / predicate 收口唯一性 / 无进展守卫主信号 |
 | 文档 | user-guide / CHANGELOG / README 在 finishing-a-development-branch 阶段按规则评估 |
@@ -290,6 +308,7 @@ interface AgentGoal {
 | D8 | grant 白名单最小面,deny 全链最高 | 安全边界不留给实现猜;grant 只开「可批量且可逆」的写入三件套 |
 | D9 | 打断对齐现网 AbortSignal,库是真相 | 「先写进度再停」与 socket 销毁语义矛盾;progressNote 降级为辅助缓存 |
 | D10 | predicate 型 runner 单一收口 | 模型与 runner 双写 complete 会竞态;自检型保留人工确认 |
+| D11 | 五面分工:底栏短提醒 / Strip 本回合态 / chip 唯一继续 / 表单 Modal / 设置页撤权与用量 | UserStatus 不是窗口底栏;停止≠暂停≠挂起;confirm-modal 撑不起创建表单 |
 
 ## 7. 参考
 
