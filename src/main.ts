@@ -16,7 +16,6 @@ import { publishSettingsSnapshot } from './ui/settings-store';
 import { getEffectiveChatModelMaxTokens } from './utils/context-window';
 import { tailBudget } from './core/context-budget';
 import { normalizeMcpServerConfig } from './core/mcp-config';
-import { join } from 'node:path';
 import { AttachmentStore } from './core/attachment-store';
 import type { AttachmentRef } from './ports/llm';
 

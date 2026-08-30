@@ -20,7 +20,6 @@
 | ID | 文件 | 状态 | 创建日期 | 备注 |
 |---|---|---|---|---|
 | S-ECOSYSTEM | [2026-08-20-ecosystem-management-design.md](specs/2026-08-20-ecosystem-management-design.md) | Active | 2026-08-20 | 插件生态管理(PRD 支柱 C):商店探索/安装/配置/更新/回滚;EcosystemChange 变更日志为核心;需 ADR-018(网络出站扩展);plan 待写 |
-| S-VISION | [2026-08-20-vision-image-messages.md](specs/2026-08-20-vision-image-messages.md) | Active | 2026-08-20 | 图片消息真正发给模型;P-VISION-1 已合入 develop(squash)。spec **v1.4**:附件外置 + 远端 `chatVisionEnabled`(默认关,OpenAI `image_url`) + localhost Ollama `images[]`;待归档 |
 | S-GOAL | [2026-08-22-agent-goal-mode.md](specs/2026-08-22-agent-goal-mode.md) | Active | 2026-08-22 | Agent 目标模式;取代 S-TASK;spec **v1.3** + P-GOAL-1 Pending(指示器:底栏 StatusBarItem、去 emoji、停止≠挂起、继续 chip 唯一目标、GoalCreateModal、撤权=设置页或 pause) |
 
 
@@ -31,7 +30,6 @@
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
 | P-GOAL-1 | [2026-08-22-agent-goal-mode.md](plans/2026-08-22-agent-goal-mode.md) | Pending | S-GOAL | 8 Task;对齐 spec v1.3 五面 UI;偏差见 plan |
-| P-VISION-1 | [2026-08-20-vision-image-messages.md](plans/2026-08-20-vision-image-messages.md) | ✅ Completed | S-VISION | 已 squash 合入 develop;远端视觉走 OpenAI image_url;发送即清预览;CHANGELOG Unreleased + user-guide §3.1 已写。README 英/中功能清单是否加「带图提问」待确认归档时一并处理 |
 
 ---
 
@@ -60,4 +58,4 @@
 
 ## 已归档
 
-见 [ARCHIVE.md](ARCHIVE.md) — 含按月统计图与全部归档记录(65 条 / 56 目录)。
+见 [ARCHIVE.md](ARCHIVE.md) — 含按月统计图与全部归档记录(66 条 / 57 目录)。

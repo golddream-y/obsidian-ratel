@@ -21,7 +21,7 @@ function makeCtx(): ContextManager {
 		setLastSessionId: async () => {},
 		listSessionIndex: async () => [],
 	};
-	return new ContextManager(empty, undefined as never, 8000);
+	return new ContextManager(empty, { getOverrides: () => ({}), getTools: () => [] }, 8000);
 }
 
 describe('addUserMessage 引用', () => {

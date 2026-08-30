@@ -97,6 +97,7 @@ Memory stays as Markdown under `.ratel/memory/` — pin must-keep preferences wi
 ## Your agent, your stack
 
 - **Model freedom:** choose chat, embedding, and reranking models independently; use DeepSeek, Claude, Ollama, or compatible custom endpoints.
+- **Vision:** attach images in chat.
 - **Layered memory:** pinned preferences never get truncated; related topic memories join each turn automatically.
 - **Skills:** define reusable working methods in Markdown, with optional sandboxed scripts and reference files the agent can run or read.
 - **MCP:** connect web search and external tools with per-server and per-tool permissions.

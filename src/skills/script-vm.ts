@@ -57,7 +57,7 @@ function createRestrictedFs(allowedDirs: string[], cwd: string): Record<string, 
 		return abs;
 	};
 	return {
-		readFileSync: (p: string, enc?: BufferEncoding) => nodeFs.readFileSync(guard(p), enc ?? 'utf-8'),
+		readFileSync: (p: string, enc?: 'utf8' | 'utf-8') => nodeFs.readFileSync(guard(p), enc ?? 'utf-8'),
 		writeFileSync: (p: string, data: string) => nodeFs.writeFileSync(guardWrite(p), data, 'utf-8'),
 		appendFileSync: (p: string, data: string) => nodeFs.appendFileSync(guardWrite(p), data, 'utf-8'),
 		existsSync: (p: string) => {
@@ -78,12 +78,19 @@ function serializeResult(value: unknown): string {
 	let text: string;
 	if (value === undefined) {
 		text = 'undefined';
+	} else if (
+		typeof value === 'string' ||
+		typeof value === 'number' ||
+		typeof value === 'boolean' ||
+		value === null
+	) {
+		text = String(value);
 	} else {
 		try {
-			text = JSON.stringify(value) ?? String(value);
+			text = JSON.stringify(value) ?? Object.prototype.toString.call(value);
 		} catch {
-			// 循环引用等不可序列化值降级为 String()
-			text = String(value);
+			// 循环引用等不可序列化值降级为 Object 标签
+			text = Object.prototype.toString.call(value);
 		}
 	}
 	if (Buffer.byteLength(text, 'utf-8') > MAX_RESULT_BYTES) {
@@ -123,18 +130,18 @@ export function runInVmSandbox(req: VmSandboxRequest): VmSandboxResult {
 		},
 		fs: createRestrictedFs(allowedDirs, cwd),
 		path: {
-			join: nodePath.join,
-			resolve: nodePath.resolve,
-			dirname: nodePath.dirname,
-			basename: nodePath.basename,
-			extname: nodePath.extname,
+			join: (...parts: string[]) => nodePath.join(...parts),
+			resolve: (...parts: string[]) => nodePath.resolve(...parts),
+			dirname: (p: string) => nodePath.dirname(p),
+			basename: (p: string) => nodePath.basename(p),
+			extname: (p: string) => nodePath.extname(p),
 			sep: nodePath.sep,
-			relative: nodePath.relative,
+			relative: (from: string, to: string) => nodePath.relative(from, to),
 		},
 	};
 	const context = vm.createContext(sandbox);
 	try {
-		const value = vm.runInContext(req.code, context, { filename: 'skill-script.js' });
+		const value: unknown = vm.runInContext(req.code, context, { filename: 'skill-script.js' }) as unknown;
 		return { ok: true, result: serializeResult(value) };
 	} catch (err) {
 		const e = err instanceof Error ? err : new Error(String(err));

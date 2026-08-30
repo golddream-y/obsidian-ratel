@@ -11,7 +11,7 @@
 
 **Tech Stack:** TypeScript(strict)、vitest、esbuild、Obsidian requestUrl(无新增依赖)
 
-**Spec:** [S-VISION](../specs/2026-08-20-vision-image-messages.md)
+**Spec:** [S-VISION](./2026-08-20-vision-image-messages.md)
 
 ---
 

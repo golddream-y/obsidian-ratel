@@ -9,21 +9,21 @@
 
 ## 统计
 
-**按月归档记录数**(共 65 条,56 个目录)
+**按月归档记录数**(共 66 条,57 个目录)
 
 ```mermaid
 xychart-beta
     title "按月归档记录数"
     x-axis ["2026-06", "2026-07", "2026-08"]
-    y-axis "记录数" 0 --> 25
-    bar [17, 23, 25]
+    y-axis "记录数" 0 --> 26
+    bar [17, 23, 26]
 ```
 
 **归档形态分布**
 
 ```mermaid
 pie showData title 归档形态分布
-    "完成归档" : 58
+    "完成归档" : 59
     "Abandoned(未实施/中途废弃)" : 4
     "Superseded(被取代)" : 3
 ```
@@ -34,6 +34,7 @@ pie showData title 归档形态分布
 
 | ID | 归档目录 | 日期 | 备注 |
 |---|---|---|---|
+| S-VISION | [archive/S-VISION/](archive/S-VISION/) | 08-30 | 贴图真正发给视觉模型;远端视觉开关+image_url;squash `99a2bce` 合入 develop,CHANGELOG 0.5.1 |
 | S-TASK (spec) | [archive/S-TASK/](archive/S-TASK/) | 08-22 | **Superseded by [S-GOAL](../specs/2026-08-22-agent-goal-mode.md)**:静态步骤清单被动态工作流取代——goal 只存意图+完成标准+进度游标,每轮从库重推导;未实施即被替代,无代码产出,单活/GC/onload 提示等内核继承进 S-GOAL |
 | S-SKILL (spec) | [archive/S-SKILL/](archive/S-SKILL/) | 08-20 | spec 使命完成归档:机制(P-SKILL-1)+执行层(P-SKILL-2)+超时(P-SKILL-2-TIMEOUT)三 plan 交付,UI 由 S-SKILL-UX 0.3.0 承接;执行层随 0.5.0 发版 |
 | S-SKILL (P-SKILL-2-TIMEOUT) | [archive/S-SKILL/](archive/S-SKILL/) | 08-19 | ADR-017 v1.1 超时心跳分类:慢→LLM continueRun/killRun,死→自动杀,10min 上限;补设置控件;squash `377d842`;1288 tests |

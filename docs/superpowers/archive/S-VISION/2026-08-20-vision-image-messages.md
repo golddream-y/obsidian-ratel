@@ -3,17 +3,17 @@
 > 日期: 2026-08-20
 > 修订: 2026-08-22 **v1.2** — 按 P-VISION-1 实现修正回写:图片走 `ChatMessage.attachments` 独立字段(不扩 content 联合);单适配器现状(无 Anthropic,砍 Ollama 模型名启发式);i18n key 归 `chat.error.*` 族
 > 修订: 2026-08-22 **v1.3** — 存储定稿**附件外置**:write-once 落 `pluginDir/attachments/<sessionId>/`,消息只存引用;推翻 v1.2「直存 session JSON」(每回合全量序列化,图片多时主线程卡顿);渲染沿用现有 data URL 形态(objectURL 为后续优化项)
-> 状态: Active
+> 状态: Archived
 > Spec ID: **S-VISION**
-> 关联: [PRD §7](../../PRD.md)(支柱 A 对话能力)、ADR-014(网络出站不变 — 无新增端点)
+> 关联: [PRD §7](../../../PRD.md)(支柱 A 对话能力)、ADR-014(网络出站不变 — 无新增端点)
 
 ## 1. 背景
 
-图片上传是半截功能:UI 层完整(上传/粘贴/预览/token 预估/气泡展示,[attachment-utils.ts](../../../src/ui/chat/input/attachment-utils.ts) 有 5MB/4 张限制),但 **LLM 协议层没有图片通道**:
+图片上传是半截功能:UI 层完整(上传/粘贴/预览/token 预估/气泡展示,[attachment-utils.ts](../../../../src/ui/chat/input/attachment-utils.ts) 有 5MB/4 张限制),但 **LLM 协议层没有图片通道**:
 
-- [llm.ts](../../../src/ports/llm.ts) `ChatMessage.content` 是纯 `string`,无图片通道
+- [llm.ts](../../../../src/ports/llm.ts) `ChatMessage.content` 是纯 `string`,无图片通道
 - context-manager `addUserMessage(content: string)` 只保存纯文本
-- 唯一适配器 [llm-openai-compat.ts](../../../src/adapters/llm-openai-compat.ts)(承载 DeepSeek 官方与本地 Ollama 两类 OpenAI 兼容端点)无 vision 格式构造
+- 唯一适配器 [llm-openai-compat.ts](../../../../src/adapters/llm-openai-compat.ts)(承载 DeepSeek 官方与本地 Ollama 两类 OpenAI 兼容端点)无 vision 格式构造
 - `src/core`、`src/adapters`、`src/ports` 里零 attachment 引用
 
 结果:用户上传图片提问,token 预算被扣(attachmentTokens 计入上下文),模型却只收到文字——占着额度不干活,答非所问。用户感知是「模型识别能力差」,实际是图根本没发出去。
@@ -61,7 +61,7 @@ attachments?: AttachmentRef[];
 
 ### 4.2 端口层:`attachments` 引用字段与能力声明(v1.2/v1.3)
 
-[llm.ts](../../../src/ports/llm.ts) **不改** `content` 类型(保持纯 string),追加两个成员:
+[llm.ts](../../../../src/ports/llm.ts) **不改** `content` 类型(保持纯 string),追加两个成员:
 
 - `ChatMessage.attachments?: AttachmentRef[]`(引用形态见 4.1;适配器收到的是 agent-loop 已解析 base64 的出站消息,见 4.5)
 - `LLMClient.supportsImages: boolean` — 能力声明,agent-loop 发送前探测用
