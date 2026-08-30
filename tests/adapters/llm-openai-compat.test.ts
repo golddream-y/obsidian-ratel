@@ -1,8 +1,8 @@
 /**
- * @file tests/adapters/llm-deepseek.test.ts
+ * @file tests/adapters/llm-openai-compat.test.ts
  * @description DeepSeek LLM 适配器单元测试(requestUrl + SSE 解析 + 工具调用)
- * @module tests/adapters/llm-deepseek
- * @depends src/adapters/llm-deepseek, src/ports/llm
+ * @module tests/adapters/llm-openai-compat
+ * @depends src/adapters/llm-openai-compat, src/ports/llm
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -59,7 +59,7 @@ function createMockHttpRequest(_options: unknown, callback: (res: unknown) => vo
 	return req;
 }
 
-import { DeepSeekLLM } from '../../src/adapters/llm-deepseek';
+import { OpenAICompatLLM } from '../../src/adapters/llm-openai-compat';
 import type { ChatRequest } from '../../src/ports/llm';
 
 /**
@@ -69,7 +69,7 @@ function buildSseText(events: string[]): string {
 	return events.map((e) => `data: ${e}`).join('\n') + '\n';
 }
 
-describe('DeepSeekLLM', () => {
+describe('OpenAICompatLLM', () => {
 	beforeEach(() => {
 		mockRequestUrl.mockReset();
 	});
@@ -86,7 +86,7 @@ describe('DeepSeekLLM', () => {
 			text: sseText,
 		});
 
-		const llm = new DeepSeekLLM({
+		const llm = new OpenAICompatLLM({
 			apiBase: 'https://api.deepseek.com',
 			apiKey: 'sk-test',
 			model: 'deepseek-chat',
@@ -121,7 +121,7 @@ describe('DeepSeekLLM', () => {
 			text: sseText,
 		});
 
-		const llm = new DeepSeekLLM({
+		const llm = new OpenAICompatLLM({
 			apiBase: 'https://api.deepseek.com',
 			apiKey: 'sk-test',
 			model: 'deepseek-chat',
@@ -153,7 +153,7 @@ describe('DeepSeekLLM', () => {
 			text: '',
 		});
 
-		const llm = new DeepSeekLLM({
+		const llm = new OpenAICompatLLM({
 			apiBase: 'https://api.deepseek.com',
 			apiKey: 'sk-bad',
 			model: 'deepseek-chat',
@@ -178,7 +178,7 @@ describe('DeepSeekLLM', () => {
 			};
 		});
 
-		const llm = new DeepSeekLLM({
+		const llm = new OpenAICompatLLM({
 			apiBase: 'https://api.deepseek.com',
 			apiKey: 'sk-test',
 			model: 'deepseek-chat',
@@ -223,7 +223,7 @@ describe('DeepSeekLLM', () => {
 	});
 
 	it('serializes tool call arguments in request body', () => {
-		const adapter = new DeepSeekLLM({ apiBase: 'http://test', apiKey: 'sk-test', model: 'test' });
+		const adapter = new OpenAICompatLLM({ apiBase: 'http://test', apiKey: 'sk-test', model: 'test' });
 		const req: ChatRequest = {
 			messages: [
 				{ role: 'user', content: 'test' },
@@ -239,7 +239,7 @@ describe('DeepSeekLLM', () => {
 	});
 
 	it('buildRequestBody - thinking disabled - 上送 thinking.type', () => {
-		const adapter = new DeepSeekLLM({ apiBase: 'http://test', apiKey: 'sk-test', model: 'deepseek-v4-pro' });
+		const adapter = new OpenAICompatLLM({ apiBase: 'http://test', apiKey: 'sk-test', model: 'deepseek-v4-pro' });
 		const req: ChatRequest = {
 			messages: [{ role: 'user', content: '起标题' }],
 			options: { maxTokens: 96, thinking: 'disabled' },
@@ -253,7 +253,7 @@ describe('DeepSeekLLM', () => {
 	});
 
 	it('buildRequestBody - assistant 带 reasoning - 回传 reasoning_content', () => {
-		const adapter = new DeepSeekLLM({ apiBase: 'http://test', apiKey: 'sk-test', model: 'deepseek-reasoner' });
+		const adapter = new OpenAICompatLLM({ apiBase: 'http://test', apiKey: 'sk-test', model: 'deepseek-reasoner' });
 		const req: ChatRequest = {
 			messages: [
 				{ role: 'user', content: '查文档' },
@@ -277,7 +277,7 @@ describe('DeepSeekLLM', () => {
 	});
 
 	it('buildRequestBody - 无 reasoning - 不上送 reasoning_content 字段', () => {
-		const adapter = new DeepSeekLLM({ apiBase: 'http://test', apiKey: 'sk-test', model: 'test' });
+		const adapter = new OpenAICompatLLM({ apiBase: 'http://test', apiKey: 'sk-test', model: 'test' });
 		const req: ChatRequest = {
 			messages: [{ role: 'assistant', content: 'hi' }],
 		};
@@ -288,7 +288,7 @@ describe('DeepSeekLLM', () => {
 	});
 
 	it('buildRequestBody - 含孤立 tool - 上送前剥掉', () => {
-		const adapter = new DeepSeekLLM({ apiBase: 'http://test', apiKey: 'sk-test', model: 'test' });
+		const adapter = new OpenAICompatLLM({ apiBase: 'http://test', apiKey: 'sk-test', model: 'test' });
 		const req: ChatRequest = {
 			messages: [
 				{ role: 'tool', content: 'orphan', toolCallId: 'A' },
@@ -305,7 +305,7 @@ describe('DeepSeekLLM', () => {
 	});
 
 	it('countTokens returns rough estimate', () => {
-		const llm = new DeepSeekLLM({
+		const llm = new OpenAICompatLLM({
 			apiBase: 'https://api.deepseek.com',
 			apiKey: 'sk-test',
 			model: 'deepseek-chat',
@@ -323,7 +323,7 @@ describe('DeepSeekLLM', () => {
 			text: sseText,
 		});
 
-		const adapter = new DeepSeekLLM({ apiBase: 'http://test', apiKey: 'sk', model: 'm' });
+		const adapter = new OpenAICompatLLM({ apiBase: 'http://test', apiKey: 'sk', model: 'm' });
 		const stream = adapter.chat({ messages: [] });
 		const collected: string[] = [];
 		for await (const delta of stream) {
@@ -346,7 +346,7 @@ describe('DeepSeekLLM', () => {
 			text: sseText,
 		});
 
-		const adapter = new DeepSeekLLM({ apiBase: 'http://test', apiKey: 'sk', model: 'm' });
+		const adapter = new OpenAICompatLLM({ apiBase: 'http://test', apiKey: 'sk', model: 'm' });
 		const toolCalls: Array<{ id: string; name: string }> = [];
 		for await (const delta of adapter.chat({ messages: [] })) {
 			if (delta.toolCall) toolCalls.push({ id: delta.toolCall.id, name: delta.toolCall.name });
@@ -362,7 +362,7 @@ describe('DeepSeekLLM', () => {
 		// requestUrl 网络错误直接 reject
 		mockRequestUrl.mockRejectedValueOnce(new Error('Network error'));
 
-		const adapter = new DeepSeekLLM({ apiBase: 'http://test', apiKey: 'sk', model: 'm' });
+		const adapter = new OpenAICompatLLM({ apiBase: 'http://test', apiKey: 'sk', model: 'm' });
 		const stream = adapter.chat({ messages: [] });
 
 		await expect(async () => {
@@ -376,7 +376,7 @@ describe('DeepSeekLLM', () => {
 			text: '',
 		});
 
-		const adapter = new DeepSeekLLM({ apiBase: 'http://test', apiKey: 'sk', model: 'm' });
+		const adapter = new OpenAICompatLLM({ apiBase: 'http://test', apiKey: 'sk', model: 'm' });
 
 		await expect(async () => {
 			for await (const _ of adapter.chat({ messages: [] })) { /* consume */ }
@@ -395,7 +395,7 @@ describe('DeepSeekLLM', () => {
 
 		mockRequestUrl.mockResolvedValueOnce({ status: 200, text: sseText });
 
-		const llm = new DeepSeekLLM({
+		const llm = new OpenAICompatLLM({
 			apiBase: 'http://test',
 			apiKey: 'sk-test',
 			model: 'deepseek-reasoner',
@@ -423,7 +423,7 @@ describe('DeepSeekLLM', () => {
 
 			mockRequestUrl.mockResolvedValueOnce({ status: 200, text: sseText });
 
-			const llm = new DeepSeekLLM({
+			const llm = new OpenAICompatLLM({
 				apiBase: 'http://test',
 				apiKey: 'sk-test',
 				model: 'deepseek-chat',
@@ -441,7 +441,7 @@ describe('DeepSeekLLM', () => {
 			// 用户报告:刚发请求点停止没反应 — abort 必须穿透到 HTTP 层销毁请求
 			mockHttpBehavior = 'pending';
 			try {
-				const llm = new DeepSeekLLM({
+				const llm = new OpenAICompatLLM({
 					apiBase: 'http://test',
 					apiKey: 'sk-test',
 					model: 'deepseek-chat',
@@ -471,7 +471,7 @@ describe('DeepSeekLLM', () => {
 		it('signal 已 aborted - 不发请求直接抛错', async () => {
 			mockHttpBehavior = 'pending';
 			try {
-				const llm = new DeepSeekLLM({
+				const llm = new OpenAICompatLLM({
 					apiBase: 'http://test',
 					apiKey: 'sk-test',
 					model: 'deepseek-chat',

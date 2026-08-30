@@ -85,6 +85,8 @@ export interface RatelVaultSettings {
 	chatPreset: ChatPresetId;
 	chatModel: string;
 	chatApiBase: string;
+	/** 当前对话端点/模型支持图片输入(S-VISION v1.4)— OpenRouter 视觉模型等;localhost 端点自动视为支持,此项仅供远端显式声明 */
+	chatVisionEnabled: boolean;
 	/** 模型上下文窗口上限(token) — StatusLine 上下文使用率计算 */
 	chatModelMaxTokens: number;
 	/** 上下文接近上限时自动压缩(默认开) */
@@ -195,6 +197,7 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 	chatPreset: 'deepseek',
 	chatModel: 'deepseek-v4-flash',
 	chatApiBase: 'https://api.deepseek.com',
+	chatVisionEnabled: false,
 	contextLengthPreset: '256k',
 	chatModelMaxTokens: 256_000,
 	autoCompactEnabled: true,
@@ -606,6 +609,11 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 							key: 'chatApiBase',
 							placeholder: 'https://api.deepseek.com',
 						},
+					},
+					{
+						name: tNow('settings.chatVision.name'),
+						desc: tNow('settings.chatVision.desc'),
+						control: { type: 'toggle', key: 'chatVisionEnabled' },
 					},
 					{
 						name: tNow('settings.advanced.secretHint.title'),

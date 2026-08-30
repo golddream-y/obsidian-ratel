@@ -21,6 +21,7 @@
 	import type { Message } from './message-stream/types';
 	import { newMessageId } from './message-stream/new-message-id';
 	import { hydrateSessionMessages } from './message-stream/hydrate-session-messages';
+	import type { AttachmentRef } from '../../ports/llm';
 	import { latestCiteSearchResults } from './latest-cite-search';
 	import ChatNavRail from './nav/ChatNavRail.svelte';
 	import {
@@ -358,6 +359,7 @@
 		}
 		if (!sessionHasContent(s.messages)) {
 			await plugin.persistence.sessions.delete(sessionId);
+			await plugin.attachments.removeSession(sessionId);
 			sessionDirty = false;
 			return;
 		}
@@ -375,7 +377,7 @@
 		}
 		sessionId = s.id;
 		syncChipTitles(s);
-		messages = hydrateSessionMessages(s.messages, {
+		messages = await hydrateSessionMessages(s.messages, plugin.attachments, sessionId, {
 			resolveMcpServerLabel,
 			markers: s.compactMarkers,
 		});
@@ -420,6 +422,7 @@
 			}
 			if (s && !sessionHasContent(s.messages)) {
 				await plugin.persistence.sessions.delete(s.id);
+					await plugin.attachments.removeSession(s.id);
 			}
 		}
 		await startBlankSession();
@@ -506,6 +509,7 @@
 					await plugin.persistence.setLastSessionId(existing.id);
 				} else {
 					await plugin.persistence.sessions.delete(existing.id);
+					await plugin.attachments.removeSession(existing.id);
 				}
 			}
 			clearToolSessionGrants();
@@ -533,7 +537,7 @@
 				}
 				sessionId = s.id;
 				syncChipTitles(s);
-				messages = hydrateSessionMessages(s.messages, {
+				messages = await hydrateSessionMessages(s.messages, plugin.attachments, sessionId, {
 			resolveMcpServerLabel,
 			markers: s.compactMarkers,
 		});
@@ -653,6 +657,7 @@
 	async function deleteSessionFromMenu(id: string): Promise<void> {
 		if (switching || isRunning) return;
 		await plugin.persistence.sessions.delete(id);
+		await plugin.attachments.removeSession(id);
 		if (id === sessionId) {
 			await createNewSession();
 		} else {
@@ -949,7 +954,7 @@
 		if (targetSessionId !== sessionId) return;
 		const ctx = plugin.createContext();
 		await ctx.load(targetSessionId);
-		messages = hydrateSessionMessages(ctx.getTranscript(), {
+		messages = await hydrateSessionMessages(ctx.getTranscript(), plugin.attachments, targetSessionId, {
 			markers: ctx.getCompactMarkers(),
 			resolveMcpServerLabel,
 		});
@@ -988,7 +993,7 @@
 			// 关键路径:切场后只写 persistence,不把旧场 hydrate 进新场 UI
 			if (sessionId !== compactingSessionId) return;
 			await ctx.load(compactingSessionId);
-			messages = hydrateSessionMessages(ctx.getTranscript(), {
+			messages = await hydrateSessionMessages(ctx.getTranscript(), plugin.attachments, compactingSessionId, {
 				markers: ctx.getCompactMarkers(),
 				resolveMcpServerLabel,
 			});
@@ -1091,6 +1096,9 @@
 		mentionQuery = null;
 		mentionItems = [];
 		sessionMenuOpen = false;
+		// 修复:预览栏跟输入框一起清空。附件已拷进 currentAttachments 与用户气泡,
+		// 不必等整轮 LLM 结束(否则发送后预览还挂着直到全文渲染完)。
+		plugin.userStatus.clearAttachments();
 		// 关键路径:先挂 abortController 再翻 isRunning，避免停钮已显示但 abort 仍为 null
 		const ac = new AbortController();
 		abortController = ac;
@@ -1118,7 +1126,13 @@
 		scrollToBottom();
 
 		try {
-			const events = plugin.ask(sessionId, text, ac.signal);
+			// 关键路径(S-VISION v1.3):发送前 write-once 落盘,ask 只传 KB 级引用;
+			// base64 来自入队前拷贝的 currentAttachments,不读 pending 队列(队列已清空)
+			const refs: AttachmentRef[] = [];
+			for (const att of currentAttachments) {
+				refs.push(await plugin.attachments.save(sessionId, att));
+			}
+			const events = plugin.ask(sessionId, text, ac.signal, refs.length > 0 ? refs : undefined);
 
 			for await (const event of events) {
 				switch (event.type) {
@@ -1227,7 +1241,6 @@
 		} finally {
 			isRunning = false;
 			abortController = null;
-			plugin.userStatus.clearAttachments();
 			scrollToBottom();
 
 			// 关键路径:整轮结束后自动压 — 不在流式中途插队

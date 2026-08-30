@@ -68,14 +68,20 @@ attachments?: AttachmentRef[];
 
 attachments 仅出现在 user 消息上;system / assistant / tool 消息不带。
 
+> **v1.4 修订(2026-08-25,OpenRouter 实测反馈)**:能力来源由「localhost 自动判定」单一来源扩为两路 ——
+> ① localhost 端点自动视为支持(不变);② 远端端点新增设置项 `chatVisionEnabled`(默认关),
+> 用户显式声明当前模型支持图片(OpenRouter 视觉模型、各类 OpenAI 兼容网关)。开关随 rebuildLLM
+> 常规传播;跨模型会话污染守卫(4.3)语义不变——切回无视觉端点时历史图照常剥除。
+
 ### 4.3 适配器实现(v1.2 按单适配器现状修正)
 
 仓库只有 `llm-openai-compat.ts` 一个适配器(原名 llm-deepseek.ts,P-VISION-1 Task 0 正名——它实为通用 OpenAI 兼容家族适配器),同时承载 DeepSeek 官方与本地 Ollama 两类 OpenAI 兼容端点(无 Anthropic 适配器):
 
 | 端点 | 图片支持 | 实现 |
 |---|---|---|
-| localhost(Ollama) | ✅(模型相关) | `buildRequestBody` 透传 `messages[].images = [base64]`(Ollama 原生字段) |
-| DeepSeek 官方远端 | ❌ | agent-loop 探测拦截本轮新图(见 4.4);请求体层剥掉历史图 |
+| localhost(Ollama) | ✅(模型相关) | `messages[].images = [base64]`(Ollama 原生字段) |
+| 远端 + `chatVisionEnabled` | ✅ | OpenAI `content` 多模态:`text` + `image_url` data URL(OpenRouter / 兼容网关;**不要**发 Ollama 的裸 `images`,会 500) |
+| DeepSeek 官方远端(开关关) | ❌ | agent-loop 探测拦截本轮新图(见 4.4);请求体层剥掉历史图 |
 | Anthropic | — | 适配器不存在;待立项时一并实现 base64 image block |
 
 **跨模型会话防护(v1.2 补)**:透传必须带 `supportsImages &&` 前置判断——Ollama 会话中途切回 DeepSeek 续聊时,本轮无新图、探测放行,但**历史含图消息仍会进 buildRequestBody**,远端必须剥掉 images(否则未知字段报 400)。语义与 compact 摘要后模型看不到旧图一致。
@@ -95,7 +101,7 @@ ChatView.svelte(发送:pendingAttachments$ → AttachmentStore.save 落盘 → �
   → plugin.ask(sessionId, text, signal, refs)
   → agent-loop:addUserMessage(refs)入库(轻量)→ 探测(含图 && !supportsImages → VISION_UNSUPPORTED 终止)
   → 发送前经 AttachmentStore 解析 refs → base64(仅内存,不落盘)随 ChatMessage 出站
-  → 适配器:localhost 透传 images / 远端剥除
+  → 适配器:localhost 透传 images;远端开视觉开关则发 OpenAI image_url;未开则剥除
 ```
 
 - context-manager `addUserMessage` 扩为 `(content, refs?)` 可选二参(纯文本路径兼容;有图才写字段,入库的只有 KB 级引用)

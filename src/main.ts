@@ -16,6 +16,9 @@ import { publishSettingsSnapshot } from './ui/settings-store';
 import { getEffectiveChatModelMaxTokens } from './utils/context-window';
 import { tailBudget } from './core/context-budget';
 import { normalizeMcpServerConfig } from './core/mcp-config';
+import { join } from 'node:path';
+import { AttachmentStore } from './core/attachment-store';
+import type { AttachmentRef } from './ports/llm';
 
 import type { AgentEvent } from './types';
 import { agentLoop } from './core/agent-loop';
@@ -26,7 +29,7 @@ import { ToolRegistry } from './core/tool-registry';
 import { ObsidianVault } from './adapters/obsidian-vault';
 import { PersistenceJson } from './adapters/persistence-json';
 import { mergePluginData } from './adapters/data-json-merge';
-import { DeepSeekLLM } from './adapters/llm-deepseek';
+import { OpenAICompatLLM } from './adapters/llm-openai-compat';
 import type { EmbeddingPort } from './ports/embedding';
 import { EmbeddingApi } from './adapters/embedding-api';
 import { EmbeddingLocal } from './adapters/embedding-local';
@@ -157,7 +160,7 @@ export default class RatelVaultPlugin extends Plugin {
 	vault!: ObsidianVault;
 	workspacePort!: WorkspacePort;
 	persistence!: PersistenceJson;
-	llm!: DeepSeekLLM;
+	llm!: OpenAICompatLLM;
 	embedding!: EmbeddingPort;
 	tools!: ToolRegistry;
 	hooks!: HookRegistry;
@@ -196,6 +199,8 @@ export default class RatelVaultPlugin extends Plugin {
 	// 关键路径:W4 — Indexer subagent 实例,供 Librarian 等子代理调用。
 	indexer!: Indexer;
 	toolSessionGrants = new ToolPermissionSessionGrants();
+	/** 图片附件外置存储(S-VISION v1.3)— onload 装配,目录 <pluginDir>/attachments;会话删除时整目录清走 */
+	attachments!: AttachmentStore;
 	userNotice = new UserNotice();
 	userStatus = new UserStatus();
 	/** file-menu 插入 @mention 时若 ChatView 尚未 mount,先排队 */
@@ -239,12 +244,13 @@ export default class RatelVaultPlugin extends Plugin {
 			(data) => this.saveData(data),
 			pluginDir,
 		);
-		this.llm = new DeepSeekLLM({
+		this.llm = new OpenAICompatLLM({
 			apiBase: this.settings.chatApiBase,
 			// 关键路径:apiKey 不再存 settings,从 Obsidian 钥匙串按 chatApiBase 端点类型解析;
 			// localhost Ollama 免 Key 返回 null → 空串透传给 LLM(本地服务不校验)。
 			apiKey: resolveChatApiKey(this.app, this.settings) ?? '',
 			model: this.settings.chatModel,
+			visionEnabled: this.settings.chatVisionEnabled,
 		});
 
 		// Embedding 适配器:本地 ONNX vs 远端 OpenAI 兼容端点,按设置二选一。
@@ -259,6 +265,9 @@ export default class RatelVaultPlugin extends Plugin {
 		// 因此只做目录占位;InlineWorker 场景下会在模型就绪后重新创建带 embeddings 的 store。
 		this.vectraStore = new VectraStore(this.indexDir);
 		ensurePluginGitignore(pluginDir);
+		// S-VISION v1.3:附件外置根目录 — 必须用上方解析好的绝对 pluginDir
+		// 修复: 曾误用相对的 manifest.dir,渲染进程 CWD 下 fs 相对解析直接 ENOENT
+		this.attachments = new AttachmentStore(path.join(pluginDir, 'attachments'));
 		this.modelContextRegistry = new ModelContextRegistry(pluginDir);
 
 		// ==================== 用户记忆系统 ====================
@@ -1131,12 +1140,13 @@ export default class RatelVaultPlugin extends Plugin {
 	 * 但已构造的 LLM 还指向旧值。重建一次让新 key 生效。
 	 */
 	rebuildLLM(): void {
-		this.llm = new DeepSeekLLM({
+		this.llm = new OpenAICompatLLM({
 			apiBase: this.settings.chatApiBase,
 			// 关键路径:apiKey 不再存 settings,从 Obsidian 钥匙串按 chatApiBase 端点类型解析;
 			// localhost Ollama 免 Key 返回 null → 空串透传给 LLM(本地服务不校验)。
 			apiKey: resolveChatApiKey(this.app, this.settings) ?? '',
 			model: this.settings.chatModel,
+			visionEnabled: this.settings.chatVisionEnabled,
 		});
 	}
 
@@ -1360,9 +1370,15 @@ export default class RatelVaultPlugin extends Plugin {
 	 *
 	 * @param sessionId - 会话 ID,关联到 Persistence 存储。
 	 * @param message - 用户最新一条消息。
+	 * @param attachments - 可选图片附件引用(S-VISION v1.3);KB 级 {id, mimeType},base64 由 AttachmentStore 外置。
 	 * @returns 异步迭代的 `AgentEvent` 流。
 	 */
-	async *ask(sessionId: string, message: string, signal?: AbortSignal): AsyncIterable<AgentEvent> {
+	async *ask(
+		sessionId: string,
+		message: string,
+		signal?: AbortSignal,
+		attachments?: AttachmentRef[],
+	): AsyncIterable<AgentEvent> {
 		// 关键路径:注入 overrides + tools + skills getter,让 ContextManager 调 Composer 拼系统提示词。
 		const ctx = new ContextManager(this.persistence, {
 			getOverrides: () => this.settings.promptOverrides,
@@ -1456,7 +1472,7 @@ export default class RatelVaultPlugin extends Plugin {
 			for (let attempt = 0; attempt < 2; attempt++) {
 				let overflow = false;
 				for await (const ev of agentLoop(
-					{ sessionId, message },
+					{ sessionId, message, attachments },
 					ctx,
 					this.llm,
 					this.tools,
@@ -1467,6 +1483,7 @@ export default class RatelVaultPlugin extends Plugin {
 					this.settings.agentMaxSteps,
 					this.skillActivator,
 					skipAdd,
+					this.attachments, // S-VISION v1.3:出站前把附件引用解析回 base64(仅内存瞬态)
 				)) {
 					if (
 						ev.type === 'error' &&

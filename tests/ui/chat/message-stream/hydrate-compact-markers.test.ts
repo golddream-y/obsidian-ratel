@@ -7,13 +7,13 @@ import type { ChatMessage } from '../../../../src/ports/llm';
 import { hydrateSessionMessages } from '../../../../src/ui/chat/message-stream/hydrate-session-messages';
 
 describe('hydrateSessionMessages compact markers', () => {
-	it('hydrateSessionMessages - 有 marker afterIndex=1 - 在第三条 UI 前插入 compact 分隔', () => {
+	it('hydrateSessionMessages - 有 marker afterIndex=1 - 在第三条 UI 前插入 compact 分隔', async () => {
 		const raw: ChatMessage[] = [
 			{ role: 'user', content: 'a' },
 			{ role: 'assistant', content: 'b' },
 			{ role: 'user', content: 'c' },
 		];
-		const ui = hydrateSessionMessages(raw, {
+		const ui = await hydrateSessionMessages(raw, undefined, '', {
 			markers: [{ afterIndex: 1, summary: 's', restoredNotePaths: [], at: 1 }],
 		});
 		expect(ui.map((m) => m.role)).toEqual(['user', 'assistant', 'compact', 'user']);

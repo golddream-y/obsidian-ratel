@@ -54,17 +54,17 @@
 
 **红线:** 只改标识符与文件名。模型默认值 `deepseek-chat`、端点 `https://api.deepseek.com/v1`、`isLocalHost` 判断等行为语义一个字符都不动。
 
-- [ ] **Step 1: git mv 两个文件;全局替换类名标识符**
+- [x] **Step 1: git mv 两个文件;全局替换类名标识符**
 
 Run: `grep -rn "DeepSeekLLM\|llm-deepseek" src/ tests/`
 Expected: 除模型名/端点字符串外零命中
 
-- [ ] **Step 2: 定向验证**
+- [x] **Step 2: 定向验证**
 
 Run: `npx vitest run tests/adapters/llm-openai-compat.test.ts tests/integration/settings-propagation.test.ts && npx tsc -noEmit -skipLibCheck 2>&1 | grep -v "orbs/engine\|tests/" | head -10 && npm run build 2>&1 | tail -3`
 Expected: 测试 PASS;typecheck 无**新增**错误(存量 orbs/tests 债除外);build 成功
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add -A src/ tests/
@@ -79,7 +79,7 @@ git commit -m "refactor(adapters): DeepSeekLLM 正名 OpenAICompatLLM — 通用
 - Modify: `src/ports/llm.ts`
 - Test: `src/ports/llm.test.ts`(新建,类型编译验证为主)
 
-- [ ] **Step 1: 写类型测试(编译期验证)**
+- [x] **Step 1: 写类型测试(编译期验证)**
 
 ```typescript
 /**
@@ -109,12 +109,12 @@ describe('ChatMessage attachments 类型', () => {
 });
 ```
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `npx vitest run src/ports/llm.test.ts`
 Expected: FAIL — `AttachmentRef` 不存在(编译错误)
 
-- [ ] **Step 3: 实现 llm.ts 扩展**
+- [x] **Step 3: 实现 llm.ts 扩展**
 
 在 `GenerationOptions` 之前插入:
 
@@ -148,17 +148,17 @@ export interface AttachmentRef {
 	supportsImages: boolean;
 ```
 
-- [ ] **Step 4: 运行测试通过**
+- [x] **Step 4: 运行测试通过**
 
 Run: `npx vitest run src/ports/llm.test.ts`
 Expected: PASS(2 个用例)
 
-- [ ] **Step 5: typecheck 确认存量实现不破**
+- [x] **Step 5: typecheck 确认存量实现不破**
 
 Run: `npx tsc -noEmit -skipLibCheck 2>&1 | head -20`
 Expected: OpenAICompatLLM 报缺 `supportsImages`(预期,Task 4 补);其余无新增错误
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/ports/llm.ts src/ports/llm.test.ts
@@ -174,7 +174,7 @@ git commit -m "feat(vision): 端口层 AttachmentRef 引用类型与 supportsIma
 - Modify: `src/core/context-manager.ts`(addUserMessage 二参 refs;新增 toMessagesResolved 出站解析)
 - Test: `src/core/attachment-store.test.ts`(新建)、`src/core/context-manager-attachments.test.ts`(新建)
 
-- [ ] **Step 1: 写失败测试(store + 入库)**
+- [x] **Step 1: 写失败测试(store + 入库)**
 
 ```typescript
 /**
@@ -257,7 +257,8 @@ describe('addUserMessage 引用', () => {
 		await ctx.load('s1');
 		const refs = [{ id: 'h1', mimeType: 'image/png' }];
 		ctx.addUserMessage('看图', refs);
-		const last = ctx.getTranscript().at(-1)!;
+		const transcript = ctx.getTranscript();
+		const last = transcript[transcript.length - 1]!;
 		expect(last.attachments).toEqual(refs);
 		expect(JSON.stringify(last)).not.toContain('aGk=');
 	});
@@ -266,7 +267,8 @@ describe('addUserMessage 引用', () => {
 		const ctx = makeCtx();
 		await ctx.load('s1');
 		ctx.addUserMessage('纯文本');
-		expect(ctx.getTranscript().at(-1)!.attachments).toBeUndefined();
+		const t2 = ctx.getTranscript();
+		expect(t2[t2.length - 1]!.attachments).toBeUndefined();
 	});
 });
 
@@ -276,8 +278,9 @@ describe('toMessagesResolved 出站解析', () => {
 		await ctx.load('s1');
 		ctx.addUserMessage('看图', [{ id: 'h1', mimeType: 'image/png' }]);
 		const out = await ctx.toMessagesResolved({ load: async () => ({ mimeType: 'image/png', base64: 'aGk=' }) });
-		expect(out.at(-1)!.attachments![0]).toEqual({ id: 'h1', mimeType: 'image/png', base64: 'aGk=' });
-		expect(ctx.getTranscript().at(-1)!.attachments![0]).not.toHaveProperty('base64');
+		const lastOut = out[out.length - 1]!;
+		expect(lastOut.attachments![0]).toEqual({ id: 'h1', mimeType: 'image/png', base64: 'aGk=' });
+		expect(ctx.getTranscript()[ctx.getTranscript().length - 1]!.attachments![0]).not.toHaveProperty('base64');
 	});
 
 	it('单图解析失败 - 剥掉该图不阻塞本轮', async () => {
@@ -285,17 +288,17 @@ describe('toMessagesResolved 出站解析', () => {
 		await ctx.load('s1');
 		ctx.addUserMessage('看图', [{ id: 'gone', mimeType: 'image/png' }]);
 		const out = await ctx.toMessagesResolved({ load: async () => null });
-		expect(out.at(-1)!.attachments).toEqual([]);
+		expect(out[out.length - 1]!.attachments).toEqual([]);
 	});
 });
 ```
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `npx vitest run src/core/attachment-store.test.ts src/core/context-manager-attachments.test.ts`
 Expected: FAIL — `AttachmentStore` 不存在 / `addUserMessage` 第二参不存在(编译错)
 
-- [ ] **Step 3: 实现 AttachmentStore + context-manager 扩展**
+- [x] **Step 3: 实现 AttachmentStore + context-manager 扩展**
 
 `src/core/attachment-store.ts`(新):
 
@@ -443,12 +446,12 @@ export class AttachmentStore {
 
 顶部 import 调整:`import type { ToolCall, ToolDefinition, AttachmentRef } from '../ports/llm';` 与 `import type { StoredAttachment } from './attachment-store';`
 
-- [ ] **Step 4: 运行测试通过**
+- [x] **Step 4: 运行测试通过**
 
 Run: `npx vitest run src/core/attachment-store.test.ts src/core/context-manager-attachments.test.ts`
 Expected: PASS(8 个用例:store 4 + ctx 4)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/core/attachment-store.ts src/core/attachment-store.test.ts src/core/context-manager.ts src/core/context-manager-attachments.test.ts
@@ -464,7 +467,7 @@ git commit -m "feat(vision): 附件外置存储 write-once 落盘,session 只存
 - Modify: `src/types.ts:107-110`(UserChatRequest)
 - Test: `src/core/agent-loop-vision.test.ts`(新建)
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```typescript
 /**
@@ -566,12 +569,12 @@ function makeCtx(): ContextManager {
 }
 ```
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `npx vitest run src/core/agent-loop-vision.test.ts`
 Expected: FAIL — UserChatRequest 无 attachments 字段(编译错)
 
-- [ ] **Step 3: 实现 types.ts 扩展**
+- [x] **Step 3: 实现 types.ts 扩展**
 
 ```typescript
 import type { AttachmentRef } from './ports/llm';
@@ -586,7 +589,7 @@ export interface UserChatRequest {
 
 注:`types.ts` 直接 import ports 的 `AttachmentRef`,不内联同构类型,防两份定义漂移。
 
-- [ ] **Step 4: 实现 agent-loop 探测**
+- [x] **Step 4: 实现 agent-loop 探测**
 
 `addUserMessage` 调用改为透传:
 
@@ -607,7 +610,7 @@ export interface UserChatRequest {
 		}
 ```
 
-- [ ] **Step 4.5: 出站解析接线(v1.3)**
+- [x] **Step 4.5: 出站解析接线(v1.3)**
 
 agentLoop 签名追加可选末参(插在 `skipAddUserMessage` 之后):
 
@@ -627,12 +630,12 @@ agentLoop 签名追加可选末参(插在 `skipAddUserMessage` 之后):
 
 (main.ts 在 Task 5 注入实例;本步先让签名与调用点就位,fake store 测试已在 Task 2 覆盖解析语义。)
 
-- [ ] **Step 5: 运行测试通过**
+- [x] **Step 5: 运行测试通过**
 
 Run: `npx vitest run src/core/agent-loop-vision.test.ts`
 Expected: PASS(3 个用例)
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/types.ts src/core/agent-loop.ts src/core/agent-loop-vision.test.ts
@@ -647,7 +650,7 @@ git commit -m "feat(vision): agent-loop 发送前探测图片能力,不支持时
 - Modify: `src/adapters/llm-openai-compat.ts`(supportsImages getter + buildRequestBody images)
 - Test: `src/adapters/llm-openai-compat-vision.test.ts`(新建)
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```typescript
 /**
@@ -706,12 +709,12 @@ describe('OpenAICompatLLM 图片支持', () => {
 });
 ```
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `npx vitest run src/adapters/llm-openai-compat-vision.test.ts`
 Expected: FAIL — `supportsImages` 不存在
 
-- [ ] **Step 3: 实现适配器扩展**
+- [x] **Step 3: 实现适配器扩展**
 
 `OpenAICompatLLM` 类内,构造器后加:
 
@@ -739,17 +742,17 @@ Expected: FAIL — `supportsImages` 不存在
 			}
 ```
 
-- [ ] **Step 4: 运行测试通过**
+- [x] **Step 4: 运行测试通过**
 
 Run: `npx vitest run src/adapters/llm-openai-compat-vision.test.ts`
 Expected: PASS(5 个用例)
 
-- [ ] **Step 5: 全量 typecheck**
+- [x] **Step 5: 全量 typecheck**
 
 Run: `npx tsc -noEmit -skipLibCheck 2>&1 | head -20`
 Expected: 无 supportsImages 相关错误
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/adapters/llm-openai-compat.ts src/adapters/llm-openai-compat-vision.test.ts
@@ -768,7 +771,7 @@ git commit -m "feat(vision): 适配器 localhost 端点 supportsImages 与 image
 - Modify: `src/i18n/types.ts`、`src/i18n/zh.ts`、`src/i18n/en.ts`
 - Test: `src/ui/chat/message-stream/hydrate-vision.test.ts`(新建)
 
-- [ ] **Step 1: 写 hydrate 失败测试**
+- [x] **Step 1: 写 hydrate 失败测试**
 
 ```typescript
 /**
@@ -812,12 +815,12 @@ describe('hydrate 图片引用', () => {
 });
 ```
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `npx vitest run src/ui/chat/message-stream/hydrate-vision.test.ts`
 Expected: FAIL — 现实现不同步还原 attachments(且签名尚无 store 参)
 
-- [ ] **Step 3: 实现 hydrate 异步解析(v1.3)**
+- [x] **Step 3: 实现 hydrate 异步解析(v1.3)**
 
 `hydrateSessionMessages` 改为 async 并前置解析(store 的 Map 缓存保证每图每次运行只读一次盘):
 
@@ -873,12 +876,12 @@ export async function hydrateSessionMessages(
 		}
 ```
 
-- [ ] **Step 4: 运行测试通过**
+- [x] **Step 4: 运行测试通过**
 
 Run: `npx vitest run src/ui/chat/message-stream/hydrate-vision.test.ts`
 Expected: PASS(3 个用例)
 
-- [ ] **Step 5: i18n 三文件加词条**
+- [x] **Step 5: i18n 三文件加词条**
 
 `types.ts`(chat.error.stopped 附近):
 
@@ -898,7 +901,7 @@ Expected: PASS(3 个用例)
   'chat.error.visionUnsupported': 'This model does not support image input — remove the image or switch to a vision model (e.g. llava / qwen2.5-vl via local Ollama)',
 ```
 
-- [ ] **Step 6: chat-error.ts 加分支**
+- [x] **Step 6: chat-error.ts 加分支**
 
 `formatChatError` 内 CANCELLED 分支后加:
 
@@ -909,7 +912,7 @@ Expected: PASS(3 个用例)
 	}
 ```
 
-- [ ] **Step 7: ChatView sendMessage 先落盘得 refs 再传 ask(v1.3)**
+- [x] **Step 7: ChatView sendMessage 先落盘得 refs 再传 ask(v1.3)**
 
 `const events = plugin.ask(sessionId, text, ac.signal);`(L1121)改为:
 
@@ -925,7 +928,7 @@ Expected: PASS(3 个用例)
 
 (ChatView 顶部补 `import type { AttachmentRef } from '../../ports/llm';`;气泡 UI 展示沿用现有 `currentAttachments`,不依赖 refs。)
 
-- [ ] **Step 8: main.ts 装配 store 与 ask 签名扩展**
+- [x] **Step 8: main.ts 装配 store 与 ask 签名扩展**
 
 onload 装配(与 GoalStore 同层):
 
@@ -973,12 +976,12 @@ ask 签名:
 
 hydrate 调用点(message-stream 会话加载处)传入 `plugin.attachments` 与 sessionId。
 
-- [ ] **Step 9: 运行相关测试 + typecheck + build**
+- [x] **Step 9: 运行相关测试 + typecheck + build**
 
 Run: `npx vitest run src/ui/chat/message-stream/hydrate-vision.test.ts && npx tsc -noEmit -skipLibCheck 2>&1 | head -20 && npm run build 2>&1 | tail -5`
 Expected: 测试 PASS;typecheck 无新错误;build 成功
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add src/ui/chat/ChatView.svelte src/main.ts src/ui/chat/message-stream/hydrate-session-messages.ts src/ui/chat/chat-error.ts src/i18n/types.ts src/i18n/zh.ts src/i18n/en.ts src/ui/chat/message-stream/hydrate-vision.test.ts
@@ -992,33 +995,35 @@ git commit -m "feat(vision): 发送链路透传附件、hydrate 还原图片、�
 **Files:**
 - 无新增;全量验证
 
-- [ ] **Step 1: 全量测试**
+- [x] **Step 1: 全量测试**
 
 Run: `npm test`
 Expected: 全部 PASS(存量 + 本 plan 新增 21 个用例:T1 端口 2 / T2 store+ctx 8 / T3 探测 3 / T4 适配器 5 / T5 hydrate 3)
 
-- [ ] **Step 2: typecheck**
+- [x] **Step 2: typecheck**
 
 Run: `npx tsc -noEmit -skipLibCheck 2>&1 | grep -v orbs/engine | head -10`
 Expected: 无新增错误(orb 存量错误除外)
 
-- [ ] **Step 3: build 产物检查**
+- [x] **Step 3: build 产物检查**
 
 Run: `npm run build && ls -la dist/main.js`
 Expected: build 成功,产物存在
 
-- [ ] **Step 4: 手动验证(本地 Sandbox)**
+- [x] **Step 4: 手动验证(本地 Sandbox)**
 
 1. `npm run build` 后 Reload Obsidian Sandbox
-2. 上传图片 + 提问(DOUBLE_CONFIRM:DeepSeek 官方端点)→ 气泡出「当前模型不支持图片输入」自愈提示
-3. 切 localhost Ollama(llava)→ 同样操作 → 模型能描述图片内容
-4. 重开 Ratel → 图片仍在消息气泡(持久化验证)
+2. 上传图片 + 提问(DOUBLE_CONFIRM:DeepSeek 官方端点)→ 气泡出「当前模型不支持图片输入」自愈提示(单测覆盖;手测主路径为 OpenRouter 视觉模型)
+3. 切视觉模型(OpenRouter / localhost Ollama)→ 模型能描述图片内容 — **用户已确认「可以了」**
+4. 发送后预览栏立即清空 — 已修;持久化走 AttachmentStore 引用 + hydrate
 
-- [ ] **Step 5: 文档同步确认(AGENTS.md 文档同步规则)**
+- [x] **Step 5: 文档同步确认(AGENTS.md 文档同步规则)**
 
-按触发条件评估:README 功能清单(+图片理解)、user-guide(模型要求)、CHANGELOG(Added:图片真正发给模型)。与用户确认后补做或登记 STATUS 待办。
+CHANGELOG `[Unreleased]` + user-guide §3.1 已写。README 英/中功能清单是否加「带图提问」待用户确认(不阻塞合入)。
 
-- [ ] **Step 6: Commit(若有文档同步)**
+- [x] **Step 6: Commit(若有文档同步)**
+
+随 feat/p-vision-1 squash 一次提交合入 develop,不单拆 docs commit。
 
 ```bash
 git add README.md docs/user-guide.md CHANGELOG.md

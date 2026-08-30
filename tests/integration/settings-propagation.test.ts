@@ -2,7 +2,7 @@
  * @file tests/integration/settings-propagation.test.ts
  * @description 改 settings 后调 rebuild,adapter 实例被替换;钥匙串 Key 解析
  * @module tests/integration/settings-propagation
- * @depends main, settings, adapters/llm-deepseek, adapters/embedding-*
+ * @depends main, settings, adapters/llm-openai-compat, adapters/embedding-*
  *
  * 关键路径:本测试断言手动 rebuild 路径仍工作。当前实现下,settings 字段改动不会
  * 自动 rebuild,需手动调 `plugin.rebuildXxx()`。反应式 Proxy 自动化属于 P-DEFENSIVE-IMPL。
@@ -18,11 +18,16 @@ vi.mock('obsidian', () => ({
 	App: class {},
 	Plugin: class {},
 	PluginSettingTab: class {},
+	SettingPage: class {},
 	Setting: class {},
 	Notice: class {},
 	WorkspaceLeaf: class {},
 	ItemView: class {},
 	editor: { Editor: class {} },
+	Modal: class {
+		open() {}
+		close() {}
+	},
 }));
 
 vi.mock('svelte', () => ({
@@ -39,10 +44,16 @@ vi.mock('../../src/ui/chat/ChatView', () => ({
 	VIEW_TYPE_CHAT: 'ratel-chat',
 }));
 
+// 关键路径:MemoryModal import MemoryPanel.svelte,vitest 没配 svelte 解析器,需 stub
+vi.mock('../../src/ui/memory-panel/MemoryModal', () => ({
+	MemoryModal: class {},
+	shouldCreateMemoryModal: (current: unknown) => current === null,
+}));
+
 import type { App } from 'obsidian';
 import RatelVaultPlugin from '../../src/main';
 import { DEFAULT_SETTINGS } from '../../src/settings';
-import { DeepSeekLLM } from '../../src/adapters/llm-deepseek';
+import { OpenAICompatLLM } from '../../src/adapters/llm-openai-compat';
 import { EmbeddingLocal } from '../../src/adapters/embedding-local';
 import { EmbeddingApi } from '../../src/adapters/embedding-api';
 import { RATEL_SECRET_IDS } from '../../src/secrets/ratel-secrets';
@@ -84,7 +95,7 @@ describe('Settings 变更传播', () => {
 		plugin.rebuildLLM();
 
 		expect(plugin.llm).not.toBe(oldLlm);
-		expect(plugin.llm).toBeInstanceOf(DeepSeekLLM);
+		expect(plugin.llm).toBeInstanceOf(OpenAICompatLLM);
 		// 关键路径:新 LLM 的 config 反映钥匙串里的新 apiKey
 		expect(plugin.llm.config.apiKey).toBe('sk-new');
 	});

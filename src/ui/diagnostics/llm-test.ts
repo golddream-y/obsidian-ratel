@@ -181,7 +181,7 @@ export function renderLLMTest(container: HTMLElement, plugin: RatelVaultPlugin):
 
         // 为了让测试页的参数不影响插件主 LLM,临时创建一个独立客户端
         // (如果不临时创建,plugin.llm 是全局的,参数改了也只在这次请求生效,
-        // 但 DeepSeekLLM 构造时只存了 config,options 是每次请求传的,所以直接用 plugin.llm 即可)
+        // 但 OpenAICompatLLM 构造时只存了 config,options 是每次请求传的,所以直接用 plugin.llm 即可)
         const llm = plugin.llm;
 
         try {

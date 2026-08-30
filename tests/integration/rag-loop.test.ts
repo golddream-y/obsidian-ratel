@@ -80,6 +80,7 @@ describe('RAG loop integration', () => {
 					yield { text: '项目使用 TypeScript + esbuild' };
 				}
 			},
+			supportsImages: false,
 			countTokens: () => 10,
 		};
 

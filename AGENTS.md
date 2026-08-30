@@ -68,7 +68,7 @@ src/
     vector-vectra.ts    # vectra 包装(upsertItem 支持预计算向量)
     embedding-onnx.ts   # ONNX 推理(在 Web Worker 中执行)
     embedding-worker-proxy.ts # EmbeddingPort 代理,postMessage 到 Web Worker
-    llm-deepseek.ts     # DeepSeek (OpenAI 兼容)
+    llm-openai-compat.ts # OpenAI 兼容适配器(DeepSeek/Ollama 等端点)
     llm-anthropic.ts    # Claude
   tools/            # 库工具(搜索、读取、创建等)
   hooks/            # 知识治理钩子

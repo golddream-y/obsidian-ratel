@@ -537,6 +537,7 @@ describe('agentLoop', () => {
 				}
 				yield { text: '回答' };
 			},
+			supportsImages: false,
 			countTokens: () => 10,
 		};
 		const tools = new ToolRegistry();

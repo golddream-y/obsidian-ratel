@@ -22,6 +22,7 @@ export const CONFIG_UPDATE_WHITELIST: ReadonlySet<string> = new Set<string>([
 	// --- 对话模型 ---
 	'chatModel',
 	'chatApiBase',
+	'chatVisionEnabled',
 	'contextLengthPreset',
 	'chatModelMaxTokens',
 	'autoCompactEnabled',

@@ -7,11 +7,11 @@ import { setLang } from '../../../../src/i18n';
 import { pathForCiteIndex } from '../../../../src/ui/chat/open-chat-note';
 import { hydrateSessionMessages } from '../../../../src/ui/chat/message-stream/hydrate-session-messages';
 
-describe('hydrateSessionMessages', () => {
+describe('hydrateSessionMessages', async () => {
 	beforeEach(() => setLang('zh'));
 
-	it('hydrateSessionMessages - 纯文本一轮 - user+assistant text', () => {
-		const ui = hydrateSessionMessages([
+	it('hydrateSessionMessages - 纯文本一轮 - user+assistant text', async () => {
+		const ui = await hydrateSessionMessages([
 			{ role: 'user', content: 'hi' },
 			{ role: 'assistant', content: 'hello' },
 		]);
@@ -23,8 +23,8 @@ describe('hydrateSessionMessages', () => {
 		expect(ui[1]!.segments).toEqual([{ type: 'text', text: 'hello' }]);
 	});
 
-	it('hydrateSessionMessages - 一轮 search_vault - 含 tool 与 text 段', () => {
-		const ui = hydrateSessionMessages([
+	it('hydrateSessionMessages - 一轮 search_vault - 含 tool 与 text 段', async () => {
+		const ui = await hydrateSessionMessages([
 			{ role: 'user', content: 'q' },
 			{
 				role: 'assistant',
@@ -44,8 +44,8 @@ describe('hydrateSessionMessages', () => {
 		expect(asst.segments.some((s) => s.type === 'text' && s.text === '答')).toBe(true);
 	});
 
-	it('hydrateSessionMessages - 跳过 system - 不进 UI', () => {
-		const ui = hydrateSessionMessages([
+	it('hydrateSessionMessages - 跳过 system - 不进 UI', async () => {
+		const ui = await hydrateSessionMessages([
 			{ role: 'system', content: 'ignore' },
 			{ role: 'user', content: 'u' },
 		]);
@@ -53,7 +53,7 @@ describe('hydrateSessionMessages', () => {
 		expect(ui[0]!.role).toBe('user');
 	});
 
-	it('hydrateSessionMessages - search_vault 标准结果 - 挂 searchResults', () => {
+	it('hydrateSessionMessages - search_vault 标准结果 - 挂 searchResults', async () => {
 		const toolBody = JSON.stringify([
 			{
 				docId: 'd1',
@@ -63,7 +63,7 @@ describe('hydrateSessionMessages', () => {
 				reranked: true,
 			},
 		]);
-		const ui = hydrateSessionMessages([
+		const ui = await hydrateSessionMessages([
 			{ role: 'user', content: 'q' },
 			{
 				role: 'assistant',
@@ -83,14 +83,14 @@ describe('hydrateSessionMessages', () => {
 		expect(pathForCiteIndex(asst.searchResults, 1)).toBe('notes/a.md');
 	});
 
-	it('hydrateSessionMessages - 两次 search_vault - 保留最后一次', () => {
+	it('hydrateSessionMessages - 两次 search_vault - 保留最后一次', async () => {
 		const first = JSON.stringify([
 			{ docId: 'd1', score: 0.5, index: 1, metadata: { path: 'old.md' } },
 		]);
 		const second = JSON.stringify([
 			{ docId: 'd2', score: 0.8, index: 1, metadata: { path: 'new.md' } },
 		]);
-		const ui = hydrateSessionMessages([
+		const ui = await hydrateSessionMessages([
 			{ role: 'user', content: 'q' },
 			{ role: 'assistant', content: '', toolCallId: 't1', toolName: 'search_vault', toolArgs: {} },
 			{ role: 'tool', content: first, toolCallId: 't1' },
@@ -101,11 +101,11 @@ describe('hydrateSessionMessages', () => {
 		expect(ui[1]!.searchResults?.[0]?.path).toBe('new.md');
 	});
 
-	it('hydrateSessionMessages - 末次 search 空数组 - 不挂 searchResults', () => {
+	it('hydrateSessionMessages - 末次 search 空数组 - 不挂 searchResults', async () => {
 		const first = JSON.stringify([
 			{ docId: 'd1', score: 0.5, index: 1, metadata: { path: 'old.md' } },
 		]);
-		const ui = hydrateSessionMessages([
+		const ui = await hydrateSessionMessages([
 			{ role: 'user', content: 'q' },
 			{ role: 'assistant', content: '', toolCallId: 't1', toolName: 'search_vault', toolArgs: {} },
 			{ role: 'tool', content: first, toolCallId: 't1' },

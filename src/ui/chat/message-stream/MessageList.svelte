@@ -179,18 +179,23 @@
 	// 关键路径:焦点/选择端点暂留对应单元,防止交互中被卸载导致选区丢失
 	$effect(() => {
 		const updateRetained = () => {
-			const next = new Set<string>();
-			const focused = unitIdFromNode(document.activeElement);
-			if (focused) next.add(focused);
-			const selection = window.getSelection();
-			if (selection && !selection.isCollapsed && selection.rangeCount > 0) {
-				const selRange = selection.getRangeAt(0);
-				const start = unitIdFromNode(selRange.startContainer);
-				const end = unitIdFromNode(selRange.endContainer);
-				if (start) next.add(start);
-				if (end) next.add(end);
-			}
-			retainedIds = next;
+			// 修复: 删除附件芯片等 DOM 变更会在 Svelte flush 期间同步触发 focusout /
+			// selectionchange;此刻处于活动 effect 上下文,直接写 $state 撞
+			// state_unsafe_mutation 守卫。微任务延后到刷新周期外再读选区并写入。
+			queueMicrotask(() => {
+				const next = new Set<string>();
+				const focused = unitIdFromNode(document.activeElement);
+				if (focused) next.add(focused);
+				const selection = window.getSelection();
+				if (selection && !selection.isCollapsed && selection.rangeCount > 0) {
+					const selRange = selection.getRangeAt(0);
+					const start = unitIdFromNode(selRange.startContainer);
+					const end = unitIdFromNode(selRange.endContainer);
+					if (start) next.add(start);
+					if (end) next.add(end);
+				}
+				retainedIds = next;
+			});
 		};
 		document.addEventListener('focusin', updateRetained);
 		document.addEventListener('focusout', updateRetained);

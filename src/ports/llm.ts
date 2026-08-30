@@ -17,10 +17,26 @@ export interface LLMClient {
 	 */
 	chat(req: ChatRequest): AsyncIterable<ChatDelta>;
 	/**
+	 * 当前端点是否支持图片输入(S-VISION)。
+	 * agent-loop 发送前探测:含图 && 不支持 → 直接报错,不静默丢图。
+	 */
+	supportsImages: boolean;
+	/**
 	 * 计算给定文本的 token 数(用于上下文截断判断)。
 	 * @param text - 待计算文本。
 	 */
 	countTokens(text: string): number;
+}
+
+/**
+ * 图片附件引用(S-VISION v1.3)— session 里只存 {id, mimeType};
+ * base64 仅在出站解析副本上出现(见 context-manager.toMessagesResolved),持久层永不含。
+ * id = 内容 hash(AttachmentStore 文件名);base64 不含 `data:` 前缀。
+ */
+export interface AttachmentRef {
+	id: string;
+	mimeType: string;
+	base64?: string;
 }
 
 /**
@@ -60,6 +76,8 @@ export interface ChatRequest {
 export interface ChatMessage {
 	role: 'system' | 'user' | 'assistant' | 'tool';
 	content: string;
+	/** 图片附件引用 — 仅 user 消息;适配器按端点能力构造 vision 格式或拒绝 */
+	attachments?: AttachmentRef[];
 	/** 思考过程全文 — 适配器映射为 API 的 reasoning_content */
 	reasoning?: string;
 	toolCallId?: string;

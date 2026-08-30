@@ -59,6 +59,7 @@ const TRUNCATION_NOTICE = '\n\n---\n⚠️ **回复因长度限制被截断。**
  * @param maxSteps - 可选的最大步数上限,默认 50(见 ADR-004)
  * @param skillActivator - 可选的 Skill 激活器,用于 activate_skill / deactivate_skill 执行后重组 system prompt 的 skills 段
  * @param skipAddUserMessage - 为 true 时不追加 user 消息(压缩重试时 transcript 已含该句)
+ * @param attachmentStore - 可选附件存储(S-VISION v1.3),出站前把消息里的附件引用解析回 base64;未注入时原样直通
  * @returns AgentEvent 异步可迭代流
  * @throws 不会向上抛错 — 内部错误一律转 `error` 事件
  * @example
@@ -80,6 +81,9 @@ export async function* agentLoop(
 	// 关键路径:Skill 激活/反激活后需重组 system prompt — 注入 Activator(Discovery 重组用)。
 	skillActivator?: SkillActivator,
 	skipAddUserMessage?: boolean,
+	attachmentStore?: {
+		load(sessionId: string, id: string): Promise<{ mimeType: string; base64: string } | null>;
+	},
 ): AsyncIterable<AgentEvent> {
 	// 关键路径:maxSteps 可配置(见 ADR-004),未传时降级默认值 50。
 	const effectiveMaxSteps = maxSteps ?? DEFAULT_MAX_STEPS;
@@ -93,7 +97,7 @@ export async function* agentLoop(
 		ctx.setSkillsContext(skillActivator.composeDiscovery(ctx.getOverrides(), req.message), '');
 	}
 	if (!skipAddUserMessage) {
-		ctx.addUserMessage(req.message);
+		ctx.addUserMessage(req.message, req.attachments);
 	}
 
 	// 关键路径:意图分类,判断是否需要 RAG 工作流。无 classifier 时降级 direct(向后兼容)。
@@ -110,6 +114,13 @@ export async function* agentLoop(
 	}
 
 	try {
+		// 关键路径(S-VISION):发送前能力探测 — 含图 && 模型不支持 → 立即终止。
+		// 消息已入 session(用户换模型重发可见),但本轮不调 LLM,不静默丢图。
+		if (req.attachments && req.attachments.length > 0 && !llm.supportsImages) {
+			yield { type: 'error', payload: { code: 'VISION_UNSUPPORTED', message: '当前模型不支持图片输入' } };
+			return;
+		}
+
 		let loopExitedViaBreak = false;
 
 		// 单步循环:每轮产生一段 assistant 回复 + 零到多次工具调用。
@@ -133,8 +144,10 @@ export async function* agentLoop(
 			try {
 				// 让 LLM 流式产出;逐步把 text 投递给 UI,toolCall 全部收集(支持一轮多工具)。
 				// 关键路径:signal 穿透到 HTTP 层 — abort 时销毁 socket,首字节 pending 期也能立即停止
+				// 关键路径(S-VISION v1.3):出站前把引用解析回 base64 —— 仅内存瞬态副本,
+				// session 内消息保持 KB 级引用不被污染;store 未注入时原样直通。
 				const stream = llm.chat({
-					messages: ctx.toMessages(intent),
+					messages: await ctx.toMessagesResolved(attachmentStore, intent),
 					tools: tools.definitions(),
 					signal,
 				});

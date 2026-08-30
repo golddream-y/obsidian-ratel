@@ -14,6 +14,7 @@ function createMockLLM(streamOutput: string): LLMClient {
 			// 关键路径:模拟 LLM 流式返回意图判断结果
 			yield { text: streamOutput };
 		},
+		supportsImages: false,
 		countTokens: () => 10,
 	};
 }
@@ -26,6 +27,7 @@ function createMockLLMThrowing(): LLMClient {
 			yield { text: '' };
 			throw new Error('LLM unavailable');
 		},
+		supportsImages: false,
 		countTokens: () => 10,
 	};
 }
@@ -71,6 +73,7 @@ describe('classifyIntent', () => {
 				chatSpy(req);
 				yield { text: 'rag' };
 			},
+			supportsImages: false,
 			countTokens: () => 10,
 		};
 		await classifyIntent('问题', { llm });
@@ -87,6 +90,7 @@ describe('classifyIntent', () => {
 				chatSpy(req);
 				yield { text: 'rag' };
 			},
+			supportsImages: false,
 			countTokens: () => 10,
 		};
 		await classifyIntent('问题', { llm });

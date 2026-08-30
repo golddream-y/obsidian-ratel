@@ -13,6 +13,7 @@ function createMockLLM(streamOutput: string): LLMClient {
 		async *chat(_req: ChatRequest): AsyncIterable<ChatDelta> {
 			yield { text: streamOutput };
 		},
+		supportsImages: false,
 		countTokens: () => 10,
 	};
 }
@@ -25,6 +26,7 @@ function createMockLLMThrowing(): LLMClient {
 			yield { text: '' };
 			throw new Error('LLM unavailable');
 		},
+		supportsImages: false,
 		countTokens: () => 10,
 	};
 }
@@ -72,6 +74,7 @@ describe('rewriteQuery', () => {
 				chatSpy(req);
 				yield { text: '变体1\n变体2\n' };
 			},
+			supportsImages: false,
 			countTokens: () => 10,
 		};
 		await rewriteQuery('问题', { llm });
@@ -98,6 +101,7 @@ describe('rewriteQuery', () => {
 				chatSpy(req);
 				yield { text: '变体1\n变体2\n' };
 			},
+			supportsImages: false,
 			countTokens: () => 10,
 		};
 		await rewriteQuery('问题', { llm });

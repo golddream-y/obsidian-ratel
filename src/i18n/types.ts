@@ -251,6 +251,9 @@ export interface ChatStrings {
   'chat.error.stopped': string;
   'chat.error.compactFailed': string;
   'chat.error.attachmentInvalid': string;
+  'chat.error.visionUnsupported': string;
+  'settings.chatVision.name': string;
+  'settings.chatVision.desc': string;
   'chat.thinking': string;
   'chat.thinking.done': string;
   'chat.tool.executing': string;

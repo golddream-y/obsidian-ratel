@@ -1,7 +1,7 @@
 /**
- * @file src/adapters/llm-deepseek.ts
+ * @file src/adapters/llm-openai-compat.ts
  * @description DeepSeek 聊天补全适配器(OpenAI 兼容协议,支持流式 SSE 与工具调用)
- * @module adapters/llm-deepseek
+ * @module adapters/llm-openai-compat
  * @depends obsidian(requestUrl 备用), ports/llm, node:https/node:http(node 原生流式)
  */
 
@@ -12,6 +12,7 @@ import type { IncomingMessage } from 'node:http';
 import type { LLMClient, ChatRequest, ChatDelta, ToolCall } from '../ports/llm';
 import { sanitizeToolMessageOrder } from '../core/tool-message-align';
 import { tNow } from '../i18n';
+import { isLocalHost } from '../secrets/ratel-secrets';
 
 /**
  * DeepSeek 客户端配置。
@@ -24,6 +25,8 @@ interface DeepSeekConfig {
 	apiBase: string;
 	apiKey: string;
 	model: string;
+	/** 用户显式声明端点/模型支持图片输入(S-VISION v1.4)— OpenRouter 视觉模型等远端场景;localhost 自动视为支持 */
+	visionEnabled?: boolean;
 }
 
 /**
@@ -52,13 +55,22 @@ interface OpenAIToolCallChunk {
  * - 若 URL 解析失败或协议不支持,降级到 Obsidian `requestUrl`(一次性返回,无打字机效果)。
  *
  * @example
- *   const llm = new DeepSeekLLM({ apiBase, apiKey, model: 'deepseek-chat' });
+ *   const llm = new OpenAICompatLLM({ apiBase, apiKey, model: 'deepseek-chat' });
  *   for await (const delta of llm.chat(req)) {
  *     if (delta.text) process.stdout.write(delta.text);
  *   }
  */
-export class DeepSeekLLM implements LLMClient {
+export class OpenAICompatLLM implements LLMClient {
 	constructor(private config: DeepSeekConfig) {}
+
+	/**
+	 * 图片能力(S-VISION)— localhost(Ollama)端点支持 OpenAI 兼容 images 字段;
+	 * 远端 DeepSeek 官方端点不支持图片,agent-loop 会在此为 false 时拦截含图请求。
+	 */
+	get supportsImages(): boolean {
+		// localhost(Ollama)自动判定;远端靠用户在设置里显式声明(如 OpenRouter 视觉模型)
+		return this.config.visionEnabled === true || isLocalHost(this.config.apiBase);
+	}
 
 	/**
 	 * 向 DeepSeek `/chat/completions` 发起流式请求,逐 chunk yield `ChatDelta`。
@@ -413,6 +425,9 @@ export class DeepSeekLLM implements LLMClient {
 	 * - 助手消息若携带 `toolCallId`,补齐 `tool_calls` 数组,让多轮工具调用上下文完整。
 	 * - 助手消息若携带 `reasoning`,映射为 `reasoning_content`(DeepSeek thinking 模式 tool 轮必回传)。
 	 * - 工具消息(`role: 'tool'`)需要 `tool_call_id` 把结果回绑到对应调用。
+	 * - 含图且 `supportsImages`:localhost(Ollama)用 `messages[].images` 裸 base64;
+	 *   远端(OpenRouter 等)用 OpenAI `content` 多模态数组(`image_url` data URL)。
+	 *   远端未开视觉开关则剥离附件,防止 DeepSeek 收到未知字段报 400/500。
 	 *
 	 * @param req - 内部 `ChatRequest`。
 	 * @returns 序列化前的请求体对象。
@@ -436,6 +451,31 @@ export class DeepSeekLLM implements LLMClient {
 			}
 			if (m.role === 'tool' && m.toolCallId) {
 				msg.tool_call_id = m.toolCallId;
+			}
+			// 关键路径(S-VISION):本轮新图由 agent-loop 探测拦截;历史含图仍会走到这里。
+			// localhost → Ollama 原生 images[];远端开视觉 → OpenAI image_url(网关不认裸 images,会 400/500);
+			// 远端未开视觉 → 剥离(切回 DeepSeek 续聊)。
+			if (this.supportsImages && m.role === 'user' && m.attachments && m.attachments.length > 0) {
+				const parts = m.attachments.filter(
+					(a) => typeof a.base64 === 'string' && a.base64.length > 0,
+				);
+				if (parts.length > 0) {
+					if (isLocalHost(this.config.apiBase)) {
+						msg.images = parts.map((a) => a.base64);
+					} else {
+						const content: Array<Record<string, unknown>> = [];
+						if (typeof m.content === 'string' && m.content.length > 0) {
+							content.push({ type: 'text', text: m.content });
+						}
+						for (const a of parts) {
+							content.push({
+								type: 'image_url',
+								image_url: { url: `data:${a.mimeType};base64,${a.base64}` },
+							});
+						}
+						msg.content = content;
+					}
+				}
 			}
 			return msg;
 		});

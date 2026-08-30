@@ -77,6 +77,11 @@ export function applySettingValue(plugin: SettingApplier, key: string, value: un
 		plugin.settings.chatPreset = 'custom';
 		plugin.rebuildLLM();
 	}
+	if (key === 'chatVisionEnabled') {
+		// 修复(S-VISION v1.4):视觉开关即时生效 — LLM 实例捕获构造期 config,
+		// 不重建则 supportsImages 一直是旧值,直到重启/改模型才生效
+		plugin.rebuildLLM();
+	}
 	// 关键路径:embedLocalModel 当前是只读字段(内置模型),不会触发 setControlValue,
 	// 但保险起见排除,避免未来误触发 rebuild。
 	if (key.startsWith('embed') && key !== 'embedLocalModel') {

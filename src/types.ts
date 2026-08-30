@@ -11,6 +11,7 @@
  */
 
 // ==================== 端口类型 re-export ====================
+import type { AttachmentRef } from './ports/llm';
 export type { ChatMessage, ChatDelta, ToolCall, ToolDefinition } from './ports/llm';
 export type { VectorSearchResult, SearchFilter } from './ports/vector';
 export type { Session, NoteMeta, HookLogEntry } from './ports/persistence';
@@ -108,6 +109,8 @@ export type WorkerResponse =
 export interface UserChatRequest {
 	sessionId: string;
 	message: string;
+	/** 图片附件(S-VISION)— ChatView 从 pendingAttachments$ 取,随消息进 agent-loop */
+	attachments?: AttachmentRef[];
 }
 
 // ==================== 用户记忆系统(Phase 1)====================

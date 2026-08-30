@@ -41,6 +41,7 @@ function createMockLLM(responses: ChatDelta[][]): LLMClient {
 		async *chat(_req: ChatRequest): AsyncIterable<ChatDelta> {
 			for (const d of responses[i++] ?? []) yield d;
 		},
+		supportsImages: false,
 		countTokens: () => 10,
 	};
 }
@@ -96,6 +97,7 @@ describe('compactSession', () => {
 			async *chat() {
 				throw new Error('LLM 不应被调用');
 			},
+			supportsImages: false,
 			countTokens: () => 0,
 		};
 
@@ -150,6 +152,7 @@ describe('compactSession', () => {
 			async *chat() {
 				throw new Error('network');
 			},
+			supportsImages: false,
 			countTokens: () => 0,
 		};
 
@@ -184,6 +187,7 @@ describe('compactSession', () => {
 				capturedHistory = typeof userMsg?.content === 'string' ? userMsg.content : '';
 				yield { text: '溢出摘要' };
 			},
+			supportsImages: false,
 			countTokens: () => 10,
 		};
 

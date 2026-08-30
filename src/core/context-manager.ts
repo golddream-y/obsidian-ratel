@@ -2,11 +2,13 @@
  * @file src/core/context-manager.ts
  * @description ContextManager — 会话上下文管理器,负责 Session 加载/保存与对话消息累积,并提供 token 估算。
  * @module core/context-manager
- * @depends ../ports/persistence, ../ports/llm
+ * @depends ../ports/persistence, ../ports/llm, ./intent-classifier, ./attachment-store
  */
 
 import type { Persistence, Session, ChatMessage, CompactMarker } from '../ports/persistence';
-import type { ToolCall, ToolDefinition } from '../ports/llm';
+import type { ToolCall, ToolDefinition, AttachmentRef } from '../ports/llm';
+// 关键路径(S-VISION v1.3):StoredAttachment 仅作出站解析的 store.load 返回类型契约,零运行时依赖
+import type { StoredAttachment } from './attachment-store';
 // 关键路径:Intent 复用意图分类器定义,避免类型重复声明导致两端不同步
 import type { Intent } from './intent-classifier';
 // 关键路径:中英混合 token 估算,比 length/4 更准(中文 1.5 字符/token,英文 4 字符/token)
@@ -146,11 +148,18 @@ export class ContextManager {
 	 * 追加用户消息。
 	 *
 	 * @param content - 用户消息文本。
+	 * @param refs - 可选图片附件引用(S-VISION v1.3);只存 KB 级 {id, mimeType},
+	 *               base64 永不入 session(见 AttachmentStore)。
 	 * @throws 在 `load()` 之前调用会抛 'Session not loaded'。
 	 */
-	addUserMessage(content: string): void {
+	addUserMessage(content: string, refs?: AttachmentRef[]): void {
 		const session = this.requireSession();
-		session.messages.push({ role: 'user', content });
+		const msg: ChatMessage = { role: 'user', content };
+		// 关键路径:有图才写字段,老会话 JSON 不出现空数组污染;引用不含 base64
+		if (refs && refs.length > 0) {
+			msg.attachments = refs.map((r) => ({ id: r.id, mimeType: r.mimeType }));
+		}
+		session.messages.push(msg);
 		session.updatedAt = Date.now();
 	}
 
@@ -443,6 +452,37 @@ export class ContextManager {
 		}
 		messages.push(...this.pruneSearchBlocks(this.searchResultsMessages), ...head, ...trimmedTail);
 		return messages;
+	}
+
+	/**
+	 * 出站消息解析:把 user 消息里的附件引用解析回 base64(仅内存瞬态)。
+	 *
+	 * 设计要点:
+	 * - 返回新数组,绝不改写 session 内消息(出站副本,原引用保持干净)
+	 * - store 缺失(纯文本端点)原样返回;单图解析失败剥掉该图不阻塞本轮
+	 *
+	 * @param store - AttachmentStore(或同形测试替身);undefined 时不解析。
+	 * @param intent - 意图分类结果,默认 'direct'(向后兼容),透传给 toMessages。
+	 * @returns 可直接进 ChatRequest 的消息数组;含 base64 的引用仅存在于该副本。
+	 */
+	async toMessagesResolved(
+		store: { load(sessionId: string, id: string): Promise<StoredAttachment | null> } | undefined,
+		intent: Intent = 'direct',
+	): Promise<ChatMessage[]> {
+		const msgs = this.toMessages(intent);
+		if (!store) return msgs;
+		return Promise.all(
+			msgs.map(async (m) => {
+				if (m.role !== 'user' || !m.attachments?.length) return m;
+				const resolved: AttachmentRef[] = [];
+				for (const ref of m.attachments) {
+					const hit = await store.load(this.sessionId, ref.id);
+					// 关键路径:解析成功才带 base64 出站;失败剥除(历史图容错)
+					if (hit) resolved.push({ ...ref, base64: hit.base64 });
+				}
+				return { ...m, attachments: resolved };
+			}),
+		);
 	}
 
 	/**

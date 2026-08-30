@@ -21,6 +21,10 @@ export function formatChatError(code: string, message: string): DiagError {
 	if (code === 'CANCELLED') {
 		return { type: 'runtime', message: tNow('chat.error.stopped') };
 	}
+	if (code === 'VISION_UNSUPPORTED') {
+		// 自愈型提示(与「取消」同语义,非红色错误条):引导移除图片或换视觉模型
+		return { type: 'runtime', message: tNow('chat.error.visionUnsupported') };
+	}
 	// 关键路径:code 是内部英文标识符(LLM_ERROR/TOOL_ERROR/INDEX_NOT_READY),
 	// 不直接拼到用户可见消息里;仅传 message 让 formatError 做启发式分类。
 	const err = new Error(message);

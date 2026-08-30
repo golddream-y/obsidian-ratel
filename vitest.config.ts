@@ -33,7 +33,9 @@ export default defineConfig({
 		// 关键路径:tests/integration 会真实下载模型并跑 ONNX 推理,依赖网络与 wasm,
 		// 默认 npm test 不运行,避免 CI 不稳定;本地手动验证时用 --config 或显式指定路径。
 		// 关键路径:src/skills、src/tools 与 src/core 下的测试与源码同目录放置,便于查阅;此处显式纳入。
-		include: ['tests/**/*.test.ts', 'src/i18n/**/*.test.ts', 'src/skills/**/*.test.ts', 'src/tools/**/*.test.ts', 'src/core/**/*.test.ts'],
+		// 修复(S-VISION):补 src/ports 与 src/ui —— include 缺失时显式路径会被过滤成
+		// "No test files found",叠加 passWithNoTests 吞成 exit 0(静默假绿)。
+		include: ['tests/**/*.test.ts', 'src/i18n/**/*.test.ts', 'src/skills/**/*.test.ts', 'src/tools/**/*.test.ts', 'src/core/**/*.test.ts', 'src/ports/**/*.test.ts', 'src/ui/**/*.test.ts'],
 		exclude: ['tests/integration/**'],
 		environment: 'node',
 		passWithNoTests: true,
