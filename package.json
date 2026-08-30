@@ -1,6 +1,6 @@
 {
 	"name": "ratel-vault",
-	"version": "0.2.4",
+	"version": "0.5.2",
 	"description": "Harness-driven knowledge base agent for your Obsidian vault",
 	"main": "main.js",
 	"type": "module",
@@ -27,13 +27,13 @@
 	"license": "MIT",
 	"overrides": {
 		"vectra": {
-			"@huggingface/transformers": false,
-			"protobufjs": "8.6.5"
+			"@huggingface/transformers": false
 		},
 		"@huggingface/transformers": false,
 		"onnxruntime-node": false,
 		"undici": "^7.28.0",
-		"adm-zip": "^0.6.0"
+		"adm-zip": "^0.6.0",
+		"protobufjs": "8.8.0"
 	},
 	"devDependencies": {
 		"@eslint/js": "^9.39.4",
