@@ -14,6 +14,7 @@
 		computeGaze,
 	} from './layout';
 	import { getEyeRings, lerpRings, applyGaze, squashRing } from './eyes';
+	import { waitingWander, speakingTalkAmount } from './face-motion';
 	import { drawMascotFrame } from './paint';
 	import type { MascotFace } from './types';
 
@@ -96,7 +97,7 @@
 		};
 	}
 
-	/** 当前帧左右眼环（morph + 视线 + 眨眼）。 */
+	/** 当前帧左右眼环（morph + 视线 + 眨眼 + 等待/说话循环）。 */
 	function buildRings(gazeFrozen: boolean): { left: ReturnType<typeof getEyeRings>['left']; right: ReturnType<typeof getEyeRings>['right'] } {
 		const from = getEyeRings(morphFromFace);
 		const to = getEyeRings(morphToFace);
@@ -108,12 +109,28 @@
 			right = squashRing(right, blinkAmount);
 		}
 
+		const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+		const live = animate && morphT > 0.5;
+		if (live && morphToFace === 'speaking') {
+			const talk = speakingTalkAmount(now);
+			left = squashRing(left, talk);
+			right = squashRing(right, talk);
+		}
+
 		const centerX = posLeft + MASCOT_SIZE / 2;
 		const centerY = posTop + MASCOT_SIZE / 2;
 		const gaze = computeGaze(pointerX, pointerY, centerX, centerY, gazeFrozen);
+		let gx = gaze.x;
+		let gy = gaze.y;
+		// 等待态始终慢转；指针只叠加一部分，鼠标停在窗内也不会变成静脸
+		if (live && morphToFace === 'waiting' && !gazeFrozen) {
+			const w = waitingWander(now);
+			gx = Math.min(0.55, Math.max(-0.55, w.x + gaze.x * 0.35));
+			gy = Math.min(0.4, Math.max(-0.4, w.y + gaze.y * 0.35));
+		}
 		return {
-			left: applyGaze(left, gaze.x, gaze.y),
-			right: applyGaze(right, gaze.x, gaze.y),
+			left: applyGaze(left, gx, gy),
+			right: applyGaze(right, gx, gy),
 		};
 	}
 

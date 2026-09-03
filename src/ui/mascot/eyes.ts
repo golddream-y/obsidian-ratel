@@ -53,16 +53,16 @@ const FACE_SHAPES: Record<MascotFace, { left: EyeShape; right: EyeShape }> = {
 		right: { cx: RIGHT_CX, cy: BASE_CY + 0.04, rx: 0.085, ry: 0.07, tilt: -0.25 },
 	},
 	waiting: {
-		left: { cx: LEFT_CX, cy: BASE_CY, rx: 0.075, ry: 0.09 },
-		right: { cx: RIGHT_CX, cy: BASE_CY, rx: 0.075, ry: 0.09 },
+		left: { cx: LEFT_CX, cy: BASE_CY + 0.02, rx: 0.07, ry: 0.07 },
+		right: { cx: RIGHT_CX, cy: BASE_CY + 0.02, rx: 0.07, ry: 0.07 },
 	},
 	working: {
 		left: { cx: LEFT_CX, cy: BASE_CY, rx: 0.095, ry: 0.1 },
 		right: { cx: RIGHT_CX, cy: BASE_CY, rx: 0.095, ry: 0.1 },
 	},
 	speaking: {
-		left: { cx: LEFT_CX, cy: BASE_CY, rx: 0.1, ry: 0.12 },
-		right: { cx: RIGHT_CX, cy: BASE_CY, rx: 0.1, ry: 0.12 },
+		left: { cx: LEFT_CX, cy: BASE_CY - 0.01, rx: 0.11, ry: 0.14 },
+		right: { cx: RIGHT_CX, cy: BASE_CY - 0.01, rx: 0.11, ry: 0.14 },
 	},
 };
 
