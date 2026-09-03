@@ -1,6 +1,6 @@
 /**
  * @file src/ui/mascot/paint.ts
- * @description 吉祥物单帧 Canvas：软blob身体 + 平滑眼环 + 瞳孔
+ * @description 吉祥物单帧 Canvas：软blob身体 + 平滑眼环
  * @module ui/mascot/paint
  * @depends ./eyes, ./sim
  */
@@ -11,11 +11,8 @@ export interface MascotPaintOptions {
 	size: number;
 	accent: string;
 	eyeFill: string;
-	pupilFill?: string;
 	leftRing: EyeRing;
 	rightRing: EyeRing;
-	gazeX?: number;
-	gazeY?: number;
 	body?: MascotBodyPose;
 }
 
@@ -35,17 +32,6 @@ export function ringToPath(ring: EyeRing, size: number): RingPath {
 		closed: true,
 		points: ring.map((p) => ({ x: p.x * size, y: p.y * size })),
 	};
-}
-
-function ringCentroid(ring: EyeRing): { x: number; y: number } {
-	let x = 0;
-	let y = 0;
-	for (const p of ring) {
-		x += p.x;
-		y += p.y;
-	}
-	const n = ring.length || 1;
-	return { x: x / n, y: y / n };
 }
 
 /**
@@ -95,14 +81,11 @@ function mixRgb(rgb: [number, number, number], amt: number): string {
 }
 
 /**
- * 绘制一帧：blob 身体、平滑双眼、随视线的瞳孔。
+ * 绘制一帧：blob 身体 + 平滑双眼（无瞳孔）。
  */
 export function drawMascotFrame(ctx: CanvasRenderingContext2D, opts: MascotPaintOptions): void {
 	const { size, accent, eyeFill, leftRing, rightRing } = opts;
-	const gx = opts.gazeX ?? 0;
-	const gy = opts.gazeY ?? 0;
 	const body = opts.body ?? { scaleX: 1, scaleY: 1, rotate: 0, offsetY: 0 };
-	const pupilFill = opts.pupilFill || 'rgba(20,18,16,0.72)';
 	const cx = size / 2;
 	const cy = size / 2;
 	const rx = size / 2 - 2.2;
@@ -132,18 +115,5 @@ export function drawMascotFrame(ctx: CanvasRenderingContext2D, opts: MascotPaint
 	ctx.fillStyle = eyeFill;
 	fillSmoothRing(ctx, leftRing, size);
 	fillSmoothRing(ctx, rightRing, size);
-
-	const drawPupil = (ring: EyeRing) => {
-		const c = ringCentroid(ring);
-		const px = (c.x + gx * 0.045) * size;
-		const py = (c.y + gy * 0.04) * size;
-		ctx.beginPath();
-		ctx.ellipse(px, py, size * 0.038, size * 0.046, 0, 0, Math.PI * 2);
-		ctx.fill();
-	};
-	ctx.fillStyle = pupilFill;
-	drawPupil(leftRing);
-	drawPupil(rightRing);
-
 	ctx.restore();
 }

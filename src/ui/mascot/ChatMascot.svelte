@@ -79,15 +79,13 @@
 	}
 
 	/** 从宿主读强调色、眼白、瞳孔。 */
-	function readPaintColors(el: HTMLElement): { accent: string; eyeFill: string; pupilFill: string } {
+	function readPaintColors(el: HTMLElement): { accent: string; eyeFill: string } {
 		const style = getComputedStyle(el);
 		const accent = style.getPropertyValue('--interactive-accent').trim();
 		const eyeFill = style.getPropertyValue('--background-primary').trim();
-		const pupilFill = style.getPropertyValue('--text-normal').trim();
 		return {
 			accent: accent || '#7c6cff',
 			eyeFill: eyeFill || '#ffffff',
-			pupilFill: pupilFill || 'rgba(20,18,16,0.75)',
 		};
 	}
 
@@ -123,11 +121,8 @@
 			size: MASCOT_SIZE,
 			accent: colors.accent,
 			eyeFill: colors.eyeFill,
-			pupilFill: colors.pupilFill,
 			leftRing: frame.left,
 			rightRing: frame.right,
-			gazeX: frame.gazeX,
-			gazeY: frame.gazeY,
 			body: frame.body,
 		});
 	}
