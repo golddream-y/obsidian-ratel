@@ -186,9 +186,18 @@
 		cancelAnimationFrame(rafId);
 	}
 
+	/** 视口坐标 → 消息 wrap 局部坐标。视线必须与 posLeft/posTop 同一空间。 */
+	function wrapLocalPoint(clientX: number, clientY: number): { x: number; y: number } | null {
+		if (!wrapEl) return null;
+		const rect = wrapEl.getBoundingClientRect();
+		return { x: clientX - rect.left, y: clientY - rect.top };
+	}
+
 	function onWrapPointerMove(e: PointerEvent) {
-		pointerX = e.clientX;
-		pointerY = e.clientY;
+		const p = wrapLocalPoint(e.clientX, e.clientY);
+		if (!p) return;
+		pointerX = p.x;
+		pointerY = p.y;
 	}
 
 	function onWrapPointerLeave() {
@@ -200,6 +209,8 @@
 		const now = Date.now();
 		if (now - lastDownAt < DOUBLE_CLICK_MS) {
 			lastDownAt = 0;
+			// 关键路径:双击复位后必须清 dragging,否则随后的 pointerup 会把旧拖位再写回 settings
+			dragging = false;
 			onRatioReset();
 			syncPosition();
 			paintFrame();
