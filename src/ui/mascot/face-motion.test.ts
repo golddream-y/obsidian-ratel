@@ -4,7 +4,7 @@
  * @module ui/mascot/face-motion.test
  */
 import { describe, it, expect } from 'vitest';
-import { waitingWander, speakingTalkAmount, listeningGlance } from './face-motion';
+import { waitingWander, speakingTalkAmount, listeningGlance, idleGlance } from './face-motion';
 
 describe('waitingWander', () => {
 	it('不同时刻 - 视线水平分量会变 - 不是死盯', () => {
@@ -37,10 +37,16 @@ describe('speakingTalkAmount', () => {
 
 describe('listeningGlance', () => {
 	it('看向输入框 - 垂直分量为正 - 朝下', () => {
-		expect(listeningGlance(0).y).toBeGreaterThan(0.15);
-		expect(listeningGlance(400).y).toBeGreaterThan(0.15);
+		expect(listeningGlance(0).y).toBeGreaterThan(0.1);
+		expect(listeningGlance(400).y).toBeGreaterThan(0.1);
 	});
 	it('不同时刻 - 水平分量会变 - 像跟着字走', () => {
 		expect(listeningGlance(0).x).not.toBeCloseTo(listeningGlance(600).x, 2);
+	});
+});
+
+describe('idleGlance', () => {
+	it('空闲微瞥 - 两时刻水平分量不同', () => {
+		expect(idleGlance(0).x).not.toBeCloseTo(idleGlance(1800).x, 2);
 	});
 });

@@ -57,6 +57,44 @@ function fillSmoothRing(ctx: CanvasRenderingContext2D, ring: EyeRing, size: numb
 	ctx.fill();
 }
 
+/**
+ * 按身体明度选整眼填充：浅色身体用深眼，深色身体用奶油眼。不是瞳孔。
+ *
+ * @param accent - 身体色
+ */
+export function pickEyeFill(accent: string): string {
+	const rgb = parseRgbTriplet(accent);
+	if (!rgb) return '#1a1816';
+	const luma = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
+	return luma > 96 ? '#1a1816' : '#f4f0ea';
+}
+
+function fillBlobBody(ctx: CanvasRenderingContext2D, rx: number, ry: number): void {
+	const n = 24;
+	const pts: Array<{ x: number; y: number }> = [];
+	for (let i = 0; i < n; i++) {
+		const a = (i / n) * Math.PI * 2 - Math.PI / 2;
+		const wobble = 1 + 0.05 * Math.cos(2 * a) + 0.032 * Math.sin(3 * a);
+		let x = Math.cos(a) * rx * wobble;
+		let y = Math.sin(a) * ry * wobble;
+		if (y > 0) y *= 1.06;
+		pts.push({ x, y });
+	}
+	const mid = (i: number, j: number) => ({
+		x: (pts[i].x + pts[j].x) / 2,
+		y: (pts[i].y + pts[j].y) / 2,
+	});
+	const first = mid(n - 1, 0);
+	ctx.beginPath();
+	ctx.moveTo(first.x, first.y);
+	for (let i = 0; i < n; i++) {
+		const nxt = (i + 1) % n;
+		const m = mid(i, nxt);
+		ctx.quadraticCurveTo(pts[i].x, pts[i].y, m.x, m.y);
+	}
+	ctx.closePath();
+}
+
 function parseRgbTriplet(color: string): [number, number, number] | null {
 	const hex = color.replace('#', '').trim();
 	if (hex.length === 6 || hex.length === 3) {
@@ -97,8 +135,7 @@ export function drawMascotFrame(ctx: CanvasRenderingContext2D, opts: MascotPaint
 	ctx.scale(body.scaleX, body.scaleY);
 
 	ctx.beginPath();
-	ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
-	ctx.closePath();
+	fillBlobBody(ctx, rx, ry);
 	const rgb = parseRgbTriplet(accent);
 	if (typeof ctx.createRadialGradient === 'function' && rgb) {
 		const grad = ctx.createRadialGradient(-rx * 0.28, -ry * 0.32, 2, 0, 0, rx);

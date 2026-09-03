@@ -13,7 +13,7 @@
 		offsetToRatio,
 		computeGaze,
 	} from './layout';
-	import { drawMascotFrame } from './paint';
+	import { drawMascotFrame, pickEyeFill } from './paint';
 	import { MascotSim } from './sim';
 	import type { MascotFace } from './types';
 
@@ -78,14 +78,13 @@
 		posTop = top;
 	}
 
-	/** 从宿主读强调色、眼白、瞳孔。 */
+	/** 身体用强调色；整眼按明度对比，不用主题底当眼白。 */
 	function readPaintColors(el: HTMLElement): { accent: string; eyeFill: string } {
 		const style = getComputedStyle(el);
-		const accent = style.getPropertyValue('--interactive-accent').trim();
-		const eyeFill = style.getPropertyValue('--background-primary').trim();
+		const accent = style.getPropertyValue('--interactive-accent').trim() || '#7c6cff';
 		return {
-			accent: accent || '#7c6cff',
-			eyeFill: eyeFill || '#ffffff',
+			accent,
+			eyeFill: pickEyeFill(accent),
 		};
 	}
 
@@ -115,6 +114,7 @@
 			pointerGaze,
 			dt,
 			now,
+			pressing: dragging,
 		});
 		const colors = readPaintColors(host);
 		drawMascotFrame(ctx, {

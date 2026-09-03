@@ -38,8 +38,8 @@ const BASE_CY = 0.44;
 /** 各脸档眼形参数 — 自绘椭圆采样，非拷贝外部点列 */
 const FACE_SHAPES: Record<MascotFace, { left: EyeShape; right: EyeShape }> = {
 	idle: {
-		left: { cx: LEFT_CX, cy: BASE_CY, rx: 0.09, ry: 0.11 },
-		right: { cx: RIGHT_CX, cy: BASE_CY, rx: 0.09, ry: 0.11 },
+		left: { cx: LEFT_CX - 0.01, cy: BASE_CY, rx: 0.105, ry: 0.125 },
+		right: { cx: RIGHT_CX + 0.01, cy: BASE_CY + 0.008, rx: 0.1, ry: 0.12 },
 	},
 	thinking: {
 		left: { cx: LEFT_CX, cy: BASE_CY + 0.02, rx: 0.1, ry: 0.05 },

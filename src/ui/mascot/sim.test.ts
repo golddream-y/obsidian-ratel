@@ -39,4 +39,26 @@ describe('MascotSim', () => {
 		}
 		expect(Math.abs(f.gazeX) + Math.abs(f.gazeY)).toBeGreaterThan(0.04);
 	});
+	it('按下 - 若干帧后身体竖直被压扁', () => {
+		const sim = new MascotSim();
+		let f = sim.tick({
+			face: 'idle',
+			animate: true,
+			pointerGaze: { x: 0, y: 0 },
+			dt: 1 / 60,
+			now: 0,
+			pressing: true,
+		});
+		for (let i = 1; i <= 18; i++) {
+			f = sim.tick({
+				face: 'idle',
+				animate: true,
+				pointerGaze: { x: 0, y: 0 },
+				dt: 1 / 60,
+				now: i * 16,
+				pressing: true,
+			});
+		}
+		expect(f.body.scaleY).toBeLessThan(0.97);
+	});
 });

@@ -6,7 +6,7 @@
 import { describe, it, expect } from 'vitest';
 import { MASCOT_FACES } from './types';
 import { getEyeRings, lerpRings, applyGaze, EYE_SAMPLES, type EyeRing } from './eyes';
-import { drawMascotFrame, ringToPath } from './paint';
+import { drawMascotFrame, ringToPath, pickEyeFill } from './paint';
 
 function meanX(ring: EyeRing): number {
 	return ring.reduce((s, p) => s + p.x, 0) / ring.length;
@@ -96,5 +96,12 @@ describe('paint', () => {
 		const ring = getEyeRings('idle').left;
 		const path = ringToPath(ring, 48);
 		expect(path.closed).toBe(true);
+	});
+
+	it('浅色身体 - 整眼用深色 - 不是眼白加点', () => {
+		expect(pickEyeFill('#e8e4dc')).toBe('#1a1816');
+	});
+	it('深色身体 - 整眼用浅奶油色', () => {
+		expect(pickEyeFill('#2a1f4a')).toBe('#f4f0ea');
 	});
 });

@@ -31,6 +31,17 @@ export function waitingWander(nowMs: number): { x: number; y: number } {
 }
 
 /**
+ * 空闲微瞥：鼠标停住时眼睛仍轻轻扫，避免木呆。
+ */
+export function idleGlance(nowMs: number): { x: number; y: number } {
+	const t = nowMs / 1000;
+	return {
+		x: Math.sin(t * 0.55) * 0.22,
+		y: Math.cos(t * 0.38) * 0.1,
+	};
+}
+
+/**
  * 流式正文：双眼周期性压扁，形成开合。
  *
  * @param nowMs - 单调毫秒
@@ -42,7 +53,7 @@ export function speakingTalkAmount(nowMs: number): number {
 }
 
 /** 听用户打字：朝下看输入框，水平小幅跟着走 */
-const LISTEN_DOWN = 0.32;
+const LISTEN_DOWN = 0.16;
 const LISTEN_AMP_X = 0.22;
 const LISTEN_HZ_X = 1.4;
 
