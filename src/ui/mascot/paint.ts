@@ -1,17 +1,22 @@
 /**
  * @file src/ui/mascot/paint.ts
- * @description 吉祥物单帧 Canvas 绘制
+ * @description 吉祥物单帧 Canvas：软blob身体 + 平滑眼环 + 瞳孔
  * @module ui/mascot/paint
- * @depends ./eyes
+ * @depends ./eyes, ./sim
  */
 import type { EyeRing } from './eyes';
+import type { MascotBodyPose } from './sim';
 
 export interface MascotPaintOptions {
 	size: number;
 	accent: string;
 	eyeFill: string;
+	pupilFill?: string;
 	leftRing: EyeRing;
 	rightRing: EyeRing;
+	gazeX?: number;
+	gazeY?: number;
+	body?: MascotBodyPose;
 }
 
 export interface RingPath {
@@ -24,7 +29,6 @@ export interface RingPath {
  *
  * @param ring - 0–1 脸框内眼环
  * @param size - 画布逻辑边长
- * @returns 像素坐标与闭合标记
  */
 export function ringToPath(ring: EyeRing, size: number): RingPath {
 	return {
@@ -33,46 +37,113 @@ export function ringToPath(ring: EyeRing, size: number): RingPath {
 	};
 }
 
-/**
- * 在 Canvas 上绘制眼环路径。
- *
- * @param ctx - 2D 上下文
- * @param ring - 眼环
- * @param size - 逻辑边长
- */
-function strokeRing(ctx: CanvasRenderingContext2D, ring: EyeRing, size: number): void {
-	const path = ringToPath(ring, size);
-	ctx.beginPath();
-	ctx.moveTo(path.points[0].x, path.points[0].y);
-	for (let i = 1; i < path.points.length; i++) {
-		ctx.lineTo(path.points[i].x, path.points[i].y);
+function ringCentroid(ring: EyeRing): { x: number; y: number } {
+	let x = 0;
+	let y = 0;
+	for (const p of ring) {
+		x += p.x;
+		y += p.y;
 	}
-	ctx.closePath();
+	const n = ring.length || 1;
+	return { x: x / n, y: y / n };
 }
 
 /**
- * 绘制吉祥物一帧：圆身 + 双眼填充。
- *
- * @param ctx - 2D 上下文（调用方负责 setTransform / clear）
- * @param opts - 颜色与眼环
+ * 闭合二次曲线，8/16 点折线会发硬。
+ */
+function fillSmoothRing(ctx: CanvasRenderingContext2D, ring: EyeRing, size: number): void {
+	const pts = ringToPath(ring, size).points;
+	const n = pts.length;
+	if (n < 3) return;
+	const mid = (i: number, j: number) => ({
+		x: (pts[i].x + pts[j].x) / 2,
+		y: (pts[i].y + pts[j].y) / 2,
+	});
+	const first = mid(n - 1, 0);
+	ctx.beginPath();
+	ctx.moveTo(first.x, first.y);
+	for (let i = 0; i < n; i++) {
+		const nxt = (i + 1) % n;
+		const m = mid(i, nxt);
+		ctx.quadraticCurveTo(pts[i].x, pts[i].y, m.x, m.y);
+	}
+	ctx.closePath();
+	ctx.fill();
+}
+
+function parseRgbTriplet(color: string): [number, number, number] | null {
+	const hex = color.replace('#', '').trim();
+	if (hex.length === 6 || hex.length === 3) {
+		const full = hex.length === 3 ? hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2] : hex;
+		if (/^[0-9a-fA-F]{6}$/.test(full)) {
+			const n = parseInt(full, 16);
+			return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+		}
+	}
+	const m = color.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+	if (!m) return null;
+	return [Number(m[1]), Number(m[2]), Number(m[3])];
+}
+
+function mixRgb(rgb: [number, number, number], amt: number): string {
+	const t = amt < 0 ? 0 : 255;
+	const a = Math.abs(amt);
+	const r = Math.round(rgb[0] + (t - rgb[0]) * a);
+	const g = Math.round(rgb[1] + (t - rgb[1]) * a);
+	const b = Math.round(rgb[2] + (t - rgb[2]) * a);
+	return `rgb(${r},${g},${b})`;
+}
+
+/**
+ * 绘制一帧：blob 身体、平滑双眼、随视线的瞳孔。
  */
 export function drawMascotFrame(ctx: CanvasRenderingContext2D, opts: MascotPaintOptions): void {
 	const { size, accent, eyeFill, leftRing, rightRing } = opts;
+	const gx = opts.gazeX ?? 0;
+	const gy = opts.gazeY ?? 0;
+	const body = opts.body ?? { scaleX: 1, scaleY: 1, rotate: 0, offsetY: 0 };
+	const pupilFill = opts.pupilFill || 'rgba(20,18,16,0.72)';
 	const cx = size / 2;
 	const cy = size / 2;
-	const radius = size / 2 - 1;
+	const rx = size / 2 - 2.2;
+	const ry = size / 2 - 2.6;
 
 	ctx.save();
+	ctx.translate(cx, cy + body.offsetY);
+	ctx.rotate((body.rotate * Math.PI) / 180);
+	ctx.scale(body.scaleX, body.scaleY);
+
 	ctx.beginPath();
-	ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+	ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
 	ctx.closePath();
-	ctx.fillStyle = accent;
+	const rgb = parseRgbTriplet(accent);
+	if (typeof ctx.createRadialGradient === 'function' && rgb) {
+		const grad = ctx.createRadialGradient(-rx * 0.28, -ry * 0.32, 2, 0, 0, rx);
+		grad.addColorStop(0, mixRgb(rgb, 0.28));
+		grad.addColorStop(0.52, accent);
+		grad.addColorStop(1, mixRgb(rgb, -0.16));
+		ctx.fillStyle = grad;
+	} else {
+		ctx.fillStyle = accent;
+	}
 	ctx.fill();
 
+	ctx.translate(-cx, -cy);
 	ctx.fillStyle = eyeFill;
-	strokeRing(ctx, leftRing, size);
-	ctx.fill();
-	strokeRing(ctx, rightRing, size);
-	ctx.fill();
+	fillSmoothRing(ctx, leftRing, size);
+	fillSmoothRing(ctx, rightRing, size);
+
+	const drawPupil = (ring: EyeRing) => {
+		const c = ringCentroid(ring);
+		const px = (c.x + gx * 0.045) * size;
+		const py = (c.y + gy * 0.04) * size;
+		ctx.beginPath();
+		ctx.ellipse(px, py, size * 0.038, size * 0.046, 0, 0, Math.PI * 2);
+		ctx.fill();
+	};
+	ctx.fillStyle = pupilFill;
+	drawPupil(leftRing);
+	drawPupil(rightRing);
+
 	ctx.restore();
 }

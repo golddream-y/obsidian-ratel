@@ -1,6 +1,6 @@
 /**
  * @file src/ui/mascot/eyes.ts
- * @description 吉祥物眼环几何：每脸左右 8 点闭合多边形
+ * @description 吉祥物眼环几何：每脸左右椭圆采样闭合环
  * @module ui/mascot/eyes
  * @depends ./types
  *
@@ -8,19 +8,20 @@
  */
 import type { MascotFace } from './types';
 
-/** 脸框内归一化坐标点 */
+/** 每只眼采样点数 — 多于折线 8 点，闭合曲线才圆 */
+export const EYE_SAMPLES = 16;
 export interface EyePoint {
 	x: number;
 	y: number;
 }
 
-/** 单眼 8 点闭合环 */
+/** 单眼闭合环 */
 export type EyeRing = EyePoint[];
 
 const FACE_CLAMP_MIN = 0.04;
 const FACE_CLAMP_MAX = 0.96;
-const GAZE_TRANSLATE_X = 0.07;
-const GAZE_TRANSLATE_Y = 0.05;
+const GAZE_TRANSLATE_X = 0.1;
+const GAZE_TRANSLATE_Y = 0.08;
 
 interface EyeShape {
 	cx: number;
@@ -71,18 +72,18 @@ const FACE_SHAPES: Record<MascotFace, { left: EyeShape; right: EyeShape }> = {
 };
 
 /**
- * 椭圆 8 点采样，起点在顶部。
+ * 椭圆采样闭合环，起点在顶部。
  *
  * @param shape - 眼心、半径与倾斜
- * @returns 8 点闭合环
+ * @returns 闭合环
  */
 function sampleEyeRing(shape: EyeShape): EyeRing {
 	const { cx, cy, rx, ry, tilt = 0 } = shape;
 	const cos = Math.cos(tilt);
 	const sin = Math.sin(tilt);
 	const ring: EyeRing = [];
-	for (let i = 0; i < 8; i++) {
-		const angle = (i / 8) * Math.PI * 2 - Math.PI / 2;
+	for (let i = 0; i < EYE_SAMPLES; i++) {
+		const angle = (i / EYE_SAMPLES) * Math.PI * 2 - Math.PI / 2;
 		const lx = rx * Math.cos(angle);
 		const ly = ry * Math.sin(angle);
 		const x = cx + lx * cos - ly * sin;

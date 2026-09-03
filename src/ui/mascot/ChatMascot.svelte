@@ -1,6 +1,6 @@
 <!--
 	@file src/ui/mascot/ChatMascot.svelte
-	@description 聊天窗可拖吉祥物 — Canvas 绘制、视线跟鼠标、脸档弹簧 morph
+	@description 聊天窗可拖吉祥物 — blob 身体、弹簧视线与眨眼
 	@module ui/mascot/ChatMascot
 	@depends ./layout, ./eyes, ./paint, ./types, ../../i18n
 -->
@@ -13,16 +13,11 @@
 		offsetToRatio,
 		computeGaze,
 	} from './layout';
-	import { getEyeRings, lerpRings, applyGaze, squashRing } from './eyes';
-	import { waitingWander, speakingTalkAmount, listeningGlance } from './face-motion';
 	import { drawMascotFrame } from './paint';
+	import { MascotSim } from './sim';
 	import type { MascotFace } from './types';
 
 	const DOUBLE_CLICK_MS = 300;
-	const MORPH_SPRING = 0.22;
-	const BLINK_MIN_MS = 6000;
-	const BLINK_MAX_MS = 14000;
-	const BLINK_DURATION_MS = 160;
 
 	const ARIA_KEYS: Record<MascotFace, StringKey> = {
 		idle: 'chat.mascot.aria.idle',
@@ -60,20 +55,16 @@
 	let dragging = $state(false);
 	let pointerX = $state<number | null>(null);
 	let pointerY = $state<number | null>(null);
-	let morphFromFace = $state<MascotFace>('idle');
-	let morphToFace = $state<MascotFace>('idle');
-	let morphT = $state(1);
-	let blinkAmount = $state(0);
 	let lastDownAt = 0;
 
 	let wrapEl: HTMLElement | null = null;
 	let resizeObs: ResizeObserver | null = null;
 	let rafId = 0;
-	let blinkTimer: ReturnType<typeof setTimeout> | null = null;
-	let blinkAnimTimer: ReturnType<typeof setTimeout> | null = null;
 	let running = false;
 	let grabOffsetX = 0;
 	let grabOffsetY = 0;
+	let lastFrameAt = 0;
+	const sim = new MascotSim();
 
 	const ariaLabel = $derived($t(ARIA_KEYS[face]));
 
@@ -87,56 +78,16 @@
 		posTop = top;
 	}
 
-	/** 从宿主读强调色与眼填色。 */
-	function readPaintColors(el: HTMLElement): { accent: string; eyeFill: string } {
+	/** 从宿主读强调色、眼白、瞳孔。 */
+	function readPaintColors(el: HTMLElement): { accent: string; eyeFill: string; pupilFill: string } {
 		const style = getComputedStyle(el);
 		const accent = style.getPropertyValue('--interactive-accent').trim();
 		const eyeFill = style.getPropertyValue('--background-primary').trim();
+		const pupilFill = style.getPropertyValue('--text-normal').trim();
 		return {
 			accent: accent || '#7c6cff',
 			eyeFill: eyeFill || '#ffffff',
-		};
-	}
-
-	/** 当前帧左右眼环（morph + 视线 + 眨眼 + 等待/说话循环）。 */
-	function buildRings(gazeFrozen: boolean): { left: ReturnType<typeof getEyeRings>['left']; right: ReturnType<typeof getEyeRings>['right'] } {
-		const from = getEyeRings(morphFromFace);
-		const to = getEyeRings(morphToFace);
-		let left = lerpRings(from.left, to.left, morphT);
-		let right = lerpRings(from.right, to.right, morphT);
-
-		if (blinkAmount > 0 && morphToFace === 'idle' && morphT > 0.85) {
-			left = squashRing(left, blinkAmount);
-			right = squashRing(right, blinkAmount);
-		}
-
-		const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
-		const live = animate && morphT > 0.5;
-		if (live && morphToFace === 'speaking') {
-			const talk = speakingTalkAmount(now);
-			left = squashRing(left, talk);
-			right = squashRing(right, talk);
-		}
-
-		const centerX = posLeft + MASCOT_SIZE / 2;
-		const centerY = posTop + MASCOT_SIZE / 2;
-		const gaze = computeGaze(pointerX, pointerY, centerX, centerY, gazeFrozen);
-		let gx = gaze.x;
-		let gy = gaze.y;
-		// 等待态始终慢转；指针只叠加一部分，鼠标停在窗内也不会变成静脸
-		if (live && morphToFace === 'waiting' && !gazeFrozen) {
-			const w = waitingWander(now);
-			gx = Math.min(0.55, Math.max(-0.55, w.x + gaze.x * 0.35));
-			gy = Math.min(0.4, Math.max(-0.4, w.y + gaze.y * 0.35));
-		}
-		if (live && morphToFace === 'listening' && !gazeFrozen) {
-			const g = listeningGlance(now);
-			gx = Math.min(0.55, Math.max(-0.55, g.x + gaze.x * 0.25));
-			gy = Math.min(0.4, Math.max(-0.4, g.y + gaze.y * 0.2));
-		}
-		return {
-			left: applyGaze(left, gx, gy),
-			right: applyGaze(right, gx, gy),
+			pupilFill: pupilFill || 'rgba(20,18,16,0.75)',
 		};
 	}
 
@@ -147,58 +98,47 @@
 		const ctx = canvas.getContext('2d');
 		if (!ctx) return;
 
+		const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+		const dt = lastFrameAt ? Math.min(0.05, (now - lastFrameAt) / 1000) : 1 / 60;
+		lastFrameAt = now;
+
 		const dpr = Math.min(2, (typeof devicePixelRatio !== 'undefined' && devicePixelRatio) || 1);
 		canvas.width = Math.round(MASCOT_SIZE * dpr);
 		canvas.height = Math.round(MASCOT_SIZE * dpr);
 		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 		ctx.clearRect(0, 0, MASCOT_SIZE, MASCOT_SIZE);
 
-		const { accent, eyeFill } = readPaintColors(host);
-		const { left, right } = buildRings(dragging || !animate);
+		const centerX = posLeft + MASCOT_SIZE / 2;
+		const centerY = posTop + MASCOT_SIZE / 2;
+		const pointerGaze = computeGaze(pointerX, pointerY, centerX, centerY, dragging || !animate);
+		const frame = sim.tick({
+			face,
+			animate,
+			pointerGaze,
+			dt,
+			now,
+		});
+		const colors = readPaintColors(host);
 		drawMascotFrame(ctx, {
 			size: MASCOT_SIZE,
-			accent,
-			eyeFill,
-			leftRing: left,
-			rightRing: right,
+			accent: colors.accent,
+			eyeFill: colors.eyeFill,
+			pupilFill: colors.pupilFill,
+			leftRing: frame.left,
+			rightRing: frame.right,
+			gazeX: frame.gazeX,
+			gazeY: frame.gazeY,
+			body: frame.body,
 		});
-	}
-
-	function scheduleBlink() {
-		if (!animate) return;
-		if (blinkTimer) clearTimeout(blinkTimer);
-		const delay = BLINK_MIN_MS + Math.random() * (BLINK_MAX_MS - BLINK_MIN_MS);
-		blinkTimer = setTimeout(() => {
-			blinkAmount = 1;
-			if (blinkAnimTimer) clearTimeout(blinkAnimTimer);
-			blinkAnimTimer = setTimeout(() => {
-				blinkAmount = 0;
-				scheduleBlink();
-			}, BLINK_DURATION_MS);
-		}, delay);
-	}
-
-	function stopBlink() {
-		if (blinkTimer) clearTimeout(blinkTimer);
-		if (blinkAnimTimer) clearTimeout(blinkAnimTimer);
-		blinkTimer = null;
-		blinkAnimTimer = null;
-		blinkAmount = 0;
-	}
-
-	function frameStep() {
-		if (morphT < 1) {
-			morphT = Math.min(1, morphT + (1 - morphT) * MORPH_SPRING);
-		}
-		paintFrame();
 	}
 
 	function startLoop() {
 		if (running) return;
 		running = true;
+		lastFrameAt = 0;
 		const loop = () => {
 			if (!running) return;
-			frameStep();
+			paintFrame();
 			rafId = requestAnimationFrame(loop);
 		};
 		rafId = requestAnimationFrame(loop);
@@ -314,32 +254,12 @@
 	});
 
 	$effect(() => {
-		if (face !== morphToFace) {
-			if (!animate) {
-				morphFromFace = face;
-				morphToFace = face;
-				morphT = 1;
-				paintFrame();
-			} else {
-				morphFromFace = morphT >= 0.999 ? morphToFace : morphFromFace;
-				morphToFace = face;
-				morphT = 0;
-			}
-		}
-	});
-
-	$effect(() => {
 		stopLoop();
-		stopBlink();
 		if (!enabled || !canvasEl) return;
 
 		if (animate) {
-			scheduleBlink();
 			startLoop();
 		} else {
-			morphT = 1;
-			morphFromFace = face;
-			morphToFace = face;
 			pointerX = null;
 			pointerY = null;
 			paintFrame();
@@ -347,13 +267,11 @@
 
 		return () => {
 			stopLoop();
-			stopBlink();
 		};
 	});
 
 	onDestroy(() => {
 		stopLoop();
-		stopBlink();
 		unbindWrap();
 	});
 </script>
@@ -390,8 +308,10 @@
 		touch-action: none;
 		user-select: none;
 		cursor: grab;
-		border: 1px solid var(--background-modifier-border);
-		border-radius: 50%;
+		overflow: visible;
+		border: none;
+		background: transparent;
+		border-radius: 0;
 		box-sizing: border-box;
 	}
 
@@ -403,6 +323,6 @@
 		display: block;
 		width: 48px;
 		height: 48px;
-		border-radius: 50%;
+		pointer-events: none;
 	}
 </style>

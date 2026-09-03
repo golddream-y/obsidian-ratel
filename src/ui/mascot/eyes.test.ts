@@ -5,7 +5,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { MASCOT_FACES } from './types';
-import { getEyeRings, lerpRings, applyGaze, type EyeRing } from './eyes';
+import { getEyeRings, lerpRings, applyGaze, EYE_SAMPLES, type EyeRing } from './eyes';
 import { drawMascotFrame, ringToPath } from './paint';
 
 function meanX(ring: EyeRing): number {
@@ -13,11 +13,11 @@ function meanX(ring: EyeRing): number {
 }
 
 describe('getEyeRings', () => {
-	it('每张脸 - 左右环长度均为 8', () => {
+	it('每张脸 - 左右环长度均为采样点数', () => {
 		for (const face of MASCOT_FACES) {
 			const { left, right } = getEyeRings(face);
-			expect(left.length).toBe(8);
-			expect(right.length).toBe(8);
+			expect(left.length).toBe(EYE_SAMPLES);
+			expect(right.length).toBe(EYE_SAMPLES);
 		}
 	});
 });
@@ -28,7 +28,7 @@ describe('lerpRings', () => {
 
 	it('t=0 - 等于起点', () => {
 		const r = lerpRings(a, b, 0);
-		for (let i = 0; i < 8; i++) {
+		for (let i = 0; i < EYE_SAMPLES; i++) {
 			expect(r[i].x).toBeCloseTo(a[i].x, 8);
 			expect(r[i].y).toBeCloseTo(a[i].y, 8);
 		}
@@ -36,7 +36,7 @@ describe('lerpRings', () => {
 
 	it('t=1 - 等于终点', () => {
 		const r = lerpRings(a, b, 1);
-		for (let i = 0; i < 8; i++) {
+		for (let i = 0; i < EYE_SAMPLES; i++) {
 			expect(r[i].x).toBeCloseTo(b[i].x, 8);
 			expect(r[i].y).toBeCloseTo(b[i].y, 8);
 		}
@@ -48,7 +48,7 @@ describe('applyGaze', () => {
 
 	it('视线 0 - 坐标不变', () => {
 		const out = applyGaze(ring, 0, 0);
-		for (let i = 0; i < 8; i++) {
+		for (let i = 0; i < EYE_SAMPLES; i++) {
 			expect(out[i].x).toBeCloseTo(ring[i].x, 8);
 			expect(out[i].y).toBeCloseTo(ring[i].y, 8);
 		}
@@ -72,6 +72,12 @@ describe('paint', () => {
 			moveTo: () => {},
 			lineTo: () => {},
 			arc: () => {},
+			ellipse: () => {},
+			quadraticCurveTo: () => {},
+			translate: () => {},
+			rotate: () => {},
+			scale: () => {},
+			createRadialGradient: () => ({ addColorStop: () => {} }),
 			fillStyle: '',
 		} as unknown as CanvasRenderingContext2D;
 
