@@ -1,6 +1,6 @@
 /**
  * @file src/ui/mascot/face-motion.ts
- * @description 等待慢转眼、说话开合 — 纯函数，供 rAF 取样
+ * @description 等待慢转眼、说话开合、听打字朝下看 — 纯函数，供 rAF 取样
  * @module ui/mascot/face-motion
  */
 
@@ -39,4 +39,23 @@ export function waitingWander(nowMs: number): { x: number; y: number } {
 export function speakingTalkAmount(nowMs: number): number {
 	const phase = (nowMs / TALK_PERIOD_MS) * Math.PI * 2;
 	return (Math.sin(phase) + 1) * 0.5 * TALK_PEAK;
+}
+
+/** 听用户打字：朝下看输入框，水平小幅跟着走 */
+const LISTEN_DOWN = 0.32;
+const LISTEN_AMP_X = 0.22;
+const LISTEN_HZ_X = 1.4;
+
+/**
+ * 用户在输入框打字：眼睛朝下看 composer，并沿水平轻扫。
+ *
+ * @param nowMs - 单调毫秒
+ * @returns 叠加到 gaze 的归一化偏移
+ */
+export function listeningGlance(nowMs: number): { x: number; y: number } {
+	const t = nowMs / 1000;
+	return {
+		x: Math.sin(t * LISTEN_HZ_X) * LISTEN_AMP_X,
+		y: LISTEN_DOWN,
+	};
 }

@@ -232,6 +232,7 @@ const chatZh: ChatStrings = {
   'chat.mascot.aria.thinking': 'Ratel 正在思考',
   'chat.mascot.aria.working': 'Ratel 正在调用工具',
   'chat.mascot.aria.speaking': 'Ratel 正在回答',
+  'chat.mascot.aria.listening': 'Ratel 在听你打字',
   'chat.mascot.aria.error': 'Ratel 遇到错误',
   'chat.mascot.aria.stopped': 'Ratel 已停止',
   'orb.state.working': '工作中…',

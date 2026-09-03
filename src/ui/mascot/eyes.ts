@@ -64,6 +64,10 @@ const FACE_SHAPES: Record<MascotFace, { left: EyeShape; right: EyeShape }> = {
 		left: { cx: LEFT_CX, cy: BASE_CY - 0.01, rx: 0.11, ry: 0.14 },
 		right: { cx: RIGHT_CX, cy: BASE_CY - 0.01, rx: 0.11, ry: 0.14 },
 	},
+	listening: {
+		left: { cx: LEFT_CX + 0.01, cy: BASE_CY + 0.06, rx: 0.1, ry: 0.08 },
+		right: { cx: RIGHT_CX - 0.01, cy: BASE_CY + 0.06, rx: 0.1, ry: 0.08 },
+	},
 };
 
 /**

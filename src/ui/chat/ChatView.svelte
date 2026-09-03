@@ -794,6 +794,7 @@
 			cancelled: mascotCancelled,
 			errorHoldActive,
 			segments: lastAssistant?.segments ?? [],
+			userTyping: input.trim().length > 0,
 		}),
 	);
 	const modelName = $derived($settingsStore.chatModel);

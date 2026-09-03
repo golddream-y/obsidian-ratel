@@ -231,6 +231,7 @@ export interface ChatStrings {
   'chat.mascot.aria.thinking': string;
   'chat.mascot.aria.working': string;
   'chat.mascot.aria.speaking': string;
+  'chat.mascot.aria.listening': string;
   'chat.mascot.aria.error': string;
   'chat.mascot.aria.stopped': string;
   'orb.state.working': string;

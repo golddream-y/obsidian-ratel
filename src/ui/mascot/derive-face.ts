@@ -11,17 +11,23 @@ export interface MascotFaceInput {
 	cancelled: boolean;
 	errorHoldActive: boolean;
 	segments: MessageSegment[];
+	/** 输入框有内容且用户正在写（Agent 未跑时切 listening） */
+	userTyping: boolean;
 }
 
 /**
- * 同帧只返回一档;errorHold 最高,其余按末段判别忙碌子态。
+ * 同帧只返回一档;errorHold 最高,跑起来走忙态,停下才看用户是否在打字。
  *
- * @param input - ChatView 已有运行/取消/报错保持与 segments 快照
+ * @param input - ChatView 已有运行/取消/报错保持、segments 与输入框打字
  * @returns 当前帧应展示的吉祥物脸档
  */
 export function deriveMascotFace(input: MascotFaceInput): MascotFace {
 	if (input.errorHoldActive) return 'error';
-	if (!input.isRunning) return input.cancelled ? 'stopped' : 'idle';
+	if (!input.isRunning) {
+		if (input.cancelled) return 'stopped';
+		if (input.userTyping) return 'listening';
+		return 'idle';
+	}
 	const last = input.segments[input.segments.length - 1];
 	if (!last) return 'waiting';
 	if (last.type === 'tool' && last.toolCall.status === 'calling') return 'working';

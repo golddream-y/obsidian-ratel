@@ -14,7 +14,7 @@
 		computeGaze,
 	} from './layout';
 	import { getEyeRings, lerpRings, applyGaze, squashRing } from './eyes';
-	import { waitingWander, speakingTalkAmount } from './face-motion';
+	import { waitingWander, speakingTalkAmount, listeningGlance } from './face-motion';
 	import { drawMascotFrame } from './paint';
 	import type { MascotFace } from './types';
 
@@ -30,6 +30,7 @@
 		thinking: 'chat.mascot.aria.thinking',
 		working: 'chat.mascot.aria.working',
 		speaking: 'chat.mascot.aria.speaking',
+		listening: 'chat.mascot.aria.listening',
 		error: 'chat.mascot.aria.error',
 		stopped: 'chat.mascot.aria.stopped',
 	};
@@ -127,6 +128,11 @@
 			const w = waitingWander(now);
 			gx = Math.min(0.55, Math.max(-0.55, w.x + gaze.x * 0.35));
 			gy = Math.min(0.4, Math.max(-0.4, w.y + gaze.y * 0.35));
+		}
+		if (live && morphToFace === 'listening' && !gazeFrozen) {
+			const g = listeningGlance(now);
+			gx = Math.min(0.55, Math.max(-0.55, g.x + gaze.x * 0.25));
+			gy = Math.min(0.4, Math.max(-0.4, g.y + gaze.y * 0.2));
 		}
 		return {
 			left: applyGaze(left, gx, gy),

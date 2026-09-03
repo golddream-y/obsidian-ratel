@@ -230,6 +230,7 @@ export const en: Strings = {
   'chat.mascot.aria.thinking': 'Ratel thinking',
   'chat.mascot.aria.working': 'Ratel using a tool',
   'chat.mascot.aria.speaking': 'Ratel replying',
+  'chat.mascot.aria.listening': 'Ratel listening to you type',
   'chat.mascot.aria.error': 'Ratel encountered an error',
   'chat.mascot.aria.stopped': 'Ratel stopped',
   'orb.state.working': 'Working…',
