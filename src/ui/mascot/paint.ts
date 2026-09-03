@@ -57,18 +57,6 @@ function fillSmoothRing(ctx: CanvasRenderingContext2D, ring: EyeRing, size: numb
 	ctx.fill();
 }
 
-/**
- * 按身体明度选整眼填充：浅色身体用深眼，深色身体用奶油眼。不是瞳孔。
- *
- * @param accent - 身体色
- */
-export function pickEyeFill(accent: string): string {
-	const rgb = parseRgbTriplet(accent);
-	if (!rgb) return '#1a1816';
-	const luma = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
-	return luma > 96 ? '#1a1816' : '#f4f0ea';
-}
-
 function fillBlobBody(ctx: CanvasRenderingContext2D, rx: number, ry: number): void {
 	const n = 24;
 	const pts: Array<{ x: number; y: number }> = [];
