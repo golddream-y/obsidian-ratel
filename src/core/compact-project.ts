@@ -24,7 +24,6 @@ export const COMPACT_SUMMARY_PREFIX = '[compact 摘要]\n';
 
 /** 可 microcompact 的工具名 */
 export const FOLDABLE_TOOL_NAMES = new Set([
-	'read_note',
 	'search_vault',
 	'grep',
 	'glob',
@@ -166,7 +165,7 @@ export function projectView(
 		const lines = latest.restoredNotePaths.map((p) => `- ${p}`).join('\n');
 		head.push({
 			role: 'system',
-			content: `最近读过的笔记（按需 read_note）:\n${lines}`,
+			content: `最近读过的笔记（仅当上下文中没有该篇 read_note 全文时再读）:\n${lines}`,
 		});
 	}
 	const tailSlice = messages.slice(latest.afterIndex + 1);

@@ -9,6 +9,7 @@ import type { CompactMarker } from '../../src/ports/persistence';
 import {
 	AUTO_COMPACT_THRESHOLD_PCT,
 	CompactCircuitBreaker,
+	FOLDABLE_TOOL_NAMES,
 	extractRestoredNotePaths,
 	isPromptTooLong,
 	microcompactMessages,
@@ -24,18 +25,73 @@ function tool(id: string, content: string): ChatMessage {
 }
 
 describe('microcompactMessages', () => {
-	it('microcompactMessages - 旧 read_note 超保留条数 - 正文变占位且保留 toolCallId', () => {
+	it('FOLDABLE_TOOL_NAMES - 发现类可折,read_note 与图切片不可折', () => {
+		expect([...FOLDABLE_TOOL_NAMES].sort()).toEqual(
+			['glob', 'grep', 'list_files', 'search_memory', 'search_vault'].sort(),
+		);
+		expect(FOLDABLE_TOOL_NAMES.has('read_note')).toBe(false);
+		expect(FOLDABLE_TOOL_NAMES.has('get_links')).toBe(false);
+		expect(FOLDABLE_TOOL_NAMES.has('search_by_tag')).toBe(false);
+		expect(FOLDABLE_TOOL_NAMES.has('search_by_property')).toBe(false);
+		expect(FOLDABLE_TOOL_NAMES.has('get_vault_structure')).toBe(false);
+	});
+
+	it('microcompactMessages - 旧 grep 超保留条数 - 正文变占位且保留 toolCallId', () => {
 		const msgs: ChatMessage[] = [];
 		for (let i = 0; i < 6; i++) {
-			msgs.push(asstTool(`t${i}`, 'read_note', { path: `n${i}.md` }));
+			msgs.push(asstTool(`t${i}`, 'grep', { pattern: `p${i}` }));
 			msgs.push(tool(`t${i}`, 'FULL'.repeat(20)));
 		}
 		const out = microcompactMessages(msgs, 5);
 		const tools = out.filter((m) => m.role === 'tool');
-		expect(tools[0]!.content.startsWith('[compacted] read_note')).toBe(true);
-		expect(tools[0]!.content).toContain('path=n0.md');
+		expect(tools[0]!.content.startsWith('[compacted] grep')).toBe(true);
 		expect(tools[5]!.content.startsWith('FULL')).toBe(true);
 		expect(tools[0]!.toolCallId).toBe('t0');
+	});
+
+	it('microcompactMessages - 6 条 read_note keepRecent=5 - 全部仍是全文', () => {
+		const msgs: ChatMessage[] = [];
+		for (let i = 0; i < 6; i++) {
+			msgs.push(asstTool(`t${i}`, 'read_note', { path: `n${i}.md` }));
+			msgs.push(tool(`t${i}`, `BODY${i}`.repeat(10)));
+		}
+		const out = microcompactMessages(msgs, 5);
+		const tools = out.filter((m) => m.role === 'tool');
+		expect(tools).toHaveLength(6);
+		for (const t of tools) {
+			expect(t.content.startsWith('[compacted]')).toBe(false);
+			expect(t.content.startsWith('BODY')).toBe(true);
+		}
+	});
+
+	it('microcompactMessages - 6 条 get_links keepRecent=5 - 切片全部保留', () => {
+		const msgs: ChatMessage[] = [];
+		for (let i = 0; i < 6; i++) {
+			msgs.push(asstTool(`t${i}`, 'get_links', { path: `n${i}.md` }));
+			msgs.push(tool(`t${i}`, JSON.stringify({ path: `n${i}.md`, outgoing: [`x${i}.md`] })));
+		}
+		const out = microcompactMessages(msgs, 5);
+		const tools = out.filter((m) => m.role === 'tool');
+		expect(tools).toHaveLength(6);
+		for (const t of tools) {
+			expect(t.content.startsWith('[compacted]')).toBe(false);
+			expect(t.content).toContain('outgoing');
+		}
+	});
+
+	it('microcompactMessages - 先 6 条 grep 再 1 条 get_links - grep 可折 links 仍在', () => {
+		const msgs: ChatMessage[] = [];
+		for (let i = 0; i < 6; i++) {
+			msgs.push(asstTool(`g${i}`, 'grep', { pattern: 'q' }));
+			msgs.push(tool(`g${i}`, 'GREP'.repeat(20)));
+		}
+		msgs.push(asstTool('L', 'get_links', { path: 'hub.md' }));
+		msgs.push(tool('L', '{"path":"hub.md","outgoing":["a.md"]}'));
+		const out = microcompactMessages(msgs, 5);
+		const tools = out.filter((m) => m.role === 'tool');
+		expect(tools[0]!.content.startsWith('[compacted] grep')).toBe(true);
+		expect(tools[6]!.content).toContain('hub.md');
+		expect(tools[6]!.content.startsWith('[compacted]')).toBe(false);
 	});
 
 	it('microcompactMessages - Error: 开头 - 不折叠', () => {
@@ -80,6 +136,8 @@ describe('projectView', () => {
 		expect(p.head[0]!.content).toContain('[compact 摘要]');
 		expect(p.head[0]!.content).toContain('要点A');
 		expect(p.head.some((m) => m.content.includes('a.md'))).toBe(true);
+		expect(p.head.some((m) => m.content.includes('没有该篇'))).toBe(true);
+		expect(p.head.some((m) => m.content.includes('按需 read_note'))).toBe(false);
 		expect(p.tail).toHaveLength(1);
 		expect(p.tail[0]!.content).toBe('新');
 	});
