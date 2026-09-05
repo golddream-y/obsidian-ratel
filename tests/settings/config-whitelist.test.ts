@@ -53,7 +53,7 @@ describe('CONFIG_UPDATE_WHITELIST', () => {
 			'dailyNoteFolder', 'dailyNoteFormat',
 			// 语言外观
 			'language', 'uiColorScheme', 'uiAccent',
-			'chatNavRailEnabled', 'chatNavRailSide', 'chatMotionEnabled',
+			'chatNavRailEnabled', 'chatNavRailSide', 'chatMotionEnabled', 'chatMascotEnabled',
 		];
 		for (const key of expected) {
 			expect(isWhitelistedKey(key)).toBe(true);

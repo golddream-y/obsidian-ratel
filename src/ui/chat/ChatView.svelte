@@ -92,8 +92,13 @@
 	import GlareHover from '../motion/chrome/GlareHover.svelte';
 	import OrbBackdrop from '../motion/empty/OrbBackdrop.svelte';
 	import { isChatMotionEnabled } from '../motion/prefs';
+	import ChatMascot from '../mascot/ChatMascot.svelte';
+	import { deriveMascotFace } from '../mascot/derive-face';
+	import { DEFAULT_MASCOT_RATIO } from '../mascot/layout';
 	import { isNearBottom, snapScrollToBottom } from './sticky-scroll';
 	import { FrameCoalescer } from './frame-coalescer';
+
+	const MASCOT_ERROR_HOLD_MS = 2400;
 
 	let { plugin }: { plugin: RatelVaultPlugin } = $props();
 
@@ -133,6 +138,7 @@
 	onDestroy(() => {
 		appearanceUnsub?.();
 		if (navFlashTimer) clearTimeout(navFlashTimer);
+		if (errorHoldTimer) clearTimeout(errorHoldTimer);
 		layoutFrame.cancel();
 		void flushCurrentSession();
 	});
@@ -149,6 +155,8 @@
 		return () => leaf.classList.remove('is-ratel-empty');
 	});
 	let isRunning = $state(false);
+	let errorHoldActive = $state(false);
+	let errorHoldTimer: ReturnType<typeof setTimeout> | null = null;
 	let sessionId = $state('');
 	let sessionShortTitle = $state('');
 	let sessionFullTitle = $state('');
@@ -278,6 +286,28 @@
 	async function setNavSide(next: 'left' | 'right') {
 		plugin.settings.chatNavRailSide = next;
 		await plugin.saveSettings();
+	}
+
+	/** 报错脸保持约 2.4s，到期自动清除。 */
+	function triggerErrorHold() {
+		errorHoldActive = true;
+		if (errorHoldTimer) clearTimeout(errorHoldTimer);
+		errorHoldTimer = setTimeout(() => {
+			errorHoldActive = false;
+			errorHoldTimer = null;
+		}, MASCOT_ERROR_HOLD_MS);
+	}
+
+	function setMascotRatio(x: number, y: number) {
+		plugin.settings.chatMascotX = x;
+		plugin.settings.chatMascotY = y;
+		void plugin.saveSettings();
+	}
+
+	function resetMascotRatio() {
+		plugin.settings.chatMascotX = DEFAULT_MASCOT_RATIO.x;
+		plugin.settings.chatMascotY = DEFAULT_MASCOT_RATIO.y;
+		void plugin.saveSettings();
 	}
 
 	// 消息变高 / 开关变更后重算轨度量(与贴底写入共用同一合帧器)
@@ -750,6 +780,23 @@
 	// 关键路径:/ 与 @ 互斥 — 斜杠优先;mention 补全仅在非 slash 态
 	const mentionVisible = $derived(mentionQuery !== null && !slashVisible);
 	const chatMotionOn = $derived(isChatMotionEnabled($settingsStore));
+	const lastAssistant = $derived.by(() => {
+		for (let i = messages.length - 1; i >= 0; i--) {
+			const m = messages[i];
+			if (m.role === 'assistant') return m;
+		}
+		return null;
+	});
+	const mascotCancelled = $derived(lastAssistant?.cancelled === true);
+	const mascotFace = $derived(
+		deriveMascotFace({
+			isRunning,
+			cancelled: mascotCancelled,
+			errorHoldActive,
+			segments: lastAssistant?.segments ?? [],
+			userTyping: input.trim().length > 0,
+		}),
+	);
 	const modelName = $derived($settingsStore.chatModel);
 	const embedKind = $derived($settingsStore.embedProvider);
 	const permLevel = $derived(($settingsStore.toolPermissionLevel ?? 'safe') as ToolPermissionLevel);
@@ -892,6 +939,7 @@
 			am.cancelled = true;
 			return;
 		}
+		triggerErrorHold();
 		// 关键路径:工具相关错误优先附到最近一个 calling 状态的同名工具段
 		if (code === 'TOOL_ERROR' || code === 'TOOL_DENIED' || code === 'INDEX_NOT_READY') {
 			if (toolName) {
@@ -1514,6 +1562,17 @@
 			class:has-nav-rail={railVisible}
 			data-nav-side={railVisible ? ($settingsStore.chatNavRailSide ?? 'right') : undefined}
 		>
+			{#if $settingsStore.chatMascotEnabled !== false}
+				<ChatMascot
+					enabled={true}
+					animate={chatMotionOn}
+					face={mascotFace}
+					ratioX={$settingsStore.chatMascotX ?? DEFAULT_MASCOT_RATIO.x}
+					ratioY={$settingsStore.chatMascotY ?? DEFAULT_MASCOT_RATIO.y}
+					onRatioChange={setMascotRatio}
+					onRatioReset={resetMascotRatio}
+				/>
+			{/if}
 			<MessageList
 				{messages}
 				{sessionId}

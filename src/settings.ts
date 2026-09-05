@@ -178,6 +178,14 @@ export interface RatelVaultSettings {
 	/** 是否播放空态/入场/扫光等装饰动效（不含 ThinkingOrb 忙态） */
 	chatMotionEnabled: boolean;
 
+	// 关键路径(P-MASCOT-1 — 捣蛋鬼开关与归一化位置)
+	/** 是否在消息区显示可拖动捣蛋鬼 */
+	chatMascotEnabled: boolean;
+	/** 捣蛋鬼水平位置(归一化 0~1,1 = 贴右) */
+	chatMascotX: number;
+	/** 捣蛋鬼垂直位置(归一化 0~1,1 = 贴底) */
+	chatMascotY: number;
+
 	/** MCP Server 列表；默认空 = 零出站 */
 	mcpServers: McpServerConfig[];
 	/** 用户已确认允许 spawn 的 stdio serverId 列表 */
@@ -306,6 +314,10 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 	chatNavRailSide: 'right',
 	// 关键路径:默认开启装饰动效;系统 prefers-reduced-motion 时由 prefs 闸门兜底关闭。
 	chatMotionEnabled: true,
+	// 关键路径:默认开启捣蛋鬼并贴右下角(归一化 1,1)。
+	chatMascotEnabled: true,
+	chatMascotX: 1,
+	chatMascotY: 1,
 	// 关键路径:默认空列表 = 零 MCP 出站（ADR-014）
 	mcpServers: [],
 	mcpApprovedSpawns: [],
@@ -824,6 +836,11 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 						name: tNow('settings.chatMotionEnabled.name'),
 						desc: tNow('settings.chatMotionEnabled.desc'),
 						control: { type: 'toggle', key: 'chatMotionEnabled' },
+					},
+					{
+						name: tNow('settings.chatMascotEnabled.name'),
+						desc: tNow('settings.chatMascotEnabled.desc'),
+						control: { type: 'toggle', key: 'chatMascotEnabled' },
 					},
 					{
 						name: tNow('settings.chatNavRailSide.name'),

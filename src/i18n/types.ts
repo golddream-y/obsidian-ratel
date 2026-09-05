@@ -61,6 +61,8 @@ export interface SettingsStrings {
   'settings.chatNavRailEnabled.desc': string;
   'settings.chatMotionEnabled.name': string;
   'settings.chatMotionEnabled.desc': string;
+  'settings.chatMascotEnabled.name': string;
+  'settings.chatMascotEnabled.desc': string;
   'settings.chatNavRailSide.name': string;
   'settings.chatNavRailSide.desc': string;
   'settings.chatNavRailSide.left': string;
@@ -224,6 +226,14 @@ export interface ChatStrings {
   'chat.workbar.searching': string;
   'chat.workbar.compacting': string;
   'chat.typing': string;
+  'chat.mascot.aria.idle': string;
+  'chat.mascot.aria.waiting': string;
+  'chat.mascot.aria.thinking': string;
+  'chat.mascot.aria.working': string;
+  'chat.mascot.aria.speaking': string;
+  'chat.mascot.aria.listening': string;
+  'chat.mascot.aria.error': string;
+  'chat.mascot.aria.stopped': string;
   'orb.state.working': string;
   'orb.state.searching': string;
   'orb.state.solving': string;

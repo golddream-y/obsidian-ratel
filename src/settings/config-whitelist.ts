@@ -56,6 +56,7 @@ export const CONFIG_UPDATE_WHITELIST: ReadonlySet<string> = new Set<string>([
 	'chatNavRailEnabled',
 	'chatNavRailSide',
 	'chatMotionEnabled',
+	'chatMascotEnabled',
 ]);
 
 /**
@@ -113,6 +114,7 @@ const BOOLEAN_KEYS: ReadonlySet<string> = new Set<string>([
 	'memoryAutoWrite',
 	'chatNavRailEnabled',
 	'chatMotionEnabled',
+	'chatMascotEnabled',
 ]);
 
 /** 字符串 key — 默认要求非空(纯空白视为空) */
