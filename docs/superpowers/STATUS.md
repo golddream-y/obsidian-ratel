@@ -30,7 +30,7 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
-| P-READ-PRESERVE-1 | [2026-09-05-preserve-read-note-microcompact.md](plans/2026-09-05-preserve-read-note-microcompact.md) | Pending | S-READ-PRESERVE | 2 Task:compact 集合+文案 / prompt+CHANGELOG |
+| P-READ-PRESERVE-1 | [2026-09-05-preserve-read-note-microcompact.md](plans/2026-09-05-preserve-read-note-microcompact.md) | In Progress | S-READ-PRESERVE | 2 Task;分支 feat/p-read-preserve-1 |
 | P-GOAL-1 | [2026-08-22-agent-goal-mode.md](plans/2026-08-22-agent-goal-mode.md) | Pending | S-GOAL | 8 Task;对齐 spec v1.3 五面 UI;偏差见 plan |
 
 ---
