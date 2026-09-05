@@ -19,7 +19,6 @@
 
 | ID | 文件 | 状态 | 创建日期 | 备注 |
 |---|---|---|---|---|
-| S-READ-PRESERVE | [2026-09-05-preserve-read-note-microcompact.md](specs/2026-09-05-preserve-read-note-microcompact.md) | Active | 2026-09-05 | 代码已落地 feat/p-read-preserve-1;待合入后询问归档 |
 | S-ECOSYSTEM | [2026-08-20-ecosystem-management-design.md](specs/2026-08-20-ecosystem-management-design.md) | Active | 2026-08-20 | 插件生态管理(PRD 支柱 C):商店探索/安装/配置/更新/回滚;EcosystemChange 变更日志为核心;需 ADR-018(网络出站扩展);plan 待写 |
 | S-GOAL | [2026-08-22-agent-goal-mode.md](specs/2026-08-22-agent-goal-mode.md) | Active | 2026-08-22 | Agent 目标模式;取代 S-TASK;spec **v1.3** + P-GOAL-1 Pending(指示器:底栏 StatusBarItem、去 emoji、停止≠挂起、继续 chip 唯一目标、GoalCreateModal、撤权=设置页或 pause) |
 
@@ -30,7 +29,6 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
-| P-READ-PRESERVE-1 | [2026-09-05-preserve-read-note-microcompact.md](plans/2026-09-05-preserve-read-note-microcompact.md) | Completed | S-READ-PRESERVE | 2 Task 完成;分支 feat/p-read-preserve-1;待合入 |
 | P-GOAL-1 | [2026-08-22-agent-goal-mode.md](plans/2026-08-22-agent-goal-mode.md) | Pending | S-GOAL | 8 Task;对齐 spec v1.3 五面 UI;偏差见 plan |
 
 ---
@@ -60,4 +58,4 @@
 
 ## 已归档
 
-见 [ARCHIVE.md](ARCHIVE.md) — 含按月统计图与全部归档记录(69 条 / 58 目录)。
+见 [ARCHIVE.md](ARCHIVE.md) — 含按月统计图与全部归档记录(70 条 / 59 目录)。

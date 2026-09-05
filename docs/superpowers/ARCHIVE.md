@@ -9,21 +9,21 @@
 
 ## 统计
 
-**按月归档记录数**(共 69 条,58 个目录)
+**按月归档记录数**(共 70 条,59 个目录)
 
 ```mermaid
 xychart-beta
     title "按月归档记录数"
     x-axis ["2026-06", "2026-07", "2026-08", "2026-09"]
     y-axis "记录数" 0 --> 26
-    bar [17, 23, 26, 3]
+    bar [17, 23, 26, 4]
 ```
 
 **归档形态分布**
 
 ```mermaid
 pie showData title 归档形态分布
-    "完成归档" : 62
+    "完成归档" : 63
     "Abandoned(未实施/中途废弃)" : 4
     "Superseded(被取代)" : 3
 ```
@@ -34,6 +34,7 @@ pie showData title 归档形态分布
 
 | ID | 归档目录 | 日期 | 备注 |
 |---|---|---|---|
+| S-READ-PRESERVE | [archive/S-READ-PRESERVE/](archive/S-READ-PRESERVE/) | 09-05 | microcompact 不折 `read_note`;图切片保持不折;随 0.6.1 发版 |
 | S-MASCOT-3 | [archive/S-MASCOT/](archive/S-MASCOT/) | 09-05 | 眼形+眼动;不读回复;plan 文件名为 `*.plan.md` |
 | S-MASCOT-2 | [archive/S-MASCOT/](archive/S-MASCOT/) | 09-05 | 闲着连眨/单击轻弹/忙态;吸附无开关 8px |
 | S-MASCOT | [archive/S-MASCOT/](archive/S-MASCOT/) | 09-05 | 可拖捣蛋鬼 v1(设置文案「捣蛋鬼」/ Imp);squash `14c6ee4` 合入 develop,随 0.6.0 发版 |
