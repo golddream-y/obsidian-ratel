@@ -19,7 +19,7 @@
 
 | ID | 文件 | 状态 | 创建日期 | 备注 |
 |---|---|---|---|---|
-| S-READ-PRESERVE | [2026-09-05-preserve-read-note-microcompact.md](specs/2026-09-05-preserve-read-note-microcompact.md) | Active | 2026-09-05 | microcompact 不再折叠 `read_note` 全文,避免循环查看;prompt 禁止已有全文再读;plan 待写 |
+| S-READ-PRESERVE | [2026-09-05-preserve-read-note-microcompact.md](specs/2026-09-05-preserve-read-note-microcompact.md) | Active | 2026-09-05 | microcompact 不折 `read_note`;图切片保持不折;prompt 禁再读全文 + 禁沿边巡库;plan 待写 |
 | S-ECOSYSTEM | [2026-08-20-ecosystem-management-design.md](specs/2026-08-20-ecosystem-management-design.md) | Active | 2026-08-20 | 插件生态管理(PRD 支柱 C):商店探索/安装/配置/更新/回滚;EcosystemChange 变更日志为核心;需 ADR-018(网络出站扩展);plan 待写 |
 | S-GOAL | [2026-08-22-agent-goal-mode.md](specs/2026-08-22-agent-goal-mode.md) | Active | 2026-08-22 | Agent 目标模式;取代 S-TASK;spec **v1.3** + P-GOAL-1 Pending(指示器:底栏 StatusBarItem、去 emoji、停止≠挂起、继续 chip 唯一目标、GoalCreateModal、撤权=设置页或 pause) |
 
