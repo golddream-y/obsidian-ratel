@@ -36,7 +36,7 @@ pie showData title 归档形态分布
 |---|---|---|---|
 | S-MASCOT-3 | [archive/S-MASCOT/](archive/S-MASCOT/) | 09-05 | 眼形+眼动;不读回复;plan 文件名为 `*.plan.md` |
 | S-MASCOT-2 | [archive/S-MASCOT/](archive/S-MASCOT/) | 09-05 | 闲着连眨/单击轻弹/忙态;吸附无开关 8px |
-| S-MASCOT | [archive/S-MASCOT/](archive/S-MASCOT/) | 09-05 | 可拖捣蛋鬼 v1(设置文案「捣蛋鬼」/ Imp);`feat/p-mascot-1`;CHANGELOG 起草 0.6.0,尚未 squash 合入 develop |
+| S-MASCOT | [archive/S-MASCOT/](archive/S-MASCOT/) | 09-05 | 可拖捣蛋鬼 v1(设置文案「捣蛋鬼」/ Imp);squash `14c6ee4` 合入 develop,随 0.6.0 发版 |
 
 ## 2026-08
 

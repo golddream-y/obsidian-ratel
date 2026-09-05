@@ -1,7 +1,7 @@
 # S-MASCOT — 执行日志(按时间倒序)
 
 > 该系列 spec(S-MASCOT / S-MASCOT-2 / S-MASCOT-3)的实施记录。最新在前。
-> 归档时分支 `feat/p-mascot-1` 尚未 squash 合入 develop;CHANGELOG 已起草 `[0.6.0]`。
+> squash 合入 develop:`14c6ee4`;随 0.6.0 发版。
 > spec 与 plan 原文件名相同,plan 按 S-VISION 惯例改存为 `*.plan.md`。
 > 用户可见文案定为「捣蛋鬼」(英文 Imp);归档 spec 正文仍保留当时的「吉祥物」用词。
 
