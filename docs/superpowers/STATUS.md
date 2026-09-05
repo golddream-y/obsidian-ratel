@@ -19,7 +19,7 @@
 
 | ID | 文件 | 状态 | 创建日期 | 备注 |
 |---|---|---|---|---|
-| S-READ-PRESERVE | [2026-09-05-preserve-read-note-microcompact.md](specs/2026-09-05-preserve-read-note-microcompact.md) | Active | 2026-09-05 | microcompact 不折 `read_note`;图切片保持不折;prompt 禁再读全文 + 禁沿边巡库;P-READ-PRESERVE-1 Pending |
+| S-READ-PRESERVE | [2026-09-05-preserve-read-note-microcompact.md](specs/2026-09-05-preserve-read-note-microcompact.md) | Active | 2026-09-05 | 代码已落地 feat/p-read-preserve-1;待合入后询问归档 |
 | S-ECOSYSTEM | [2026-08-20-ecosystem-management-design.md](specs/2026-08-20-ecosystem-management-design.md) | Active | 2026-08-20 | 插件生态管理(PRD 支柱 C):商店探索/安装/配置/更新/回滚;EcosystemChange 变更日志为核心;需 ADR-018(网络出站扩展);plan 待写 |
 | S-GOAL | [2026-08-22-agent-goal-mode.md](specs/2026-08-22-agent-goal-mode.md) | Active | 2026-08-22 | Agent 目标模式;取代 S-TASK;spec **v1.3** + P-GOAL-1 Pending(指示器:底栏 StatusBarItem、去 emoji、停止≠挂起、继续 chip 唯一目标、GoalCreateModal、撤权=设置页或 pause) |
 
@@ -30,7 +30,7 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
-| P-READ-PRESERVE-1 | [2026-09-05-preserve-read-note-microcompact.md](plans/2026-09-05-preserve-read-note-microcompact.md) | In Progress | S-READ-PRESERVE | 2 Task;分支 feat/p-read-preserve-1 |
+| P-READ-PRESERVE-1 | [2026-09-05-preserve-read-note-microcompact.md](plans/2026-09-05-preserve-read-note-microcompact.md) | Completed | S-READ-PRESERVE | 2 Task 完成;分支 feat/p-read-preserve-1;待合入 |
 | P-GOAL-1 | [2026-08-22-agent-goal-mode.md](plans/2026-08-22-agent-goal-mode.md) | Pending | S-GOAL | 8 Task;对齐 spec v1.3 五面 UI;偏差见 plan |
 
 ---
@@ -50,11 +50,10 @@
 
 ## Future execution queue(按顺序)
 
-1. **S-READ-PRESERVE**(hotfix,可插队)— P-READ-PRESERVE-1 Pending;microcompact 保留 `read_note`
-2. **S-GOAL**(goal 模式)— spec **v1.3** + P-GOAL-1 已定,待启动实施;成果沉淀 v1 用现有 `write_note` 对话确认,不依赖写侧
-3. 候选(无 spec,重启时新开):update_frontmatter / Write Gate / append_to_daily(S-EVOLUTION 写侧,见 archive/S-EVOLUTION/)  
-4. S-ECOSYSTEM(差异化主打,动工前先确认商店审核口径 + 立 ADR-018)
-5. 候选(无 spec):skill-script-sandbox 心跳用例 fake-timers 化 — 存量时序 flake(300ms 真定时器赛跑,P-VISION-1 审查期间实证 base/HEAD 均间歇失败)
+1. **S-GOAL**(goal 模式)— spec **v1.3** + P-GOAL-1 已定,待启动实施;成果沉淀 v1 用现有 `write_note` 对话确认,不依赖写侧
+2. 候选(无 spec,重启时新开):update_frontmatter / Write Gate / append_to_daily(S-EVOLUTION 写侧,见 archive/S-EVOLUTION/)  
+3. S-ECOSYSTEM(差异化主打,动工前先确认商店审核口径 + 立 ADR-018)
+4. 候选(无 spec):skill-script-sandbox 心跳用例 fake-timers 化 — 存量时序 flake(300ms 真定时器赛跑,P-VISION-1 审查期间实证 base/HEAD 均间歇失败)
 
 
 ---
