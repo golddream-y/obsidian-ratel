@@ -1,6 +1,6 @@
 /**
  * @file src/ui/mascot/paint.ts
- * @description 吉祥物单帧 Canvas：软blob身体 + 平滑眼环
+ * @description 捣蛋鬼单帧 Canvas：软blob身体 + 平滑眼环
  * @module ui/mascot/paint
  * @depends ./eyes, ./sim
  */

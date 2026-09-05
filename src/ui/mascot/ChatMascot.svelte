@@ -1,23 +1,28 @@
 <!--
 	@file src/ui/mascot/ChatMascot.svelte
-	@description 聊天窗可拖吉祥物 — blob 身体、弹簧视线与眨眼
+	@description 聊天窗可拖捣蛋鬼 — blob 身体、弹簧视线与眨眼
 	@module ui/mascot/ChatMascot
-	@depends ./layout, ./eyes, ./paint, ./types, ../../i18n
+	@depends ./layout, ./paint, ./sim, ./gesture, ./types, ../../i18n
 -->
 <script lang="ts">
 	import { onDestroy } from 'svelte';
 	import { t, type StringKey } from '../../i18n';
 	import {
 		MASCOT_SIZE,
+		MASCOT_CANVAS_PAD,
+		MASCOT_CANVAS_VIEW,
 		ratioToOffset,
 		offsetToRatio,
 		computeGaze,
+		snapMascotToSides,
 	} from './layout';
 	import { drawMascotFrame } from './paint';
 	import { MascotSim } from './sim';
+	import { isMascotTap } from './gesture';
 	import type { MascotFace } from './types';
 
 	const DOUBLE_CLICK_MS = 300;
+	const BUSY_TAP: ReadonlySet<MascotFace> = new Set(['waiting', 'thinking', 'working', 'speaking']);
 
 	const ARIA_KEYS: Record<MascotFace, StringKey> = {
 		idle: 'chat.mascot.aria.idle',
@@ -53,9 +58,13 @@
 	let posLeft = $state(0);
 	let posTop = $state(0);
 	let dragging = $state(false);
+	let holding = $state(false);
 	let pointerX = $state<number | null>(null);
 	let pointerY = $state<number | null>(null);
 	let lastDownAt = 0;
+	let downX = 0;
+	let downY = 0;
+	let didDrag = false;
 
 	let wrapEl: HTMLElement | null = null;
 	let resizeObs: ResizeObserver | null = null;
@@ -101,10 +110,12 @@
 		lastFrameAt = now;
 
 		const dpr = Math.min(2, (typeof devicePixelRatio !== 'undefined' && devicePixelRatio) || 1);
-		canvas.width = Math.round(MASCOT_SIZE * dpr);
-		canvas.height = Math.round(MASCOT_SIZE * dpr);
+		canvas.width = Math.round(MASCOT_CANVAS_VIEW * dpr);
+		canvas.height = Math.round(MASCOT_CANVAS_VIEW * dpr);
 		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-		ctx.clearRect(0, 0, MASCOT_SIZE, MASCOT_SIZE);
+		ctx.clearRect(0, 0, MASCOT_CANVAS_VIEW, MASCOT_CANVAS_VIEW);
+		ctx.save();
+		ctx.translate(MASCOT_CANVAS_PAD, MASCOT_CANVAS_PAD);
 
 		const centerX = posLeft + MASCOT_SIZE / 2;
 		const centerY = posTop + MASCOT_SIZE / 2;
@@ -115,7 +126,7 @@
 			pointerGaze,
 			dt,
 			now,
-			pressing: dragging,
+			pressing: holding,
 		});
 		const colors = readPaintColors(host);
 		drawMascotFrame(ctx, {
@@ -126,6 +137,7 @@
 			rightRing: frame.right,
 			body: frame.body,
 		});
+		ctx.restore();
 	}
 
 	function startLoop() {
@@ -170,20 +182,25 @@
 			lastDownAt = 0;
 			// 关键路径:双击复位后必须清 dragging,否则随后的 pointerup 会把旧拖位再写回 settings
 			dragging = false;
+			holding = false;
+			didDrag = false;
 			onRatioReset();
 			syncPosition();
 			paintFrame();
 			return;
 		}
 		lastDownAt = now;
+		holding = true;
+		didDrag = false;
+		downX = e.clientX;
+		downY = e.clientY;
+		dragging = false;
 
-		dragging = true;
 		const host = rootEl as HTMLDivElement;
 		host.setPointerCapture(e.pointerId);
 		const elRect = host.getBoundingClientRect();
 		grabOffsetX = e.clientX - elRect.left;
 		grabOffsetY = e.clientY - elRect.top;
-		onMascotDragAt(e.clientX, e.clientY);
 	}
 
 	function onMascotDragAt(clientX: number, clientY: number) {
@@ -191,27 +208,40 @@
 		const rect = wrapEl.getBoundingClientRect();
 		posLeft = clientX - rect.left - grabOffsetX;
 		posTop = clientY - rect.top - grabOffsetY;
+		const snapped = snapMascotToSides(posLeft, posTop, wrapEl.clientWidth);
+		posLeft = snapped.left;
+		posTop = snapped.top;
 		paintFrame();
 	}
 
 	function onMascotPointerMove(e: PointerEvent) {
-		if (!dragging) return;
+		if (!holding) return;
+		if (!didDrag && isMascotTap(e.clientX - downX, e.clientY - downY)) return;
+		didDrag = true;
+		dragging = true;
 		onMascotDragAt(e.clientX, e.clientY);
 	}
 
 	function onMascotPointerUp(e: PointerEvent) {
-		if (!dragging || !wrapEl) return;
+		if (!holding) return;
+		holding = false;
 		dragging = false;
 		try {
 			(rootEl as HTMLDivElement).releasePointerCapture(e.pointerId);
 		} catch {
 			// 已释放时忽略
 		}
-		const w = wrapEl.clientWidth;
-		const h = wrapEl.clientHeight;
-		const ratio = offsetToRatio(posLeft, posTop, w, h);
-		onRatioChange(ratio.x, ratio.y);
-		syncPosition();
+		const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+		if (didDrag && wrapEl) {
+			const w = wrapEl.clientWidth;
+			const h = wrapEl.clientHeight;
+			const ratio = offsetToRatio(posLeft, posTop, w, h);
+			onRatioChange(ratio.x, ratio.y);
+			syncPosition();
+		} else if (!didDrag && animate) {
+			sim.pulseTap(BUSY_TAP.has(face) ? 0.5 : 1, now);
+		}
+		didDrag = false;
 		paintFrame();
 	}
 
@@ -288,8 +318,12 @@
 		<canvas
 			bind:this={canvasEl}
 			class="ratel-mascot-canvas"
-			width={MASCOT_SIZE}
-			height={MASCOT_SIZE}
+			width={MASCOT_CANVAS_VIEW}
+			height={MASCOT_CANVAS_VIEW}
+			style:left="{-MASCOT_CANVAS_PAD}px"
+			style:top="{-MASCOT_CANVAS_PAD}px"
+			style:width="{MASCOT_CANVAS_VIEW}px"
+			style:height="{MASCOT_CANVAS_VIEW}px"
 			aria-hidden="true"
 		></canvas>
 	</div>
@@ -316,9 +350,8 @@
 	}
 
 	.ratel-mascot-canvas {
+		position: absolute;
 		display: block;
-		width: 48px;
-		height: 48px;
 		pointer-events: none;
 	}
 </style>

@@ -1,6 +1,6 @@
 /**
  * @file src/ui/mascot/sim.ts
- * @description 吉祥物姿态模拟：弹簧换脸、视线滞后、呼吸、眨眼过冲
+ * @description 捣蛋鬼姿态模拟：弹簧换脸、视线滞后、呼吸、眨眼过冲、单击轻弹
  * @module ui/mascot/sim
  * @depends ./types, ./eyes, ./face-motion, ./spring
  *
@@ -8,7 +8,19 @@
  */
 import type { MascotFace } from './types';
 import { getEyeRings, lerpRings, applyGaze, squashRing, type EyeRing } from './eyes';
-import { waitingWander, listeningGlance, idleGlance } from './face-motion';
+import {
+	waitingWander,
+	listeningGlance,
+	idleGlance,
+	idleSwayRotate,
+	waitingBodyRotate,
+	speakingNod,
+	speakingTalkAmount,
+	thinkingWink,
+	errorShakeRotate,
+	shouldDoubleBlink,
+	nextBlinkDelayMs,
+} from './face-motion';
 import { createSpring, snapSpring, stepSpring, type Spring } from './spring';
 
 export interface MascotBodyPose {
@@ -27,7 +39,7 @@ export interface MascotSimFrame {
 	open: number;
 }
 
-interface FaceKinetics {
+export interface FaceKinetics {
 	breathe: number;
 	rotate: number;
 	bounceAmp: number;
@@ -40,22 +52,29 @@ interface FaceKinetics {
 }
 
 const FACE_KINETICS: Record<MascotFace, FaceKinetics> = {
-	idle: { breathe: 0.022, rotate: 0, bounceAmp: 0, bounceHz: 0, blinkMin: 2200, blinkMax: 4800, restOpen: 1, lookBiasX: 0, lookBiasY: 0 },
-	waiting: { breathe: 0.014, rotate: 0, bounceAmp: 0, bounceHz: 0, blinkMin: 3800, blinkMax: 7200, restOpen: 0.94, lookBiasX: 0, lookBiasY: 0 },
-	thinking: { breathe: 0.007, rotate: -6, bounceAmp: 0, bounceHz: 0, blinkMin: 8000, blinkMax: 14000, restOpen: 0.4, lookBiasX: 0.08, lookBiasY: 0.06 },
-	working: { breathe: 0.012, rotate: 7, bounceAmp: 1.1, bounceHz: 2.4, blinkMin: 2400, blinkMax: 4200, restOpen: 1.04, lookBiasX: 0, lookBiasY: -0.04 },
-	speaking: { breathe: 0.018, rotate: 0, bounceAmp: 1.15, bounceHz: 2.05, blinkMin: 1600, blinkMax: 3200, restOpen: 1.04, lookBiasX: 0, lookBiasY: -0.04 },
-	listening: { breathe: 0.014, rotate: 3, bounceAmp: 0.25, bounceHz: 0.9, blinkMin: 2400, blinkMax: 4400, restOpen: 0.94, lookBiasX: 0, lookBiasY: 0 },
-	error: { breathe: 0.004, rotate: -11, bounceAmp: 0, bounceHz: 0, blinkMin: 0, blinkMax: 0, restOpen: 0.72, lookBiasX: 0.12, lookBiasY: 0.08 },
-	stopped: { breathe: 0.003, rotate: 2, bounceAmp: 0, bounceHz: 0, blinkMin: 0, blinkMax: 0, restOpen: 0.32, lookBiasX: 0, lookBiasY: 0.12 },
+	idle: { breathe: 0.03, rotate: 0, bounceAmp: 0, bounceHz: 0, blinkMin: 6000, blinkMax: 12000, restOpen: 1, lookBiasX: 0, lookBiasY: 0 },
+	waiting: { breathe: 0.016, rotate: 0, bounceAmp: 0.35, bounceHz: 0.55, blinkMin: 3800, blinkMax: 7200, restOpen: 0.94, lookBiasX: 0, lookBiasY: 0 },
+	thinking: { breathe: 0.005, rotate: -10, bounceAmp: 0, bounceHz: 0, blinkMin: 8000, blinkMax: 14000, restOpen: 0.32, lookBiasX: 0.08, lookBiasY: 0.06 },
+	working: { breathe: 0.012, rotate: 8, bounceAmp: 1.6, bounceHz: 3.2, blinkMin: 2400, blinkMax: 4200, restOpen: 1.04, lookBiasX: 0, lookBiasY: -0.04 },
+	speaking: { breathe: 0.018, rotate: 0, bounceAmp: 0.9, bounceHz: 2.4, blinkMin: 1600, blinkMax: 3200, restOpen: 1.04, lookBiasX: 0, lookBiasY: -0.04 },
+	listening: { breathe: 0.014, rotate: 3, bounceAmp: 0.12, bounceHz: 0.7, blinkMin: 2400, blinkMax: 4400, restOpen: 0.94, lookBiasX: 0, lookBiasY: 0 },
+	error: { breathe: 0.004, rotate: -13, bounceAmp: 0, bounceHz: 0, blinkMin: 0, blinkMax: 0, restOpen: 0.68, lookBiasX: 0.12, lookBiasY: 0.08 },
+	stopped: { breathe: 0.002, rotate: 3, bounceAmp: 0, bounceHz: 0, blinkMin: 0, blinkMax: 0, restOpen: 0.28, lookBiasX: 0, lookBiasY: 0.12 },
 };
+
+/**
+ * 各脸运动参数（供测试断言忙态差）。
+ */
+export function mascotKinetics(face: MascotFace): FaceKinetics {
+	return FACE_KINETICS[face];
+}
 
 function clamp(v: number, a: number, b: number): number {
 	return Math.min(b, Math.max(a, v));
 }
 
 /**
- * 吉祥物每帧姿态。ChatMascot 只喂信号，不在组件里堆正弦。
+ * 捣蛋鬼每帧姿态。ChatMascot 只喂信号，不在组件里堆正弦。
  */
 export class MascotSim {
 	private morph: Spring = createSpring(1);
@@ -69,6 +88,18 @@ export class MascotSim {
 	private blinkUntil = 0;
 	private squashX: Spring = createSpring(1);
 	private squashY: Spring = createSpring(1);
+	private tapUntil = 0;
+	private tapAmp = 1;
+	private errorAt = -1;
+	private lastAnimate = true;
+	private rng: () => number;
+
+	/**
+	 * @param rng - 眨眼随机源，测试可注入恒值
+	 */
+	constructor(rng: () => number = Math.random) {
+		this.rng = rng;
+	}
 
 	/**
 	 * 切脸。animate=false 时立刻贴住。
@@ -92,6 +123,18 @@ export class MascotSim {
 	}
 
 	/**
+	 * 单击轻弹：把压扁弹簧目标打出去一截。
+	 *
+	 * @param amp - 1 为闲着满幅，忙态约 0.5
+	 * @param now - 当前毫秒
+	 */
+	pulseTap(amp: number, now: number): void {
+		if (!this.lastAnimate) return;
+		this.tapAmp = amp;
+		this.tapUntil = now + 320;
+	}
+
+	/**
 	 * 推进一帧。
 	 *
 	 * @param args.face - 当前脸
@@ -108,6 +151,10 @@ export class MascotSim {
 		now: number;
 		pressing?: boolean;
 	}): MascotSimFrame {
+		this.lastAnimate = args.animate;
+		if (args.face === 'error' && this.toFace !== 'error') {
+			this.errorAt = args.now;
+		}
 		this.setFace(args.face, args.animate);
 		const kin = FACE_KINETICS[this.toFace];
 
@@ -118,14 +165,16 @@ export class MascotSim {
 			snapSpring(this.open, kin.restOpen);
 			snapSpring(this.squashX, 1);
 			snapSpring(this.squashY, 1);
-			return this.compose();
+			this.tapUntil = 0;
+			return this.compose(args.now, 0, 0, kin.rotate);
 		}
 
 		this.morph.t = 1;
 		stepSpring(this.morph, 16, 0.88, args.dt);
 
-		this.squashX.t = args.pressing ? 1.1 : 1;
-		this.squashY.t = args.pressing ? 0.88 : 1;
+		const tapping = args.now < this.tapUntil;
+		this.squashX.t = args.pressing ? 1.1 : tapping ? 1 + 0.12 * this.tapAmp : 1;
+		this.squashY.t = args.pressing ? 0.88 : tapping ? 1 - 0.2 * this.tapAmp : 1;
 		stepSpring(this.squashX, 18, 0.72, args.dt);
 		stepSpring(this.squashY, 18, 0.72, args.dt);
 
@@ -153,12 +202,15 @@ export class MascotSim {
 		stepSpring(this.gazeY, 11, 0.78, args.dt);
 
 		this.stepBlink(args.now, kin);
+		if (this.toFace === 'speaking' && this.blinkPhase === 'idle') {
+			this.open.t = kin.restOpen - speakingTalkAmount(args.now) * 0.55;
+		}
 		stepSpring(this.open, 26, 1, args.dt);
 
 		const t = args.now / 1000;
 		const breathe = kin.breathe * Math.sin((Math.PI * 2 * t) / 3.6);
 		const bounce = kin.bounceAmp * Math.sin(Math.PI * 2 * kin.bounceHz * t);
-		return this.compose(breathe, bounce, kin.rotate);
+		return this.compose(args.now, breathe, bounce, kin.rotate);
 	}
 
 	private stepBlink(now: number, kin: FaceKinetics): void {
@@ -168,11 +220,13 @@ export class MascotSim {
 			return;
 		}
 		if (this.blinkAt === 0) {
-			this.blinkAt = now + kin.blinkMin + Math.random() * (kin.blinkMax - kin.blinkMin);
+			this.blinkAt = now + nextBlinkDelayMs(kin, this.rng(), false);
 		}
 		if (this.blinkPhase === 'idle' && now >= this.blinkAt) {
 			this.blinkPhase = 'shut';
 			this.open.t = 0.06;
+			this.open.x = 0.08;
+			this.open.v = 0;
 			this.blinkUntil = now + 70;
 		} else if (this.blinkPhase === 'shut' && now >= this.blinkUntil) {
 			this.blinkPhase = 'open';
@@ -181,13 +235,14 @@ export class MascotSim {
 		} else if (this.blinkPhase === 'open' && now >= this.blinkUntil) {
 			this.blinkPhase = 'idle';
 			this.open.t = kin.restOpen;
-			this.blinkAt = now + kin.blinkMin + Math.random() * (kin.blinkMax - kin.blinkMin);
+			const dbl = shouldDoubleBlink(this.rng());
+			this.blinkAt = now + nextBlinkDelayMs(kin, this.rng(), dbl);
 		} else if (this.blinkPhase === 'idle') {
 			this.open.t = kin.restOpen;
 		}
 	}
 
-	private compose(breathe = 0, bounce = 0, rotate = 0): MascotSimFrame {
+	private compose(now: number, breathe = 0, bounce = 0, rotate = 0): MascotSimFrame {
 		const k = clamp(this.morph.x, 0, 1);
 		const from = getEyeRings(this.fromFace);
 		const to = getEyeRings(this.toFace);
@@ -196,10 +251,29 @@ export class MascotSim {
 		const open = clamp(this.open.x, 0.04, 1.25);
 		left = squashRing(left, 1 - open);
 		right = squashRing(right, 1 - open);
+		if (this.toFace === 'thinking') {
+			left = squashRing(left, thinkingWink(now));
+		}
 		const gx = this.gazeX.x;
 		const gy = this.gazeY.x;
 		left = applyGaze(left, gx, gy);
 		right = applyGaze(right, gx, gy);
+
+		let extraRotate = rotate + bounce * 0.35 + gx * 8;
+		let extraY = breathe * 1.8 + bounce * 0.4;
+		if (this.lastAnimate && this.toFace === 'idle') {
+			extraRotate += idleSwayRotate(now);
+		}
+		if (this.lastAnimate && this.toFace === 'waiting') {
+			extraRotate += waitingBodyRotate(now);
+		}
+		if (this.lastAnimate && this.toFace === 'speaking') {
+			extraY += speakingNod(now);
+		}
+		if (this.lastAnimate && this.toFace === 'error' && this.errorAt >= 0) {
+			extraRotate += errorShakeRotate(now - this.errorAt);
+		}
+
 		return {
 			left,
 			right,
@@ -209,8 +283,8 @@ export class MascotSim {
 			body: {
 				scaleX: (1 + breathe * 0.35) * this.squashX.x,
 				scaleY: (1 + breathe + bounce * 0.01) * this.squashY.x,
-				rotate: rotate + bounce * 0.35 + gx * 8,
-				offsetY: breathe * 1.8 + bounce * 0.4,
+				rotate: extraRotate,
+				offsetY: extraY,
 			},
 		};
 	}

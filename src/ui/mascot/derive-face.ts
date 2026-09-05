@@ -1,6 +1,6 @@
 /**
  * @file src/ui/mascot/derive-face.ts
- * @description 由 ChatView 已有信号派生吉祥物脸(S-MASCOT 4.2)
+ * @description 由 ChatView 已有信号派生捣蛋鬼脸(S-MASCOT 4.2)
  * @module ui/mascot/derive-face
  */
 import type { MessageSegment } from '../chat/message-stream/types';
@@ -19,7 +19,7 @@ export interface MascotFaceInput {
  * 同帧只返回一档;errorHold 最高,跑起来走忙态,停下才看用户是否在打字。
  *
  * @param input - ChatView 已有运行/取消/报错保持、segments 与输入框打字
- * @returns 当前帧应展示的吉祥物脸档
+ * @returns 当前帧应展示的捣蛋鬼脸档
  */
 export function deriveMascotFace(input: MascotFaceInput): MascotFace {
 	if (input.errorHoldActive) return 'error';

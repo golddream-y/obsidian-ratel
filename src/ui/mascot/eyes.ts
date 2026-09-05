@@ -1,6 +1,6 @@
 /**
  * @file src/ui/mascot/eyes.ts
- * @description 吉祥物眼环几何：每脸左右椭圆采样闭合环
+ * @description 捣蛋鬼眼环几何：椭圆 + 眼皮，按状态换形状
  * @module ui/mascot/eyes
  * @depends ./types
  *
@@ -29,6 +29,10 @@ interface EyeShape {
 	rx: number;
 	ry: number;
 	tilt?: number;
+	/** 0–1，把上半（屏幕上方、更小 y）压向中线 */
+	lidTop?: number;
+	/** 0–1，把下半压向中线 */
+	lidBottom?: number;
 }
 
 const LEFT_CX = 0.34;
@@ -41,33 +45,33 @@ const FACE_SHAPES: Record<MascotFace, { left: EyeShape; right: EyeShape }> = {
 		left: { cx: LEFT_CX - 0.01, cy: BASE_CY, rx: 0.105, ry: 0.125 },
 		right: { cx: RIGHT_CX + 0.01, cy: BASE_CY + 0.008, rx: 0.1, ry: 0.12 },
 	},
-	thinking: {
-		left: { cx: LEFT_CX, cy: BASE_CY + 0.02, rx: 0.1, ry: 0.05 },
-		right: { cx: RIGHT_CX, cy: BASE_CY + 0.02, rx: 0.1, ry: 0.05 },
-	},
-	error: {
-		left: { cx: LEFT_CX - 0.02, cy: BASE_CY, rx: 0.085, ry: 0.09, tilt: -0.35 },
-		right: { cx: RIGHT_CX + 0.02, cy: BASE_CY, rx: 0.085, ry: 0.09, tilt: 0.35 },
-	},
-	stopped: {
-		left: { cx: LEFT_CX, cy: BASE_CY + 0.04, rx: 0.085, ry: 0.07, tilt: 0.25 },
-		right: { cx: RIGHT_CX, cy: BASE_CY + 0.04, rx: 0.085, ry: 0.07, tilt: -0.25 },
-	},
 	waiting: {
-		left: { cx: LEFT_CX, cy: BASE_CY + 0.02, rx: 0.07, ry: 0.07 },
-		right: { cx: RIGHT_CX, cy: BASE_CY + 0.02, rx: 0.07, ry: 0.07 },
+		left: { cx: LEFT_CX, cy: BASE_CY + 0.02, rx: 0.048, ry: 0.05 },
+		right: { cx: RIGHT_CX, cy: BASE_CY + 0.02, rx: 0.048, ry: 0.05 },
+	},
+	thinking: {
+		left: { cx: LEFT_CX, cy: BASE_CY + 0.03, rx: 0.11, ry: 0.038, lidTop: 0.35, lidBottom: 0.25 },
+		right: { cx: RIGHT_CX, cy: BASE_CY + 0.03, rx: 0.1, ry: 0.048, lidTop: 0.2, lidBottom: 0.15 },
 	},
 	working: {
-		left: { cx: LEFT_CX, cy: BASE_CY, rx: 0.095, ry: 0.1 },
-		right: { cx: RIGHT_CX, cy: BASE_CY, rx: 0.095, ry: 0.1 },
+		left: { cx: LEFT_CX, cy: BASE_CY - 0.01, rx: 0.118, ry: 0.13 },
+		right: { cx: RIGHT_CX, cy: BASE_CY - 0.01, rx: 0.118, ry: 0.13 },
 	},
 	speaking: {
-		left: { cx: LEFT_CX, cy: BASE_CY - 0.01, rx: 0.11, ry: 0.14 },
-		right: { cx: RIGHT_CX, cy: BASE_CY - 0.01, rx: 0.11, ry: 0.14 },
+		left: { cx: LEFT_CX, cy: BASE_CY - 0.02, rx: 0.1, ry: 0.155 },
+		right: { cx: RIGHT_CX, cy: BASE_CY - 0.02, rx: 0.1, ry: 0.155 },
 	},
 	listening: {
-		left: { cx: LEFT_CX + 0.01, cy: BASE_CY + 0.06, rx: 0.1, ry: 0.08 },
-		right: { cx: RIGHT_CX - 0.01, cy: BASE_CY + 0.06, rx: 0.1, ry: 0.08 },
+		left: { cx: LEFT_CX + 0.01, cy: BASE_CY + 0.08, rx: 0.1, ry: 0.07, lidTop: 0.12 },
+		right: { cx: RIGHT_CX - 0.01, cy: BASE_CY + 0.08, rx: 0.1, ry: 0.07, lidTop: 0.12 },
+	},
+	error: {
+		left: { cx: LEFT_CX - 0.01, cy: BASE_CY, rx: 0.1, ry: 0.055, tilt: 0.72 },
+		right: { cx: RIGHT_CX + 0.01, cy: BASE_CY, rx: 0.1, ry: 0.055, tilt: -0.72 },
+	},
+	stopped: {
+		left: { cx: LEFT_CX, cy: BASE_CY + 0.05, rx: 0.1, ry: 0.08, lidTop: 0.78 },
+		right: { cx: RIGHT_CX, cy: BASE_CY + 0.05, rx: 0.1, ry: 0.08, lidTop: 0.78 },
 	},
 };
 
@@ -78,14 +82,17 @@ const FACE_SHAPES: Record<MascotFace, { left: EyeShape; right: EyeShape }> = {
  * @returns 闭合环
  */
 function sampleEyeRing(shape: EyeShape): EyeRing {
-	const { cx, cy, rx, ry, tilt = 0 } = shape;
+	const { cx, cy, rx, ry, tilt = 0, lidTop = 0, lidBottom = 0 } = shape;
 	const cos = Math.cos(tilt);
 	const sin = Math.sin(tilt);
 	const ring: EyeRing = [];
 	for (let i = 0; i < EYE_SAMPLES; i++) {
 		const angle = (i / EYE_SAMPLES) * Math.PI * 2 - Math.PI / 2;
-		const lx = rx * Math.cos(angle);
-		const ly = ry * Math.sin(angle);
+		let lx = rx * Math.cos(angle);
+		let ly = ry * Math.sin(angle);
+		// 屏幕 y 向下：ly < 0 是眼顶。lidTop 把上眼皮压下来，形成缝或月牙。
+		if (ly < 0 && lidTop > 0) ly *= 1 - lidTop;
+		if (ly > 0 && lidBottom > 0) ly *= 1 - lidBottom;
 		const x = cx + lx * cos - ly * sin;
 		const y = cy + lx * sin + ly * cos;
 		ring.push({ x, y });
@@ -96,7 +103,7 @@ function sampleEyeRing(shape: EyeShape): EyeRing {
 /**
  * 取指定脸档的左右眼环。
  *
- * @param face - 吉祥物脸档
+ * @param face - 捣蛋鬼脸档
  * @returns 左右眼 8 点环
  */
 export function getEyeRings(face: MascotFace): { left: EyeRing; right: EyeRing } {

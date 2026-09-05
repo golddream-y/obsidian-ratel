@@ -8,8 +8,8 @@
 const WAIT_AMP_X = 0.5;
 /** 等待态垂直摆幅 */
 const WAIT_AMP_Y = 0.32;
-const WAIT_HZ_X = 0.9;
-const WAIT_HZ_Y = 0.65;
+const WAIT_HZ_X = 0.72;
+const WAIT_HZ_Y = 0.5;
 
 /** 说话开合角频率：约 85ms 半拍，看起来像在讲 */
 const TALK_PERIOD_MS = 170;
@@ -69,4 +69,70 @@ export function listeningGlance(nowMs: number): { x: number; y: number } {
 		x: Math.sin(t * LISTEN_HZ_X) * LISTEN_AMP_X,
 		y: LISTEN_DOWN,
 	};
+}
+
+/**
+ * 是否安排连眨（约四分之一）。
+ *
+ * @param rand - [0,1) 随机数
+ */
+export function shouldDoubleBlink(rand: number): boolean {
+	return rand < 0.25;
+}
+
+/**
+ * 下一眨距离当前的毫秒数。
+ *
+ * @param kin - 该脸的眨间隔范围
+ * @param rand - [0,1)
+ * @param doubleBlink - 是否短间隔连眨
+ */
+export function nextBlinkDelayMs(
+	kin: { blinkMin: number; blinkMax: number },
+	rand: number,
+	doubleBlink: boolean,
+): number {
+	if (doubleBlink) return 120 + rand * 100;
+	return kin.blinkMin + rand * (kin.blinkMax - kin.blinkMin);
+}
+
+/**
+ * 闲着身体慢倾，约 ±4°。
+ */
+export function idleSwayRotate(nowMs: number): number {
+	return 4 * Math.sin((nowMs / 1000) * 0.7);
+}
+
+/**
+ * 等待时身体左右轻摆。
+ */
+export function waitingBodyRotate(nowMs: number): number {
+	return 5 * Math.sin((nowMs / 1000) * 0.8);
+}
+
+/**
+ * 说话时轻微点头（像素量级的 offsetY）。
+ */
+export function speakingNod(nowMs: number): number {
+	return 1.05 * Math.sin((nowMs / 1000) * 3.1);
+}
+
+/**
+ * 思考时左眼额外闭合量 0–1，约每 3s 眨一下单眼。
+ */
+export function thinkingWink(nowMs: number): number {
+	const cycle = ((nowMs % 3000) + 3000) % 3000;
+	if (cycle >= 180) return 0;
+	return 0.85 * Math.sin((cycle / 180) * Math.PI);
+}
+
+/**
+ * 切入报错后的短震角度；220ms 后为 0。
+ *
+ * @param elapsedMs - 自切入 error 起的毫秒
+ */
+export function errorShakeRotate(elapsedMs: number): number {
+	if (elapsedMs < 0 || elapsedMs >= 220) return 0;
+	const env = 1 - elapsedMs / 220;
+	return 8 * Math.sin((elapsedMs / 70) * Math.PI * 2) * env;
 }

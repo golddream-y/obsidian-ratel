@@ -1,6 +1,6 @@
 /**
  * @file src/ui/mascot/derive-face.test.ts
- * @description 吉祥物脸派生优先级测试
+ * @description 捣蛋鬼脸派生优先级测试
  * @module ui/mascot/derive-face.test
  */
 import { describe, it, expect } from 'vitest';

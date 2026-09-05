@@ -13,6 +13,7 @@ import type { LLMClient, ChatRequest, ChatDelta, ToolCall } from '../ports/llm';
 import { sanitizeToolMessageOrder } from '../core/tool-message-align';
 import { tNow } from '../i18n';
 import { isLocalHost } from '../secrets/ratel-secrets';
+import { Utf8StreamBuffer } from '../utils/utf8-stream-buffer';
 
 /**
  * DeepSeek 客户端配置。
@@ -130,9 +131,11 @@ export class OpenAICompatLLM implements LLMClient {
 		let finishReason: string | null = null;
 		// 关键路径:保存流末尾的 API 真值 token,finally 阶段 yield 到 message.end
 		let capturedUsage: { promptTokens: number; completionTokens: number } | undefined;
+		// 关键路径:禁止对每个 TCP chunk 单独 toString('utf8') — 汉字会被拆成三个 U+FFFD
+		const utf8 = new Utf8StreamBuffer();
 
 		for await (const chunk of stream as unknown as AsyncIterable<Buffer | string>) {
-			buffer += typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+			buffer += utf8.push(chunk);
 
 			// SSE 事件以 \n\n 分隔
 			let newlineIdx: number;
@@ -145,6 +148,7 @@ export class OpenAICompatLLM implements LLMClient {
 				yield* result.deltas;
 			}
 		}
+		buffer += utf8.flush();
 
 		// 处理尾部可能残留的最后一个事件
 		if (buffer.trim()) {
@@ -340,11 +344,12 @@ export class OpenAICompatLLM implements LLMClient {
 	 */
 	private readAll(stream: NodeJS.ReadableStream): Promise<string> {
 		return new Promise((resolve, reject) => {
+			const utf8 = new Utf8StreamBuffer();
 			let chunks = '';
 			stream.on('data', (c: Buffer | string) => {
-				chunks += typeof c === 'string' ? c : c.toString('utf8');
+				chunks += utf8.push(c);
 			});
-			stream.on('end', () => resolve(chunks));
+			stream.on('end', () => resolve(chunks + utf8.flush()));
 			stream.on('error', reject);
 		});
 	}
