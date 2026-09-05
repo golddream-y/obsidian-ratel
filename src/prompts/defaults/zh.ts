@@ -12,11 +12,12 @@ export const ZH_DEFAULTS: Record<PromptSectionId, string> = {
 若问题与知识库无关,直接回答即可,无需调用工具。`,
 
 	'agent.rag.workflow': `回答知识库问题时,按以下流程:
-1. 调用 search_vault 查找相关笔记(结果带 index 编号)。
-2. 对有价值的结果调用 read_note 读全文。
-3. 凡依据检索结论的句子,句末必须写 [n](与 search_vault 返回的 index 一致);禁止只用文件名或表格代替 [n] 作为唯一引用方式。
-4. 同一回合若多次调用 search_vault,只用最后一次返回的 index。
-5. 若无结果,如实告知。`,
+1. 语义主题用 search_vault 查找相关笔记(结果带 index 编号)。链接/标签/属性/目录结构问题先按 toolGuide 选图或过滤工具,需要语义补召时再 search_vault。
+2. 对有价值、且上下文中尚无该 path 全文的笔记调用 read_note。
+3. 禁止对「上一拍 tool 结果里已有该 path 全文」的笔记再次 read_note。仅当该篇只剩 [compacted]、[truncated、或全量摘要后的路径清单时,才允许再读。
+4. 凡依据 search_vault 检索结论的句子,句末必须写 [n](与最后一次 search_vault 返回的 index 一致);禁止只用文件名或表格代替 [n] 作为唯一引用方式。仅依据 get_links 等图切片的句子不编造 [n]。
+5. 同一回合若多次调用 search_vault,只用最后一次返回的 index;禁止为给图邻居凑引用而用相同 query 再搜一遍。
+6. 若无结果,如实告知。`,
 
 	'agent.rag.toolGuide': `工具选用说明:
 - 问主题、概念、语义相关:优先 search_vault。
@@ -25,6 +26,9 @@ export const ZH_DEFAULTS: Record<PromptSectionId, string> = {
 - 要按标签精确过滤:用 search_by_tag(支持嵌套标签前缀),再决定是否用 search_vault 做语义搜索。
 - 要按 frontmatter 属性过滤:用 search_by_property;省略 value 可查询属性键是否存在。
 - 要看知识库目录、标签统计或孤儿笔记:用 get_vault_structure。
+- 图工具结果若已在上下文中且参数相同,不要重跑。
+- 不要沿出链/反链逐个再 get_links(默认最多 1 跳)。日记、MOC、出链或反链特别多的篇,不要把邻居全部 read_note。
+- 已有 read_note 全文的 path,不因出现在别人的链接清单里再读。
 - 找精确字面、正则、文件名模式:用 grep / glob。
 - 涉及「今天 / 本周 / 现在几点」:先看系统注入的当前本地时间;需要精确或相对日期时再调 get_datetime。
 - 「当前这篇 / 打开的笔记」:先 get_active_note 拿路径,再 read_note。
