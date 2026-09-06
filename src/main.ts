@@ -1623,9 +1623,9 @@ export default class RatelVaultPlugin extends Plugin {
 			}
 		} finally {
 			this.currentAskCtx = null;
+			// 关键路径:消费方提前结束 for-await 或 agentLoop 抛错也要记账(C1)
+			await this.finalizeAskRound(sessionId, signal, opts, collectedEvents);
 		}
-
-		await this.finalizeAskRound(sessionId, signal, opts, collectedEvents);
 	}
 
 	/**
