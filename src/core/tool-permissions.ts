@@ -121,13 +121,16 @@ export async function resolveToolPermission(
 	settings: ToolPermissionSettings,
 	grants: ToolPermissionSessionGrants,
 	confirm: (toolCall: ToolCall) => Promise<ToolConfirmResult>,
+	goalGrantCheck?: (toolCall: ToolCall) => boolean,
 ): Promise<void> {
 	const path = extractToolPath(toolCall);
 	const perm: ToolPermission = settings.toolPermissions[toolCall.name] ?? 'ask';
-	// 关键路径: deny 优先于档位与会话 grant
+	// 关键路径: deny 优先于档位、goal grant 与会话 grant(spec 4.6)
 	if (perm === 'deny') {
 		throw new Error(tNow('error.tool.rejectedDisabled', { toolName: toolCall.name }));
 	}
+	// 关键路径(S-GOAL): goal grant 在 deny 之后、会话 grant 之前
+	if (goalGrantCheck?.(toolCall)) return;
 	if (grants.has(toolCall.name, path)) return;
 
 	const level = effectiveLevel(settings);
