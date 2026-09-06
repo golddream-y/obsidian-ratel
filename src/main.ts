@@ -8,6 +8,8 @@
 import { EMBEDDING_WORKER_CODE } from '@ratel/embedding-worker-code';
 import { BUILTIN_SKILLS, APP_VERSION } from '@ratel/builtin-skills-code';
 import { FileSystemAdapter, Notice, Plugin, TFile } from 'obsidian';
+import fs, { readdirSync } from 'node:fs';
+import path from 'node:path';
 import { type RatelVaultSettings, DEFAULT_SETTINGS, RatelVaultSettingTab, normalizeContextLengthSettings } from './settings';
 import { normalizeChatPreset } from './settings/chat-preset';
 import { normalizeAppearanceSettings } from './ui/appearance/normalize-appearance-settings';
@@ -109,8 +111,6 @@ import { sha256 } from './utils/hash';
 import { IndexManifest, migrateLegacyIndexManifest, resolveIndexManifestPath } from './core/index-manifest';
 import { ModelContextRegistry } from './ui/tokens/model-context-registry';
 import os from 'os';
-import path from 'path';
-import { readdirSync } from 'node:fs';
 // 关键路径:P-SKILL-1-CORE — Skill 机制(三源加载 + 注册表 + 激活器 + 2 工具)。
 import { SkillLoader } from './skills/skill-loader';
 import { SkillRegistry } from './skills/skill-registry';
@@ -145,6 +145,23 @@ import type { WorkspacePort } from './ports/workspace';
 import { formatEnvContextLine } from './utils/local-datetime';
 import { compactSession } from './ui/chat/compact-session';
 import { shouldRetryAfterOverflow } from './core/compact-overflow-retry';
+import { GoalStore } from './core/goal-store';
+import { GoalRunner, composeGoalAnchor } from './core/goal-runner';
+import { createGoalGrantCheck } from './core/goal-grant';
+import {
+	createManageGoalTool,
+	type ManageGoalPrompts,
+} from './tools/manage-goal';
+import { showGoalCreateModal } from './ui/goal/GoalCreateModal';
+import { showGoalActionConfirmModal } from './ui/goal/GoalActionConfirmModal';
+import {
+	applyGoalTerminalChoice,
+	showGoalCompletedNotice,
+	showGoalTerminalChoiceModal,
+} from './ui/goal/GoalTerminalChoiceModal';
+import { pickGoalStatusBarText } from './ui/goal/goal-status-bar';
+import { GOAL_SETTINGS_SECTION_ID, renderGoalSettingsSection } from './ui/settings/goal-setting-page';
+import type { AgentGoal } from './core/goal-store';
 
 /**
  * Ratel Vault 插件主类。
@@ -213,6 +230,17 @@ export default class RatelVaultPlugin extends Plugin {
 	private skillManageModal: SkillManageModal | null = null;
 	/** Skill 脚本沙箱(P-SKILL-2/ADR-017)— onunload 时 terminateAll 击杀活跃脚本 Worker */
 	private skillScriptSandbox: SkillScriptSandbox | null = null;
+	/** Goal 落盘与回合收口(S-GOAL) */
+	goalStore!: GoalStore;
+	goalRunner!: GoalRunner;
+	/** UI 刷新令牌 — ChatView / 底栏订阅 */
+	goalRevision = 0;
+	private goalStatusBarEl?: HTMLElement;
+	private goalStatusBarOpensSettings = false;
+	private currentChatSessionId: string | null = null;
+	private pendingTerminalGoalId: string | null = null;
+	private pendingTerminalKind: 'completed' | 'cancelled' | null = null;
+	private pendingTerminalAllowWriteNote = false;
 	// 关键路径:SettingTab 实例在 addSettingTab 时保存,ObsidianWorkspace 经 getter 读最新值定位 tab
 	private settingTab: RatelVaultSettingTab | null = null;
 	private workerMode: 'thread' | 'inline' = 'inline';
@@ -267,6 +295,15 @@ export default class RatelVaultPlugin extends Plugin {
 		// S-VISION v1.3:附件外置根目录 — 必须用上方解析好的绝对 pluginDir
 		// 修复: 曾误用相对的 manifest.dir,渲染进程 CWD 下 fs 相对解析直接 ENOENT
 		this.attachments = new AttachmentStore(path.join(pluginDir, 'attachments'));
+		this.goalStore = new GoalStore(pluginDir);
+		this.goalRunner = new GoalRunner({
+			goalStore: this.goalStore,
+			vault: this.vault,
+			settings: () => ({
+				goalRoundTokenSoftCap: this.settings.goalRoundTokenSoftCap,
+				agentMaxSteps: this.settings.agentMaxSteps,
+			}),
+		});
 		this.modelContextRegistry = new ModelContextRegistry(pluginDir);
 
 		// ==================== 用户记忆系统 ====================
@@ -609,6 +646,20 @@ export default class RatelVaultPlugin extends Plugin {
 		this.tools.register(
 			createUpdateAppConfigTool(this, toolDefMap.get('update_app_config')!),
 		);
+		const manageGoalPrompts: ManageGoalPrompts = {
+			promptCreate: (draft) => showGoalCreateModal(this.app, this.vault, draft),
+			promptConfirm: ({ action, goal }) => showGoalActionConfirmModal(this.app, action, goal),
+			onTerminal: (goal, kind) => this.handleGoalTerminal(goal, kind),
+		};
+		this.tools.register(
+			createManageGoalTool(
+				this.goalStore,
+				toolDefMap.get('manage_goal')!,
+				() => this.currentChatSessionId ?? '',
+				manageGoalPrompts,
+				() => this.settings.goalMaxRounds,
+			),
+		);
 
 		// ==================== MCP Host（ADR-014）====================
 		// 关键路径:stdio 首次 spawn 弹窗确认；已批准 id 直接放行。
@@ -798,6 +849,18 @@ export default class RatelVaultPlugin extends Plugin {
 		// 设置面板
 		this.settingTab = new RatelVaultSettingTab(this.app, this);
 		this.addSettingTab(this.settingTab);
+
+		const goalStatusItem = this.addStatusBarItem();
+		goalStatusItem.hide();
+		this.goalStatusBarEl = goalStatusItem;
+		goalStatusItem.onClickEvent(() => {
+			if (this.goalStatusBarOpensSettings) {
+				this.openGoalSettings();
+			} else {
+				void this.activateChatView();
+			}
+		});
+		void this.initGoalUi(pluginDir);
 
 		devLogger.setDebugEnabled(this.settings.debugLog);
 		this.feedbackController = new FeedbackController({
@@ -1377,7 +1440,10 @@ export default class RatelVaultPlugin extends Plugin {
 		message: string,
 		signal?: AbortSignal,
 		attachments?: AttachmentRef[],
+		opts?: { goalRound?: boolean },
 	): AsyncIterable<AgentEvent> {
+		this.currentChatSessionId = sessionId;
+		const collectedEvents: AgentEvent[] = [];
 		// 关键路径:注入 overrides + tools + skills getter,让 ContextManager 调 Composer 拼系统提示词。
 		const ctx = new ContextManager(this.persistence, {
 			getOverrides: () => this.settings.promptOverrides,
@@ -1390,6 +1456,11 @@ export default class RatelVaultPlugin extends Plugin {
 		},
 		// 关键路径(S-CTX-TRIM):历史上限随窗口推导,替换写死的 8000
 		tailBudget(getEffectiveChatModelMaxTokens(this.settings)));
+
+		ctx.setGoalAnchorProvider(() => {
+			const g = this.goalStore.getBoundActive(sessionId);
+			return g ? composeGoalAnchor(g) : null;
+		});
 
 		// 关键路径(P-BASIC-ENV):每次 ask 注入当前本地时间,零工具成本回答「今天几号」。
 		ctx.setEnvContext(formatEnvContextLine(new Date()));
@@ -1453,6 +1524,11 @@ export default class RatelVaultPlugin extends Plugin {
 		const intentClassifier = (msg: string) =>
 			classifyIntent(msg, { llm: this.llm, overrides: this.settings.promptOverrides });
 
+		const goalGrantCheck = createGoalGrantCheck({
+			goalStore: this.goalStore,
+			currentSessionId: sessionId,
+		});
+
 		const toolPermissionCheck = (tc: ToolCall) =>
 			resolveToolPermission(
 				tc,
@@ -1462,6 +1538,7 @@ export default class RatelVaultPlugin extends Plugin {
 				},
 				this.toolSessionGrants,
 				(call) => showToolConfirmModal(this.app, call),
+				goalGrantCheck,
 			);
 
 		// 关键路径:绑定当前 ctx 供 activate_skill / deactivate_skill 写 transcript。
@@ -1495,9 +1572,10 @@ export default class RatelVaultPlugin extends Plugin {
 						overflow = true;
 						break;
 					}
+					collectedEvents.push(ev);
 					yield ev;
 				}
-				if (!overflow) return;
+				if (!overflow) break;
 
 				try {
 					const cctx = this.createContext();
@@ -1519,28 +1597,35 @@ export default class RatelVaultPlugin extends Plugin {
 						compactOpts,
 					);
 					if (r.skipped) {
-						yield {
+						collectedEvents.push({
 							type: 'error',
 							payload: { code: 'LLM_ERROR', message: '上下文过长且无法压缩' },
-						};
-						return;
+						});
+						yield collectedEvents[collectedEvents.length - 1]!;
+						break;
 					}
-					yield { type: 'compact.applied', payload: { sessionId } };
+					const compactEv = { type: 'compact.applied' as const, payload: { sessionId } };
+					collectedEvents.push(compactEv);
+					yield compactEv;
 				} catch (e) {
-					yield {
-						type: 'error',
+					const errEv = {
+						type: 'error' as const,
 						payload: {
-							code: 'LLM_ERROR',
+							code: 'LLM_ERROR' as const,
 							message: e instanceof Error ? e.message : String(e),
 						},
 					};
-					return;
+					collectedEvents.push(errEv);
+					yield errEv;
+					break;
 				}
 				skipAdd = true;
 			}
 		} finally {
 			this.currentAskCtx = null;
 		}
+
+		await this.finalizeAskRound(sessionId, signal, opts, collectedEvents);
 	}
 
 	/**
@@ -1658,6 +1743,122 @@ export default class RatelVaultPlugin extends Plugin {
 		this.vectraStore = this.createVectraStore();
 		// 关键路径:proxy 实现 EmbeddingPort,InlineWorker 用它做批量 embed,索引与搜索都走 Worker 线程。
 		this.inlineWorker!.initWithStore(this.vectraStore, proxy);
+	}
+
+	/**
+	 * ask 尾部统一记账与收口 — 外审 C1,所有路径必经。
+	 */
+	private async finalizeAskRound(
+		sessionId: string,
+		signal: AbortSignal | undefined,
+		opts: { goalRound?: boolean } | undefined,
+		collectedEvents: AgentEvent[],
+	): Promise<void> {
+		const result = await this.goalRunner.finalizeRound({
+			sessionId,
+			aborted: !!signal?.aborted,
+			goalRoundFlag: opts?.goalRound === true,
+			events: collectedEvents,
+		});
+		this.bumpGoalUi();
+
+		if (result.completed && result.completedGoalId) {
+			const goal = await this.goalStore.get(result.completedGoalId);
+			if (goal) {
+				await this.handleGoalTerminal(goal, 'completed');
+			}
+		}
+
+		if (this.pendingTerminalGoalId && this.pendingTerminalAllowWriteNote) {
+			const goal = await this.goalStore.get(this.pendingTerminalGoalId);
+			if (goal && (goal.status === 'completed' || goal.status === 'cancelled')) {
+				await this.handleGoalTerminal(goal, this.pendingTerminalKind ?? 'completed');
+				this.pendingTerminalGoalId = null;
+				this.pendingTerminalKind = null;
+				this.pendingTerminalAllowWriteNote = false;
+			}
+		}
+	}
+
+	/** 当前 Chat 会话 id — manage_goal 与设置页恢复用 */
+	getCurrentChatSessionId(): string | null {
+		return this.currentChatSessionId;
+	}
+
+	/** 递增 revision 并刷新底栏 */
+	bumpGoalUi(): void {
+		this.goalRevision++;
+		void this.refreshGoalStatusBar();
+	}
+
+	private async refreshGoalStatusBar(): Promise<void> {
+		if (!this.goalStatusBarEl) return;
+		const goals = await this.goalStore.list();
+		const incomplete = goals.filter((g) => g.status !== 'completed' && g.status !== 'cancelled');
+		const stale = await this.goalStore.listStaleTerminal(this.settings.goalArchiveDays);
+		if (incomplete.length === 0 && stale.length === 0) {
+			this.goalStatusBarEl.hide();
+			return;
+		}
+		const picked = pickGoalStatusBarText(goals, stale.length);
+		if (!picked) {
+			this.goalStatusBarEl.hide();
+			return;
+		}
+		this.goalStatusBarOpensSettings = picked.openSettings;
+		this.goalStatusBarEl.setText(picked.text);
+		this.goalStatusBarEl.show();
+	}
+
+	/** 打开设置页 agent Tab 并滚到 Goal 区块 */
+	openGoalSettings(): void {
+		void this.workspacePort.openPluginSettings('agent');
+		requestAnimationFrame(() => {
+			document.getElementById(GOAL_SETTINGS_SECTION_ID)?.scrollIntoView({ behavior: 'smooth' });
+		});
+	}
+
+	private async initGoalUi(pluginDir: string): Promise<void> {
+		const corruptDir = path.join(pluginDir, 'goals', 'corrupt');
+		let corruptBefore = 0;
+		try {
+			corruptBefore = fs.existsSync(corruptDir) ? fs.readdirSync(corruptDir).length : 0;
+		} catch {
+			// ignore
+		}
+		await this.goalStore.list();
+		let corruptAfter = corruptBefore;
+		try {
+			corruptAfter = fs.existsSync(corruptDir) ? fs.readdirSync(corruptDir).length : 0;
+		} catch {
+			// ignore
+		}
+		if (corruptAfter > corruptBefore) {
+			new Notice(tNow('goal.notice.corrupt', { count: corruptAfter - corruptBefore }));
+		}
+		this.bumpGoalUi();
+	}
+
+	/** 终态三选一/二选一 — spec 4.9 */
+	async handleGoalTerminal(goal: AgentGoal, kind: 'completed' | 'cancelled'): Promise<void> {
+		const result = await showGoalTerminalChoiceModal(this.app, kind, goal);
+		await applyGoalTerminalChoice(this.goalStore, goal, result);
+		if (result.choice === 'writeNote') {
+			new Notice(tNow('goal.notice.writeNoteHint'));
+			this.pendingTerminalGoalId = goal.id;
+			this.pendingTerminalKind = kind;
+			this.pendingTerminalAllowWriteNote = true;
+			void this.activateChatView();
+		} else {
+			this.pendingTerminalGoalId = null;
+			this.pendingTerminalKind = null;
+			this.pendingTerminalAllowWriteNote = false;
+			if (result.showCompletedNotice && kind === 'completed') {
+				const fresh = await this.goalStore.get(goal.id);
+				if (fresh) showGoalCompletedNotice(fresh);
+			}
+		}
+		this.bumpGoalUi();
 	}
 
 	/**

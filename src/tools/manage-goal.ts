@@ -58,6 +58,8 @@ export interface ManageGoalPrompts {
 		action: 'resume' | 'cancel' | 'complete';
 		goal: AgentGoal;
 	}) => Promise<boolean>;
+	/** 终态收口后三选一/二选一 Modal(spec 4.9) */
+	onTerminal?: (goal: AgentGoal, kind: 'completed' | 'cancelled') => void | Promise<void>;
 }
 
 /**
@@ -70,14 +72,14 @@ export interface ManageGoalPrompts {
  *
  * @param goalStore - Goal 存储
  * @param definition - LLM schema
- * @param sessionId - 当前会话 id(绑定用)
+ * @param getSessionId - 当前 chat 会话 id(getter,避免 onload 注册时拍死)
  * @param prompts - Modal 回调(单测注入 stub,Task 7 接 Obsidian Modal)
  * @param defaultMaxRounds - 默认回合上限(来自 settings.goalMaxRounds)
  */
 export function createManageGoalTool(
 	goalStore: GoalStore,
 	definition: ToolDefinition,
-	sessionId: string,
+	getSessionId: () => string,
 	prompts: ManageGoalPrompts,
 	defaultMaxRounds: () => number,
 ): Tool {
@@ -85,6 +87,7 @@ export function createManageGoalTool(
 		definition,
 		readOnly: false,
 		async execute(args: Record<string, unknown>) {
+			const sessionId = getSessionId();
 			const action = parseAction(args.action);
 			switch (action) {
 				case 'create':
@@ -297,7 +300,8 @@ async function handleCancel(
 	if (!ok) {
 		return tNow('goal.tool.actionCancelled');
 	}
-	await store.transition(goal.id, 'cancelled');
+	const updated = await store.transition(goal.id, 'cancelled');
+	await prompts.onTerminal?.(updated, 'cancelled');
 	return tNow('goal.tool.cancelled', { objective: goal.objective });
 }
 
@@ -314,6 +318,7 @@ async function handleComplete(
 	if (!ok) {
 		return tNow('goal.tool.actionCancelled');
 	}
-	await store.transition(goal.id, 'completed');
+	const updated = await store.transition(goal.id, 'completed');
+	await prompts.onTerminal?.(updated, 'completed');
 	return tNow('goal.tool.completed', { objective: goal.objective });
 }

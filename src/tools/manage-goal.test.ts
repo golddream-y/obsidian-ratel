@@ -61,7 +61,7 @@ describe('manage_goal 工具', () => {
 	});
 
 	it('create - 用户确认后落盘并激活 - 返回成功', async () => {
-		const tool = createManageGoalTool(store, fakeDef, SESSION, autoConfirmPrompts(), () => 10);
+		const tool = createManageGoalTool(store, fakeDef, () => SESSION, autoConfirmPrompts(), () => 10);
 		const result = await tool.execute({
 			action: 'create',
 			objective: '补全 frontmatter',
@@ -79,7 +79,7 @@ describe('manage_goal 工具', () => {
 		const tool = createManageGoalTool(
 			store,
 			fakeDef,
-			SESSION,
+			() => SESSION,
 			autoConfirmPrompts({
 				promptCreate: async () => ({ confirmed: false }),
 			}),
@@ -95,7 +95,7 @@ describe('manage_goal 工具', () => {
 	});
 
 	it('create - criteria 为空 - 抛错且不落盘', async () => {
-		const tool = createManageGoalTool(store, fakeDef, SESSION, autoConfirmPrompts(), () => 10);
+		const tool = createManageGoalTool(store, fakeDef, () => SESSION, autoConfirmPrompts(), () => 10);
 		await expect(
 			tool.execute({ action: 'create', objective: '目标', criteriaText: '' }),
 		).rejects.toThrow(/完成标准/);
@@ -103,14 +103,14 @@ describe('manage_goal 工具', () => {
 	});
 
 	it('create - criteria 与 objective 相同 - 抛错', async () => {
-		const tool = createManageGoalTool(store, fakeDef, SESSION, autoConfirmPrompts(), () => 10);
+		const tool = createManageGoalTool(store, fakeDef, () => SESSION, autoConfirmPrompts(), () => 10);
 		await expect(
 			tool.execute({ action: 'create', objective: '同一句话', criteriaText: '同一句话' }),
 		).rejects.toThrow(/完成标准/);
 	});
 
 	it('create - 裸 ** grant - 抛错', async () => {
-		const tool = createManageGoalTool(store, fakeDef, SESSION, autoConfirmPrompts(), () => 10);
+		const tool = createManageGoalTool(store, fakeDef, () => SESSION, autoConfirmPrompts(), () => 10);
 		await expect(
 			tool.execute({
 				action: 'create',
@@ -133,7 +133,7 @@ describe('manage_goal 工具', () => {
 		const tool = createManageGoalTool(
 			store,
 			fakeDef,
-			SESSION,
+			() => SESSION,
 			autoConfirmPrompts({
 				promptCreate: async (d) => {
 					draft = d;
@@ -165,7 +165,7 @@ describe('manage_goal 工具', () => {
 			birthSessionId: SESSION,
 			status: 'pending',
 		});
-		const tool = createManageGoalTool(store, fakeDef, SESSION, autoConfirmPrompts(), () => 10);
+		const tool = createManageGoalTool(store, fakeDef, () => SESSION, autoConfirmPrompts(), () => 10);
 		await tool.execute({ action: 'resume', goalId: g.id });
 		const updated = await store.get(g.id);
 		expect(updated?.status).toBe('active');
@@ -185,7 +185,7 @@ describe('manage_goal 工具', () => {
 			birthSessionId: 'other',
 			status: 'pending',
 		});
-		const tool = createManageGoalTool(store, fakeDef, SESSION, autoConfirmPrompts(), () => 10);
+		const tool = createManageGoalTool(store, fakeDef, () => SESSION, autoConfirmPrompts(), () => 10);
 		await expect(tool.execute({ action: 'resume', goalId: b.id })).rejects.toThrow(/另一场对话/);
 	});
 
@@ -196,7 +196,7 @@ describe('manage_goal 工具', () => {
 			birthSessionId: SESSION,
 		});
 		await store.activate(g.id, SESSION);
-		const tool = createManageGoalTool(store, fakeDef, SESSION, autoConfirmPrompts(), () => 10);
+		const tool = createManageGoalTool(store, fakeDef, () => SESSION, autoConfirmPrompts(), () => 10);
 		await tool.execute({ action: 'pause', goalId: g.id });
 		expect((await store.get(g.id))?.status).toBe('paused');
 	});
@@ -208,7 +208,7 @@ describe('manage_goal 工具', () => {
 			birthSessionId: SESSION,
 		});
 		await store.activate(g.id, SESSION);
-		const tool = createManageGoalTool(store, fakeDef, SESSION, autoConfirmPrompts(), () => 10);
+		const tool = createManageGoalTool(store, fakeDef, () => SESSION, autoConfirmPrompts(), () => 10);
 		await tool.execute({ action: 'cancel', goalId: g.id });
 		expect((await store.get(g.id))?.status).toBe('cancelled');
 	});
@@ -223,7 +223,7 @@ describe('manage_goal 工具', () => {
 			birthSessionId: SESSION,
 		});
 		await store.activate(g.id, SESSION);
-		const tool = createManageGoalTool(store, fakeDef, SESSION, autoConfirmPrompts(), () => 10);
+		const tool = createManageGoalTool(store, fakeDef, () => SESSION, autoConfirmPrompts(), () => 10);
 		await expect(tool.execute({ action: 'complete', goalId: g.id })).rejects.toThrow(/谓词|自动/);
 	});
 
@@ -234,7 +234,7 @@ describe('manage_goal 工具', () => {
 			birthSessionId: SESSION,
 		});
 		await store.activate(g.id, SESSION);
-		const tool = createManageGoalTool(store, fakeDef, SESSION, autoConfirmPrompts(), () => 10);
+		const tool = createManageGoalTool(store, fakeDef, () => SESSION, autoConfirmPrompts(), () => 10);
 		await tool.execute({ action: 'complete', goalId: g.id });
 		expect((await store.get(g.id))?.status).toBe('completed');
 	});
@@ -245,7 +245,7 @@ describe('manage_goal 工具', () => {
 			completionCriteria: { text: '完成' },
 			birthSessionId: SESSION,
 		});
-		const tool = createManageGoalTool(store, fakeDef, SESSION, autoConfirmPrompts(), () => 10);
+		const tool = createManageGoalTool(store, fakeDef, () => SESSION, autoConfirmPrompts(), () => 10);
 		const result = await tool.execute({ action: 'list' });
 		expect(result).toContain('列表示例');
 	});
@@ -257,13 +257,13 @@ describe('manage_goal 工具', () => {
 			birthSessionId: SESSION,
 		});
 		await store.activate(g.id, SESSION);
-		const tool = createManageGoalTool(store, fakeDef, SESSION, autoConfirmPrompts(), () => 10);
+		const tool = createManageGoalTool(store, fakeDef, () => SESSION, autoConfirmPrompts(), () => 10);
 		await tool.execute({ action: 'update', goalId: g.id, progressNote: '已处理 3/10' });
 		expect((await store.get(g.id))?.progressNote).toBe('已处理 3/10');
 	});
 
 	it('readOnly 为 false', () => {
-		const tool = createManageGoalTool(store, fakeDef, SESSION, autoConfirmPrompts(), () => 10);
+		const tool = createManageGoalTool(store, fakeDef, () => SESSION, autoConfirmPrompts(), () => 10);
 		expect(tool.readOnly).toBe(false);
 	});
 });

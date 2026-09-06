@@ -305,6 +305,17 @@ export class GoalStore {
 	 * @returns 绑定的 active goal 或 null
 	 */
 	getBoundActive(sessionId: string): AgentGoal | null {
+		const g = this.getSessionGoal(sessionId);
+		return g?.status === 'active' ? g : null;
+	}
+
+	/**
+	 * 返回绑定到指定会话的 active 或 blocked goal — StatusStrip 忙态用。
+	 *
+	 * @param sessionId - 当前会话 id
+	 * @returns 绑定的 active/blocked goal 或 null
+	 */
+	getSessionGoal(sessionId: string): AgentGoal | null {
 		if (!fs.existsSync(this.goalsDir)) return null;
 		const entries = fs.readdirSync(this.goalsDir);
 		for (const name of entries) {
@@ -313,7 +324,10 @@ export class GoalStore {
 			try {
 				const raw = fs.readFileSync(filePath, 'utf8');
 				const goal = JSON.parse(raw) as AgentGoal;
-				if (goal.status === 'active' && goal.activeSessionId === sessionId) {
+				if (
+					(goal.status === 'active' || goal.status === 'blocked') &&
+					goal.activeSessionId === sessionId
+				) {
 					return goal;
 				}
 			} catch {

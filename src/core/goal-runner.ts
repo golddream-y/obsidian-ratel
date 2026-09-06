@@ -38,6 +38,8 @@ export interface FinalizeRoundResult {
 	roundCounted: boolean;
 	completed: boolean;
 	blocked: boolean;
+	/** predicate 收口完成时的 goal id — 供完成三选一 Modal */
+	completedGoalId?: string;
 	budgetAction?: 'continue' | 'endRound' | 'askRounds';
 }
 
@@ -113,7 +115,12 @@ export class GoalRunner {
 			if (remainingNow === 0) {
 				await this.deps.goalStore.transition(fresh.id, 'completed');
 				this.snapshots.delete(fresh.id);
-				return { roundCounted: true, completed: true, blocked: false };
+				return {
+					roundCounted: true,
+					completed: true,
+					blocked: false,
+					completedGoalId: fresh.id,
+				};
 			}
 		}
 

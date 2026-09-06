@@ -78,9 +78,12 @@
 	import { FeedbackModal } from './feedback-modal';
 	import { openSponsorPage } from './sponsor-links';
 	import { openChatNote } from './open-chat-note';
-	import { Notice } from 'obsidian';
+	import { Notice, Modal } from 'obsidian';
 	import { devLogger } from '../../logging/dev-logger';
 	import { formatToolDisplayName } from './format-tool-display';
+	import { composeContinueMessage } from '../../core/goal-runner';
+	import type { AgentGoal } from '../../core/goal-store';
+	import { pickContinueChip, truncateObjective } from '../goal/pick-continue-chip';
 	import { estimateMessagesTokens, estimateTokens } from '../tokens/token-estimator';
 	import { getEffectiveChatModelMaxTokens } from '../../utils/context-window';
 	import { applyRatelAppearance } from '../appearance/apply-ratel-appearance';
@@ -155,6 +158,8 @@
 		return () => leaf.classList.remove('is-ratel-empty');
 	});
 	let isRunning = $state(false);
+	let goalsSnapshot = $state<AgentGoal[]>([]);
+	let goalRoundSteps = $state(0);
 	let errorHoldActive = $state(false);
 	let errorHoldTimer: ReturnType<typeof setTimeout> | null = null;
 	let sessionId = $state('');
@@ -761,6 +766,27 @@
 	const contextStore = plugin.userStatus.contextUsage$;
 	const attachmentStore = plugin.userStatus.pendingAttachments$;
 
+	$effect(() => {
+		void plugin.goalRevision;
+		void plugin.goalStore.list().then((g) => {
+			goalsSnapshot = g;
+		});
+	});
+
+	const sessionGoal = $derived.by(() => {
+		if (!sessionId) return null;
+		return plugin.goalStore.getSessionGoal(sessionId);
+	});
+
+	const continueChip = $derived(
+		pickContinueChip({
+			sessionId: sessionId ?? '',
+			goals: goalsSnapshot,
+			inputNonempty: input.trim().length > 0,
+			isRunning,
+		}),
+	);
+
 	let keyTick = $state(0);
 	const hasKey = $derived.by(() => {
 		void keyTick;
@@ -812,6 +838,41 @@
 		if (s.index === 'processing' || s.index === 'scanning' || s.index === 'queueing' || s.index === 'diffing') {
 			return { type: 'indexing' as const, text: $t('chat.workbar.indexing') };
 		}
+		// 关键路径(S-GOAL):本会话绑定目标忙态优先于「运行中隐藏 Strip」
+		const sg = sessionGoal;
+		if (sg) {
+			if (sg.status === 'blocked') {
+				const reason = (sg.blockedReason ?? '').trim();
+				return {
+					type: 'goal-blocked' as const,
+					text: tNow('goal.strip.blocked', {
+						reason:
+							reason.length > 40 ? `${reason.slice(0, 39)}…` : reason || '—',
+					}),
+					hard: true,
+				};
+			}
+			if (sg.status === 'active') {
+				if (isRunning) {
+					return {
+						type: 'goal-running' as const,
+						text: tNow('goal.strip.running', {
+							objective: truncateObjective(sg.objective),
+							round: sg.roundsDone + 1,
+							maxRounds: sg.maxRounds,
+							step: goalRoundSteps,
+							maxSteps: $settingsStore.agentMaxSteps,
+						}),
+						hard: false,
+					};
+				}
+				return {
+					type: 'goal-stopped' as const,
+					text: tNow('goal.strip.stopped'),
+					hard: false,
+				};
+			}
+		}
 		// 模型下载中(真在下模型时仍提示,即使对话中)
 		if (s.model === 'downloading') {
 			return { type: 'downloading' as const, text: $t('chat.workbar.downloading') };
@@ -833,7 +894,8 @@
 	const busyOverride = $derived(workBar ? workBar.text : null);
 	// 忙态文案对应 ThinkingOrb 动词(硬 gate 无 orb)
 	const busyOrbKind = $derived.by(() => {
-		if (!workBar || workBar.type === 'hard') return null;
+		if (!workBar || workBar.type === 'hard' || workBar.type === 'goal-blocked') return null;
+		if (workBar.type === 'goal-running' || workBar.type === 'goal-stopped') return 'thinking' as const;
 		if (workBar.type === 'indexing') return 'index' as const;
 		if (workBar.type === 'compacting') return 'compact' as const;
 		if (workBar.type === 'preparing' || workBar.type === 'downloading') return 'connecting' as const;
@@ -1081,9 +1143,11 @@
 	}
 
 	// ==================== 发送消息(含 token 三层校准) ====================
-	async function sendMessage() {
+	type SendMessageOpts = { text?: string; goalRound?: boolean };
+
+	async function sendMessage(opts?: SendMessageOpts) {
 		refreshKeyState();
-		const text = input.trim();
+		const text = (opts?.text ?? input).trim();
 		if (!text || isRunning || isCompacting || switching || !sessionId) return;
 
 		// 策略 A:发送文本以 textarea 为准(含 @path 字面量);extractMentions 仅开发日志,零 readFile
@@ -1139,10 +1203,12 @@
 		// 关键路径:入队成功后递增令牌触发火花;gate 早退与 Stop 不触发。
 		sendSparkTick += 1;
 
-		input = '';
-		mentionPaths = [];
-		mentionQuery = null;
-		mentionItems = [];
+		if (!opts?.text) {
+			input = '';
+			mentionPaths = [];
+			mentionQuery = null;
+			mentionItems = [];
+		}
 		sessionMenuOpen = false;
 		// 修复:预览栏跟输入框一起清空。附件已拷进 currentAttachments 与用户气泡,
 		// 不必等整轮 LLM 结束(否则发送后预览还挂着直到全文渲染完)。
@@ -1151,6 +1217,7 @@
 		const ac = new AbortController();
 		abortController = ac;
 		isRunning = true;
+		goalRoundSteps = 0;
 		// 关键路径:不在此 patch model=checking — 否则 StatusStrip「思考中」
 		// 与 MessageList 打字指示双重叠;model 状态只由 FeedbackController 维护。
 		let lastToolName: string | undefined;
@@ -1180,7 +1247,13 @@
 			for (const att of currentAttachments) {
 				refs.push(await plugin.attachments.save(sessionId, att));
 			}
-			const events = plugin.ask(sessionId, text, ac.signal, refs.length > 0 ? refs : undefined);
+			const events = plugin.ask(
+				sessionId,
+				text,
+				ac.signal,
+				refs.length > 0 ? refs : undefined,
+				opts?.goalRound ? { goalRound: true } : undefined,
+			);
 
 			for await (const event of events) {
 				switch (event.type) {
@@ -1224,6 +1297,9 @@
 						break;
 					case 'tool.call':
 						lastToolName = event.payload.name;
+						if (sessionGoal?.status === 'active') {
+							goalRoundSteps++;
+						}
 						appendToolCall(am, {
 							name: event.payload.name,
 							displayName: formatToolDisplayName(event.payload.name, event.payload.args, {
@@ -1315,6 +1391,52 @@
 
 	function stopGeneration() {
 		abortController?.abort();
+	}
+
+	function showTakeoverConfirm(objective: string): Promise<boolean> {
+		return new Promise((resolve) => {
+			const modal = new Modal(plugin.app);
+			modal.titleEl.setText(tNow('goal.chip.takeoverConfirmTitle'));
+			modal.contentEl.createEl('p', {
+				text: tNow('goal.chip.takeoverConfirmBody', { objective }),
+			});
+			const row = modal.contentEl.createDiv({ cls: 'modal-button-container' });
+			row.createEl('button', { text: tNow('goal.modal.confirm.primary'), cls: 'mod-cta' }).onclick =
+				() => {
+					resolve(true);
+					modal.close();
+				};
+			row.createEl('button', { text: tNow('modal.toolConfirm.deny') }).onclick = () => {
+				resolve(false);
+				modal.close();
+			};
+			modal.open();
+		});
+	}
+
+	async function handleContinueChip() {
+		const chip = continueChip;
+		if (chip.kind === 'hidden' || !sessionId) return;
+		if (chip.kind === 'multi-pending') {
+			plugin.openGoalSettings();
+			return;
+		}
+		try {
+			if (chip.kind === 'takeover') {
+				const ok = await showTakeoverConfirm(chip.objective ?? '');
+				if (!ok || !chip.goalId) return;
+				await plugin.goalStore.activate(chip.goalId, sessionId);
+				plugin.bumpGoalUi();
+			}
+			if (chip.kind === 'single-pending' && chip.goalId) {
+				await plugin.goalStore.activate(chip.goalId, sessionId);
+				plugin.bumpGoalUi();
+			}
+			await sendMessage({ text: composeContinueMessage(), goalRound: true });
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			new Notice(message, 5000);
+		}
 	}
 
 	const PERM_LEVELS: readonly ToolPermissionLevel[] = ['safe', 'auto', 'danger'];
@@ -1610,7 +1732,7 @@
 			chatBusy={isRunning}
 			busyOverride={busyOverride}
 			busyOrbKind={busyOrbKind}
-			busyHard={workBar?.type === 'hard'}
+			busyHard={workBar?.type === 'hard' || workBar?.type === 'goal-blocked'}
 			onToggle={() => (drawerExpanded = !drawerExpanded)}
 		/>
 		<StatusDrawer
@@ -1634,6 +1756,33 @@
 
 			<!-- @mention chip 条 -->
 			<MentionStrip paths={mentionPaths} onRemove={removeMention} />
+
+			{#if continueChip.kind !== 'hidden'}
+				<div class="ratel-goal-chip-wrap">
+					<button
+						type="button"
+						class="ratel-goal-chip"
+						onclick={() => void handleContinueChip()}
+						disabled={isRunning || isCompacting}
+					>
+						{#if continueChip.kind === 'continue'}
+							{tNow('goal.chip.continue', {
+								objective: truncateObjective(continueChip.objective ?? ''),
+							})}
+						{:else if continueChip.kind === 'takeover'}
+							{tNow('goal.chip.takeover', {
+								objective: truncateObjective(continueChip.objective ?? ''),
+							})}
+						{:else if continueChip.kind === 'single-pending'}
+							{tNow('goal.chip.singlePending', {
+								objective: truncateObjective(continueChip.objective ?? ''),
+							})}
+						{:else if continueChip.kind === 'multi-pending'}
+							{tNow('goal.chip.multiPending', { count: continueChip.pendingCount ?? 0 })}
+						{/if}
+					</button>
+				</div>
+			{/if}
 
 			<!--
 				浮层相对一体壳顶边定位(§5.6):wrap 套住 shell,
@@ -2338,6 +2487,31 @@
 	.ratel-perm-seg button:focus-visible {
 		outline: none;
 		box-shadow: inset 0 0 0 1px var(--ratel-copper-glow);
+	}
+
+	.ratel-goal-chip-wrap {
+		padding: 4px 0;
+		flex-shrink: 0;
+	}
+
+	.ratel-goal-chip {
+		display: inline-flex;
+		align-items: center;
+		max-width: 100%;
+		padding: 4px 10px;
+		border-radius: 6px;
+		border: 1px solid var(--background-modifier-border);
+		background: color-mix(in srgb, var(--interactive-accent) 10%, var(--background-secondary));
+		color: var(--text-normal);
+		font-size: 12px;
+		line-height: 1.4;
+		cursor: pointer;
+		text-align: left;
+	}
+
+	.ratel-goal-chip:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
 	}
 
 	@media (prefers-reduced-motion: reduce) {

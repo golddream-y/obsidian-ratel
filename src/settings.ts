@@ -38,6 +38,7 @@ import type { OverrideMap } from './prompts/types';
 import { listEditableSections } from './prompts';
 // 关键路径:声明式 settings 子页面与 render wrapper
 import { DiagnosticsSettingPage } from './ui/settings/diagnostics-setting-page';
+import { renderGoalSettingsSection } from './ui/settings/goal-setting-page';
 import {
 	renderChatSecretHint,
 	renderEmbedSecretHint,
@@ -764,6 +765,36 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			// ==================== Tab:记忆与权限 ====================
 			{
 				type: 'group',
+				heading: tNow('settings.goal.heading'),
+				cls: agentCls,
+				visible: agentVisible,
+				items: [
+					{
+						name: tNow('settings.goal.maxRounds.name'),
+						desc: tNow('settings.goal.maxRounds.desc'),
+						control: { type: 'number', key: 'goalMaxRounds', min: 1, max: 100 },
+					},
+					{
+						name: tNow('settings.goal.roundTokenSoftCap.name'),
+						desc: tNow('settings.goal.roundTokenSoftCap.desc'),
+						control: { type: 'number', key: 'goalRoundTokenSoftCap', min: 0, max: 500000 },
+					},
+					{
+						name: tNow('settings.goal.archiveDays.name'),
+						desc: tNow('settings.goal.archiveDays.desc'),
+						control: { type: 'number', key: 'goalArchiveDays', min: 1, max: 365 },
+					},
+					{
+						name: tNow('goal.settings.listHeading'),
+						searchable: false,
+						render: (setting) => {
+							void renderGoalSettingsSection(setting.settingEl, this.plugin);
+						},
+					},
+				],
+			},
+			{
+				type: 'group',
 				heading: tNow('memory.settings.heading'),
 				cls: agentCls,
 				visible: agentVisible,
@@ -1057,6 +1088,7 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			open_settings: 'settings.toolPermissions.open_settings',
 			get_app_config: 'settings.toolPermissions.get_app_config',
 			update_app_config: 'settings.toolPermissions.update_app_config',
+			manage_goal: 'settings.toolPermissions.manage_goal',
 		};
 		const key = map[toolName];
 		return key ? tNow(key) : toolName;
@@ -1073,6 +1105,7 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			'open_settings',
 			'get_app_config',
 			'update_app_config',
+			'manage_goal',
 	];
 
 		const items: SettingGroupItem[] = [
