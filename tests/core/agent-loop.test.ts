@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { agentLoop } from '../../src/core/agent-loop';
 import { ContextManager } from '../../src/core/context-manager';
-import { ToolRegistry } from '../../src/core/tool-registry';
+import { ToolRegistry, type Tool } from '../../src/core/tool-registry';
 import { HookRegistry } from '../../src/core/hooks';
 import type { LLMClient, ChatRequest, ChatDelta, ToolCall } from '../../src/ports/llm';
 import type { Persistence, Session } from '../../src/ports/persistence';
@@ -1064,6 +1064,48 @@ describe('agentLoop', () => {
 		expect(endEvent).toBeDefined();
 		expect(endEvent!.payload.promptTokens).toBe(10);
 		expect(endEvent!.payload.completionTokens).toBe(5);
+	});
+
+	it('message.end - 多步流 step 字段为跨步累计总和', async () => {
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence, undefined, 8000);
+		const writeTool: Tool = {
+			definition: {
+				name: 'mock_write',
+				description: 't',
+				parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] },
+			},
+			async execute() {
+				return 'ok';
+			},
+		};
+		const tools = new ToolRegistry();
+		tools.register(writeTool);
+		const llm = createMockLLM([
+			[
+				{ toolCall: { id: 'c1', name: 'mock_write', args: { path: 'a.md' } } },
+				{ text: '', usage: { promptTokens: 10, completionTokens: 5 } },
+			],
+			[
+				{ text: 'done' },
+				{ text: '', usage: { promptTokens: 20, completionTokens: 8 } },
+			],
+		]);
+		const hooks = new HookRegistry();
+
+		const events: AgentEvent[] = [];
+		for await (const event of agentLoop(
+			{ sessionId: 's1', message: 'Hi' }, ctx, llm, tools, hooks,
+		)) {
+			events.push(event);
+		}
+
+		const endEvent = events.find((e) => e.type === 'message.end') as
+			Extract<AgentEvent, { type: 'message.end' }> | undefined;
+		expect(endEvent!.payload.stepPromptTokens).toBe(30);
+		expect(endEvent!.payload.stepCompletionTokens).toBe(13);
+		expect(endEvent!.payload.promptTokens).toBe(20);
+		expect(endEvent!.payload.completionTokens).toBe(8);
 	});
 
 	it('agentLoop - skipAddUserMessage true - 不重复追加 user', async () => {

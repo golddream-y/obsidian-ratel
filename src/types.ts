@@ -35,6 +35,10 @@ export type AgentEvent =
 				tokens: number;
 				promptTokens?: number;
 				completionTokens?: number;
+				/** F1:跨步累计 prompt tokens(向后兼容,优先于 promptTokens) */
+				stepPromptTokens?: number;
+				/** F1:跨步累计 completion tokens(向后兼容,优先于 completionTokens) */
+				stepCompletionTokens?: number;
 			};
 	  }
 	| { type: 'tool.call'; payload: { name: string; args: unknown } }

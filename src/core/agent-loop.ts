@@ -90,6 +90,8 @@ export async function* agentLoop(
 	// 关键路径:保存流末尾的 API 真值 token,finally 阶段 yield 到 message.end
 	// 声明在函数顶部,确保 try/finally 与 for 循环都能访问(跨多步累积最后一个 usage)。
 	let lastUsage: { promptTokens: number; completionTokens: number } | undefined;
+	let stepPromptTokensSum = 0;
+	let stepCompletionTokensSum = 0;
 	// 加载或初始化 session,然后把用户消息压入上下文。
 	await ctx.load(req.sessionId);
 	if (skillActivator) {
@@ -175,6 +177,8 @@ export async function* agentLoop(
 					}
 					// 关键路径:捕获 API 真值 token,finally 阶段 yield
 					if (delta.usage) {
+						stepPromptTokensSum += delta.usage.promptTokens;
+						stepCompletionTokensSum += delta.usage.completionTokens;
 						lastUsage = delta.usage;
 					}
 				}
@@ -374,6 +378,8 @@ export async function* agentLoop(
 				tokens: ctx.tokenCount(),
 				promptTokens: lastUsage?.promptTokens,
 				completionTokens: lastUsage?.completionTokens,
+				stepPromptTokens: stepPromptTokensSum || undefined,
+				stepCompletionTokens: stepCompletionTokensSum || undefined,
 			},
 		};
 	}
