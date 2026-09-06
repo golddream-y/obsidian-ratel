@@ -5,9 +5,9 @@
 > **修订:** 2026-08-22 自审修订 — F1 usage 跨步累计(message.end 新增字段)、F2 成功写判定写死、F3 UserStatus/StatusStrip 两面区分、F4 现网优先级链说明、F5 拒裸 `*`、F6 迁移表枚举、F7 绑定悬空惰性比较。
 > **修订 2:** 2026-08-22 外审修订 — **C1 记账挂 `plugin.ask()` 尾部统一 finalizeRound**(闲聊/继续/同回合续写全覆盖,runner 不再是唯一入口);锚定 provider 热读(每轮 toMessages 现查 store,不拍死快照);composeRoundMessage 缩为可见短句;协商卡=动作内 Modal 入偏差表;types.ts / tests 路径补齐;evaluateFrontmatterAll 钉死外观方法名。
 > **修订 3:** 2026-08-22 UI 设计补全 — Task 7 扩为五面(对照当时 spec v1.2)
-> **修订 4:** 2026-08-22 指示器评审补完 v1.3 — 面 1=`addStatusBarItem`;文案去 emoji、停止≠挂起;继续 chip 唯一目标+输入中隐藏;create=`GoalCreateModal`;撤权=设置页暂停或对话 pause;Task 7 与手动脚本对齐 spec v1.3
+> **修订 5:** 2026-09-06 对齐 spec **v1.4** — 完成/放弃后三选一(留列表/立即归档/先写笔记);待归档只标不自动搬;[全部归档]确认条数;无 manage_goal archive;不以 Skill 实现引擎
 
-**Goal:** 落地 S-GOAL **v1.3** — goal 落盘(单活 + 会话绑定 + 损坏隔离)、grant 白名单、锚定 ephemeral 注入、`manage_goal`、`finalizeRound`、五面 UI(底栏 / Strip / 继续 chip / 表单 Modal / 设置页)。
+**Goal:** 落地 S-GOAL **v1.4** — goal 落盘(单活 + 会话绑定 + 损坏隔离)、grant 白名单、锚定 ephemeral 注入、`manage_goal`、`finalizeRound`、五面 UI(底栏 / Strip / 继续 chip / 表单 Modal / 设置页);归档全部人点头。
 
 **Architecture:** 四层分离 — ① `goal-store.ts` 纯存储(原子写 tmp+rename,单活仲裁,corrupt 隔离,可直测);② `goal-guard.ts` 纯函数守卫(无进展主信号 + 三层预算,无 IO 可直测);③ 权限与注入两个薄钩子(`goal-grant.ts` 插入 `resolveToolPermission` deny 检查之后;injector 注册 `goal` 段,复用 S-SR-LAYERING 通道);④ `goal-runner.ts` 回合记账与收口,**挂点在 `plugin.ask()` 尾部统一跑 `finalizeRound`**(外审 C1:闲聊、点「继续」、create 后同回合续写走的都是 ChatView→ask 直连,runner 若自成入口则记账全空)——ask 内消费自己 yield 的事件流做统计,收尾按计轮语义(spec 4.4)决定是否 roundsDone/校验/守卫/收口。
 

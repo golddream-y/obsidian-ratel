@@ -4,6 +4,7 @@
 > 修订: 2026-08-22 **v1.1** — 按外部评审修订:补 session 占用、grant 白名单、打断状态机(对齐现网 AbortSignal)、锚定 ephemeral 注入通道、预算闭环等 13 项
 > 修订: 2026-08-22 **v1.2** — 4.11 五面 UI;计轮语义;停止≠暂停;软上限回合后检查
 > 修订: 2026-08-22 **v1.3** — 指示器评审落地:面 1 用窗口底栏 StatusBarItem(不是 UserStatus store);文案去 emoji、停止≠挂起;继续 chip 唯一目标+输入中隐藏;create 用独立表单 Modal;撤权=设置页暂停或对话 pause
+> 修订: 2026-09-06 **v1.4** — 归档全部人点头(完成当下三选一;待归档只标不搬;禁止静默删/搬);Goal 为内核机制,不以 Skill 模拟
 > 状态: Active
 > Spec ID: **S-GOAL**
 > 取代: [S-TASK](../archive/S-TASK/2026-08-19-agent-task-store.md)(未实施即被取代,继承其合理内核)
@@ -45,6 +46,7 @@ S-TASK 的设计前提是「计划先行」:先列步骤清单,再逐步执行�
 - 不静默删除任何目标记录——归档必须用户确认,损坏记录隔离不丢弃
 - 不做目标模板/周期性目标(归支柱 A)
 - 不依赖未立项的 `append_to_daily`——成果沉淀 v1 用现有工具对话确认完成,不被写侧拖期
+- **不以 Skill 实现 Goal 引擎**(见 4.12)——Skill 不能挂权限、不能跨会话授权、不能在 compact 后保住锚定;预置 SKILL.md 至多教「怎么开口立目标」,v1 连这份都可以不做
 
 ---
 
@@ -190,11 +192,28 @@ interface AgentGoal {
 - blocked 只用于「无法推进」(缺密钥、重复失败、无进展守卫触发);校验未过但能推进不算 blocked
 - 成果沉淀 v1:完成卡对话确认「把总结写入某篇笔记」(现有 `write_note`,用户点名目标);`append_to_daily` 解绑,写侧轻量 spec 立项后再升级(评审 Important 9 采纳——不让 S-GOAL 重蹈 S-TASK 被未立项依赖拖死的覆辙)
 
-### 4.9 GC 与归档
+### 4.9 GC 与归档(全部人点头,机器不擅搬)
 
-- 终态目标永不自动删除;超 7 天(阈值可调)进入「待归档」(底栏短文案或设置页列出)
-- 用户确认后才移入 `goals/archive/`;取消原 S-TASK「总数上限 50 兜底淘汰」
-- 待归档堆积时提高提示显著度,不偷跑删除
+终态(`completed` / `cancelled`)文件**永不自动删除**,也**永不自动** `rename` 进 `goals/archive/`。「待归档」只是列表上的标记,不是一次静默搬家。
+
+**完成当下(必问,三选一 Modal,默认「留在列表」):**
+
+| 选项 | 行为 |
+|---|---|
+| 留在列表 | 保持终态,出现在设置页 Goal 列表;日后可再归档 |
+| 立即归档 | 确认后才移入 `goals/archive/`,退出日常列表 |
+| 先把总结写入笔记 | 走现有 `write_note` 点名路径;写完**再**回到本三选一(写笔记失败不自动归档) |
+
+放弃(`cancel`)同样问「留在列表 / 立即归档」,没有「写入笔记」项。
+
+**过期只提醒、不搬家:**
+
+- 终态超过 `goalArchiveDays`(默认 7,可调)→ 标「待归档」;底栏在无进行中目标时显示「待归档 K」,点进设置页
+- 不在 onload / 心跳里批量 move
+- 设置页:单行[归档]与[全部归档]都要确认 Modal;[全部归档]必须写出将搬走的条数,主按钮默认不是聚焦态,避免回车误伤
+- 模型 `manage_goal` **没有** archive action——归档只走设置页(或完成/放弃 Modal 里用户点的「立即归档」),防止助手代归档
+
+损坏隔离(`goals/corrupt/`)仍自动:那是救文件不是藏进度,并 Notice。与归档不是同一条路。
 
 ### 4.10 工具面(单工具多 action)
 
@@ -257,20 +276,37 @@ interface AgentGoal {
 **面 4 · 动作 Modal(`ToolConfirmModal` 不够用:它只有允许/本会话/拒绝,没有表单)**
 
 - **create**:独立 `GoalCreateModal`——objective / criteriaText(textarea)、predicate glob + property(可选)、maxRounds、grant globs;底部「将授权写入约 N 个文件」;主按钮 [创建并开始] / [仅排队](已有 active 时)
-- **resume / cancel / complete**:小确认 Modal(只读摘要 + 主按钮),不要套工具权限三键
+- **resume / cancel / complete**:小确认 Modal(只读摘要 + 主按钮),不要套工具权限三键。complete / cancel 确认后**紧接 4.9 三选一**(或放弃的二选一),不要静默留或静默搬
 - **pause**:无 Modal(设置页或工具直接执行)
 
 **面 5 · 设置页 Goal 区块(`ui/settings/goal-setting-page.ts`)**
 
 - 列表行:状态点色 · objective 截断 · 轮次 r/R · 用量(in/out tokens)· 更新时间;blocked 行展开 reason。v1 用量只在这里看,chat 不做进度卡
-- 行内操作(**直走 store,不经模型**):active→[暂停];paused/blocked→[恢复][放弃];终态超期→[归档]
-- 待归档汇总 + [全部归档]
+- 行内操作(**直走 store,不经模型**):active→[暂停];paused/blocked→[恢复][放弃];终态→[归档](确认 Modal)
+- 待归档汇总 + [全部归档](确认 Modal,展示条数)
 
-**通知(Notice)**:corrupt 隔离必发;completed 收口一条「目标完成 · 用量 …」(无 emoji);blocked 不发 Notice(底栏 + Strip 已覆盖)。
+**通知(Notice)**:corrupt 隔离必发;completed 收口一条「目标完成 · 用量 …」(无 emoji);blocked 不发 Notice(底栏 + Strip 已覆盖)。完成三选一 Modal 比这条 Notice 优先:先问去留,Notice 可在选择后发。
 
-**明确不做(v1)**:诊断抽屉内 goal 区块(后续候选)、独立 chat 进度卡、底栏多条 item、Strip 上的暂停钮。
+**明确不做(v1)**:诊断抽屉内 goal 区块(后续候选)、独立 chat 进度卡、底栏多条 item、Strip 上的暂停钮、用预置 Skill 冒充 Goal 引擎、到期自动搬进 archive。
 
 全部字符串走 `src/i18n/zh.ts` / `en.ts`,新增 goal namespace;工具显示名友好化(如「推进目标:补全 frontmatter」)。
+
+### 4.12 为何必须是内置机制(不是 Skill)
+
+Skill 做得到:教模型用什么口吻提议「立个目标」、完成后建议写入哪篇笔记。
+
+Skill **做不到**,且这些正是 Goal 的产品内核:
+
+| 能力 | 为何 Skill 不够 |
+|---|---|
+| 跨会话还在 | Skill 正文只在一场对话里;换场 / `/new` 即不再自动带着目标状态 |
+| 授权免逐笔确认 | 写权限在 `tool-permissions`;Skill 不能给 `projects/**` 发一张跨会话 grant |
+| 压缩后仍记得在干什么 | 锚定必须在 `toMessages()` 投影层每轮现拼;Skill 文本会进 transcript,会被 compact 折掉 |
+| 底栏 / 继续 chip | 要挂 `addStatusBarItem` 与输入区,不是 Markdown 指令 |
+| 单活 + 会话占用 | 两场聊天抢同一个目标是 store 仲裁,不是提示词约定 |
+| 代码完成校验 | `frontmatter-all` 要扫 metadataCache,不是模型自觉 |
+
+因此 v1:**store + grant 钩子 + runner 挂 `ask()` 尾部 + 五面 UI** 高耦合内置。`manage_goal` 只是给模型的手柄。日后若做预置 Skill,只允许「何时建议用户立目标」的文案,禁止在 SKILL.md 里伪造进度账本。
 
 ---
 
@@ -309,6 +345,7 @@ interface AgentGoal {
 | D9 | 打断对齐现网 AbortSignal,库是真相 | 「先写进度再停」与 socket 销毁语义矛盾;progressNote 降级为辅助缓存 |
 | D10 | predicate 型 runner 单一收口 | 模型与 runner 双写 complete 会竞态;自检型保留人工确认 |
 | D11 | 五面分工:底栏短提醒 / Strip 本回合态 / chip 唯一继续 / 表单 Modal / 设置页撤权与用量 | UserStatus 不是窗口底栏;停止≠暂停≠挂起;confirm-modal 撑不起创建表单 |
+| D12 | 归档全部人点头;Goal 内核非 Skill | 「改了就能查」;Skill 够教口吻、不够当跨会话账本与权限面 |
 
 ## 7. 参考
 
