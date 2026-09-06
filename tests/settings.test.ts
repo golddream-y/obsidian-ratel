@@ -85,4 +85,11 @@ it('DEFAULT_SETTINGS - embedAvailableModels 仅含 1 个内置本地模型', () 
 it('DEFAULT_SETTINGS - embedDownloadedModels 初始为空数组', () => {
     expect(DEFAULT_SETTINGS.embedDownloadedModels).toEqual([]);
 });
+
+it('DEFAULT_SETTINGS - 包含 goal 模式默认字段', () => {
+    expect(DEFAULT_SETTINGS.goalMaxRounds).toBe(10);
+    expect(DEFAULT_SETTINGS.goalRoundTokenSoftCap).toBe(0);
+    expect(DEFAULT_SETTINGS.goalArchiveDays).toBe(7);
+    expect(DEFAULT_SETTINGS.toolPermissions.manage_goal).toBe('allow');
+});
 });

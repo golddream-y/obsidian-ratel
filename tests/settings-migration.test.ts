@@ -91,6 +91,14 @@ describe('Settings 迁移', () => {
 
         expect(merged.toolPermissions.read_note).toBe('allow');
         expect(merged.toolPermissions.write_note).toBe('ask');
+        expect(merged.toolPermissions.manage_goal).toBe('allow');
+    });
+
+    it('旧 data.json 无 goal 字段时补齐默认值', () => {
+        const merged = simulateLoadSettings({ chatModel: 'custom-model' });
+        expect(merged.goalMaxRounds).toBe(10);
+        expect(merged.goalRoundTokenSoftCap).toBe(0);
+        expect(merged.goalArchiveDays).toBe(7);
     });
 
     it('chatModelMaxTokens=0 → 256k', () => {

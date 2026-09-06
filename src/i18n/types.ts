@@ -128,6 +128,13 @@ export interface SettingsStrings {
   'settings.developer.debugLog.name': string;
   'settings.developer.agentMaxSteps.name': string;
   'settings.developer.agentMaxSteps.desc': string;
+  'settings.goal.heading': string;
+  'settings.goal.maxRounds.name': string;
+  'settings.goal.maxRounds.desc': string;
+  'settings.goal.roundTokenSoftCap.name': string;
+  'settings.goal.roundTokenSoftCap.desc': string;
+  'settings.goal.archiveDays.name': string;
+  'settings.goal.archiveDays.desc': string;
   'settings.developer.trustMode.name': string;
   'settings.developer.trustMode.desc': string;
   // 关键路径(P-SKILL-2-TIMEOUT T3):skillScriptTimeout slider(高级组;存储 ms,显示秒)
@@ -178,6 +185,7 @@ export interface SettingsStrings {
   'settings.toolPermissions.open_settings': string;
   'settings.toolPermissions.get_app_config': string;
   'settings.toolPermissions.update_app_config': string;
+  'settings.toolPermissions.manage_goal': string;
   'settings.toolPermissions.allow': string;
   'settings.toolPermissions.ask': string;
   'settings.toolPermissions.deny': string;
@@ -876,6 +884,14 @@ export interface PromptLabelStrings {
   'promptLabel.tool.update_app_config.description.desc': string;
   'promptLabel.tool.update_app_config.param.updates': string;
   'promptLabel.tool.update_app_config.param.updates.desc': string;
+  'promptLabel.tool.manage_goal.description': string;
+  'promptLabel.tool.manage_goal.description.desc': string;
+  'promptLabel.tool.manage_goal.param.action': string;
+  'promptLabel.tool.manage_goal.param.action.desc': string;
+  'promptLabel.tool.manage_goal.param.objective': string;
+  'promptLabel.tool.manage_goal.param.objective.desc': string;
+  'promptLabel.tool.manage_goal.param.criteriaText': string;
+  'promptLabel.tool.manage_goal.param.criteriaText.desc': string;
   'promptLabel.retrieval.wrapperPrefix': string;
   'promptLabel.retrieval.wrapperSuffix': string;
 }
@@ -899,6 +915,7 @@ export interface ToolPermStrings {
   'toolPerm.editNote': string;
   'toolPerm.deleteNote': string;
   'toolPerm.runSkillScript': string;
+  'toolPerm.manageGoal': string;
 }
 
 // ==================== Memory(记忆系统 — P-MEMORY-UI 消费) ====================
@@ -1013,12 +1030,40 @@ export interface SkillStrings {
   'modal.skillManage.usedTimes': string;
 }
 
+// ==================== Goal(S-GOAL — 目标模式) ====================
+export interface GoalStrings {
+  'goal.error.invalidAction': string;
+  'goal.error.criteriaEmpty': string;
+  'goal.error.criteriaSameAsObjective': string;
+  'goal.error.objectiveEmpty': string;
+  'goal.error.invalidGrant': string;
+  'goal.error.goalNotFound': string;
+  'goal.error.notActive': string;
+  'goal.error.activeElsewhere': string;
+  'goal.error.predicateCompleteRejected': string;
+  'goal.error.nothingToUpdate': string;
+  'goal.tool.createCancelled': string;
+  'goal.tool.createdActive': string;
+  'goal.tool.createdPending': string;
+  'goal.tool.updated': string;
+  'goal.tool.listEmpty': string;
+  'goal.tool.paused': string;
+  'goal.tool.resumed': string;
+  'goal.tool.cancelled': string;
+  'goal.tool.completed': string;
+  'goal.tool.actionCancelled': string;
+  'goal.continue.message': string;
+  'goal.anchor.objective': string;
+  'goal.anchor.criteria': string;
+  'goal.anchor.progress': string;
+}
+
 // ==================== 合并 ====================
 export interface Strings extends
   BaseStrings, SettingsStrings, ChatStrings, ToolNameStrings,
   SlashStrings, NoticeStrings, ModalStrings, StatusStrings,
   DiagnosticsStrings, ErrorStrings, PromptLabelStrings, MemoryStrings,
-  CmdStrings, ToolPermStrings, SkillStrings {
+  CmdStrings, ToolPermStrings, SkillStrings, GoalStrings {
   // 后续新功能按 namespace 追加 extends
 }
 

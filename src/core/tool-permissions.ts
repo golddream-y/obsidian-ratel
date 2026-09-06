@@ -103,6 +103,13 @@ export function summarizeToolCall(toolCall: ToolCall): string {
 			const id = skillName && scriptPath ? `${skillName}/${scriptPath}` : toolCall.name;
 			return tNow('toolPerm.runSkillScript', { id });
 		}
+		case 'manage_goal': {
+			const action = typeof toolCall.args.action === 'string' ? toolCall.args.action : '';
+			const objective = typeof toolCall.args.objective === 'string' ? toolCall.args.objective : '';
+			const truncated =
+				objective.length > 40 ? `${objective.slice(0, 40)}…` : objective;
+			return tNow('toolPerm.manageGoal', { action, objective: truncated || '—' });
+		}
 		default: {
 			const parsed = parseMcpToolName(toolCall.name);
 			if (parsed) {

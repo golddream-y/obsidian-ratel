@@ -570,6 +570,39 @@ function buildSections(): SectionMeta[] {
 			placeholders: [],
 			allowOverride: true,
 		},
+		// --- tool.manage_goal ---
+		{
+			id: 'tool.manage_goal.description',
+			label: tNow('promptLabel.tool.manage_goal.description'),
+			description: tNow('promptLabel.tool.manage_goal.description.desc'),
+			zone: 'tool',
+			placeholders: [],
+			allowOverride: true,
+		},
+		{
+			id: 'tool.manage_goal.param.action',
+			label: tNow('promptLabel.tool.manage_goal.param.action'),
+			description: tNow('promptLabel.tool.manage_goal.param.action.desc'),
+			zone: 'tool',
+			placeholders: [],
+			allowOverride: true,
+		},
+		{
+			id: 'tool.manage_goal.param.objective',
+			label: tNow('promptLabel.tool.manage_goal.param.objective'),
+			description: tNow('promptLabel.tool.manage_goal.param.objective.desc'),
+			zone: 'tool',
+			placeholders: [],
+			allowOverride: true,
+		},
+		{
+			id: 'tool.manage_goal.param.criteriaText',
+			label: tNow('promptLabel.tool.manage_goal.param.criteriaText'),
+			description: tNow('promptLabel.tool.manage_goal.param.criteriaText.desc'),
+			zone: 'tool',
+			placeholders: [],
+			allowOverride: true,
+		},
 	];
 }
 

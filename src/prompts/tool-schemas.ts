@@ -336,6 +336,40 @@ export const TOOL_SCHEMA_SKELETONS: Record<string, SchemaSkeleton> = {
 			required: ['updates'],
 		},
 	},
+	manage_goal: {
+		name: 'manage_goal',
+		parameters: {
+			type: 'object',
+			properties: {
+				action: {
+					type: 'string',
+					enum: ['create', 'update', 'list', 'pause', 'resume', 'cancel', 'complete'],
+				},
+				goalId: { type: 'string' },
+				objective: { type: 'string' },
+				criteriaText: { type: 'string' },
+				predicate: {
+					type: 'object',
+					properties: {
+						kind: { type: 'string', enum: ['frontmatter-all'] },
+						pathGlob: { type: 'string' },
+						property: { type: 'string' },
+					},
+				},
+				maxRounds: { type: 'number' },
+				grant: { type: 'array', items: { type: 'string' } },
+				progressNote: { type: 'string' },
+				usage: {
+					type: 'object',
+					properties: {
+						inputTokens: { type: 'number' },
+						outputTokens: { type: 'number' },
+					},
+				},
+			},
+			required: ['action'],
+		},
+	},
 };
 
 export const ALL_TOOL_NAMES = [
@@ -350,4 +384,5 @@ export const ALL_TOOL_NAMES = [
 	'open_settings',
 	'get_app_config',
 	'update_app_config',
+	'manage_goal',
 ];

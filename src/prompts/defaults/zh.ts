@@ -215,4 +215,10 @@ export const ZH_DEFAULTS: Record<PromptSectionId, string> = {
 	'tool.update_app_config.description':
 		'代替用户修改 Ratel 应用设置(需用户确认)。仅白名单内的 key 生效:对话模型(chatModel/chatApiBase/contextLengthPreset/chatModelMaxTokens/autoCompactEnabled)、分块与索引(chunkSize/chunkOverlap/autoIndex/indexPaused)、Embedding 与 Rerank(embedProvider/embedApiBase/embedApiModel/embedApiDimensions/rerankerApiBase/rerankerModel)、记忆(memoryEnabled/memoryAutoWrite/memoryStorageLimitMB/memoryInjectLimitKB/memoryDynamicLimitKB/memoryContextTotalLimitKB)、日记(dailyNoteFolder/dailyNoteFormat)、语言外观(language/uiColorScheme/uiAccent/chatNavRailEnabled/chatNavRailSide/chatMotionEnabled/chatMascotEnabled)。工具权限、MCP、Prompt 覆盖等敏感项一律拒绝,必须由用户在设置面板亲手修改。格式示例:{"updates":{"chunkSize":800,"autoIndex":false}};返回逐 key 的 ok/reason,被拒的 key 不影响同批其他 key。',
 	'tool.update_app_config.param.updates': '要修改的设置键值对对象;key 必须在白名单内,值类型与取值范围见工具描述',
+
+	'tool.manage_goal.description':
+		'管理 Agent 目标:创建、更新进度、列出队列、暂停、恢复、放弃或完成。无 archive 动作。create 需用户确认表单后才落盘;predicate 型目标由系统自动收口,不可 complete。',
+	'tool.manage_goal.param.action': '动作: create / update / list / pause / resume / cancel / complete',
+	'tool.manage_goal.param.objective': '目标陈述(创建后不可变)',
+	'tool.manage_goal.param.criteriaText': '完成标准;须非空且不同于 objective',
 };

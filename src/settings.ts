@@ -126,6 +126,14 @@ export interface RatelVaultSettings {
 	/** Agent Loop 最大步数上限 — 防止工具调用死循环,默认 50(见 ADR-004) */
 	agentMaxSteps: number;
 
+	// Goal(S-GOAL — 目标模式预算与归档提醒)
+	/** 跨回合轮数默认上限 — create 未指定 maxRounds 时使用 */
+	goalMaxRounds: number;
+	/** 单回合 token 软上限;0 = 关闭(spec 4.7) */
+	goalRoundTokenSoftCap: number;
+	/** 终态 goal 超过多少天标为待归档(不自动搬家,spec 4.9) */
+	goalArchiveDays: number;
+
 	// Tool permissions (S-VAULT-TOOLS)
 	toolPermissions: Record<string, ToolPermission>;
 	/** 工具权限档位 — safe/auto/danger；取代产品语义上的 trustMode */
@@ -239,6 +247,10 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 	// 关键路径:50 步覆盖知识库场景(1 glob + N read + 分析 + write),见 ADR-004。
 	agentMaxSteps: 50,
 
+	goalMaxRounds: 10,
+	goalRoundTokenSoftCap: 0,
+	goalArchiveDays: 7,
+
 	toolPermissions: {
 		search_vault: 'allow',
 		read_note: 'allow',
@@ -279,6 +291,8 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 		get_app_config: 'allow',
 		// 关键路径(P-CFG):update_app_config 代改设置并落盘,默认 ask 由用户逐次确认。
 		update_app_config: 'ask',
+		// 关键路径(S-GOAL):manage_goal 默认 allow;动作内 Modal 负责 create/resume/cancel/complete 确认
+		manage_goal: 'allow',
 	},
 	// 关键路径:默认无任何 override,使用 zh.ts 内置中文模板。
 	promptOverrides: {},
