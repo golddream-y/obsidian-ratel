@@ -100,8 +100,10 @@ export class ContextManager {
 	 * 由 tailBudget(getEffectiveChatModelMaxTokens(settings)) 推导,随窗口 128k–1M 缩放。
 	 */
 	private readonly maxHistoryTokens: number;
-	/** 统一注入管理器 — env/memory/skills 三段唯一组装出口(S-SR-LAYERING) */
+	/** 统一注入管理器 — env/memory/skills/goal 四段唯一组装出口(S-SR-LAYERING) */
 	private readonly injector = new PromptInjector();
+	/** S-GOAL 锚定 provider — build 每轮现读,不入 session.messages */
+	private goalAnchorProvider?: () => string | null;
 
 	/**
 	 * @param persistence - 持久化端口,用于加载/保存 session。
@@ -121,6 +123,12 @@ export class ContextManager {
 		this.injector.register({ id: 'env', build: () => this.envContextLine || null });
 		this.injector.register({ id: 'memory', build: () => this.memorySystemPrompt || null });
 		this.injector.register({ id: 'skills', build: () => this.skillsDiscovery || null });
+		this.injector.register({
+			id: 'goal',
+			// 关键路径(S-GOAL):每轮 toMessages 现查 provider,progressNote 更新后锚定立即反映
+			build: () => this.goalAnchorProvider?.() || null,
+			ownBudgetBytes: 2048,
+		});
 	}
 
 	/**
@@ -365,6 +373,15 @@ export class ContextManager {
 	 */
 	setEnvContext(line: string): void {
 		this.envContextLine = line;
+	}
+
+	/**
+	 * 注入 goal 锚定 provider — getter 每轮现读,不入 session.messages(S-GOAL D6)。
+	 *
+	 * @param provider - 返回锚定文本;null/空串表示本段缺席
+	 */
+	setGoalAnchorProvider(provider: () => string | null): void {
+		this.goalAnchorProvider = provider;
 	}
 
 	/**

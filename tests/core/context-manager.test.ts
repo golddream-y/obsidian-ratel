@@ -650,6 +650,66 @@ describe('resetSession', () => {
 	});
 });
 
+// ==================== S-GOAL 锚定注入 ====================
+
+describe('goal 锚定注入', () => {
+	it('setGoalAnchorProvider - 返回 X 时 toMessages 含 X 且位于 system 段', async () => {
+		const ctx = createCtx(createMockPersistence());
+		await ctx.load('s-goal');
+		ctx.setGoalAnchorProvider(() => 'GOAL_ANCHOR_X');
+		const msgs = ctx.toMessages();
+		const goalMsg = msgs.find((m) => m.role === 'system' && m.content === 'GOAL_ANCHOR_X');
+		expect(goalMsg).toBeDefined();
+		expect(msgs[0]!.role).toBe('system');
+	});
+
+	it('setGoalAnchorProvider - getTranscript 不含锚定', async () => {
+		const ctx = createCtx(createMockPersistence());
+		await ctx.load('s-goal');
+		ctx.setGoalAnchorProvider(() => 'GOAL_ANCHOR_X');
+		ctx.toMessages();
+		expect(ctx.getTranscript().some((m) => m.content === 'GOAL_ANCHOR_X')).toBe(false);
+	});
+
+	it('setGoalAnchorProvider - compact 投影后 toMessages 仍含锚定', async () => {
+		const sessions = new Map<string, Session>();
+		sessions.set('s1', {
+			id: 's1',
+			title: '',
+			messages: [
+				{ role: 'user', content: '旧问' },
+				{ role: 'assistant', content: '旧答' },
+				{ role: 'user', content: '新问' },
+			],
+			compactMarkers: [{ afterIndex: 1, summary: '旧对话摘要', restoredNotePaths: [], at: 1 }],
+			createdAt: 0,
+			updatedAt: 0,
+		});
+		const ctx = createCtx(createMockPersistence(sessions));
+		await ctx.load('s1');
+		ctx.setGoalAnchorProvider(() => 'GOAL_AFTER_COMPACT');
+		const msgs = ctx.toMessages('direct');
+		expect(msgs.some((m) => m.content === 'GOAL_AFTER_COMPACT')).toBe(true);
+	});
+
+	it('setGoalAnchorProvider - provider 热读 A→B', async () => {
+		const ctx = createCtx(createMockPersistence());
+		await ctx.load('s-goal');
+		let anchor = 'GOAL_A';
+		ctx.setGoalAnchorProvider(() => anchor);
+		expect(ctx.toMessages().some((m) => m.content === 'GOAL_A')).toBe(true);
+		anchor = 'GOAL_B';
+		expect(ctx.toMessages().some((m) => m.content === 'GOAL_B')).toBe(true);
+	});
+
+	it('setGoalAnchorProvider - 未设置时无 goal 段', async () => {
+		const ctx = createCtx(createMockPersistence());
+		await ctx.load('s-goal');
+		const msgs = ctx.toMessages();
+		expect(msgs.filter((m) => m.role === 'system')).toHaveLength(1);
+	});
+});
+
 // ==================== compact 投影 ====================
 
 describe('compact 投影', () => {
