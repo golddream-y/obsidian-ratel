@@ -409,6 +409,9 @@ export interface ToolNameStrings {
 // ==================== Slash commands ====================
 export interface SlashStrings {
   'slash.new.description': string;
+  'slash.goal.description': string;
+  'slash.goal.usage': string;
+  'slash.goal.timeLimitIgnored': string;
   'slash.compact.description': string;
   'slash.model.description': string;
   'slash.reindex.description': string;
@@ -1042,6 +1045,8 @@ export interface GoalStrings {
   'goal.error.activeElsewhere': string;
   'goal.error.predicateCompleteRejected': string;
   'goal.error.nothingToUpdate': string;
+  'goal.slash.defaultCriteria': string;
+  'goal.slash.conflictSteer': string;
   'goal.tool.createCancelled': string;
   'goal.tool.createdActive': string;
   'goal.tool.createdPending': string;
@@ -1063,6 +1068,10 @@ export interface GoalStrings {
   'goal.statusBar.stale': string;
   'goal.strip.running': string;
   'goal.strip.stopped': string;
+  'goal.strip.elsewhere': string;
+  'goal.strip.paused': string;
+  'goal.strip.pending': string;
+  'goal.strip.pendingMany': string;
   'goal.strip.blocked': string;
   'goal.chip.continue': string;
   'goal.chip.takeover': string;

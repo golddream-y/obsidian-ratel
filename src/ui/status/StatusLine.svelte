@@ -29,6 +29,8 @@
 		busyOrbKind = null,
 		/** 硬 gate 阻塞时强制错误强调色(文案仍走 busyOverride) */
 		busyHard = false,
+		/** 有覆盖文案但不转 orb(如目标空闲等待) */
+		busyQuiet = false,
 	}: {
 		status$: Readable<UserStatusSnapshot>;
 		contextUsage$: Readable<ContextUsage>;
@@ -38,6 +40,7 @@
 		busyOverride?: string | null;
 		busyOrbKind?: RatelOrbBusyKind | null;
 		busyHard?: boolean;
+		busyQuiet?: boolean;
 	} = $props();
 
 	// 关键路径:Svelte 5 直接用 $ 前缀订阅 store
@@ -74,15 +77,15 @@
 		}),
 	);
 
-	// 关键路径:work-bar 忙态可能尚未反映进 deriveTone(如 compacting),busyOverride 时强制 busy 点
+	// 关键路径:busyOverride 默认当忙态;busyQuiet 只换文案不转球
 	const dotBusy = $derived(
-		state.tone === 'thinking' ||
-			state.tone === 'indexing' ||
-			(!!busyOverride && state.tone !== 'error' && state.tone !== 'unconfigured'),
+		!busyQuiet &&
+			(state.tone === 'thinking' ||
+				state.tone === 'indexing' ||
+				(!!busyOverride && state.tone !== 'error' && state.tone !== 'unconfigured')),
 	);
 
-	// 忙态用 ThinkingOrb 替代黄点 pulse;硬错误 / 未配置仍用 CSS 点
-	const showOrb = $derived(dotBusy && !busyHard);
+	const showOrb = $derived(dotBusy && !busyHard && !busyQuiet);
 	const orbKind = $derived.by((): RatelOrbBusyKind => {
 		if (busyOrbKind) return busyOrbKind;
 		if (state.tone === 'indexing') return 'index';
@@ -105,7 +108,8 @@
 	{:else}
 		<span
 			class="ratel-sl-dot"
-			class:ratel-sl-dot-ready={state.tone === 'ready' && !dotBusy && !busyHard}
+			class:ratel-sl-dot-ready={state.tone === 'ready' && !dotBusy && !busyHard && !busyQuiet}
+			class:ratel-sl-dot-goal={busyQuiet && !busyHard}
 			class:ratel-sl-dot-error={state.tone === 'error' || busyHard}
 			class:ratel-sl-dot-unconfigured={state.tone === 'unconfigured' && !busyHard}
 		></span>
@@ -113,6 +117,7 @@
 	<span
 		class="ratel-sl-text"
 		class:ratel-sl-text-warn={dotBusy && !busyHard}
+		class:ratel-sl-text-goal={busyQuiet && !busyHard}
 		class:ratel-sl-text-error={state.tone === 'error' || busyHard}
 		class:ratel-sl-text-muted={state.tone === 'unconfigured' && !busyHard}
 	>{label}</span>
@@ -155,6 +160,15 @@
 
 	.ratel-sl-dot-ready {
 		background: var(--text-success);
+	}
+
+	.ratel-sl-dot-goal {
+		background: var(--text-accent, var(--interactive-accent));
+	}
+
+	.ratel-sl-text-goal {
+		color: var(--text-accent, var(--interactive-accent));
+		font-weight: 500;
 	}
 
 	.ratel-sl-dot-error {

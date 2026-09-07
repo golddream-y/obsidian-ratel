@@ -1,0 +1,53 @@
+/**
+ * @file src/ui/motion/chrome/border-beam.css
+ * @description 扫边光带 — 对标 libraries.dev Border Beam,纯 CSS,无 React
+ */
+
+@property --ratel-beam-angle {
+	syntax: '<angle>';
+	initial-value: 0deg;
+	inherits: false;
+}
+
+.ratel-beam {
+	position: relative;
+	isolation: isolate;
+}
+
+.ratel-beam::after {
+	content: '';
+	position: absolute;
+	inset: -1px;
+	border-radius: inherit;
+	padding: 1px;
+	background: conic-gradient(
+		from var(--ratel-beam-angle, 0deg),
+		transparent 0deg,
+		color-mix(in srgb, var(--interactive-accent) 90%, #fff) 28deg,
+		transparent 72deg
+	);
+	-webkit-mask:
+		linear-gradient(#fff 0 0) content-box,
+		linear-gradient(#fff 0 0);
+	-webkit-mask-composite: xor;
+	mask:
+		linear-gradient(#fff 0 0) content-box,
+		linear-gradient(#fff 0 0);
+	mask-composite: exclude;
+	pointer-events: none;
+	z-index: 1;
+	animation: ratel-beam-spin 2.6s linear infinite;
+}
+
+@keyframes ratel-beam-spin {
+	to {
+		--ratel-beam-angle: 360deg;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.ratel-beam::after {
+		animation: none;
+		opacity: 0.45;
+	}
+}

@@ -58,7 +58,7 @@
 		attachToolResult,
 		markToolFailed,
 	} from './message-stream/segment-appender';
-	import { filterCommands, type SlashCommand } from './input/slash-commands';
+	import { filterCommands, parseSlashGoalInput, splitLeadingSlashCommand, type SlashCommand } from './input/slash-commands';
 	import {
 		extractMentions,
 		formatMentionToken,
@@ -81,9 +81,10 @@
 	import { Notice, Modal } from 'obsidian';
 	import { devLogger } from '../../logging/dev-logger';
 	import { formatToolDisplayName } from './format-tool-display';
-	import { composeContinueMessage } from '../../core/goal-runner';
+	import { composeContinueMessage, composeGoalConflictSteer } from '../../core/goal-runner';
 	import type { AgentGoal } from '../../core/goal-store';
 	import { pickContinueChip, truncateObjective } from '../goal/pick-continue-chip';
+	import { pickGoalStrip, goalChromeFromStrip } from '../goal/pick-goal-strip';
 	import { estimateMessagesTokens, estimateTokens } from '../tokens/token-estimator';
 	import { getEffectiveChatModelMaxTokens } from '../../utils/context-window';
 	import { applyRatelAppearance } from '../appearance/apply-ratel-appearance';
@@ -100,6 +101,7 @@
 	import { DEFAULT_MASCOT_RATIO } from '../mascot/layout';
 	import { isNearBottom, snapScrollToBottom } from './sticky-scroll';
 	import { FrameCoalescer } from './frame-coalescer';
+	import '../motion/chrome/border-beam.css';
 
 	const MASCOT_ERROR_HOLD_MS = 2400;
 
@@ -186,6 +188,7 @@
 	let slashMenuEl = $state<{ handleKeydown: (e: KeyboardEvent) => boolean } | null>(null);
 	let mentionMenuEl = $state<{ handleKeydown: (e: KeyboardEvent) => boolean } | null>(null);
 	let textareaEl = $state<HTMLTextAreaElement | null>(null);
+	let inputHighlightEl = $state<HTMLDivElement | null>(null);
 	let sendSparkTick = $state(0);
 	let mentionPaths = $state<string[]>([]);
 	let mentionQuery = $state<string | null>(null);
@@ -768,14 +771,21 @@
 
 	$effect(() => {
 		void plugin.goalRevision;
+		void sessionId;
 		void plugin.goalStore.list().then((g) => {
 			goalsSnapshot = g;
 		});
 	});
 
 	const sessionGoal = $derived.by(() => {
+		void plugin.goalRevision;
 		if (!sessionId) return null;
-		return plugin.goalStore.getSessionGoal(sessionId);
+		const fromSnap = goalsSnapshot.find(
+			(g) =>
+				(g.status === 'active' || g.status === 'blocked') &&
+				g.activeSessionId === sessionId,
+		);
+		return fromSnap ?? plugin.goalStore.getSessionGoal(sessionId);
 	});
 
 	const continueChip = $derived(
@@ -786,6 +796,16 @@
 			isRunning,
 		}),
 	);
+
+	const goalStrip = $derived(
+		pickGoalStrip({
+			sessionId: sessionId ?? '',
+			goals: goalsSnapshot,
+			isRunning,
+		}),
+	);
+
+	const goalChrome = $derived(goalChromeFromStrip(goalStrip.kind));
 
 	let keyTick = $state(0);
 	const hasKey = $derived.by(() => {
@@ -803,6 +823,7 @@
 		if (!v) return false;
 		return filterCommands(input).length > 0;
 	});
+	const inputHighlightSpans = $derived(splitLeadingSlashCommand(input));
 	// 关键路径:/ 与 @ 互斥 — 斜杠优先;mention 补全仅在非 slash 态
 	const mentionVisible = $derived(mentionQuery !== null && !slashVisible);
 	const chatMotionOn = $derived(isChatMotionEnabled($settingsStore));
@@ -834,15 +855,12 @@
 		const s = $statusStore;
 		// 阻塞提示优先单独显示(hard gate 时 Send 仍禁用)
 		if (gate.hardBlockReason) return { type: 'hard' as const, text: gate.hardBlockReason };
-		// 索引中(processing/scanning/queueing/diffing 四种状态,统一显示"索引中...")
-		if (s.index === 'processing' || s.index === 'scanning' || s.index === 'queueing' || s.index === 'diffing') {
-			return { type: 'indexing' as const, text: $t('chat.workbar.indexing') };
-		}
-		// 关键路径(S-GOAL):本会话绑定目标忙态优先于「运行中隐藏 Strip」
-		const sg = sessionGoal;
-		if (sg) {
-			if (sg.status === 'blocked') {
-				const reason = (sg.blockedReason ?? '').trim();
+		// 关键路径(S-GOAL):未完成目标常显,新会话不绑 active 也要看到进行中 / 暂停
+		const gs = goalStrip;
+		if (gs.kind !== 'hidden' && gs.goal) {
+			const obj = truncateObjective(gs.goal.objective);
+			if (gs.kind === 'blocked') {
+				const reason = (gs.goal.blockedReason ?? '').trim();
 				return {
 					type: 'goal-blocked' as const,
 					text: tNow('goal.strip.blocked', {
@@ -852,26 +870,54 @@
 					hard: true,
 				};
 			}
-			if (sg.status === 'active') {
-				if (isRunning) {
-					return {
-						type: 'goal-running' as const,
-						text: tNow('goal.strip.running', {
-							objective: truncateObjective(sg.objective),
-							round: sg.roundsDone + 1,
-							maxRounds: sg.maxRounds,
-							step: goalRoundSteps,
-							maxSteps: $settingsStore.agentMaxSteps,
-						}),
-						hard: false,
-					};
-				}
+			if (gs.kind === 'running') {
 				return {
-					type: 'goal-stopped' as const,
-					text: tNow('goal.strip.stopped'),
+					type: 'goal-running' as const,
+					text: tNow('goal.strip.running', {
+						objective: obj,
+						round: gs.goal.roundsDone + 1,
+						maxRounds: gs.goal.maxRounds,
+						step: goalRoundSteps,
+						maxSteps: $settingsStore.agentMaxSteps,
+					}),
 					hard: false,
 				};
 			}
+			if (gs.kind === 'active-here') {
+				return {
+					type: 'goal-stopped' as const,
+					text: tNow('goal.strip.stopped', { objective: obj }),
+					hard: false,
+				};
+			}
+			if (gs.kind === 'active-elsewhere') {
+				return {
+					type: 'goal-elsewhere' as const,
+					text: tNow('goal.strip.elsewhere', { objective: obj }),
+					hard: false,
+				};
+			}
+			if (gs.kind === 'paused') {
+				return {
+					type: 'goal-paused' as const,
+					text: tNow('goal.strip.paused', { objective: obj }),
+					hard: false,
+				};
+			}
+			if (gs.kind === 'pending') {
+				return {
+					type: 'goal-pending' as const,
+					text:
+						gs.pendingCount && gs.pendingCount >= 2
+							? tNow('goal.strip.pendingMany', { count: gs.pendingCount })
+							: tNow('goal.strip.pending', { objective: obj }),
+					hard: false,
+				};
+			}
+		}
+		// 索引中(processing/scanning/queueing/diffing 四种状态,统一显示"索引中...")
+		if (s.index === 'processing' || s.index === 'scanning' || s.index === 'queueing' || s.index === 'diffing') {
+			return { type: 'indexing' as const, text: $t('chat.workbar.indexing') };
 		}
 		// 模型下载中(真在下模型时仍提示,即使对话中)
 		if (s.model === 'downloading') {
@@ -895,7 +941,10 @@
 	// 忙态文案对应 ThinkingOrb 动词(硬 gate 无 orb)
 	const busyOrbKind = $derived.by(() => {
 		if (!workBar || workBar.type === 'hard' || workBar.type === 'goal-blocked') return null;
-		if (workBar.type === 'goal-running' || workBar.type === 'goal-stopped') return 'thinking' as const;
+		if (workBar.type.startsWith('goal-')) {
+			if (goalChrome.orb) return 'thinking' as const;
+			return null;
+		}
 		if (workBar.type === 'indexing') return 'index' as const;
 		if (workBar.type === 'compacting') return 'compact' as const;
 		if (workBar.type === 'preparing' || workBar.type === 'downloading') return 'connecting' as const;
@@ -1019,6 +1068,10 @@
 			case '/new':
 				void createNewSession();
 				break;
+			case '/goal':
+				input = '/goal ';
+				new Notice(tNow('slash.goal.usage'), 3500);
+				break;
 			case '/compact':
 				handleCompact();
 				break;
@@ -1029,6 +1082,17 @@
 				plugin.indexController.reindex().catch((err) => devLogger.error('index', '/reindex 失败', err));
 				break;
 		}
+	}
+
+	/** Tab 补全斜杠命令名,光标落到末尾,不执行 */
+	function completeSlashIntoInput(filled: string): void {
+		input = filled;
+		void tick().then(() => {
+			if (!textareaEl) return;
+			textareaEl.focus();
+			const pos = filled.length;
+			textareaEl.setSelectionRange(pos, pos);
+		});
 	}
 
 	/** 状态抽屉「记忆管理」入口 → 打开 MemoryModal */
@@ -1143,12 +1207,53 @@
 	}
 
 	// ==================== 发送消息(含 token 三层校准) ====================
-	type SendMessageOpts = { text?: string; goalRound?: boolean };
+	type SendMessageOpts = { text?: string; llmText?: string; goalRound?: boolean; bypassSlashGoal?: boolean };
 
 	async function sendMessage(opts?: SendMessageOpts) {
 		refreshKeyState();
 		const text = (opts?.text ?? input).trim();
 		if (!text || isRunning || isCompacting || switching || !sessionId) return;
+
+		if (!opts?.bypassSlashGoal) {
+			const slashGoal = parseSlashGoalInput(text);
+			if (slashGoal) {
+				// 关键路径:带参数的 /goal 已脱离菜单,必须在发模型前拦下;不弹表,当场开跑
+				if (!opts?.text) input = '';
+				if (slashGoal.timeLimitIgnored) {
+					new Notice(tNow('slash.goal.timeLimitIgnored'), 4000);
+				}
+				if (!slashGoal.objective) {
+					input = '/goal ';
+					new Notice(tNow('slash.goal.usage'), 3500);
+					return;
+				}
+				try {
+					const outcome = await plugin.startGoalFromSlash(slashGoal.objective);
+					if (outcome.kind === 'conflict') {
+						await sendMessage({
+							text: `/goal ${slashGoal.objective}`,
+							llmText: composeGoalConflictSteer(
+								outcome.currentObjective,
+								slashGoal.objective,
+							),
+							bypassSlashGoal: true,
+						});
+						return;
+					}
+					goalsSnapshot = await plugin.goalStore.list();
+				} catch (err) {
+					const message = err instanceof Error ? err.message : String(err);
+					new Notice(tNow('notice.operationFailed', { message }));
+					return;
+				}
+				await sendMessage({
+					text: `/goal ${slashGoal.objective}`,
+					goalRound: true,
+					bypassSlashGoal: true,
+				});
+				return;
+			}
+		}
 
 		// 策略 A:发送文本以 textarea 为准(含 @path 字面量);extractMentions 仅开发日志,零 readFile
 		const mentioned = extractMentions(text).filter(isSafeVaultMentionPath);
@@ -1249,7 +1354,7 @@
 			}
 			const events = plugin.ask(
 				sessionId,
-				text,
+				opts?.llmText ?? text,
 				ac.signal,
 				refs.length > 0 ? refs : undefined,
 				opts?.goalRound ? { goalRound: true } : undefined,
@@ -1475,9 +1580,15 @@
 		}
 	}
 
+	function syncInputHighlightScroll() {
+		if (!textareaEl || !inputHighlightEl) return;
+		inputHighlightEl.scrollTop = textareaEl.scrollTop;
+	}
+
 	function handleInput() {
 		syncMentionQueryFromCursor();
 		syncMentionPathsFromInput();
+		syncInputHighlightScroll();
 	}
 
 	function handleSelect() {
@@ -1733,6 +1844,7 @@
 			busyOverride={busyOverride}
 			busyOrbKind={busyOrbKind}
 			busyHard={workBar?.type === 'hard' || workBar?.type === 'goal-blocked'}
+			busyQuiet={workBar?.type.startsWith('goal-') === true && goalChrome.quiet}
 			onToggle={() => (drawerExpanded = !drawerExpanded)}
 		/>
 		<StatusDrawer
@@ -1758,29 +1870,36 @@
 			<MentionStrip paths={mentionPaths} onRemove={removeMention} />
 
 			{#if continueChip.kind !== 'hidden'}
+				{@const chipActive =
+					continueChip.kind === 'continue' || continueChip.kind === 'takeover'}
 				<div class="ratel-goal-chip-wrap">
-					<button
-						type="button"
-						class="ratel-goal-chip"
-						onclick={() => void handleContinueChip()}
-						disabled={isRunning || isCompacting}
-					>
-						{#if continueChip.kind === 'continue'}
-							{tNow('goal.chip.continue', {
-								objective: truncateObjective(continueChip.objective ?? ''),
-							})}
-						{:else if continueChip.kind === 'takeover'}
-							{tNow('goal.chip.takeover', {
-								objective: truncateObjective(continueChip.objective ?? ''),
-							})}
-						{:else if continueChip.kind === 'single-pending'}
-							{tNow('goal.chip.singlePending', {
-								objective: truncateObjective(continueChip.objective ?? ''),
-							})}
-						{:else if continueChip.kind === 'multi-pending'}
-							{tNow('goal.chip.multiPending', { count: continueChip.pendingCount ?? 0 })}
-						{/if}
-					</button>
+					<GlareHover enabled={chatMotionOn && !isRunning && chipActive}>
+						{#snippet children()}
+							<button
+								type="button"
+								class="ratel-goal-chip"
+								class:ratel-beam={chatMotionOn && chipActive}
+								onclick={() => void handleContinueChip()}
+								disabled={isRunning || isCompacting}
+							>
+								{#if continueChip.kind === 'continue'}
+									{tNow('goal.chip.continue', {
+										objective: truncateObjective(continueChip.objective ?? ''),
+									})}
+								{:else if continueChip.kind === 'takeover'}
+									{tNow('goal.chip.takeover', {
+										objective: truncateObjective(continueChip.objective ?? ''),
+									})}
+								{:else if continueChip.kind === 'single-pending'}
+									{tNow('goal.chip.singlePending', {
+										objective: truncateObjective(continueChip.objective ?? ''),
+									})}
+								{:else if continueChip.kind === 'multi-pending'}
+									{tNow('goal.chip.multiPending', { count: continueChip.pendingCount ?? 0 })}
+								{/if}
+							</button>
+						{/snippet}
+					</GlareHover>
 				</div>
 			{/if}
 
@@ -1809,6 +1928,7 @@
 							bind:this={slashMenuEl}
 							input={input}
 							onSelect={executeSlashCommand}
+							onComplete={completeSlashIntoInput}
 							onClose={() => { input = ''; }}
 						/>
 					</div>
@@ -1817,22 +1937,42 @@
 				<div
 					class="ratel-input-shell"
 					class:ratel-input-shell--disabled={isRunning || isCompacting || !gate.canSend}
+					class:ratel-input-shell--goal={goalChrome.beam}
+					class:ratel-input-shell--goal-paused={goalStrip.kind === 'paused'}
+					class:ratel-beam={chatMotionOn && goalChrome.beam}
 				>
 					<button class="ratel-plus-btn" type="button" onclick={triggerFileInput} aria-label={$t('chat.input.addImage')} disabled={isRunning}>+</button>
 					<input bind:this={fileInput} type="file" accept="image/png,image/jpeg,image/webp,image/gif" onchange={handleFileSelect} style="display:none;" />
-					<textarea
-						bind:this={textareaEl}
-						bind:value={input}
-						onkeydown={handleKeydown}
-						oninput={handleInput}
-						onselect={handleSelect}
-						onkeyup={handleSelect}
-						onpaste={handlePaste}
-						onfocus={refreshKeyState}
-						placeholder={$t('chat.input.placeholder')}
-						disabled={isRunning || isCompacting || !gate.canSend}
-						rows={1}
-					></textarea>
+					<div
+						class="ratel-input-field"
+					>
+						<div
+							class="ratel-input-hl"
+							bind:this={inputHighlightEl}
+							aria-hidden="true"
+						>
+							{#each inputHighlightSpans as span}
+								{#if span.kind === 'command'}
+									<span class="ratel-slash-token">{span.text}</span>
+								{:else}{span.text}{/if}
+							{/each}{#if input.endsWith('\n')}<span>{'\u200b'}</span>{/if}
+						</div>
+						<textarea
+							bind:this={textareaEl}
+							bind:value={input}
+							class:ratel-input-ghost={input.length > 0}
+							onkeydown={handleKeydown}
+							oninput={handleInput}
+							onselect={handleSelect}
+							onkeyup={handleSelect}
+							onpaste={handlePaste}
+							onscroll={syncInputHighlightScroll}
+							onfocus={refreshKeyState}
+							placeholder={$t('chat.input.placeholder')}
+							disabled={isRunning || isCompacting || !gate.canSend}
+							rows={1}
+						></textarea>
+					</div>
 					<ClickSpark enabled={chatMotionOn} tick={sendSparkTick}>
 						{#snippet children()}
 							<GlareHover enabled={chatMotionOn && !isRunning}>
@@ -2360,7 +2500,44 @@
 		cursor: not-allowed;
 	}
 
+	.ratel-input-field {
+		position: relative;
+		flex: 1;
+		min-width: 0;
+		align-self: stretch;
+		display: flex;
+	}
+
+	.ratel-input-hl {
+		position: absolute;
+		inset: 0;
+		padding: 8px 4px;
+		border: none;
+		font-family: inherit;
+		font-size: 13px;
+		font-weight: 400;
+		line-height: 1.5;
+		letter-spacing: normal;
+		white-space: pre-wrap;
+		overflow-wrap: break-word;
+		word-break: normal;
+		overflow: hidden;
+		max-height: 160px;
+		pointer-events: none;
+		color: var(--text-normal);
+		z-index: 0;
+	}
+
+	.ratel-slash-token {
+		color: var(--text-accent, var(--interactive-accent));
+		font-family: inherit;
+		font-weight: inherit;
+		letter-spacing: inherit;
+	}
+
 	.ratel-input-shell textarea {
+		position: relative;
+		z-index: 1;
 		flex: 1;
 		min-width: 0;
 		min-height: 54px;
@@ -2370,6 +2547,7 @@
 		border-radius: 0;
 		background: transparent;
 		color: var(--text-normal);
+		caret-color: var(--text-normal);
 		font-family: inherit;
 		font-size: 13px;
 		line-height: 1.5;
@@ -2379,6 +2557,11 @@
 		box-shadow: none;
 		-webkit-appearance: none;
 		appearance: none;
+	}
+
+	.ratel-input-shell textarea.ratel-input-ghost {
+		/* 有字时把字形交给下层高亮层,只留光标与选区 */
+		color: transparent;
 	}
 
 	.ratel-input-shell textarea::placeholder {
@@ -2490,23 +2673,45 @@
 	}
 
 	.ratel-goal-chip-wrap {
-		padding: 4px 0;
+		padding: 2px 0;
 		flex-shrink: 0;
+	}
+
+	.ratel-goal-chip-wrap :global(.ratel-glare) {
+		display: block;
+		align-self: stretch;
+		width: 100%;
+		flex-shrink: 1;
 	}
 
 	.ratel-goal-chip {
 		display: inline-flex;
 		align-items: center;
 		max-width: 100%;
-		padding: 4px 10px;
-		border-radius: 6px;
-		border: 1px solid var(--background-modifier-border);
-		background: color-mix(in srgb, var(--interactive-accent) 10%, var(--background-secondary));
-		color: var(--text-normal);
-		font-size: 12px;
-		line-height: 1.4;
+		padding: 3px 11px;
+		border-radius: 999px;
+		border: 1px solid color-mix(in srgb, var(--interactive-accent) 32%, var(--background-modifier-border));
+		background: color-mix(in srgb, var(--interactive-accent) 7%, transparent);
+		color: var(--text-accent, var(--interactive-accent));
+		font-size: 11.5px;
+		font-weight: 500;
+		line-height: 1.35;
+		letter-spacing: 0.01em;
 		cursor: pointer;
 		text-align: left;
+		white-space: nowrap;
+	}
+
+	.ratel-goal-chip:hover:not(:disabled) {
+		background: color-mix(in srgb, var(--interactive-accent) 14%, transparent);
+	}
+
+	.ratel-input-shell--goal {
+		border-color: color-mix(in srgb, var(--interactive-accent) 40%, var(--background-modifier-border));
+	}
+
+	.ratel-input-shell--goal-paused {
+		border-color: color-mix(in srgb, var(--text-muted) 50%, var(--background-modifier-border));
 	}
 
 	.ratel-goal-chip:disabled {
