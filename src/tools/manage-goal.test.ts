@@ -4,13 +4,14 @@
  * @module tools/manage-goal.test
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
 import {
+	commitGoalCreate,
 	createManageGoalTool,
-	type GoalCreateDraft,
+	defaultGoalCriteriaFromObjective,
 	type ManageGoalPrompts,
 } from './manage-goal';
 import { GoalStore, GOAL_ACTIVE_ELSEWHERE } from '../core/goal-store';
@@ -60,6 +61,42 @@ describe('manage_goal 工具', () => {
 		rmSync(pluginDir, { recursive: true, force: true });
 	});
 
+	it('create - 无 promptCreate 仍落盘并激活', async () => {
+		const tool = createManageGoalTool(
+			store,
+			fakeDef,
+			() => SESSION,
+			autoConfirmPrompts(),
+			() => 10,
+			() => '可以,就按这个标准',
+		);
+		const result = await tool.execute({
+			action: 'create',
+			objective: '审查妖市',
+			criteriaText: '写出完整审查报告并落盘',
+		});
+		expect(result).toMatch(/已创建|开始/);
+		expect((await store.list())[0]!.status).toBe('active');
+	});
+
+	it('create - 本轮用户是 /goal 陈述 - 不落盘并返回需确认', async () => {
+		const tool = createManageGoalTool(
+			store,
+			fakeDef,
+			() => SESSION,
+			autoConfirmPrompts(),
+			() => 10,
+			() => '/goal 审查妖市',
+		);
+		const result = await tool.execute({
+			action: 'create',
+			objective: '审查妖市',
+			criteriaText: '写出完整审查报告并落盘',
+		});
+		expect(result).toMatch(/还不能创建/);
+		expect(await store.list()).toHaveLength(0);
+	});
+
 	it('create - 用户确认后落盘并激活 - 返回成功', async () => {
 		const tool = createManageGoalTool(store, fakeDef, () => SESSION, autoConfirmPrompts(), () => 10);
 		const result = await tool.execute({
@@ -73,25 +110,6 @@ describe('manage_goal 工具', () => {
 		expect(goals).toHaveLength(1);
 		expect(goals[0].status).toBe('active');
 		expect(goals[0].activeSessionId).toBe(SESSION);
-	});
-
-	it('create - 用户取消 Modal - 不落盘', async () => {
-		const tool = createManageGoalTool(
-			store,
-			fakeDef,
-			() => SESSION,
-			autoConfirmPrompts({
-				promptCreate: async () => ({ confirmed: false }),
-			}),
-			() => 10,
-		);
-		const result = await tool.execute({
-			action: 'create',
-			objective: '测试',
-			criteriaText: '标准不同',
-		});
-		expect(result).toMatch(/取消/);
-		expect(await store.list()).toHaveLength(0);
 	});
 
 	it('create - criteria 为空 - 抛错且不落盘', async () => {
@@ -121,7 +139,7 @@ describe('manage_goal 工具', () => {
 		).rejects.toThrow();
 	});
 
-	it('create - 已有 active - 仅创建 pending', async () => {
+	it('create - 已有 active - 不落盘并返回冲突文案', async () => {
 		const existing = await store.create({
 			objective: '进行中',
 			completionCriteria: { text: '完成' },
@@ -129,33 +147,48 @@ describe('manage_goal 工具', () => {
 		});
 		await store.activate(existing.id, SESSION);
 
-		let draft: GoalCreateDraft | undefined;
+		let opened = false;
 		const tool = createManageGoalTool(
 			store,
 			fakeDef,
 			() => SESSION,
 			autoConfirmPrompts({
-				promptCreate: async (d) => {
-					draft = d;
-					return {
-						confirmed: true,
-						activate: true,
-						objective: d.objective,
-						criteriaText: d.criteriaText,
-					};
+				promptCreate: async () => {
+					opened = true;
+					return { confirmed: true, activate: true, objective: '第二条', criteriaText: '另一标准' };
 				},
 			}),
 			() => 10,
 		);
-		await tool.execute({
+		const msg = await tool.execute({
 			action: 'create',
-			objective: '排队目标',
+			objective: '第二条',
 			criteriaText: '另一标准',
 		});
-		expect(draft?.suggestActivate).toBe(false);
+		expect(opened).toBe(false);
+		expect(msg).toContain('进行中');
+		expect(msg).toMatch(/不要再建|不要排队/);
 		const goals = await store.list();
-		const pending = goals.find((g) => g.objective === '排队目标');
-		expect(pending?.status).toBe('pending');
+		expect(goals).toHaveLength(1);
+		expect(goals[0]!.objective).toBe('进行中');
+	});
+
+	it('create - 已有 paused - 不落盘', async () => {
+		const existing = await store.create({
+			objective: '已暂停',
+			completionCriteria: { text: '完成' },
+			birthSessionId: SESSION,
+		});
+		await store.activate(existing.id, SESSION);
+		await store.transition(existing.id, 'paused');
+		const tool = createManageGoalTool(store, fakeDef, () => SESSION, autoConfirmPrompts(), () => 10);
+		const msg = await tool.execute({
+			action: 'create',
+			objective: '第二条',
+			criteriaText: '另一标准',
+		});
+		expect(msg).toContain('已暂停');
+		expect(await store.list()).toHaveLength(1);
 	});
 
 	it('resume - 用户确认 - 激活并绑定会话', async () => {
@@ -213,6 +246,29 @@ describe('manage_goal 工具', () => {
 		expect((await store.get(g.id))?.status).toBe('cancelled');
 	});
 
+	it('cancel - 已是 cancelled - 不弹确认', async () => {
+		const g = await store.create({
+			objective: '放弃测',
+			completionCriteria: { text: '完成' },
+			birthSessionId: SESSION,
+		});
+		await store.activate(g.id, SESSION);
+		await store.transition(g.id, 'cancelled');
+		const promptConfirm = vi.fn(async () => true);
+		const onTerminal = vi.fn();
+		const tool = createManageGoalTool(
+			store,
+			fakeDef,
+			() => SESSION,
+			{ ...autoConfirmPrompts(), promptConfirm, onTerminal },
+			() => 10,
+		);
+		const out = await tool.execute({ action: 'cancel', goalId: g.id });
+		expect(out).toMatch(/已放弃|Cancelled/i);
+		expect(promptConfirm).not.toHaveBeenCalled();
+		expect(onTerminal).not.toHaveBeenCalled();
+	});
+
 	it('complete - predicate 型 - 抛错拒绝', async () => {
 		const g = await store.create({
 			objective: '谓词目标',
@@ -265,5 +321,68 @@ describe('manage_goal 工具', () => {
 	it('readOnly 为 false', () => {
 		const tool = createManageGoalTool(store, fakeDef, () => SESSION, autoConfirmPrompts(), () => 10);
 		expect(tool.readOnly).toBe(false);
+	});
+
+	it('commitGoalCreate - 斜杠空完成标准由 Modal 补齐后落盘', async () => {
+		const msg = await commitGoalCreate(
+			store,
+			SESSION,
+			{
+				confirmed: true,
+				activate: true,
+				objective: '补全属性',
+				criteriaText: '匹配文件都有 status',
+				maxRounds: 10,
+				grant: null,
+			},
+			{
+				objective: '补全属性',
+				criteriaText: '',
+				maxRounds: 10,
+				grant: null,
+			},
+		);
+		expect(msg).toMatch(/已创建/);
+		const goals = await store.list();
+		expect(goals).toHaveLength(1);
+		expect(goals[0]!.status).toBe('active');
+	});
+
+	it('commitGoalCreate - 已有未完成 - 抛错且不落第二条', async () => {
+		const existing = await store.create({
+			objective: '进行中',
+			completionCriteria: { text: '完成' },
+			birthSessionId: SESSION,
+		});
+		await store.activate(existing.id, SESSION);
+		await expect(
+			commitGoalCreate(
+				store,
+				SESSION,
+				{
+					confirmed: true,
+					activate: true,
+					objective: '第二条',
+					criteriaText: '另一标准',
+					maxRounds: 10,
+					grant: null,
+				},
+				{
+					objective: '第二条',
+					criteriaText: '另一标准',
+					maxRounds: 10,
+					grant: null,
+				},
+			),
+		).rejects.toThrow(/未完成/);
+		expect(await store.list()).toHaveLength(1);
+	});
+
+	it('defaultGoalCriteriaFromObjective - 与陈述不同且非空', () => {
+		const objective = '把 projects 补上 status';
+		const criteria = defaultGoalCriteriaFromObjective(objective);
+		expect(criteria.length).toBeGreaterThan(0);
+		expect(criteria).not.toBe(objective);
+		expect(criteria).toContain(objective);
 	});
 });

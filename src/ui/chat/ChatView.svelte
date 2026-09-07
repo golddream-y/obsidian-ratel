@@ -81,7 +81,7 @@
 	import { Notice, Modal } from 'obsidian';
 	import { devLogger } from '../../logging/dev-logger';
 	import { formatToolDisplayName } from './format-tool-display';
-	import { composeContinueMessage, composeGoalConflictSteer } from '../../core/goal-runner';
+	import { composeContinueMessage, composeGoalConflictSteer, composeGoalCreateSteer } from '../../core/goal-runner';
 	import type { AgentGoal } from '../../core/goal-store';
 	import { pickContinueChip, truncateObjective } from '../goal/pick-continue-chip';
 	import { pickGoalStrip, goalChromeFromStrip } from '../goal/pick-goal-strip';
@@ -1100,6 +1100,11 @@
 		plugin.openMemoryModal();
 	}
 
+	/** 状态抽屉「目标」入口 → 打开 GoalManageModal */
+	function openGoalManage(): void {
+		plugin.openGoalManageModal();
+	}
+
 	/** 状态抽屉「MCP」入口 → 打开 McpManageModal */
 	function openMcp(): void {
 		plugin.openMcpManageModal();
@@ -1217,7 +1222,7 @@
 		if (!opts?.bypassSlashGoal) {
 			const slashGoal = parseSlashGoalInput(text);
 			if (slashGoal) {
-				// 关键路径:带参数的 /goal 已脱离菜单,必须在发模型前拦下;不弹表,当场开跑
+				// 关键路径:带参数的 /goal 已脱离菜单,必须在发模型前拦下;先对话确认再落盘
 				if (!opts?.text) input = '';
 				if (slashGoal.timeLimitIgnored) {
 					new Notice(tNow('slash.goal.timeLimitIgnored'), 4000);
@@ -1228,30 +1233,32 @@
 					return;
 				}
 				try {
-					const outcome = await plugin.startGoalFromSlash(slashGoal.objective);
-					if (outcome.kind === 'conflict') {
+					const incomplete = await plugin.goalStore.findIncomplete();
+					if (incomplete) {
 						await sendMessage({
 							text: `/goal ${slashGoal.objective}`,
 							llmText: composeGoalConflictSteer(
-								outcome.currentObjective,
+								incomplete.objective,
 								slashGoal.objective,
 							),
 							bypassSlashGoal: true,
 						});
 						return;
 					}
-					goalsSnapshot = await plugin.goalStore.list();
+					await sendMessage({
+						text: `/goal ${slashGoal.objective}`,
+						llmText: composeGoalCreateSteer(
+							slashGoal.objective,
+							plugin.settings.goalMaxRounds,
+						),
+						bypassSlashGoal: true,
+					});
+					return;
 				} catch (err) {
 					const message = err instanceof Error ? err.message : String(err);
 					new Notice(tNow('notice.operationFailed', { message }));
 					return;
 				}
-				await sendMessage({
-					text: `/goal ${slashGoal.objective}`,
-					goalRound: true,
-					bypassSlashGoal: true,
-				});
-				return;
 			}
 		}
 
@@ -1523,7 +1530,7 @@
 		const chip = continueChip;
 		if (chip.kind === 'hidden' || !sessionId) return;
 		if (chip.kind === 'multi-pending') {
-			plugin.openGoalSettings();
+			plugin.openGoalManageModal();
 			return;
 		}
 		try {
@@ -1854,6 +1861,7 @@
 			embedKind={embedKind}
 			onCompact={handleCompact}
 			onFeedback={openFeedback}
+			onGoal={openGoalManage}
 			onMemory={openMemory}
 			onMcp={openMcp}
 			onSkill={openSkill}

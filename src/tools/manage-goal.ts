@@ -15,6 +15,7 @@ import {
 } from '../core/goal-store';
 import { validateGrantGlobs } from '../core/goal-grant';
 import { tNow } from '../i18n';
+import { isSlashGoalCreateTurn } from '../ui/chat/input/slash-commands';
 
 /** manage_goal action 清单 — 无 archive(spec v1.4) */
 export const MANAGE_GOAL_ACTIONS = [
@@ -36,7 +37,7 @@ export interface GoalCreateDraft {
 	maxRounds?: number;
 	grant?: string[] | null;
 	predicate?: GoalPredicate;
-	/** 是否建议激活 — 已有其他 active 时为 false */
+	/** 始终建议激活 — v1.6 无「仅排队」入口,保留字段给 Modal 兼容 */
 	suggestActivate: boolean;
 }
 
@@ -66,15 +67,16 @@ export interface ManageGoalPrompts {
  * 构造 `manage_goal` 工具。
  *
  * 设计要点:
- * - create 经 promptCreate 确认后才落盘,避免脏状态(spec 4.3)
- * - 已有 active 时 create 仅允许 pending(store.activate 抛 GOAL_ACTIVE_ELSEWHERE)
+ * - create 对话确认后才落盘,斜杠同回合硬拒(spec 4.3)
+ * - 已有未完成目标时 create 不落盘,返回冲突短句(v1.6 无用户可见排队)
  * - predicate 型 complete 由 runner 收口,工具直接拒绝
  *
  * @param goalStore - Goal 存储
  * @param definition - LLM schema
  * @param getSessionId - 当前 chat 会话 id(getter,避免 onload 注册时拍死)
- * @param prompts - Modal 回调(单测注入 stub,Task 7 接 Obsidian Modal)
+ * @param prompts - Modal 回调(单测注入 stub;create 不再调用 promptCreate)
  * @param defaultMaxRounds - 默认回合上限(来自 settings.goalMaxRounds)
+ * @param getLastUserText - 本轮用户原文;斜杠同回合硬拒 create
  */
 export function createManageGoalTool(
 	goalStore: GoalStore,
@@ -82,6 +84,7 @@ export function createManageGoalTool(
 	getSessionId: () => string,
 	prompts: ManageGoalPrompts,
 	defaultMaxRounds: () => number,
+	getLastUserText?: () => string,
 ): Tool {
 	return {
 		definition,
@@ -91,7 +94,13 @@ export function createManageGoalTool(
 			const action = parseAction(args.action);
 			switch (action) {
 				case 'create':
-					return handleCreate(goalStore, sessionId, args, prompts, defaultMaxRounds);
+					return handleCreate(
+						goalStore,
+						sessionId,
+						args,
+						defaultMaxRounds,
+						getLastUserText,
+					);
 				case 'update':
 					return handleUpdate(goalStore, args);
 				case 'list':
@@ -128,10 +137,15 @@ function assertCriteria(objective: string, criteriaText: string): void {
 	}
 }
 
-async function hasActiveGoal(store: GoalStore): Promise<boolean> {
-	const all = await store.list();
-	return all.some((g) => g.status === 'active');
+/**
+ * 斜杠立目标时的默认完成标准 — 必须与 objective 不同,否则 store 拒收。
+ *
+ * @param objective - 用户写下的目标陈述
+ */
+export function defaultGoalCriteriaFromObjective(objective: string): string {
+	return tNow('goal.slash.defaultCriteria', { objective: objective.trim() });
 }
+
 
 function parsePredicate(args: Record<string, unknown>): GoalPredicate | undefined {
 	const pred = args.predicate;
@@ -167,8 +181,8 @@ async function handleCreate(
 	store: GoalStore,
 	sessionId: string,
 	args: Record<string, unknown>,
-	prompts: ManageGoalPrompts,
 	defaultMaxRounds: () => number,
+	getLastUserText?: () => string,
 ): Promise<string> {
 	const objective = typeof args.objective === 'string' ? args.objective.trim() : '';
 	if (!objective) {
@@ -183,28 +197,76 @@ async function handleCreate(
 			? args.maxRounds
 			: defaultMaxRounds();
 
-	const otherActive = await hasActiveGoal(store);
-	const draft: GoalCreateDraft = {
-		objective,
-		criteriaText,
-		maxRounds,
-		grant,
-		predicate,
-		suggestActivate: !otherActive,
-	};
+	const incomplete = await store.findIncomplete();
+	if (incomplete) {
+		return tNow('goal.tool.createBlocked', { current: incomplete.objective });
+	}
 
-	const confirmed = await prompts.promptCreate(draft);
-	if (!confirmed.confirmed) {
+	const lastUser = getLastUserText?.() ?? '';
+	if (isSlashGoalCreateTurn(lastUser)) {
+		return tNow('goal.tool.createNeedConfirm');
+	}
+
+	return commitGoalCreate(
+		store,
+		sessionId,
+		{
+			confirmed: true,
+			activate: true,
+			objective,
+			criteriaText,
+			maxRounds,
+			grant,
+			predicate,
+		},
+		{ objective, criteriaText, maxRounds, grant, predicate },
+	);
+}
+
+/** 斜杠 `/goal` 与 manage_goal create 共用的落盘 — Modal 确认后才写 store */
+export interface GoalCreateSeed {
+	objective: string;
+	criteriaText: string;
+	maxRounds: number;
+	grant: string[] | null;
+	predicate?: GoalPredicate;
+}
+
+/**
+ * 把创建表单确认结果写入 GoalStore。
+ *
+ * @param store - Goal 存储
+ * @param sessionId - 当前 chat 会话;激活时绑定
+ * @param confirmed - Modal 结果
+ * @param seed - Modal 打开前的草稿,字段被确认结果覆盖
+ * @returns 给模型或 Notice 的短句
+ * @throws 陈述为空、完成标准不合规、grant 非法
+ */
+export async function commitGoalCreate(
+	store: GoalStore,
+	sessionId: string,
+	confirmed: GoalCreateConfirmResult,
+	seed: GoalCreateSeed,
+): Promise<string> {
+	if (!confirmed.confirmed || confirmed.activate === false) {
 		return tNow('goal.tool.createCancelled');
 	}
 
-	const finalObjective = (confirmed.objective ?? objective).trim();
-	const finalCriteria = (confirmed.criteriaText ?? criteriaText).trim();
+	const incomplete = await store.findIncomplete();
+	if (incomplete) {
+		throw new Error(tNow('goal.error.incompleteExists', { current: incomplete.objective }));
+	}
+
+	const finalObjective = (confirmed.objective ?? seed.objective).trim();
+	if (!finalObjective) {
+		throw new Error(tNow('goal.error.objectiveEmpty'));
+	}
+	const finalCriteria = (confirmed.criteriaText ?? seed.criteriaText).trim();
 	assertCriteria(finalObjective, finalCriteria);
-	const finalGrant = confirmed.grant !== undefined ? confirmed.grant : grant;
+	const finalGrant = confirmed.grant !== undefined ? confirmed.grant : seed.grant;
 	if (finalGrant?.length) validateGrantGlobs(finalGrant);
-	const finalPredicate = confirmed.predicate ?? predicate;
-	const finalMaxRounds = confirmed.maxRounds ?? maxRounds;
+	const finalPredicate = confirmed.predicate ?? seed.predicate;
+	const finalMaxRounds = confirmed.maxRounds ?? seed.maxRounds;
 
 	const completionCriteria = finalPredicate
 		? { text: finalCriteria, predicate: finalPredicate }
@@ -219,8 +281,7 @@ async function handleCreate(
 		status: 'pending',
 	});
 
-	const wantActivate = confirmed.activate ?? !otherActive;
-	if (wantActivate && !otherActive) {
+	if (sessionId) {
 		await store.activate(goal.id, sessionId);
 		return tNow('goal.tool.createdActive', { objective: finalObjective });
 	}
@@ -295,7 +356,21 @@ async function handleCancel(
 	args: Record<string, unknown>,
 	prompts: ManageGoalPrompts,
 ): Promise<string> {
-	const goal = await requireGoal(store, args.goalId);
+	if (typeof args.goalId !== 'string' || !args.goalId) {
+		throw new Error(tNow('goal.error.goalNotFound', { id: String(args.goalId) }));
+	}
+	const existing = await store.get(args.goalId);
+	if (!existing) {
+		throw new Error(tNow('goal.error.goalNotFound', { id: args.goalId }));
+	}
+	// 已放弃则幂等返回,避免模型连打两次 cancel 时放弃确认与归档弹窗来回叠
+	if (existing.status === 'cancelled') {
+		return tNow('goal.tool.cancelled', { objective: existing.objective });
+	}
+	const goal = existing.status === 'completed' ? null : existing;
+	if (!goal) {
+		throw new Error(tNow('goal.error.goalNotFound', { id: args.goalId }));
+	}
 	const ok = await prompts.promptConfirm({ action: 'cancel', goal });
 	if (!ok) {
 		return tNow('goal.tool.actionCancelled');

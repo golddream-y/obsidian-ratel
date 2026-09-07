@@ -152,15 +152,15 @@ import {
 	createManageGoalTool,
 	type ManageGoalPrompts,
 } from './tools/manage-goal';
-import { showGoalCreateModal } from './ui/goal/GoalCreateModal';
 import { showGoalActionConfirmModal } from './ui/goal/GoalActionConfirmModal';
 import {
 	applyGoalTerminalChoice,
 	showGoalCompletedNotice,
 	showGoalTerminalChoiceModal,
 } from './ui/goal/GoalTerminalChoiceModal';
+import { waitGoalModalGap } from './ui/goal/wait-goal-modal';
 import { pickGoalStatusBarText } from './ui/goal/goal-status-bar';
-import { GOAL_SETTINGS_SECTION_ID, renderGoalSettingsSection } from './ui/settings/goal-setting-page';
+import { GoalManageModal, shouldCreateGoalManageModal } from './ui/goal/GoalManageModal';
 import type { AgentGoal } from './core/goal-store';
 
 /**
@@ -224,6 +224,8 @@ export default class RatelVaultPlugin extends Plugin {
 	private feedbackController?: FeedbackController;
 	/** 记忆管理 Modal 单例 — 已打开则忽略再次 open */
 	private memoryModal: MemoryModal | null = null;
+	/** 目标管理 Modal 单例 — 已打开则忽略再次 open */
+	private goalManageModal: GoalManageModal | null = null;
 	/** MCP 管理 Modal 单例 — 已打开则忽略再次 open */
 	private mcpManageModal: McpManageModal | null = null;
 	/** Skill 管理 Modal 单例(S-SKILL-UX;已打开则忽略重复打开) */
@@ -238,6 +240,8 @@ export default class RatelVaultPlugin extends Plugin {
 	private goalStatusBarEl?: HTMLElement;
 	private goalStatusBarOpensSettings = false;
 	private currentChatSessionId: string | null = null;
+	/** 当前 ask 轮用户原文 — manage_goal 斜杠同回合硬拒 */
+	lastAskUserText?: string;
 	private pendingTerminalGoalId: string | null = null;
 	private pendingTerminalKind: 'completed' | 'cancelled' | null = null;
 	private pendingTerminalAllowWriteNote = false;
@@ -277,7 +281,6 @@ export default class RatelVaultPlugin extends Plugin {
 			// localhost Ollama 免 Key 返回 null → 空串透传给 LLM(本地服务不校验)。
 			apiKey: resolveChatApiKey(this.app, this.settings) ?? '',
 			model: this.settings.chatModel,
-			visionEnabled: this.settings.chatVisionEnabled,
 		});
 
 		// Embedding 适配器:本地 ONNX vs 远端 OpenAI 兼容端点,按设置二选一。
@@ -647,7 +650,7 @@ export default class RatelVaultPlugin extends Plugin {
 			createUpdateAppConfigTool(this, toolDefMap.get('update_app_config')!),
 		);
 		const manageGoalPrompts: ManageGoalPrompts = {
-			promptCreate: (draft) => showGoalCreateModal(this.app, this.vault, draft),
+			promptCreate: async () => ({ confirmed: true }),
 			promptConfirm: ({ action, goal }) => showGoalActionConfirmModal(this.app, action, goal),
 			onTerminal: (goal, kind) => this.handleGoalTerminal(goal, kind),
 		};
@@ -658,6 +661,7 @@ export default class RatelVaultPlugin extends Plugin {
 				() => this.currentChatSessionId ?? '',
 				manageGoalPrompts,
 				() => this.settings.goalMaxRounds,
+				() => this.lastAskUserText ?? '',
 			),
 		);
 
@@ -855,7 +859,7 @@ export default class RatelVaultPlugin extends Plugin {
 		this.goalStatusBarEl = goalStatusItem;
 		goalStatusItem.onClickEvent(() => {
 			if (this.goalStatusBarOpensSettings) {
-				this.openGoalSettings();
+				this.openGoalManageModal();
 			} else {
 				void this.activateChatView();
 			}
@@ -1208,7 +1212,6 @@ export default class RatelVaultPlugin extends Plugin {
 			// localhost Ollama 免 Key 返回 null → 空串透传给 LLM(本地服务不校验)。
 			apiKey: resolveChatApiKey(this.app, this.settings) ?? '',
 			model: this.settings.chatModel,
-			visionEnabled: this.settings.chatVisionEnabled,
 		});
 	}
 
@@ -1443,6 +1446,7 @@ export default class RatelVaultPlugin extends Plugin {
 		opts?: { goalRound?: boolean },
 	): AsyncIterable<AgentEvent> {
 		this.currentChatSessionId = sessionId;
+		this.lastAskUserText = message;
 		const collectedEvents: AgentEvent[] = [];
 		// 关键路径:注入 overrides + tools + skills getter,让 ContextManager 调 Composer 拼系统提示词。
 		const ctx = new ContextManager(this.persistence, {
@@ -1810,14 +1814,24 @@ export default class RatelVaultPlugin extends Plugin {
 		this.goalStatusBarEl.show();
 	}
 
-	/** 打开设置页 agent Tab 并滚到 Goal 区块 */
-	openGoalSettings(): void {
-		void this.workspacePort.openPluginSettings('agent');
-		requestAnimationFrame(() => {
-			document.getElementById(GOAL_SETTINGS_SECTION_ID)?.scrollIntoView({ behavior: 'smooth' });
-		});
+	/**
+	 * 打开目标列表 Modal(单例) — 底栏待归档 / 多条遗留 pending chip / 抽屉「目标」。
+	 *
+	 * 关键路径:已打开则忽略,避免叠窗。
+	 */
+	openGoalManageModal(): void {
+		if (!shouldCreateGoalManageModal(this.goalManageModal)) return;
+		const modal = new GoalManageModal(this.app, this);
+		this.goalManageModal = modal;
+		modal.onClosed = () => {
+			if (this.goalManageModal === modal) this.goalManageModal = null;
+		};
+		modal.open();
 	}
 
+	/**
+	 * 初始化 Goal UI — 扫描损坏文件并刷新底栏。
+	 */
 	private async initGoalUi(pluginDir: string): Promise<void> {
 		const corruptDir = path.join(pluginDir, 'goals', 'corrupt');
 		let corruptBefore = 0;
@@ -1841,6 +1855,7 @@ export default class RatelVaultPlugin extends Plugin {
 
 	/** 终态三选一/二选一 — spec 4.9 */
 	async handleGoalTerminal(goal: AgentGoal, kind: 'completed' | 'cancelled'): Promise<void> {
+		await waitGoalModalGap();
 		const result = await showGoalTerminalChoiceModal(this.app, kind, goal);
 		await applyGoalTerminalChoice(this.goalStore, goal, result);
 		if (result.choice === 'writeNote') {

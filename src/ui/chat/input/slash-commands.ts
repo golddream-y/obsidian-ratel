@@ -32,6 +32,11 @@ export function getSlashCommands(): readonly SlashCommand[] {
 			icon: '✨',
 		},
 		{
+			name: '/goal',
+			description: tNow('slash.goal.description'),
+			icon: '🎯',
+		},
+		{
 			name: '/compact',
 			description: tNow('slash.compact.description'),
 			icon: '📦',
@@ -68,4 +73,100 @@ export function filterCommands(input: string): SlashCommand[] {
 	}
 	const lower = input.toLowerCase();
 	return getSlashCommands().filter((cmd) => cmd.name.toLowerCase().startsWith(lower));
+}
+
+/**
+ * Tab 补全:筛到只剩一条时补成 `/命令 `。
+ *
+ * @param input - 输入框当前内容(无空格的斜杠前缀)
+ * @returns 补全后的字符串;无法唯一确定时 null
+ */
+export function completeUniqueSlashCommand(input: string): string | null {
+	const matches = filterCommands(input);
+	if (matches.length !== 1) return null;
+	return `${matches[0]!.name} `;
+}
+
+/** `/goal` 解析结果 — 菜单精确匹配或带参数发送时共用 */
+export interface ParsedSlashGoal {
+	/** 预填进创建表单的目标陈述;空则只打开空白表单 */
+	objective: string;
+	/** 前缀是 30m / 2h 一类时限 — v1 不支持,剥掉后仍打开表单 */
+	timeLimitIgnored: boolean;
+}
+
+/**
+ * 识别聊天输入是否为 `/goal` 或 `/goal <陈述>`。
+ *
+ * 关键路径:含空格时 filterCommands 已关菜单,回车会走 sendMessage;
+ * 必须在发往模型前拦截,否则会当成普通消息。
+ *
+ * @param input - 已 trim 的输入框内容
+ * @returns 命中 `/goal` 时返回解析结果,否则 null(`/goalie` 不算)
+ */
+export function parseSlashGoalInput(input: string): ParsedSlashGoal | null {
+	const trimmed = input.trim();
+	const match = /^\/goal(?:\s+(.*))?$/i.exec(trimmed);
+	if (!match) return null;
+	let rest = (match[1] ?? '').trim();
+	let timeLimitIgnored = false;
+	// 与 Cursor /goal 对齐:开头的 30m / 2h 不是目标正文
+	const timed = /^(\d+[mh])\s+(.*)$/i.exec(rest);
+	if (timed) {
+		timeLimitIgnored = true;
+		rest = timed[2]!.trim();
+	} else if (/^\d+[mh]$/i.test(rest)) {
+		timeLimitIgnored = true;
+		rest = '';
+	}
+	return { objective: rest, timeLimitIgnored };
+}
+
+/**
+ * 本轮用户消息是否为带陈述的 `/goal` 创建回合。
+ *
+ * 关键路径:斜杠同回合硬拒 manage_goal create(spec 4.3),空 `/goal` 不算创建回合。
+ *
+ * @param text - 用户原文(通常 trim 后)
+ * @returns 能解析出非空 objective 时为 true
+ */
+export function isSlashGoalCreateTurn(text: string): boolean {
+	const parsed = parseSlashGoalInput(text.trim());
+	return Boolean(parsed?.objective);
+}
+
+/** 输入高亮片段 — 完整斜杠命令用强调色,其余普通色 */
+export interface SlashHighlightSpan {
+	kind: 'command' | 'text';
+	text: string;
+}
+
+/**
+ * 把输入拆成「完整斜杠命令 + 其余」。
+ *
+ * 只高亮登记表里的全名(`/goal` `/new` …),`/g` 或 `/goalie` 不高亮。
+ *
+ * @param input - 输入框或用户气泡原文
+ */
+export function splitLeadingSlashCommand(input: string): SlashHighlightSpan[] {
+	if (!input.startsWith('/')) {
+		return [{ kind: 'text', text: input }];
+	}
+	const names = getSlashCommands()
+		.map((c) => c.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+		.sort((a, b) => b.length - a.length);
+	const re = new RegExp(`^(${names.join('|')})(?=\\s|$)`, 'i');
+	const match = re.exec(input);
+	if (!match) {
+		return [{ kind: 'text', text: input }];
+	}
+	const cmd = match[0];
+	const rest = input.slice(cmd.length);
+	if (!rest) {
+		return [{ kind: 'command', text: cmd }];
+	}
+	return [
+		{ kind: 'command', text: cmd },
+		{ kind: 'text', text: rest },
+	];
 }
