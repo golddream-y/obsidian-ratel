@@ -54,6 +54,8 @@ describe('CONFIG_UPDATE_WHITELIST', () => {
 			// 语言外观
 			'language', 'uiColorScheme', 'uiAccent',
 			'chatNavRailEnabled', 'chatNavRailSide', 'chatMotionEnabled', 'chatMascotEnabled',
+			// 目标模式
+			'goalMaxRounds',
 		];
 		for (const key of expected) {
 			expect(isWhitelistedKey(key)).toBe(true);
@@ -164,6 +166,14 @@ describe('validateConfigValue', () => {
 
 	it('数值 - NaN - 拒绝', () => {
 		expect(validateConfigValue('chunkSize', Number.NaN).ok).toBe(false);
+	});
+
+	it('goalMaxRounds - 1 与 100 通过,0 与 101 拒绝', () => {
+		expect(validateConfigValue('goalMaxRounds', 1).ok).toBe(true);
+		expect(validateConfigValue('goalMaxRounds', 100).ok).toBe(true);
+		expect(validateConfigValue('goalMaxRounds', 10).ok).toBe(true);
+		expect(validateConfigValue('goalMaxRounds', 0).ok).toBe(false);
+		expect(validateConfigValue('goalMaxRounds', 101).ok).toBe(false);
 	});
 
 	it('布尔 - 字符串 "true" - 拒绝', () => {

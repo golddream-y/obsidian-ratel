@@ -22,7 +22,6 @@ export const CONFIG_UPDATE_WHITELIST: ReadonlySet<string> = new Set<string>([
 	// --- 对话模型 ---
 	'chatModel',
 	'chatApiBase',
-	'chatVisionEnabled',
 	'contextLengthPreset',
 	'chatModelMaxTokens',
 	'autoCompactEnabled',
@@ -57,6 +56,8 @@ export const CONFIG_UPDATE_WHITELIST: ReadonlySet<string> = new Set<string>([
 	'chatNavRailSide',
 	'chatMotionEnabled',
 	'chatMascotEnabled',
+	// --- 目标模式 ---
+	'goalMaxRounds',
 ]);
 
 /**
@@ -91,7 +92,9 @@ const ENUM_CONSTRAINTS: Readonly<Record<string, readonly string[]>> = {
  *
  * 关键路径:chatModelMaxTokens 用 CUSTOM_TOKEN_MIN/MAX(高级页 number 控件);
  * chunk/chunkOverlap 用索引页 slider 边界;memory 四项用高级页 number 边界。
+ * memoryTopicsAutoInjectK 用高级页 number 边界。
  * embedApiDimensions 无 UI 控件,按主流 Embedding 模型维度范围给 1~8192。
+ * goalMaxRounds 与目标模式设置页 number 控件 min/max 一致(1~100)。
  */
 const NUMBER_CONSTRAINTS: Readonly<Record<string, { min: number; max: number }>> = {
 	chatModelMaxTokens: { min: CUSTOM_TOKEN_MIN, max: CUSTOM_TOKEN_MAX },
@@ -103,6 +106,7 @@ const NUMBER_CONSTRAINTS: Readonly<Record<string, { min: number; max: number }>>
 	memoryDynamicLimitKB: { min: 1, max: 500 },
 	memoryContextTotalLimitKB: { min: 1, max: 500 },
 	memoryTopicsAutoInjectK: { min: 0, max: 10 },
+	goalMaxRounds: { min: 1, max: 100 },
 };
 
 /** 布尔开关 key — 严格 boolean,拒绝字符串 "true" */
