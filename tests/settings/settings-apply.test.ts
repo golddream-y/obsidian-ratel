@@ -23,13 +23,6 @@ function makePlugin(): SettingApplier & {
 }
 
 describe('applySettingValue - LLM 相关副作用分发', () => {
-	it('chatVisionEnabled 写入后触发 rebuildLLM - 开关即时生效', () => {
-		const plugin = makePlugin();
-		applySettingValue(plugin, 'chatVisionEnabled', true);
-		expect(plugin.settings.chatVisionEnabled).toBe(true);
-		expect(plugin.rebuildLLM).toHaveBeenCalledTimes(1);
-	});
-
 	it('chatApiBase 改动仍走既有路径 - preset 置 custom 且 rebuildLLM', () => {
 		const plugin = makePlugin();
 		applySettingValue(plugin, 'chatApiBase', 'https://openrouter.ai/api/v1');

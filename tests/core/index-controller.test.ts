@@ -85,4 +85,60 @@ describe('IndexController', () => {
         ctl.destroy();
         for (const u of unsubs) expect(u).toHaveBeenCalled();
     });
+
+    it('onFileCreate - png 等非 md - 不读文件不入队', async () => {
+        vi.useFakeTimers();
+        let createCb: (p: string) => void = () => {};
+        const readFile = vi.fn().mockResolvedValue('# hi');
+        const incrementalIndex = vi.fn().mockResolvedValue({ indexed: 1, errors: 0 });
+        const ctl = new IndexController(
+            {
+                onFileCreate: (cb) => {
+                    createCb = cb;
+                    return () => {};
+                },
+                onFileModify: () => () => {},
+                onFileDelete: () => () => {},
+                onFileRename: () => () => {},
+                readFile,
+            },
+            {
+                fullReindex: vi.fn().mockResolvedValue({ indexed: 0, errors: 0 }),
+                incrementalIndex,
+                deleteFile: vi.fn().mockResolvedValue(0),
+            },
+            '/tmp',
+        );
+        await ctl.onLayoutReady(false);
+        createCb('photo.png');
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(readFile).not.toHaveBeenCalled();
+        expect(incrementalIndex).not.toHaveBeenCalled();
+        expect(get(ctl.indexManager.status$).state).not.toBe('Queueing');
+        ctl.destroy();
+        vi.useRealTimers();
+    });
+
+    it('enqueue - 非 md - 跳过', async () => {
+        const readFile = vi.fn().mockResolvedValue('x');
+        const ctl = new IndexController(
+            {
+                onFileCreate: () => () => {},
+                onFileModify: () => () => {},
+                onFileDelete: () => () => {},
+                onFileRename: () => () => {},
+                readFile,
+            },
+            {
+                fullReindex: vi.fn().mockResolvedValue({ indexed: 0, errors: 0 }),
+                incrementalIndex: vi.fn().mockResolvedValue({ indexed: 1, errors: 0 }),
+                deleteFile: vi.fn().mockResolvedValue(0),
+            },
+            '/tmp',
+        );
+        await ctl.onLayoutReady(false);
+        await ctl.enqueue('shot.jpg', 'upsert');
+        expect(readFile).not.toHaveBeenCalled();
+        ctl.destroy();
+    });
 });

@@ -9,7 +9,7 @@
 
 Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔记写综述，也能记住你的偏好。索引在本地跑，密钥进钥匙串；只有你配置的模型 API 会联网。
 
-**适合**：知识库问答、写综述、整理最近笔记、扩展自定义 Skill。  
+**适合**：知识库问答、写综述、整理最近笔记、跨对话的长期整理目标、扩展自定义 Skill。  
 **不适合**：移动端、需要外网搜索 / Shell 的场景（本插件不做）。
 
 ---
@@ -59,6 +59,7 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 | 按属性筛选 | 「找 `status: draft` 的笔记」 | `search_by_property`（不传 value 时查键是否存在） |
 | 查看库概览 | 「库里有哪些标签和孤儿笔记？」 | `get_vault_structure`（可按目录 / 标签 / 孤儿笔记选择） |
 | 写综述 / 整理 | 「把产品规划相关笔记整理成背景文档」 | 多步检索 → 读写（写前会按权限询问） |
+| 立长期目标 | 「`/goal` 把某目录补全属性」 | 先复述完成标准和回合上限，你点头后才创建；详见 [§6](#6-长期目标) |
 | 帮我配置 / 排障 | 「帮我换个模型」「索引怎么不跑了」 | 内置 ratel-config skill → `get_app_config` 诊断 → 代改或 `open_settings` 引导（密钥只会引导去钥匙串，不会代填） |
 
 流式回答时可以看到工具调用过程；支持 reasoning 的模型（如 DeepSeek-R1 / V4）会显示可折叠「思考」块。模型在想、在写、在调工具时，消息流里会用**思考球**（点阵小球）代替原来的小黄点。检索结果在回答下方以「来源 N 篇」折叠条展示，点开可跳转笔记；正文里若已有可点的 `[1][2]`，底部来源条会隐藏以免重复。
@@ -71,11 +72,7 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 
 输入区可以附带图片（需同时输入文字再发送）。
 
-| 你用的模型 | 怎么做 |
-|---|---|
-| 本地 Ollama 视觉模型（如 llava） | 直接发图即可,无需额外开关 |
-| OpenRouter 等远端视觉模型 | 设置 → Ratel → **对话模型** → 打开 **视觉输入(图片理解)** |
-| DeepSeek 等纯文本模型 | 发图会被拦住并提示;去掉图片,或换成视觉模型后再开开关 |
+贴了图就会发给当前对话模型。本地 Ollama 视觉模型与 OpenRouter 等远端视觉模型可以直接看图；DeepSeek 一类纯文本模型会报错，去掉图片或换成视觉模型即可。
 
 重启 Obsidian 后,历史气泡里的图仍在。图片文件存在插件目录,不塞进会话 JSON。
 
@@ -113,7 +110,32 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 
 ---
 
-## 6. 记忆
+## 6. 长期目标
+
+跨很多回合、甚至换会话还要接着干的整理任务，用 `/goal` 立一条长期目标。普通问答不用走这套。
+
+**怎么立**
+
+- 输入 `/goal` 加一句陈述，例如 `/goal 把某目录补全属性`。空 `/goal` 只提示用法。不支持 `30m` / `2h` 限时（会忽略该前缀）。
+- 助手先复述完成标准和回合上限，你点头后才创建。聊天里看到的就是你打的命令。
+- 同时只能有一条未完成目标。再立新的时，当面问：放弃当前并开始新的，还是继续当前。
+- 改**以后新建**时的默认回合上限：让助手走配置技能改设置。给**当前这条**加轮：对话里提高这一条的上限，不是改全局默认。
+
+**怎么接着干**
+
+- 目标跟着库走，换会话、关聊天也不会丢。完成标准钉在**绑定的那场对话**里，压缩也不会忘；简单目标可以很快收工。
+- 底栏和输入区上方会提醒进行中 / 暂停 / 受阻 / 预算用尽。新开一场对话时模型看不到完成标准，要点「接管」绑到当前对话才接着干。
+- 创建时若授权了某目录，那里面的批量改笔记会少弹窗；暂停即收回授权。停生成 ≠ 暂停目标。
+
+**怎么结束**
+
+- 对照完成标准，对话里确认后即关闭，不弹去留。
+- 列表：状态抽屉底部「目标」，或设置 → 记忆与权限 → **查看目标**（暂停 / 恢复 / 放弃 / 归档）。归档只在这里人手点。
+- 回合用尽会停下来问：加轮、先停或放弃，不会因为轮数到了就当成做完。设置页只留默认回合上限、单回合 token 软顶、待归档天数。
+
+---
+
+## 7. 记忆
 
 跟它说「记住我偏好 Tailwind」或「忘掉 X」即可。
 
@@ -125,13 +147,13 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 
 都是普通 Markdown，可直接编辑。总存储上限约 10MB。记忆只作对话上下文发往你配置的模型端点，不会单独上传第三方。
 
-在聊天侧栏展开状态条 → 底部「记忆」，或设置 → 记忆与权限 → 查看记忆；在弹窗中浏览 / 编辑 / 清理模型记忆。
+在聊天侧栏展开状态条 → 底部「记忆管理」，或设置 → 记忆与权限 → 查看记忆；在弹窗中浏览 / 编辑 / 清理模型记忆。
 
 每轮自动注入的主题条数在 设置 → 记忆与权限 → **「自动注入相关主题数」** 调整（0–10，0 表示关闭，也可让 AI 代改）。记忆面板中每个主题显示的「命中 N 次」即该主题被自动带入对话的次数。
 
 ---
 
-## 7. Skill（扩展能力）
+## 8. Skill（扩展能力）
 
 把含 `SKILL.md` 的文件夹放到：
 
@@ -174,19 +196,19 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 
 ---
 
-## 8. 斜杠命令与命令面板
+## 9. 斜杠命令与命令面板
 
 聊天输入 `/`：
 
 | 命令 | 作用 |
 |---|---|
 | `/new` | 新对话 |
-| `/goal` | 立长期目标：`/goal 把某目录补全属性`。助手会先复述完成标准与当前回合上限，你确认后再创建；要改回合上限可让助手走配置技能。已有未完成目标时，仍会让你选择放弃旧的或继续旧的。空 `/goal` 只提示用法。不支持 `30m`/`2h` 限时（忽略该前缀） |
+| `/goal` | 立长期目标，详见 [§6](#6-长期目标) |
 | `/compact` | 压缩发给模型的上下文，聊天记录全部保留；可自动（设置默认开） |
 | `/model` | 查看当前模型配置 |
 | `/reindex` | 强制全量重建索引 |
 
-聊天输入 `@`：按文件名/路径补全库内笔记，发送时只保留 `@相对路径` 字面量（不预读全文）。也可在文件资源管理器右键 Markdown → **添加到 Ratel**。
+聊天输入 `@`：按文件名/路径补全库内笔记，发送时只保留 `@相对路径` 字面量（不预读全文）。也可在文件资源管理器右键 Markdown → **添加到 Ratel**。不要把电脑上的绝对路径（如 `/Users/…`）当笔记引用粘进来。
 
 命令面板（不在 `/` 菜单里）：
 
@@ -196,15 +218,15 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 
 ---
 
-## 9. 设置速查
+## 10. 设置速查
 
 打开 **设置 → Ratel** 即见顶栏五个 Tab：
 
 | Tab | 常用项 |
 |---|---|
 | **对话模型** | 语言、场景预设（DeepSeek / Ollama / 自定义）、模型、API Base、钥匙串状态、自动压缩上下文（默认开） |
-| **笔记索引** | Embedding、分块 / 自动索引、Rerank |
-| **记忆与权限** | 记忆开关与面板、日记约定、工具权限档位、全部工具权限（含 MCP 工具） |
+| **笔记索引** | Embedding、分块 / 自动索引、Rerank；只索引 Markdown，图片不当笔记切块 |
+| **记忆与权限** | 目标默认回合上限与「查看目标」、记忆开关与面板、日记约定、工具权限档位、全部工具权限（含 MCP 工具） |
 | **外观** | 颜色模式（跟随 Obsidian / 浅色 / 深色）、强调色色块（含铜 / Material 色）、捣蛋鬼（消息区可拖的小色块）；仅影响 Ratel 面板，预览即时生效 |
 | **高级** | Context Length、模型 registry、提示词覆盖、记忆容量、开发者选项、诊断 |
 
@@ -223,15 +245,15 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 
 ---
 
-## 10. 状态怎么读
+## 11. 状态怎么读
 
 ### 对话位置轨
 
 消息区右侧（可改到左侧）有一列细点，对应各轮提问：悬停会加宽并显示前几字摘要，点击跳到该轮；离开底部时点 ↓ 回到最新。消息区系统滚动条已隐藏，用点列导航即可。设置里可关闭。与状态条上的上下文占用 % 不是同一回事。
 
 - **输入区**：右侧发送钮是 **↑**；生成中变成红色停止方块。下方可切工具权限三档。
-- **输入区顶沿 StatusStrip**：状态点 + 就绪/忙态文案 + 右侧上下文占用 `%`（绿 → 黄 → 红）；忙时可与消息流里的思考球一起出现。有未完成目标时会一直显示：进行中（含换了新会话仍绑在旧对话的情况）或已暂停；受阻时单独提示原因。换会话不会把这条藏掉。
-- **点开 Strip**：抽屉里看索引篇数、Embedding 类型、上下文 used/max 与进度条、压缩按钮；底部可进记忆 / MCP / 反馈等
+- **输入区顶沿 StatusStrip**：状态点 + 就绪/忙态文案 + 右侧上下文占用 `%`（绿 → 黄 → 红）；忙时可与消息流里的思考球一起出现。有未完成目标时会一直显示：进行中（含换了新会话仍绑在旧对话的情况）、已暂停、受阻或回合预算用尽。换会话不会把这条藏掉。本场目标闲等时**不再**另出「继续推进」胶囊（和 Strip 重复）；需要接管另一场对话、或清理遗留未开始目标时才会出现胶囊（点多条遗留会打开目标列表）。同一时间只保留一条未完成目标，不会再往下排队。
+- **点开 Strip**：抽屉里看索引篇数、Embedding 类型、上下文 used/max 与进度条、压缩按钮；底部可进目标 / 记忆 / MCP / 反馈等
 - **Header**：短标题芯片（历史列表）+ ✎（编辑标题）+ 模型名（点击查看模型信息）；不再显示占用百分比
 
 未配置 API Key 或索引未就绪时，发送会被挡住并在 Strip 提示原因。
@@ -242,7 +264,7 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 
 ---
 
-## 11. 隐私
+## 12. 隐私
 
 - 默认本地索引 + 本地嵌入  
 - **唯一网络**：你配置的模型 /（可选）嵌入 API /（可选）Rerank  
@@ -251,7 +273,7 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 
 ---
 
-## 12. FAQ
+## 13. FAQ
 
 | 问题 | 回答 |
 |---|---|
@@ -269,6 +291,8 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 | AI 总结标题失败？ | 总结请求已关 thinking。若只是开场白截断的临时标题，仍会再跑总结；真正失败时可手改 ✎ |
 | 引用 `[n]` 变灰点不开？ | 应沿用本场最近一次检索；悬停应能看到路径。若仍灰，确认本场做过检索后再试 |
 | 「本次会话不再询问」还弹？ | 换工具名仍会问；同工具不同路径不应再问。换场或 `/new` 后授权清空 |
+| `/goal` 和改回合上限？ | 先对话确认再创建。设置里的是**默认**上限；当前目标加轮是提高这一条，不要拿改默认冒充 |
+| 换了新对话目标还在吗？ | 还在，底栏和条会提醒。新对话里模型看不到完成标准，要点接管才接着干；暂停才会从这场对话摘掉 |
 | 刚开 MCP 显示无工具？ | 等开启完成后再看列表；可点「刷新」强制重连 |
 | 为什么不帮我填 API Key？ | 密钥只存 Obsidian 钥匙串，Agent 只能看到「配没配」，拿不到也填不了明文；照提示去 设置 → 钥匙串 添加对应 secret ID |
 | 工具输出特别长会怎样？ | 发给模型的正文截到 3.2 万字符以内（保留头尾要点）；聊天气泡里仍是全文。长任务续跑时最好带上任务原句 |
@@ -283,7 +307,7 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 
 **First run:** Configure chat model (+ Keychain `ratel-chat-openai-compatible`, or local Ollama). Wait for indexing. Open chat via the 🦡 ribbon.
 
-**Ask naturally:** topics → semantic search with citations; “today” → injected local time; “this note” → active file; “open that note” → opens it in Obsidian at the heading or block; daily note path is probed only (never auto-created). Config questions go through the built-in config skill (whitelisted changes by chat; keys only via the keychain). Memory lives in `.ratel/memory/`. Skills live under `.ratel/skills/` (or `~/.ratel/skills/`) — installed means enabled (vault wins on name conflicts). Manage them via the Skills button in the status drawer: per-skill toggle (persists across restarts), view full text, edit, or delete with double confirmation; built-ins are read-only and update with the plugin. A skill folder may also ship `scripts/` (sandboxed JavaScript — no network, file access limited to the vault and the skill folder) and `references/` docs the agent runs or reads on demand; each script asks approval on first run (“Always allow” remembers); scripts that keep reporting progress are not killed at the timeout — the agent gets their progress and decides to keep waiting or stop them (stalled scripts with no progress heartbeat are terminated after the timeout, default 30s, configurable 5–120s; absolute cap 10 minutes), and a script failing 3 times in a row (stalled, over the cap, or crashed) is circuit-broken until re-approved.
+**Ask naturally:** topics → semantic search with citations; “today” → injected local time; “this note” → active file; “open that note” → opens it in Obsidian at the heading or block; daily note path is probed only (never auto-created). Config questions go through the built-in config skill (whitelisted changes by chat; keys only via the keychain). **Long-running goals:** `/goal` restates criteria and round budget, then creates after you agree; one incomplete goal at a time; it survives new chats (take over to keep working); complete closes it, archive only from the goal list. Memory lives in `.ratel/memory/`. Skills live under `.ratel/skills/` (or `~/.ratel/skills/`) — installed means enabled (vault wins on name conflicts). Manage them via the Skills button in the status drawer: per-skill toggle (persists across restarts), view full text, edit, or delete with double confirmation; built-ins are read-only and update with the plugin. A skill folder may also ship `scripts/` (sandboxed JavaScript — no network, file access limited to the vault and the skill folder) and `references/` docs the agent runs or reads on demand; each script asks approval on first run (“Always allow” remembers); scripts that keep reporting progress are not killed at the timeout — the agent gets their progress and decides to keep waiting or stop them (stalled scripts with no progress heartbeat are terminated after the timeout, default 30s, configurable 5–120s; absolute cap 10 minutes), and a script failing 3 times in a row (stalled, over the cap, or crashed) is circuit-broken until re-approved.
 
 **Sessions:** Header chip opens recent chats; ✎ edits / AI-summarizes the title. Switching while generating asks first. “Allow for this session” grants by tool name for the whole chat.
 

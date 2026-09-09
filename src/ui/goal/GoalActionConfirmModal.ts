@@ -43,6 +43,7 @@ export function showGoalActionConfirmModal(
 
 class GoalActionConfirmModal extends Modal {
 	private settled = false;
+	private pending: boolean | null = null;
 
 	constructor(
 		app: App,
@@ -51,12 +52,6 @@ class GoalActionConfirmModal extends Modal {
 		private onResolve: (ok: boolean) => void,
 	) {
 		super(app);
-	}
-
-	private settle(ok: boolean): void {
-		if (this.settled) return;
-		this.settled = true;
-		this.onResolve(ok);
 	}
 
 	onOpen(): void {
@@ -68,18 +63,21 @@ class GoalActionConfirmModal extends Modal {
 		const btnRow = contentEl.createDiv({ cls: 'modal-button-container' });
 		btnRow.createEl('button', { text: tNow('goal.modal.confirm.primary'), cls: 'mod-cta' }).onclick =
 			() => {
-				this.settle(true);
+				this.pending = true;
 				this.close();
 			};
 		btnRow.createEl('button', { text: tNow('modal.toolConfirm.deny') }).onclick = () => {
-			this.settle(false);
+			this.pending = false;
 			this.close();
 		};
 	}
 
 	onClose(): void {
+		// 关键路径:关窗后再异步 resolve,避免同一 click 里立刻打开归档弹窗导致点击穿透来回弹
+		const ok = this.pending ?? false;
 		if (!this.settled) {
-			this.settle(false);
+			this.settled = true;
+			window.setTimeout(() => this.onResolve(ok), 0);
 		}
 		this.contentEl.empty();
 	}

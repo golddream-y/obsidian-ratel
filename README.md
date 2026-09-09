@@ -62,6 +62,12 @@ Inspect sources, ask a follow-up, snooze, ignore, or let Ratel organize, link, a
 
 Ratel combines semantic, keyword, and note-relationship signals, then keeps clickable sources in the answer.
 
+**Keep a long-running goal across chats**
+
+> “/goal finish the Q3 reading notes this week”
+
+The goal stays with the vault, not a single conversation. Chat confirms the done criteria before creating it; the status bar and a strip above the input remind you, and a new chat can take it over.
+
 **Complete multi-step knowledge work**
 
 > “Turn my product-planning notes into a background document.”

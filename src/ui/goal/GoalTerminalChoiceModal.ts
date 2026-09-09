@@ -1,6 +1,6 @@
 /**
  * @file src/ui/goal/GoalTerminalChoiceModal.ts
- * @description 终态三选一/二选一 Modal — spec 4.9
+ * @description 关闭目标去留一框 — 留列表 / 归档 / 写笔记 / 取消(spec 4.9)
  * @module ui/goal/GoalTerminalChoiceModal
  * @depends obsidian, core/goal-store, i18n
  */
@@ -19,39 +19,55 @@ export interface GoalTerminalChoiceResult {
 }
 
 /**
+ * 关窗时如何解释「没点处理按钮」。
+ *
+ * @param pending - 用户点过的选项;null 表示 Esc / 取消 / 点遮罩
+ * @param alreadyTerminal - 目标是否已是 completed/cancelled(runner 收口后)
+ * @returns 处理结果;null 表示中止,调用方不得 transition
+ */
+export function choiceFromModalClose(
+	pending: GoalTerminalChoiceResult | null,
+	alreadyTerminal: boolean,
+): GoalTerminalChoiceResult | null {
+	if (pending) return pending;
+	if (alreadyTerminal) {
+		return { choice: 'keep', showCompletedNotice: false };
+	}
+	return null;
+}
+
+/**
  * 完成/放弃后询问留列表、归档或先写笔记(spec 4.9)。
  *
  * @param app - Obsidian App
- * @param kind - completed 三选一;cancelled 二选一
- * @param goal - 终态目标
+ * @param kind - completed 含写笔记;cancelled 不含
+ * @param goal - 目标摘要
+ * @param opts.alreadyTerminal - 已落盘终态时关窗=留列表;未落盘时关窗=中止
  */
 export function showGoalTerminalChoiceModal(
 	app: App,
 	kind: 'completed' | 'cancelled',
 	goal: AgentGoal,
-): Promise<GoalTerminalChoiceResult> {
+	opts?: { alreadyTerminal?: boolean },
+): Promise<GoalTerminalChoiceResult | null> {
 	return new Promise((resolve) => {
-		const modal = new GoalTerminalChoiceModal(app, kind, goal, resolve);
+		const modal = new GoalTerminalChoiceModal(app, kind, goal, opts?.alreadyTerminal === true, resolve);
 		modal.open();
 	});
 }
 
 class GoalTerminalChoiceModal extends Modal {
 	private settled = false;
+	private pending: GoalTerminalChoiceResult | null = null;
 
 	constructor(
 		app: App,
 		private kind: 'completed' | 'cancelled',
 		private goal: AgentGoal,
-		private onResolve: (result: GoalTerminalChoiceResult) => void,
+		private alreadyTerminal: boolean,
+		private onResolve: (result: GoalTerminalChoiceResult | null) => void,
 	) {
 		super(app);
-	}
-
-	private settle(result: GoalTerminalChoiceResult): void {
-		if (this.settled) return;
-		this.settled = true;
-		this.onResolve(result);
 	}
 
 	onOpen(): void {
@@ -69,40 +85,47 @@ class GoalTerminalChoiceModal extends Modal {
 
 		const btnRow = contentEl.createDiv({ cls: 'modal-button-container' });
 
-		// 关键路径:默认「留在列表」为首个按钮,但不设 mod-cta 避免误触归档
+		// 关键路径:不设 mod-cta,避免回车误归档
 		const keepBtn = btnRow.createEl('button', {
 			text: tNow('goal.modal.terminal.keep'),
 		});
 		keepBtn.onclick = () => {
-			this.settle({
+			this.pending = {
 				choice: 'keep',
 				showCompletedNotice: this.kind === 'completed',
-			});
+			};
 			this.close();
 		};
 
 		if (this.kind === 'completed') {
 			btnRow.createEl('button', { text: tNow('goal.modal.terminal.writeNote') }).onclick = () => {
-				this.settle({ choice: 'writeNote' });
+				this.pending = { choice: 'writeNote' };
 				this.close();
 			};
 		}
 
 		btnRow.createEl('button', { text: tNow('goal.modal.terminal.archive') }).onclick = () => {
-			this.settle({
+			this.pending = {
 				choice: 'archive',
 				showCompletedNotice: this.kind === 'completed',
-			});
+			};
 			this.close();
 		};
+
+		// 未落盘时取消=不关目标;已终态时取消与留列表同义,不再单列以免两颗同效按钮
+		if (!this.alreadyTerminal) {
+			btnRow.createEl('button', { text: tNow('common.cancel') }).onclick = () => {
+				this.pending = null;
+				this.close();
+			};
+		}
 	}
 
 	onClose(): void {
+		const result = choiceFromModalClose(this.pending, this.alreadyTerminal);
 		if (!this.settled) {
-			this.settle({
-				choice: 'keep',
-				showCompletedNotice: this.kind === 'completed',
-			});
+			this.settled = true;
+			window.setTimeout(() => this.onResolve(result), 0);
 		}
 		this.contentEl.empty();
 	}

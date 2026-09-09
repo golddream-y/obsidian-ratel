@@ -11,7 +11,7 @@ import { tNow } from '../../i18n';
 /** 底栏文案优先级结果 */
 export interface GoalStatusBarText {
 	text: string;
-	/** 点击打开设置页 Goal 区块(仅待归档) */
+	/** 点击打开目标管理 Modal(仅待归档) */
 	openSettings: boolean;
 }
 

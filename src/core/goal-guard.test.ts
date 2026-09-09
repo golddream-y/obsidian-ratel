@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { evaluateNoProgress, checkBudgets } from './goal-guard';
+import { evaluateNoProgress, checkBudgets, isGoalBudgetExhausted } from './goal-guard';
 
 describe('evaluateNoProgress', () => {
 	it('有 predicate - 剩余集合连续两轮不降 - blocked', () => {
@@ -111,5 +111,19 @@ describe('checkBudgets', () => {
 				maxRounds: 10,
 			}),
 		).toEqual({ action: 'continue' });
+	});
+});
+
+describe('isGoalBudgetExhausted', () => {
+	it('isGoalBudgetExhausted - roundsDone 未达上限 - false', () => {
+		expect(isGoalBudgetExhausted({ roundsDone: 9, maxRounds: 10 })).toBe(false);
+	});
+
+	it('isGoalBudgetExhausted - roundsDone 等于 maxRounds - true', () => {
+		expect(isGoalBudgetExhausted({ roundsDone: 10, maxRounds: 10 })).toBe(true);
+	});
+
+	it('isGoalBudgetExhausted - roundsDone 超过 maxRounds - true', () => {
+		expect(isGoalBudgetExhausted({ roundsDone: 12, maxRounds: 10 })).toBe(true);
 	});
 });

@@ -708,6 +708,23 @@ body.theme-dark .workspace-leaf-content[data-type="ratel-chat"] .ratel-session-m
 	padding-top: 4px;
 }
 
+/* 目标管理 Modal — 与记忆壳同宽,内容滚动列表 */
+.modal.ratel-goal-manage-modal-shell {
+	width: min(720px, 92vw);
+	height: min(85vh, 900px);
+	max-height: min(85vh, 900px);
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+}
+
+.modal.ratel-goal-manage-modal-shell .ratel-goal-manage-modal {
+	flex: 1 1 auto;
+	min-height: 0;
+	overflow: auto;
+	padding-top: 4px;
+}
+
 /* ==================== 状态抽屉低频入口 ==================== */
 /* 关键路径:压过 Obsidian 默认 button(边框/阴影/固定 input 高度),保持静默文字链 */
 .workspace-leaf-content[data-type="ratel-chat"] button.ratel-drawer-action {

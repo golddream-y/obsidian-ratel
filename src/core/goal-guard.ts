@@ -86,7 +86,19 @@ export function checkBudgets(input: BudgetCheckInput): { action: BudgetAction } 
 		return { action: 'endRound' };
 	}
 	if (input.roundsDone >= input.maxRounds) {
+		// 语义:预算耗尽待裁决(加轮/先停/放弃),不是问完成
 		return { action: 'askRounds' };
 	}
 	return { action: 'continue' };
+}
+
+/**
+ * 跨回合预算是否已耗尽 — 满轮保险丝(架构 §5.1)。
+ *
+ * 触达后挡住 grant 免确认与计轮续跑;不改变 status,也不等于完成。
+ *
+ * @param goal - 只需轮次字段
+ */
+export function isGoalBudgetExhausted(goal: { roundsDone: number; maxRounds: number }): boolean {
+	return goal.roundsDone >= goal.maxRounds;
 }

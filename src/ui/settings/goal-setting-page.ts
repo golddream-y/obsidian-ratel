@@ -1,6 +1,6 @@
 /**
  * @file src/ui/settings/goal-setting-page.ts
- * @description 设置页 Goal 区块 — spec 4.11 面 5
+ * @description 目标管理列表 DOM — GoalManageModal 挂载,设置页不再嵌列表
  * @module ui/settings/goal-setting-page
  * @depends obsidian, main, core/goal-store, ui/goal/*
  */
@@ -9,9 +9,11 @@ import { Modal, Notice, Setting, type App } from 'obsidian';
 import type RatelVaultPlugin from '../../main';
 import type { AgentGoal } from '../../core/goal-store';
 import { truncateObjective } from '../goal/pick-continue-chip';
+import { pickGoalRowActions } from '../goal/pick-goal-row-actions';
+import { applyGoalTerminalChoice, showGoalTerminalChoiceModal } from '../goal/GoalTerminalChoiceModal';
 import { tNow } from '../../i18n';
 
-/** Goal 设置区块 DOM id — 底栏/ chip 跳转锚点 */
+/** 目标列表根节点 id — 管理 Modal 内锚点 */
 export const GOAL_SETTINGS_SECTION_ID = 'ratel-goal-settings-section';
 
 /**
@@ -89,39 +91,45 @@ function renderGoalRow(
 		});
 	}
 
-	if (goal.status === 'active') {
-		setting.addButton((btn) => {
-			btn.setButtonText(tNow('goal.settings.pause'));
-			btn.onClick(() => void transitionAndRefresh(plugin, goal.id, 'paused', container));
-		});
-	}
-	if (goal.status === 'paused' || goal.status === 'blocked') {
-		setting.addButton((btn) => {
-			btn.setButtonText(tNow('goal.settings.resume'));
-			btn.onClick(() => void activateAndRefresh(plugin, goal, container));
-		});
-		setting.addButton((btn) => {
-			btn.setButtonText(tNow('goal.settings.cancel'));
-			btn.onClick(() =>
-				void showSingleArchiveConfirm(plugin.app, goal, 'cancelled', async () => {
-					await plugin.goalStore.transition(goal.id, 'cancelled');
-					plugin.bumpGoalUi();
-					await renderGoalSettingsSection(container, plugin);
-				}),
-			);
-		});
-	}
-	if (goal.status === 'completed' || goal.status === 'cancelled') {
-		setting.addButton((btn) => {
-			btn.setButtonText(tNow('goal.settings.archive'));
-			btn.onClick(() =>
-				void showSingleArchiveConfirm(plugin.app, goal, 'archive', async () => {
-					await plugin.goalStore.archive(goal.id);
-					plugin.bumpGoalUi();
-					await renderGoalSettingsSection(container, plugin);
-				}),
-			);
-		});
+	for (const action of pickGoalRowActions(goal.status)) {
+		if (action === 'pause') {
+			setting.addButton((btn) => {
+				btn.setButtonText(tNow('goal.settings.pause'));
+				btn.onClick(() => void transitionAndRefresh(plugin, goal.id, 'paused', container));
+			});
+		} else if (action === 'resume') {
+			setting.addButton((btn) => {
+				btn.setButtonText(tNow('goal.settings.resume'));
+				btn.onClick(() => void activateAndRefresh(plugin, goal, container));
+			});
+		} else if (action === 'cancel') {
+			setting.addButton((btn) => {
+				btn.setButtonText(tNow('goal.settings.cancel'));
+				btn.onClick(() =>
+					void (async () => {
+						const decision = await showGoalTerminalChoiceModal(plugin.app, 'cancelled', goal, {
+							alreadyTerminal: false,
+						});
+						if (!decision) return;
+						const updated = await plugin.goalStore.transition(goal.id, 'cancelled');
+						await applyGoalTerminalChoice(plugin.goalStore, updated, decision);
+						await plugin.finishGoalTerminalUi(updated, 'cancelled', decision);
+						await renderGoalSettingsSection(container, plugin);
+					})(),
+				);
+			});
+		} else if (action === 'archive') {
+			setting.addButton((btn) => {
+				btn.setButtonText(tNow('goal.settings.archive'));
+				btn.onClick(() =>
+					void showSingleArchiveConfirm(plugin.app, goal, 'archive', async () => {
+						await plugin.goalStore.archive(goal.id);
+						plugin.bumpGoalUi();
+						await renderGoalSettingsSection(container, plugin);
+					}),
+				);
+			});
+		}
 	}
 }
 

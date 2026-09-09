@@ -7,6 +7,7 @@
 
 import type { ObsidianVault } from '../adapters/obsidian-vault';
 import type { IndexController } from '../core/index-controller';
+import { isIndexableMarkdownPath } from '../utils/path-safety';
 
 /**
  * Indexer subagent 依赖。
@@ -58,6 +59,7 @@ export class Indexer {
 	 * @throws 文件不存在时 readFile 抛错,透传给调用方。
 	 */
 	async indexFile(path: string): Promise<void> {
+		if (!isIndexableMarkdownPath(path)) return;
 		const content = await this.deps.vault.readFile(path);
 		this.deps.indexController.indexManager.enqueue(path, 'upsert', content);
 	}
@@ -70,6 +72,7 @@ export class Indexer {
 	 * @param path - vault 相对路径。
 	 */
 	async deleteFile(path: string): Promise<void> {
+		if (!isIndexableMarkdownPath(path)) return;
 		this.deps.indexController.indexManager.enqueue(path, 'delete');
 	}
 }

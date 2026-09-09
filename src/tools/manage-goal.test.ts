@@ -14,7 +14,7 @@ import {
 	defaultGoalCriteriaFromObjective,
 	type ManageGoalPrompts,
 } from './manage-goal';
-import { GoalStore, GOAL_ACTIVE_ELSEWHERE } from '../core/goal-store';
+import { GoalStore } from '../core/goal-store';
 import { setLang } from '../i18n';
 import type { ToolDefinition } from '../ports/llm';
 
@@ -42,6 +42,7 @@ function autoConfirmPrompts(overrides?: Partial<ManageGoalPrompts>): ManageGoalP
 			predicate: draft.predicate,
 		}),
 		promptConfirm: async () => true,
+		promptClose: async () => ({ choice: 'keep' }),
 		...overrides,
 	};
 }
@@ -97,8 +98,51 @@ describe('manage_goal 工具', () => {
 		expect(await store.list()).toHaveLength(0);
 	});
 
+	it('create - 落盘成功 - 调用 onChanged 刷 UI', async () => {
+		const onChanged = vi.fn();
+		const tool = createManageGoalTool(
+			store,
+			fakeDef,
+			() => SESSION,
+			autoConfirmPrompts({ onChanged }),
+			() => 10,
+			() => '可以',
+		);
+		await tool.execute({
+			action: 'create',
+			objective: '审查妖市',
+			criteriaText: '写出完整审查报告并落盘',
+		});
+		expect(onChanged).toHaveBeenCalledTimes(1);
+	});
+
+	it('create - 本轮仍是 /goal - 不调用 onChanged', async () => {
+		const onChanged = vi.fn();
+		const tool = createManageGoalTool(
+			store,
+			fakeDef,
+			() => SESSION,
+			autoConfirmPrompts({ onChanged }),
+			() => 10,
+			() => '/goal 审查妖市',
+		);
+		await tool.execute({
+			action: 'create',
+			objective: '审查妖市',
+			criteriaText: '写出完整审查报告并落盘',
+		});
+		expect(onChanged).not.toHaveBeenCalled();
+	});
+
 	it('create - 用户确认后落盘并激活 - 返回成功', async () => {
-		const tool = createManageGoalTool(store, fakeDef, () => SESSION, autoConfirmPrompts(), () => 10);
+		const tool = createManageGoalTool(
+			store,
+			fakeDef,
+			() => SESSION,
+			autoConfirmPrompts(),
+			() => 10,
+			() => '可以',
+		);
 		const result = await tool.execute({
 			action: 'create',
 			objective: '补全 frontmatter',
@@ -254,19 +298,38 @@ describe('manage_goal 工具', () => {
 		});
 		await store.activate(g.id, SESSION);
 		await store.transition(g.id, 'cancelled');
-		const promptConfirm = vi.fn(async () => true);
+		const promptClose = vi.fn(async () => ({ choice: 'keep' as const }));
 		const onTerminal = vi.fn();
 		const tool = createManageGoalTool(
 			store,
 			fakeDef,
 			() => SESSION,
-			{ ...autoConfirmPrompts(), promptConfirm, onTerminal },
+			{ ...autoConfirmPrompts(), promptClose, onTerminal },
 			() => 10,
 		);
 		const out = await tool.execute({ action: 'cancel', goalId: g.id });
 		expect(out).toMatch(/已放弃|Cancelled/i);
-		expect(promptConfirm).not.toHaveBeenCalled();
+		expect(promptClose).not.toHaveBeenCalled();
 		expect(onTerminal).not.toHaveBeenCalled();
+	});
+
+	it('cancel - 用户点取消 - 不改状态', async () => {
+		const g = await store.create({
+			objective: '放弃测',
+			completionCriteria: { text: '完成' },
+			birthSessionId: SESSION,
+		});
+		await store.activate(g.id, SESSION);
+		const tool = createManageGoalTool(
+			store,
+			fakeDef,
+			() => SESSION,
+			autoConfirmPrompts({ promptClose: async () => null }),
+			() => 10,
+		);
+		const out = await tool.execute({ action: 'cancel', goalId: g.id });
+		expect(out).toMatch(/取消/);
+		expect((await store.get(g.id))?.status).toBe('active');
 	});
 
 	it('complete - predicate 型 - 抛错拒绝', async () => {
@@ -283,15 +346,23 @@ describe('manage_goal 工具', () => {
 		await expect(tool.execute({ action: 'complete', goalId: g.id })).rejects.toThrow(/谓词|自动/);
 	});
 
-	it('complete - 自检型且确认 - 变为 completed', async () => {
+	it('complete - 自检型 - 变为 completed 且不弹去留', async () => {
 		const g = await store.create({
 			objective: '自检目标',
 			completionCriteria: { text: '人工确认完成' },
 			birthSessionId: SESSION,
 		});
 		await store.activate(g.id, SESSION);
-		const tool = createManageGoalTool(store, fakeDef, () => SESSION, autoConfirmPrompts(), () => 10);
+		const promptClose = vi.fn(async () => ({ choice: 'archive' as const }));
+		const tool = createManageGoalTool(
+			store,
+			fakeDef,
+			() => SESSION,
+			autoConfirmPrompts({ promptClose }),
+			() => 10,
+		);
 		await tool.execute({ action: 'complete', goalId: g.id });
+		expect(promptClose).not.toHaveBeenCalled();
 		expect((await store.get(g.id))?.status).toBe('completed');
 	});
 
@@ -316,6 +387,33 @@ describe('manage_goal 工具', () => {
 		const tool = createManageGoalTool(store, fakeDef, () => SESSION, autoConfirmPrompts(), () => 10);
 		await tool.execute({ action: 'update', goalId: g.id, progressNote: '已处理 3/10' });
 		expect((await store.get(g.id))?.progressNote).toBe('已处理 3/10');
+	});
+
+	it('update - 提高本条 maxRounds - 落盘', async () => {
+		const g = await store.create({
+			objective: '加轮测',
+			completionCriteria: { text: '完成' },
+			birthSessionId: SESSION,
+			maxRounds: 10,
+		});
+		await store.activate(g.id, SESSION);
+		const tool = createManageGoalTool(store, fakeDef, () => SESSION, autoConfirmPrompts(), () => 10);
+		await tool.execute({ action: 'update', goalId: g.id, maxRounds: 15 });
+		expect((await store.get(g.id))?.maxRounds).toBe(15);
+	});
+
+	it('update - maxRounds 未高于当前 - 抛错', async () => {
+		const g = await store.create({
+			objective: '加轮拒',
+			completionCriteria: { text: '完成' },
+			birthSessionId: SESSION,
+			maxRounds: 10,
+		});
+		await store.activate(g.id, SESSION);
+		const tool = createManageGoalTool(store, fakeDef, () => SESSION, autoConfirmPrompts(), () => 10);
+		await expect(tool.execute({ action: 'update', goalId: g.id, maxRounds: 10 })).rejects.toThrow(
+			/加轮|maxRounds/,
+		);
 	});
 
 	it('readOnly 为 false', () => {

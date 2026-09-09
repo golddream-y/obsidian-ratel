@@ -270,8 +270,6 @@ export interface ChatStrings {
   'chat.error.compactFailed': string;
   'chat.error.attachmentInvalid': string;
   'chat.error.visionUnsupported': string;
-  'settings.chatVision.name': string;
-  'settings.chatVision.desc': string;
   'chat.thinking': string;
   'chat.thinking.done': string;
   'chat.tool.executing': string;
@@ -553,6 +551,7 @@ export interface StatusStrings {
   'status.drawer.docCount': string;
   'status.drawer.feedback': string;
   'status.drawer.memory': string;
+  'status.drawer.goal': string;
   'status.drawer.sponsor': string;
   'status.drawer.mcp': string;
   'status.drawer.skill': string;
@@ -1045,9 +1044,15 @@ export interface GoalStrings {
   'goal.error.activeElsewhere': string;
   'goal.error.predicateCompleteRejected': string;
   'goal.error.nothingToUpdate': string;
+  'goal.error.maxRoundsNotRaised': string;
+  'goal.error.budgetExhausted': string;
+  'goal.error.incompleteExists': string;
   'goal.slash.defaultCriteria': string;
   'goal.slash.conflictSteer': string;
+  'goal.slash.createSteer': string;
   'goal.tool.createCancelled': string;
+  'goal.tool.createNeedConfirm': string;
+  'goal.tool.createBlocked': string;
   'goal.tool.createdActive': string;
   'goal.tool.createdPending': string;
   'goal.tool.updated': string;
@@ -1058,9 +1063,11 @@ export interface GoalStrings {
   'goal.tool.completed': string;
   'goal.tool.actionCancelled': string;
   'goal.continue.message': string;
+  'goal.continue.budgetExhausted': string;
   'goal.anchor.objective': string;
   'goal.anchor.criteria': string;
   'goal.anchor.progress': string;
+  'goal.anchor.budgetExhausted': string;
   'goal.statusBar.blocked': string;
   'goal.statusBar.active': string;
   'goal.statusBar.paused': string;
@@ -1068,6 +1075,7 @@ export interface GoalStrings {
   'goal.statusBar.stale': string;
   'goal.strip.running': string;
   'goal.strip.stopped': string;
+  'goal.strip.budgetExhausted': string;
   'goal.strip.elsewhere': string;
   'goal.strip.paused': string;
   'goal.strip.pending': string;
@@ -1089,7 +1097,6 @@ export interface GoalStrings {
   'goal.modal.create.grantDesc': string;
   'goal.modal.create.estimate': string;
   'goal.modal.create.activate': string;
-  'goal.modal.create.queueOnly': string;
   'goal.modal.confirm.primary': string;
   'goal.modal.confirm.resumeTitle': string;
   'goal.modal.confirm.resumeBody': string;
@@ -1103,7 +1110,10 @@ export interface GoalStrings {
   'goal.modal.terminal.keep': string;
   'goal.modal.terminal.archive': string;
   'goal.modal.terminal.writeNote': string;
+  'goal.manage.title': string;
   'goal.settings.listHeading': string;
+  'goal.settings.openManage.name': string;
+  'goal.settings.openManage.desc': string;
   'goal.settings.empty': string;
   'goal.settings.staleHeading': string;
   'goal.settings.staleTag': string;

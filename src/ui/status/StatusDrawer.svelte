@@ -18,6 +18,7 @@
 		onCompact,
 		onFeedback,
 		onMemory,
+		onGoal,
 		onMcp,
 		onSkill,
 		onSponsor,
@@ -31,6 +32,8 @@
 		onFeedback?: () => void;
 		/** 记忆管理入口(可选) */
 		onMemory?: () => void;
+		/** 目标管理入口(可选,S-GOAL v1.7) */
+		onGoal?: () => void;
 		/** MCP 管理入口(可选) */
 		onMcp?: () => void;
 		/** 技能管理入口(可选,S-SKILL-UX) */
@@ -151,9 +154,25 @@
 		<div class="ratel-drawer-row ratel-drawer-row-end">
 			<button class="ratel-drawer-micro-btn" type="button" onclick={onCompact}>{$t('status.drawer.compactButton')}</button>
 		</div>
-		{#if onFeedback || onMemory || onMcp || onSkill || onSponsor}
-			<!-- 左功能(记忆/MCP) · 右反馈类(反馈/赞助);无 aria-label,避免 Obsidian「相关操作」提示 -->
+		{#if onFeedback || onMemory || onGoal || onMcp || onSkill || onSponsor}
+			<!-- 左功能(目标/记忆/MCP) · 右反馈类(反馈/赞助);无 aria-label,避免 Obsidian「相关操作」提示 -->
 			<nav class="ratel-drawer-actions">
+				{#if onGoal}
+					<button type="button" class="ratel-drawer-action" onclick={onGoal}>
+						<svg class="ratel-drawer-action-ico" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
+							<circle
+								cx="12"
+								cy="12"
+								r="7.25"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.75"
+							/>
+							<circle cx="12" cy="12" r="2.4" fill="currentColor" />
+						</svg>
+						<span>{$t('status.drawer.goal')}</span>
+					</button>
+				{/if}
 				{#if onMemory}
 					<button type="button" class="ratel-drawer-action" onclick={onMemory}>
 						<svg class="ratel-drawer-action-ico" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">

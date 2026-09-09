@@ -17,8 +17,8 @@ export interface LLMClient {
 	 */
 	chat(req: ChatRequest): AsyncIterable<ChatDelta>;
 	/**
-	 * 当前端点是否支持图片输入(S-VISION)。
-	 * agent-loop 发送前探测:含图 && 不支持 → 直接报错,不静默丢图。
+	 * 发图协议选择(S-VISION):true 走 Ollama `images[]`,false 走 OpenAI `image_url`。
+	 * 不再作为发送闸门 — 有图就发给模型,接口拒图再映射为 VISION_UNSUPPORTED。
 	 */
 	supportsImages: boolean;
 	/**

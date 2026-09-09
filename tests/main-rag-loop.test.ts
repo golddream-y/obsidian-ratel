@@ -19,6 +19,10 @@ vi.mock('obsidian', () => ({
 		addRibbonIcon = vi.fn();
 		addCommand = vi.fn();
 		addSettingTab = vi.fn();
+		addStatusBarItem = vi.fn().mockReturnValue({
+			hide: vi.fn(),
+			onClickEvent: vi.fn(),
+		});
 	},
 	PluginSettingTab: class {},
 	SettingPage: class {},

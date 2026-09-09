@@ -112,7 +112,13 @@ export type WorkerResponse =
  */
 export interface UserChatRequest {
 	sessionId: string;
+	/** 写入 transcript / UI 的用户原文 */
 	message: string;
+	/**
+	 * 仅本轮出站给模型的替换正文(斜杠 `/goal` 的确认引导)。
+	 * 不入库;缺省时模型看到的就是 `message`。
+	 */
+	modelMessage?: string;
 	/** 图片附件(S-VISION)— ChatView 从 pendingAttachments$ 取,随消息进 agent-loop */
 	attachments?: AttachmentRef[];
 }

@@ -55,7 +55,7 @@ describe('createGoalGrantCheck', () => {
 	let pluginDir: string;
 
 	beforeEach(async () => {
-		setConfigDir('.obsidian');
+		setConfigDir('config');
 		const made = makeStore();
 		store = made.store;
 		pluginDir = made.dir;
@@ -108,6 +108,22 @@ describe('createGoalGrantCheck', () => {
 		const check = createGoalGrantCheck({ goalStore: store, currentSessionId: SESSION });
 		const tc: ToolCall = { id: '6', name: 'write_note', args: { path: 'other/a.md', content: 'x' } };
 		expect(check(tc)).toBe(false);
+	});
+
+	it('grant 矩阵 - 满轮后命中 glob 抛预算耗尽', async () => {
+		const goals = await store.list();
+		await store.update(goals[0]!.id, { roundsDone: 10, maxRounds: 10 });
+		const check = createGoalGrantCheck({ goalStore: store, currentSessionId: SESSION });
+		const tc: ToolCall = { id: '7', name: 'write_note', args: { path: 'projects/a.md', content: 'x' } };
+		expect(() => check(tc)).toThrow(/加轮|预算/);
+	});
+
+	it('grant 矩阵 - 加轮后命中 glob 再放行', async () => {
+		const goals = await store.list();
+		await store.update(goals[0]!.id, { roundsDone: 10, maxRounds: 15 });
+		const check = createGoalGrantCheck({ goalStore: store, currentSessionId: SESSION });
+		const tc: ToolCall = { id: '9', name: 'write_note', args: { path: 'projects/a.md', content: 'x' } };
+		expect(check(tc)).toBe(true);
 	});
 });
 

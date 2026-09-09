@@ -2,9 +2,10 @@
 	@file src/ui/chat/message-stream/TextSegment.svelte
 	@description 文本段渲染 — 助手单块 MarkdownView(stable/tail 由 projector 拆分),用户消息纯文本
 	@module ui/chat/message-stream/TextSegment
-	@depends ../components/MarkdownView.svelte
+	@depends ../components/MarkdownView.svelte, ../input/slash-commands
 -->
 <script lang="ts">
+	import { splitLeadingSlashCommand } from '../input/slash-commands';
 	import MarkdownView from '../../components/MarkdownView.svelte';
 
 	let {
@@ -27,7 +28,13 @@
 </script>
 
 {#if isUser}
-	<div class="ratel-text-segment ratel-text-user">{text}</div>
+	<div class="ratel-text-segment ratel-text-user">
+		{#each splitLeadingSlashCommand(text) as span}
+			{#if span.kind === 'command'}
+				<span class="ratel-slash-token">{span.text}</span>
+			{:else}{span.text}{/if}
+		{/each}
+	</div>
 {:else}
 	<div class="ratel-text-segment ratel-text-assistant">
 		<MarkdownView
@@ -51,6 +58,12 @@
 		white-space: pre-wrap;
 		word-break: break-word;
 		color: var(--text-normal);
+	}
+
+	.ratel-slash-token {
+		color: var(--text-accent, var(--interactive-accent));
+		font-family: var(--font-monospace);
+		font-weight: 600;
 	}
 
 	.ratel-text-assistant {

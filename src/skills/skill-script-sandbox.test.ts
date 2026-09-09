@@ -174,7 +174,7 @@ describe('SkillScriptSandbox 心跳分类超时状态机(ADR-017 v1.1)', () => {
 		});
 		expect(out1.status).toBe('stillRunning');
 		// 停跳窗口过半后续等:重置后的 window 在 +1000ms,巡检杀点在 lastBeat+1000ms(更早)
-		await new Promise((r) => setTimeout(r, 500));
+		await new Promise((r) => window.setTimeout(r, 500));
 		const start = Date.now();
 		const out2 = await sandbox.continueRun();
 		expect(out2).toEqual({ status: 'timeout', kind: 'stalled', hadProgress: true });
@@ -279,7 +279,7 @@ describe('SkillScriptSandbox 浏览器 Worker 适配(Obsidian 渲染进程路径
 		const sandbox = new SkillScriptSandbox('code', () => wrapBrowserWorker(fake as unknown as Worker));
 		const pending = sandbox.run({ code: 'x', args: [], allowedDirs: [], timeoutMs: 5_000 });
 		// 让 run 的微任务链先跑:postMessage({type:'run'}) 已发出
-		await new Promise((r) => setTimeout(r, 0));
+		await new Promise((r) => window.setTimeout(r, 0));
 		expect(fake.posted[0]).toMatchObject({ type: 'run', code: 'x' });
 		fake.emit('message', { type: 'done', result: { ok: true, result: '"ok"' } });
 		expect(await pending).toEqual({ status: 'ok', result: '"ok"' });
@@ -292,7 +292,7 @@ describe('SkillScriptSandbox 浏览器 Worker 适配(Obsidian 渲染进程路径
 		const sandbox = new SkillScriptSandbox('code', () => wrapBrowserWorker(fake as unknown as Worker));
 		// 关键路径:窗口 300ms,发完心跳即到点 → stillRunning(不真等 5s)
 		const pending = sandbox.run({ code: 'x', args: [], allowedDirs: [], timeoutMs: 300 });
-		await new Promise((r) => setTimeout(r, 0));
+		await new Promise((r) => window.setTimeout(r, 0));
 		fake.emit('message', { type: 'progress', message: '已处理 3/45' });
 		// 窗口到点(有心跳)→ stillRunning,worker 不 terminate
 		fake.emit('message', { type: 'progress', message: '已处理 4/45' });

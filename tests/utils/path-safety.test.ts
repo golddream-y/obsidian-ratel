@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { validateVaultPath, setConfigDir } from '../../src/utils/path-safety';
+import { validateVaultPath, setConfigDir, isIndexableMarkdownPath } from '../../src/utils/path-safety';
 
 describe('validateVaultPath', () => {
 	// 关键路径:模拟生产环境,configDirName 必须设置,否则 configDir 检查失效
@@ -35,5 +35,18 @@ describe('validateVaultPath', () => {
 
 	it('.trash 目录 - 抛错', () => {
 		expect(() => validateVaultPath('.trash/old.md')).toThrow('不允许访问 .trash');
+	});
+});
+
+describe('isIndexableMarkdownPath', () => {
+	it('isIndexableMarkdownPath - md 大小写 - 可索引', () => {
+		expect(isIndexableMarkdownPath('notes/a.md')).toBe(true);
+		expect(isIndexableMarkdownPath('Notes/A.MD')).toBe(true);
+	});
+
+	it('isIndexableMarkdownPath - 图片与无扩展名 - 不索引', () => {
+		expect(isIndexableMarkdownPath('shot.png')).toBe(false);
+		expect(isIndexableMarkdownPath('folder/photo.jpg')).toBe(false);
+		expect(isIndexableMarkdownPath('readme')).toBe(false);
 	});
 });

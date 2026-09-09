@@ -82,7 +82,8 @@ export interface GoalChrome {
 export function goalChromeFromStrip(kind: GoalStripKind): GoalChrome {
 	switch (kind) {
 		case 'running':
-			return { beam: true, orb: true, quiet: false };
+			// 球只留在消息流「撰写中」;Strip 用回合/步文案 + 静点,避免两个同款 orb
+			return { beam: true, orb: false, quiet: true };
 		case 'active-here':
 		case 'active-elsewhere':
 			return { beam: true, orb: false, quiet: true };

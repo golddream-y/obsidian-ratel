@@ -20,7 +20,8 @@
 | ID | 文件 | 状态 | 创建日期 | 备注 |
 |---|---|---|---|---|
 | S-ECOSYSTEM | [2026-08-20-ecosystem-management-design.md](specs/2026-08-20-ecosystem-management-design.md) | Active | 2026-08-20 | 插件生态管理(PRD 支柱 C):商店探索/安装/配置/更新/回滚;EcosystemChange 变更日志为核心;需 ADR-018(网络出站扩展);plan 待写 |
-| S-GOAL | [2026-08-22-agent-goal-mode.md](specs/2026-08-22-agent-goal-mode.md) | Active | 2026-08-22 | Agent 目标模式;取代 S-TASK;spec **v1.5** + P-GOAL-1 In Progress(跨会话常显 Strip;Beam/Orb 克制动效;归档人点头;内核非 Skill) |
+| S-GOAL | [2026-08-22-agent-goal-mode.md](specs/2026-08-22-agent-goal-mode.md) | Active | 2026-08-22 | 内核已随 0.7.0 发版;架构正文 [architecture/agent/goal-mode.md](../architecture/agent/goal-mode.md);spec 待归档 |
+| S-LLM-RETRY | [2026-09-09-llm-chat-retry.md](specs/2026-09-09-llm-chat-retry.md) | Active | 2026-09-09 | 对话模型 `LLMClient.chat` 网络/429/5xx 退避重试;MCP curl 不在范围 |
 
 
 ---
@@ -29,8 +30,9 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
-| P-GOAL-1 | [2026-08-22-agent-goal-mode.md](plans/2026-08-22-agent-goal-mode.md) | In Progress | S-GOAL | 8 Task;分支 feat/p-goal-1;内核 v1.4 |
-| P-GOAL-CHROME | [2026-09-07-goal-chrome-beam.md](plans/2026-09-07-goal-chrome-beam.md) | In Progress | S-GOAL | 1 Task;v1.5 Strip Beam/Orb;同分支 feat/p-goal-1 |
+| P-GOAL-1 | [2026-08-22-agent-goal-mode.md](plans/2026-08-22-agent-goal-mode.md) | Completed | S-GOAL | 8 Task;随 0.7.0 发版;待归档 |
+| P-GOAL-CHROME | [2026-09-07-goal-chrome-beam.md](plans/2026-09-07-goal-chrome-beam.md) | Completed | S-GOAL | 1 Task;feat/p-goal-1 `f592ed1`;随 0.7.0 发版 |
+| P-GOAL-CONFIRM | [2026-09-07-goal-create-confirm.md](plans/2026-09-07-goal-create-confirm.md) | Completed | S-GOAL | 3 Task;创建改对话确认;随 0.7.0 发版 |
 
 ---
 
@@ -49,7 +51,7 @@
 
 ## Future execution queue(按顺序)
 
-1. **S-GOAL** — P-GOAL-1 内核 In Progress;P-GOAL-CHROME(v1.5 动效)In Progress
+1. **S-LLM-RETRY** — 对话模型 chat 网络重试;plan 待写
 2. 候选(无 spec,重启时新开):update_frontmatter / Write Gate / append_to_daily(S-EVOLUTION 写侧,见 archive/S-EVOLUTION/)  
 3. S-ECOSYSTEM(差异化主打,动工前先确认商店审核口径 + 立 ADR-018)
 4. 候选(无 spec):skill-script-sandbox 心跳用例 fake-timers 化 — 存量时序 flake(300ms 真定时器赛跑,P-VISION-1 审查期间实证 base/HEAD 均间歇失败)

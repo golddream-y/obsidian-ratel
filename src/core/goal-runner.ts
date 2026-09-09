@@ -8,7 +8,7 @@
 import type { AgentEvent } from '../types';
 import type { VaultPort } from '../ports/vault';
 import type { AgentGoal, GoalStore } from './goal-store';
-import { evaluateNoProgress, checkBudgets } from './goal-guard';
+import { evaluateNoProgress, checkBudgets, isGoalBudgetExhausted } from './goal-guard';
 import { GOAL_GRANTABLE_TOOLS } from './goal-grant';
 import { globToRegex } from '../utils/glob-to-regex';
 import { tNow } from '../i18n';
@@ -88,6 +88,16 @@ export class GoalRunner {
 
 		if (input.aborted) {
 			return { roundCounted: false, completed: false, blocked: false };
+		}
+
+		// 关键路径:满轮后只记账 usage,不再计轮、不烧守卫、不改 status
+		if (isGoalBudgetExhausted(goal)) {
+			return {
+				roundCounted: false,
+				completed: false,
+				blocked: false,
+				budgetAction: 'askRounds',
+			};
 		}
 
 		const shouldCountRound = input.goalRoundFlag || stats.grantWrites > 0;
@@ -223,6 +233,7 @@ export function collectRoundStats(events: AgentEvent[]): RoundCollectedStats {
 
 /**
  * 拼装 goal 复述锚定文本 — ephemeral 注入用(spec 4.5),≤2048 字节。
+ * 满轮时追加预算耗尽行,不含完成暗示。
  *
  * @param goal - 当前绑定 goal
  */
@@ -232,6 +243,9 @@ export function composeGoalAnchor(goal: AgentGoal): string {
 		tNow('goal.anchor.criteria', { text: goal.completionCriteria.text }),
 		tNow('goal.anchor.progress', { text: goal.progressNote || '—' }),
 	];
+	if (isGoalBudgetExhausted(goal)) {
+		lines.push(tNow('goal.anchor.budgetExhausted'));
+	}
 	let text = lines.join('\n');
 	while (Buffer.byteLength(text, 'utf8') > ANCHOR_MAX_BYTES) {
 		text = text.slice(0, Math.max(0, text.length - 32));
@@ -244,6 +258,32 @@ export function composeGoalAnchor(goal: AgentGoal): string {
  */
 export function composeContinueMessage(): string {
 	return tNow('goal.continue.message');
+}
+
+/**
+ * 已有未完成目标时斜杠立新目标 — 交给模型当面问用户,不弹拒绝提示、不排队。
+ *
+ * @param currentObjective - 进行中的目标陈述
+ * @param nextObjective - 用户新写的目标陈述
+ */
+export function composeGoalConflictSteer(currentObjective: string, nextObjective: string): string {
+	return tNow('goal.slash.conflictSteer', {
+		current: currentObjective.trim(),
+		next: nextObjective.trim(),
+	});
+}
+
+/**
+ * 斜杠立目标且尚无未完成目标 — 发给模型复述确认,本回合禁止 create。
+ *
+ * @param objective - 用户写下的目标陈述
+ * @param maxRounds - 当前设置 goalMaxRounds
+ */
+export function composeGoalCreateSteer(objective: string, maxRounds: number): string {
+	return tNow('goal.slash.createSteer', {
+		objective: objective.trim(),
+		rounds: String(maxRounds),
+	});
 }
 
 /**

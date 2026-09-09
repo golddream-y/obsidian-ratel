@@ -2,19 +2,19 @@
 
 > **状态:** Active（产品方向已定；下文「要建成什么」未改。落地进度随发版对照，不等于已经验收 §19）
 >
-> **对照发版:** 0.6.1（2026-09-05）
+> **对照发版:** 0.7.0（2026-09-09）
 >
 > **日期:** 2026-08-20（修订:纳入生态管理支柱,原 2026-08-15 初稿聚焦知识管理主线；2026-09-05 把背景从 0.5.0 叙事改成 0.6.1 对照，并补 §1.1）
 >
 > **类型:** 产品总纲 / PRD
 >
-> **关联:** [S-EVOLUTION](superpowers/archive/S-EVOLUTION/2026-07-15-evolution-graph-agent.md)（归档，读侧已发、写侧未做）、[S-GRAPH-EXPAND](superpowers/archive/S-GRAPH-EXPAND/2026-08-03-graph-expand-design.md)（Abandoned）、[S-MCP-HOST](superpowers/archive/S-MCP-HOST/2026-08-03-mcp-host-design.md)（已发）、[S-GOAL](superpowers/specs/2026-08-22-agent-goal-mode.md)（Active，支柱 A 前置，未实施）、[S-ECOSYSTEM](superpowers/specs/2026-08-20-ecosystem-management-design.md)（Active，支柱 C，plan 未写）、[ADR-013](adr/2026-08-03-graph-retrieval-minimize-human-curation.md)、[ADR-014](adr/2026-08-03-mcp-host-platform.md)、[ADR-015](adr/2026-08-03-capability-pool.md)
+> **关联:** [S-EVOLUTION](superpowers/archive/S-EVOLUTION/2026-07-15-evolution-graph-agent.md)（归档，读侧已发、写侧未做）、[S-GRAPH-EXPAND](superpowers/archive/S-GRAPH-EXPAND/2026-08-03-graph-expand-design.md)（Abandoned）、[S-MCP-HOST](superpowers/archive/S-MCP-HOST/2026-08-03-mcp-host-design.md)（已发）、[S-GOAL](superpowers/specs/2026-08-22-agent-goal-mode.md)（Active，已随 0.7.0 发内核）、[S-ECOSYSTEM](superpowers/specs/2026-08-20-ecosystem-management-design.md)（Active，支柱 C，plan 未写）、[ADR-013](adr/2026-08-03-graph-retrieval-minimize-human-curation.md)、[ADR-014](adr/2026-08-03-mcp-host-platform.md)、[ADR-015](adr/2026-08-03-capability-pool.md)
 
 ## 1. 背景
 
 Ratel **0.6.1** 已越过“和 Vault 聊天”的基础门槛：融合检索与图切片、可点击引用、多步工具、分层记忆、Skill（含沙箱脚本）、MCP、Subagent、模型可替换、对话式配置、权限与钥匙串、本地嵌入；对话可贴图给视觉模型，聊天窗有可选捣蛋鬼。它仍以功能清单对外叙事：图谱、检索、扩展、模型与隐私并列，用户难以快速理解为什么值得长期使用。
 
-**尚未形成 PRD 承诺的产品人格：** 支柱 A 的 Heartbeat / 洞察收件箱 / 本地 Notice 闭环未做；支柱 B 的知识熵治理与跨笔记挖掘未产品化；支柱 C 的插件生态管理未做。Goal 模式（跨会话目标）已有 spec，未实施。
+**尚未形成 PRD 承诺的产品人格：** 支柱 A 的 Heartbeat / 洞察收件箱 / 本地 Notice 闭环未做；支柱 B 的知识熵治理与跨笔记挖掘未产品化；支柱 C 的插件生态管理未做。Goal 模式（跨会话目标）已随 0.7.0 发内核。
 
 当前市场中，语义找回、Vault 问答、Agent 工具、图谱感知、本地模型、Skill 与 MCP 已分别被多个 Obsidian AI 产品覆盖。继续以“功能更多”竞争，会进入同质化与功能军备竞赛。Ratel 需要把已有能力组织成一个更清楚的产品人格。
 
@@ -34,23 +34,23 @@ Ratel **0.6.1** 已越过“和 Vault 聊天”的基础门槛：融合检索与
 - 插件生态的探索、安装与配置是 Obsidian 用户的普遍痛点，适合 Agent 代劳；但环境变更属敏感操作，必须以路径白名单物理校验、事前备份与可回滚为前提；
 - 第一阶段先在 Obsidian 内完成 Heartbeat、洞察收件箱与系统通知闭环；外部消息通道后置评估。
 
-### 1.1 相对 0.6.1 的落地对照
+### 1.1 相对 0.7.0 的落地对照
 
 本表只回答「发版里有没有」，不改上面的产品判断。§11 需求 ID 仍是目标口径。
 
-| 范围 | 0.6.1 | 说明 |
+| 范围 | 0.7.0 | 说明 |
 |---|---|---|
 | 开放底座 | 已落地 | 模型自由、Skill、MCP、Subagent；CFG-01 / CFG-02 |
 | 信任护栏（对话路径） | 大部已落地 | 黑名单、工具权限、密钥不进仓库、审计可本地看；Write Gate / 洞察写入闭环未做 |
 | 支柱 B：找回与引用 | 已落地 | KM-01 / KM-02；检索内 1 跳扩邻；0.6.1 起同一轮不再因上下文瘦身反复读已打开的笔记 |
 | 支柱 B：熵治理、挖掘 | 未做 | KM-03 / KM-04 |
 | 支柱 A：Heartbeat、收件箱、Notice | 未做 | PI-01～06、NT-01～04 |
-| 支柱 A 前置：Goal 模式 | 设计完成 | [S-GOAL](superpowers/specs/2026-08-22-agent-goal-mode.md) v1.3 + [P-GOAL-1](superpowers/plans/2026-08-22-agent-goal-mode.md) Pending |
+| 支柱 A 前置：Goal 模式 | 已落地 | `/goal` 随 0.7.0；[S-GOAL](superpowers/specs/2026-08-22-agent-goal-mode.md) |
 | 支柱 C：生态管理 | 未做 | EC-01～09；[S-ECOSYSTEM](superpowers/specs/2026-08-20-ecosystem-management-design.md) 待 plan 与 ADR-018 |
 | 写侧三件套 | 未做 | `update_frontmatter` / Write Gate / `append_to_daily`（S-EVOLUTION 写侧，独立立项） |
 | README 按支柱改叙事 | 未做 | §15 仍是建议，不是现状 |
 
-实施顺序以 [STATUS.md](superpowers/STATUS.md) 队列为准（当前第一项 S-GOAL），不在本总纲里再排一期。
+实施顺序以 [STATUS.md](superpowers/STATUS.md) 队列为准（当前第一项 S-LLM-RETRY），不在本总纲里再排一期。
 
 ## 2. 产品定位
 

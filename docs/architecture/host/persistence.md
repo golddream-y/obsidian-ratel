@@ -56,6 +56,10 @@
 ├── styles.css                 ← 样式(可选)
 ├── data.json                  ← 设置 + 会话 + 笔记元数据 + Hook 日志
 ├── .gitignore                 ← 自动生成(排除索引/缓存)
+├── goals/                     ← Goal 模式 JSON(不进 data.json)
+│   ├── <id>.json              ← 未归档目标
+│   ├── archive/               ← 用户确认后移入
+│   └── corrupt/               ← 解析失败隔离
 └── index/                     ← vectra 向量索引
     ├── index.json             ← 文档元数据
     └── items/                 ← 向量 + 文本
@@ -63,7 +67,7 @@
         └── ...
 ```
 
-**关键**:`data.json` 内部由 `PersistenceJson` 管理三个仓库:`sessions` / `notes` / `hookLog`,共存于同一 JSON 文件。会话不单独存文件。
+**关键**:`data.json` 内部由 `PersistenceJson` 管理三个仓库:`sessions` / `notes` / `hookLog`,共存于同一 JSON 文件。会话不单独存文件。Goal 记录走独立目录,见 [agent/goal-mode](../agent/goal-mode.md)。
 
 **模型缓存**(不在插件目录):
 

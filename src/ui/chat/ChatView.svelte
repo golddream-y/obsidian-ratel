@@ -63,6 +63,7 @@
 		extractMentions,
 		formatMentionToken,
 		isSafeVaultMentionPath,
+		isPastedAbsoluteFsPath,
 		parseActiveMentionQuery,
 	} from './input/mention-parser';
 	import { suggestMentions } from './input/mention-suggest';
@@ -82,9 +83,11 @@
 	import { devLogger } from '../../logging/dev-logger';
 	import { formatToolDisplayName } from './format-tool-display';
 	import { composeContinueMessage, composeGoalConflictSteer, composeGoalCreateSteer } from '../../core/goal-runner';
+	import { isGoalBudgetExhausted } from '../../core/goal-guard';
 	import type { AgentGoal } from '../../core/goal-store';
-	import { pickContinueChip, truncateObjective } from '../goal/pick-continue-chip';
-	import { pickGoalStrip, goalChromeFromStrip } from '../goal/pick-goal-strip';
+import { pickContinueChip, shouldShowContinueChip, truncateObjective } from '../goal/pick-continue-chip';
+import { pickGoalStrip, goalChromeFromStrip } from '../goal/pick-goal-strip';
+import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 	import { estimateMessagesTokens, estimateTokens } from '../tokens/token-estimator';
 	import { getEffectiveChatModelMaxTokens } from '../../utils/context-window';
 	import { applyRatelAppearance } from '../appearance/apply-ratel-appearance';
@@ -770,7 +773,7 @@
 	const attachmentStore = plugin.userStatus.pendingAttachments$;
 
 	$effect(() => {
-		void plugin.goalRevision;
+		void $goalRevisionStore;
 		void sessionId;
 		void plugin.goalStore.list().then((g) => {
 			goalsSnapshot = g;
@@ -778,7 +781,7 @@
 	});
 
 	const sessionGoal = $derived.by(() => {
-		void plugin.goalRevision;
+		void $goalRevisionStore;
 		if (!sessionId) return null;
 		const fromSnap = goalsSnapshot.find(
 			(g) =>
@@ -788,10 +791,16 @@
 		return fromSnap ?? plugin.goalStore.getSessionGoal(sessionId);
 	});
 
+	const goalsForUi = $derived(
+		sessionGoal && !goalsSnapshot.some((g) => g.id === sessionGoal.id)
+			? [...goalsSnapshot, sessionGoal]
+			: goalsSnapshot,
+	);
+
 	const continueChip = $derived(
 		pickContinueChip({
 			sessionId: sessionId ?? '',
-			goals: goalsSnapshot,
+			goals: goalsForUi,
 			inputNonempty: input.trim().length > 0,
 			isRunning,
 		}),
@@ -800,7 +809,7 @@
 	const goalStrip = $derived(
 		pickGoalStrip({
 			sessionId: sessionId ?? '',
-			goals: goalsSnapshot,
+			goals: goalsForUi,
 			isRunning,
 		}),
 	);
@@ -871,6 +880,17 @@
 				};
 			}
 			if (gs.kind === 'running') {
+				if (isGoalBudgetExhausted(gs.goal)) {
+					return {
+						type: 'goal-running' as const,
+						text: tNow('goal.strip.budgetExhausted', {
+							objective: obj,
+							round: gs.goal.roundsDone,
+							maxRounds: gs.goal.maxRounds,
+						}),
+						hard: false,
+					};
+				}
 				return {
 					type: 'goal-running' as const,
 					text: tNow('goal.strip.running', {
@@ -884,6 +904,17 @@
 				};
 			}
 			if (gs.kind === 'active-here') {
+				if (isGoalBudgetExhausted(gs.goal)) {
+					return {
+						type: 'goal-stopped' as const,
+						text: tNow('goal.strip.budgetExhausted', {
+							objective: obj,
+							round: gs.goal.roundsDone,
+							maxRounds: gs.goal.maxRounds,
+						}),
+						hard: false,
+					};
+				}
 				return {
 					type: 'goal-stopped' as const,
 					text: tNow('goal.strip.stopped', { objective: obj }),
@@ -1212,6 +1243,7 @@
 	}
 
 	// ==================== 发送消息(含 token 三层校准) ====================
+	// llmText 只出站给模型(确认引导),气泡与 session JSON 永远用 text
 	type SendMessageOpts = { text?: string; llmText?: string; goalRound?: boolean; bypassSlashGoal?: boolean };
 
 	async function sendMessage(opts?: SendMessageOpts) {
@@ -1361,10 +1393,13 @@
 			}
 			const events = plugin.ask(
 				sessionId,
-				opts?.llmText ?? text,
+				text,
 				ac.signal,
 				refs.length > 0 ? refs : undefined,
-				opts?.goalRound ? { goalRound: true } : undefined,
+				{
+					...(opts?.goalRound ? { goalRound: true } : {}),
+					...(opts?.llmText && opts.llmText !== text ? { modelMessage: opts.llmText } : {}),
+				},
 			);
 
 			for await (const event of events) {
@@ -1544,7 +1579,14 @@
 				await plugin.goalStore.activate(chip.goalId, sessionId);
 				plugin.bumpGoalUi();
 			}
-			await sendMessage({ text: composeContinueMessage(), goalRound: true });
+			const bound = plugin.goalStore.getBoundActive(sessionId);
+			const exhausted = bound ? isGoalBudgetExhausted(bound) : false;
+			await sendMessage({
+				text: exhausted
+					? tNow('goal.continue.budgetExhausted')
+					: composeContinueMessage(),
+				goalRound: !exhausted,
+			});
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
 			new Notice(message, 5000);
@@ -1603,17 +1645,13 @@
 	}
 
 	/**
-	 * 整段粘贴绝对路径时拦截 — 避免 @Users/... 假相对路径进对话。
+	 * 整段粘贴本机绝对路径时拦截 — 避免 @Users/... 假相对路径进对话。
+	 * 斜杠命令(`/goal …`)以 `/` 开头但不是文件系统路径,必须放行。
 	 */
 	function handlePaste(e: ClipboardEvent) {
 		const raw = (e.clipboardData?.getData('text') ?? '').trim();
 		if (!raw || raw.includes('\n')) return;
-		const candidate = raw.replace(/^@/, '');
-		const looksAbsolute =
-			candidate.startsWith('/') ||
-			/^[A-Za-z]:[/\\]/.test(candidate) ||
-			/^(Users|home|private|var|tmp)\//i.test(candidate);
-		if (looksAbsolute && !isSafeVaultMentionPath(candidate)) {
+		if (isPastedAbsoluteFsPath(raw) && !isSafeVaultMentionPath(raw.replace(/^@/, ''))) {
 			e.preventDefault();
 			new Notice(tNow('chat.mention.absoluteRejected'), 4000);
 		}
@@ -1877,7 +1915,7 @@
 			<!-- @mention chip 条 -->
 			<MentionStrip paths={mentionPaths} onRemove={removeMention} />
 
-			{#if continueChip.kind !== 'hidden'}
+			{#if shouldShowContinueChip(continueChip, goalStrip.kind)}
 				{@const chipActive =
 					continueChip.kind === 'continue' || continueChip.kind === 'takeover'}
 				<div class="ratel-goal-chip-wrap">

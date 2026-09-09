@@ -11,6 +11,16 @@ import path from 'path';
 /** Goal 生命周期状态 */
 export type GoalStatus = 'pending' | 'active' | 'paused' | 'blocked' | 'completed' | 'cancelled';
 
+/** 未完成态 — v1.6 全局至多一条;pending 仅为落盘瞬间或脏数据 */
+export const INCOMPLETE_GOAL_STATUSES = ['pending', 'active', 'paused', 'blocked'] as const;
+
+const INCOMPLETE_PRIORITY: Record<(typeof INCOMPLETE_GOAL_STATUSES)[number], number> = {
+	active: 0,
+	blocked: 1,
+	paused: 2,
+	pending: 3,
+};
+
 /** v0 代码谓词 — 仅 frontmatter-all */
 export interface GoalPredicate {
 	kind: 'frontmatter-all';
@@ -133,6 +143,24 @@ export class GoalStore {
 	}
 
 	/**
+	 * 当前未完成目标 — active 优先,其次 blocked / paused / 遗留 pending。
+	 *
+	 * @returns 至多一条;队列为空则 null
+	 */
+	async findIncomplete(): Promise<AgentGoal | null> {
+		const incomplete = (await this.list()).filter((g) =>
+			(INCOMPLETE_GOAL_STATUSES as readonly string[]).includes(g.status),
+		);
+		if (!incomplete.length) return null;
+		incomplete.sort(
+			(a, b) =>
+				INCOMPLETE_PRIORITY[a.status as (typeof INCOMPLETE_GOAL_STATUSES)[number]] -
+				INCOMPLETE_PRIORITY[b.status as (typeof INCOMPLETE_GOAL_STATUSES)[number]],
+		);
+		return incomplete[0] ?? null;
+	}
+
+	/**
 	 * 按 id 读取单个 goal(含 archive 内文件,供归档后查阅)。
 	 *
 	 * @param id - goal id
@@ -204,7 +232,7 @@ export class GoalStore {
 	}
 
 	/**
-	 * 激活 goal — 单活仲裁 + 会话绑定。
+	 * 激活 goal — 单活仲裁 + 会话绑定。已是 active 时只改绑定(新会话接管),不走状态表。
 	 *
 	 * @param id - goal id
 	 * @param sessionId - 当前会话 id
@@ -219,6 +247,18 @@ export class GoalStore {
 		}
 
 		const goal = await this.requireActiveFile(id);
+		if (goal.status === 'active') {
+			// 关键路径:接管 / 新会话续跑 — 已是 active,只改绑定,禁止走 pending→active 表
+			if (goal.activeSessionId === sessionId) return goal;
+			const rebound: AgentGoal = {
+				...goal,
+				activeSessionId: sessionId,
+				updatedAt: new Date().toISOString(),
+			};
+			await this.writeGoal(rebound);
+			return rebound;
+		}
+
 		const allowed = TRANSITIONS[goal.status];
 		if (!allowed.includes('active')) {
 			throw new Error(`非法状态迁移: ${goal.status} → active`);

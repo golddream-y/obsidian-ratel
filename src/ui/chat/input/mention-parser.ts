@@ -56,6 +56,22 @@ export function isSafeVaultMentionPath(path: string): boolean {
 }
 
 /**
+ * 整段粘贴是否像本机绝对路径(Finder / 资源管理器),而不是斜杠命令。
+ *
+ * 关键路径:`/goal 审查…` 以 `/` 开头但不是路径;不能用 startsWith('/') 一刀切。
+ *
+ * @param text - 剪贴板原文(可含前导 @)
+ */
+export function isPastedAbsoluteFsPath(text: string): boolean {
+	const candidate = text.replace(/^@/, '').trim();
+	if (!candidate) return false;
+	if (/^[A-Za-z]:[/\\]/.test(candidate)) return true;
+	if (/^(Users|home|private|var|tmp)\//i.test(candidate)) return true;
+	if (/^\/(Users|home|private|var|tmp|Volumes|opt|etc)\//i.test(candidate)) return true;
+	return false;
+}
+
+/**
  * 从 textarea 光标前文本解析正在输入的 @ 查询(无空格)。
  *
  * @param textBeforeCursor - 光标前子串

@@ -2,7 +2,7 @@
  * @file src/tools/manage-goal.ts
  * @description `manage_goal` 工具 — 单工具多 action 管理 Agent 目标(S-GOAL spec 4.10)
  * @module tools/manage-goal
- * @depends core/goal-store, core/goal-grant, i18n
+ * @depends core/goal-store, core/goal-grant, i18n, ui/goal/GoalTerminalChoiceModal
  */
 
 import type { Tool } from '../core/tool-registry';
@@ -16,6 +16,10 @@ import {
 import { validateGrantGlobs } from '../core/goal-grant';
 import { tNow } from '../i18n';
 import { isSlashGoalCreateTurn } from '../ui/chat/input/slash-commands';
+import {
+	applyGoalTerminalChoice,
+	type GoalTerminalChoiceResult,
+} from '../ui/goal/GoalTerminalChoiceModal';
 
 /** manage_goal action 清单 — 无 archive(spec v1.4) */
 export const MANAGE_GOAL_ACTIONS = [
@@ -52,15 +56,30 @@ export interface GoalCreateConfirmResult {
 	predicate?: GoalPredicate;
 }
 
-/** 动作内确认回调 — resume/cancel/complete 用;create 用 promptCreate */
+/** 动作内确认回调 — resume 用小确认;cancel/complete 用终态一框(含取消) */
 export interface ManageGoalPrompts {
 	promptCreate: (draft: GoalCreateDraft) => Promise<GoalCreateConfirmResult>;
 	promptConfirm: (opts: {
 		action: 'resume' | 'cancel' | 'complete';
 		goal: AgentGoal;
 	}) => Promise<boolean>;
-	/** 终态收口后三选一/二选一 Modal(spec 4.9) */
+	/**
+	 * 关闭目标唯一确认框 — 仅放弃:留列表 / 归档 / 取消。
+	 * 完成不走此框。返回 null 表示取消,不得 transition。缺省视为 keep(单测)。
+	 */
+	promptClose?: (
+		opts: { kind: 'completed' | 'cancelled'; goal: AgentGoal },
+	) => Promise<GoalTerminalChoiceResult | null>;
+	/** 终态已落盘后再问去留(runner 自动 complete) */
 	onTerminal?: (goal: AgentGoal, kind: 'completed' | 'cancelled') => void | Promise<void>;
+	/** 关闭后的 UI 收口(写笔记提示 / 完成 Notice),归档已由工具落盘 */
+	onClosed?: (
+		goal: AgentGoal,
+		kind: 'completed' | 'cancelled',
+		result: GoalTerminalChoiceResult,
+	) => void | Promise<void>;
+	/** 落盘变更后立刻刷侧栏条/chip — create 与本回合续跑叠在一起时不能等 ask 收尾 */
+	onChanged?: () => void;
 }
 
 /**
@@ -98,6 +117,7 @@ export function createManageGoalTool(
 						goalStore,
 						sessionId,
 						args,
+						prompts,
 						defaultMaxRounds,
 						getLastUserText,
 					);
@@ -166,6 +186,29 @@ function parseGrant(args: Record<string, unknown>): string[] | null {
 	return globs.length ? globs : null;
 }
 
+async function decideClose(
+	prompts: ManageGoalPrompts,
+	kind: 'completed' | 'cancelled',
+	goal: AgentGoal,
+): Promise<GoalTerminalChoiceResult | null> {
+	if (!prompts.promptClose) {
+		return { choice: 'keep' };
+	}
+	return prompts.promptClose({ kind, goal });
+}
+
+async function applyClose(
+	store: GoalStore,
+	prompts: ManageGoalPrompts,
+	updated: AgentGoal,
+	kind: 'completed' | 'cancelled',
+	decision: GoalTerminalChoiceResult,
+): Promise<void> {
+	await applyGoalTerminalChoice(store, updated, decision);
+	prompts.onChanged?.();
+	await prompts.onClosed?.(updated, kind, decision);
+}
+
 async function requireGoal(store: GoalStore, goalId: unknown): Promise<AgentGoal> {
 	if (typeof goalId !== 'string' || !goalId) {
 		throw new Error(tNow('goal.error.goalNotFound', { id: String(goalId) }));
@@ -181,6 +224,7 @@ async function handleCreate(
 	store: GoalStore,
 	sessionId: string,
 	args: Record<string, unknown>,
+	prompts: ManageGoalPrompts,
 	defaultMaxRounds: () => number,
 	getLastUserText?: () => string,
 ): Promise<string> {
@@ -207,7 +251,7 @@ async function handleCreate(
 		return tNow('goal.tool.createNeedConfirm');
 	}
 
-	return commitGoalCreate(
+	const msg = await commitGoalCreate(
 		store,
 		sessionId,
 		{
@@ -221,6 +265,10 @@ async function handleCreate(
 		},
 		{ objective, criteriaText, maxRounds, grant, predicate },
 	);
+	if (await store.findIncomplete()) {
+		prompts.onChanged?.();
+	}
+	return msg;
 }
 
 /** 斜杠 `/goal` 与 manage_goal create 共用的落盘 — Modal 确认后才写 store */
@@ -288,12 +336,18 @@ export async function commitGoalCreate(
 	return tNow('goal.tool.createdPending', { objective: finalObjective });
 }
 
+/**
+ * 更新进度游标、用量,或提高本条 maxRounds(加轮)。
+ *
+ * @param store - Goal 存储
+ * @param args - 须含 goalId;可选 progressNote / usage / maxRounds
+ */
 async function handleUpdate(store: GoalStore, args: Record<string, unknown>): Promise<string> {
 	const goal = await requireGoal(store, args.goalId);
 	if (goal.status !== 'active') {
 		throw new Error(tNow('goal.error.notActive', { id: goal.id }));
 	}
-	const patch: { progressNote?: string; usage?: AgentGoal['usage'] } = {};
+	const patch: { progressNote?: string; usage?: AgentGoal['usage']; maxRounds?: number } = {};
 	if (typeof args.progressNote === 'string') {
 		patch.progressNote = args.progressNote;
 	}
@@ -304,7 +358,13 @@ async function handleUpdate(store: GoalStore, args: Record<string, unknown>): Pr
 			patch.usage = { inputTokens: u.inputTokens, outputTokens: u.outputTokens };
 		}
 	}
-	if (!patch.progressNote && !patch.usage) {
+	if (typeof args.maxRounds === 'number') {
+		if (!Number.isInteger(args.maxRounds) || args.maxRounds <= goal.maxRounds) {
+			throw new Error(tNow('goal.error.maxRoundsNotRaised', { current: String(goal.maxRounds) }));
+		}
+		patch.maxRounds = args.maxRounds;
+	}
+	if (!patch.progressNote && !patch.usage && patch.maxRounds === undefined) {
 		throw new Error(tNow('goal.error.nothingToUpdate'));
 	}
 	await store.update(goal.id, patch);
@@ -371,12 +431,12 @@ async function handleCancel(
 	if (!goal) {
 		throw new Error(tNow('goal.error.goalNotFound', { id: args.goalId }));
 	}
-	const ok = await prompts.promptConfirm({ action: 'cancel', goal });
-	if (!ok) {
+	const decision = await decideClose(prompts, 'cancelled', goal);
+	if (decision === null) {
 		return tNow('goal.tool.actionCancelled');
 	}
 	const updated = await store.transition(goal.id, 'cancelled');
-	await prompts.onTerminal?.(updated, 'cancelled');
+	await applyClose(store, prompts, updated, 'cancelled', decision);
 	return tNow('goal.tool.cancelled', { objective: goal.objective });
 }
 
@@ -389,11 +449,11 @@ async function handleComplete(
 	if (goal.completionCriteria.predicate) {
 		throw new Error(tNow('goal.error.predicateCompleteRejected'));
 	}
-	const ok = await prompts.promptConfirm({ action: 'complete', goal });
-	if (!ok) {
-		return tNow('goal.tool.actionCancelled');
-	}
 	const updated = await store.transition(goal.id, 'completed');
-	await prompts.onTerminal?.(updated, 'completed');
+	// 完成=关掉:对话里确认后落盘,不问去留;JSON 留在列表,归档去目标管理
+	await applyClose(store, prompts, updated, 'completed', {
+		choice: 'keep',
+		showCompletedNotice: true,
+	});
 	return tNow('goal.tool.completed', { objective: goal.objective });
 }

@@ -157,10 +157,12 @@ import {
 	applyGoalTerminalChoice,
 	showGoalCompletedNotice,
 	showGoalTerminalChoiceModal,
+	type GoalTerminalChoiceResult,
 } from './ui/goal/GoalTerminalChoiceModal';
 import { waitGoalModalGap } from './ui/goal/wait-goal-modal';
 import { pickGoalStatusBarText } from './ui/goal/goal-status-bar';
 import { GoalManageModal, shouldCreateGoalManageModal } from './ui/goal/GoalManageModal';
+import { bumpGoalRevision } from './ui/goal/goal-revision';
 import type { AgentGoal } from './core/goal-store';
 
 /**
@@ -652,7 +654,11 @@ export default class RatelVaultPlugin extends Plugin {
 		const manageGoalPrompts: ManageGoalPrompts = {
 			promptCreate: async () => ({ confirmed: true }),
 			promptConfirm: ({ action, goal }) => showGoalActionConfirmModal(this.app, action, goal),
+			promptClose: ({ kind, goal }) =>
+				showGoalTerminalChoiceModal(this.app, kind, goal, { alreadyTerminal: false }),
 			onTerminal: (goal, kind) => this.handleGoalTerminal(goal, kind),
+			onClosed: (goal, kind, result) => this.finishGoalTerminalUi(goal, kind, result),
+			onChanged: () => this.bumpGoalUi(),
 		};
 		this.tools.register(
 			createManageGoalTool(
@@ -1443,7 +1449,7 @@ export default class RatelVaultPlugin extends Plugin {
 		message: string,
 		signal?: AbortSignal,
 		attachments?: AttachmentRef[],
-		opts?: { goalRound?: boolean },
+		opts?: { goalRound?: boolean; modelMessage?: string },
 	): AsyncIterable<AgentEvent> {
 		this.currentChatSessionId = sessionId;
 		this.lastAskUserText = message;
@@ -1552,7 +1558,7 @@ export default class RatelVaultPlugin extends Plugin {
 			for (let attempt = 0; attempt < 2; attempt++) {
 				let overflow = false;
 				for await (const ev of agentLoop(
-					{ sessionId, message, attachments },
+					{ sessionId, message, attachments, modelMessage: opts?.modelMessage },
 					ctx,
 					this.llm,
 					this.tools,
@@ -1769,7 +1775,7 @@ export default class RatelVaultPlugin extends Plugin {
 		if (result.completed && result.completedGoalId) {
 			const goal = await this.goalStore.get(result.completedGoalId);
 			if (goal) {
-				await this.handleGoalTerminal(goal, 'completed');
+				showGoalCompletedNotice(goal);
 			}
 		}
 
@@ -1792,6 +1798,7 @@ export default class RatelVaultPlugin extends Plugin {
 	/** 递增 revision 并刷新底栏 */
 	bumpGoalUi(): void {
 		this.goalRevision++;
+		bumpGoalRevision();
 		void this.refreshGoalStatusBar();
 	}
 
@@ -1853,11 +1860,27 @@ export default class RatelVaultPlugin extends Plugin {
 		this.bumpGoalUi();
 	}
 
-	/** 终态三选一/二选一 — spec 4.9 */
+	/** 终态去留一框 — runner 自动 complete 时目标已落盘 */
 	async handleGoalTerminal(goal: AgentGoal, kind: 'completed' | 'cancelled'): Promise<void> {
+		// 关键路径:落盘已是终态,先刷侧栏再弹去留,避免条/chip 残留
+		this.bumpGoalUi();
 		await waitGoalModalGap();
-		const result = await showGoalTerminalChoiceModal(this.app, kind, goal);
+		const result = await showGoalTerminalChoiceModal(this.app, kind, goal, {
+			alreadyTerminal: true,
+		});
+		if (!result) return;
 		await applyGoalTerminalChoice(this.goalStore, goal, result);
+		await this.finishGoalTerminalUi(goal, kind, result);
+	}
+
+	/**
+	 * 关闭/完成后的 Notice 与写笔记跟进 — 不负责弹窗与归档落盘。
+	 */
+	async finishGoalTerminalUi(
+		goal: AgentGoal,
+		kind: 'completed' | 'cancelled',
+		result: GoalTerminalChoiceResult,
+	): Promise<void> {
 		if (result.choice === 'writeNote') {
 			new Notice(tNow('goal.notice.writeNoteHint'));
 			this.pendingTerminalGoalId = goal.id;

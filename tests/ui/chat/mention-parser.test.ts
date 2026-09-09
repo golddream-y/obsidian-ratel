@@ -9,6 +9,7 @@ import {
 	extractMentions,
 	formatMentionToken,
 	isSafeVaultMentionPath,
+	isPastedAbsoluteFsPath,
 	parseActiveMentionQuery,
 } from '../../../src/ui/chat/input/mention-parser';
 
@@ -41,6 +42,38 @@ describe('isSafeVaultMentionPath', () => {
 
 	it('isSafeVaultMentionPath - 含 .. - false', () => {
 		expect(isSafeVaultMentionPath('../secret.md')).toBe(false);
+	});
+});
+
+describe('isPastedAbsoluteFsPath', () => {
+	it('斜杠命令 /goal 加中文陈述 - 不是绝对路径', () => {
+		expect(
+			isPastedAbsoluteFsPath(
+				'/goal 审查一下我这些已经写完的中篇小说的逻辑漏洞 和上下文缺失 语言表达不通顺等 用专业的小说写手严格要求',
+			),
+		).toBe(false);
+	});
+
+	it('/new 或 /goal 无空格 - 不是绝对路径', () => {
+		expect(isPastedAbsoluteFsPath('/goal')).toBe(false);
+		expect(isPastedAbsoluteFsPath('/new')).toBe(false);
+	});
+
+	it('POSIX /Users 笔记路径 - 是绝对路径', () => {
+		expect(isPastedAbsoluteFsPath('/Users/alice/Notes/a.md')).toBe(true);
+		expect(isPastedAbsoluteFsPath('@/Users/alice/Notes/a.md')).toBe(true);
+	});
+
+	it('剥掉盘符前缀的 Users/ - 是绝对路径', () => {
+		expect(isPastedAbsoluteFsPath('Users/alice/Notes/a.md')).toBe(true);
+	});
+
+	it('Windows 盘符 - 是绝对路径', () => {
+		expect(isPastedAbsoluteFsPath('C:\\Vault\\a.md')).toBe(true);
+	});
+
+	it('库内相对路径 - 不是绝对路径', () => {
+		expect(isPastedAbsoluteFsPath('玄幻中篇/妖市.md')).toBe(false);
 	});
 });
 

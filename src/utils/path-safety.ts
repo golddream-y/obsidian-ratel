@@ -78,6 +78,19 @@ export function validateVaultPath(path: string): string {
 	return normalized;
 }
 
+/**
+ * 是否纳入向量索引 — 全量扫描只扫 Markdown;增量也必须同一口径。
+ *
+ * 关键路径:库内 png/pdf 等二进制若当笔记去 chunk+embed,会长时间卡在排队/处理中。
+ *
+ * @param vaultRelativePath - vault 相对路径
+ */
+export function isIndexableMarkdownPath(vaultRelativePath: string): boolean {
+	const normalized = vaultRelativePath.replace(/\\/g, '/');
+	const base = normalized.slice(normalized.lastIndexOf('/') + 1);
+	return base.toLowerCase().endsWith('.md');
+}
+
 /** grep/glob 用:排除插件配置与回收站目录下的文件 */
 export function isExcludedVaultPath(filePath: string): boolean {
 	// 关键路径:用启动期注入的 configDirName 拦截配置目录,兼容用户自定义 configDir。

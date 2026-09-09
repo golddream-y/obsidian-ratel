@@ -1,6 +1,6 @@
 /**
  * @file src/core/agent-loop-vision.test.ts
- * @description VISION_UNSUPPORTED 探测测试 — 含图且模型不支持时轮次终止(S-VISION)
+ * @description 含图请求不再预拦截 — 发给模型,接口拒图再标 VISION_UNSUPPORTED
  * @module core/agent-loop-vision.test
  */
 import { describe, it, expect } from 'vitest';
@@ -9,11 +9,16 @@ import { ContextManager } from './context-manager';
 import type { Persistence } from '../ports/persistence';
 import type { LLMClient, ChatRequest, ChatDelta } from '../ports/llm';
 
-function makeLlm(opts: { supportsImages: boolean; chatCalls?: number[] }): LLMClient {
+function makeLlm(opts: {
+	supportsImages: boolean;
+	chatCalls?: number[];
+	throwMessage?: string;
+}): LLMClient {
 	return {
 		supportsImages: opts.supportsImages,
 		async *chat(req: ChatRequest): AsyncIterable<ChatDelta> {
 			opts.chatCalls?.push(req.messages.length);
+			if (opts.throwMessage) throw new Error(opts.throwMessage);
 			yield { text: 'ok' };
 		},
 		countTokens: (t: string) => Math.ceil(t.length / 4),
@@ -29,8 +34,8 @@ async function collect(iter: AsyncIterable<{ type: string; payload?: unknown }>)
 	return out;
 }
 
-describe('agent-loop vision 探测', () => {
-	it('含图 + 模型不支持 - yield VISION_UNSUPPORTED - 不调 LLM', async () => {
+describe('agent-loop vision', () => {
+	it('含图 + supportsImages false - 仍调 LLM - 不预拦 VISION_UNSUPPORTED', async () => {
 		const chatCalls: number[] = [];
 		const llm = makeLlm({ supportsImages: false, chatCalls });
 		const events = await collect(
@@ -42,13 +47,15 @@ describe('agent-loop vision 探测', () => {
 				emptyHooks,
 			),
 		);
-		expect(chatCalls).toEqual([]);
-		expect(events.some((e) => e.type === 'error' && (e.payload as { code: string }).code === 'VISION_UNSUPPORTED')).toBe(true);
+		expect(chatCalls.length).toBeGreaterThan(0);
+		expect(events.some((e) => e.type === 'error' && (e.payload as { code: string }).code === 'VISION_UNSUPPORTED')).toBe(false);
 	});
 
-	it('含图 + 模型支持 - 正常进 LLM - 无 VISION_UNSUPPORTED', async () => {
-		const chatCalls: number[] = [];
-		const llm = makeLlm({ supportsImages: true, chatCalls });
+	it('含图 + 接口报 image_url - yield VISION_UNSUPPORTED', async () => {
+		const llm = makeLlm({
+			supportsImages: false,
+			throwMessage: 'Invalid content: image_url is not supported',
+		});
 		const events = await collect(
 			agentLoop(
 				{ sessionId: 's', message: '看图', attachments: [{ id: 'h1', mimeType: 'image/png', base64: 'aGk=' }] },
@@ -58,8 +65,7 @@ describe('agent-loop vision 探测', () => {
 				emptyHooks,
 			),
 		);
-		expect(chatCalls.length).toBeGreaterThan(0);
-		expect(events.some((e) => e.type === 'error' && (e.payload as { code: string }).code === 'VISION_UNSUPPORTED')).toBe(false);
+		expect(events.some((e) => e.type === 'error' && (e.payload as { code: string }).code === 'VISION_UNSUPPORTED')).toBe(true);
 	});
 
 	it('无图 + 模型不支持 - 正常进 LLM', async () => {
@@ -78,7 +84,6 @@ describe('agent-loop vision 探测', () => {
 	});
 });
 
-// 与 Task 2 同款 fake Persistence + ContextManager 构造
 function makeCtx(): ContextManager {
 	const empty: Persistence = {
 		sessions: {

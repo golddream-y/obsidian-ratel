@@ -6,7 +6,7 @@
  */
 
 import type { UserChatRequest, AgentEvent } from '../types';
-import type { LLMClient, ToolCall } from '../ports/llm';
+import type { LLMClient, ToolCall, ChatMessage } from '../ports/llm';
 import type { ContextManager } from './context-manager';
 import type { ToolRegistry } from './tool-registry';
 import type { HookRegistry } from './hooks';
@@ -16,6 +16,7 @@ import type { SkillActivator } from '../skills/skill-activator';
 import { devLogger } from '../logging/dev-logger';
 import { isPromptTooLong } from './compact-project';
 import { mapSearchResults } from './search-result-mapper';
+import { isLikelyVisionApiError } from './vision-api-error';
 
 /**
  * Agent Loop 的默认最大步数上限,防止工具调用陷入死循环。
@@ -31,6 +32,28 @@ const DEFAULT_MAX_STEPS = 50;
  * 截断提示文本 — 当回复因步数上限或 max_tokens 被截断时,追加到助手消息末尾。
  */
 const TRUNCATION_NOTICE = '\n\n---\n⚠️ **回复因长度限制被截断。** 可以发送「继续」让模型接着输出。';
+
+/**
+ * 出站副本里把最后一条 user 换成引导文 — transcript 仍是用户原文。
+ *
+ * @param messages - toMessages() 投影(含 system)
+ * @param overlay - 本轮给模型的正文;空则原样返回
+ */
+export function overlayLastUserContent(
+	messages: ChatMessage[],
+	overlay: string | undefined,
+): ChatMessage[] {
+	const text = overlay?.trim();
+	if (!text) return messages;
+	for (let i = messages.length - 1; i >= 0; i--) {
+		if (messages[i]!.role === 'user') {
+			const copy = messages.slice();
+			copy[i] = { ...messages[i]!, content: text };
+			return copy;
+		}
+	}
+	return messages;
+}
 
 /**
  * Agent 主循环:驱动一次完整的"用户消息 → LLM 流式回复 → 工具调用 → LLM 续传"流程。
@@ -116,13 +139,6 @@ export async function* agentLoop(
 	}
 
 	try {
-		// 关键路径(S-VISION):发送前能力探测 — 含图 && 模型不支持 → 立即终止。
-		// 消息已入 session(用户换模型重发可见),但本轮不调 LLM,不静默丢图。
-		if (req.attachments && req.attachments.length > 0 && !llm.supportsImages) {
-			yield { type: 'error', payload: { code: 'VISION_UNSUPPORTED', message: '当前模型不支持图片输入' } };
-			return;
-		}
-
 		let loopExitedViaBreak = false;
 
 		// 单步循环:每轮产生一段 assistant 回复 + 零到多次工具调用。
@@ -149,7 +165,10 @@ export async function* agentLoop(
 				// 关键路径(S-VISION v1.3):出站前把引用解析回 base64 —— 仅内存瞬态副本,
 				// session 内消息保持 KB 级引用不被污染;store 未注入时原样直通。
 				const stream = llm.chat({
-					messages: await ctx.toMessagesResolved(attachmentStore, intent),
+					messages: overlayLastUserContent(
+						await ctx.toMessagesResolved(attachmentStore, intent),
+						req.modelMessage,
+					),
 					tools: tools.definitions(),
 					signal,
 				});
@@ -191,6 +210,16 @@ export async function* agentLoop(
 					break;
 				}
 				const message = err instanceof Error ? err.message : String(err);
+				if (
+					req.attachments &&
+					req.attachments.length > 0 &&
+					isLikelyVisionApiError(message)
+				) {
+					yield { type: 'error', payload: { code: 'VISION_UNSUPPORTED', message } };
+					ctx.addAssistantMessage(accumulatedText || `Error: ${message}`, accumulatedReasoning || undefined);
+					loopExitedViaBreak = true;
+					break;
+				}
 				// 关键路径:首轮 LLM 尚未产出工具调用时上下文过长 → 交给 ask 压缩重试,不写 Error assistant。
 				if (isPromptTooLong(err) && step === 0 && toolCalls.length === 0) {
 					yield { type: 'error', payload: { code: 'CONTEXT_OVERFLOW', message } };

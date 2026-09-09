@@ -4,7 +4,7 @@
  * @module core/goal-runner.test
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
@@ -12,6 +12,8 @@ import {
 	GoalRunner,
 	composeGoalAnchor,
 	composeContinueMessage,
+	composeGoalConflictSteer,
+	composeGoalCreateSteer,
 	evaluateFrontmatterAll,
 	collectRoundStats,
 } from './goal-runner';
@@ -82,12 +84,45 @@ describe('composeGoalAnchor', () => {
 		expect(anchor).toContain('已处理 2/5');
 		expect(Buffer.byteLength(anchor, 'utf8')).toBeLessThanOrEqual(2048);
 	});
+
+	it('composeGoalAnchor - 满轮 - 含预算耗尽提示且不含完成暗示', async () => {
+		setLang('zh');
+		const store = makeStore().store;
+		const goal = await store.create({
+			objective: '补全 frontmatter',
+			completionCriteria: { text: '全部含 status' },
+			birthSessionId: SESSION,
+			maxRounds: 10,
+		});
+		await store.update(goal.id, { roundsDone: 10 });
+		const fresh = await store.get(goal.id);
+		const anchor = composeGoalAnchor(fresh!);
+		expect(anchor).toMatch(/加轮|预算/);
+		expect(anchor).not.toMatch(/完成目标|收尾/);
+	});
 });
 
 describe('composeContinueMessage', () => {
 	it('composeContinueMessage - 返回一句短句', () => {
 		setLang('zh');
 		expect(composeContinueMessage()).toBe('继续推进当前目标');
+	});
+
+	it('composeGoalConflictSteer - 含当前与新目标且不拒绝', () => {
+		setLang('zh');
+		const text = composeGoalConflictSteer('整理旧笔记', '补全属性');
+		expect(text).toContain('整理旧笔记');
+		expect(text).toContain('补全属性');
+		expect(text).toMatch(/问用户/);
+		expect(text).not.toMatch(/暂停当前/);
+	});
+
+	it('composeGoalCreateSteer - 含陈述与回合数且禁止本回合 create', () => {
+		setLang('zh');
+		const text = composeGoalCreateSteer('审查妖市', 10);
+		expect(text).toContain('审查妖市');
+		expect(text).toContain('10');
+		expect(text).toMatch(/禁止调用 manage_goal create/);
 	});
 });
 
@@ -184,6 +219,23 @@ describe('GoalRunner.finalizeRound', () => {
 		const goal = store.getBoundActive(SESSION);
 		expect(goal?.roundsDone).toBe(0);
 		expect(goal?.usage.inputTokens).toBe(3);
+	});
+
+	it('finalizeRound - 已满轮再续跑 - 不计轮', async () => {
+		const g = await seedActive();
+		await store.update(g.id, { roundsDone: 10, maxRounds: 10 });
+		const result = await runner.finalizeRound({
+			sessionId: SESSION,
+			aborted: false,
+			goalRoundFlag: true,
+			events: [endEvent(2, 1, 2, 1)],
+		});
+		expect(result.roundCounted).toBe(false);
+		expect(result.budgetAction).toBe('askRounds');
+		const goal = store.getBoundActive(SESSION);
+		expect(goal?.roundsDone).toBe(10);
+		expect(goal?.status).toBe('active');
+		expect(goal?.usage.inputTokens).toBe(2);
 	});
 
 	it('finalizeRound - goalRoundFlag 计轮', async () => {

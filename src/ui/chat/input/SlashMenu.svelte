@@ -5,7 +5,7 @@
 	 * @module ui/SlashMenu
 	 * @depends ui/slash-commands
 	 */
-	import { filterCommands, type SlashCommand } from './slash-commands';
+	import { filterCommands, completeUniqueSlashCommand, type SlashCommand } from './slash-commands';
 	import { t } from '../../../i18n';
 	import { isChatMotionEnabled } from '../../motion/prefs';
 	import { settings$ } from '../../settings-store';
@@ -14,10 +14,13 @@
 	let {
 		input,
 		onSelect,
+		onComplete,
 		onClose,
 	}: {
 		input: string;
 		onSelect: (cmd: SlashCommand) => void;
+		/** Tab 补全写入输入框,不执行命令 */
+		onComplete: (filled: string) => void;
 		onClose: () => void;
 	} = $props();
 
@@ -39,7 +42,7 @@
 	});
 
 	/**
-	 * 处理键盘事件 — 上下键移动,回车确认,Esc 关闭。
+	 * 处理键盘事件 — 上下键移动,回车执行,Tab 补全,Esc 关闭。
 	 * @returns true 表示事件已处理
 	 */
 	export function handleKeydown(e: KeyboardEvent): boolean {
@@ -58,6 +61,17 @@
 			e.preventDefault();
 			const cmd = commands[selectedIndex];
 			if (cmd) onSelect(cmd);
+			return true;
+		}
+		if (e.key === 'Tab') {
+			e.preventDefault();
+			const unique = completeUniqueSlashCommand(input);
+			if (unique) {
+				onComplete(unique);
+				return true;
+			}
+			const cmd = commands[selectedIndex];
+			if (cmd) onComplete(`${cmd.name} `);
 			return true;
 		}
 		if (e.key === 'Escape') {

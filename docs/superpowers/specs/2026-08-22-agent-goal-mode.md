@@ -1,10 +1,18 @@
 # S-GOAL — Agent 目标模式(Goal Mode)
 
+> **架构正文:** [docs/architecture/agent/goal-mode.md](../../architecture/agent/goal-mode.md)。本文保留产品决策履历与实施对照。预算与完成两条回路、满轮不问完成、日常回合锚定供随时判定,以架构文档为准;下文 4.7 满轮「加轮还是收尾」与 4.8「轮数用尽时提议完成」已废止,改代码前先对架构文档,不要按这两句实现。
+
 > 日期: 2026-08-22
 > 修订: 2026-08-22 **v1.1** — 按外部评审修订:补 session 占用、grant 白名单、打断状态机(对齐现网 AbortSignal)、锚定 ephemeral 注入通道、预算闭环等 13 项
 > 修订: 2026-08-22 **v1.2** — 4.11 五面 UI;计轮语义;停止≠暂停;软上限回合后检查
 > 修订: 2026-08-22 **v1.3** — 指示器评审落地:面 1 用窗口底栏 StatusBarItem(不是 UserStatus store);文案去 emoji、停止≠挂起;继续 chip 唯一目标+输入中隐藏;create 用独立表单 Modal;撤权=设置页暂停或对话 pause
 > 修订: 2026-09-06 **v1.4** — 归档全部人点头(完成当下三选一;待归档只标不搬;禁止静默删/搬);Goal 为内核机制,不以 Skill 模拟
+> 修订: 2026-09-07 **v1.5** — 面 2 指示条跨会话常显 + 进行中/暂停;动效只吃 Border Beam(克制)与 Thinking Orb(仅真在跑);不新开 spec
+> 修订: 2026-09-07 **v1.5.2** — 回合执行中 Strip 不叠思考球,球只留消息流
+> 修订: 2026-09-07 **v1.6** — 砍用户可见排队:未完成目标全局至多一条;冲突只问放弃或继续,不「暂停并排队」
+> 修订: 2026-09-07 **v1.7** — 目标列表移出设置页,与记忆管理并列进独立 Modal;pending 可恢复/放弃
+> 修订: 2026-09-07 **v1.8** — 创建改为对话确认:先复述完成标准与当前回合预算,用户点头后才 create;改预算走 ratel-config / `goalMaxRounds`;创建不再弹 GoalCreateModal
+> 修订: 2026-09-09 **v1.10** — 完成=关掉:对话确认后 complete,不去留弹窗;归档只走目标管理
 > 状态: Active
 > Spec ID: **S-GOAL**
 > 取代: [S-TASK](../archive/S-TASK/2026-08-19-agent-task-store.md)(未实施即被取代,继承其合理内核)
@@ -41,12 +49,15 @@ S-TASK 的设计前提是「计划先行」:先列步骤清单,再逐步执行�
 
 - 不做定时/后台自动续跑——Heartbeat 触发器留给支柱 A(行业共识:v1 手动继续)
 - 不做多目标并行执行(active 全局唯一,严格串行)
+- **不做用户可见的目标队列**(v1 至多一条未完成:`active` / `paused` / `blocked` / 遗留 `pending`;新目标与未完成冲突时交给模型问放弃或继续,不落第二条 JSON)
 - 不做目标依赖图(DAG)
 - 不做跨设备同步
 - 不静默删除任何目标记录——归档必须用户确认,损坏记录隔离不丢弃
 - 不做目标模板/周期性目标(归支柱 A)
 - 不依赖未立项的 `append_to_daily`——成果沉淀 v1 用现有工具对话确认完成,不被写侧拖期
 - **不以 Skill 实现 Goal 引擎**(见 4.12)——Skill 不能挂权限、不能跨会话授权、不能在 compact 后保住锚定;预置 SKILL.md 至多教「怎么开口立目标」,v1 连这份都可以不做
+- **不引入 libraries.dev 的 React 包**(border-beam / thinking-orbs / liquid-gooey / metal-fx / img-fx);观感用现有 Svelte/CSS/canvas 翻译层
+- **Gooey / Liquid Metal / 出图 loading 不做进 Goal 面**(侧栏窄、已有 Glare/Spark/空态 WebGL,叠上去抢戏)
 
 ---
 
@@ -85,10 +96,10 @@ interface AgentGoal {
 
 | 状态 | 含义 |
 |---|---|
-| `pending` | 排队中,等待激活 |
+| `pending` | 落盘瞬间的内部态,随即 `activate`;用户路径上不「排队第二条」。遗留 pending 仅脏数据,设置页清理或恢复 |
 | `active` | 正在推进,**全局至多一个**,store 层激活前检查、拒绝双活 |
-| `paused` | 用户显式挂起(grant 同时失效) |
-| `blocked` | 受阻,附原因等用户处理;不占 active 坑 |
+| `paused` | 用户显式挂起(grant 同时失效);仍占「未完成」坑,不能再立新目标 |
+| `blocked` | 受阻,附原因等用户处理;不占 active 坑,但仍占未完成坑 |
 | `completed` / `cancelled` | 终态,永不自动删除 |
 
 **会话占用(S-TASK D1 的完整答案——「这条消息属于哪个 goal」):**
@@ -101,19 +112,25 @@ interface AgentGoal {
 
 ### 4.3 创建协商流程
 
-两个入口殊途同归:Agent 从对话识别批量意图主动提议,或用户显式说「立个目标」。
+两个入口殊途同归:Agent 从对话识别批量意图主动提议,用户说「立个目标」,或斜杠 `/goal <陈述>`。
 
-**时序:模型调 `create` → 独立表单 Modal 弹出 → 用户改完点确认才落盘。** 不在对话里先出卡片、也不先写盘再弹窗(避免脏状态)。Modal 字段与校验见 4.11 面 4。
+**时序:先对话确认,再 `create` 落盘。不弹创建表单。** 完成标准必须经用户点头,避免模型写错验收条件就开跑。
 
 ```
-→ 模型在对话里谈清意图后调 create(带建议字段)
-→ Modal:目标陈述 / 完成标准 / 回合预算 / 授权 glob(预估覆盖文件数),全部可改
-→ 完成标准含糊(如「整理干净点」)由模型负责追问细化;create 本地兜底:
-   criteria.text 为空、或与 objective 相同 → 拒绝创建
-→ 回合预算估算 > maxRounds 默认值 → Modal 建议拆成多个 pending 入队
-→ objective 创建后不可变;要改意图 = cancel + 重建新 goal(进度游标可人工带入)
-→ 已有 active 时主按钮为[仅排队];用户可先在设置页暂停当前再[创建并开始]
-→ 用户确认 → 落盘(pending 或 active)
+→ `/goal <陈述>` 与自然语言一样只发给模型:不落盘、不弹表。空 `/goal` 仍只提示用法
+→ 模型用 get_app_config 读取 goalMaxRounds,在对话里复述:
+   目标陈述 / 拟完成标准 / 当前设置的回合上限 N,并问是否要改
+→ 完成标准含糊(如「整理干净点」)必须追问细化,不得本回合 create
+→ 用户要改回合上限:激活 ratel-config,征得同意后 update_app_config({ goalMaxRounds })
+   (改的是设置默认值,不是给单条目标开小灶;随后 create 用当时的 settings.goalMaxRounds)
+→ 用户明确同意后才 manage_goal create;grant 默认空,写操作仍逐笔确认;
+   用户在确认对话里主动给出目录 glob 时才带 grant
+→ create 本地兜底不变:criteria.text 为空、或与 objective 相同 → 拒绝
+→ **硬闸:** 本轮用户消息能解析为 `/goal <非空陈述>` 时,create 必须拒绝并提示先对话确认
+   (防止模型在斜杠同一回合抢建)
+→ objective 创建后不可变;要改意图 = cancel + 重建
+→ 已有未完成目标时不落盘;斜杠与 create 都把冲突交给模型当面问:放弃当前并开始新的 / 继续当前。不排队
+→ 用户确认后落盘并立刻 activate(无会话绑定时才停在 pending)
 ```
 
 `GoalPredicate` v0 仅一类,其余降级 LLM 自检:
@@ -125,7 +142,7 @@ interface AgentGoal {
 
 ```
 触发:窗口底栏 StatusBarItem(未完成/待归档)/ 输入区继续 chip / 对话里说「继续」
-排队仲裁:无 active 但有 pending → 模型按意图建议先做哪个,用户点头才激活(模型建议,用户落锤)
+遗留 pending:不按队列仲裁谁先跑;设置页恢复或取消。v1 不新建第二条未完成目标
 回合开始:
   复述锚定注入(见 4.5)→ 扫库重推导剩余工作 → StatusStrip 显示目标忙态
   → 连续执行(命中 grant 的写入免逐笔确认)
@@ -187,8 +204,8 @@ interface AgentGoal {
 
 ### 4.8 完成验证与成果沉淀
 
-- **predicate 型**:runner 每轮末跑代码校验,通过即由 **runner 收口自动 complete**(附证据清单);模型不可对 predicate 型目标调 `complete`——单一收口,杜绝双写(评审 Important 13 采纳)
-- **LLM 自检型**:模型只能**提议**完成(附证据),用户 ask 确认后才 complete
+- **LLM 自检型**:完成标准给人看、防漂移(锚定每轮带上),**不**每轮验收。只在模型认为已达标、用户要收工或轮数用尽时提议,用户点头后才 `complete`。完成即关掉,不问归档。不要完成弹窗
+- **predicate 型**:runner 收口自动 complete,同样不弹去留;可发完成 Notice
 - blocked 只用于「无法推进」(缺密钥、重复失败、无进展守卫触发);校验未过但能推进不算 blocked
 - 成果沉淀 v1:完成卡对话确认「把总结写入某篇笔记」(现有 `write_note`,用户点名目标);`append_to_daily` 解绑,写侧轻量 spec 立项后再升级(评审 Important 9 采纳——不让 S-GOAL 重蹈 S-TASK 被未立项依赖拖死的覆辙)
 
@@ -196,22 +213,24 @@ interface AgentGoal {
 
 终态(`completed` / `cancelled`)文件**永不自动删除**,也**永不自动** `rename` 进 `goals/archive/`。「待归档」只是列表上的标记,不是一次静默搬家。
 
-**完成当下(必问,三选一 Modal,默认「留在列表」):**
+**完成当下:** 对话确认后落盘为 `completed`,JSON 留在目标列表。不问「留列表 / 归档 / 写笔记」。归档只在目标管理里人点。
 
-| 选项 | 行为 |
+**放弃当下(一框,含取消):**
+
+| 选项 | 效果 |
 |---|---|
-| 留在列表 | 保持终态,出现在设置页 Goal 列表;日后可再归档 |
-| 立即归档 | 确认后才移入 `goals/archive/`,退出日常列表 |
-| 先把总结写入笔记 | 走现有 `write_note` 点名路径;写完**再**回到本三选一(写笔记失败不自动归档) |
+| 留在列表 | 变为 cancelled,仍出现在目标列表 |
+| 立即归档 | 移入 `goals/archive/` |
+| 取消 / 关窗 | **不**改 status |
 
-放弃(`cancel`)同样问「留在列表 / 立即归档」,没有「写入笔记」项。
+`resume` 仍用小确认框。
 
 **过期只提醒、不搬家:**
 
-- 终态超过 `goalArchiveDays`(默认 7,可调)→ 标「待归档」;底栏在无进行中目标时显示「待归档 K」,点进设置页
+- 终态超过 `goalArchiveDays`(默认 7,可调)→ 标「待归档」;底栏在无进行中目标时显示「待归档 K」,点开目标管理 Modal
 - 不在 onload / 心跳里批量 move
 - 设置页:单行[归档]与[全部归档]都要确认 Modal;[全部归档]必须写出将搬走的条数,主按钮默认不是聚焦态,避免回车误伤
-- 模型 `manage_goal` **没有** archive action——归档只走设置页(或完成/放弃 Modal 里用户点的「立即归档」),防止助手代归档
+- 模型 `manage_goal` **没有** archive action——归档只走目标管理里人点的[归档],防止助手代归档
 
 损坏隔离(`goals/corrupt/`)仍自动:那是救文件不是藏进度,并 Notice。与归档不是同一条路。
 
@@ -221,13 +240,13 @@ interface AgentGoal {
 
 | action | 默认权限 | 说明 |
 |---|---|---|
-| create | ask | 独立表单 Modal 确认后才落盘;本地兜底校验(见 4.3) |
+| create | allow(对话已确认) | 无创建表单;斜杠同一回合硬拒;本地兜底校验(见 4.3) |
 | update(progress) | allow | 进度游标/用量回写 |
 | list | allow | 队列查询(含状态明细) |
 | pause | allow | 安全方向,随时可停 |
 | resume | ask | 激活 = 开跑授权 + 会话绑定,「人在场落锤」点(含 pending→active、blocked→重启) |
 | cancel | ask | 终态变更需确认 |
-| complete | ask(仅自检型) | predicate 型由 runner 收口,模型调用直接拒绝 |
+| complete | ask(仅自检型) | 对话已确认;无完成弹窗;predicate 型由 runner 收口 |
 
 ### 4.11 UI 设计(状态 × 界面矩阵)
 
@@ -244,50 +263,79 @@ interface AgentGoal {
 |---|---|---|
 | blocked ≥ 1 | 目标受阻 N | 打开 chat |
 | active 存在 | 目标进行中 | 打开 chat |
-| 仅 paused/pending | 目标暂停 P / 排队 M(有则拼接,尽量短) | 打开 chat |
-| 无未完成但待归档 ≥ 1 | 待归档 K | 打开设置页 Goal 区块 |
+| 仅 paused / 遗留 pending | 目标暂停 P / 未开始 M(脏数据清理,有则拼接) | 打开 chat |
+| 无未完成但待归档 ≥ 1 | 待归档 K | 打开目标管理 Modal |
 
-底栏不写 objective、不加 进行/排队/暂停三计数堆在一行(空间不够)。细节在 chat Strip 与设置页。
+底栏不写 objective、不加 进行/未开始/暂停三计数堆在一行(空间不够)。细节在 chat Strip 与设置页。
 
-**面 2 · chat StatusStrip(busyOverride,仅本会话绑定且 chat 已开)**
+**面 2 · chat StatusStrip(busyOverride,chat 已开即显示未完成目标,不限本会话绑定)**
+
+新会话后目标仍在:指示条不因 `activeSessionId` 绑在旧对话而消失。
 
 | 时机 | busyOverride 文案 | 点色 |
 |---|---|---|
-| 回合执行中 | \<objective 截断\> · 回合 r/R · 步 s/S | busy(现有 orb) |
-| 打断后等待输入 | 目标已停止,等待你的输入 | busy |
+| 本会话回合执行中 | \<objective 截断\> · 回合 r/R · 步 s/S | quiet 点(球在消息流「撰写中」,Strip 不叠第二颗) |
+| 本会话绑定、等待输入 | \<objective\> · 进行中,等待输入 | quiet 点 |
+| active 绑在其他会话(含点了新会话) | \<objective\> · 进行中 | quiet 点 |
+| paused | \<objective\> · 已暂停 | quiet 点 |
+| 无 active、仅遗留 pending | 未开始文案 | quiet 点 |
 | blocked | 目标受阻:\<reason 截断\> | error(`busyHard`) |
 
 停止 = 复用生成停止钮,不新增控件。整行仍开抽屉——用户要暂停/归档去设置页。
 
+**面 2/3 动效契约(v1.5,对标 libraries.dev 观感、不装其 npm)**
+
+闸门:`isChatMotionEnabled` + `prefers-reduced-motion`(关闸则静态描边、无扫、无 orb 动画)。色走 `--interactive-accent` **mono**,不要彩虹 `colorful`。
+
+| 时机 | Beam(输入壳,可含继续 chip) | Orb(StatusStrip) |
+|---|---|---|
+| 本场回合执行中 | 开(慢扫) | 关,强调色静点(`busyQuiet`);思考球只在 MessageList |
+| 进行中、等输入(含绑在其他会话 / 新会话) | 开 | 关,强调色静点(`busyQuiet`) |
+| 已暂停 | 关,灰边 | 关,静点 |
+| 仅遗留 pending | 关 | 关 |
+| 受阻 | 关 | 关,`busyHard` |
+
+约束:
+
+- 用户气泡继续用现有 StarBorder,不叠第二道 Beam
+- 发送钮继续 GlareHover + ClickSpark,不套 Metal
+- 继续 chip 可用现成 GlareHover;回合数字可用现成 CountUp(可选,不阻塞)
+- 空闲「进行中」禁止转思考球——那是「太丑」的根因之一
+- 回合执行中 Strip 也不转球:与消息流「撰写中」同款 orb 叠两颗更怪;Strip 只承担目标进度数字
+
 **面 3 · 输入区「继续」chip(放在 MentionStrip 一类预览条位置)**
 
-唯一继续目标(只显示一个 chip):
+唯一继续目标(只显示一个 chip;**与 Strip 不重复**):
 
-1. 本会话绑定的 `active` 且当前未在跑 → 「继续推进:\<objective 截断\>」
+1. 本会话绑定的 `active` 且当前未在跑 → **不显示 chip**(面 2 Strip 已是「进行中,等待输入」;用户直接打字发送即可推进;计轮仍按 4.4:`goalRound` 旗标或 grant 写入)
 2. `active` 绑在**其他**会话 → 「接管并继续:\<objective 截断\>」,点击先 confirm 再转移绑定
-3. 无 active、恰好 **1** 条 pending → 「继续排队中的目标:\<objective 截断\>」
-4. 无 active、pending ≥ 2 → 「N 个目标排队」,点击打开设置页 Goal 区块(不擅自激活哪一条)
+3. 无 active、恰好 **1** 条遗留 pending → 「继续未开始的目标:\<objective 截断\>」(脏数据舱口)
+4. 无 active、pending ≥ 2 → 「N 个未开始目标」,点击打开目标管理 Modal(不擅自激活哪一条)
 5. 仅 paused / 仅 blocked、无上述目标 → **不显示 chip**(去设置页恢复)
 
 隐藏:输入框非空、或 `isRunning`。避免误点继续把正在打的字冲掉。
 
-点击(1)(2)(3) → `ask(sessionId, composeContinueMessage(), { goalRound: true })`。
+点击(2)(3) → `ask(sessionId, composeContinueMessage(), { goalRound: true })`。
 
 **面 4 · 动作 Modal(`ToolConfirmModal` 不够用:它只有允许/本会话/拒绝,没有表单)**
 
-- **create**:独立 `GoalCreateModal`——objective / criteriaText(textarea)、predicate glob + property(可选)、maxRounds、grant globs;底部「将授权写入约 N 个文件」;主按钮 [创建并开始] / [仅排队](已有 active 时)
-- **resume / cancel / complete**:小确认 Modal(只读摘要 + 主按钮),不要套工具权限三键。complete / cancel 确认后**紧接 4.9 三选一**(或放弃的二选一),不要静默留或静默搬
-- **pause**:无 Modal(设置页或工具直接执行)
+- **create**:不使用 `GoalCreateModal`。确认在对话里完成(4.3);**已有未完成目标时不建新目标、不弹拒绝提示**,把新旧目标交给模型当面问:放弃当前并开始新的 / 继续当前。空 `/goal` 只提示用法
+- **resume**:小确认 Modal(只读摘要 + 主按钮),不要套工具权限三键
+- **complete**:无弹窗。对话点头后落盘即关闭
+- **cancel**:只弹 4.9 放弃一框(留列表 / 归档 / 取消)
+- **pause**:无 Modal(目标管理列表或工具直接执行)
 
-**面 5 · 设置页 Goal 区块(`ui/settings/goal-setting-page.ts`)**
+**面 5 · 目标管理 Modal + 设置页预算(`GoalManageModal` / 设置「目标模式」)**
 
-- 列表行:状态点色 · objective 截断 · 轮次 r/R · 用量(in/out tokens)· 更新时间;blocked 行展开 reason。v1 用量只在这里看,chat 不做进度卡
-- 行内操作(**直走 store,不经模型**):active→[暂停];paused/blocked→[恢复][放弃];终态→[归档](确认 Modal)
+- **列表不在设置页嵌 DOM**。入口:状态抽屉「目标」(与「记忆管理」并列)、设置页「查看目标」按钮、底栏待归档点击、遗留多条 pending 的 chip
+- 列表行:状态点色 · objective 截断 · 轮次 r/R · 用量(in/out tokens)· 更新时间;blocked 行展开 reason。v1 用量只在管理窗看,chat 不做进度卡
+- 行内操作(**直走 store,不经模型**):active→[暂停];pending/paused/blocked→[恢复][放弃];终态→[归档](确认 Modal)
 - 待归档汇总 + [全部归档](确认 Modal,展示条数)
+- 设置「记忆与权限 → 目标模式」只留回合上限 / token 软上限 / 待归档天数 + 「查看目标」按钮
 
 **通知(Notice)**:corrupt 隔离必发;completed 收口一条「目标完成 · 用量 …」(无 emoji);blocked 不发 Notice(底栏 + Strip 已覆盖)。完成三选一 Modal 比这条 Notice 优先:先问去留,Notice 可在选择后发。
 
-**明确不做(v1)**:诊断抽屉内 goal 区块(后续候选)、独立 chat 进度卡、底栏多条 item、Strip 上的暂停钮、用预置 Skill 冒充 Goal 引擎、到期自动搬进 archive。
+**明确不做(v1)**:把目标列表塞进记忆管理 Tab(记忆与 Goal 不是一类账本)、诊断抽屉内嵌 goal 进度区块、独立 chat 进度卡、底栏多条 item、Strip 上的暂停钮、用预置 Skill 冒充 Goal 引擎、到期自动搬进 archive。
 
 全部字符串走 `src/i18n/zh.ts` / `en.ts`,新增 goal namespace;工具显示名友好化(如「推进目标:补全 frontmatter」)。
 
@@ -303,7 +351,7 @@ Skill **做不到**,且这些正是 Goal 的产品内核:
 | 授权免逐笔确认 | 写权限在 `tool-permissions`;Skill 不能给 `projects/**` 发一张跨会话 grant |
 | 压缩后仍记得在干什么 | 锚定必须在 `toMessages()` 投影层每轮现拼;Skill 文本会进 transcript,会被 compact 折掉 |
 | 底栏 / 继续 chip | 要挂 `addStatusBarItem` 与输入区,不是 Markdown 指令 |
-| 单活 + 会话占用 | 两场聊天抢同一个目标是 store 仲裁,不是提示词约定 |
+| 单活 + 未完成唯一 + 会话占用 | 两场聊天抢同一个目标是 store 仲裁;第二条未完成不许建 |
 | 代码完成校验 | `frontmatter-all` 要扫 metadataCache,不是模型自觉 |
 
 因此 v1:**store + grant 钩子 + runner 挂 `ask()` 尾部 + 五面 UI** 高耦合内置。`manage_goal` 只是给模型的手柄。日后若做预置 Skill,只允许「何时建议用户立目标」的文案,禁止在 SKILL.md 里伪造进度账本。
@@ -321,7 +369,7 @@ Skill **做不到**,且这些正是 Goal 的产品内核:
 | `src/core/agent-loop.ts` | AbortSignal 打断钩子、`message.end` token 累加到 `AgentGoal.usage`(**不进** UsageStatsStore——它只计 skills/memoryTopics/scriptFailures,无 LLM token) |
 | `src/core/context-manager.ts`(投影层) | 锚定段 ephemeral 拼接点 |
 | `src/ui/chat/` `src/ui/status/` | StatusStrip busyOverride;输入区继续 chip |
-| `src/ui/goal/GoalCreateModal.ts`(新) | create 表单 Modal |
+| `src/ui/goal/GoalCreateModal.ts` | v1.8 创建路径不再调用;文件可留,resume 等仍用 GoalActionConfirmModal |
 | `src/ui/settings/goal-setting-page.ts`(新) | Goal 列表/暂停/归档 |
 | `main.ts` | `addStatusBarItem` 面 1;onload 扫描 corrupt;ask 尾部 finalizeRound |
 | `src/i18n/` | 新 namespace |
@@ -334,7 +382,7 @@ Skill **做不到**,且这些正是 Goal 的产品内核:
 
 | # | 决策 | 理由 |
 |---|---|---|
-| D1 | 全局单活 + pending 队列 + **会话绑定** | 消息/写入归属永远清晰(S-TASK D1 的防混理由);两会话同跑一个 goal 是数据竞争 |
+| D1 | 全局至多一条未完成 + **会话绑定**;`pending` 不是用户队列 | 同屏两张几乎一样的排队卡没有产品价值;消息/写入归属仍靠 session 绑定;两会话同跑一个 goal 是数据竞争 |
 | D2 | 步骤不持久化 | 行业共识:步骤是透明层;库本身是持久状态,每轮重定向 |
 | D3 | 续跑需人在场 + resume 显式绑定 | Obsidian 插件无后台生命周期;每次激活都是显式确认点,安全优势 |
 | D4 | 归档需确认,永不静默删;损坏隔离不丢 | 「改了就能查」的一贯姿态;Copilot/Devin 均保留历史 |
@@ -344,8 +392,9 @@ Skill **做不到**,且这些正是 Goal 的产品内核:
 | D8 | grant 白名单最小面,deny 全链最高 | 安全边界不留给实现猜;grant 只开「可批量且可逆」的写入三件套 |
 | D9 | 打断对齐现网 AbortSignal,库是真相 | 「先写进度再停」与 socket 销毁语义矛盾;progressNote 降级为辅助缓存 |
 | D10 | predicate 型 runner 单一收口 | 模型与 runner 双写 complete 会竞态;自检型保留人工确认 |
-| D11 | 五面分工:底栏短提醒 / Strip 本回合态 / chip 唯一继续 / 表单 Modal / 设置页撤权与用量 | UserStatus 不是窗口底栏;停止≠暂停≠挂起;confirm-modal 撑不起创建表单 |
+| D11 | 五面分工:底栏短提醒 / Strip 本回合态 / chip 唯一继续 / 创建改对话确认 / **GoalManageModal 管列表** / 设置页只留预算 | 列表夹在权限开关里怪;记忆管理是另一本账,只并列入口不混 Tab |
 | D12 | 归档全部人点头;Goal 内核非 Skill | 「改了就能查」;Skill 够教口吻、不够当跨会话账本与权限面 |
+| D13 | 指示条跨会话常显;动效 = Beam(进行中) + Orb(仅执行中) | `/new` 后目标仍在;libraries.dev 五件套只翻译这两件,Gooey/Metal/出图不做进 Goal |
 
 ## 7. 参考
 

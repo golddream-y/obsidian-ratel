@@ -133,8 +133,8 @@ describe('pickGoalStrip', () => {
 });
 
 describe('goalChromeFromStrip', () => {
-	it('goalChromeFromStrip - running - beam 与 orb 开 quiet 关', () => {
-		expect(goalChromeFromStrip('running')).toEqual({ beam: true, orb: true, quiet: false });
+	it('goalChromeFromStrip - running - 有 beam 无 orb(球给消息流)', () => {
+		expect(goalChromeFromStrip('running')).toEqual({ beam: true, orb: false, quiet: true });
 	});
 
 	it('goalChromeFromStrip - active-elsewhere - 有 beam 无 orb', () => {

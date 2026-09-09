@@ -195,6 +195,7 @@ graph TB
         A3["tools<br/>工具系统"]
         A4["hooks<br/>知识治理钩子"]
         A5["capability-surface<br/>能力池 + 生命周期"]
+        A6["goal-mode<br/>跨会话目标"]
     end
 
     subgraph "LLM 领域(模型管理 + 流式协议)"
@@ -215,8 +216,11 @@ graph TB
     R2 --> L1
     A0 --> A1
     A0 --> R2
+    A0 --> A6
     A1 --> L1
+    A1 --> A6
     A3 --> R2
+    A6 --> A3
     L1 --> L2
     A0 --> H1
     R1 --> H2
@@ -233,6 +237,7 @@ graph TB
 | **Agent** | prompt-management | 提示词 registry + Composer:中文模板 / 动态注入 / section 覆盖 | [agent/prompt-management.md](agent/prompt-management.md) |
 | **Agent** | tools | 工具系统:注册、发现、调用、返回格式(含环境感知只读工具) | [agent/tools.md](agent/tools.md) |
 | **Agent** | hooks | 知识治理钩子:pre-write / post-write 阶段化扩展点 | [agent/hooks.md](agent/hooks.md) |
+| **Agent** | goal-mode | 跨会话持久目标:意图 + 完成标准 + 预算;人在场续跑 | [agent/goal-mode.md](agent/goal-mode.md) |
 | **LLM** | model-management | 模型管理:Embedding + Reranker + LLM 的接口级统一管理 | [llm/model-management.md](llm/model-management.md) |
 | **LLM** | streaming | 流式协议:SSE 解析、取消、重试、CORS 策略 | [llm/streaming.md](llm/streaming.md) |
 | **Host** | obsidian-integration | Obsidian 集成:API 封装、UI 挂载、设置、命令 | [host/obsidian-integration.md](host/obsidian-integration.md) |
@@ -252,7 +257,7 @@ graph TB
 ```mermaid
 graph TB
     subgraph "核心 Engine"
-        Core["Agent Loop + Context Manager + Hooks"]
+        Core["Agent Loop + Context Manager + Hooks + Goal"]
     end
 
     subgraph "Port 接口(零实现)"

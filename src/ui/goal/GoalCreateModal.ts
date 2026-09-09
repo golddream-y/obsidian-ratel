@@ -38,13 +38,12 @@ class GoalCreateModal extends Modal {
 	private property = '';
 	private maxRounds = 10;
 	private grantText = '';
-	private activate = true;
 	private estimateEl?: HTMLElement;
 
 	constructor(
 		app: App,
 		private vault: VaultPort,
-		private draft: GoalCreateDraft,
+		draft: GoalCreateDraft,
 		private onResolve: (result: GoalCreateConfirmResult) => void,
 	) {
 		super(app);
@@ -52,7 +51,6 @@ class GoalCreateModal extends Modal {
 		this.criteriaText = draft.criteriaText;
 		this.maxRounds = draft.maxRounds ?? 10;
 		this.grantText = (draft.grant ?? []).join('\n');
-		this.activate = draft.suggestActivate;
 		if (draft.predicate) {
 			this.pathGlob = draft.predicate.pathGlob;
 			this.property = draft.predicate.property;
@@ -152,22 +150,11 @@ class GoalCreateModal extends Modal {
 		this.refreshEstimate();
 
 		const btnRow = contentEl.createDiv({ cls: 'modal-button-container' });
-		if (this.draft.suggestActivate) {
-			btnRow
-				.createEl('button', { text: tNow('goal.modal.create.activate'), cls: 'mod-cta' })
-				.onclick = () => {
-					this.submit(true);
-				};
-		} else {
-			btnRow
-				.createEl('button', { text: tNow('goal.modal.create.queueOnly'), cls: 'mod-cta' })
-				.onclick = () => {
-					this.submit(false);
-				};
-			btnRow.createEl('button', { text: tNow('goal.modal.create.activate') }).onclick = () => {
+		btnRow
+			.createEl('button', { text: tNow('goal.modal.create.activate'), cls: 'mod-cta' })
+			.onclick = () => {
 				this.submit(true);
 			};
-		}
 		btnRow.createEl('button', { text: tNow('modal.toolConfirm.deny') }).onclick = () => {
 			this.settle({ confirmed: false });
 			this.close();

@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync, mkdirSync } from 'fs';
+import { mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
 import { GoalStore, GOAL_ACTIVE_ELSEWHERE } from './goal-store';
@@ -58,6 +58,33 @@ describe('GoalStore', () => {
 		await store.activate(g1.id, 'session-a');
 
 		await expect(store.activate(g2.id, 'session-b')).rejects.toThrow(GOAL_ACTIVE_ELSEWHERE);
+	});
+
+	it('activate - 已 active 换会话 - 只改绑定不抛迁移错误', async () => {
+		const goal = await store.create(baseInput());
+		await store.activate(goal.id, 'session-a');
+		const rebound = await store.activate(goal.id, 'session-b');
+		expect(rebound.status).toBe('active');
+		expect(rebound.activeSessionId).toBe('session-b');
+	});
+
+	it('activate - 已绑定本会话 - 幂等', async () => {
+		const goal = await store.create(baseInput());
+		await store.activate(goal.id, 'session-a');
+		const again = await store.activate(goal.id, 'session-a');
+		expect(again.status).toBe('active');
+		expect(again.activeSessionId).toBe('session-a');
+	});
+
+	it('findIncomplete - 优先 active 再 paused', async () => {
+		const paused = await store.create(baseInput({ objective: '已暂停' }));
+		await store.activate(paused.id, 'session-a');
+		await store.transition(paused.id, 'paused');
+		const leftover = await store.create(baseInput({ objective: '遗留 pending' }));
+		expect(leftover.status).toBe('pending');
+		const found = await store.findIncomplete();
+		expect(found?.objective).toBe('已暂停');
+		expect(found?.status).toBe('paused');
 	});
 
 	it('list - 损坏 JSON 隔离到 corrupt 且其余可读', async () => {

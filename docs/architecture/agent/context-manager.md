@@ -30,7 +30,7 @@
 
 ### 2.2 搜索结果与旁路注入位置固定
 
-**决策**:`toMessages()` 固定顺序组装,旁路段(环境时间 / 记忆 / Skill)与检索结果都不进历史截断池。
+**决策**:`toMessages()` 固定顺序组装,旁路段(环境时间 / 记忆 / Skill / Goal 锚定)与检索结果都不进历史截断池。
 
 **顺序**(role 均为 system,除历史外):
 
@@ -38,15 +38,16 @@
 2. 环境时间行(`setEnvContext` → `formatEnvContextLine`,每次 `ask()` 注入)
 3. 记忆段(`setMemoryContext`)
 4. Skill Discovery + Active(`setSkillsContext`)
-5. 检索结果块(`addSearchResults`)
-6. 裁剪后的对话历史
+5. Goal 锚定(`PromptInjector` `id: 'goal'`,每轮现拼,见 [goal-mode](goal-mode.md))
+6. 检索结果块(`addSearchResults`)
+7. 裁剪后的对话历史
 
-**注入流程(S-SR-LAYERING / [ADR-016](../../adr/2026-08-19-layered-injection.md)):** 旁路动态段不再是「setter 存字段 → `toMessages()` 逐段 push」— setter 只写状态,env / memory / skills 三源在 ContextManager **构造期**注册进 `PromptInjector`,`toMessages()` 从 `PromptInjector.buildSections()` 按注册序拉段,注入顺序与历史实现一致。`setMemoryContext` 追加可选 `layering` 参数(pinned 恒注入 + relatedTopics top-K + 总预算裁剪,分层细节见 [prompt-management §3.1](prompt-management.md#31-动态注入管理器promptinjector))。
+**注入流程(S-SR-LAYERING / [ADR-016](../../adr/2026-08-19-layered-injection.md)):** 旁路动态段不再是「setter 存字段 → `toMessages()` 逐段 push」— setter 只写状态,env / memory / skills / goal 四源在 ContextManager **构造期**注册进 `PromptInjector`,`toMessages()` 从 `PromptInjector.buildSections()` 按注册序拉段。`setMemoryContext` 追加可选 `layering` 参数(pinned 恒注入 + relatedTopics top-K + 总预算裁剪,分层细节见 [prompt-management §3.1](prompt-management.md#31-动态注入管理器promptinjector))。
 
 **原因**:
 - LLM 对上下文开头的信息权重更高;「今天几号」零工具成本即可答对
 - 固定位置便于测试和调试
-- 环境时间与记忆/Skill 同为旁路注入,不污染 session.messages 持久化
+- 环境时间、记忆、Skill、Goal 锚定同为旁路注入,不污染 session.messages 持久化
 
 ### 2.3 系统提示词可组合
 

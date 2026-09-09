@@ -2,13 +2,15 @@
  * @file src/core/goal-grant.ts
  * @description Goal grant 白名单评估 — 工具 × glob × 在场条件(S-GOAL spec 4.6)
  * @module core/goal-grant
- * @depends core/goal-store, utils/glob-to-regex, utils/path-safety
+ * @depends core/goal-store, core/goal-guard, utils/glob-to-regex, utils/path-safety
  */
 
 import type { ToolCall } from '../ports/llm';
 import type { GoalStore } from './goal-store';
 import { globToRegex } from '../utils/glob-to-regex';
 import { isExcludedVaultPath, validateVaultPath } from '../utils/path-safety';
+import { isGoalBudgetExhausted } from './goal-guard';
+import { tNow } from '../i18n';
 
 /** grant 可放行的写侧工具白名单 */
 export const GOAL_GRANTABLE_TOOLS = new Set(['write_note', 'edit_note', 'append_note']);
@@ -78,14 +80,20 @@ export function createGoalGrantCheck(deps: GoalGrantCheckDeps): (toolCall: ToolC
 		if (typeof pathArg !== 'string' || !pathArg) {
 			return false;
 		}
+		let matched = false;
 		try {
 			const normalized = validateVaultPath(pathArg);
 			if (isExcludedVaultPath(normalized)) {
 				return false;
 			}
-			return goal.grant.some((glob) => globToRegex(glob).test(normalized));
+			matched = goal.grant.some((glob) => globToRegex(glob).test(normalized));
 		} catch {
 			return false;
 		}
+		// 关键路径:满轮后命中 grant 的写入不再免确认,直接拒绝,逼人先加轮或暂停
+		if (matched && isGoalBudgetExhausted(goal)) {
+			throw new Error(tNow('goal.error.budgetExhausted'));
+		}
+		return matched;
 	};
 }

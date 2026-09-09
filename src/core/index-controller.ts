@@ -13,6 +13,7 @@
 import { IndexManager, type IndexBackend } from './index-manager';
 import { FolderWatcher } from './folder-watcher';
 import { Ratelignore } from '../utils/ratelignore-parser';
+import { isIndexableMarkdownPath } from '../utils/path-safety';
 import { devLogger } from '../logging/dev-logger';
 
 /**
@@ -64,15 +65,22 @@ export class IndexController {
         // 关键路径:订阅 4 个 vault 事件;rename 拆为 delete(old) + create(new)。
         this.unsubscribers.push(
             this.vault.onFileCreate((p) => {
+                if (!isIndexableMarkdownPath(p)) return;
                 if (!this.ratelignore.ignores(p)) this.watcher.notify(p, 'upsert');
             }),
             this.vault.onFileModify((p) => {
+                if (!isIndexableMarkdownPath(p)) return;
                 if (!this.ratelignore.ignores(p)) this.watcher.notify(p, 'upsert');
             }),
-            this.vault.onFileDelete((p) => this.watcher.notify(p, 'delete')),
+            this.vault.onFileDelete((p) => {
+                if (!isIndexableMarkdownPath(p)) return;
+                this.watcher.notify(p, 'delete');
+            }),
             this.vault.onFileRename((newPath, oldPath) => {
-                this.watcher.notify(oldPath, 'delete');
-                if (!this.ratelignore.ignores(newPath)) this.watcher.notify(newPath, 'upsert');
+                if (isIndexableMarkdownPath(oldPath)) this.watcher.notify(oldPath, 'delete');
+                if (isIndexableMarkdownPath(newPath) && !this.ratelignore.ignores(newPath)) {
+                    this.watcher.notify(newPath, 'upsert');
+                }
             }),
         );
 
@@ -98,6 +106,7 @@ export class IndexController {
      * @param op - 'upsert' 或 'delete'
      */
     async enqueue(path: string, op: 'upsert' | 'delete'): Promise<void> {
+        if (!isIndexableMarkdownPath(path)) return;
         if (op === 'delete') {
             this.indexManager.enqueue(path, 'delete');
             return;

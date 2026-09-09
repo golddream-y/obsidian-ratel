@@ -1176,4 +1176,39 @@ describe('agentLoop', () => {
 			),
 		).toBe(false);
 	});
+
+	it('有 modelMessage - transcript 只存用户原文 - 出站最后一条 user 是引导文', async () => {
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence, undefined, 8000);
+		let outboundLastUser = '';
+		const llm: LLMClient = {
+			async *chat(req: ChatRequest): AsyncIterable<ChatDelta> {
+				const users = req.messages.filter((m) => m.role === 'user');
+				outboundLastUser = users.at(-1)?.content ?? '';
+				yield { text: '收到' };
+			},
+			embed: async () => [],
+			countTokens: () => 1,
+		};
+		const tools = new ToolRegistry();
+		const hooks = new HookRegistry();
+		for await (const _ of agentLoop(
+			{
+				sessionId: 's1',
+				message: '/goal 审查妖市',
+				modelMessage: '用户要用目标模式完成:「审查妖市」。本回合禁止 create。',
+			},
+			ctx,
+			llm,
+			tools,
+			hooks,
+		)) {
+			/* drain */
+		}
+		const session = await persistence.sessions.get('s1');
+		const storedUser = session!.messages.find((m) => m.role === 'user');
+		expect(storedUser?.content).toBe('/goal 审查妖市');
+		expect(storedUser?.content).not.toContain('禁止 create');
+		expect(outboundLastUser).toContain('禁止 create');
+	});
 });

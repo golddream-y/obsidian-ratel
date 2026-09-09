@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { pickContinueChip } from './pick-continue-chip';
+import { pickContinueChip, shouldShowContinueChip } from './pick-continue-chip';
 import type { AgentGoal } from '../../core/goal-store';
 
 const SESSION = 's-main';
@@ -48,15 +48,14 @@ describe('pickContinueChip', () => {
 		expect(r.kind).toBe('hidden');
 	});
 
-	it('本会话 active - 继续推进', () => {
+	it('本会话 active 闲等 - 不叠继续 chip(Strip 已显示)', () => {
 		const r = pickContinueChip({
 			sessionId: SESSION,
 			goals: [makeGoal({ id: 'g1', status: 'active', objective: '整理笔记', activeSessionId: SESSION })],
 			inputNonempty: false,
 			isRunning: false,
 		});
-		expect(r.kind).toBe('continue');
-		expect(r.goalId).toBe('g1');
+		expect(r.kind).toBe('hidden');
 	});
 
 	it('active 绑在其他会话 - 接管', () => {
@@ -102,5 +101,29 @@ describe('pickContinueChip', () => {
 			isRunning: false,
 		});
 		expect(r.kind).toBe('hidden');
+	});
+
+	it('shouldShowContinueChip - 条已在展示 pending - 不叠 chip', () => {
+		const chip = pickContinueChip({
+			sessionId: SESSION,
+			goals: [makeGoal({ id: 'g2', status: 'pending', objective: '排队' })],
+			inputNonempty: false,
+			isRunning: false,
+		});
+		expect(shouldShowContinueChip(chip, 'pending')).toBe(false);
+	});
+
+	it('shouldShowContinueChip - 接管 - 条在别处仍显示 chip', () => {
+		const chip = pickContinueChip({
+			sessionId: SESSION,
+			goals: [makeGoal({ id: 'g1', status: 'active', objective: 'X', activeSessionId: OTHER })],
+			inputNonempty: false,
+			isRunning: false,
+		});
+		expect(shouldShowContinueChip(chip, 'active-elsewhere')).toBe(true);
+	});
+
+	it('shouldShowContinueChip - hidden chip - 不显示', () => {
+		expect(shouldShowContinueChip({ kind: 'hidden' }, 'hidden')).toBe(false);
 	});
 });

@@ -36,6 +36,8 @@ export const ZH_DEFAULTS: Record<PromptSectionId, string> = {
 - 「最近改过哪些」:list_recent_notes。
 - 「这篇有哪些章节」:get_note_outline(走标题缓存,不必读全文)。
 - 检索到笔记后要为用户「打开原文并定位」:用 open_note(path 可省略 .md,anchor 定位标题或 ^块)。
+- 用户要立持久目标(含 /goal):不要立刻 manage_goal create。先 get_app_config 看 goalMaxRounds,在对话里复述目标陈述、拟完成标准、当前回合上限,问用户是否确认或要改。完成标准含糊必须先追问。用户要改全局默认回合上限时 activate_skill(name: ratel-config),同意后再 update_app_config。给当前已存在的目标加轮用 manage_goal update 提高本条 maxRounds,不要改全局默认冒充。用户明确同意后才 create;grant 默认不填。本轮用户消息仍是 /goal 加陈述时系统会拒绝 create,下一轮确认后再调。已有未完成目标时不要 create 第二条,问放弃当前还是继续当前。
+- 收口目标:对照完成标准随时可以判定。已满足则简述证据并问用户,点头后再 manage_goal complete。未满足则继续推进,不要每轮调用 complete,也不要等回合用尽才判定。回合预算用尽时问加轮、先停或放弃,不要把完成当选项。完成即关闭,不要问归档或写笔记;不要指望完成弹窗。谓词型由系统自动收口,不可 complete。
 
 当前可用工具:
 {{toolList}}`,
@@ -213,11 +215,11 @@ export const ZH_DEFAULTS: Record<PromptSectionId, string> = {
 	'tool.get_app_config.description':
 		'读取 Ratel 配置快照、密钥配置状态(boolean 存在性与所需密钥 ID,不含密钥值)与索引状态。排查配置问题、诊断「为什么不工作」的第一步。',
 	'tool.update_app_config.description':
-		'代替用户修改 Ratel 应用设置(需用户确认)。仅白名单内的 key 生效:对话模型(chatModel/chatApiBase/contextLengthPreset/chatModelMaxTokens/autoCompactEnabled)、分块与索引(chunkSize/chunkOverlap/autoIndex/indexPaused)、Embedding 与 Rerank(embedProvider/embedApiBase/embedApiModel/embedApiDimensions/rerankerApiBase/rerankerModel)、记忆(memoryEnabled/memoryAutoWrite/memoryStorageLimitMB/memoryInjectLimitKB/memoryDynamicLimitKB/memoryContextTotalLimitKB)、日记(dailyNoteFolder/dailyNoteFormat)、语言外观(language/uiColorScheme/uiAccent/chatNavRailEnabled/chatNavRailSide/chatMotionEnabled/chatMascotEnabled)。工具权限、MCP、Prompt 覆盖等敏感项一律拒绝,必须由用户在设置面板亲手修改。格式示例:{"updates":{"chunkSize":800,"autoIndex":false}};返回逐 key 的 ok/reason,被拒的 key 不影响同批其他 key。',
+		'代替用户修改 Ratel 应用设置(需用户确认)。仅白名单内的 key 生效:对话模型(chatModel/chatApiBase/contextLengthPreset/chatModelMaxTokens/autoCompactEnabled)、分块与索引(chunkSize/chunkOverlap/autoIndex/indexPaused)、Embedding 与 Rerank(embedProvider/embedApiBase/embedApiModel/embedApiDimensions/rerankerApiBase/rerankerModel)、记忆(memoryEnabled/memoryAutoWrite/memoryStorageLimitMB/memoryInjectLimitKB/memoryDynamicLimitKB/memoryContextTotalLimitKB)、目标模式(goalMaxRounds,整数 1-100,默认回合上限)、日记(dailyNoteFolder/dailyNoteFormat)、语言外观(language/uiColorScheme/uiAccent/chatNavRailEnabled/chatNavRailSide/chatMotionEnabled/chatMascotEnabled)。工具权限、MCP、Prompt 覆盖等敏感项一律拒绝,必须由用户在设置面板亲手修改。格式示例:{"updates":{"chunkSize":800,"autoIndex":false}};返回逐 key 的 ok/reason,被拒的 key 不影响同批其他 key。',
 	'tool.update_app_config.param.updates': '要修改的设置键值对对象;key 必须在白名单内,值类型与取值范围见工具描述',
 
 	'tool.manage_goal.description':
-		'管理 Agent 目标:创建、更新进度、列出队列、暂停、恢复、放弃或完成。无 archive 动作。create 需用户确认表单后才落盘;predicate 型目标由系统自动收口,不可 complete。',
+		'管理 Agent 目标:创建、更新进度、列出、暂停、恢复、放弃或完成。同一时间至多一条未完成目标;已有未完成时不要 create 第二条,改为问用户放弃当前还是继续当前。无 archive 动作。create 前必须已在对话里与用户确认完成标准,并告知当前设置的回合上限(goalMaxRounds);用户未点头禁止 create。不要指望弹出创建表单。改全局默认回合上限走 ratel-config 再 update_app_config({ goalMaxRounds }),不要写进 create 参数凑数。给当前目标加轮用 update 提高本条 maxRounds(必须高于当前值)。不要每轮 complete。对照标准随时可判;已满足或用户要收工时对话点头后再 complete,不要等回合用尽。预算用尽时问加轮/先停/放弃,不要 complete。完成即关闭,不问归档。不要指望完成弹窗。predicate 型由系统自动收口,不可 complete。',
 	'tool.manage_goal.param.action': '动作: create / update / list / pause / resume / cancel / complete',
 	'tool.manage_goal.param.objective': '目标陈述(创建后不可变)',
 	'tool.manage_goal.param.criteriaText': '完成标准;须非空且不同于 objective',
