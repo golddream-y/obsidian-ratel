@@ -5,7 +5,7 @@
 > 修订: 2026-08-22 **v1.3** — 存储定稿**附件外置**:write-once 落 `pluginDir/attachments/<sessionId>/`,消息只存引用;推翻 v1.2「直存 session JSON」(每回合全量序列化,图片多时主线程卡顿);渲染沿用现有 data URL 形态(objectURL 为后续优化项)
 > 状态: Archived
 > Spec ID: **S-VISION**
-> 关联: [PRD §7](../../../PRD.md)(支柱 A 对话能力)、ADR-014(网络出站不变 — 无新增端点)
+> 关联: [prd/features.md](../../../prd/features.md)(支柱 A 对话能力)、ADR-014(网络出站不变 — 无新增端点)
 
 ## 1. 背景
 

@@ -146,7 +146,7 @@ Obsidian → **设置** → **社区插件** → **浏览** → 搜索 **Ratel**
 
 | 文档 | 内容 |
 |---|---|
-| [产品全貌](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/PRD.md) | 产品定位、完整能力与发展方向 |
+| [产品总纲](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/prd/overview.md) | 产品定位、完整能力与发展方向 |
 | [使用手册](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/user-guide.md) | 上手、场景、斜杠命令、FAQ |
 | [更新日志](https://github.com/golddream-y/obsidian-ratel/blob/main/CHANGELOG.md) | 完整发版历史 |
 | [架构](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/architecture/overview.md) | 端口、Agent Loop、工具与 Worker |

@@ -6,7 +6,7 @@
 | 状态 | Active |
 | 创建 | 2026-06-15 |
 | 取代 | [S-INIT-EMBED](docs/superpowers/specs/2026-06-15-ratel-init-embedding-design.md) · [S-INDEX-AUTO](docs/superpowers/specs/2026-06-15-ratel-auto-indexing-design.md) — 两 spec 内容已合并 |
-| 关联 PRD | [`docs/PRD.md` § F6 Worker 后台索引](docs/PRD.md) · [`docs/PRD.md` § F10 初始化嵌入](docs/PRD.md) |
+| 关联产品总纲 | 当时 § F6 / F10 已并入现行 [prd/overview.md](../../../prd/overview.md) |
 | 关联架构 | [`docs/ARCHITECTURE.md` § 5 索引管线](docs/ARCHITECTURE.md) · [`docs/architecture/vector-index.md` 向量化与索引架构](docs/architecture/vector-index.md) · [`docs/architecture/tool-dispatch.md` § 6 嵌入管线复用](docs/architecture/tool-dispatch.md) |
 | 调研参考 | [Smart Connections v4 源码](https://github.com/brianpetro/obsidian-smart-connections) — `SmartEnv` 生命周期 · `process_watch` 增量 · `pause_controls` 暂停 · `.scignore` 排除 |
 
@@ -783,7 +783,7 @@ case 'index.status':  { /* 返 totalDocs / lastIndexTime */ }
 
 ### 内部参考
 
-- [PRD F6 / F10](docs/PRD.md) — 需求源头
+- [prd/overview.md](../../../prd/overview.md) — 需求源头（当时 F6 / F10）
 - [ARCHITECTURE.md § 5 索引管线](docs/ARCHITECTURE.md) — 顶层架构
 - [architecture/vector-index.md](docs/architecture/vector-index.md) — 向量化与索引架构(下钻层)
 - [VectraStore 当前实现](src/adapters/vector-vectra.ts) — 改造基线

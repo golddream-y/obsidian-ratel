@@ -1,7 +1,7 @@
 # Ratel Vault — 架构总览
 
 > 本文档是 Ratel Vault 技术架构的**唯一总入口**。5 分钟看懂系统由哪几块组成、它们怎么协作。
-> 各子系统的详细设计见 `docs/architecture/` 下的领域文档;非显然的技术选型见 `docs/adr/`。
+> 各子系统的详细设计见 `docs/architecture/` 下的领域文档;非显然的技术选型见 `docs/adr/`。产品方向见 [prd/overview.md](../prd/overview.md)。
 
 ---
 
@@ -209,6 +209,8 @@ graph TB
         H3["settings<br/>设置系统"]
         H4["index-controller<br/>索引控制器"]
         H5["folder-watcher<br/>文件去抖监听"]
+        H6["plugin-profile<br/>插件配置档案"]
+        H7["ecosystem<br/>对话装卸其他插件"]
     end
 
     R2 --> R1
@@ -221,6 +223,8 @@ graph TB
     A1 --> A6
     A3 --> R2
     A6 --> A3
+    A3 --> H6
+    A3 --> H7
     L1 --> L2
     A0 --> H1
     R1 --> H2
@@ -247,6 +251,8 @@ graph TB
 | **Host** | folder-watcher | 文件去抖:单文件 5s 计时,delete 立即触发 | [host/folder-watcher.md](host/folder-watcher.md) |
 | **Host** | worker-protocol | Worker 通信:postMessage 协议、请求/响应关联、超时控制 | [host/worker-protocol.md](host/worker-protocol.md) |
 | **Host** | mcp | MCP Host:多 Server 编排、双 transport、工具入册与权限 | [host/mcp.md](host/mcp.md) |
+| **Host** | plugin-profile | 社区插件配置档案:一份 schema、多份实例、匹配后交生态工具写入 | [host/plugin-profile.md](host/plugin-profile.md) |
+| **Host** | ecosystem | 对话寻找/安装/升级/卸载:写盘+确认+未文档启用降级;无官方授权 | [host/ecosystem.md](host/ecosystem.md) |
 
 ---
 
@@ -439,6 +445,9 @@ src/
     workspace.ts                   #   WorkspacePort(活动文件 / 选区)
     skill-port.ts                  #   SkillPort 接口 (三源抽象, skill-fs/skill-vault 实现)
     vault.ts                       #   VaultPort(+ VaultMetadata.headings)
+    plugin-profile.ts              #   PluginProfilePort(档案加载/匹配/校验;计划)
+
+  profiles/                        # 插件档案(计划): schema 校验、注册、匹配、识别草稿
 
   adapters/                        # Adapter 实现
     obsidian-vault.ts              #   Obsidian Vault API 薄封装
@@ -672,6 +681,9 @@ graph LR
 | ADR-013 图谱检索 | `docs/adr/2026-08-03-graph-retrieval-minimize-human-curation.md` | 少靠人管理:向量保底 + 机会性用边 + 双通道确认 |
 | ADR-014 MCP 平台 | `docs/adr/2026-08-03-mcp-host-platform.md` | 平台级 MCP Host,不自建 websearch;双 transport |
 | ADR-015 能力池 | `docs/adr/2026-08-03-capability-pool.md` | 统一意图选择(能力池),按 kind 路由执行链路 |
+| 产品总纲 | `docs/prd/overview.md` | 产品定位与分册入口 |
+| S-PLUGIN-PROFILE | `docs/superpowers/specs/2026-09-10-plugin-profile-design.md` | 插件配置档案需求;正文 [host/plugin-profile.md](host/plugin-profile.md) |
+| S-ECOSYSTEM | `docs/superpowers/specs/2026-08-20-ecosystem-management-design.md` | 对话装卸执行层;正文 [host/ecosystem.md](host/ecosystem.md) |
 | S-BASIC-ENV | `docs/superpowers/archive/S-BASIC-ENV/` | 环境感知:时间注入 + WorkspacePort + daily/recent/outline(已归档,0.1.5) |
 | STATUS.md | `docs/superpowers/STATUS.md` | spec / plan 状态追踪 |
 | 归档 | `docs/superpowers/archive/` | 已完成的 spec/plan 历史档案 |

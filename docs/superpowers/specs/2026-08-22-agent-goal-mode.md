@@ -16,7 +16,7 @@
 > 状态: Active
 > Spec ID: **S-GOAL**
 > 取代: [S-TASK](../archive/S-TASK/2026-08-19-agent-task-store.md)(未实施即被取代,继承其合理内核)
-> 关联: [PRD §2.2 产品能力栈](../../PRD.md)(支柱 A「主动智能」的前置叙事)、S-EVOLUTION Phase C(子代理模板化改为消费 goal)、写侧三件套(独立轻量 spec 待立项,本 spec 不依赖)
+> 关联: [产品能力栈](../../prd/positioning.md)(支柱 A「主动智能」的前置叙事)、S-EVOLUTION Phase C(子代理模板化改为消费 goal)、写侧三件套(独立轻量 spec 待立项,本 spec 不依赖)
 
 ---
 

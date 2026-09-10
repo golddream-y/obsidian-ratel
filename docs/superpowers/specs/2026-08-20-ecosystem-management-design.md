@@ -1,9 +1,12 @@
 # S-ECOSYSTEM — Obsidian 插件生态管理
 
+> **架构正文:** [docs/architecture/host/ecosystem.md](../../architecture/host/ecosystem.md)。改代码前以架构文档为准（含：无官方安装授权、未文档 API 降级）。
+
 > 日期: 2026-08-20
+> 修订: 2026-09-10 — 产品按阶段对齐 [prd/ecosystem.md](../../prd/ecosystem.md)；执行层架构独立成文；EC-10 宿主能力诚实表述
 > 状态: Active
 > Spec ID: **S-ECOSYSTEM**
-> 关联: [PRD §7.3 生态管理](../../PRD.md)、[EC-01 ~ EC-09](../../PRD.md)、[ADR-014](../../adr/2026-08-03-mcp-host-platform.md)(网络出站先例)、新 ADR-018(待立)
+> 关联: [支柱 C 生态管理](../../prd/ecosystem.md)、[EC-01 ~ EC-10](../../prd/requirements.md)、[S-PLUGIN-PROFILE](2026-09-10-plugin-profile-design.md)（配置档案）、[ADR-014](../../adr/2026-08-03-mcp-host-platform.md)(网络出站先例)、新 ADR-018(待立)
 
 ## 1. 背景
 
@@ -14,12 +17,13 @@ PRD 已将产品定位升级为「主动智能的知识与环境管理 Agent」�
 ## 2. 目标
 
 1. 用户用自然语言探索社区插件并得到带作者、下载量、已装标注的推荐（EC-01）
-2. 确认流安装商店插件，即装即用免重启（EC-02）
+2. 确认流安装商店插件：写入目录与启用清单，尽力运行时启用，失败须说明（EC-02 / EC-10）
 3. 更新保留用户配置、卸载先备份后移除（EC-03 / EC-04）
 4. 点名 key 最小 diff 修改其他插件配置（EC-05）
 5. **每次环境变更留 append-only 日志，任意变更可回滚**（EC-06 / EC-07 — 本 spec 核心）
 6. 路径白名单物理校验，越界不可达（EC-08）
 7. Obsidian 官方设置只引导不代改（EC-09）
+8. 不声称官方插件管理授权；desktop-only；商店上架前过审核口径（EC-10）
 
 ## 3. 非目标
 
@@ -28,7 +32,8 @@ PRD 已将产品定位升级为「主动智能的知识与环境管理 Agent」�
 - 不安装商店清单之外的来源（裸 URL、本地旁路包）
 - 不做主题与 CSS snippet 管理
 - 不做 Ratel 自身插件目录的管理（防 Agent 改自己，维持禁区）
-- 不做插件的语义级「深度调优」（如自动生成整套配置模板）— v1 只做点名 key 修改
+- 不把内部 `app.plugins.installPlugin` 写成稳定公开合约；实现必须可降级到写盘 + 请用户重载
+- 不做模型对着未知结构现编整份 `data.json` — v1 只做点名 key 修改；**经唯一 schema 校验的插件档案 preset** 见 [S-PLUGIN-PROFILE](2026-09-10-plugin-profile-design.md)，展开后仍走本 spec 的最小 diff / 确认 / 回滚
 
 ## 4. 详细设计
 
@@ -80,7 +85,7 @@ configDir（名字用户可自定义，启动期已注入）内路径归属：
 | 工具 | 做什么 | 备注 |
 |---|---|---|
 | `search_plugins` | 清单内搜索，返回 top N 候选（id、名称、描述、作者、下载量、是否已装） | 本地过滤排序，不把清单喂模型 |
-| `install_plugin` | 清单定位 → 确认 → 下载三件套 → 写入 → 运行时启用 | `app.plugins.loadManifests()` 后 `enablePlugin(id)`，免重启 |
+| `install_plugin` | 清单定位 → 确认 → 下载三件套 → 写入启用清单 → 尽力热启用 | 热启用走未文档 `app.plugins.*`；失败须说明并引导重载，见架构 §1 |
 | `uninstall_plugin` | 禁用 → 备份 → 删目录 | 确认弹窗列将删除的目录 |
 | `update_plugin` | 查最新 release → 备份 → 覆盖三件套 | **跳过 data.json**，配置不丢 |
 | `configure_plugin` | 读目标插件 data.json → 返回结构；或按点名 key 写回 | 写前展示前后值，最小 diff |
@@ -160,7 +165,7 @@ configDir（名字用户可自定义，启动期已注入）内路径归属：
 
 ## 6. 参考
 
-- [PRD §7.3 生态管理](../../PRD.md)
+- [prd/ecosystem.md](../../prd/ecosystem.md)
 - [ADR-014: MCP Host 平台](../../adr/2026-08-03-mcp-host-platform.md)（opt-in 出站先例）
 - [obsidian-releases 社区清单](https://github.com/obsidianmd/obsidian-releases)
 - 分期：Phase 1 = 4.5/4.6 日志备份基建 + search/install/status；Phase 2 = update/configure/uninstall/restore + open_settings 官方定位

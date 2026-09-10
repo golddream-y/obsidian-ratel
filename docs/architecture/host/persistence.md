@@ -12,6 +12,7 @@
 - 不负责 Obsidian API 封装(属于 [obsidian-integration](obsidian-integration.md))
 - 不负责索引逻辑(属于 [rag/vector-index](../rag/vector-index.md))
 - 不负责模型下载(属于 [llm/model-management](../llm/model-management.md))
+- 不负责插件档案加载与校验(属于 [plugin-profile](plugin-profile.md)；vault 侧文件在 `.ratel/plugin-profiles/`)
 
 ---
 

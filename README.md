@@ -146,7 +146,7 @@ See the [User Guide](https://github.com/golddream-y/obsidian-ratel/blob/main/doc
 
 | Doc | Contents |
 |---|---|
-| [Product Vision](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/PRD.md) | Positioning, complete product picture, and direction |
+| [Product Vision](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/prd/overview.md) | Positioning, complete product picture, and direction |
 | [User Guide](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/user-guide.md) | Setup, scenarios, slash commands, and FAQ |
 | [Changelog](https://github.com/golddream-y/obsidian-ratel/blob/main/CHANGELOG.md) | Release history |
 | [Architecture](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/architecture/overview.md) | Ports, agent loop, tools, and workers |

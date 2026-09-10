@@ -6,7 +6,7 @@
 >
 > **类型:** Feature Spec
 >
-> **关联:** [PRD](../../../PRD.md) CFG-01 / CFG-02、[ADR-006](../../adr/2026-07-27-embedding-worker-inline.md)(内联分发先例)、S-SKILL-1-CORE(三源 Skill 机制)
+> **关联:** [prd/requirements.md](../../../prd/requirements.md) CFG-01 / CFG-02、[ADR-006](../../adr/2026-07-27-embedding-worker-inline.md)(内联分发先例)、S-SKILL-1-CORE(三源 Skill 机制)
 
 ## 1. 背景
 
