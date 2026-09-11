@@ -23,6 +23,7 @@
 | S-GOAL | [2026-08-22-agent-goal-mode.md](specs/2026-08-22-agent-goal-mode.md) | Active | 2026-08-22 | 内核已随 0.7.0 发版;架构正文 [architecture/agent/goal-mode.md](../architecture/agent/goal-mode.md);spec 待归档 |
 | S-LLM-RETRY | [2026-09-09-llm-chat-retry.md](specs/2026-09-09-llm-chat-retry.md) | Active | 2026-09-09 | 对话模型 `LLMClient.chat` 网络/429/5xx 退避重试;MCP curl 不在范围 |
 | S-PLUGIN-PROFILE | [2026-09-10-plugin-profile-design.md](specs/2026-09-10-plugin-profile-design.md) | Active | 2026-09-10 | 社区插件配置档案:一份 schema 多份实例;架构正文 [architecture/host/plugin-profile.md](../architecture/host/plugin-profile.md);依赖 S-ECOSYSTEM 写入;plan 待写 |
+| S-HOST-ACCESS | [2026-09-11-host-access-design.md](specs/2026-09-11-host-access-design.md) | Active | 2026-09-11 | 库外文件+宿主命令:设置总闸默认关,开后走安全/自动/危险且视为破坏性;解析 Skill 另开 spec |
 
 
 ---
@@ -57,6 +58,7 @@
 3. S-ECOSYSTEM(差异化主打,动工前先确认商店审核口径 + 立 ADR-018)
 4. S-PLUGIN-PROFILE — 配置档案底座(schema/规则/识别/示例)可与生态工具分期;写入依赖 S-ECOSYSTEM
 5. 候选(无 spec):skill-script-sandbox 心跳用例 fake-timers 化 — 存量时序 flake(300ms 真定时器赛跑,P-VISION-1 审查期间实证 base/HEAD 均间歇失败)
+6. S-HOST-ACCESS — 库外访问总闸;不插队;文档解析另开 spec
 
 
 ---
