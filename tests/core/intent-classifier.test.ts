@@ -65,9 +65,10 @@ describe('classifyIntent', () => {
 		expect(intent).toBe('rag');
 	});
 
-	it('classifyIntent - 调用 LLM 时 maxTokens=5', async () => {
-		// 关键路径:验证 maxTokens 限制,降低 token 成本
+	it('classifyIntent - 调用 LLM 时 maxTokens=5 并穿透 signal', async () => {
+		// 关键路径:验证 maxTokens 限制,降低 token 成本;停止钮必须能取消分类请求
 		const chatSpy = vi.fn();
+		const ac = new AbortController();
 		const llm: LLMClient = {
 			async *chat(req: ChatRequest): AsyncIterable<ChatDelta> {
 				chatSpy(req);
@@ -76,10 +77,32 @@ describe('classifyIntent', () => {
 			supportsImages: false,
 			countTokens: () => 10,
 		};
-		await classifyIntent('问题', { llm });
+		await classifyIntent('问题', { llm, signal: ac.signal });
 		expect(chatSpy).toHaveBeenCalledWith(expect.objectContaining({
 			options: expect.objectContaining({ maxTokens: 5 }),
+			signal: ac.signal,
 		}));
+	});
+
+	it('classifyIntent - 流挂起时 abort - 抛出取消且不降级 rag', async () => {
+		const ac = new AbortController();
+		const llm: LLMClient = {
+			async *chat(req: ChatRequest): AsyncIterable<ChatDelta> {
+				await new Promise<never>((_, reject) => {
+					const fail = () => reject(new Error('请求已取消'));
+					if (req.signal?.aborted) {
+						fail();
+						return;
+					}
+					req.signal?.addEventListener('abort', fail, { once: true });
+				});
+			},
+			supportsImages: false,
+			countTokens: () => 10,
+		};
+		const pending = classifyIntent('问题', { llm, signal: ac.signal });
+		ac.abort();
+		await expect(pending).rejects.toThrow(/请求已取消/);
 	});
 
 	it('classifyIntent - system prompt 为中文', async () => {

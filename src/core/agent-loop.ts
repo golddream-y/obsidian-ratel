@@ -128,13 +128,18 @@ export async function* agentLoop(
 	// 关键路径:意图分类,判断是否需要 RAG 工作流。无 classifier 时降级 direct(向后兼容)。
 	// 关键路径:分类器异常时静默降级 rag(与 classifyIntent 自身降级方向一致,宁可多搜不漏),
 	// 不向上抛错以遵守 agentLoop 的 @throws 契约(message.end 与 save 仍由 finally 保证)。
+	// 关键路径:已 abort 时跳过分类器 — 分类本身会打 LLM,点停止后不应再发请求。
 	let intent: Intent = 'direct';
-	if (intentClassifier) {
+	if (intentClassifier && !signal?.aborted) {
 		try {
 			intent = await intentClassifier(req.message);
 		} catch {
-			// 关键路径:分类失败降级 rag,保证主流程继续(search_vault 仍可工作)
-			intent = 'rag';
+			if (signal?.aborted) {
+				intent = 'direct';
+			} else {
+				// 关键路径:分类失败降级 rag,保证主流程继续(search_vault 仍可工作)
+				intent = 'rag';
+			}
 		}
 	}
 
@@ -279,6 +284,11 @@ export async function* agentLoop(
 			// 关键路径:一轮内逐个执行工具调用(对 UI 展示为逐条 tool.call/tool.result),
 			// 每个工具独立过权限门控与钩子,单个失败不阻断其他工具。
 			for (const tc of toolCalls) {
+				if (signal?.aborted) {
+					yield { type: 'error', payload: { code: 'CANCELLED', message: '用户取消' } };
+					loopExitedViaBreak = true;
+					break;
+				}
 				yield { type: 'tool.call', payload: { name: tc.name, args: tc.args } };
 
 				// 权限门控(信任模式/用户确认)
@@ -378,6 +388,8 @@ export async function* agentLoop(
 				ctx.addToolResult(tc.id, JSON.stringify(result));
 				accumulatedText = '';
 			}
+
+			if (loopExitedViaBreak) break;
 
 			// 截断后执行完工具,继续下一轮让 LLM 续传(不 break)。
 		}

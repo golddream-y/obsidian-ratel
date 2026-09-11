@@ -31,6 +31,7 @@ import { ObsidianVault } from './adapters/obsidian-vault';
 import { PersistenceJson } from './adapters/persistence-json';
 import { mergePluginData } from './adapters/data-json-merge';
 import { OpenAICompatLLM } from './adapters/llm-openai-compat';
+import { wrapLlmChatRetry } from './core/llm-chat-retry';
 import type { EmbeddingPort } from './ports/embedding';
 import { EmbeddingApi } from './adapters/embedding-api';
 import { EmbeddingLocal } from './adapters/embedding-local';
@@ -277,13 +278,7 @@ export default class RatelVaultPlugin extends Plugin {
 			(data) => this.saveData(data),
 			pluginDir,
 		);
-		this.llm = new OpenAICompatLLM({
-			apiBase: this.settings.chatApiBase,
-			// 关键路径:apiKey 不再存 settings,从 Obsidian 钥匙串按 chatApiBase 端点类型解析;
-			// localhost Ollama 免 Key 返回 null → 空串透传给 LLM(本地服务不校验)。
-			apiKey: resolveChatApiKey(this.app, this.settings) ?? '',
-			model: this.settings.chatModel,
-		});
+		this.llm = this.createChatLlm();
 
 		// Embedding 适配器:本地 ONNX vs 远端 OpenAI 兼容端点,按设置二选一。
 		this.rebuildEmbeddingAdapter();
@@ -1212,13 +1207,22 @@ export default class RatelVaultPlugin extends Plugin {
 	 * 但已构造的 LLM 还指向旧值。重建一次让新 key 生效。
 	 */
 	rebuildLLM(): void {
-		this.llm = new OpenAICompatLLM({
-			apiBase: this.settings.chatApiBase,
-			// 关键路径:apiKey 不再存 settings,从 Obsidian 钥匙串按 chatApiBase 端点类型解析;
-			// localhost Ollama 免 Key 返回 null → 空串透传给 LLM(本地服务不校验)。
-			apiKey: resolveChatApiKey(this.app, this.settings) ?? '',
-			model: this.settings.chatModel,
-		});
+		this.llm = this.createChatLlm();
+	}
+
+	/**
+	 * 构造对话 LLM：适配器外包一层网络/429/5xx 退避（S-LLM-RETRY）。
+	 */
+	private createChatLlm() {
+		return wrapLlmChatRetry(
+			new OpenAICompatLLM({
+				apiBase: this.settings.chatApiBase,
+				// 关键路径:apiKey 不再存 settings,从钥匙串按 chatApiBase 端点类型解析;
+				// localhost Ollama 免 Key 返回 null → 空串透传给 LLM(本地服务不校验)。
+				apiKey: resolveChatApiKey(this.app, this.settings) ?? '',
+				model: this.settings.chatModel,
+			}),
+		);
 	}
 
 	/**
@@ -1532,7 +1536,11 @@ export default class RatelVaultPlugin extends Plugin {
 		// 闭包捕获 this.llm,与 agentLoop 解耦。
 		// 关键路径:把 overrides 透传给 intent-classifier,让内部 LLM 也走 Composer + 用户自定义 section。
 		const intentClassifier = (msg: string) =>
-			classifyIntent(msg, { llm: this.llm, overrides: this.settings.promptOverrides });
+			classifyIntent(msg, {
+				llm: this.llm,
+				overrides: this.settings.promptOverrides,
+				signal,
+			});
 
 		const goalGrantCheck = createGoalGrantCheck({
 			goalStore: this.goalStore,

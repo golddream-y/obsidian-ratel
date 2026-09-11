@@ -76,6 +76,7 @@ Skill 若写「去 curl / 请求某 URL」,Ratel **没有内置 HTTP 工具**。
 
 - v1 **不**新增 StatusStrip 文案、不发 Notice。停止钮继续 abort 当前 HTTP。
 - 最终失败仍用现有 `formatChatError`;429 已有「请稍等后重试」建议,保持。
+- 对话打字行的「重试中」提示与 `connecting` 球见 [S-LLM-RETRY-UI](2026-09-11-llm-retry-status-design.md);本文件仍不改 StatusStrip。
 
 ### 4.6 测试
 

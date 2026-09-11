@@ -63,6 +63,15 @@ export class OpenAICompatLLM implements LLMClient {
 	constructor(private config: DeepSeekConfig) {}
 
 	/**
+	 * HTTP 非 2xx：文案走 i18n，并挂 status 供 S-LLM-RETRY 判定。
+	 */
+	private llmHttpError(status: number, detail: string): Error & { status: number } {
+		const err = new Error(tNow('error.api.llmFailed', { status, detail })) as Error & { status: number };
+		err.status = status;
+		return err;
+	}
+
+	/**
 	 * 发图协议(S-VISION):localhost 走 Ollama `images[]`,远端走 `image_url`。
 	 * 不拦截含图请求 — 纯文本端点由接口报错后映射为 VISION_UNSUPPORTED。
 	 */
@@ -120,7 +129,7 @@ export class OpenAICompatLLM implements LLMClient {
 		if (statusCode < 200 || statusCode >= 300) {
 			// 消费掉错误体以便连接干净关闭
 			const errText = await this.readAll(stream);
-			throw new Error(tNow('error.api.llmFailed', { status: statusCode, detail: errText.slice(0, 200) }));
+			throw this.llmHttpError(statusCode, errText.slice(0, 200));
 		}
 
 		// 工具调用增量缓冲:key = tool_call.index,value = {id, name, arguments 字符串拼接}
@@ -132,51 +141,57 @@ export class OpenAICompatLLM implements LLMClient {
 		// 关键路径:禁止对每个 TCP chunk 单独 toString('utf8') — 汉字会被拆成三个 U+FFFD
 		const utf8 = new Utf8StreamBuffer();
 
-		for await (const chunk of stream as unknown as AsyncIterable<Buffer | string>) {
-			buffer += utf8.push(chunk);
+		try {
+			for await (const chunk of stream as unknown as AsyncIterable<Buffer | string>) {
+				if (req.signal?.aborted) throw new Error('请求已取消');
+				buffer += utf8.push(chunk);
 
-			// SSE 事件以 \n\n 分隔
-			let newlineIdx: number;
-			while ((newlineIdx = buffer.indexOf('\n\n')) !== -1) {
-				const rawEvent = buffer.slice(0, newlineIdx);
-				buffer = buffer.slice(newlineIdx + 2);
-				const result = this.processSSEEvent(rawEvent, toolCallAccumulators);
+				// SSE 事件以 \n\n 分隔
+				let newlineIdx: number;
+				while ((newlineIdx = buffer.indexOf('\n\n')) !== -1) {
+					const rawEvent = buffer.slice(0, newlineIdx);
+					buffer = buffer.slice(newlineIdx + 2);
+					const result = this.processSSEEvent(rawEvent, toolCallAccumulators);
+					if (result.finishReason) finishReason = result.finishReason;
+					if (result.usage) capturedUsage = result.usage;
+					yield* result.deltas;
+				}
+			}
+			buffer += utf8.flush();
+
+			// 处理尾部可能残留的最后一个事件
+			if (buffer.trim()) {
+				const result = this.processSSEEvent(buffer, toolCallAccumulators);
 				if (result.finishReason) finishReason = result.finishReason;
 				if (result.usage) capturedUsage = result.usage;
 				yield* result.deltas;
 			}
-		}
-		buffer += utf8.flush();
 
-		// 处理尾部可能残留的最后一个事件
-		if (buffer.trim()) {
-			const result = this.processSSEEvent(buffer, toolCallAccumulators);
-			if (result.finishReason) finishReason = result.finishReason;
-			if (result.usage) capturedUsage = result.usage;
-			yield* result.deltas;
-		}
-
-		// 收尾:把累积的工具调用一次性 yield 出去,text 留空以便调用方区分。
-		for (const [, tc] of toolCallAccumulators) {
-			let args: Record<string, unknown> = {};
-			try {
-				args = JSON.parse(tc.arguments) as Record<string, unknown>;
-			} catch {
-				// 修复:模型截断或残缺 JSON 时,把原始字符串塞入 raw 字段,避免整轮失败。
-				args = { raw: tc.arguments };
+			// 收尾:把累积的工具调用一次性 yield 出去,text 留空以便调用方区分。
+			for (const [, tc] of toolCallAccumulators) {
+				let args: Record<string, unknown> = {};
+				try {
+					args = JSON.parse(tc.arguments) as Record<string, unknown>;
+				} catch {
+					// 修复:模型截断或残缺 JSON 时,把原始字符串塞入 raw 字段,避免整轮失败。
+					args = { raw: tc.arguments };
+				}
+				const toolCall: ToolCall = { id: tc.id, name: tc.name, args };
+				yield { text: '', toolCall };
 			}
-			const toolCall: ToolCall = { id: tc.id, name: tc.name, args };
-			yield { text: '', toolCall };
-		}
 
-		// 关键路径:流末尾 yield usage,供 agent-loop 透传到 message.end
-		if (capturedUsage) {
-			yield { text: '', usage: capturedUsage };
-		}
+			// 关键路径:流末尾 yield usage,供 agent-loop 透传到 message.end
+			if (capturedUsage) {
+				yield { text: '', usage: capturedUsage };
+			}
 
-		// 关键路径:流末尾 yield finishReason,让 agent-loop 判断是否被 max_tokens 截断。
-		if (finishReason) {
-			yield { text: '', finishReason: finishReason as ChatDelta['finishReason'] };
+			// 关键路径:流末尾 yield finishReason,让 agent-loop 判断是否被 max_tokens 截断。
+			if (finishReason) {
+				yield { text: '', finishReason: finishReason as ChatDelta['finishReason'] };
+			}
+		} catch (err) {
+			if (req.signal?.aborted) throw new Error('请求已取消');
+			throw err;
 		}
 	}
 
@@ -302,6 +317,25 @@ export class OpenAICompatLLM implements LLMClient {
 			const isHttps = url.protocol === 'https:';
 			// 关键路径:静态选择 http/https 模块,避免 require() 动态导入(eslint 禁止)。
 			const lib = isHttps ? https : http;
+			let settled = false;
+			let resStream: IncomingMessage | undefined;
+			const fail = (err: Error) => {
+				if (settled) {
+					resStream?.destroy(err);
+					return;
+				}
+				settled = true;
+				cleanup();
+				reject(err);
+			};
+			// 关键路径:响应头到达后仍保留 abort — DeepSeek 思考阶段会长时间不出 token;
+			// 若在 callback 里 cleanup,停止钮只能干等下一个 SSE 字节
+			const onAbort = () => {
+				const err = new Error('请求已取消');
+				req.destroy(err);
+				fail(err);
+			};
+			const cleanup = () => signal?.removeEventListener('abort', onAbort);
 			const req = lib.request(
 				{
 					hostname: url.hostname,
@@ -315,8 +349,18 @@ export class OpenAICompatLLM implements LLMClient {
 					},
 				},
 				(res: IncomingMessage) => {
-					// 关键路径:IncomingMessage 实现 NodeJS.ReadableStream,无需双重断言。
-					cleanup();
+					resStream = res;
+					res.once('close', cleanup);
+					res.once('end', cleanup);
+					if (settled) {
+						res.destroy(new Error('请求已取消'));
+						return;
+					}
+					if (signal?.aborted) {
+						fail(new Error('请求已取消'));
+						return;
+					}
+					settled = true;
 					resolve({
 						stream: res,
 						statusCode: res.statusCode ?? 0,
@@ -324,13 +368,8 @@ export class OpenAICompatLLM implements LLMClient {
 				},
 			);
 			req.on('error', (err) => {
-				cleanup();
-				reject(err);
+				fail(err instanceof Error ? err : new Error(String(err)));
 			});
-			// 关键路径:abort 穿透 — 销毁 req 连带销毁响应流,for-await 立即抛错;
-			// 不只依赖上层循环轮询 aborted(首字节 pending 期间没人轮询,停止钮点了没反应)
-			const onAbort = () => req.destroy(new Error('请求已取消'));
-			const cleanup = () => signal?.removeEventListener('abort', onAbort);
 			signal?.addEventListener('abort', onAbort);
 			req.write(options.body);
 			req.end();
@@ -370,7 +409,7 @@ export class OpenAICompatLLM implements LLMClient {
 		});
 
 		if (response.status < 200 || response.status >= 300) {
-			throw new Error(tNow('error.api.llmFailed', { status: response.status, detail: '' }));
+			throw this.llmHttpError(response.status, '');
 		}
 
 		const text = response.text;

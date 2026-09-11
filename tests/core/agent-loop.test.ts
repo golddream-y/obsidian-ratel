@@ -420,6 +420,43 @@ describe('agentLoop', () => {
 
 	// ==================== 取消机制 ====================
 
+	it('取消 - signal 已 abort - 不调意图分类器也不调 LLM', async () => {
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence, undefined, 8000);
+		let llmCalls = 0;
+		const llm: LLMClient = {
+			async *chat(): AsyncIterable<ChatDelta> {
+				llmCalls += 1;
+				yield { text: 'should not reach' };
+			},
+			supportsImages: false,
+			countTokens: () => 10,
+		};
+		const tools = new ToolRegistry();
+		const hooks = new HookRegistry();
+		const intentClassifier = vi.fn().mockResolvedValue('rag' as const);
+		const controller = new AbortController();
+		controller.abort();
+
+		const events: AgentEvent[] = [];
+		for await (const event of agentLoop(
+			{ sessionId: 's1', message: 'Hi' },
+			ctx,
+			llm,
+			tools,
+			hooks,
+			controller.signal,
+			intentClassifier,
+		)) {
+			events.push(event);
+		}
+
+		expect(intentClassifier).not.toHaveBeenCalled();
+		expect(llmCalls).toBe(0);
+		expect(events.some((e) => e.type === 'error' && e.payload.code === 'CANCELLED')).toBe(true);
+		expect(events.some((e) => e.type === 'message.end')).toBe(true);
+	});
+
 	it('取消 - signal 已 abort - 不调 LLM,直接 yield error + message.end', async () => {
 		const persistence = createMockPersistence();
 		const ctx = new ContextManager(persistence, undefined, 8000);
@@ -485,6 +522,55 @@ describe('agentLoop', () => {
 		expect(deltas.length).toBeGreaterThanOrEqual(1);
 		expect(events.some((e) => e.type === 'error' && e.payload.code === 'CANCELLED')).toBe(true);
 		expect(events.some((e) => e.type === 'message.end')).toBe(true);
+	});
+
+	it('取消 - 第一个工具内 abort - 不执行后续工具也不进下一轮 LLM', async () => {
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence, undefined, 8000);
+		const controller = new AbortController();
+		let secondRuns = 0;
+		let llmCalls = 0;
+		const llm: LLMClient = {
+			async *chat(): AsyncIterable<ChatDelta> {
+				llmCalls += 1;
+				if (llmCalls === 1) {
+					yield { text: '', toolCall: { id: 'a', name: 'first', args: {} } };
+					yield { text: '', toolCall: { id: 'b', name: 'second', args: {} } };
+					return;
+				}
+				yield { text: 'should not reach' };
+			},
+			countTokens: () => 10,
+		};
+		const tools = new ToolRegistry();
+		tools.register({
+			definition: { name: 'first', description: '', parameters: {} },
+			execute: async () => {
+				controller.abort();
+				return '1';
+			},
+		});
+		tools.register({
+			definition: { name: 'second', description: '', parameters: {} },
+			execute: async () => {
+				secondRuns += 1;
+				return '2';
+			},
+		});
+		const events: AgentEvent[] = [];
+		for await (const event of agentLoop(
+			{ sessionId: 's1', message: 'Hi' },
+			ctx,
+			llm,
+			tools,
+			new HookRegistry(),
+			controller.signal,
+		)) {
+			events.push(event);
+		}
+		expect(secondRuns).toBe(0);
+		expect(llmCalls).toBe(1);
+		expect(events.some((e) => e.type === 'error' && e.payload.code === 'CANCELLED')).toBe(true);
 	});
 
 	it('取消 - 仍保存 session', async () => {

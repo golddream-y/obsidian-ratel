@@ -6,6 +6,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { PassThrough } from 'node:stream';
 
 // 关键路径:vi.hoisted 确保 mockRequestUrl 在 vi.mock 提升前完成初始化。
 const { mockRequestUrl } = vi.hoisted(() => ({
@@ -29,7 +30,9 @@ vi.mock('node:http', () => ({
 
 // 关键路径:模拟 node http/https request — 返回 mock req,在 end() 时触发 error 降级
 // behavior='pending' 时不触发任何事件(模拟请求挂起),由 destroy() 触发 error — 供 abort 测试用
-let mockHttpBehavior: 'error' | 'pending' = 'error';
+// behavior='headers-then-hang': 已 200 但响应体不出字节(思考阶段),abort 必须能 destroy 响应流
+let mockHttpBehavior: 'error' | 'pending' | 'headers-then-hang' = 'error';
+let hangingRes: PassThrough | null = null;
 function createMockHttpRequest(_options: unknown, callback: (res: unknown) => void) {
 	const handlers: Record<string, Array<(arg?: unknown) => void>> = {};
 	const req = {
@@ -42,9 +45,19 @@ function createMockHttpRequest(_options: unknown, callback: (res: unknown) => vo
 					if (errorHandler) errorHandler(new Error('mock: forced fallback to requestUrl'));
 				}, 0);
 			}
+			if (mockHttpBehavior === 'headers-then-hang') {
+				setTimeout(() => {
+					const res = new PassThrough();
+					(res as PassThrough & { statusCode: number }).statusCode = 200;
+					hangingRes = res;
+					callback(res);
+				}, 0);
+			}
 		},
 		// 关键路径:模拟 req.destroy(err) — 立即触发 error handler,模拟 abort 销毁 socket
 		destroy: (err?: Error) => {
+			hangingRes?.destroy(err ?? new Error('mock: destroyed'));
+			hangingRes = null;
 			const errorHandler = handlers.error?.[0];
 			if (errorHandler) errorHandler(err ?? new Error('mock: destroyed'));
 		},
@@ -467,6 +480,35 @@ describe('OpenAICompatLLM', () => {
 				mockHttpBehavior = 'error';
 			}
 		}, 3000);
+
+		it('响应头已到、流还在挂起时 abort - 立即抛错且不降级 requestUrl', async () => {
+			// 修复:HTTP 200 后卸掉 abort 监听,思考阶段点停止只能干等下一个 token
+			mockHttpBehavior = 'headers-then-hang';
+			try {
+				const llm = new OpenAICompatLLM({
+					apiBase: 'http://test',
+					apiKey: 'sk-test',
+					model: 'deepseek-chat',
+				});
+				const controller = new AbortController();
+				const consumed = (async () => {
+					for await (const _delta of llm.chat({
+						messages: [{ role: 'user', content: 'Hi' }],
+						signal: controller.signal,
+					})) {
+						void _delta;
+					}
+				})();
+				await new Promise((r) => setTimeout(r, 30));
+				expect(hangingRes, '响应头应已到达').not.toBeNull();
+				controller.abort();
+				await expect(consumed).rejects.toThrow(/请求已取消/);
+				expect(mockRequestUrl).not.toHaveBeenCalled();
+			} finally {
+				hangingRes = null;
+				mockHttpBehavior = 'error';
+			}
+		}, 1500);
 
 		it('signal 已 aborted - 不发请求直接抛错', async () => {
 			mockHttpBehavior = 'pending';
