@@ -7,7 +7,7 @@
 import type { BaseStrings, SettingsStrings, ChatStrings, ToolNameStrings,
   SlashStrings, NoticeStrings, ModalStrings, StatusStrings,
   DiagnosticsStrings, ErrorStrings, PromptLabelStrings, MemoryStrings,
-  CmdStrings, ToolPermStrings, SkillStrings, GoalStrings, Strings } from './types';
+  CmdStrings, ToolPermStrings, SkillStrings, EcosystemStrings, GoalStrings, Strings } from './types';
 
 const baseZh: BaseStrings = {
   'common.ok': '确定',
@@ -173,6 +173,8 @@ const settingsZh: SettingsStrings = {
   'settings.toolPermissions.deactivate_skill': '关闭 Skill',
   'settings.toolPermissions.read_skill_reference': '读取 Skill 参考资料',
   'settings.toolPermissions.run_skill_script': '运行 Skill 脚本',
+  'settings.toolPermissions.preview_skill_ecosystem': '预览场景依赖',
+  'settings.toolPermissions.write_skill_draft': '写技能草稿',
   'settings.toolPermissions.get_datetime': '获取时间',
   'settings.toolPermissions.get_active_note': '当前笔记',
   'settings.toolPermissions.get_daily_note': '日记路径',
@@ -400,6 +402,8 @@ const toolNameZh: ToolNameStrings = {
   'tool.name.get_app_config': '读取应用配置',
   'tool.name.update_app_config': '修改应用配置',
   'tool.name.run_skill_script': '运行脚本 {script}',
+  'tool.name.preview_skill_ecosystem': '预览场景依赖 {name}',
+  'tool.name.write_skill_draft': '写技能草稿 {name}',
   'tool.name.mcp': 'MCP · {server} · {tool}',
 };
 
@@ -810,6 +814,23 @@ const promptLabelZh: PromptLabelStrings = {
   'promptLabel.tool.run_skill_script.param.scriptPath.desc': 'scripts/ 内相对路径',
   'promptLabel.tool.run_skill_script.param.args': 'run_skill_script.args',
   'promptLabel.tool.run_skill_script.param.args.desc': '传给脚本的参数数组',
+  // 关键路径(S-SCENE-ECO):preview_skill_ecosystem / write_skill_draft 工具
+  'promptLabel.tool.preview_skill_ecosystem.description': 'preview_skill_ecosystem 描述',
+  'promptLabel.tool.preview_skill_ecosystem.description.desc': '只读预览 Skill 的 ecosystem 依赖计划(插件/档案/模板/Ratel 设置),不写盘',
+  'promptLabel.tool.preview_skill_ecosystem.param.name': 'preview_skill_ecosystem.name',
+  'promptLabel.tool.preview_skill_ecosystem.param.name.desc': 'Skill 名称(kebab-case)',
+  'promptLabel.tool.write_skill_draft.description': 'write_skill_draft 描述',
+  'promptLabel.tool.write_skill_draft.description.desc': '写库内 Skill 草稿到 .ratel/skills/,强制未启用,不改装环境',
+  'promptLabel.tool.write_skill_draft.param.name': 'write_skill_draft.name',
+  'promptLabel.tool.write_skill_draft.param.name.desc': 'Skill 名称(kebab-case)',
+  'promptLabel.tool.write_skill_draft.param.description': 'write_skill_draft.description',
+  'promptLabel.tool.write_skill_draft.param.description.desc': 'Skill 一句话描述',
+  'promptLabel.tool.write_skill_draft.param.instructions': 'write_skill_draft.instructions',
+  'promptLabel.tool.write_skill_draft.param.instructions.desc': 'SKILL.md 正文(不含 frontmatter)',
+  'promptLabel.tool.write_skill_draft.param.ecosystem': 'write_skill_draft.ecosystem',
+  'promptLabel.tool.write_skill_draft.param.ecosystem.desc': '可选依赖对象(plugins/ratel/vaultFiles);非法则拒绝写入',
+  'promptLabel.tool.write_skill_draft.param.overwrite': 'write_skill_draft.overwrite',
+  'promptLabel.tool.write_skill_draft.param.overwrite.desc': '是否覆盖已有草稿',
   'promptLabel.tool.get_datetime.description': 'get_datetime 描述',
   'promptLabel.tool.get_datetime.description.desc': '获取本地时间或相对日期',
   'promptLabel.tool.get_datetime.param.format': 'get_datetime.format',
@@ -899,6 +920,7 @@ const toolPermZh: ToolPermStrings = {
   'toolPerm.editNote': '精确替换 {path} 中的文本',
   'toolPerm.deleteNote': '将 {path} 移到回收站',
   'toolPerm.runSkillScript': '运行 Skill 脚本: {id}',
+  'toolPerm.writeSkillDraft': '写技能草稿 {name}',
   'toolPerm.manageGoal': '管理目标 [{action}]: {objective}',
 };
 
@@ -970,6 +992,7 @@ const skillZh: SkillStrings = {
   'error.skill.invalidName': 'Skill 名称非法: {name}',
   'error.skill.notEnabled': 'Skill {name} 未启用',
   'error.skill.loadFailed': 'Skill 加载失败: {message}',
+  'error.skill.draftForbiddenDir': '禁止把技能草稿写到插件内置目录',
   // 关键路径(P-SKILL-2):read_skill_reference 工具
   'skill.ref.notFound': '未找到参考文件: {path}',
   'skill.ref.invalidPath': '路径非法(不允许绝对路径或 ..): {path}',
@@ -1117,6 +1140,28 @@ const goalZh: GoalStrings = {
   'goal.notice.writeNoteHint': '请在对话中说明要把总结写入哪篇笔记;写完后再选择留列表或归档',
 };
 
+const ecosystemZh: EcosystemStrings = {
+  'ecosystem.invalid.notObject': 'ecosystem 必须是对象',
+  'ecosystem.invalid.unknownTopLevel': '未知顶层键 {key}',
+  'ecosystem.invalid.pluginIdEmpty': 'pluginId 不能为空',
+  'ecosystem.invalid.barePluginKeys': 'plugin 项不允许包含裸补丁键(keys/patch/dataJson)',
+  'ecosystem.invalid.profileIncomplete': 'profileId 与 presetId 必须成对出现',
+  'ecosystem.invalid.profileMissing': '找不到插件档案 {profileId}/{presetId}',
+  'ecosystem.invalid.profileDraft': '档案 {profileId} 仍为草稿',
+  'ecosystem.invalid.profileDisabled': '档案 {profileId} 已禁用',
+  'ecosystem.invalid.profilePluginMismatch': '档案 {profileId} 的 pluginId 与声明不一致',
+  'ecosystem.invalid.presetMissing': '找不到预设 {presetId}',
+  'ecosystem.invalid.forbiddenPluginId': '不能把 ratel-vault 写进依赖',
+  'ecosystem.invalid.ratelKeyUnknown': 'ratel.key 不在白名单: {key}',
+  'ecosystem.invalid.vaultDestUnsafe': 'vaultFiles.dest 路径不安全: {dest}',
+  'ecosystem.invalid.skillUrlInvalid': 'vaultFiles.source 格式无效',
+  'ecosystem.invalid.skillUrlWrongSkill': 'skill:// 必须指向本 Skill',
+  'ecosystem.invalid.skillUrlTraversal': 'skill:// 路径含越界片段',
+  'ecosystem.preview.noBlock': '该 Skill 没有 ecosystem 依赖块',
+  'ecosystem.draft.exists': '库内已有技能 {name},需要 overwrite=true 才能覆盖',
+  'ecosystem.draft.written': '已写入草稿 .ratel/skills/{name}/,默认未启用',
+};
+
 export const zh: Strings = {
   ...baseZh,
   ...settingsZh,
@@ -1133,5 +1178,6 @@ export const zh: Strings = {
   ...cmdZh,
   ...toolPermZh,
   ...skillZh,
+  ...ecosystemZh,
   ...goalZh,
 };

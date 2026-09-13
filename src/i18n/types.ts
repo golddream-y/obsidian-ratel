@@ -172,6 +172,8 @@ export interface SettingsStrings {
   'settings.toolPermissions.deactivate_skill': string;
   'settings.toolPermissions.read_skill_reference': string;
   'settings.toolPermissions.run_skill_script': string;
+  'settings.toolPermissions.preview_skill_ecosystem': string;
+  'settings.toolPermissions.write_skill_draft': string;
   'settings.toolPermissions.get_datetime': string;
   'settings.toolPermissions.get_active_note': string;
   'settings.toolPermissions.get_daily_note': string;
@@ -401,6 +403,8 @@ export interface ToolNameStrings {
   'tool.name.get_app_config': string;
   'tool.name.update_app_config': string;
   'tool.name.run_skill_script': string;
+  'tool.name.preview_skill_ecosystem': string;
+  'tool.name.write_skill_draft': string;
   'tool.name.mcp': string;
 }
 
@@ -824,6 +828,23 @@ export interface PromptLabelStrings {
   'promptLabel.tool.run_skill_script.param.scriptPath.desc': string;
   'promptLabel.tool.run_skill_script.param.args': string;
   'promptLabel.tool.run_skill_script.param.args.desc': string;
+  // 关键路径(S-SCENE-ECO):preview_skill_ecosystem / write_skill_draft 工具 section 元数据
+  'promptLabel.tool.preview_skill_ecosystem.description': string;
+  'promptLabel.tool.preview_skill_ecosystem.description.desc': string;
+  'promptLabel.tool.preview_skill_ecosystem.param.name': string;
+  'promptLabel.tool.preview_skill_ecosystem.param.name.desc': string;
+  'promptLabel.tool.write_skill_draft.description': string;
+  'promptLabel.tool.write_skill_draft.description.desc': string;
+  'promptLabel.tool.write_skill_draft.param.name': string;
+  'promptLabel.tool.write_skill_draft.param.name.desc': string;
+  'promptLabel.tool.write_skill_draft.param.description': string;
+  'promptLabel.tool.write_skill_draft.param.description.desc': string;
+  'promptLabel.tool.write_skill_draft.param.instructions': string;
+  'promptLabel.tool.write_skill_draft.param.instructions.desc': string;
+  'promptLabel.tool.write_skill_draft.param.ecosystem': string;
+  'promptLabel.tool.write_skill_draft.param.ecosystem.desc': string;
+  'promptLabel.tool.write_skill_draft.param.overwrite': string;
+  'promptLabel.tool.write_skill_draft.param.overwrite.desc': string;
   'promptLabel.tool.get_datetime.description': string;
   'promptLabel.tool.get_datetime.description.desc': string;
   'promptLabel.tool.get_datetime.param.format': string;
@@ -917,6 +938,7 @@ export interface ToolPermStrings {
   'toolPerm.editNote': string;
   'toolPerm.deleteNote': string;
   'toolPerm.runSkillScript': string;
+  'toolPerm.writeSkillDraft': string;
   'toolPerm.manageGoal': string;
 }
 
@@ -992,6 +1014,7 @@ export interface SkillStrings {
   'error.skill.invalidName': string;
   'error.skill.notEnabled': string;
   'error.skill.loadFailed': string;
+  'error.skill.draftForbiddenDir': string;
   // 关键路径(P-SKILL-2):read_skill_reference 工具
   'skill.ref.notFound': string;
   'skill.ref.invalidPath': string;
@@ -1030,6 +1053,29 @@ export interface SkillStrings {
   'modal.skillManage.editHint': string;
   /** 技能行使用次数(S-SR-LAYERING SR-03 — activate_skill 计数) */
   'modal.skillManage.usedTimes': string;
+}
+
+// ==================== Ecosystem(S-SCENE-ECO — 场景依赖预览 / 草稿) ====================
+export interface EcosystemStrings {
+  'ecosystem.invalid.notObject': string;
+  'ecosystem.invalid.unknownTopLevel': string;
+  'ecosystem.invalid.pluginIdEmpty': string;
+  'ecosystem.invalid.barePluginKeys': string;
+  'ecosystem.invalid.profileIncomplete': string;
+  'ecosystem.invalid.profileMissing': string;
+  'ecosystem.invalid.profileDraft': string;
+  'ecosystem.invalid.profileDisabled': string;
+  'ecosystem.invalid.profilePluginMismatch': string;
+  'ecosystem.invalid.presetMissing': string;
+  'ecosystem.invalid.forbiddenPluginId': string;
+  'ecosystem.invalid.ratelKeyUnknown': string;
+  'ecosystem.invalid.vaultDestUnsafe': string;
+  'ecosystem.invalid.skillUrlInvalid': string;
+  'ecosystem.invalid.skillUrlWrongSkill': string;
+  'ecosystem.invalid.skillUrlTraversal': string;
+  'ecosystem.preview.noBlock': string;
+  'ecosystem.draft.exists': string;
+  'ecosystem.draft.written': string;
 }
 
 // ==================== Goal(S-GOAL — 目标模式) ====================
@@ -1145,7 +1191,7 @@ export interface Strings extends
   BaseStrings, SettingsStrings, ChatStrings, ToolNameStrings,
   SlashStrings, NoticeStrings, ModalStrings, StatusStrings,
   DiagnosticsStrings, ErrorStrings, PromptLabelStrings, MemoryStrings,
-  CmdStrings, ToolPermStrings, SkillStrings, GoalStrings {
+  CmdStrings, ToolPermStrings, SkillStrings, EcosystemStrings, GoalStrings {
   // 后续新功能按 namespace 追加 extends
 }
 
