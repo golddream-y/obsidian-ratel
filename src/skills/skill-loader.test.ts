@@ -159,6 +159,58 @@ x`,
 		});
 	});
 
+	it('loadAll - 合法 ecosystem - manifest.ecosystem.valid', async () => {
+		const port = makePortWithSkill(
+			'demo',
+			`---
+name: demo
+description: 带依赖
+ecosystem:
+  plugins:
+    - pluginId: dataview
+---
+body`,
+		);
+		const loader = new SkillLoader([port]);
+		const { skills, warnings } = await loader.loadAll();
+		expect(warnings).toHaveLength(0);
+		expect(skills).toHaveLength(1);
+		expect(skills[0]!.manifest.ecosystem.validity).toBe('valid');
+		expect(skills[0]!.manifest.ecosystem.value?.plugins[0]?.pluginId).toBe('dataview');
+	});
+
+	it('loadAll - 非法 ecosystem - 仍加载 Skill 且 validity=invalid', async () => {
+		const port = makePortWithSkill(
+			'demo',
+			`---
+name: demo
+description: 坏依赖
+ecosystem:
+  plugins:
+    - pluginId: ratel-vault
+---
+body`,
+		);
+		const loader = new SkillLoader([port]);
+		const { skills } = await loader.loadAll();
+		expect(skills).toHaveLength(1);
+		expect(skills[0]!.manifest.ecosystem.validity).toBe('invalid');
+	});
+
+	it('loadAll - 无 ecosystem - validity=absent', async () => {
+		const port = makePortWithSkill(
+			'demo',
+			`---
+name: demo
+description: 普通
+---
+body`,
+		);
+		const loader = new SkillLoader([port]);
+		const { skills } = await loader.loadAll();
+		expect(skills[0]!.manifest.ecosystem.validity).toBe('absent');
+	});
+
 	it('loadAll - 文件读取失败 - 记 warning 不阻塞其他', async () => {
 		const port = new MockSkillPort('vault', '/vault', {
 			'good': `---

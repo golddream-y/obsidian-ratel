@@ -7,6 +7,8 @@
 
 import matter from 'gray-matter';
 import type { SkillPort } from '../ports/skill-port';
+import { isWhitelistedKey } from '../settings/config-whitelist';
+import { parseSkillEcosystem } from './parse-skill-ecosystem';
 import { SKILL_NAME_REGEX } from './skill-name';
 import type { Skill, SkillManifest, SkillActivation, SkillLoadWarning } from './types';
 
@@ -132,6 +134,17 @@ export class SkillLoader {
 		const enabled = typeof data.enabled === 'boolean' ? data.enabled : true;
 		const tags = Array.isArray(data.tags) ? data.tags.filter((t): t is string => typeof t === 'string') : [];
 		const i18nDescription = this.extractI18nDescription(data.i18n, skillPath, warnings);
+		const ecosystem = parseSkillEcosystem(data.ecosystem, {
+			skillName: name,
+			isWhitelistedKey,
+			lookupProfile: { lookup: () => undefined },
+		});
+		if (ecosystem.validity === 'invalid') {
+			warnings.push({
+				path: skillPath,
+				message: `ecosystem 无效: ${ecosystem.issues.map((i) => i.code).join(',')}`,
+			});
+		}
 		return {
 			name,
 			description,
@@ -141,6 +154,7 @@ export class SkillLoader {
 			activation,
 			tags,
 			i18nDescription,
+			ecosystem,
 		};
 	}
 

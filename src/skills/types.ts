@@ -2,8 +2,10 @@
  * @file src/skills/types.ts
  * @description Skill 机制核心类型 — Skill / SkillManifest / SkillSource / SkillActivation
  * @module skills/types
- * @depends prompts/types(仅 PromptSectionId 引用,无运行时依赖)
+ * @depends prompts/types(仅 PromptSectionId 引用,无运行时依赖), skills/ecosystem-types
  */
+
+import type { ParsedSkillEcosystem } from './ecosystem-types';
 
 /**
  * Skill 来源标识,对应三源合并存储的优先级。
@@ -62,6 +64,8 @@ export interface SkillManifest {
 	tags: string[];
 	/** 多语言 description,locale → 文案 */
 	i18nDescription?: SkillI18nDescription;
+	/** 场景依赖;无块时 validity=absent。非法不阻止加载。 */
+	ecosystem: ParsedSkillEcosystem;
 }
 
 /**

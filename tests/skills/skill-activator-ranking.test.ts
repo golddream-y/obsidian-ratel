@@ -14,7 +14,14 @@ import type { Skill } from '../../src/skills/types';
 /** 最小 Skill 桩 — manifest 必填字段按 src/skills/types.ts 实际接口构造 */
 function fakeSkill(name: string, description: string, tags: string[] = []): Skill {
 	return {
-		manifest: { name, description, enabled: true, activation: 'auto', tags },
+		manifest: {
+			name,
+			description,
+			enabled: true,
+			activation: 'auto',
+			tags,
+			ecosystem: { validity: 'absent', issues: [] },
+		},
 		instructions: 'do things',
 		dir: `/fake/${name}`,
 		source: 'builtin',

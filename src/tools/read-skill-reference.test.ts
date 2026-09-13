@@ -24,7 +24,14 @@ function makeRegistry(dir: string): SkillRegistry {
 	const registry = new SkillRegistry();
 	registry.reload(
 		[{
-			manifest: { name: 'demo', description: 'd', enabled: true, activation: 'auto', tags: [] },
+			manifest: {
+				name: 'demo',
+				description: 'd',
+				enabled: true,
+				activation: 'auto',
+				tags: [],
+				ecosystem: { validity: 'absent', issues: [] },
+			},
 			instructions: 'body',
 			source: 'vault',
 			dir,

@@ -18,6 +18,7 @@ function makeSkill(name: string, instructions: string, opts: Partial<Skill['mani
 			enabled: opts.enabled ?? true,
 			activation: opts.activation ?? 'auto',
 			tags: opts.tags ?? [],
+			ecosystem: opts.ecosystem ?? { validity: 'absent', issues: [] },
 		},
 		instructions,
 		source: 'vault',

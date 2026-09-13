@@ -17,6 +17,7 @@ function makeSkill(name: string, opts: Partial<Skill['manifest']> = {}): Skill {
 			enabled: opts.enabled ?? true,
 			activation: opts.activation ?? 'auto',
 			tags: opts.tags ?? [],
+			ecosystem: opts.ecosystem ?? { validity: 'absent', issues: [] },
 		},
 		instructions: `instructions-${name}`,
 		source: 'vault',

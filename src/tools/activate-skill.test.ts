@@ -19,7 +19,14 @@ const fakeDef: ToolDefinition = {
 
 function makeSkill(name: string): Skill {
 	return {
-		manifest: { name, description: `desc-${name}`, enabled: true, activation: 'auto' as const, tags: [] },
+		manifest: {
+			name,
+			description: `desc-${name}`,
+			enabled: true,
+			activation: 'auto' as const,
+			tags: [],
+			ecosystem: { validity: 'absent', issues: [] },
+		},
 		instructions: `instr-${name}`,
 		source: 'vault',
 		dir: `/vault/${name}`,

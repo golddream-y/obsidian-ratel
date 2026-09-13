@@ -89,7 +89,14 @@ describe('run_skill_script 工具', () => {
 		registry = new SkillRegistry();
 		registry.reload(
 			[{
-				manifest: { name: 'data-cleaner', description: 'd', enabled: true, activation: 'auto', tags: [] },
+				manifest: {
+					name: 'data-cleaner',
+					description: 'd',
+					enabled: true,
+					activation: 'auto',
+					tags: [],
+					ecosystem: { validity: 'absent', issues: [] },
+				},
 				instructions: 'body',
 				source: 'vault',
 				dir,
@@ -320,7 +327,14 @@ describe('run_skill_script 工具 - vault 相对 dir', () => {
 		// 旧实现 path.resolve 拿 CWD 拼 + 相对前缀字符串包含校验,任何 scriptPath 都被判「路径非法」。
 		registry.reload(
 			[{
-				manifest: { name: 'timeout-demo', description: 'd', enabled: true, activation: 'auto', tags: [] },
+				manifest: {
+					name: 'timeout-demo',
+					description: 'd',
+					enabled: true,
+					activation: 'auto',
+					tags: [],
+					ecosystem: { validity: 'absent', issues: [] },
+				},
 				instructions: 'body',
 				source: 'vault',
 				dir: skillRelDir,
