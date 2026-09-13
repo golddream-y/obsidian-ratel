@@ -61,18 +61,45 @@ export class ObsidianVault implements VaultPort {
 
 	/**
 	 * 写入文件 — 文件存在则覆盖,不存在则创建。
+	 *
+	 * 关键路径:点开头目录(如 `.ratel/skills/`)不进 Obsidian 文件索引,
+	 * `vault.create` 对其常失败;此类路径走 adapter.mkdir + adapter.write
+	 * (与 readFile 对称,基于磁盘,与索引无关)。
 	 */
 	async writeFile(path: string, content: string): Promise<void> {
 		const normalized = validateVaultPath(path);
 		const file = this.app.vault.getAbstractFileByPath(normalized);
 		if (file instanceof TFile) {
 			await this.app.vault.modify(file, content);
+		} else if (this.isHiddenVaultPath(normalized)) {
+			await this.ensureAdapterDirs(normalized);
+			await this.app.vault.adapter.write(normalized, content);
 		} else {
 			const dir = normalized.substring(0, normalized.lastIndexOf('/'));
 			if (dir && !this.app.vault.getAbstractFileByPath(dir)) {
 				await this.app.vault.createFolder(dir);
 			}
 			await this.app.vault.create(normalized, content);
+		}
+	}
+
+	/** 路径任一分段以 `.` 开头(如 `.ratel`)则视为点目录,不进 Obsidian 索引。 */
+	private isHiddenVaultPath(normalized: string): boolean {
+		return normalized.split('/').some((segment) => segment.startsWith('.'));
+	}
+
+	/** 逐级 mkdir 父目录;已存在时忽略错误(与 readFile adapter 回退配套)。 */
+	private async ensureAdapterDirs(normalizedPath: string): Promise<void> {
+		const segments = normalizedPath.split('/');
+		segments.pop();
+		let current = '';
+		for (const segment of segments) {
+			current = current ? `${current}/${segment}` : segment;
+			try {
+				await this.app.vault.adapter.mkdir(current);
+			} catch {
+				// 修复:父目录已存在时 mkdir 可能抛错,忽略后继续。
+			}
 		}
 	}
 

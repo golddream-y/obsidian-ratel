@@ -30,6 +30,8 @@ const { mockTFile, mockApp } = vi.hoisted(() => {
 				list: vi.fn(),
 				exists: vi.fn(),
 				read: vi.fn(),
+				mkdir: vi.fn(),
+				write: vi.fn(),
 			},
 			on: vi.fn((event: string, cb: (file: unknown, oldPath?: string) => void) => {
 				if (!eventListeners.has(event)) eventListeners.set(event, new Set());
@@ -186,6 +188,16 @@ describe('ObsidianVault', () => {
 
 		expect(mockApp.vault.createFolder).not.toHaveBeenCalled();
 		expect(mockApp.vault.create).toHaveBeenCalledWith('root.md', 'content');
+	});
+
+	it('writeFile - 点目录路径 - 走 adapter.mkdir 与 adapter.write', async () => {
+		mockApp.vault.getAbstractFileByPath.mockReturnValue(null);
+		mockApp.vault.adapter.exists = vi.fn().mockResolvedValue(false);
+		mockApp.vault.adapter.mkdir = vi.fn().mockResolvedValue(undefined);
+		mockApp.vault.adapter.write = vi.fn().mockResolvedValue(undefined);
+		await vault.writeFile('.ratel/skills/demo/SKILL.md', '---\nname: demo\n');
+		expect(mockApp.vault.create).not.toHaveBeenCalled();
+		expect(mockApp.vault.adapter.write).toHaveBeenCalled();
 	});
 
 	it('getBacklinks - 有反链 - 返回 Map<源路径, 次数>', () => {
