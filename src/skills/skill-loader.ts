@@ -7,12 +7,8 @@
 
 import matter from 'gray-matter';
 import type { SkillPort } from '../ports/skill-port';
+import { SKILL_NAME_REGEX } from './skill-name';
 import type { Skill, SkillManifest, SkillActivation, SkillLoadWarning } from './types';
-
-/**
- * Skill name 合法正则(spec §4.2):全小写字母数字 + 连字符,首字母必须字母,长度 1-64。
- */
-const SKILL_NAME_REGEX = /^[a-z][a-z0-9-]{0,63}$/;
 
 /**
  * Skill 加载器 — 扫描三源,解析 frontmatter,合并同名 skill。
