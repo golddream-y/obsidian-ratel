@@ -159,6 +159,14 @@ export const ZH_DEFAULTS: Record<PromptSectionId, string> = {
 		'只读预览某个 Skill 的 ecosystem 依赖:将装/已装的商店插件、档案 preset、将写入的库内模板、将改的 Ratel 白名单设置。不写盘、不安装。依赖块非法时 applyReady=false,必须把 issues 原样告诉用户,禁止说已经配好。本版本没有 apply_skill_ecosystem。',
 	'tool.preview_skill_ecosystem.param.name': 'Skill 名称(kebab-case)',
 
+	'tool.write_skill_draft.description':
+		'写库内 Skill 草稿到 .ratel/skills/<name>/SKILL.md。强制 enabled=false、activation=auto,默认不进入 Discovery。可选 ecosystem 对象;非法则拒绝写入。不要用 write_note 写 .ratel/skills。',
+	'tool.write_skill_draft.param.name': 'Skill 名称(kebab-case)',
+	'tool.write_skill_draft.param.description': 'Skill 一句话描述',
+	'tool.write_skill_draft.param.instructions': 'SKILL.md 正文(不含 frontmatter)',
+	'tool.write_skill_draft.param.ecosystem': '可选依赖对象(plugins/ratel/vaultFiles)',
+	'tool.write_skill_draft.param.overwrite': '是否覆盖已有草稿(默认 false)',
+
 	'tool.read_skill_reference.description': '读取 Skill 的 references/ 目录内文件(如风格指南、模板、词汇表)。路径限制在该 skill 的 references/ 文件夹内。',
 	'tool.read_skill_reference.param.skillName': 'Skill 名称',
 	'tool.read_skill_reference.param.path': 'references/ 内的相对路径',

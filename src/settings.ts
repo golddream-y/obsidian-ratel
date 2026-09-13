@@ -266,6 +266,7 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 		activate_skill: 'allow',
 		deactivate_skill: 'allow',
 		preview_skill_ecosystem: 'allow',
+		write_skill_draft: 'ask',
 		// 关键路径(P-SKILL-2):read 只读放行;run 默认 allow — per-script 授权由工具内
 		// ScriptTrustGate 负责,通用 'ask' 会对同一脚本双重弹窗(ADR-017 / plan 关键设计)。
 		read_skill_reference: 'allow',
@@ -1064,6 +1065,7 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			activate_skill: 'settings.toolPermissions.activate_skill',
 			deactivate_skill: 'settings.toolPermissions.deactivate_skill',
 			preview_skill_ecosystem: 'settings.toolPermissions.preview_skill_ecosystem',
+			write_skill_draft: 'settings.toolPermissions.write_skill_draft',
 			read_skill_reference: 'settings.toolPermissions.read_skill_reference',
 			run_skill_script: 'settings.toolPermissions.run_skill_script',
 			get_datetime: 'settings.toolPermissions.get_datetime',
@@ -1088,7 +1090,7 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			'search_vault', 'read_note', 'grep', 'glob', 'list_files',
 			'write_note', 'append_note', 'edit_note', 'delete_note',
 			'search_memory', 'remember', 'forget_memory',
-			'activate_skill', 'deactivate_skill', 'preview_skill_ecosystem',
+			'activate_skill', 'deactivate_skill', 'preview_skill_ecosystem', 'write_skill_draft',
 			'read_skill_reference', 'run_skill_script',
 			'get_datetime', 'get_active_note', 'get_daily_note', 'list_recent_notes', 'get_note_outline',
 			'get_links', 'search_by_tag', 'search_by_property', 'get_vault_structure',

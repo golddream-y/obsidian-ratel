@@ -116,6 +116,12 @@ export function summarizeToolCall(toolCall: ToolCall): string {
 				? tNow('tool.name.preview_skill_ecosystem', { name: skillName })
 				: tNow('settings.toolPermissions.preview_skill_ecosystem');
 		}
+		case 'write_skill_draft': {
+			const skillName = typeof toolCall.args.name === 'string' ? toolCall.args.name : '';
+			return skillName
+				? tNow('toolPerm.writeSkillDraft', { name: skillName })
+				: tNow('settings.toolPermissions.write_skill_draft');
+		}
 		default: {
 			const parsed = parseMcpToolName(toolCall.name);
 			if (parsed) {

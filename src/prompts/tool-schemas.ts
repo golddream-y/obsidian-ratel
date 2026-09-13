@@ -179,6 +179,20 @@ export const TOOL_SCHEMA_SKELETONS: Record<string, SchemaSkeleton> = {
 			required: ['name'],
 		},
 	},
+	write_skill_draft: {
+		name: 'write_skill_draft',
+		parameters: {
+			type: 'object',
+			properties: {
+				name: { type: 'string' },
+				description: { type: 'string' },
+				instructions: { type: 'string' },
+				ecosystem: { type: 'object' },
+				overwrite: { type: 'boolean' },
+			},
+			required: ['name', 'description', 'instructions'],
+		},
+	},
 	read_skill_reference: {
 		name: 'read_skill_reference',
 		parameters: {
@@ -386,7 +400,7 @@ export const ALL_TOOL_NAMES = [
 	'read_note', 'search_vault', 'grep', 'glob', 'list_files',
 	'write_note', 'append_note', 'edit_note', 'delete_note',
 	'search_memory', 'remember', 'forget_memory',
-	'activate_skill', 'deactivate_skill', 'preview_skill_ecosystem',
+	'activate_skill', 'deactivate_skill', 'preview_skill_ecosystem', 'write_skill_draft',
 	'read_skill_reference', 'run_skill_script',
 	'get_datetime', 'get_active_note', 'get_daily_note', 'list_recent_notes', 'get_note_outline',
 	'get_links', 'search_by_tag', 'search_by_property', 'get_vault_structure',

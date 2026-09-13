@@ -122,6 +122,7 @@ import { SkillVaultAdapter } from './adapters/skill-vault';
 import { createActivateSkillTool } from './tools/activate-skill';
 import { createDeactivateSkillTool } from './tools/deactivate-skill';
 import { createPreviewSkillEcosystemTool } from './tools/preview-skill-ecosystem';
+import { createWriteSkillDraftTool } from './tools/write-skill-draft';
 import { createPluginPresence } from './adapters/plugin-presence';
 // 关键路径(P-SKILL-2/ADR-017):skill 脚本执行 — 沙箱 + 信任门 + 2 工具接线。
 import { createReadSkillReferenceTool } from './tools/read-skill-reference';
@@ -555,6 +556,13 @@ export default class RatelVaultPlugin extends Plugin {
 				this.skillRegistry,
 				toolDefMap.get('preview_skill_ecosystem')!,
 				createPluginPresence(this.app.vault.adapter, this.app.vault.configDir),
+			),
+		);
+		this.tools.register(
+			createWriteSkillDraftTool(
+				this.vault,
+				toolDefMap.get('write_skill_draft')!,
+				() => this.reloadSkills(),
 			),
 		);
 		// 关键路径(P-SKILL-2/ADR-017):脚本沙箱 — Worker 一次性,runner 常驻管理串行与超时。
