@@ -51,7 +51,7 @@ const invalidEcosystem: ParsedSkillEcosystem = {
 		ratel: [{ key: 'badKey' }],
 		vaultFiles: [],
 	},
-	issues: [{ code: 'ratelKeyUnknown', detail: 'ratel.key 不在白名单: badKey' }],
+	issues: [{ code: 'ratelKeyUnknown', detail: 'ratel.key 不在白名单: badKey', params: { key: 'badKey' } }],
 };
 
 const absentEcosystem: ParsedSkillEcosystem = { validity: 'absent', issues: [] };

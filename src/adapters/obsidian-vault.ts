@@ -83,9 +83,9 @@ export class ObsidianVault implements VaultPort {
 		}
 	}
 
-	/** 路径任一分段以 `.` 开头(如 `.ratel`)则视为点目录,不进 Obsidian 索引。 */
+	/** 仅 `.ratel/skills/` 下路径走 adapter 直写;其他点目录仍用 vault.create。 */
 	private isHiddenVaultPath(normalized: string): boolean {
-		return normalized.split('/').some((segment) => segment.startsWith('.'));
+		return normalized === '.ratel/skills' || normalized.startsWith('.ratel/skills/');
 	}
 
 	/** 逐级 mkdir 父目录;已存在时忽略错误(与 readFile adapter 回退配套)。 */
@@ -109,6 +109,7 @@ export class ObsidianVault implements VaultPort {
 		if (file instanceof TFile) {
 			await this.app.vault.append(file, content);
 		} else {
+			// 修复:`.ratel/skills/` 等点目录 append 仍走 vault.create,未做 adapter 回退。
 			await this.app.vault.create(normalized, content);
 		}
 	}

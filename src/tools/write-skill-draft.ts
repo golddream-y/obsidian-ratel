@@ -19,45 +19,6 @@ import { optionalBoolean } from './validate-args';
 
 const SKILL_DRAFT_DIR = '.ratel/skills';
 
-/**
- * 从 parse 阶段 issue.detail 提取 i18n 占位符(与 preview-skill-ecosystem 对齐)。
- */
-function issueParamsForI18n(issue: EcosystemIssue): Record<string, string> | undefined {
-	const { code, detail } = issue;
-	switch (code) {
-		case 'unknownTopLevel': {
-			const m = /^未知顶层键: (.+)$/.exec(detail);
-			return m ? { key: m[1] } : undefined;
-		}
-		case 'profileMissing': {
-			const m = /^档案不存在: (.+)\/(.+)$/.exec(detail);
-			return m ? { profileId: m[1], presetId: m[2] } : undefined;
-		}
-		case 'profileDraft': {
-			const m = /^档案为草稿: (.+)$/.exec(detail);
-			return m ? { profileId: m[1] } : undefined;
-		}
-		case 'profileDisabled': {
-			const m = /^档案已禁用: (.+)$/.exec(detail);
-			return m ? { profileId: m[1] } : undefined;
-		}
-		case 'presetMissing': {
-			const m = /^预设不存在: (.+)$/.exec(detail);
-			return m ? { presetId: m[1] } : undefined;
-		}
-		case 'ratelKeyUnknown': {
-			const m = /^ratel\.key 不在白名单: (.+)$/.exec(detail);
-			return m ? { key: m[1] } : undefined;
-		}
-		case 'vaultDestUnsafe': {
-			const m = /^vaultFiles\.dest 越界: (.+)$/.exec(detail);
-			return m ? { dest: m[1] } : undefined;
-		}
-		default:
-			return undefined;
-	}
-}
-
 function ecosystemIssueMessage(code: EcosystemErrorCode, params?: Record<string, string>): string {
 	const key = `ecosystem.invalid.${code}` as StringKey;
 	return params ? tNow(key, params) : tNow(key);
@@ -65,12 +26,11 @@ function ecosystemIssueMessage(code: EcosystemErrorCode, params?: Record<string,
 
 function formatEcosystemIssues(issues: EcosystemIssue[]): string {
 	return issues
-		.map((issue) => {
-			const params = issueParamsForI18n(issue);
-			return params
-				? ecosystemIssueMessage(issue.code, params)
-				: ecosystemIssueMessage(issue.code);
-		})
+		.map((issue) =>
+			issue.params
+				? ecosystemIssueMessage(issue.code, issue.params)
+				: ecosystemIssueMessage(issue.code),
+		)
 		.join('; ');
 }
 
@@ -86,11 +46,13 @@ function formatEcosystemIssues(issues: EcosystemIssue[]): string {
  * @param vault - VaultPort 外观
  * @param definition - LLM 侧 schema
  * @param reloadSkills - 可选,写盘后刷新 SkillRegistry
+ * @param listBuiltinNames - 可选,返回内置 skill 名列表,用于拒绝覆盖内置技能
  */
 export function createWriteSkillDraftTool(
 	vault: VaultPort,
 	definition: ToolDefinition,
 	reloadSkills?: () => void | Promise<void>,
+	listBuiltinNames?: () => string[],
 ): Tool {
 	return {
 		definition,
@@ -102,6 +64,10 @@ export function createWriteSkillDraftTool(
 			const name = args.name;
 			if (!isSkillName(name)) {
 				throw new Error(tNow('error.skill.invalidName', { name }));
+			}
+
+			if (listBuiltinNames?.().includes(name)) {
+				throw new Error(tNow('error.skill.draftNameReserved', { name }));
 			}
 
 			if (typeof args.description !== 'string' || args.description.trim().length === 0) {

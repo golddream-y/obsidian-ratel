@@ -127,4 +127,18 @@ describe('write_skill_draft 工具', () => {
 		const tool = createWriteSkillDraftTool(vault, fakeDef);
 		expect(tool.readOnly).toBe(false);
 	});
+
+	it('内置技能名 - 拒绝写入', async () => {
+		const { vault, files } = createRecordingVault();
+		const listBuiltinNames = () => ['create-skill', 'ratel-config'];
+		const tool = createWriteSkillDraftTool(vault, fakeDef, undefined, listBuiltinNames);
+		await expect(
+			tool.execute({ ...baseArgs, name: 'create-skill' }),
+		).rejects.toThrow(/不能覆盖内置技能/);
+		expect(files.size).toBe(0);
+		await expect(
+			tool.execute({ ...baseArgs, name: 'ratel-config' }),
+		).rejects.toThrow(/不能覆盖内置技能/);
+		expect(files.size).toBe(0);
+	});
 });

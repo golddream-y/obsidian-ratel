@@ -562,7 +562,8 @@ export default class RatelVaultPlugin extends Plugin {
 			createWriteSkillDraftTool(
 				this.vault,
 				toolDefMap.get('write_skill_draft')!,
-				() => this.reloadSkills(),
+				() => { void this.reloadSkills(); },
+				() => Object.keys(BUILTIN_SKILLS),
 			),
 		);
 		// 关键路径(P-SKILL-2/ADR-017):脚本沙箱 — Worker 一次性,runner 常驻管理串行与超时。

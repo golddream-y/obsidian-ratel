@@ -262,7 +262,7 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 		search_memory: 'allow',
 		remember: 'ask',
 		forget_memory: 'ask',
-		// 关键路径:2 个 skill 工具只读放行(不写文件,只改 system prompt)。
+		// 关键路径:activate/deactivate/preview 只读放行;write_skill_draft 写草稿需确认。
 		activate_skill: 'allow',
 		deactivate_skill: 'allow',
 		preview_skill_ecosystem: 'allow',

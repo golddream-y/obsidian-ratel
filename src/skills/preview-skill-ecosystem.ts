@@ -7,7 +7,6 @@
 
 import type {
 	EcosystemErrorCode,
-	EcosystemIssue,
 	EcosystemValidity,
 	PluginPresence,
 	PluginPresenceStatus,
@@ -30,45 +29,6 @@ export interface EcosystemPreview {
 	ratel: Array<{ key: string }>;
 	vaultFiles: Array<{ dest: string; source: string }>;
 	applyReady: boolean;
-}
-
-/**
- * 从 parse 阶段 issue.detail 提取 i18n 占位符(与 parse-skill-ecosystem 中文 detail 对齐)。
- */
-function issueParamsForI18n(issue: EcosystemIssue): Record<string, string> | undefined {
-	const { code, detail } = issue;
-	switch (code) {
-		case 'unknownTopLevel': {
-			const m = /^未知顶层键: (.+)$/.exec(detail);
-			return m ? { key: m[1] } : undefined;
-		}
-		case 'profileMissing': {
-			const m = /^档案不存在: (.+)\/(.+)$/.exec(detail);
-			return m ? { profileId: m[1], presetId: m[2] } : undefined;
-		}
-		case 'profileDraft': {
-			const m = /^档案为草稿: (.+)$/.exec(detail);
-			return m ? { profileId: m[1] } : undefined;
-		}
-		case 'profileDisabled': {
-			const m = /^档案已禁用: (.+)$/.exec(detail);
-			return m ? { profileId: m[1] } : undefined;
-		}
-		case 'presetMissing': {
-			const m = /^预设不存在: (.+)$/.exec(detail);
-			return m ? { presetId: m[1] } : undefined;
-		}
-		case 'ratelKeyUnknown': {
-			const m = /^ratel\.key 不在白名单: (.+)$/.exec(detail);
-			return m ? { key: m[1] } : undefined;
-		}
-		case 'vaultDestUnsafe': {
-			const m = /^vaultFiles\.dest 越界: (.+)$/.exec(detail);
-			return m ? { dest: m[1] } : undefined;
-		}
-		default:
-			return undefined;
-	}
 }
 
 /**
@@ -109,13 +69,12 @@ export async function buildEcosystemPreview(
 	const parsed = skill.manifest.ecosystem;
 	const { validity, issues } = parsed;
 
-	const previewIssues = issues.map((issue) => {
-		const params = issueParamsForI18n(issue);
-		return {
-			code: issue.code,
-			message: params ? opts.t(issue.code, params) : opts.t(issue.code),
-		};
-	});
+	const previewIssues = issues.map((issue) => ({
+		code: issue.code,
+		message: issue.params
+			? opts.t(issue.code, issue.params)
+			: opts.t(issue.code),
+	}));
 
 	if (validity === 'absent') {
 		return {

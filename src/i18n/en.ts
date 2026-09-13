@@ -977,6 +977,7 @@ export const en: Strings = {
   'error.skill.notEnabled': 'Skill {name} is not enabled',
   'error.skill.loadFailed': 'Skill load failed: {message}',
   'error.skill.draftForbiddenDir': 'Skill drafts cannot be written to the plugin built-in directory',
+  'error.skill.draftNameReserved': 'Cannot overwrite built-in skill {name}',
   // Key path (P-SKILL-2): read_skill_reference tool
   'skill.ref.notFound': 'Reference file not found: {path}',
   'skill.ref.invalidPath': 'Invalid path (absolute paths and .. are not allowed): {path}',
@@ -1124,6 +1125,9 @@ export const en: Strings = {
 
   // ==================== EcosystemStrings ====================
   'ecosystem.invalid.notObject': 'ecosystem must be an object',
+  'ecosystem.invalid.notArray': 'This field must be an array',
+  'ecosystem.invalid.itemNotObject': 'Each array item must be an object',
+  'ecosystem.invalid.requiredNotBoolean': 'required must be a boolean',
   'ecosystem.invalid.unknownTopLevel': 'Unknown top-level key {key}',
   'ecosystem.invalid.pluginIdEmpty': 'pluginId must not be empty',
   'ecosystem.invalid.barePluginKeys': 'Plugin entries must not include bare patch keys (keys/patch/dataJson)',

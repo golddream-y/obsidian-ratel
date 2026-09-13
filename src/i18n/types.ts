@@ -1015,6 +1015,7 @@ export interface SkillStrings {
   'error.skill.notEnabled': string;
   'error.skill.loadFailed': string;
   'error.skill.draftForbiddenDir': string;
+  'error.skill.draftNameReserved': string;
   // 关键路径(P-SKILL-2):read_skill_reference 工具
   'skill.ref.notFound': string;
   'skill.ref.invalidPath': string;
@@ -1058,6 +1059,9 @@ export interface SkillStrings {
 // ==================== Ecosystem(S-SCENE-ECO — 场景依赖预览 / 草稿) ====================
 export interface EcosystemStrings {
   'ecosystem.invalid.notObject': string;
+  'ecosystem.invalid.notArray': string;
+  'ecosystem.invalid.itemNotObject': string;
+  'ecosystem.invalid.requiredNotBoolean': string;
   'ecosystem.invalid.unknownTopLevel': string;
   'ecosystem.invalid.pluginIdEmpty': string;
   'ecosystem.invalid.barePluginKeys': string;

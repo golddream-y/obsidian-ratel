@@ -993,6 +993,7 @@ const skillZh: SkillStrings = {
   'error.skill.notEnabled': 'Skill {name} 未启用',
   'error.skill.loadFailed': 'Skill 加载失败: {message}',
   'error.skill.draftForbiddenDir': '禁止把技能草稿写到插件内置目录',
+  'error.skill.draftNameReserved': '不能覆盖内置技能 {name}',
   // 关键路径(P-SKILL-2):read_skill_reference 工具
   'skill.ref.notFound': '未找到参考文件: {path}',
   'skill.ref.invalidPath': '路径非法(不允许绝对路径或 ..): {path}',
@@ -1142,6 +1143,9 @@ const goalZh: GoalStrings = {
 
 const ecosystemZh: EcosystemStrings = {
   'ecosystem.invalid.notObject': 'ecosystem 必须是对象',
+  'ecosystem.invalid.notArray': '该字段必须是数组',
+  'ecosystem.invalid.itemNotObject': '数组每项必须是对象',
+  'ecosystem.invalid.requiredNotBoolean': 'required 必须为布尔值',
   'ecosystem.invalid.unknownTopLevel': '未知顶层键 {key}',
   'ecosystem.invalid.pluginIdEmpty': 'pluginId 不能为空',
   'ecosystem.invalid.barePluginKeys': 'plugin 项不允许包含裸补丁键(keys/patch/dataJson)',

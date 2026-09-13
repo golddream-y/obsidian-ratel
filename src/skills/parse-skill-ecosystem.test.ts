@@ -131,4 +131,47 @@ describe('parseSkillEcosystem', () => {
 		expect(r.validity).toBe('invalid');
 		expect(r.issues.some((i) => i.code === 'unknownTopLevel')).toBe(true);
 	});
+
+	it('plugins 非数组 - notArray', () => {
+		const r = parseSkillEcosystem({ plugins: {} }, ctx);
+		expect(r.validity).toBe('invalid');
+		expect(r.issues).toContainEqual({ code: 'notArray', detail: 'plugins 必须是数组' });
+	});
+
+	it('plugins 项非对象 - itemNotObject', () => {
+		const r = parseSkillEcosystem({ plugins: ['bad'] }, ctx);
+		expect(r.validity).toBe('invalid');
+		expect(r.issues).toContainEqual({ code: 'itemNotObject', detail: 'plugins 每项必须是对象' });
+	});
+
+	it('required 非布尔 - requiredNotBoolean', () => {
+		const r = parseSkillEcosystem(
+			{ plugins: [{ pluginId: 'dataview', required: 'yes' }] },
+			ctx,
+		);
+		expect(r.validity).toBe('invalid');
+		expect(r.issues).toContainEqual({ code: 'requiredNotBoolean', detail: 'required 必须为布尔值' });
+	});
+
+	it('档案 pluginId 不一致 - profilePluginMismatch 带 profileId', () => {
+		const r = parseSkillEcosystem(
+			{
+				plugins: [{ pluginId: 'dataview', profileId: 'dv', presetId: 'js' }],
+			},
+			{
+				...ctx,
+				lookupProfile: {
+					lookup: () => ({
+						pluginId: 'templater',
+						enabled: true,
+						draft: false,
+						presetExists: true,
+					}),
+				},
+			},
+		);
+		expect(r.validity).toBe('invalid');
+		const issue = r.issues.find((i) => i.code === 'profilePluginMismatch');
+		expect(issue?.params).toEqual({ profileId: 'dv' });
+	});
 });

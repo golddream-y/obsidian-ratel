@@ -66,6 +66,7 @@ export function parseSkillEcosystem(
 			issues.push({
 				code: 'unknownTopLevel',
 				detail: `未知顶层键: ${key}`,
+				params: { key },
 			});
 		}
 	}
@@ -92,7 +93,7 @@ function parsePlugins(
 ): SkillEcosystemPluginDep[] {
 	if (raw == null) return [];
 	if (!Array.isArray(raw)) {
-		issues.push({ code: 'notObject', detail: 'plugins 必须是数组' });
+		issues.push({ code: 'notArray', detail: 'plugins 必须是数组' });
 		return [];
 	}
 
@@ -100,7 +101,7 @@ function parsePlugins(
 
 	for (const item of raw) {
 		if (typeof item !== 'object' || item == null || Array.isArray(item)) {
-			issues.push({ code: 'notObject', detail: 'plugins 每项必须是对象' });
+			issues.push({ code: 'itemNotObject', detail: 'plugins 每项必须是对象' });
 			continue;
 		}
 
@@ -132,7 +133,7 @@ function parsePlugins(
 		let required = true;
 		if ('required' in entry) {
 			if (typeof entry.required !== 'boolean') {
-				issues.push({ code: 'notObject', detail: 'required 必须为布尔值' });
+				issues.push({ code: 'requiredNotBoolean', detail: 'required 必须为布尔值' });
 			} else {
 				required = entry.required;
 			}
@@ -190,6 +191,7 @@ function validateProfile(
 		issues.push({
 			code: 'profileMissing',
 			detail: `档案不存在: ${profileId}/${presetId}`,
+			params: { profileId, presetId },
 		});
 		return;
 	}
@@ -198,6 +200,7 @@ function validateProfile(
 		issues.push({
 			code: 'profileDraft',
 			detail: `档案为草稿: ${profileId}`,
+			params: { profileId },
 		});
 	}
 
@@ -205,6 +208,7 @@ function validateProfile(
 		issues.push({
 			code: 'profileDisabled',
 			detail: `档案已禁用: ${profileId}`,
+			params: { profileId },
 		});
 	}
 
@@ -212,6 +216,7 @@ function validateProfile(
 		issues.push({
 			code: 'profilePluginMismatch',
 			detail: `档案 pluginId(${profile.pluginId}) 与声明(${pluginId})不一致`,
+			params: { profileId },
 		});
 	}
 
@@ -219,6 +224,7 @@ function validateProfile(
 		issues.push({
 			code: 'presetMissing',
 			detail: `预设不存在: ${presetId}`,
+			params: { presetId },
 		});
 	}
 }
@@ -232,7 +238,7 @@ function parseRatel(
 ): SkillEcosystemRatelDep[] {
 	if (raw == null) return [];
 	if (!Array.isArray(raw)) {
-		issues.push({ code: 'notObject', detail: 'ratel 必须是数组' });
+		issues.push({ code: 'notArray', detail: 'ratel 必须是数组' });
 		return [];
 	}
 
@@ -240,7 +246,7 @@ function parseRatel(
 
 	for (const item of raw) {
 		if (typeof item !== 'object' || item == null || Array.isArray(item)) {
-			issues.push({ code: 'notObject', detail: 'ratel 每项必须是对象' });
+			issues.push({ code: 'itemNotObject', detail: 'ratel 每项必须是对象' });
 			continue;
 		}
 
@@ -256,6 +262,7 @@ function parseRatel(
 			issues.push({
 				code: 'ratelKeyUnknown',
 				detail: `ratel.key 不在白名单: ${key}`,
+				params: { key },
 			});
 		}
 
@@ -274,7 +281,7 @@ function parseVaultFiles(
 ): SkillEcosystemVaultFile[] {
 	if (raw == null) return [];
 	if (!Array.isArray(raw)) {
-		issues.push({ code: 'notObject', detail: 'vaultFiles 必须是数组' });
+		issues.push({ code: 'notArray', detail: 'vaultFiles 必须是数组' });
 		return [];
 	}
 
@@ -282,7 +289,7 @@ function parseVaultFiles(
 
 	for (const item of raw) {
 		if (typeof item !== 'object' || item == null || Array.isArray(item)) {
-			issues.push({ code: 'notObject', detail: 'vaultFiles 每项必须是对象' });
+			issues.push({ code: 'itemNotObject', detail: 'vaultFiles 每项必须是对象' });
 			continue;
 		}
 
@@ -300,7 +307,8 @@ function parseVaultFiles(
 				detail: `vaultFiles.source 格式无效: ${source}`,
 			});
 		} else {
-			const [, urlSkillName, relPath] = match;
+			const urlSkillName = match[1] ?? '';
+			const relPath = match[2] ?? '';
 			sourceRel = relPath;
 
 			if (urlSkillName !== ctx.skillName) {
@@ -327,6 +335,7 @@ function parseVaultFiles(
 			issues.push({
 				code: 'vaultDestUnsafe',
 				detail: `vaultFiles.dest 越界: ${dest}`,
+				params: { dest },
 			});
 		}
 

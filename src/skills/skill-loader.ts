@@ -2,7 +2,7 @@
  * @file src/skills/skill-loader.ts
  * @description SkillLoader — 三源扫描 + frontmatter 解析 + 同名合并(vault > global > builtin)
  * @module skills/skill-loader
- * @depends gray-matter, ports/skill-port, skills/types
+ * @depends gray-matter, ports/skill-port, skills/types, skills/parse-skill-ecosystem, settings/config-whitelist, skills/skill-name
  */
 
 import matter from 'gray-matter';

@@ -190,14 +190,27 @@ describe('ObsidianVault', () => {
 		expect(mockApp.vault.create).toHaveBeenCalledWith('root.md', 'content');
 	});
 
-	it('writeFile - 点目录路径 - 走 adapter.mkdir 与 adapter.write', async () => {
+	it('writeFile - .ratel/skills 路径 - 走 adapter.mkdir 与 adapter.write', async () => {
+		const content = '---\nname: demo\n';
 		mockApp.vault.getAbstractFileByPath.mockReturnValue(null);
 		mockApp.vault.adapter.exists = vi.fn().mockResolvedValue(false);
 		mockApp.vault.adapter.mkdir = vi.fn().mockResolvedValue(undefined);
 		mockApp.vault.adapter.write = vi.fn().mockResolvedValue(undefined);
-		await vault.writeFile('.ratel/skills/demo/SKILL.md', '---\nname: demo\n');
+		await vault.writeFile('.ratel/skills/demo/SKILL.md', content);
 		expect(mockApp.vault.create).not.toHaveBeenCalled();
-		expect(mockApp.vault.adapter.write).toHaveBeenCalled();
+		expect(mockApp.vault.createFolder).not.toHaveBeenCalled();
+		expect(mockApp.vault.adapter.write).toHaveBeenCalledWith('.ratel/skills/demo/SKILL.md', content);
+		expect(mockApp.vault.adapter.mkdir).toHaveBeenCalledWith('.ratel');
+		expect(mockApp.vault.adapter.mkdir).toHaveBeenCalledWith('.ratel/skills');
+		expect(mockApp.vault.adapter.mkdir).toHaveBeenCalledWith('.ratel/skills/demo');
+	});
+
+	it('writeFile - .ratel/memory 路径 - 走 vault.create 而非 adapter.write', async () => {
+		mockApp.vault.getAbstractFileByPath.mockReturnValue(null);
+		mockApp.vault.adapter.write = vi.fn().mockResolvedValue(undefined);
+		await vault.writeFile('.ratel/memory/x.md', 'content');
+		expect(mockApp.vault.adapter.write).not.toHaveBeenCalled();
+		expect(mockApp.vault.create).toHaveBeenCalledWith('.ratel/memory/x.md', 'content');
 	});
 
 	it('getBacklinks - 有反链 - 返回 Map<源路径, 次数>', () => {

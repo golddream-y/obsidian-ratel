@@ -6,6 +6,9 @@
 
 export const ECOSYSTEM_ERROR_CODES = [
 	'notObject',
+	'notArray',
+	'itemNotObject',
+	'requiredNotBoolean',
 	'unknownTopLevel',
 	'pluginIdEmpty',
 	'barePluginKeys',
@@ -54,6 +57,8 @@ export interface EcosystemIssue {
 	code: EcosystemErrorCode;
 	/** 给开发者日志的中文细节,不含本机绝对路径 */
 	detail: string;
+	/** i18n 占位符(如 profileId、presetId、key) */
+	params?: Record<string, string>;
 }
 
 export interface ParsedSkillEcosystem {
