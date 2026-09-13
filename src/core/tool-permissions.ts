@@ -110,6 +110,12 @@ export function summarizeToolCall(toolCall: ToolCall): string {
 				objective.length > 40 ? `${objective.slice(0, 40)}…` : objective;
 			return tNow('toolPerm.manageGoal', { action, objective: truncated || '—' });
 		}
+		case 'preview_skill_ecosystem': {
+			const skillName = typeof toolCall.args.name === 'string' ? toolCall.args.name : '';
+			return skillName
+				? tNow('tool.name.preview_skill_ecosystem', { name: skillName })
+				: tNow('settings.toolPermissions.preview_skill_ecosystem');
+		}
 		default: {
 			const parsed = parseMcpToolName(toolCall.name);
 			if (parsed) {

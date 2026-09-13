@@ -155,6 +155,10 @@ export const ZH_DEFAULTS: Record<PromptSectionId, string> = {
 	'tool.deactivate_skill.description': '关闭一个已激活的 Skill,从上下文移除其指令。',
 	'tool.deactivate_skill.param.name': 'Skill 名称',
 
+	'tool.preview_skill_ecosystem.description':
+		'只读预览某个 Skill 的 ecosystem 依赖:将装/已装的商店插件、档案 preset、将写入的库内模板、将改的 Ratel 白名单设置。不写盘、不安装。依赖块非法时 applyReady=false,必须把 issues 原样告诉用户,禁止说已经配好。本版本没有 apply_skill_ecosystem。',
+	'tool.preview_skill_ecosystem.param.name': 'Skill 名称(kebab-case)',
+
 	'tool.read_skill_reference.description': '读取 Skill 的 references/ 目录内文件(如风格指南、模板、词汇表)。路径限制在该 skill 的 references/ 文件夹内。',
 	'tool.read_skill_reference.param.skillName': 'Skill 名称',
 	'tool.read_skill_reference.param.path': 'references/ 内的相对路径',

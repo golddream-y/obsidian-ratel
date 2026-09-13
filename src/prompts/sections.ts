@@ -251,6 +251,23 @@ function buildSections(): SectionMeta[] {
 			placeholders: [],
 			allowOverride: true,
 		},
+		// --- tool.preview_skill_ecosystem ---
+		{
+			id: 'tool.preview_skill_ecosystem.description',
+			label: tNow('promptLabel.tool.preview_skill_ecosystem.description'),
+			description: tNow('promptLabel.tool.preview_skill_ecosystem.description.desc'),
+			zone: 'tool',
+			placeholders: [],
+			allowOverride: true,
+		},
+		{
+			id: 'tool.preview_skill_ecosystem.param.name',
+			label: tNow('promptLabel.tool.preview_skill_ecosystem.param.name'),
+			description: tNow('promptLabel.tool.preview_skill_ecosystem.param.name.desc'),
+			zone: 'tool',
+			placeholders: [],
+			allowOverride: true,
+		},
 		// --- tool.read_skill_reference ---
 		{
 			id: 'tool.read_skill_reference.description',

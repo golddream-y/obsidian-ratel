@@ -39,6 +39,7 @@ const TOOL_NAME_KEY: Record<string, StringKey> = {
 	get_app_config: 'tool.name.get_app_config',
 	update_app_config: 'tool.name.update_app_config',
 	run_skill_script: 'tool.name.run_skill_script',
+	preview_skill_ecosystem: 'tool.name.preview_skill_ecosystem',
 };
 
 /**
@@ -151,6 +152,11 @@ export function formatToolDisplayName(
 			const script = extractScriptName(obj.scriptPath);
 			const key = TOOL_NAME_KEY[name];
 			return script && key ? tNow(key, { script }) : name;
+		}
+		case 'preview_skill_ecosystem': {
+			const skillName = extractShort(obj.name);
+			const key = TOOL_NAME_KEY[name];
+			return skillName && key ? tNow(key, { name: skillName }) : name;
 		}
 		default:
 			return name;
