@@ -1,6 +1,6 @@
 # 信任、降级与质量
 
-> 产品总纲入口：[overview.md](overview.md)。生态专项安全见 [ecosystem.md](ecosystem.md)#生态管理安全。
+> 产品总纲入口：[overview.md](overview.md)。生态专项安全见 [ecosystem.md](ecosystem.md)#安全边界。
 
 ## 数据范围
 
