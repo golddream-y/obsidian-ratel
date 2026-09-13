@@ -148,6 +148,14 @@ function parsePlugins(
 				code: 'profileIncomplete',
 				detail: 'profileId 与 presetId 必须成对出现',
 			});
+		} else if (
+			hasProfileId &&
+			(typeof profileId !== 'string' || typeof presetId !== 'string')
+		) {
+			issues.push({
+				code: 'profileIncomplete',
+				detail: 'profileId 与 presetId 必须为非空字符串',
+			});
 		}
 
 		const dep: SkillEcosystemPluginDep = { pluginId, required };

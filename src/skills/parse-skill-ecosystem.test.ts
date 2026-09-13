@@ -46,6 +46,17 @@ describe('parseSkillEcosystem', () => {
 		expect(r.issues.some((i) => i.code === 'profileMissing')).toBe(true);
 	});
 
+	it('profileId 非字符串 - invalid', () => {
+		const r = parseSkillEcosystem(
+			{
+				plugins: [{ pluginId: 'dataview', profileId: 123, presetId: 'enable-js' }],
+			},
+			ctx,
+		);
+		expect(r.validity).toBe('invalid');
+		expect(r.issues.some((i) => i.code === 'profileIncomplete')).toBe(true);
+	});
+
 	it('ratel.key 不在白名单 - invalid', () => {
 		const r = parseSkillEcosystem(
 			{ ratel: [{ key: 'toolPermissions' }] },
