@@ -236,6 +236,9 @@ export interface ChatStrings {
   'chat.workbar.searching': string;
   'chat.workbar.compacting': string;
   'chat.typing': string;
+  'chat.retry.soon': string;
+  'chat.retry.after': string;
+  'chat.retry.now': string;
   'chat.mascot.aria.idle': string;
   'chat.mascot.aria.waiting': string;
   'chat.mascot.aria.thinking': string;

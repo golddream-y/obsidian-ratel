@@ -55,6 +55,13 @@ export interface GenerationOptions {
 }
 
 /**
+ * 单次 chat() 的重试等待态。attempt 为即将进行或正在进行的尝试，1-based。
+ */
+export type LlmRetryWait =
+	| { phase: 'backoff'; attempt: number; maxAttempts: number; delayMs: number }
+	| { phase: 'request'; attempt: number; maxAttempts: number };
+
+/**
  * 聊天请求:消息历史 + (可选)工具定义 + (可选)生成参数。
  */
 export interface ChatRequest {
@@ -64,6 +71,11 @@ export interface ChatRequest {
 	options?: GenerationOptions;
 	/** 取消信号 — 适配器应穿透到 HTTP 层,abort 时销毁请求/socket 立即中断 */
 	signal?: AbortSignal;
+	/**
+	 * 主对话打字行重试提示（S-LLM-RETRY-UI）。适配器忽略。
+	 * 仅 wrapLlmChatRetry 调用；标题/压缩/分类器不传。
+	 */
+	onRetryWait?: (state: LlmRetryWait | null) => void;
 }
 
 /**
