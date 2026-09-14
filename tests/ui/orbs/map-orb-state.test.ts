@@ -25,6 +25,10 @@ describe('mapOrbState', () => {
 		expect(mapOrbState('index')).toBe('connecting');
 	});
 
+	it('mapOrbState - retry - 映射为 connecting', () => {
+		expect(mapOrbState('retry')).toBe('connecting');
+	});
+
 	it('mapOrbState - compact - 映射为 weaving', () => {
 		expect(mapOrbState('compact')).toBe('weaving');
 	});

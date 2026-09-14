@@ -12,6 +12,7 @@ export type RatelOrbBusyKind =
 	| 'tool'
 	| 'search'
 	| 'index'
+	| 'retry'
 	| 'compact'
 	| 'idle';
 
@@ -27,6 +28,7 @@ export function mapOrbState(kind: RatelOrbBusyKind): OrbState {
 		case 'tool':
 			return 'working';
 		case 'index':
+		case 'retry':
 			return 'connecting';
 		case 'compact':
 			return 'weaving';
