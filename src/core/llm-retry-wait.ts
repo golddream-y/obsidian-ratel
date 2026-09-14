@@ -17,6 +17,7 @@ export type RetryWaitLabel = {
  *
  * @param wait - 包装器回调
  * @param remainingMs - ChatView 本地倒计时；request 相位忽略
+ * @returns i18n key 与插值参数（不含翻译表）
  */
 export function retryWaitLabel(wait: LlmRetryWait, remainingMs: number): RetryWaitLabel {
 	const params = { attempt: wait.attempt, max: wait.maxAttempts };

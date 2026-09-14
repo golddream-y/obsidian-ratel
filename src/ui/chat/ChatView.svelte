@@ -148,6 +148,10 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 		appearanceUnsub?.();
 		if (navFlashTimer) clearTimeout(navFlashTimer);
 		if (errorHoldTimer) clearTimeout(errorHoldTimer);
+		if (retryCountdownTimer != null) {
+			window.clearInterval(retryCountdownTimer);
+			retryCountdownTimer = null;
+		}
 		layoutFrame.cancel();
 		void flushCurrentSession();
 	});
@@ -166,7 +170,7 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 	let isRunning = $state(false);
 	let retryWait = $state<LlmRetryWait | null>(null);
 	let retryRemainingMs = $state(0);
-	let retryCountdownTimer: ReturnType<typeof window.setInterval> | null = null;
+	let retryCountdownTimer: number | null = null;
 	let goalsSnapshot = $state<AgentGoal[]>([]);
 	let goalRoundSteps = $state(0);
 	let errorHoldActive = $state(false);
@@ -1270,6 +1274,7 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 				retryRemainingMs = Math.max(0, deadline - Date.now());
 			};
 			tick();
+			// 250ms 一跳：够平滑，又不至于每秒刷 4 次 i18n
 			retryCountdownTimer = window.setInterval(tick, 250);
 		} else {
 			retryRemainingMs = 0;
