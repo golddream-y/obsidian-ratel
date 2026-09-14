@@ -79,7 +79,7 @@ Agent 多步时，每一步是一次独立 `chat()`。工具跑完后下一枪�
 | `backoff` 且剩余 ≥ 1s | 网络不稳，{seconds} 秒后重试（{attempt}/{max}） |
 | `request` | 网络不稳，正在重试（{attempt}/{max}） |
 
-`seconds` = `ceil(剩余毫秒 / 1000)`。ChatView 在 `backoff` 期间用收到回调的时刻 + `delayMs` 本地倒计时（约 250ms 一跳即可）；剩余落到 0 先切「正在重试」，即使 `request` 回调晚一帧。
+`seconds` = `floor(剩余毫秒 / 1000)`。ChatView 在 `backoff` 期间用收到回调的时刻 + `delayMs` 本地倒计时（约 250ms 一跳即可）；剩余落到 0 先切「正在重试」，即使 `request` 回调晚一帧。
 
 成功 yield：`onRetryWait(null)`，球和文案回到 composing / 工具态，不闪错误、不留痕迹。
 
