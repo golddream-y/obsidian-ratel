@@ -31,6 +31,7 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
+| P-LLM-RETRY-UI | [2026-09-14-llm-retry-ui.md](plans/2026-09-14-llm-retry-ui.md) | In Progress | S-LLM-RETRY-UI | 分支 feat/p-llm-retry-ui；打字行 connecting + 三条文案 |
 
 ---
 
@@ -49,7 +50,7 @@
 
 ## Future execution queue(按顺序)
 
-1. **S-LLM-RETRY-UI** — 打字行重试提示(connecting);策略已归档为 S-LLM-RETRY
+1. **P-LLM-RETRY-UI**（进行中）— 打字行重试提示
 2. 候选(无 spec,重启时新开):update_frontmatter / Write Gate / append_to_daily(S-EVOLUTION 写侧,见 archive/S-EVOLUTION/)  
 3. S-ECOSYSTEM(差异化主打,动工前先确认商店审核口径 + 立 ADR-018)
 4. S-PLUGIN-PROFILE — 配置档案底座(schema/规则/识别/示例)可与生态工具分期;写入依赖 S-ECOSYSTEM
