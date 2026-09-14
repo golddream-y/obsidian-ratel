@@ -20,8 +20,6 @@
 | ID | 文件 | 状态 | 创建日期 | 备注 |
 |---|---|---|---|---|
 | S-ECOSYSTEM | [2026-08-20-ecosystem-management-design.md](specs/2026-08-20-ecosystem-management-design.md) | Active | 2026-08-20 | 支柱 C 执行层:对话寻找/安装/升级/卸载;架构 [host/ecosystem.md](../architecture/host/ecosystem.md);无官方授权须降级;需 ADR-018 与商店审核口径;plan 待写 |
-| S-GOAL | [2026-08-22-agent-goal-mode.md](specs/2026-08-22-agent-goal-mode.md) | Active | 2026-08-22 | 内核已随 0.7.0 发版;架构正文 [architecture/agent/goal-mode.md](../architecture/agent/goal-mode.md);spec 待归档 |
-| S-LLM-RETRY | [2026-09-09-llm-chat-retry.md](specs/2026-09-09-llm-chat-retry.md) | Active | 2026-09-09 | 策略随 0.7.1 发版;UI 见 S-LLM-RETRY-UI;MCP curl 不在范围 |
 | S-LLM-RETRY-UI | [2026-09-11-llm-retry-status-design.md](specs/2026-09-11-llm-retry-status-design.md) | Active | 2026-09-11 | 打字行 connecting 球 + 重试文案;不进 StatusStrip;无失败按钮 |
 | S-PLUGIN-PROFILE | [2026-09-10-plugin-profile-design.md](specs/2026-09-10-plugin-profile-design.md) | Active | 2026-09-10 | 社区插件配置档案:一份 schema 多份实例;架构正文 [architecture/host/plugin-profile.md](../architecture/host/plugin-profile.md);依赖 S-ECOSYSTEM 写入;plan 待写 |
 | S-HOST-ACCESS | [2026-09-11-host-access-design.md](specs/2026-09-11-host-access-design.md) | Active | 2026-09-11 | 库外文件+宿主命令:设置总闸默认关,开后走安全/自动/危险且视为破坏性;解析 Skill 另开 spec |
@@ -33,9 +31,6 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
-| P-GOAL-1 | [2026-08-22-agent-goal-mode.md](plans/2026-08-22-agent-goal-mode.md) | Completed | S-GOAL | 8 Task;随 0.7.0 发版;待归档 |
-| P-GOAL-CHROME | [2026-09-07-goal-chrome-beam.md](plans/2026-09-07-goal-chrome-beam.md) | Completed | S-GOAL | 1 Task;feat/p-goal-1 `f592ed1`;随 0.7.0 发版 |
-| P-GOAL-CONFIRM | [2026-09-07-goal-create-confirm.md](plans/2026-09-07-goal-create-confirm.md) | Completed | S-GOAL | 3 Task;创建改对话确认;随 0.7.0 发版 |
 
 ---
 
@@ -54,7 +49,7 @@
 
 ## Future execution queue(按顺序)
 
-1. **S-LLM-RETRY-UI** — 打字行重试提示(connecting);S-LLM-RETRY 策略已落地,两份 spec 一并待归档
+1. **S-LLM-RETRY-UI** — 打字行重试提示(connecting);策略已归档为 S-LLM-RETRY
 2. 候选(无 spec,重启时新开):update_frontmatter / Write Gate / append_to_daily(S-EVOLUTION 写侧,见 archive/S-EVOLUTION/)  
 3. S-ECOSYSTEM(差异化主打,动工前先确认商店审核口径 + 立 ADR-018)
 4. S-PLUGIN-PROFILE — 配置档案底座(schema/规则/识别/示例)可与生态工具分期;写入依赖 S-ECOSYSTEM
@@ -66,4 +61,4 @@
 
 ## 已归档
 
-见 [ARCHIVE.md](ARCHIVE.md) — 含按月统计图与全部归档记录(70 条 / 59 目录)。
+见 [ARCHIVE.md](ARCHIVE.md) — 含按月统计图与全部归档记录(72 条 / 61 目录)。

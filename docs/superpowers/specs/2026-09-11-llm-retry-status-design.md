@@ -3,7 +3,7 @@
 > 日期: 2026-09-11
 > 状态: Active
 > Spec ID: **S-LLM-RETRY-UI**
-> 关联: [S-LLM-RETRY](2026-09-09-llm-chat-retry.md)（策略已落地）、[thinking-orbs](https://libraries.dev/orbs)（`connecting` 态）
+> 关联: [S-LLM-RETRY](../archive/S-LLM-RETRY/2026-09-09-llm-chat-retry.md)（策略已落地）、[thinking-orbs](https://libraries.dev/orbs)（`connecting` 态）
 
 ---
 
