@@ -19,7 +19,7 @@ import { getEffectiveChatModelMaxTokens } from './utils/context-window';
 import { tailBudget } from './core/context-budget';
 import { normalizeMcpServerConfig } from './core/mcp-config';
 import { AttachmentStore } from './core/attachment-store';
-import type { AttachmentRef } from './ports/llm';
+import type { AttachmentRef, LlmRetryWait } from './ports/llm';
 
 import type { AgentEvent } from './types';
 import { agentLoop } from './core/agent-loop';
@@ -1453,7 +1453,7 @@ export default class RatelVaultPlugin extends Plugin {
 		message: string,
 		signal?: AbortSignal,
 		attachments?: AttachmentRef[],
-		opts?: { goalRound?: boolean; modelMessage?: string },
+		opts?: { goalRound?: boolean; modelMessage?: string; onRetryWait?: (state: LlmRetryWait | null) => void },
 	): AsyncIterable<AgentEvent> {
 		this.currentChatSessionId = sessionId;
 		this.lastAskUserText = message;
@@ -1566,7 +1566,13 @@ export default class RatelVaultPlugin extends Plugin {
 			for (let attempt = 0; attempt < 2; attempt++) {
 				let overflow = false;
 				for await (const ev of agentLoop(
-					{ sessionId, message, attachments, modelMessage: opts?.modelMessage },
+					{
+						sessionId,
+						message,
+						attachments,
+						modelMessage: opts?.modelMessage,
+						onRetryWait: opts?.onRetryWait,
+					},
 					ctx,
 					this.llm,
 					this.tools,

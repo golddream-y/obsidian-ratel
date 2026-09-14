@@ -1297,4 +1297,31 @@ describe('agentLoop', () => {
 		expect(storedUser?.content).not.toContain('禁止 create');
 		expect(outboundLastUser).toContain('禁止 create');
 	});
+
+	it('agentLoop - UserChatRequest.onRetryWait - 原样传给 llm.chat', async () => {
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence, undefined, 8000);
+		const cb = () => {};
+		let seen: ChatRequest | undefined;
+		const llm: LLMClient = {
+			supportsImages: false,
+			countTokens: () => 10,
+			async *chat(req: ChatRequest) {
+				seen = req;
+				yield { text: 'ok' };
+			},
+		};
+		const tools = new ToolRegistry();
+		const hooks = new HookRegistry();
+		for await (const _ of agentLoop(
+			{ sessionId: 's1', message: 'Hi', onRetryWait: cb },
+			ctx,
+			llm,
+			tools,
+			hooks,
+		)) {
+			/* drain */
+		}
+		expect(seen?.onRetryWait).toBe(cb);
+	});
 });

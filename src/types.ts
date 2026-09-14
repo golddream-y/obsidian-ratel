@@ -11,7 +11,7 @@
  */
 
 // ==================== 端口类型 re-export ====================
-import type { AttachmentRef } from './ports/llm';
+import type { AttachmentRef, LlmRetryWait } from './ports/llm';
 export type { ChatMessage, ChatDelta, ToolCall, ToolDefinition } from './ports/llm';
 export type { VectorSearchResult, SearchFilter } from './ports/vector';
 export type { Session, NoteMeta, HookLogEntry } from './ports/persistence';
@@ -121,6 +121,8 @@ export interface UserChatRequest {
 	modelMessage?: string;
 	/** 图片附件(S-VISION)— ChatView 从 pendingAttachments$ 取,随消息进 agent-loop */
 	attachments?: AttachmentRef[];
+	/** 网络重试等待态 — 仅 ChatView 主 ask 路径传入,透传到 llm.chat */
+	onRetryWait?: (state: LlmRetryWait | null) => void;
 }
 
 // ==================== 用户记忆系统(Phase 1)====================

@@ -17,6 +17,8 @@
 		offsetForUnit,
 	} from './virtual-window';
 	import { t, type StringKey } from '../../../i18n';
+	import { retryWaitLabel } from '../../../core/llm-retry-wait';
+	import type { LlmRetryWait } from '../../../ports/llm';
 	import ThinkingOrb from '../../orbs/ThinkingOrb.svelte';
 	import { mapOrbState, type RatelOrbBusyKind } from '../../orbs/map-orb-state';
 	import type { OrbState } from '../../orbs/types';
@@ -47,6 +49,8 @@
 		/** 会话最近一次检索结果 — 跟进气泡正文 [n] 挂钩回退 */
 		citeSearchFallback = null,
 		jumpRequest = null,
+		retryWait = null,
+		retryRemainingMs = 0,
 	}: {
 		messages: Message[];
 		sessionId: string;
@@ -57,6 +61,8 @@
 		highlightId?: string | null;
 		citeSearchFallback?: Message['searchResults'] | null;
 		jumpRequest?: VirtualJumpRequest | null;
+		retryWait?: LlmRetryWait | null;
+		retryRemainingMs?: number;
 	} = $props();
 
 	const ORB_LABEL: Record<OrbState, StringKey> = {
@@ -82,6 +88,7 @@
 
 	const busyKind = $derived.by((): RatelOrbBusyKind => {
 		if (!showBusyOrb) return 'thinking';
+		if (retryWait != null) return 'retry';
 		const last = messages[messages.length - 1]!;
 		const calling = last.segments.some(
 			(s) => s.type === 'tool' && s.toolCall.status === 'calling',
@@ -99,6 +106,14 @@
 	});
 
 	const busyOrbState = $derived(mapOrbState(busyKind));
+
+	const busyText = $derived.by((): { key: StringKey; params?: Record<string, string | number> } => {
+		if (showBusyOrb && retryWait != null) {
+			const { key, params } = retryWaitLabel(retryWait, retryRemainingMs);
+			return { key, params };
+		}
+		return { key: ORB_LABEL[busyOrbState] };
+	});
 	const motionOn = $derived(isChatMotionEnabled($settingsStore));
 
 	/** 已入场或 hydrate 种子的消息 id — 仅新 id 首帧播 FadeIn */
@@ -315,7 +330,7 @@
 	{#if showBusyOrb}
 		<div class="ratel-typing">
 			<ThinkingOrb orbState={busyOrbState} size={24} />
-			<span class="ratel-typing-text">{$t(ORB_LABEL[busyOrbState])}</span>
+			<span class="ratel-typing-text">{$t(busyText.key, busyText.params)}</span>
 		</div>
 	{/if}
 </div>
