@@ -5,7 +5,7 @@
  * @depends ports/llm
  */
 
-import type { ChatDelta, ChatRequest, LLMClient } from '../ports/llm';
+import type { ChatDelta, ChatRequest, LLMClient, LlmRetryWait } from '../ports/llm';
 
 /** 首次 + 最多两次重试 */
 const MAX_ATTEMPTS = 3;
@@ -58,27 +58,72 @@ export function wrapLlmChatRetry(inner: LLMClient): LLMClient {
 			return inner.countTokens(text);
 		},
 		async *chat(req: ChatRequest): AsyncIterable<ChatDelta> {
+			const onRetryWait = req.onRetryWait;
+			let waitActive = false;
+
+			const emitWait = (state: LlmRetryWait): void => {
+				onRetryWait?.(state);
+				waitActive = true;
+			};
+
+			const clearWait = (): void => {
+				if (!waitActive) return;
+				onRetryWait?.(null);
+				waitActive = false;
+			};
+
 			let lastErr: unknown;
-			for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-				if (req.signal?.aborted) {
-					throw new Error('请求已取消');
-				}
-				let yielded = false;
-				try {
-					for await (const delta of inner.chat(req)) {
-						yielded = true;
-						yield delta;
+			try {
+				for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+					if (req.signal?.aborted) {
+						clearWait();
+						throw new Error('请求已取消');
 					}
-					return;
-				} catch (err) {
-					lastErr = err;
-					const aborted = !!req.signal?.aborted;
-					if (!isRetryableLlmFailure(err, { yielded, aborted })) throw err;
-					if (attempt >= MAX_ATTEMPTS - 1) throw err;
-					await sleepMs(retryDelayMs(attempt, err), req.signal);
+					if (attempt > 0) {
+						emitWait({ phase: 'request', attempt: attempt + 1, maxAttempts: MAX_ATTEMPTS });
+					}
+					let yielded = false;
+					try {
+						for await (const delta of inner.chat(req)) {
+							if (!yielded) {
+								clearWait();
+							}
+							yielded = true;
+							yield delta;
+						}
+						clearWait();
+						return;
+					} catch (err) {
+						lastErr = err;
+						const aborted = !!req.signal?.aborted;
+						if (!isRetryableLlmFailure(err, { yielded, aborted })) {
+							clearWait();
+							throw err;
+						}
+						if (attempt >= MAX_ATTEMPTS - 1) {
+							clearWait();
+							throw err;
+						}
+						const delayMs = retryDelayMs(attempt, err);
+						emitWait({
+							phase: 'backoff',
+							attempt: attempt + 2,
+							maxAttempts: MAX_ATTEMPTS,
+							delayMs,
+						});
+						try {
+							await sleepMs(delayMs, req.signal);
+						} catch (sleepErr) {
+							clearWait();
+							throw sleepErr;
+						}
+					}
 				}
+				clearWait();
+				throw lastErr;
+			} finally {
+				clearWait();
 			}
-			throw lastErr;
 		},
 	};
 }
