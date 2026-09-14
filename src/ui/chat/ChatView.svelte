@@ -21,7 +21,7 @@
 	import type { Message } from './message-stream/types';
 	import { newMessageId } from './message-stream/new-message-id';
 	import { hydrateSessionMessages } from './message-stream/hydrate-session-messages';
-	import type { AttachmentRef } from '../../ports/llm';
+	import type { AttachmentRef, LlmRetryWait } from '../../ports/llm';
 	import { latestCiteSearchResults } from './latest-cite-search';
 	import ChatNavRail from './nav/ChatNavRail.svelte';
 	import {
@@ -164,6 +164,9 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 		return () => leaf.classList.remove('is-ratel-empty');
 	});
 	let isRunning = $state(false);
+	let retryWait = $state<LlmRetryWait | null>(null);
+	let retryRemainingMs = $state(0);
+	let retryCountdownTimer: ReturnType<typeof window.setInterval> | null = null;
 	let goalsSnapshot = $state<AgentGoal[]>([]);
 	let goalRoundSteps = $state(0);
 	let errorHoldActive = $state(false);
@@ -1247,6 +1250,32 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 	// llmText 只出站给模型(确认引导),气泡与 session JSON 永远用 text
 	type SendMessageOpts = { text?: string; llmText?: string; goalRound?: boolean; bypassSlashGoal?: boolean };
 
+	function clearRetryCountdown(): void {
+		if (retryCountdownTimer != null) {
+			window.clearInterval(retryCountdownTimer);
+			retryCountdownTimer = null;
+		}
+	}
+
+	function handleRetryWait(state: LlmRetryWait | null): void {
+		clearRetryCountdown();
+		retryWait = state;
+		if (state == null) {
+			retryRemainingMs = 0;
+			return;
+		}
+		if (state.phase === 'backoff') {
+			const deadline = Date.now() + state.delayMs;
+			const tick = (): void => {
+				retryRemainingMs = Math.max(0, deadline - Date.now());
+			};
+			tick();
+			retryCountdownTimer = window.setInterval(tick, 250);
+		} else {
+			retryRemainingMs = 0;
+		}
+	}
+
 	async function sendMessage(opts?: SendMessageOpts) {
 		refreshKeyState();
 		const text = (opts?.text ?? input).trim();
@@ -1413,6 +1442,7 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 					...(opts?.goalRound ? { goalRound: true } : {}),
 					...(opts?.llmText && opts.llmText !== text ? { modelMessage: opts.llmText } : {}),
 					preloadedContext: preCtx,
+					onRetryWait: handleRetryWait,
 				},
 			);
 
@@ -1524,6 +1554,9 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 				handleAgentError(am, 'LLM_ERROR', message);
 			}
 		} finally {
+			clearRetryCountdown();
+			retryWait = null;
+			retryRemainingMs = 0;
 			isRunning = false;
 			abortController = null;
 			scrollToBottom();
@@ -1870,6 +1903,8 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 				{messages}
 				{sessionId}
 				{isRunning}
+				{retryWait}
+				{retryRemainingMs}
 				bind:containerRef={messagesEl}
 				onScroll={handleScroll}
 				onOpenPath={handleOpenPath}

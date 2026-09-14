@@ -11,7 +11,7 @@
  */
 
 // ==================== 端口类型 re-export ====================
-import type { AttachmentRef } from './ports/llm';
+import type { AttachmentRef, LlmRetryWait } from './ports/llm';
 import type { BreadcrumbPhase } from './logging/breadcrumbs';
 export type { ChatMessage, ChatDelta, ToolCall, ToolDefinition } from './ports/llm';
 export type { VectorSearchResult, SearchFilter } from './ports/vector';
@@ -126,6 +126,8 @@ export interface UserChatRequest {
 	 * 崩溃面包屑打点（S-RENDER-STABILITY A）。agent-loop 不 import fs。
 	 */
 	onBreadcrumb?: (phase: BreadcrumbPhase, n?: string | number) => void;
+	/** 网络重试等待态 — 仅 ChatView 主 ask 路径传入,透传到 llm.chat */
+	onRetryWait?: (state: LlmRetryWait | null) => void;
 }
 
 // ==================== 用户记忆系统(Phase 1)====================

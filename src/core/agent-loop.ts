@@ -182,6 +182,7 @@ export async function* agentLoop(
 					),
 					tools: tools.definitions(),
 					signal,
+					onRetryWait: req.onRetryWait,
 				});
 
 				for await (const delta of stream) {
