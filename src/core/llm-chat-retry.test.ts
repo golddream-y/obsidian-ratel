@@ -104,4 +104,49 @@ describe('wrapLlmChatRetry', () => {
 		await expect(pending).rejects.toThrow(/请求已取消/);
 		expect(inner.calls).toBe(1);
 	});
+
+	it('onRetryWait - 第二次成功 yield - 序列 backoff request null', async () => {
+		vi.useFakeTimers();
+		const inner = fakeLlm(['503', 'ok']);
+		const wrapped = wrapLlmChatRetry(inner);
+		const seq: unknown[] = [];
+		const pending = collect(
+			wrapped.chat({
+				messages: [],
+				onRetryWait: (s) => {
+					seq.push(s);
+				},
+			}),
+		);
+		await vi.runAllTimersAsync();
+		await expect(pending).resolves.toEqual([{ text: 'ok' }]);
+		expect(seq).toEqual([
+			{ phase: 'backoff', attempt: 2, maxAttempts: 3, delayMs: 500 },
+			{ phase: 'request', attempt: 2, maxAttempts: 3 },
+			null,
+		]);
+	});
+
+	it('onRetryWait - 退避中 abort - 收到 null 且不再请求', async () => {
+		vi.useFakeTimers();
+		const inner = fakeLlm(['503', 'ok']);
+		const wrapped = wrapLlmChatRetry(inner);
+		const seq: unknown[] = [];
+		const ac = new AbortController();
+		const pending = collect(
+			wrapped.chat({
+				messages: [],
+				signal: ac.signal,
+				onRetryWait: (s) => {
+					seq.push(s);
+				},
+			}),
+		);
+		await vi.advanceTimersByTimeAsync(0);
+		ac.abort();
+		await expect(pending).rejects.toThrow(/请求已取消/);
+		expect(inner.calls).toBe(1);
+		expect(seq[seq.length - 1]).toBe(null);
+		expect(seq.some((s) => s && typeof s === 'object' && (s as { phase: string }).phase === 'request')).toBe(false);
+	});
 });
