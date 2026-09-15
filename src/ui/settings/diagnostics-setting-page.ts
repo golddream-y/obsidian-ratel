@@ -36,7 +36,7 @@ export class DiagnosticsSettingPage extends SettingPage {
 	 * 渲染诊断子页面。
 	 *
 	 * 关键路径:SettingPage 的 abstract 方法,页面打开时调用。
-	 * 内部渲染 3 个子 Tab,逻辑与原 `renderDiagnostics(containerEl)` 完全一致。
+	 * intro 之后渲染内存横幅与「上次运行」,再接 3 个诊断子 Tab。
 	 */
 	display(): void {
 		const { containerEl } = this;
@@ -46,6 +46,37 @@ export class DiagnosticsSettingPage extends SettingPage {
 			text: tNow('settings.diagnostics.intro'),
 			attr: { style: 'color: var(--text-muted); margin-bottom: 16px; font-size: 13px;' },
 		});
+
+		if (this.plugin.memoryHigh) {
+			containerEl.createEl('p', {
+				text: tNow('diag.memoryHigh'),
+				cls: 'ratel-diag-memory-banner',
+				attr: { style: 'color: var(--text-warning); margin-bottom: 12px;' },
+			});
+		}
+
+		containerEl.createEl('h3', { text: tNow('diag.lastRun.heading') });
+		const last = this.plugin.lastRunDiag;
+		if (!last) {
+			containerEl.createEl('p', { text: tNow('diag.lastRun.none') });
+		} else {
+			containerEl.createEl('p', {
+				text: tNow(last.suspectedCrash ? 'diag.lastRun.suspect' : 'diag.lastRun.ok'),
+			});
+			containerEl.createEl('p', {
+				text: tNow('diag.lastRun.phase', { phase: last.lastPhase }),
+			});
+			containerEl.createEl('p', {
+				text: tNow('diag.lastRun.age', { seconds: Math.floor(last.ageMs / 1000) }),
+			});
+			containerEl.createEl('p', {
+				text: tNow('diag.lastRun.memory', {
+					rss: String(last.rssMB),
+					heap: String(last.heapMB),
+					external: String(last.externalMB),
+				}),
+			});
+		}
 
 		createTabBar(containerEl, [
 			{

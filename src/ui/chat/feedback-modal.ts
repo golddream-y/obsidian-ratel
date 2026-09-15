@@ -23,15 +23,20 @@ interface PluginLike {
 		embedProvider: 'local' | 'api';
 		language: string;
 	};
+	breadcrumbs?: { readRecentLines(limit?: number): string[] };
 }
 
 /**
  * 组装诊断摘要 — 仅版本/模型/语言等,不含笔记正文与密钥。
  *
  * @param plugin - plugin 切片
+ * @param recentBreadcrumbs - 可选最近崩溃面包屑行(不含用户消息/笔记正文)
  * @returns 可粘贴到 Issue 的纯文本
  */
-export function buildFeedbackDiagnostics(plugin: PluginLike): string {
+export function buildFeedbackDiagnostics(
+	plugin: PluginLike,
+	recentBreadcrumbs?: string[],
+): string {
 	const lines = [
 		`Ratel ${plugin.manifest.version} (${plugin.manifest.id})`,
 		`Obsidian: ${(plugin.app as unknown as { appVersion?: string }).appVersion ?? 'unknown'}`,
@@ -39,8 +44,13 @@ export function buildFeedbackDiagnostics(plugin: PluginLike): string {
 		`Chat model: ${plugin.settings.chatModel || '(unset)'}`,
 		`Embed: ${plugin.settings.embedProvider}`,
 		'',
-		'<!-- 请描述问题 / 期望行为;不要粘贴笔记正文或 API Key -->',
 	];
+	if (recentBreadcrumbs && recentBreadcrumbs.length > 0) {
+		lines.push('Breadcrumbs (last 40, no message text):');
+		lines.push(...recentBreadcrumbs);
+		lines.push('');
+	}
+	lines.push('<!-- 请描述问题 / 期望行为;不要粘贴笔记正文或 API Key -->');
 	return lines.join('\n');
 }
 
@@ -69,7 +79,8 @@ export class FeedbackModal extends Modal {
 			cls: 'ratel-feedback-body',
 		});
 
-		const diag = buildFeedbackDiagnostics(this.plugin);
+		const recent = this.plugin.breadcrumbs?.readRecentLines(40) ?? [];
+		const diag = buildFeedbackDiagnostics(this.plugin, recent);
 		const pre = this.contentEl.createEl('pre', { cls: 'ratel-feedback-diag' });
 		pre.setText(diag);
 
