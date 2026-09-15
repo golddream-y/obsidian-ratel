@@ -15,6 +15,7 @@ const RATEL_GITIGNORE_MARKER = '# Ratel Vault';
 const RATEL_GITIGNORE_LINES = [
 	'.index/',
 	'cache/',
+	'diag/',
 	'model-context-registry.json',
 	'model-context-registry.meta.json',
 	// 关键路径:旧版清单在插件根目录,易被 Remotely Save 等同步工具删掉;保留忽略以防残留

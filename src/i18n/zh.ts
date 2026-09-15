@@ -129,6 +129,8 @@ const settingsZh: SettingsStrings = {
   'settings.autoCompactEnabled.desc': '上下文接近上限时自动压缩,保留全部对话气泡',
   'settings.developer.heading': '开发者',
   'settings.developer.debugLog.name': 'Debug 日志',
+  'settings.developer.crashBreadcrumbs.name': '崩溃面包屑',
+  'settings.developer.crashBreadcrumbs.desc': '把发送各阶段写到插件目录本地日志，不含对话正文。关闭后停止写入，下次启动仍读取历史。',
   'settings.developer.agentMaxSteps.name': 'Agent 最大步数',
   'settings.developer.agentMaxSteps.desc': 'Agent Loop 单轮最大工具调用次数',
   'settings.goal.heading': '目标模式',
@@ -570,6 +572,14 @@ const statusZh: StatusStrings = {
 
 const diagZh: DiagnosticsStrings = {
   'diag.intro': '调试工具:用于验证 Embedding、LLM、Rerank 适配器是否正常工作',
+  'diag.lastRun.heading': '上次运行',
+  'diag.lastRun.none': '没有上次运行记录。',
+  'diag.lastRun.ok': '上次正常退出。',
+  'diag.lastRun.suspect': '上次可能异常退出（渲染进程被杀时常见）。',
+  'diag.lastRun.phase': '最后阶段：{phase}',
+  'diag.lastRun.age': '距心跳：{seconds} 秒',
+  'diag.lastRun.memory': '当时内存 RSS {rss} MB / heap {heap} MB / external {external} MB',
+  'diag.memoryHigh': 'Ratel 内存偏高，建议重启 Obsidian。',
   'diag.errorType.config': '配置错误',
   'diag.errorType.network': '网络错误',
   'diag.errorType.model': '模型错误',

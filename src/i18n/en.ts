@@ -128,6 +128,8 @@ export const en: Strings = {
   'settings.autoCompactEnabled.desc': 'Compact when context nears the limit while keeping all chat bubbles',
   'settings.developer.heading': 'Developer',
   'settings.developer.debugLog.name': 'Debug log',
+  'settings.developer.crashBreadcrumbs.name': 'Crash breadcrumbs',
+  'settings.developer.crashBreadcrumbs.desc': 'Write send-path phases to a local plugin log (no message text). Turning off stops writes; next launch still reads history.',
   'settings.developer.agentMaxSteps.name': 'Agent max steps',
   'settings.developer.agentMaxSteps.desc': 'Maximum tool calls per Agent Loop turn',
   'settings.goal.heading': 'Goal mode',
@@ -562,6 +564,14 @@ export const en: Strings = {
 
   // ==================== DiagnosticsStrings ====================
   'diag.intro': 'Debug tools: verify that Embedding / LLM / Rerank adapters work correctly',
+  'diag.lastRun.heading': 'Last run',
+  'diag.lastRun.none': 'No previous-run record.',
+  'diag.lastRun.ok': 'Last run exited cleanly.',
+  'diag.lastRun.suspect': 'Last run may have crashed (typical when the renderer is killed).',
+  'diag.lastRun.phase': 'Last phase: {phase}',
+  'diag.lastRun.age': 'Age since heartbeat: {seconds}s',
+  'diag.lastRun.memory': 'Memory then: RSS {rss} MB / heap {heap} MB / external {external} MB',
+  'diag.memoryHigh': 'Ratel memory is high; restart Obsidian.',
   'diag.errorType.config': 'Configuration error',
   'diag.errorType.network': 'Network error',
   'diag.errorType.model': 'Model error',

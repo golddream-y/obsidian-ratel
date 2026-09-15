@@ -126,6 +126,8 @@ export interface SettingsStrings {
   'settings.autoCompactEnabled.desc': string;
   'settings.developer.heading': string;
   'settings.developer.debugLog.name': string;
+  'settings.developer.crashBreadcrumbs.name': string;
+  'settings.developer.crashBreadcrumbs.desc': string;
   'settings.developer.agentMaxSteps.name': string;
   'settings.developer.agentMaxSteps.desc': string;
   'settings.goal.heading': string;
@@ -577,6 +579,14 @@ export interface StatusStrings {
 // ==================== Diagnostics 子页面 ====================
 export interface DiagnosticsStrings {
   'diag.intro': string;
+  'diag.lastRun.heading': string;
+  'diag.lastRun.none': string;
+  'diag.lastRun.ok': string;
+  'diag.lastRun.suspect': string;
+  'diag.lastRun.phase': string;
+  'diag.lastRun.age': string;
+  'diag.lastRun.memory': string;
+  'diag.memoryHigh': string;
   'diag.errorType.config': string;
   'diag.errorType.network': string;
   'diag.errorType.model': string;

@@ -27,6 +27,7 @@ describe('ensurePluginGitignore', () => {
         const content = fs.readFileSync(gitignorePath, 'utf-8');
         expect(content).toContain('.index/');
         expect(content).toContain('cache/');
+        expect(content).toContain('diag/');
     });
 
     it('二次调用 - 幂等(行已存在不重复写)', () => {

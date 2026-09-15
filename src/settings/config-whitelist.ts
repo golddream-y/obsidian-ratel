@@ -14,8 +14,8 @@ import { APPEARANCE_PRESETS } from '../ui/appearance/appearance-presets';
  * 设计要点:
  * - 只收「常规偏好」类配置:对话模型、分块索引、Embedding、记忆、日记、语言外观。
  * - 安全红线(永不进入白名单):toolPermissions / toolPermissionLevel / mcpServers /
- *   mcpApprovedSpawns / promptOverrides / chatPreset / debugLog / agentMaxSteps /
- *   modelRegistryUrl — 这些是提权面或调试开关,必须由用户在设置面板亲手改。
+ *   mcpApprovedSpawns / promptOverrides / chatPreset / debugLog / crashBreadcrumbs /
+ *   agentMaxSteps / modelRegistryUrl — 这些是提权面或调试开关,必须由用户在设置面板亲手改。
  * - 每个 key 必须存在于 DEFAULT_SETTINGS(测试有「幽灵 key」守卫)。
  */
 export const CONFIG_UPDATE_WHITELIST: ReadonlySet<string> = new Set<string>([

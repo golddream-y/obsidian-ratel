@@ -27,6 +27,7 @@ export interface SettingApplier {
 	rebuildLLM(): void;
 	rebuildEmbeddingAdapter(): void;
 	syncToolDefinitions(): void;
+	syncCrashBreadcrumbs?(enabled: boolean): void;
 }
 
 /**
@@ -84,6 +85,9 @@ export function applySettingValue(plugin: SettingApplier, key: string, value: un
 	}
 	if (key === 'debugLog') {
 		devLogger.setDebugEnabled(value as boolean);
+	}
+	if (key === 'crashBreadcrumbs') {
+		plugin.syncCrashBreadcrumbs?.(value as boolean);
 	}
 	// 关键路径:language 切换后立即应用,触发 langStore 更新,Svelte 组件自动重渲染
 	if (key === 'language') {

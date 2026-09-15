@@ -22,6 +22,7 @@ const PRIVILEGE_ESCALATION_KEYS = [
 	'promptOverrides',
 	'chatPreset',
 	'debugLog',
+	'crashBreadcrumbs',
 	'agentMaxSteps',
 	'modelRegistryUrl',
 	// 嵌套 key 形态同样拒绝

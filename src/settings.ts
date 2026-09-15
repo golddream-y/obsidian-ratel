@@ -121,6 +121,8 @@ export interface RatelVaultSettings {
 
 	// Developer
 	debugLog: boolean;
+	/** 崩溃面包屑落盘（S-RENDER-STABILITY 分期 A）；默认开，开发者区可关 */
+	crashBreadcrumbs: boolean;
 	/** Agent Loop 最大步数上限 — 防止工具调用死循环,默认 50(见 ADR-004) */
 	agentMaxSteps: number;
 
@@ -241,6 +243,7 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 	embedDownloadedModels: [],
 
 	debugLog: false,
+	crashBreadcrumbs: true,
 	// 关键路径:50 步覆盖知识库场景(1 glob + N read + 分析 + write),见 ADR-004。
 	agentMaxSteps: 50,
 
@@ -997,6 +1000,11 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 					{
 						name: tNow('settings.developer.debugLog.name'),
 						control: { type: 'toggle', key: 'debugLog' },
+					},
+					{
+						name: tNow('settings.developer.crashBreadcrumbs.name'),
+						desc: tNow('settings.developer.crashBreadcrumbs.desc'),
+						control: { type: 'toggle', key: 'crashBreadcrumbs' },
 					},
 					{
 					name: tNow('settings.developer.agentMaxSteps.name'),
