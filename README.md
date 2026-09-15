@@ -124,6 +124,7 @@ These capabilities are the foundation. They serve proactive intelligence and gra
 | MCP parameters | Sent only when an enabled MCP tool is invoked |
 | Proactive insights | Filtered locally before the minimum necessary evidence is assembled |
 | Vault changes | Follow Safe / Auto / Danger permissions; notifications cannot bypass them |
+| Crash breadcrumbs | Written only under the local plugin `diag/` folder, no message text; on by default, toggle in Developer |
 | Telemetry | None |
 
 Once blacklist controls land, excluded content will never enter the index, candidate detection, model context, MCP parameters, logs, or notifications.
