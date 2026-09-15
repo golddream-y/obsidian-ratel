@@ -80,6 +80,7 @@ import type { IndexBackend } from './core/index-manager';
 import { devLogger } from './logging/dev-logger';
 import { UserNotice } from './user-feedback/user-notice';
 import { UserStatus } from './user-feedback/user-status';
+import { CrashBreadcrumbs, type LastRunDiag } from './logging/breadcrumbs';
 import { isSearchReady } from './ui/chat/chat-send-gate';
 import { applyLangPreference, tNow } from './i18n';
 import {
@@ -221,6 +222,10 @@ export default class RatelVaultPlugin extends Plugin {
 	toolSessionGrants = new ToolPermissionSessionGrants();
 	/** 图片附件外置存储(S-VISION v1.3)— onload 装配,目录 <pluginDir>/attachments;会话删除时整目录清走 */
 	attachments!: AttachmentStore;
+	/** 崩溃面包屑（S-RENDER-STABILITY A）— onload 装配；可选链避免中途失败 */
+	breadcrumbs?: CrashBreadcrumbs;
+	lastRunDiag: LastRunDiag | null = null;
+	memoryHigh = false;
 	userNotice = new UserNotice();
 	userStatus = new UserStatus();
 	/** file-menu 插入 @mention 时若 ChatView 尚未 mount,先排队 */
@@ -293,6 +298,17 @@ export default class RatelVaultPlugin extends Plugin {
 		// 因此只做目录占位;InlineWorker 场景下会在模型就绪后重新创建带 embeddings 的 store。
 		this.vectraStore = new VectraStore(this.indexDir);
 		ensurePluginGitignore(pluginDir);
+		this.breadcrumbs = new CrashBreadcrumbs({
+			pluginDir,
+			enabled: () => this.settings.crashBreadcrumbs !== false,
+			onMemoryHigh: () => {
+				this.memoryHigh = true;
+				new Notice(tNow('diag.memoryHigh'));
+			},
+		});
+		this.lastRunDiag = this.breadcrumbs.inspectLastRun();
+		this.breadcrumbs.mark('plugin.load');
+		this.breadcrumbs.startHeartbeat();
 		// S-VISION v1.3:附件外置根目录 — 必须用上方解析好的绝对 pluginDir
 		// 修复: 曾误用相对的 manifest.dir,渲染进程 CWD 下 fs 相对解析直接 ENOENT
 		this.attachments = new AttachmentStore(path.join(pluginDir, 'attachments'));
@@ -1250,12 +1266,23 @@ export default class RatelVaultPlugin extends Plugin {
 	}
 
 	/**
+	 * 开发者开关：崩溃面包屑写入。关则停心跳，开则恢复。
+	 *
+	 * @param enabled - 是否启用写入与心跳
+	 */
+	syncCrashBreadcrumbs(enabled: boolean): void {
+		this.breadcrumbs?.setEnabled(enabled);
+	}
+
+	/**
 	 * 插件卸载 — 释放 Worker 进程,避免残留。
 	 *
 	 * 关键路径:Obsidian 热重载会触发 `onunload`,此时必须清理 Worker,
 	 * 否则下次 onload 会创建第二个 Worker 进程,最终 OOM。
 	 */
 	onunload() {
+		this.breadcrumbs?.mark('plugin.unload');
+		this.breadcrumbs?.stopHeartbeat();
 		// 关键路径:onload 中途失败时(如 loadSettings 抛错)部分字段未初始化,
 		// 全部用可选链,避免卸载时二次 TypeError 掩盖根因。
 		this.feedbackController?.destroy();
@@ -1472,6 +1499,8 @@ export default class RatelVaultPlugin extends Plugin {
 		// 关键路径(S-CTX-TRIM):历史上限随窗口推导,替换写死的 8000
 		tailBudget(getEffectiveChatModelMaxTokens(this.settings)));
 
+		this.breadcrumbs?.mark('ask.begin', sessionId);
+
 		ctx.setGoalAnchorProvider(() => {
 			const g = this.goalStore.getBoundActive(sessionId);
 			return g ? composeGoalAnchor(g) : null;
@@ -1509,7 +1538,9 @@ export default class RatelVaultPlugin extends Plugin {
 					})
 				) {
 					try {
+						this.breadcrumbs?.mark('ask.embed.begin', sessionId, 1);
 						const vectors = await this.embedding.embed([message]);
+						this.breadcrumbs?.mark('ask.embed.end', sessionId, 1);
 						const queryVector = vectors[0];
 						if (queryVector) {
 							const hits = await this.memoryStore.searchIndex(message, queryVector, K);
@@ -1576,7 +1607,13 @@ export default class RatelVaultPlugin extends Plugin {
 			for (let attempt = 0; attempt < 2; attempt++) {
 				let overflow = false;
 				for await (const ev of agentLoop(
-					{ sessionId, message, attachments, modelMessage: opts?.modelMessage },
+					{
+						sessionId,
+						message,
+						attachments,
+						modelMessage: opts?.modelMessage,
+						onBreadcrumb: (phase, n) => this.breadcrumbs?.mark(phase, sessionId, n),
+					},
 					ctx,
 					this.llm,
 					this.tools,
@@ -1650,6 +1687,9 @@ export default class RatelVaultPlugin extends Plugin {
 				skipAdd = true;
 			}
 		} finally {
+			const failed = collectedEvents.some((e) => e.type === 'error');
+			if (failed) this.breadcrumbs?.mark('ask.error', sessionId);
+			this.breadcrumbs?.mark('ask.end', sessionId);
 			this.currentAskCtx = null;
 			// 关键路径:消费方提前结束 for-await 或 agentLoop 抛错也要记账(C1)
 			await this.finalizeAskRound(sessionId, signal, opts, collectedEvents);

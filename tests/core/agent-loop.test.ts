@@ -1297,4 +1297,44 @@ describe('agentLoop', () => {
 		expect(storedUser?.content).not.toContain('禁止 create');
 		expect(outboundLastUser).toContain('禁止 create');
 	});
+
+	it('onBreadcrumb - 无工具纯文本回合 - 依次 load/classify/request/first-delta', async () => {
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence, undefined, 8000);
+		const llm = createMockLLM([[{ text: 'Hi' }]]);
+		const tools = new ToolRegistry();
+		const hooks = new HookRegistry();
+		const phases: string[] = [];
+		const classifier = async () => 'direct' as const;
+
+		for await (const _ of agentLoop(
+			{
+				sessionId: 'session-abcdef',
+				message: 'Hi',
+				onBreadcrumb: (phase, n) => {
+					phases.push(n === undefined ? phase : `${phase}:${n}`);
+				},
+			},
+			ctx,
+			llm,
+			tools,
+			hooks,
+			undefined,
+			classifier,
+		)) {
+			/* drain */
+		}
+
+		expect(phases.filter((p) => p.startsWith('loop.load'))[0]).toBeDefined();
+		expect(phases).toContain('loop.classify');
+		expect(phases.some((p) => p.startsWith('llm.request'))).toBe(true);
+		expect(phases.some((p) => p.startsWith('llm.first-delta'))).toBe(true);
+		const iLoad = phases.findIndex((p) => p.startsWith('loop.load'));
+		const iCls = phases.indexOf('loop.classify');
+		const iReq = phases.findIndex((p) => p.startsWith('llm.request'));
+		const iDelta = phases.findIndex((p) => p.startsWith('llm.first-delta'));
+		expect(iLoad).toBeLessThan(iCls);
+		expect(iCls).toBeLessThan(iReq);
+		expect(iReq).toBeLessThan(iDelta);
+	});
 });

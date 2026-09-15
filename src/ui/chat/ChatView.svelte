@@ -1304,6 +1304,7 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 			hasChatApiKey: hasChatApiKey(plugin.app, plugin.settings),
 		});
 		if (!currentGate.canSend) return;
+		plugin.breadcrumbs?.mark('send.enqueue', sessionId);
 
 		const currentAttachments = get(attachmentStore).map((a) => ({
 			fileName: a.fileName,
@@ -1317,6 +1318,7 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 		// 关键路径:发送前先压 — 尚未 push 本条 user,符合 spec
 		const preCtx = plugin.createContext();
 		await preCtx.load(sessionId);
+		plugin.breadcrumbs?.mark('send.precheck', sessionId, preCtx.getTranscript().length);
 		const preUsage = preCtx.getContextUsage(maxTokens, attachmentTokens);
 		if (
 			decidePreSendCompact({
@@ -1327,6 +1329,7 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 				isCompacting,
 			})
 		) {
+			plugin.breadcrumbs?.mark('send.compact', sessionId);
 			await runCompactInChat({ auto: true });
 		}
 
@@ -1531,6 +1534,7 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 					circuitOpen: compactCircuit.isOpen(sessionId),
 				})
 			) {
+				plugin.breadcrumbs?.mark('send.compact', sessionId);
 				await runCompactInChat({ auto: true });
 			}
 		}

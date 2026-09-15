@@ -12,6 +12,7 @@
 
 // ==================== 端口类型 re-export ====================
 import type { AttachmentRef } from './ports/llm';
+import type { BreadcrumbPhase } from './logging/breadcrumbs';
 export type { ChatMessage, ChatDelta, ToolCall, ToolDefinition } from './ports/llm';
 export type { VectorSearchResult, SearchFilter } from './ports/vector';
 export type { Session, NoteMeta, HookLogEntry } from './ports/persistence';
@@ -121,6 +122,10 @@ export interface UserChatRequest {
 	modelMessage?: string;
 	/** 图片附件(S-VISION)— ChatView 从 pendingAttachments$ 取,随消息进 agent-loop */
 	attachments?: AttachmentRef[];
+	/**
+	 * 崩溃面包屑打点（S-RENDER-STABILITY A）。agent-loop 不 import fs。
+	 */
+	onBreadcrumb?: (phase: BreadcrumbPhase, n?: string | number) => void;
 }
 
 // ==================== 用户记忆系统(Phase 1)====================

@@ -110,6 +110,7 @@ export async function* agentLoop(
 ): AsyncIterable<AgentEvent> {
 	// 关键路径:maxSteps 可配置(见 ADR-004),未传时降级默认值 50。
 	const effectiveMaxSteps = maxSteps ?? DEFAULT_MAX_STEPS;
+	const onBreadcrumb = req.onBreadcrumb;
 	// 关键路径:保存流末尾的 API 真值 token,finally 阶段 yield 到 message.end
 	// 声明在函数顶部,确保 try/finally 与 for 循环都能访问(跨多步累积最后一个 usage)。
 	let lastUsage: { promptTokens: number; completionTokens: number } | undefined;
@@ -117,6 +118,7 @@ export async function* agentLoop(
 	let stepCompletionTokensSum = 0;
 	// 加载或初始化 session,然后把用户消息压入上下文。
 	await ctx.load(req.sessionId);
+	onBreadcrumb?.('loop.load', ctx.getTranscript().length);
 	if (skillActivator) {
 		// 关键路径(S-SR-LAYERING):传当前提问做相关性排序,与 main.ask() 注入路径行为一致。
 		ctx.setSkillsContext(skillActivator.composeDiscovery(ctx.getOverrides(), req.message), '');
@@ -142,6 +144,8 @@ export async function* agentLoop(
 			}
 		}
 	}
+
+	onBreadcrumb?.('loop.classify');
 
 	try {
 		let loopExitedViaBreak = false;
@@ -169,6 +173,8 @@ export async function* agentLoop(
 				// 关键路径:signal 穿透到 HTTP 层 — abort 时销毁 socket,首字节 pending 期也能立即停止
 				// 关键路径(S-VISION v1.3):出站前把引用解析回 base64 —— 仅内存瞬态副本,
 				// session 内消息保持 KB 级引用不被污染;store 未注入时原样直通。
+				onBreadcrumb?.('llm.request', step);
+				let sawFirstDelta = false;
 				const stream = llm.chat({
 					messages: overlayLastUserContent(
 						await ctx.toMessagesResolved(attachmentStore, intent),
@@ -183,6 +189,10 @@ export async function* agentLoop(
 					if (signal?.aborted) {
 						streamAborted = true;
 						break;
+					}
+					if (!sawFirstDelta && (delta.text || delta.reasoning || delta.toolCall)) {
+						sawFirstDelta = true;
+						onBreadcrumb?.('llm.first-delta', step);
 					}
 					if (delta.text) {
 						accumulatedText += delta.text;
@@ -284,6 +294,7 @@ export async function* agentLoop(
 			// 关键路径:一轮内逐个执行工具调用(对 UI 展示为逐条 tool.call/tool.result),
 			// 每个工具独立过权限门控与钩子,单个失败不阻断其他工具。
 			for (const tc of toolCalls) {
+				onBreadcrumb?.('loop.tool', `${step}:${tc.name}`);
 				if (signal?.aborted) {
 					yield { type: 'error', payload: { code: 'CANCELLED', message: '用户取消' } };
 					loopExitedViaBreak = true;

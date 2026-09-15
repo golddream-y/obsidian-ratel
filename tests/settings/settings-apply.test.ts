@@ -36,4 +36,11 @@ describe('applySettingValue - LLM 相关副作用分发', () => {
 		expect(plugin.rebuildLLM).not.toHaveBeenCalled();
 		expect(plugin.rebuildEmbeddingAdapter).not.toHaveBeenCalled();
 	});
+
+	it('crashBreadcrumbs 改动 - 调用 syncCrashBreadcrumbs', () => {
+		const plugin = makePlugin();
+		plugin.syncCrashBreadcrumbs = vi.fn();
+		applySettingValue(plugin, 'crashBreadcrumbs', false);
+		expect(plugin.syncCrashBreadcrumbs).toHaveBeenCalledWith(false);
+	});
 });
