@@ -304,6 +304,12 @@ export class CrashBreadcrumbs {
 			if (!fs.existsSync(this.logPath())) return;
 			const size = fs.statSync(this.logPath()).size;
 			if (size <= BREADCRUMB_MAX_BYTES) return;
+			// 关键路径:规格只留一份 breadcrumbs.1.log；目标已存在时 Windows 上裸 renameSync 会抛进 catch，轮转失效
+			try {
+				fs.unlinkSync(this.rotatedLogPath());
+			} catch {
+				// 修复:旧 .1.log 不存在或无法删除时仍尝试 rename
+			}
 			fs.renameSync(this.logPath(), this.rotatedLogPath());
 		} catch {
 			// 修复:轮转失败则继续往当前文件追加

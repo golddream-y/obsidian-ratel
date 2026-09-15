@@ -35,7 +35,7 @@ export default defineConfig({
 		// 关键路径:src/skills、src/tools 与 src/core 下的测试与源码同目录放置,便于查阅;此处显式纳入。
 		// 修复(S-VISION):补 src/ports 与 src/ui —— include 缺失时显式路径会被过滤成
 		// "No test files found",叠加 passWithNoTests 吞成 exit 0(静默假绿)。
-		include: ['tests/**/*.test.ts', 'src/i18n/**/*.test.ts', 'src/skills/**/*.test.ts', 'src/tools/**/*.test.ts', 'src/core/**/*.test.ts', 'src/ports/**/*.test.ts', 'src/ui/**/*.test.ts'],
+		include: ['tests/**/*.test.ts', 'src/i18n/**/*.test.ts', 'src/skills/**/*.test.ts', 'src/tools/**/*.test.ts', 'src/core/**/*.test.ts', 'src/ports/**/*.test.ts', 'src/ui/**/*.test.ts', 'src/logging/**/*.test.ts'],
 		exclude: ['tests/integration/**'],
 		environment: 'node',
 		passWithNoTests: true,
