@@ -52,6 +52,7 @@ import { createDeleteNoteTool } from './tools/delete-note';
 // 关键路径:用户记忆系统 — MemoryStore 管理 .ratel/memory/ 文件 + .memory-index/ vectra 索引,
 // 3 个工具(search_memory / remember / forget_memory)复用 memoryStore 与 embeddingPort。
 import { MemoryStore } from './core/memory-store';
+import { shouldAutoEmbedTopics } from './core/memory-topics-auto-inject';
 // 关键路径(S-SR-LAYERING):使用统计 — Skill 激活与记忆 topics 自动注入命中计数
 import { UsageStatsStore } from './core/usage-stats';
 import { createSearchMemoryTool } from './tools/search-memory';
@@ -1497,7 +1498,16 @@ export default class RatelVaultPlugin extends Plugin {
 				// 命中的主题只注入「名称 + 摘要」,全文仍走 search_memory(两种供给不重复)。
 				let relatedTopics: Array<{ name: string; summary: string }> = [];
 				const K = this.settings.memoryTopicsAutoInjectK;
-				if (K > 0 && message.trim()) {
+				const embeddingReady =
+					!(this.embedding instanceof EmbeddingLocal) || this.embedding.isReady;
+				if (
+					shouldAutoEmbedTopics({
+						k: K,
+						message,
+						indexCount: indexEntries.length,
+						embeddingReady,
+					})
+				) {
 					try {
 						const vectors = await this.embedding.embed([message]);
 						const queryVector = vectors[0];
