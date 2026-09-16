@@ -136,6 +136,8 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 	async ensureReady(): Promise<void> {
 		if (this.dead) throw new Error('Embedding Worker 不可用');
 		await this.ensureWorker();
+		// 关键路径:预热也算活动；不 arm 则 onload 创建的 WASM 会常驻到下一次 embed
+		this.armIdleTimer();
 	}
 
 	/**
@@ -156,20 +158,24 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 		}
 		// 关键路径:先清空闲时钟,避免 ensureWorker 期间 timer 把刚要用的 Worker 收掉
 		this.clearIdleTimer();
-		await this.ensureWorker();
-		const worker = this.worker;
-		if (!worker) {
-			throw new Error('Embedding Worker 不可用');
+		try {
+			await this.ensureWorker();
+			const worker = this.worker;
+			if (!worker) {
+				throw new Error('Embedding Worker 不可用');
+			}
+			const requestId = `embed_${++this.requestCounter}`;
+			const result = await new Promise<number[][]>((resolve, reject) => {
+				this.pending.set(requestId, resolve);
+				this.pendingError.set(requestId, reject);
+				const msg: WorkerEmbedMessage = { type: 'embed', texts, requestId };
+				worker.postMessage(msg);
+			});
+			return result;
+		} finally {
+			// 业务错误也要重新 arm，避免 clearIdleTimer 后 Worker 常驻
+			if (this.pending.size === 0) this.armIdleTimer();
 		}
-		const requestId = `embed_${++this.requestCounter}`;
-		const result = await new Promise<number[][]>((resolve, reject) => {
-			this.pending.set(requestId, resolve);
-			this.pendingError.set(requestId, reject);
-			const msg: WorkerEmbedMessage = { type: 'embed', texts, requestId };
-			worker.postMessage(msg);
-		});
-		if (this.pending.size === 0) this.armIdleTimer();
-		return result;
 	}
 
 	/**
@@ -269,6 +275,8 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 		await this.readyPromise;
 		this.consecutiveInitFailures = 0;
 		this.onLifecycle?.('create');
+		// 关键路径:create/warmup 起算空闲，不能等第一次 embed
+		this.armIdleTimer();
 	}
 
 	/**
@@ -308,13 +316,14 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 	}
 
 	/**
-	 * 成功 embed 且无挂起请求后启动空闲回收时钟。
+	 * 无挂起请求时启动空闲回收时钟（create / warmup / embed 成功或业务错误后）。
 	 */
 	private armIdleTimer(): void {
 		this.clearIdleTimer();
 		if (!this.worker) return;
 		this.idleTimer = globalThis.setTimeout(() => {
 			this.idleTimer = null;
+			if (this.pending.size > 0) return;
 			this.terminateWorker('idle-terminate');
 		}, IDLE_TERMINATE_MS);
 	}

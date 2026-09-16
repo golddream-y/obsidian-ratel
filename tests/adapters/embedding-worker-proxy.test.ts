@@ -444,6 +444,27 @@ describe('EmbeddingWorkerProxy', () => {
 		vi.useRealTimers();
 	});
 
+	it('ensureReady - 空闲 5 分钟 - terminate 且 lifecycle 含 idle-terminate', async () => {
+		vi.useFakeTimers();
+		const lifecycle: string[] = [];
+		const proxy = new EmbeddingWorkerProxy(
+			'mock-url',
+			async () => emptyDeps(),
+			512,
+			16,
+			(k) => lifecycle.push(k),
+		);
+		const ready = proxy.ensureReady();
+		await vi.advanceTimersByTimeAsync(1);
+		await ready;
+		expect(mockWorker.terminate).not.toHaveBeenCalled();
+		await vi.advanceTimersByTimeAsync(IDLE_TERMINATE_MS);
+		expect(mockWorker.terminate).toHaveBeenCalled();
+		expect(lifecycle).toContain('idle-terminate');
+		proxy.terminate();
+		vi.useRealTimers();
+	});
+
 	it('ensureReady - dead 后 - 抛错且不再 new Worker', async () => {
 		vi.useFakeTimers();
 		const failWorker = new MockWorker();
