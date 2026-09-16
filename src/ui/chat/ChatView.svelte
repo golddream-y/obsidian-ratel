@@ -1402,6 +1402,7 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 				{
 					...(opts?.goalRound ? { goalRound: true } : {}),
 					...(opts?.llmText && opts.llmText !== text ? { modelMessage: opts.llmText } : {}),
+					preloadedContext: preCtx,
 				},
 			);
 

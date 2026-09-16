@@ -95,6 +95,17 @@ describe('ContextManager', () => {
 		expect(ctx.toMessages().some((m) => m.content.includes('a.md'))).toBe(false);
 	});
 
+	it('load - 预发送已 load 后 agentLoop 再 load 同 id - 不再触发 persistence.sessions.get', async () => {
+		const persistence = createMockPersistence();
+		const getSpy = vi.spyOn(persistence.sessions, 'get');
+		const ctx = createCtx(persistence);
+		await ctx.load('session-1');
+		ctx.addSearchResults([{ path: 'a.md', content: 's' }]);
+		await ctx.load('session-1');
+		expect(getSpy).toHaveBeenCalledTimes(1);
+		expect(ctx.toMessages().some((m) => m.content.includes('a.md'))).toBe(true);
+	});
+
 	it('adds user message and includes it in toMessages', async () => {
 		const persistence = createMockPersistence();
 		const ctx = createCtx(persistence);

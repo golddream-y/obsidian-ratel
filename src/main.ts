@@ -25,6 +25,7 @@ import type { AgentEvent } from './types';
 import { agentLoop } from './core/agent-loop';
 import { classifyIntent } from './core/intent-classifier';
 import { ContextManager } from './core/context-manager';
+import { shouldReusePreloadedContext } from './core/preloaded-context';
 import { HookRegistry } from './core/hooks';
 import { ToolRegistry } from './core/tool-registry';
 import { ObsidianVault } from './adapters/obsidian-vault';
@@ -1468,8 +1469,9 @@ export default class RatelVaultPlugin extends Plugin {
 	/**
 	 * 聊天入口 — ChatView 通过此方法流式消费 AgentEvent。
 	 *
-	 * 关键路径:每次调用都新建一个 `ContextManager`,不跨调用复用状态,
-	 * 保证会话隔离。
+	 * 关键路径:不跨发送缓存 ctx;一次 ask 结束即丢弃。
+	 * 若传入同 session 的 `preloadedContext`,直接复用,不再 `new ContextManager`
+	 * (预发送压缩判断已 load 过同一场 JSON)。goal/env/skills/memory setter 仍照常执行。
 	 *
 	 * @param sessionId - 会话 ID,关联到 Persistence 存储。
 	 * @param message - 用户最新一条消息。
@@ -1481,23 +1483,25 @@ export default class RatelVaultPlugin extends Plugin {
 		message: string,
 		signal?: AbortSignal,
 		attachments?: AttachmentRef[],
-		opts?: { goalRound?: boolean; modelMessage?: string },
+		opts?: { goalRound?: boolean; modelMessage?: string; preloadedContext?: ContextManager },
 	): AsyncIterable<AgentEvent> {
 		this.currentChatSessionId = sessionId;
 		this.lastAskUserText = message;
 		const collectedEvents: AgentEvent[] = [];
 		// 关键路径:注入 overrides + tools + skills getter,让 ContextManager 调 Composer 拼系统提示词。
-		const ctx = new ContextManager(this.persistence, {
-			getOverrides: () => this.settings.promptOverrides,
-			getTools: () => this.tools.definitions(),
-			// ADR-012:仅 Discovery;Active 指令写入 Session.messages。
-			// 关键路径(S-SR-LAYERING):传当前提问做相关性排序(两处 composeDiscovery 同步)。
-			getSkillsDiscovery: () =>
-				this.skillActivator.composeDiscovery(this.settings.promptOverrides, message),
-			getSkillsActive: () => '',
-		},
-		// 关键路径(S-CTX-TRIM):历史上限随窗口推导,替换写死的 8000
-		tailBudget(getEffectiveChatModelMaxTokens(this.settings)));
+		const ctx = shouldReusePreloadedContext(opts?.preloadedContext, sessionId)
+			? opts!.preloadedContext!
+			: new ContextManager(this.persistence, {
+				getOverrides: () => this.settings.promptOverrides,
+				getTools: () => this.tools.definitions(),
+				// ADR-012:仅 Discovery;Active 指令写入 Session.messages。
+				// 关键路径(S-SR-LAYERING):传当前提问做相关性排序(两处 composeDiscovery 同步)。
+				getSkillsDiscovery: () =>
+					this.skillActivator.composeDiscovery(this.settings.promptOverrides, message),
+				getSkillsActive: () => '',
+			},
+			// 关键路径(S-CTX-TRIM):历史上限随窗口推导,替换写死的 8000
+			tailBudget(getEffectiveChatModelMaxTokens(this.settings)));
 
 		this.breadcrumbs?.mark('ask.begin', sessionId);
 
