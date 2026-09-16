@@ -13,9 +13,9 @@
 > 修订: 2026-09-07 **v1.7** — 目标列表移出设置页,与记忆管理并列进独立 Modal;pending 可恢复/放弃
 > 修订: 2026-09-07 **v1.8** — 创建改为对话确认:先复述完成标准与当前回合预算,用户点头后才 create;改预算走 ratel-config / `goalMaxRounds`;创建不再弹 GoalCreateModal
 > 修订: 2026-09-09 **v1.10** — 完成=关掉:对话确认后 complete,不去留弹窗;归档只走目标管理
-> 状态: Active
+> 状态: Archived
 > Spec ID: **S-GOAL**
-> 取代: [S-TASK](../archive/S-TASK/2026-08-19-agent-task-store.md)(未实施即被取代,继承其合理内核)
+> 取代: [S-TASK](../S-TASK/2026-08-19-agent-task-store.md)(未实施即被取代,继承其合理内核)
 > 关联: [产品能力栈](../../prd/positioning.md)(支柱 A「主动智能」的前置叙事)、S-EVOLUTION Phase C(子代理模板化改为消费 goal)、写侧三件套(独立轻量 spec 待立项,本 spec 不依赖)
 
 ---
@@ -404,7 +404,7 @@ Skill **做不到**,且这些正是 Goal 的产品内核:
 - Devin / TRAE SOLO / Qoder Quest——中途干预、里程碑放行、先协商规格再动手
 - Claude Code TodoWrite——会话内透明层的价值边界
 - AutoGPT / BabyAGI——无界循环的反面教材
-- [S-TASK(归档)](../archive/S-TASK/2026-08-19-agent-task-store.md)——被取代的原设计与继承说明
+- [S-TASK(归档)](../S-TASK/2026-08-19-agent-task-store.md)——被取代的原设计与继承说明
 
 ### 附录:调研待核验项(不影响设计决策)
 

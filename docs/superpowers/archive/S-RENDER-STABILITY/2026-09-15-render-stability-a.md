@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript / Vitest / Node `fs`。无新 npm。Obsidian `Notice` + 现有诊断子页面。
 
-**关联文档:** [S-RENDER-STABILITY](../specs/2026-09-15-render-stability-design.md)
+**关联文档:** [S-RENDER-STABILITY](2026-09-15-render-stability-design.md)
 
 ## Global Constraints
 

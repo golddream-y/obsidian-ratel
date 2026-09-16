@@ -14,7 +14,7 @@
 **Tech Stack:** TypeScript strict / node:fs(promises)(主线程桌面端,goal 文件在 pluginDir)/ vitest / Svelte 5(StatusStrip + 继续 chip)/ Obsidian `addStatusBarItem` + 独立 Modal / 无新 npm 依赖(glob 用现成 `globToRegex`)。
 
 **关联文档:**
-- Spec: [S-GOAL v1.4 内核](../specs/2026-08-22-agent-goal-mode.md) — 本 plan 到 Task 8;v1.5 动效见 P-GOAL-CHROME
+- Spec: [S-GOAL v1.4 内核](2026-08-22-agent-goal-mode.md) — 本 plan 到 Task 8;v1.5 动效见 P-GOAL-CHROME
 - 被取代设计: [S-TASK(归档)](../archive/S-TASK/2026-08-19-agent-task-store.md)
 
 ---

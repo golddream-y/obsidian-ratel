@@ -6,7 +6,7 @@
 
 ## 2026-08-22 — spec 取代归档(Superseded,未实施)
 
-**取代关系:** 被 [S-GOAL](../../specs/2026-08-22-agent-goal-mode.md)(Agent 目标模式)取代,替代者同日立项。
+**取代关系:** 被 [S-GOAL](../S-GOAL/2026-08-22-agent-goal-mode.md)(Agent 目标模式)取代,替代者同日立项。
 
 **原因(用户决策 + 设计复盘):**
 

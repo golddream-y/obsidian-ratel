@@ -2,7 +2,7 @@
 
 > 领域:Agent | 跨会话持久目标：意图 + 完成标准 + 预算，人在场推进
 >
-> 本文是 Goal 的**架构正文**。产品决策履历与未决任务仍见 [S-GOAL](../../superpowers/specs/2026-08-22-agent-goal-mode.md)。预算与完成两条回路以本文为准；S-GOAL 4.7 / 4.8 里「满轮问收尾 / 轮数用尽才判定」已废止。
+> 本文是 Goal 的**架构正文**。产品决策履历见归档 [S-GOAL](../../superpowers/archive/S-GOAL/2026-08-22-agent-goal-mode.md)。预算与完成两条回路以本文为准；S-GOAL 4.7 / 4.8 里「满轮问收尾 / 轮数用尽才判定」已废止。
 
 ---
 
@@ -409,8 +409,8 @@ Skill 教得了「怎么开口立目标」。做不到：跨会话还在、grant
 
 ## 13. 参考
 
-- 产品规格：[S-GOAL](../../superpowers/specs/2026-08-22-agent-goal-mode.md)
-- 实施计划：[P-GOAL-1](../../superpowers/plans/2026-08-22-agent-goal-mode.md)、[P-GOAL-CONFIRM](../../superpowers/plans/2026-09-07-goal-create-confirm.md)
+- 产品规格：[S-GOAL](../../superpowers/archive/S-GOAL/2026-08-22-agent-goal-mode.md)
+- 实施计划：[P-GOAL-1](../../superpowers/archive/S-GOAL/2026-08-22-agent-goal-mode.plan.md)、[P-GOAL-CONFIRM](../../superpowers/archive/S-GOAL/2026-09-07-goal-create-confirm.md)
 - 相邻：[agent-loop](agent-loop.md)、[context-manager](context-manager.md)、[tools](tools.md)、[host/persistence](../host/persistence.md)
 - 被取代的步骤账本：[S-TASK](../../superpowers/archive/S-TASK/2026-08-19-agent-task-store.md)
 - 行业参照：DeepSeek Harness goal 工具；Manus recitation；Copilot coding agent 把状态外置到 repo；AutoGPT 无界循环反面教材

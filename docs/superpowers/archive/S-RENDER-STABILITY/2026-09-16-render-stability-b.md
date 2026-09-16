@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript / Vitest fake timers / Web Worker mock。无新 npm。
 
-**关联文档:** [S-RENDER-STABILITY](../specs/2026-09-15-render-stability-design.md) §4.3 / §4.4 / §4.6
+**关联文档:** [S-RENDER-STABILITY](2026-09-15-render-stability-design.md) §4.3 / §4.4 / §4.6
 
 ## Global Constraints
 

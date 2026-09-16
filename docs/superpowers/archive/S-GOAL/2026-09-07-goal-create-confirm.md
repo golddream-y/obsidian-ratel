@@ -9,8 +9,8 @@
 **Tech Stack:** TypeScript / Vitest / 现有 manage_goal、slash、config-whitelist。无新 npm。
 
 **关联文档:**
-- Spec: [S-GOAL v1.8](../specs/2026-08-22-agent-goal-mode.md) §4.3 / §4.10 create / §4.11 面 4
-- 不取代 [P-GOAL-1](2026-08-22-agent-goal-mode.md);本 plan 只改创建确认时序
+- Spec: [S-GOAL v1.8](2026-08-22-agent-goal-mode.md) §4.3 / §4.10 create / §4.11 面 4
+- 不取代 [P-GOAL-1](2026-08-22-agent-goal-mode.plan.md);本 plan 只改创建确认时序
 
 ## Global Constraints
 

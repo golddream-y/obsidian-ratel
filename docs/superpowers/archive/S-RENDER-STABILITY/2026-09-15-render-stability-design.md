@@ -1,9 +1,9 @@
 # S-RENDER-STABILITY — 渲染进程稳定性：崩溃面包屑与发送路径内存纪律
 
 > 日期: 2026-09-15
-> 状态: Active
+> 状态: Archived
 > Spec ID: **S-RENDER-STABILITY**
-> 关联: [ADR-006](../../adr/) 构建产物约束（embedding worker 内联）、[S-CTX-TRIM](../archive/S-CTX-TRIM/)（上送预算）、[S-COMPACT-V2](../archive/S-COMPACT-V2/)（自动压缩）、[S-SR-LAYERING](../archive/S-SR-LAYERING/)（记忆主题自动注入）
+> 关联: [ADR-006](../../adr/) 构建产物约束（embedding worker 内联）、[S-CTX-TRIM](../S-CTX-TRIM/)（上送预算）、[S-COMPACT-V2](../S-COMPACT-V2/)（自动压缩）、[S-SR-LAYERING](../S-SR-LAYERING/)（记忆主题自动注入）
 
 ---
 
