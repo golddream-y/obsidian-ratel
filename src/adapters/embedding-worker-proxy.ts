@@ -1,18 +1,28 @@
 /**
  * @file src/adapters/embedding-worker-proxy.ts
- * @description EmbeddingWorkerProxy — Web Worker 代理,实现 EmbeddingPort,ONNX 推理在 Worker 线程
+ * @description EmbeddingWorkerProxy — Web Worker 代理,惰性创建、空闲回收、崩溃后重建
  * @module adapters/embedding-worker-proxy
- * @depends ports/embedding, adapters/embedding-onnx
+ * @depends ports/embedding, adapters/embedding-onnx, logging/dev-logger
  *
  * 设计要点:
  * - 实现 EmbeddingPort 接口,对上层(IndexProcessor / SearchVault)透明。
- * - postMessage 到 Web Worker,Worker 内跑 EmbeddingOnnx 的 ONNX WASM 推理。
- * - 请求/响应用 requestId 关联,支持并发 embed 请求。
- * - Worker 创建失败不降级,由调用方处理(提示用户接 API Embedding)。
+ * - 构造时不 new Worker;首次 embed 才创建并 init。
+ * - 无挂起请求且空闲 IDLE_TERMINATE_MS 后 terminate,释放 WASM 线性内存。
+ * - Worker 崩溃后置空,下次 embed 重建;连续两次 init 失败进入 dead。
+ * - 生命周期只走 onLifecycle 回调,不新增面包屑 phase。
  */
 
 import type { EmbeddingPort } from '../ports/embedding';
 import type { EmbeddingOnnxDeps } from './embedding-onnx';
+import { devLogger } from '../logging/dev-logger';
+
+/** 无挂起 embed 且距上次成功推理超过此时长则回收 Worker(5 分钟) */
+export const IDLE_TERMINATE_MS = 5 * 60_000;
+
+/** Worker 生命周期事件;装配层用 heartbeat + n=worker.* 打点,不改 lastPhase */
+export type WorkerLifecycleKind = 'create' | 'idle-terminate' | 'crash';
+
+type DepsOrFactory = EmbeddingOnnxDeps | (() => Promise<EmbeddingOnnxDeps>);
 
 /**
  * Web Worker 消息类型 — 主线程 → Worker。
@@ -55,51 +65,151 @@ type WorkerResponse = WorkerReadyMessage | WorkerEmbedResultMessage | WorkerErro
  * EmbeddingWorkerProxy — Web Worker 代理实现 EmbeddingPort。
  *
  * 设计要点:
- * - 构造时创建 Worker 并发送 init 消息(含模型依赖)。
- * - `ready` Promise 在 Worker 返回 ready 后 resolve;之前所有 embed 调用 await。
- * - embed 请求用自增 requestId 关联响应,支持并发。
- * - Worker 崩溃时所有 pending 请求 reject。
- * - 模型依赖(ArrayBuffer)用 transferable 转移所有权,避免复制大文件。
+ * - 第二参兼容 deps 对象与工厂;工厂路径每次 ensureWorker 都 getDeps,避免 transfer 掏空旧 buffer。
+ * - `ready` 在尚未创建 Worker 时是已 resolve 的空 Promise;真正 init 发生在首次 embed。
+ * - embed 请求用自增 requestId 关联响应,支持并发;并发首次创建会合入同一 in-flight Promise。
+ * - error 事件 reject 全部 pending 后 worker=null,不把运行时崩溃计入 consecutiveInitFailures。
  *
  * @example
- *   const proxy = new EmbeddingWorkerProxy(workerUrl, deps, 512);
- *   await proxy.ready;
+ *   const proxy = new EmbeddingWorkerProxy(workerUrl, () => getDeps(), 512);
  *   const vectors = await proxy.embed(['hello world']);
  */
 export class EmbeddingWorkerProxy implements EmbeddingPort {
 	readonly dimensions: number;
 	readonly modelId: string;
-	private worker: Worker;
-	private readyPromise: Promise<void>;
+	private worker: Worker | null = null;
+	private readyPromise: Promise<void> = Promise.resolve();
 	private pending = new Map<string, (vectors: number[][]) => void>();
 	private pendingError = new Map<string, (err: Error) => void>();
 	private requestCounter = 0;
+	private idleTimer: ReturnType<typeof setTimeout> | null = null;
+	private consecutiveInitFailures = 0;
+	private dead = false;
+	private loggedDead = false;
+	private creating: Promise<void> | null = null;
+	private settleReady: { resolve: () => void; reject: (err: Error) => void } | null = null;
+	private readonly workerUrl: string;
+	private readonly maxBatchSize: number;
+	private readonly createDeps: () => Promise<EmbeddingOnnxDeps>;
+	private readonly onLifecycle?: (kind: WorkerLifecycleKind) => void;
 
+	/**
+	 * @param workerUrl - Worker 脚本 URL(Blob URL)
+	 * @param depsOrFactory - 模型依赖对象,或每次 ensureWorker 都调用的工厂(transfer 会掏空 ArrayBuffer)
+	 * @param dimensions - 向量维度
+	 * @param maxBatchSize - Worker 内单批上限
+	 * @param onLifecycle - 可选;create / idle-terminate / crash,由装配层打 heartbeat
+	 */
 	constructor(
 		workerUrl: string,
-		deps: EmbeddingOnnxDeps,
+		depsOrFactory: DepsOrFactory,
 		dimensions: number,
 		maxBatchSize = 16,
+		onLifecycle?: (kind: WorkerLifecycleKind) => void,
 	) {
+		this.workerUrl = workerUrl;
 		this.dimensions = dimensions;
-		this.modelId = deps.modelId ?? 'local:bge-small-zh-v1.5';
-		this.worker = new Worker(workerUrl);
+		this.maxBatchSize = maxBatchSize;
+		this.onLifecycle = onLifecycle;
+		if (typeof depsOrFactory === 'function') {
+			this.createDeps = depsOrFactory;
+			this.modelId = 'local:bge-small-zh-v1.5';
+		} else {
+			this.createDeps = async () => depsOrFactory;
+			this.modelId = depsOrFactory.modelId ?? 'local:bge-small-zh-v1.5';
+		}
+	}
 
-		// 关键路径:init 完成前 ready 不 resolve;init 失败则 reject。
-		this.readyPromise = new Promise((resolve, reject) => {
-			const onInitMessage = (e: MessageEvent) => {
-				const data = e.data as WorkerResponse;
-				if (data.type === 'ready') {
-					resolve();
-				} else if (data.type === 'error' && !data.requestId) {
-					reject(new Error(data.error));
-				}
-			};
-			this.worker.addEventListener('message', onInitMessage);
+	/**
+	 * Worker init 完成的 Promise。尚未创建 Worker 时立即 resolve(惰性)。
+	 */
+	get ready(): Promise<void> {
+		return this.readyPromise;
+	}
+
+	/**
+	 * 批量生成文本向量。空数组不创建 Worker。
+	 *
+	 * @param texts - 待编码文本数组。
+	 * @returns 与 texts 等长的向量数组。
+	 * @throws Worker 不可用、推理失败或 Worker 崩溃时抛错。
+	 */
+	async embed(texts: string[]): Promise<number[][]> {
+		if (texts.length === 0) return [];
+		if (this.dead) {
+			if (!this.loggedDead) {
+				devLogger.error('worker', 'Embedding Worker 连续 init 失败，已停止重建');
+				this.loggedDead = true;
+			}
+			throw new Error('Embedding Worker 不可用');
+		}
+		await this.ensureWorker();
+		this.clearIdleTimer();
+		const worker = this.worker;
+		if (!worker) {
+			throw new Error('Embedding Worker 不可用');
+		}
+		const requestId = `embed_${++this.requestCounter}`;
+		const result = await new Promise<number[][]>((resolve, reject) => {
+			this.pending.set(requestId, resolve);
+			this.pendingError.set(requestId, reject);
+			const msg: WorkerEmbedMessage = { type: 'embed', texts, requestId };
+			worker.postMessage(msg);
+		});
+		if (this.pending.size === 0) this.armIdleTimer();
+		return result;
+	}
+
+	/**
+	 * 终止 Worker — 插件卸载时调用,不打 idle/crash 生命周期。
+	 */
+	terminate(): void {
+		this.terminateWorker();
+	}
+
+	/**
+	 * 确保 Worker 已创建并 init ready。并发 embed 共用 in-flight 创建。
+	 */
+	private async ensureWorker(): Promise<void> {
+		if (this.worker) {
+			await this.readyPromise;
+			return;
+		}
+		if (!this.creating) {
+			this.creating = this.doCreate().finally(() => {
+				this.creating = null;
+			});
+		}
+		await this.creating;
+	}
+
+	/**
+	 * 创建 Worker、绑定消息、发送 init(transfer ArrayBuffer)。
+	 */
+	private async doCreate(): Promise<void> {
+		const deps = await this.createDeps();
+		const worker = new Worker(this.workerUrl);
+		this.readyPromise = new Promise<void>((resolve, reject) => {
+			this.settleReady = { resolve, reject };
 		});
 
-		// 关键路径:init 完成后的常规消息处理(embed:result / error)。
-		this.worker.addEventListener('message', (e: MessageEvent) => {
+		const onInitMessage = (e: MessageEvent) => {
+			const data = e.data as WorkerResponse;
+			if (data.type === 'ready') {
+				worker.removeEventListener('message', onInitMessage);
+				this.settleReady?.resolve();
+				this.settleReady = null;
+			} else if (data.type === 'error' && !data.requestId) {
+				worker.removeEventListener('message', onInitMessage);
+				this.handleInitFailure(worker);
+				const err = new Error(data.error);
+				this.settleReady?.reject(err);
+				this.settleReady = null;
+			}
+		};
+		worker.addEventListener('message', onInitMessage);
+
+		worker.addEventListener('message', (e: MessageEvent) => {
 			const data = e.data as WorkerResponse;
 			if (data.type === 'embed:result') {
 				const resolve = this.pending.get(data.requestId);
@@ -118,57 +228,80 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 			}
 		});
 
-		// 关键路径:Worker 崩溃时所有 pending 请求 reject。
-		this.worker.addEventListener('error', (err: ErrorEvent) => {
-			for (const [, reject] of this.pendingError) {
-				reject(new Error(`Embedding Worker 崩溃: ${err.message}`));
-			}
-			this.pending.clear();
-			this.pendingError.clear();
+		// 关键路径:运行时崩溃不算 init 失败,下次 embed 允许重建。
+		worker.addEventListener('error', (err: ErrorEvent) => {
+			this.settleReady?.reject(new Error(`Embedding Worker 崩溃: ${err.message}`));
+			this.settleReady = null;
+			this.terminateWorker('crash', `Embedding Worker 崩溃: ${err.message}`);
 		});
 
-		// 关键路径:发送 init 消息,用 transferable 转移 ArrayBuffer 所有权。
-		const initMsg: WorkerInitMessage = { type: 'init', deps, dimensions, maxBatchSize };
+		this.worker = worker;
+		const initMsg: WorkerInitMessage = {
+			type: 'init',
+			deps,
+			dimensions: this.dimensions,
+			maxBatchSize: this.maxBatchSize,
+		};
 		const transferables = [deps.modelBuffer, deps.wasmBinary];
-		this.worker.postMessage(initMsg, transferables);
-	}
+		worker.postMessage(initMsg, transferables);
 
-	/**
-	 * Worker init 完成的 Promise。调用方可 await 确保 Worker 就绪。
-	 */
-	get ready(): Promise<void> {
-		return this.readyPromise;
-	}
-
-	/**
-	 * 批量生成文本向量。
-	 *
-	 * @param texts - 待编码文本数组。
-	 * @returns 与 texts 等长的向量数组。
-	 * @throws Worker 未就绪、推理失败或 Worker 崩溃时抛错。
-	 */
-	async embed(texts: string[]): Promise<number[][]> {
-		if (texts.length === 0) return [];
 		await this.readyPromise;
-
-		const requestId = `embed_${++this.requestCounter}`;
-		return new Promise((resolve, reject) => {
-			this.pending.set(requestId, resolve);
-			this.pendingError.set(requestId, reject);
-			const msg: WorkerEmbedMessage = { type: 'embed', texts, requestId };
-			this.worker.postMessage(msg);
-		});
+		this.consecutiveInitFailures = 0;
+		this.onLifecycle?.('create');
 	}
 
 	/**
-	 * 终止 Worker — 释放 Worker 线程资源。
+	 * init 失败:累计次数,到 2 次进入 dead;不打 crash 生命周期。
+	 *
+	 * @param worker - 本次创建失败的 Worker 实例
 	 */
-	terminate(): void {
-		this.worker.terminate();
+	private handleInitFailure(worker: Worker): void {
+		this.consecutiveInitFailures += 1;
+		if (this.consecutiveInitFailures >= 2) {
+			this.dead = true;
+		}
+		if (this.worker === worker) {
+			this.worker = null;
+		}
+		worker.terminate();
+	}
+
+	/**
+	 * 回收或卸载当前 Worker。
+	 *
+	 * @param kind - 传入则回调 onLifecycle;公开 terminate 省略以免卸载误打 idle
+	 * @param rejectMessage - pending 请求的拒绝文案
+	 */
+	private terminateWorker(kind?: WorkerLifecycleKind, rejectMessage = 'Embedding Worker 已终止'): void {
+		this.clearIdleTimer();
+		if (this.worker) {
+			this.worker.terminate();
+			this.worker = null;
+		}
 		for (const [, reject] of this.pendingError) {
-			reject(new Error('Embedding Worker 已终止'));
+			reject(new Error(rejectMessage));
 		}
 		this.pending.clear();
 		this.pendingError.clear();
+		if (kind) this.onLifecycle?.(kind);
+	}
+
+	/**
+	 * 成功 embed 且无挂起请求后启动空闲回收时钟。
+	 */
+	private armIdleTimer(): void {
+		this.clearIdleTimer();
+		if (!this.worker) return;
+		this.idleTimer = globalThis.setTimeout(() => {
+			this.idleTimer = null;
+			this.terminateWorker('idle-terminate');
+		}, IDLE_TERMINATE_MS);
+	}
+
+	private clearIdleTimer(): void {
+		if (this.idleTimer !== null) {
+			globalThis.clearTimeout(this.idleTimer);
+			this.idleTimer = null;
+		}
 	}
 }
