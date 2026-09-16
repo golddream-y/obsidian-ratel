@@ -420,4 +420,53 @@ describe('EmbeddingWorkerProxy', () => {
 		proxy.terminate();
 		vi.useRealTimers();
 	});
+
+	it('ensureReady - 尚未 embed - 创建 Worker 等到 init 且不发推理', async () => {
+		vi.useFakeTimers();
+		const lifecycle: string[] = [];
+		const proxy = new EmbeddingWorkerProxy(
+			'mock-url',
+			async () => emptyDeps(),
+			512,
+			16,
+			(k) => lifecycle.push(k),
+		);
+		const ready = proxy.ensureReady();
+		await vi.advanceTimersByTimeAsync(1);
+		await ready;
+		expect(global.Worker).toHaveBeenCalledTimes(1);
+		expect(lifecycle).toEqual(['create']);
+		const embedCalls = mockWorker.postMessage.mock.calls.filter(
+			(c: unknown[]) => (c[0] as { type: string }).type === 'embed',
+		);
+		expect(embedCalls).toHaveLength(0);
+		proxy.terminate();
+		vi.useRealTimers();
+	});
+
+	it('ensureReady - dead 后 - 抛错且不再 new Worker', async () => {
+		vi.useFakeTimers();
+		const failWorker = new MockWorker();
+		failWorker.postMessage = vi.fn((data: unknown) => {
+			queueMicrotask(() => {
+				const msg = data as { type: string };
+				if (msg.type === 'init') {
+					failWorker.onmessage?.({
+						data: { type: 'error', error: 'ONNX 初始化失败' },
+					} as MessageEvent);
+				}
+			});
+		});
+		(global as unknown as { Worker: unknown }).Worker = vi.fn(function (this: unknown) {
+			return failWorker;
+		});
+		const proxy = new EmbeddingWorkerProxy('mock-url', async () => emptyDeps(), 512);
+		await expect(proxy.embed(['a'])).rejects.toThrow();
+		await expect(proxy.embed(['b'])).rejects.toThrow();
+		const callsAfterDead = workerCallCount();
+		await expect(proxy.ensureReady()).rejects.toThrow('Embedding Worker 不可用');
+		expect(workerCallCount()).toBe(callsAfterDead);
+		proxy.terminate();
+		vi.useRealTimers();
+	});
 });

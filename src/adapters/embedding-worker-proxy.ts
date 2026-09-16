@@ -128,6 +128,17 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 	}
 
 	/**
+	 * onload 预热:创建 Worker 并等到 init ready,不跑推理。
+	 * 惰性后 `ready` 在无 worker 时是已 resolve 的空 Promise,不能当预热用。
+	 *
+	 * @throws Worker 连续 init 失败进入 dead 后抛「Embedding Worker 不可用」。
+	 */
+	async ensureReady(): Promise<void> {
+		if (this.dead) throw new Error('Embedding Worker 不可用');
+		await this.ensureWorker();
+	}
+
+	/**
 	 * 批量生成文本向量。空数组不创建 Worker。
 	 *
 	 * @param texts - 待编码文本数组。

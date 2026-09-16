@@ -1770,8 +1770,9 @@ export default class RatelVaultPlugin extends Plugin {
 	 * 关键路径:
 	 * - Worker URL 用 Blob URL 模式:构建期内联的 worker 脚本 → Blob → createObjectURL,
 	 *   生成同源 blob:app://obsidian.md/<uuid> URL,绕过 app://<hash> 与 app://obsidian.md 跨 origin 的 SecurityError。
-	 * - 模型依赖(modelBuffer / wasmBinary)从 ModelManager.getDeps() 重新读盘,返回全新 ArrayBuffer;
-	 *   transfer 给 Worker 后不影响主线程 EmbeddingOnnx 实例持有的 buffer。
+	 * - 模型依赖走工厂:每次 ensureWorker 都 ModelManager.getDeps() 重新读盘,返回全新 ArrayBuffer;
+	 *   transfer 会掏空旧 buffer,空闲回收后再 embed 必须再取一份。
+	 * - create / idle-terminate / crash 打 heartbeat + n=worker.*,不改 lastPhase。
 	 * - Worker 创建/init 失败不降级,直接抛错,提示用户配置 API Embedding 端点。
 	 * - proxy 就绪后注入 InlineWorker,IndexProcessor 后续 embed 调用都走 Worker 线程。
 	 *
@@ -1787,20 +1788,23 @@ export default class RatelVaultPlugin extends Plugin {
 		const workerUrl = URL.createObjectURL(blob);
 		this.embeddingWorkerUrl = workerUrl;
 
-		// 关键路径:getDeps 重新读盘,返回全新 ArrayBuffer 副本;transfer 给 Worker 后主线程实例不受影响。
-		const deps = await this.modelManager.getDeps();
-		if (!deps) {
-			// 关键路径:模型依赖未就绪,复用 error.embedding.notInit 引导用户检查 Embedding 初始化
-			throw new Error(tNow('error.embedding.notInit'));
-		}
-
-		const proxy = new EmbeddingWorkerProxy(workerUrl, deps, embedding.dimensions);
+		// 关键路径:工厂每次 ensureWorker 都 getDeps,避免 transfer 掏空 ArrayBuffer 后空闲重建失败。
+		const proxy = new EmbeddingWorkerProxy(
+			workerUrl,
+			async () => {
+				const fresh = await this.modelManager.getDeps();
+				if (!fresh) throw new Error(tNow('error.embedding.notInit'));
+				return fresh;
+			},
+			embedding.dimensions,
+			16,
+			(kind) => this.breadcrumbs?.mark('heartbeat', undefined, `worker.${kind}`),
+		);
 		this.embeddingWorkerProxy = proxy;
 
 		try {
-			// 关键路径:await proxy.ready 确保 Worker 内 EmbeddingOnnx.init() 完成,
-			// 否则后续 embed 调用会在 Worker 内因未初始化而失败。
-			await proxy.ready;
+			// 关键路径:惰性后 ready 在无 worker 时立即 resolve;onload 必须 ensureReady 才真正 init。
+			await proxy.ensureReady();
 		} catch (err) {
 			// 关键路径:Worker init 失败需 terminate 释放线程资源,避免悬挂 Worker 进程。
 			proxy.terminate();
