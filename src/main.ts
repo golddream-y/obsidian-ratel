@@ -1647,9 +1647,9 @@ export default class RatelVaultPlugin extends Plugin {
 				if (!overflow) break;
 
 				try {
-					const cctx = this.createContext();
-					await cctx.load(sessionId);
-					const transcript = cctx.getTranscript();
+					// 关键路径:必须压当前 ask 的 ctx。另 new+load 时同 id 幂等不会把 marker 读回,
+					// agentLoop 结束 save 还会把磁盘上刚写的压缩盖掉。
+					const transcript = ctx.getTranscript();
 					const last = transcript.at(-1);
 					let compactOpts: { untilIndex: number } | undefined;
 					if (last?.role === 'user' && last.content === message) {
@@ -1659,7 +1659,7 @@ export default class RatelVaultPlugin extends Plugin {
 						}
 					}
 					const r = await compactSession(
-						cctx,
+						ctx,
 						this.llm,
 						sessionId,
 						this.settings.promptOverrides,

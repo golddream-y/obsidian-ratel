@@ -205,4 +205,29 @@ describe('compactSession', () => {
 		const { tail } = projectView(ctx.getTranscript(), ctx.getCompactMarkers());
 		expect(tail.some((m) => m.content === currentUser)).toBe(true);
 	});
+
+	it('compactSession - 已 load 的同实例再 load - 仍能读到刚写的 marker', async () => {
+		const oldMessages: ChatMessage[] = [
+			{ role: 'user', content: '问题1' },
+			{ role: 'assistant', content: '答案1' },
+			{ role: 'user', content: '问题2' },
+			{ role: 'assistant', content: '答案2' },
+			{ role: 'user', content: '问题3' },
+			{ role: 'assistant', content: '答案3' },
+			{ role: 'user', content: '保留问题1' },
+			{ role: 'assistant', content: '保留答案1' },
+			{ role: 'user', content: '本轮新问题' },
+		];
+		const sessions = new Map<string, Session>();
+		sessions.set('s1', { id: 's1', title: '', messages: oldMessages, createdAt: 0, updatedAt: 0 });
+		const persistence = createPersistence(sessions);
+		const ctx = new ContextManager(persistence, undefined, 8000);
+		await ctx.load('s1');
+		const llm = createMockLLM([[{ text: '溢出摘要' }]]);
+		const result = await compactSession(ctx, llm, 's1', {}, { untilIndex: oldMessages.length - 2 });
+		expect(result.skipped).toBeFalsy();
+		await ctx.load('s1');
+		expect(ctx.getCompactMarkers()).toHaveLength(1);
+		expect(ctx.getCompactMarkers()[0]!.summary).toBe('溢出摘要');
+	});
 });
