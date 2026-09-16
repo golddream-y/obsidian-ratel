@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { ContextManager } from '../../src/core/context-manager';
 import type { Persistence, Session, ChatMessage } from '../../src/ports/persistence';
 import type { ToolCall } from '../../src/ports/llm';
@@ -72,6 +72,27 @@ describe('ContextManager', () => {
 		// system + 2 history messages
 		expect(msgs).toHaveLength(3);
 		expect(msgs[1]!.content).toBe('Hello');
+	});
+
+	it('load - 同 id 二次调用 - 不再触发 persistence.sessions.get', async () => {
+		const persistence = createMockPersistence();
+		const getSpy = vi.spyOn(persistence.sessions, 'get');
+		const ctx = createCtx(persistence);
+		await ctx.load('session-1');
+		await ctx.load('session-1');
+		expect(getSpy).toHaveBeenCalledTimes(1);
+	});
+
+	it('load - 换 id - 会再次 get 并丢掉旧检索结果', async () => {
+		const persistence = createMockPersistence();
+		const getSpy = vi.spyOn(persistence.sessions, 'get');
+		const ctx = createCtx(persistence);
+		await ctx.load('session-1');
+		ctx.addSearchResults([{ path: 'a.md', content: 's' }]);
+		await ctx.load('session-2');
+		expect(getSpy).toHaveBeenCalledTimes(2);
+		expect(ctx.sessionId).toBe('session-2');
+		expect(ctx.toMessages().some((m) => m.content.includes('a.md'))).toBe(false);
 	});
 
 	it('adds user message and includes it in toMessages', async () => {

@@ -61,7 +61,7 @@ export interface ContextManagerDeps {
  * - `session` 在 `load()` 之前为 `null`,所有 mutator 方法都先调 `requireSession()` 做护栏。
  * - 任何 `add*` 方法都会更新 `session.updatedAt`,便于上层按"最近活跃"排序。
  * - `toMessages()` 返回 Composer 系统段 + 检索结果 + `projectView` 投影后的 head/tail(tail 经 Layer 1 截断);`getTranscript()` 仅返回 `session.messages` 浅拷贝(UI 事实源)。
- * - `load()` 切换 session 时会清空 `searchResultsMessages`,避免旧 session 的检索结果泄漏到新 session。
+ * - `load()` 同 id 幂等(不再 `sessions.get`、不清空检索结果);换 id 时清空 `searchResultsMessages`,避免旧 session 的检索结果泄漏到新 session。
  * - Layer 1 截断:tail 超过 `maxHistoryTokens` 时先丢最后一条 user 之前的更旧轮,再把窗口内 tool 正文压占位(当前问题必留)。
  * - 系统提示词与检索结果外框通过 Composer 组装(direct / rag),解耦具体文案并支持 section 覆盖。
  *
@@ -133,12 +133,15 @@ export class ContextManager {
 
 	/**
 	 * 加载已有 session;若不存在则创建新 session(in-memory,不落盘)。
-	 * 切换 session 时清空当前检索结果,防止旧 session 的检索上下文泄漏到新 session。
+	 * 同 id 已在内存则直接 return,不再解析 session JSON、不清空检索结果。
+	 * 换 id 时清空当前检索结果,防止旧 session 的检索上下文泄漏到新 session。
 	 *
 	 * @param sessionId - 会话标识。
 	 * @returns 加载完成(无返回值)。
 	 */
 	async load(sessionId: string): Promise<void> {
+		// 关键路径:同 id 已在内存则不要再解析 session JSON(分期 B 单次加载)
+		if (this.session?.id === sessionId) return;
 		this.searchResultsMessages = [];
 		this.session = await this.persistence.sessions.get(sessionId);
 		if (!this.session) {
@@ -291,7 +294,7 @@ export class ContextManager {
 	 *
 	 * 设计要点:
 	 * - 先 `delete` 持久化,失败则抛原错误,此时 `this.session` 仍是旧的(未破坏当前状态)
-	 * - 删除成功后 `load` 会重建空 session(因为持久化里已无此 id)
+	 * - 删除成功后先丢掉内存 session,再 `load` 重建空 session(因为持久化里已无此 id;同 id load 幂等)
 	 * - 摘要以 `[compact 摘要]` 前缀包装为 system 消息,便于后续识别
 	 * - preserved 原文按原 role 直接 push,保留 tool 消息等非 user/assistant 角色
 	 *
@@ -307,6 +310,8 @@ export class ContextManager {
 	): Promise<void> {
 		// 关键路径:先删持久化,失败则抛错,不破坏当前 session 状态(此时 this.session 仍是旧的)
 		await this.persistence.sessions.delete(sessionId);
+		// 关键路径:load 同 id 幂等,须先丢掉内存引用才会从磁盘重建空 session
+		this.session = null;
 		// 重新 load 创建空 session(持久化里已无此 id)
 		await this.load(sessionId);
 		// 注入摘要 system 消息
