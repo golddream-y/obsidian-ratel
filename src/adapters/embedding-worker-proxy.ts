@@ -143,8 +143,9 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 			}
 			throw new Error('Embedding Worker 不可用');
 		}
-		await this.ensureWorker();
+		// 关键路径:先清空闲时钟,避免 ensureWorker 期间 timer 把刚要用的 Worker 收掉
 		this.clearIdleTimer();
+		await this.ensureWorker();
 		const worker = this.worker;
 		if (!worker) {
 			throw new Error('Embedding Worker 不可用');
@@ -243,7 +244,16 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 			maxBatchSize: this.maxBatchSize,
 		};
 		const transferables = [deps.modelBuffer, deps.wasmBinary];
-		worker.postMessage(initMsg, transferables);
+		// 关键路径:postMessage 可能因已 transfer 的 ArrayBuffer 抛 DataCloneError;
+		// 若不结算 readyPromise 并清空 worker,下次 ensureWorker 会永远 await ready。
+		try {
+			worker.postMessage(initMsg, transferables);
+		} catch (err) {
+			const error = err instanceof Error ? err : new Error(String(err));
+			this.handleInitFailure(worker);
+			this.settleReady?.reject(error);
+			this.settleReady = null;
+		}
 
 		await this.readyPromise;
 		this.consecutiveInitFailures = 0;

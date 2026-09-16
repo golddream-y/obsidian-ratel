@@ -318,6 +318,82 @@ describe('EmbeddingWorkerProxy', () => {
 		vi.useRealTimers();
 	});
 
+	it('init postMessage 抛错 - 对象 deps 空闲后再 embed - 不挂死且下次仍 new Worker', async () => {
+		vi.useFakeTimers();
+		const deps = emptyDeps();
+		const proxy = new EmbeddingWorkerProxy('mock-url', deps, 512);
+
+		const first = proxy.embed(['a']);
+		await vi.advanceTimersByTimeAsync(1);
+		const requestId = findLastEmbedCall(mockWorker).requestId;
+		mockWorker.onmessage?.({
+			data: { type: 'embed:result', requestId, vectors: [[0.1]] },
+		} as MessageEvent);
+		await first;
+
+		await vi.advanceTimersByTimeAsync(IDLE_TERMINATE_MS);
+		expect(mockWorker.terminate).toHaveBeenCalled();
+
+		// 关键路径:对象 deps 的 ArrayBuffer 已被 transfer，再次 init 会 DataCloneError
+		let throwNextInit = true;
+		(global as unknown as { Worker: unknown }).Worker = vi.fn(function (this: unknown) {
+			mockWorker = new MockWorker();
+			const inner = mockWorker;
+			const origPost = inner.postMessage;
+			inner.postMessage = vi.fn((data: unknown) => {
+				const msg = data as { type: string };
+				if (msg.type === 'init' && throwNextInit) {
+					throwNextInit = false;
+					const err = new Error('could not be cloned');
+					err.name = 'DataCloneError';
+					throw err;
+				}
+				return origPost.call(inner, data);
+			});
+			return inner;
+		});
+
+		const second = proxy.embed(['b']);
+		const secondOutcome = Promise.race([
+			second.then(
+				() => 'resolved' as const,
+				() => 'rejected' as const,
+			),
+			new Promise<'hung'>((resolve) => {
+				setTimeout(() => resolve('hung'), 100);
+			}),
+		]);
+		await vi.advanceTimersByTimeAsync(100);
+		expect(await secondOutcome).toBe('rejected');
+		await expect(second).rejects.toThrow();
+
+		const workersAfterThrow = workerCallCount();
+		expect(workersAfterThrow).toBe(1);
+
+		const third = proxy.embed(['c']);
+		await vi.advanceTimersByTimeAsync(100);
+		// 不挂死:worker 已清空,再次 new Worker,而不是卡在未结算的 readyPromise
+		expect(workerCallCount()).toBeGreaterThan(workersAfterThrow);
+		const rid = findLastEmbedCall(mockWorker).requestId;
+		mockWorker.onmessage?.({
+			data: { type: 'embed:result', requestId: rid, vectors: [[0.2]] },
+		} as MessageEvent);
+		const thirdOutcome = Promise.race([
+			third.then(
+				() => 'resolved' as const,
+				() => 'rejected' as const,
+			),
+			new Promise<'hung'>((resolve) => {
+				setTimeout(() => resolve('hung'), 100);
+			}),
+		]);
+		await vi.advanceTimersByTimeAsync(100);
+		expect(await thirdOutcome).toBe('resolved');
+		await third;
+		proxy.terminate();
+		vi.useRealTimers();
+	});
+
 	it('连续两次 init 失败 - dead 后 embed 直接抛错不再 new Worker', async () => {
 		vi.useFakeTimers();
 		const failWorker = new MockWorker();
