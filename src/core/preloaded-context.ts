@@ -19,3 +19,25 @@ export function shouldReusePreloadedContext(
 ): boolean {
 	return Boolean(preloaded && preloaded.sessionId && preloaded.sessionId === sessionId);
 }
+
+/**
+ * 预发送压缩写在另一份 ContextManager 上;同 id load 对旧实例是 no-op。
+ * compact 路径走过则换新实例再 load,否则沿用 stale,让 ask 仍拿到带 marker 的预加载 ctx。
+ *
+ * @param compactPathTaken - 是否进入了预发送 compact 分支
+ * @param stale - 压缩前已 load 的 ctx
+ * @param createFresh - 工厂,对应 plugin.createContext
+ * @param sessionId - 当前会话 id
+ * @returns compact 未走则 stale;否则新实例且已 load
+ */
+export async function reloadPreloadedContextAfterCompact<T extends { load(sessionId: string): Promise<void> }>(
+	compactPathTaken: boolean,
+	stale: T,
+	createFresh: () => T,
+	sessionId: string,
+): Promise<T> {
+	if (!compactPathTaken) return stale;
+	const fresh = createFresh();
+	await fresh.load(sessionId);
+	return fresh;
+}

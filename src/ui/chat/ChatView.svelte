@@ -74,6 +74,7 @@
 	import { compactSession } from './compact-session';
 	import { loadSessionContextUsage } from './session-context-usage';
 	import { decidePostTurnCompact, decidePreSendCompact } from './compact-auto';
+	import { reloadPreloadedContextAfterCompact } from '../../core/preloaded-context';
 	import { CompactCircuitBreaker } from '../../core/compact-project';
 	import { ModelInfoModal } from './model-info-modal';
 	import { FeedbackModal } from './feedback-modal';
@@ -1316,10 +1317,11 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 		const attachmentTokens = get(attachmentStore).reduce((s, a) => s + a.estimatedTokens, 0);
 
 		// 关键路径:发送前先压 — 尚未 push 本条 user,符合 spec
-		const preCtx = plugin.createContext();
+		let preCtx = plugin.createContext();
 		await preCtx.load(sessionId);
 		plugin.breadcrumbs?.mark('send.precheck', sessionId, preCtx.getTranscript().length);
 		const preUsage = preCtx.getContextUsage(maxTokens, attachmentTokens);
+		let compactPathTaken = false;
 		if (
 			decidePreSendCompact({
 				enabled: plugin.settings.autoCompactEnabled !== false,
@@ -1331,7 +1333,15 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 		) {
 			plugin.breadcrumbs?.mark('send.compact', sessionId);
 			await runCompactInChat({ auto: true });
+			compactPathTaken = true;
 		}
+		// 关键路径:compact 写在另一份 ContextManager 上;同 id load 是 no-op,旧 preCtx 看不到 marker
+		preCtx = await reloadPreloadedContextAfterCompact(
+			compactPathTaken,
+			preCtx,
+			() => plugin.createContext(),
+			sessionId,
+		);
 
 		// 关键路径:用 push + 从数组中取出 Proxy 引用,触发细粒度 DOM 更新
 		const wasEmpty = messages.length === 0;
