@@ -1466,6 +1466,7 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 										searchReranked: am.searchReranked,
 										tokenUsage: am.tokenUsage,
 										cancelled: am.cancelled,
+										...(typeof am.createdAt === 'number' ? { createdAt: am.createdAt } : {}),
 									}
 								: null;
 						await rehydrateCompactMarkersInUi(sessionId);
