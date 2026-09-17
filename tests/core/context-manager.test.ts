@@ -670,6 +670,38 @@ describe('resetSession', () => {
 		expect(messages.some((m) => m.content === 'old')).toBe(false);
 	});
 
+	it('addUserMessage - 未传入 createdAt - 写入 epoch', async () => {
+		const ctx = createCtx(createMockPersistence());
+		await ctx.load('s-ts');
+		ctx.addUserMessage('hi');
+		const u = ctx.getTranscript().find((m) => m.role === 'user');
+		expect(typeof u?.createdAt).toBe('number');
+	});
+
+	it('toMessages - 历史 user - 出站对象无 createdAt 键', async () => {
+		const ctx = createCtx(createMockPersistence());
+		await ctx.load('s-strip');
+		ctx.addUserMessage('hi');
+		const user = ctx.toMessages().find((m) => m.role === 'user');
+		expect(user).toBeDefined();
+		expect(Object.prototype.hasOwnProperty.call(user, 'createdAt')).toBe(false);
+		expect(ctx.getTranscript().find((m) => m.role === 'user')?.createdAt).toEqual(expect.any(Number));
+	});
+
+	it('refreshEnvContext - 上一轮 user 跨日 - env 含距上一轮', async () => {
+		const persistence = createMockPersistence();
+		const ctx = createCtx(persistence);
+		await ctx.load('s-gap');
+		const yesterday = new Date(2026, 8, 16, 21, 4, 0, 0).getTime();
+		ctx.addUserMessage('old');
+		const raw = ctx.getTranscript().find((m) => m.role === 'user')!;
+		raw.createdAt = yesterday;
+		ctx.refreshEnvContext(new Date(2026, 8, 17, 12, 0, 0, 0));
+		const env = ctx.toMessages().find((m) => m.role === 'system' && m.content.includes('当前本地时间'));
+		expect(env?.content).toContain('距上一轮用户消息');
+		expect(env?.content).toContain('上次 2026-09-16 21:04');
+	});
+
 	it('setEnvContext - 注入后 toMessages 含时间行', async () => {
 		const persistence = createMockPersistence();
 		const ctx = createCtx(persistence);

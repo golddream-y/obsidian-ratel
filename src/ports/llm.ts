@@ -95,6 +95,8 @@ export interface ChatMessage {
 	toolCallId?: string;
 	toolName?: string;
 	toolArgs?: Record<string, unknown>;
+	/** 写入会话时的本地墙钟 epoch ms；旧数据缺省（S-CHAT-TIME） */
+	createdAt?: number;
 }
 
 /**

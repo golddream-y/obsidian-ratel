@@ -32,6 +32,19 @@ import { projectView } from './compact-project';
 // 关键路径:丢前缀可能切散 tool 配对, sanitize 剔除孤立 tool result(Claude 路径无适配器层兜底)
 import { sanitizeToolMessageOrder } from './tool-message-align';
 import { pruneOverlongText } from './tool-result-prune';
+import { composeEnvContext, lastUserCreatedAt } from '../utils/chat-time';
+
+/** 写入会话时补 createdAt；调用方已带则保留 */
+function stampCreatedAt(msg: ChatMessage): ChatMessage {
+	if (typeof msg.createdAt === 'number') return msg;
+	return { ...msg, createdAt: Date.now() };
+}
+
+/** 出站给 LLM 时剥掉 createdAt（模型 API 不认识该字段） */
+function stripCreatedAt(msg: ChatMessage): ChatMessage {
+	const { createdAt: _drop, ...rest } = msg;
+	return rest;
+}
 
 /**
  * ContextManager 依赖注入 — 解耦 settings/工具注册表。
@@ -170,7 +183,7 @@ export class ContextManager {
 		if (refs && refs.length > 0) {
 			msg.attachments = refs.map((r) => ({ id: r.id, mimeType: r.mimeType }));
 		}
-		session.messages.push(msg);
+		session.messages.push(stampCreatedAt(msg));
 		session.updatedAt = Date.now();
 	}
 
@@ -185,7 +198,7 @@ export class ContextManager {
 		const msg: ChatMessage = { role: 'assistant', content };
 		// 关键路径:仅在有内容时写入,避免持久化空字段污染历史
 		if (reasoning) msg.reasoning = reasoning;
-		session.messages.push(msg);
+		session.messages.push(stampCreatedAt(msg));
 		session.updatedAt = Date.now();
 	}
 
@@ -206,7 +219,7 @@ export class ContextManager {
 			toolArgs: toolCall.args,
 		};
 		if (reasoning) msg.reasoning = reasoning;
-		session.messages.push(msg);
+		session.messages.push(stampCreatedAt(msg));
 		session.updatedAt = Date.now();
 	}
 
@@ -218,11 +231,11 @@ export class ContextManager {
 	 */
 	addToolResult(toolCallId: string, result: string): void {
 		const session = this.requireSession();
-		session.messages.push({
+		session.messages.push(stampCreatedAt({
 			role: 'tool',
 			content: result,
 			toolCallId,
-		});
+		}));
 		session.updatedAt = Date.now();
 	}
 
@@ -381,6 +394,17 @@ export class ContextManager {
 	}
 
 	/**
+	 * 按当前 session 刷新 env 段（当前时间 + 条件间隔）。
+	 * 必须在 load 之后、本轮 addUserMessage 之前调用。
+	 *
+	 * @param now - 参照时刻，默认当前时间
+	 */
+	refreshEnvContext(now: Date = new Date()): void {
+		const last = lastUserCreatedAt(this.session?.messages ?? []);
+		this.envContextLine = composeEnvContext(now, last);
+	}
+
+	/**
 	 * 注入 goal 锚定 provider — getter 每轮现读,不入 session.messages(S-GOAL D6)。
 	 *
 	 * @param provider - 返回锚定文本;null/空串表示本段缺席
@@ -472,7 +496,11 @@ export class ContextManager {
 		for (const section of this.injector.buildSections()) {
 			messages.push({ role: 'system', content: section.content });
 		}
-		messages.push(...this.pruneSearchBlocks(this.searchResultsMessages), ...head, ...trimmedTail);
+		messages.push(
+			...this.pruneSearchBlocks(this.searchResultsMessages),
+			...head.map(stripCreatedAt),
+			...trimmedTail.map(stripCreatedAt),
+		);
 		return messages;
 	}
 
