@@ -239,6 +239,13 @@ export interface ChatStrings {
   'chat.retry.soon': string;
   'chat.retry.after': string;
   'chat.retry.now': string;
+  'chat.day.today': string;
+  'chat.day.yesterday': string;
+  'chat.day.monthDay': string;
+  'chat.day.yearMonthDay': string;
+  'chat.session.whenNow': string;
+  'chat.session.whenMinutes': string;
+  'chat.session.whenHours': string;
   'chat.mascot.aria.idle': string;
   'chat.mascot.aria.waiting': string;
   'chat.mascot.aria.thinking': string;
