@@ -119,7 +119,7 @@ export async function* agentLoop(
 	// 加载或初始化 session,然后把用户消息压入上下文。
 	await ctx.load(req.sessionId);
 	// 关键路径(S-CHAT-TIME):load 后、addUser 前刷新 env — 间隔行基于上一轮 user,不含本轮
-	ctx.refreshEnvContext(new Date());
+	ctx.refreshEnvContext(new Date(), skipAddUserMessage ? { excludeLatestUser: true } : undefined);
 	onBreadcrumb?.('loop.load', ctx.getTranscript().length);
 	if (skillActivator) {
 		// 关键路径(S-SR-LAYERING):传当前提问做相关性排序,与 main.ask() 注入路径行为一致。

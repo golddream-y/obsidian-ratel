@@ -702,6 +702,29 @@ describe('resetSession', () => {
 		expect(env?.content).toContain('上次 2026-09-16 21:04');
 	});
 
+	it('refreshEnvContext - excludeLatestUser - 已有本轮 user - 仍按上一轮算间隔', async () => {
+		const persistence = createMockPersistence();
+		const ctx = createCtx(persistence);
+		await ctx.load('s-retry-gap');
+		const yesterday = new Date(2026, 8, 16, 21, 4, 0, 0).getTime();
+		const now = new Date(2026, 8, 17, 12, 0, 0, 0);
+		ctx.addUserMessage('old');
+		ctx.getTranscript().find((m) => m.role === 'user')!.createdAt = yesterday;
+		ctx.addUserMessage('current');
+		ctx.getTranscript().filter((m) => m.role === 'user').at(-1)!.createdAt = now.getTime();
+		ctx.refreshEnvContext(now, { excludeLatestUser: true });
+		const envWithFlag = ctx.toMessages().find(
+			(m) => m.role === 'system' && m.content.includes('当前本地时间'),
+		);
+		expect(envWithFlag?.content).toContain('距上一轮用户消息');
+		expect(envWithFlag?.content).toContain('上次 2026-09-16 21:04');
+		ctx.refreshEnvContext(now);
+		const envNoFlag = ctx.toMessages().find(
+			(m) => m.role === 'system' && m.content.includes('当前本地时间'),
+		);
+		expect(envNoFlag?.content).not.toContain('距上一轮用户消息');
+	});
+
 	it('setEnvContext - 注入后 toMessages 含时间行', async () => {
 		const persistence = createMockPersistence();
 		const ctx = createCtx(persistence);

@@ -1228,6 +1228,60 @@ describe('agentLoop', () => {
 		expect(userMessages).toHaveLength(1);
 	});
 
+	it('agentLoop - skipAddUserMessage true 且跨日 transcript - env 含距上一轮', async () => {
+		const yesterday = new Date(2026, 8, 16, 21, 4, 0, 0).getTime();
+		const today = new Date(2026, 8, 17, 12, 0, 0, 0).getTime();
+		const sessions = new Map<string, Session>([
+			[
+				's-retry',
+				{
+					id: 's-retry',
+					title: '',
+					messages: [
+						{ role: 'user', content: 'old', createdAt: yesterday },
+						{ role: 'user', content: 'current', createdAt: today },
+					],
+					createdAt: yesterday,
+					updatedAt: today,
+				},
+			],
+		]);
+		const persistence = createMockPersistence(sessions);
+		const ctx = new ContextManager(persistence, undefined, 8000);
+		let envLine = '';
+		const llm: LLMClient = {
+			async *chat(req: ChatRequest): AsyncIterable<ChatDelta> {
+				envLine = req.messages.find(
+					(m) => m.role === 'system' && m.content.includes('当前本地时间'),
+				)?.content ?? '';
+				yield { text: 'ok' };
+			},
+			embed: async () => [],
+			countTokens: () => 1,
+		};
+		const tools = new ToolRegistry();
+		const hooks = new HookRegistry();
+
+		for await (const _ of agentLoop(
+			{ sessionId: 's-retry', message: 'current' },
+			ctx,
+			llm,
+			tools,
+			hooks,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			true,
+		)) {
+			void _;
+		}
+
+		expect(envLine).toContain('距上一轮用户消息');
+		expect(envLine).toContain('上次 2026-09-16 21:04');
+	});
+
 	it('agentLoop - 第一次 llm.chat 抛 prompt too long 且尚未工具 - yield CONTEXT_OVERFLOW 且不写 Error assistant', async () => {
 		const persistence = createMockPersistence();
 		const ctx = new ContextManager(persistence, undefined, 8000);

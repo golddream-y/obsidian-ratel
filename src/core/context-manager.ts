@@ -398,9 +398,23 @@ export class ContextManager {
 	 * 必须在 load 之后、本轮 addUserMessage 之前调用。
 	 *
 	 * @param now - 参照时刻，默认当前时间
+	 * @param opts - excludeLatestUser: 为 true 时忽略 transcript 中最新一条 user（overflow 重试时不把本轮当上一轮）
 	 */
-	refreshEnvContext(now: Date = new Date()): void {
-		const last = lastUserCreatedAt(this.session?.messages ?? []);
+	refreshEnvContext(now: Date = new Date(), opts?: { excludeLatestUser?: boolean }): void {
+		const messages = this.session?.messages ?? [];
+		let last: number | undefined;
+		if (opts?.excludeLatestUser) {
+			let lastUserIdx = -1;
+			for (let i = messages.length - 1; i >= 0; i--) {
+				if (messages[i]!.role === 'user') {
+					lastUserIdx = i;
+					break;
+				}
+			}
+			last = lastUserIdx >= 0 ? lastUserCreatedAt(messages.slice(0, lastUserIdx)) : undefined;
+		} else {
+			last = lastUserCreatedAt(messages);
+		}
 		this.envContextLine = composeEnvContext(now, last);
 	}
 
