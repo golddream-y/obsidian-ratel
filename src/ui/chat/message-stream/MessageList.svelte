@@ -331,7 +331,11 @@
 				{#if unit.position === 'only' || unit.position === 'first'}
 					{@const day = dayDividerLabel(unit.msg)}
 					{#if day}
-						<div class="ratel-day-divider">{$t(day.key, day.params)}</div>
+						<div class="ratel-day-divider" role="separator">
+							<span class="ratel-day-divider-rule" aria-hidden="true"></span>
+							<span class="ratel-day-divider-label">{$t(day.key, day.params)}</span>
+							<span class="ratel-day-divider-rule" aria-hidden="true"></span>
+						</div>
 					{/if}
 				{/if}
 				<MessageBubble
@@ -436,16 +440,35 @@
 		border-bottom: 1px solid var(--background-modifier-border);
 	}
 
+	/*
+	 * 日分割线与 compact 条带刻意不同：两侧发丝线夹小字，不上下夹边框，
+	 * 避免看起来像又一条压缩分隔。上沿少垫，间距主要吃上一条气泡的 padding-bottom。
+	 */
 	.ratel-day-divider {
-		align-self: center;
-		max-width: 100%;
-		padding: 4px 12px;
+		display: flex;
+		align-items: center;
+		align-self: stretch;
+		gap: 10px;
+		width: 100%;
+		box-sizing: border-box;
+		padding: 2px 4px 10px;
+	}
+
+	.ratel-day-divider-rule {
+		flex: 1 1 0;
+		height: 1px;
+		min-width: 12px;
+		background: var(--background-modifier-border);
+		opacity: 0.45;
+	}
+
+	.ratel-day-divider-label {
+		flex: 0 0 auto;
 		font-size: 11px;
-		line-height: 1.4;
+		font-weight: 450;
+		letter-spacing: 0.06em;
+		line-height: 1;
 		color: var(--text-faint, var(--text-muted));
-		text-align: center;
-		border-top: 1px solid var(--background-modifier-border);
-		border-bottom: 1px solid var(--background-modifier-border);
 	}
 
 	@media (prefers-reduced-motion: reduce) {

@@ -9,21 +9,21 @@
 
 ## 统计
 
-**按月归档记录数**(共 72 条,61 个目录)
+**按月归档记录数**(共 73 条,62 个目录)
 
 ```mermaid
 xychart-beta
     title "按月归档记录数"
     x-axis ["2026-06", "2026-07", "2026-08", "2026-09"]
     y-axis "记录数" 0 --> 26
-    bar [17, 23, 26, 6]
+    bar [17, 23, 26, 7]
 ```
 
 **归档形态分布**
 
 ```mermaid
 pie showData title 归档形态分布
-    "完成归档" : 65
+    "完成归档" : 66
     "Abandoned(未实施/中途废弃)" : 4
     "Superseded(被取代)" : 3
 ```
@@ -34,6 +34,7 @@ pie showData title 归档形态分布
 
 | ID | 归档目录 | 日期 | 备注 |
 |---|---|---|---|
+| S-CHAT-TIME | [archive/S-CHAT-TIME/](archive/S-CHAT-TIME/) | 09-17 | P-CHAT-TIME;随 0.8.0 发版；日分割线 + 列表日历 + env 距上一轮 |
 | S-RENDER-STABILITY | [archive/S-RENDER-STABILITY/](archive/S-RENDER-STABILITY/) | 09-16 | A `446c70f` + B `fe52523` 合入 develop;分期 C(vectra/窗口/动效)另开 spec |
 | S-GOAL | [archive/S-GOAL/](archive/S-GOAL/) | 09-16 | P-GOAL-1/CHROME/CONFIRM;随 0.7.0 发版;架构正文仍在 architecture/agent/goal-mode.md |
 | S-READ-PRESERVE | [archive/S-READ-PRESERVE/](archive/S-READ-PRESERVE/) | 09-05 | microcompact 不折 `read_note`;图切片保持不折;随 0.6.1 发版 |

@@ -24,7 +24,6 @@
 | S-LLM-RETRY-UI | [2026-09-11-llm-retry-status-design.md](specs/2026-09-11-llm-retry-status-design.md) | Active | 2026-09-11 | 已合入 develop；打字行 connecting + 三条文案；与 S-LLM-RETRY 一并待归档 |
 | S-PLUGIN-PROFILE | [2026-09-10-plugin-profile-design.md](specs/2026-09-10-plugin-profile-design.md) | Active | 2026-09-10 | 社区插件配置档案:一份 schema 多份实例;架构正文 [architecture/host/plugin-profile.md](../architecture/host/plugin-profile.md);依赖 S-ECOSYSTEM 写入;plan 待写 |
 | S-HOST-ACCESS | [2026-09-11-host-access-design.md](specs/2026-09-11-host-access-design.md) | Active | 2026-09-11 | 库外文件+宿主命令:设置总闸默认关,开后走安全/自动/危险且视为破坏性;解析 Skill 另开 spec |
-| S-CHAT-TIME | [2026-09-17-chat-time-anchor-design.md](specs/2026-09-17-chat-time-anchor-design.md) | Active | 2026-09-17 | 实施完成；跨日分割线 + 列表日历日 + env 距上一轮；待归档 |
 
 
 ---
@@ -34,7 +33,6 @@
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
 | P-LLM-RETRY-UI | [2026-09-14-llm-retry-ui.md](plans/2026-09-14-llm-retry-ui.md) | Completed | S-LLM-RETRY-UI | 拣自 feat/p-llm-retry-ui 合入 develop；打字行 connecting + 三条文案 |
-| P-CHAT-TIME | [2026-09-17-chat-time-anchor.md](plans/2026-09-17-chat-time-anchor.md) | Completed | S-CHAT-TIME | 日分割线 + 列表日历 + env 距上一轮；待归档 |
 
 ---
 
@@ -54,16 +52,15 @@
 ## Future execution queue(按顺序)
 
 1. **S-LLM-RETRY + S-LLM-RETRY-UI** — 策略与打字行均已落地,两份 spec 一并待归档
-2. **S-CHAT-TIME** — 跨日续聊时间锚点已落地;plan [P-CHAT-TIME](plans/2026-09-17-chat-time-anchor.md) Completed；待归档
-3. 候选(无 spec,重启时新开):update_frontmatter / Write Gate / append_to_daily(S-EVOLUTION 写侧,见 archive/S-EVOLUTION/)
-4. S-ECOSYSTEM(差异化主打,动工前先确认商店审核口径 + 立 ADR-018)
-5. S-PLUGIN-PROFILE — 配置档案底座(schema/规则/识别/示例)可与生态工具分期;写入依赖 S-ECOSYSTEM
-6. 候选(无 spec):skill-script-sandbox 心跳用例 fake-timers 化 — 存量时序 flake(300ms 真定时器赛跑,P-VISION-1 审查期间实证 base/HEAD 均间歇失败)
-7. S-HOST-ACCESS — 库外访问总闸;不插队;文档解析另开 spec
+2. 候选(无 spec,重启时新开):update_frontmatter / Write Gate / append_to_daily(S-EVOLUTION 写侧,见 archive/S-EVOLUTION/)
+3. S-ECOSYSTEM(差异化主打,动工前先确认商店审核口径 + 立 ADR-018)
+4. S-PLUGIN-PROFILE — 配置档案底座(schema/规则/识别/示例)可与生态工具分期;写入依赖 S-ECOSYSTEM
+5. 候选(无 spec):skill-script-sandbox 心跳用例 fake-timers 化 — 存量时序 flake(300ms 真定时器赛跑,P-VISION-1 审查期间实证 base/HEAD 均间歇失败)
+6. S-HOST-ACCESS — 库外访问总闸;不插队;文档解析另开 spec
 
 
 ---
 
 ## 已归档
 
-见 [ARCHIVE.md](ARCHIVE.md) — 含按月统计图与全部归档记录(72 条 / 61 目录)。
+见 [ARCHIVE.md](ARCHIVE.md) — 含按月统计图与全部归档记录(73 条 / 62 目录)。

@@ -59,6 +59,7 @@
 			{#each entries as e, i (e.id)}
 				{@const short = rowShort(e)}
 				{@const full = rowFull(e)}
+				{@const when = formatSessionWhen(e.updatedAt)}
 				<!-- 安全路径:行主体不用 button — Obsidian 主题常给 button 固定 height,多行标题会被纵向裁切 -->
 				<div
 					class="ratel-session-row"
@@ -85,10 +86,7 @@
 					{#if full !== short}
 						<div class="ratel-session-title-full">{full}</div>
 					{/if}
-					<div class="ratel-session-when">
-						{@const when = formatSessionWhen(e.updatedAt)}
-						{$t(when.key, when.params)}
-					</div>
+					<div class="ratel-session-when">{$t(when.key, when.params)}</div>
 				</div>
 				<div class="ratel-session-row-actions">
 					<button
