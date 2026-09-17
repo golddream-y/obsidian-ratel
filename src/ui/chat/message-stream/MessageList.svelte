@@ -26,6 +26,7 @@
 	import { isChatMotionEnabled } from '../../motion/prefs';
 	import { settings$ as settingsStore } from '../../settings-store';
 	import { computeFadePlay, reseedEnteredIds } from '../../motion/enter/fade-play-policy';
+	import { formatDayDividerLabel, shouldShowDayDivider } from '../../../utils/chat-time';
 
 	/**
 	 * MessageList props。
@@ -280,6 +281,25 @@
 		if (phase === 'failed') return 'chat.compact.failed';
 		return 'chat.compact.done';
 	}
+
+	/** 向前跳过 compact 分隔行,取上一条聊天气泡的 createdAt */
+	function prevChatCreatedAt(index: number): number | undefined {
+		for (let i = index - 1; i >= 0; i--) {
+			const m = messages[i]!;
+			if (m.role === 'compact') continue;
+			return m.createdAt;
+		}
+		return undefined;
+	}
+
+	/** 首/独气泡上方日分割线 i18n 标签；无时刻或同日则不显示 */
+	function dayDividerLabel(msg: Message): { key: StringKey; params?: Record<string, string | number> } | null {
+		if (msg.role === 'compact') return null;
+		const idx = messages.findIndex((m) => m.id === msg.id);
+		if (idx < 0) return null;
+		if (!shouldShowDayDivider(prevChatCreatedAt(idx), msg.createdAt)) return null;
+		return formatDayDividerLabel(msg.createdAt!, new Date());
+	}
 </script>
 
 <div
@@ -308,6 +328,12 @@
 					{$t(compactLabelKey(unit.phase))}
 				</div>
 			{:else}
+				{#if unit.position === 'only' || unit.position === 'first'}
+					{@const day = dayDividerLabel(unit.msg)}
+					{#if day}
+						<div class="ratel-day-divider">{$t(day.key, day.params)}</div>
+					{/if}
+				{/if}
 				<MessageBubble
 					msg={unit.msg}
 					segments={unit.segments}
@@ -399,6 +425,18 @@
 	}
 
 	.ratel-compact-divider {
+		align-self: center;
+		max-width: 100%;
+		padding: 4px 12px;
+		font-size: 11px;
+		line-height: 1.4;
+		color: var(--text-faint, var(--text-muted));
+		text-align: center;
+		border-top: 1px solid var(--background-modifier-border);
+		border-bottom: 1px solid var(--background-modifier-border);
+	}
+
+	.ratel-day-divider {
 		align-self: center;
 		max-width: 100%;
 		padding: 4px 12px;

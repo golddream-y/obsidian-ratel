@@ -55,4 +55,6 @@ export interface Message {
 	attachments?: Array<{ fileName: string; mimeType: string; base64: string }>;
 	/** message.end 收到的 API 真值,用于校准 token 统计 */
 	tokenUsage?: { promptTokens: number; completionTokens: number };
+	/** 发送/落盘时的本地墙钟 epoch ms；缺省不参与日分割线比较 */
+	createdAt?: number;
 }

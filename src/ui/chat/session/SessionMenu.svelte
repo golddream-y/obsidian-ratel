@@ -8,6 +8,7 @@
 	import type { SessionIndexEntry } from '../../../ports/persistence';
 	import { deriveShortTitle } from './session-title';
 	import { staggerDelayMs } from '../../motion/chrome/animated-list-policy';
+	import { formatSessionWhen } from '../../../utils/chat-time';
 
 	let {
 		entries,
@@ -28,14 +29,6 @@
 		onRename: (id: string) => void;
 		onDelete: (id: string) => void;
 	} = $props();
-
-	function formatWhen(ts: number): string {
-		const diff = Date.now() - ts;
-		if (diff < 60_000) return '·';
-		if (diff < 3600_000) return `${Math.floor(diff / 60_000)}m`;
-		if (diff < 86400_000) return `${Math.floor(diff / 3600_000)}h`;
-		return `${Math.floor(diff / 86400_000)}d`;
-	}
 
 	function rowShort(e: SessionIndexEntry): string {
 		return (
@@ -92,7 +85,10 @@
 					{#if full !== short}
 						<div class="ratel-session-title-full">{full}</div>
 					{/if}
-					<div class="ratel-session-when">{formatWhen(e.updatedAt)}</div>
+					<div class="ratel-session-when">
+						{@const when = formatSessionWhen(e.updatedAt)}
+						{$t(when.key, when.params)}
+					</div>
 				</div>
 				<div class="ratel-session-row-actions">
 					<button

@@ -101,6 +101,21 @@ describe('hydrateSessionMessages', async () => {
 		expect(ui[1]!.searchResults?.[0]?.path).toBe('new.md');
 	});
 
+	it('hydrateSessionMessages - user 带 createdAt - UI 消息保留', async () => {
+		const ts = 1_700_000_000_000;
+		const ui = await hydrateSessionMessages([
+			{ role: 'user', content: 'hi', createdAt: ts },
+			{ role: 'assistant', content: 'hello', createdAt: ts + 1 },
+		]);
+		expect(ui[0]!.createdAt).toBe(ts);
+		expect(ui[1]!.createdAt).toBe(ts + 1);
+	});
+
+	it('hydrateSessionMessages - 缺 createdAt - 不抛且字段缺省', async () => {
+		const ui = await hydrateSessionMessages([{ role: 'user', content: 'hi' }]);
+		expect(ui[0]!.createdAt).toBeUndefined();
+	});
+
 	it('hydrateSessionMessages - 末次 search 空数组 - 不挂 searchResults', async () => {
 		const first = JSON.stringify([
 			{ docId: 'd1', score: 0.5, index: 1, metadata: { path: 'old.md' } },

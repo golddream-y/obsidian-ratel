@@ -1384,8 +1384,9 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 			role: 'user' as const,
 			segments: [{ type: 'text', text }],
 			attachments: currentAttachments.length > 0 ? currentAttachments : undefined,
+			createdAt: Date.now(),
 		});
-		messages.push({ id: newMessageId(), role: 'assistant' as const, segments: [] });
+		messages.push({ id: newMessageId(), role: 'assistant' as const, segments: [], createdAt: Date.now() });
 		if (wasEmpty) {
 			echoEnterToken += 1;
 		}

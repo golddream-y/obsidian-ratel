@@ -104,6 +104,7 @@ function buildUiEntries(
 					segments: [{ type: 'text', text: m.content }],
 					// fileName 仅展示用,落盘引用无文件名,还原置空串
 					...(atts ? { attachments: atts } : {}),
+					...(typeof m.createdAt === 'number' ? { createdAt: m.createdAt } : {}),
 				},
 				lastRawIndex: i,
 			});
@@ -117,6 +118,7 @@ function buildUiEntries(
 		}
 		if (m.role === 'assistant') {
 			const start = i;
+			const groupCreatedAt = messages[start]!.createdAt;
 			const segments: MessageSegment[] = [];
 			let sawReasoning = false;
 			let lastSearch: { results: NonNullable<Message['searchResults']>; reranked: boolean } | null = null;
@@ -194,6 +196,7 @@ function buildUiEntries(
 						...(lastSearch
 							? { searchResults: lastSearch.results, searchReranked: lastSearch.reranked }
 							: {}),
+						...(typeof groupCreatedAt === 'number' ? { createdAt: groupCreatedAt } : {}),
 					},
 					lastRawIndex: i - 1 >= start ? i - 1 : start,
 				});
