@@ -36,6 +36,8 @@
 - 自动处理路径和权限
 - 跨平台兼容
 
+会话正文 `sessions/<id>.json` 的 `messages[]` 条目可带可选 `createdAt`（epoch ms，本地墙钟）。缺省视为旧数据，不回填。该字段只用于 UI 日分割线与 env「距上一轮」；出站给模型 API 时剥离。
+
 ### 2.3 索引数据用文件系统
 
 **决策**:向量索引(vectra)直接用 Node.js `fs` 读写 `.obsidian/plugins/ratel-vault/index/`。
