@@ -146,7 +146,6 @@ import { createGetAppConfigTool } from './tools/get-app-config';
 import { createUpdateAppConfigTool } from './tools/update-app-config';
 import { ObsidianWorkspace } from './adapters/obsidian-workspace';
 import type { WorkspacePort } from './ports/workspace';
-import { formatEnvContextLine } from './utils/local-datetime';
 import { compactSession } from './ui/chat/compact-session';
 import { shouldRetryAfterOverflow } from './core/compact-overflow-retry';
 import { GoalStore } from './core/goal-store';
@@ -1515,8 +1514,7 @@ export default class RatelVaultPlugin extends Plugin {
 			return g ? composeGoalAnchor(g) : null;
 		});
 
-		// 关键路径(P-BASIC-ENV):每次 ask 注入当前本地时间,零工具成本回答「今天几号」。
-		ctx.setEnvContext(formatEnvContextLine(new Date()));
+		// 关键路径(S-CHAT-TIME):env 由 agentLoop 在 load 后 refreshEnvContext,避免双源。
 
 		// 关键路径:会话启动时注入 Discovery 目录(activate 写进 messages)。
 		// 关键路径(S-SR-LAYERING):传当前提问做 Discovery 相关性排序。

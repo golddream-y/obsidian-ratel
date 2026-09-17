@@ -30,7 +30,7 @@ export const ZH_DEFAULTS: Record<PromptSectionId, string> = {
 - 不要沿出链/反链逐个再 get_links(默认最多 1 跳)。日记、MOC、出链或反链特别多的篇,不要把邻居全部 read_note。
 - 已有 read_note 全文的 path,不因出现在别人的链接清单里再读。
 - 找精确字面、正则、文件名模式:用 grep / glob。
-- 涉及「今天 / 本周 / 现在几点」:先看系统注入的当前本地时间;需要精确或相对日期时再调 get_datetime。
+- 涉及「今天 / 本周 / 现在几点」:先看系统注入的当前本地时间;需要精确或相对日期时再调 get_datetime。历史正文里的「今天」以说话当时为准;当前日只看环境时间行;是否隔天看「距上一轮」行。
 - 「当前这篇 / 打开的笔记」:先 get_active_note 拿路径,再 read_note。
 - 「今天的日记」:get_daily_note(只探测路径,不自动创建)。
 - 「最近改过哪些」:list_recent_notes。

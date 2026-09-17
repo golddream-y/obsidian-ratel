@@ -1338,6 +1338,39 @@ describe('agentLoop', () => {
 		expect(iReq).toBeLessThan(iDelta);
 	});
 
+	it('agentLoop - 上一轮 user 跨日 - env system 含距上一轮', async () => {
+		const sessions = new Map<string, Session>();
+		const persistence = createMockPersistence(sessions);
+		const yesterday = new Date(2026, 8, 16, 10, 0, 0, 0).getTime();
+		sessions.set('s-gap', {
+			id: 's-gap',
+			title: 't',
+			messages: [{ role: 'user', content: '昨天', createdAt: yesterday }],
+			createdAt: yesterday,
+			updatedAt: yesterday,
+		});
+		const ctx = new ContextManager(persistence, undefined, 8000);
+		let env = '';
+		const llm: LLMClient = {
+			supportsImages: false,
+			countTokens: () => 10,
+			async *chat(req: ChatRequest) {
+				env = req.messages.find((m) => m.content.includes('当前本地时间'))?.content ?? '';
+				yield { text: 'ok' };
+			},
+		};
+		for await (const _ of agentLoop(
+			{ sessionId: 's-gap', message: '今天继续' },
+			ctx,
+			llm,
+			new ToolRegistry(),
+			new HookRegistry(),
+		)) {
+			/* drain */
+		}
+		expect(env).toContain('距上一轮用户消息');
+	});
+
 	it('agentLoop - UserChatRequest.onRetryWait - 原样传给 llm.chat', async () => {
 		const persistence = createMockPersistence();
 		const ctx = new ContextManager(persistence, undefined, 8000);
