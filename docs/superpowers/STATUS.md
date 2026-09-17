@@ -34,7 +34,7 @@
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
 | P-LLM-RETRY-UI | [2026-09-14-llm-retry-ui.md](plans/2026-09-14-llm-retry-ui.md) | Completed | S-LLM-RETRY-UI | 拣自 feat/p-llm-retry-ui 合入 develop；打字行 connecting + 三条文案 |
-| P-CHAT-TIME | [2026-09-17-chat-time-anchor.md](plans/2026-09-17-chat-time-anchor.md) | Pending | S-CHAT-TIME | 日分割线 + 列表日历 + env 距上一轮；6 Task |
+| P-CHAT-TIME | [2026-09-17-chat-time-anchor.md](plans/2026-09-17-chat-time-anchor.md) | In Progress | S-CHAT-TIME | 分支 feat/p-chat-time；Wave 1 T1∥T2 |
 
 ---
 
@@ -54,7 +54,7 @@
 ## Future execution queue(按顺序)
 
 1. **S-LLM-RETRY + S-LLM-RETRY-UI** — 策略与打字行均已落地,两份 spec 一并待归档
-2. **S-CHAT-TIME** — 跨日续聊时间锚点;plan [P-CHAT-TIME](plans/2026-09-17-chat-time-anchor.md) Pending
+2. **S-CHAT-TIME** — 跨日续聊时间锚点;plan [P-CHAT-TIME](plans/2026-09-17-chat-time-anchor.md) In Progress (`feat/p-chat-time`)
 3. 候选(无 spec,重启时新开):update_frontmatter / Write Gate / append_to_daily(S-EVOLUTION 写侧,见 archive/S-EVOLUTION/)
 4. S-ECOSYSTEM(差异化主打,动工前先确认商店审核口径 + 立 ADR-018)
 5. S-PLUGIN-PROFILE — 配置档案底座(schema/规则/识别/示例)可与生态工具分期;写入依赖 S-ECOSYSTEM
