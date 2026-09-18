@@ -10,9 +10,9 @@ export interface EnableAttempt {
 }
 
 type PluginsHost = {
-	loadManifest?: (dir: string) => Promise<unknown> | unknown;
-	loadManifests?: () => Promise<unknown> | unknown;
-	enablePluginAndSave?: (id: string) => Promise<unknown> | unknown;
+	loadManifest?: (dir: string) => void | Promise<void>;
+	loadManifests?: () => void | Promise<void>;
+	enablePluginAndSave?: (id: string) => void | Promise<void>;
 	getPlugin?: (id: string) => unknown;
 	plugins?: Record<string, unknown>;
 	enabledPlugins?: Set<string> | string[];
