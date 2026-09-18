@@ -114,6 +114,7 @@ describe('run_skill_script 工具', () => {
 			failures,
 			timeoutMs: () => 30_000,
 			vaultRoot: () => '/vault',
+			configDirName: () => '.obsidian',
 		});
 	}
 
@@ -124,6 +125,7 @@ describe('run_skill_script 工具', () => {
 		const out = await tool.execute({ skillName: 'data-cleaner', scriptPath: 'clean.js', args: ['--x'] });
 		expect(out).toBe('"done"');
 		expect(sandbox.lastReq?.allowedDirs).toEqual(['/vault', dir]);
+		expect(sandbox.lastReq?.deniedDirs).toEqual([path.join('/vault', '.obsidian')]);
 		expect(sandbox.lastReq?.timeoutMs).toBe(30_000);
 	});
 
@@ -345,6 +347,7 @@ describe('run_skill_script 工具 - vault 相对 dir', () => {
 			failures,
 			timeoutMs: () => 30_000,
 			vaultRoot: () => vaultRoot,
+			configDirName: () => '.obsidian',
 		});
 	}
 

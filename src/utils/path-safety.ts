@@ -21,6 +21,23 @@ export function setConfigDir(name: string): void {
 }
 
 /**
+ * 当前注入的 configDir 名(可能为空,若尚未 setConfigDir)。
+ */
+export function getConfigDirName(): string {
+	return configDirName;
+}
+
+/** Ratel 自身插件 id — 通道 B 永拒,禁止管理自己 */
+export const RATEL_PLUGIN_ID = 'ratel-vault';
+
+export interface EcosystemPathContext {
+	/** 官方商店清单内的 id */
+	catalogIds: ReadonlySet<string>;
+	/** 本地 plugins/ 下已存在的 id(下架后仍可卸载) */
+	installedIds: ReadonlySet<string>;
+}
+
+/**
  * Vault 相对路径归一化(对齐 Obsidian normalizePath 语义,避免测试环境依赖 obsidian 包)。
  */
 function normalizeVaultPath(path: string): string {
@@ -75,6 +92,73 @@ export function validateVaultPath(path: string): string {
 		throw new Error(tNow('error.path.trash', { path }));
 	}
 
+	return normalized;
+}
+
+function assertSafeVaultRelativePath(path: string): string {
+	if (!path || typeof path !== 'string') {
+		throw new Error(tNow('error.path.empty'));
+	}
+
+	if (/(^|[/\\])\.\.([/\\]|$)/.test(path)) {
+		throw new Error(tNow('error.path.traversal', { path }));
+	}
+
+	if (/^[A-Za-z]:[/\\]/.test(path)) {
+		throw new Error(tNow('error.path.absolute', { path }));
+	}
+
+	const normalized = normalizeVaultPath(path);
+
+	if (normalized.includes('..')) {
+		throw new Error(tNow('error.path.traversal', { path }));
+	}
+
+	return normalized;
+}
+
+/**
+ * 通道 B:仅放行生态写盘白名单(ADR-018)。
+ *
+ * 允许:
+ * - `{configDir}/community-plugins.json`
+ * - `{configDir}/plugins/{id}/**` 且 id ≠ ratel-vault,且 id 在清单或本地已装集合中
+ *
+ * 禁止缝进 ObsidianVault;笔记工具必须继续走 validateVaultPath。
+ *
+ * @param path - vault 相对路径
+ * @param ctx - 已校验的商店 id 与本地已装 id
+ * @returns 归一化路径
+ * @throws 越界、未知 id、管理自身、非白名单配置文件
+ */
+export function validateEcosystemPath(path: string, ctx: EcosystemPathContext): string {
+	const normalized = assertSafeVaultRelativePath(path);
+	const cfg = configDirName;
+	if (!cfg) {
+		throw new Error(tNow('error.path.ecosystem', { path }));
+	}
+
+	if (normalized === `${cfg}/community-plugins.json`) {
+		return normalized;
+	}
+
+	const prefix = `${cfg}/plugins/`;
+	if (!normalized.startsWith(prefix)) {
+		throw new Error(tNow('error.path.ecosystem', { path }));
+	}
+
+	const rest = normalized.slice(prefix.length);
+	const slash = rest.indexOf('/');
+	const id = slash === -1 ? rest : rest.slice(0, slash);
+	if (!id) {
+		throw new Error(tNow('error.path.ecosystem', { path }));
+	}
+	if (id === RATEL_PLUGIN_ID) {
+		throw new Error(tNow('error.path.ratelSelf', { path }));
+	}
+	if (!ctx.catalogIds.has(id) && !ctx.installedIds.has(id)) {
+		throw new Error(tNow('error.path.unknownPlugin', { path, id }));
+	}
 	return normalized;
 }
 

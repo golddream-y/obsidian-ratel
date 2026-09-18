@@ -198,6 +198,10 @@ export interface RatelVaultSettings {
 	mcpServers: McpServerConfig[];
 	/** 用户已确认允许 spawn 的 stdio serverId 列表 */
 	mcpApprovedSpawns: string[];
+	/**
+	 * 是否允许把社区插件写入当前库(ADR-018 R2)。false = 商店保守包 R3,只打开官方页。
+	 */
+	ecosystemWriteEnabled: boolean;
 }
 
 /**
@@ -293,6 +297,8 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 		update_app_config: 'ask',
 		// 关键路径(S-GOAL):manage_goal 默认 allow;动作内 Modal 负责 create/resume/cancel/complete 确认
 		manage_goal: 'allow',
+		search_plugins: 'allow',
+		install_plugin: 'ask',
 	},
 	// 关键路径:默认无任何 override,使用 zh.ts 内置中文模板。
 	promptOverrides: {},
@@ -335,6 +341,7 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 	// 关键路径:默认空列表 = 零 MCP 出站（ADR-014）
 	mcpServers: [],
 	mcpApprovedSpawns: [],
+	ecosystemWriteEnabled: true,
 };
 
 /**
@@ -949,6 +956,11 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 							void this.plugin.saveSettings().then(() => this.update());
 						},
 					},
+					{
+						name: tNow('settings.ecosystem.writeEnabled.name'),
+						desc: tNow('settings.ecosystem.writeEnabled.desc'),
+						control: { type: 'toggle', key: 'ecosystemWriteEnabled' },
+					},
 				],
 			},
 			{
@@ -1086,6 +1098,8 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			get_app_config: 'settings.toolPermissions.get_app_config',
 			update_app_config: 'settings.toolPermissions.update_app_config',
 			manage_goal: 'settings.toolPermissions.manage_goal',
+			search_plugins: 'settings.toolPermissions.search_plugins',
+			install_plugin: 'settings.toolPermissions.install_plugin',
 		};
 		const key = map[toolName];
 		return key ? tNow(key) : toolName;
@@ -1103,6 +1117,8 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			'get_app_config',
 			'update_app_config',
 			'manage_goal',
+			'search_plugins',
+			'install_plugin',
 	];
 
 		const items: SettingGroupItem[] = [

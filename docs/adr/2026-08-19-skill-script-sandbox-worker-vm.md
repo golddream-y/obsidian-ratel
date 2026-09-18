@@ -2,7 +2,8 @@
 
 **状态**:Accepted
 **日期**:2026-08-19
-**修订**:v1.1(2026-08-19)— §3/§4/§5 超时语义重构:硬超时从「无条件击杀」改为「按心跳分类处置」(详见 §3 修订说明)
+**修订**:v1.1(2026-08-19)— §3/§4/§5 超时语义重构:硬超时从「无条件击杀」改为「按心跳分类处置」(详见 §3 修订说明)  
+**修订**:v1.2(2026-09-18)— fs 白名单仍含 vault 根,但 **denylist 拒绝整棵 `configDir`**(PP-08 / [ADR-018](2026-09-18-ecosystem-outbound.md));脚本不得写他人 `data.json`
 **关联**:
 - [S-SKILL](../superpowers/specs/2026-07-06-skill-mechanism-design.md)(4.7 沙箱设计 / 6.6 未决问题由本 ADR 关闭)
 - P-SKILL-2-EXECUTION(实施 plan)/ P-SKILL-2-TIMEOUT(v1.1 修订实施 plan)
@@ -30,7 +31,7 @@ S-SKILL 的 P-SKILL-2-EXECUTION 要让技能携带可执行脚本(`scripts/` 目
 ### 1. 运行时 = Worker Thread + vm 双层
 
 - **Worker Thread**(Node `worker_threads`):每次执行新起一个,跑完即弃。死循环只卡 worker,`terminate()` 毫秒级击杀,Obsidian UI 零影响
-- **vm context**(Worker 内):砍 `require` / `fetch` / `child_process` / `process`;fs 白名单只开 vault 根 + 该 skill 目录;注入 `reportProgress()` 心跳 API
+- **vm context**(Worker 内):砍 `require` / `fetch` / `child_process` / `process`;fs 白名单只开 vault 根 + 该 skill 目录;**另加 `deniedDirs` = 当前库 `configDir` 绝对路径,读/写均拒**(v1.2,防脚本改配置目录 / 他人 `data.json`);注入 `reportProgress()` 心跳 API
 - 复用 ADR-006 的先例逻辑:重活不进主线程(Embedding 推理如此,脚本执行亦然)
 
 ### 2. 威胁模型:防手滑,不防黑客
