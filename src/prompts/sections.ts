@@ -603,6 +603,38 @@ function buildSections(): SectionMeta[] {
 			placeholders: [],
 			allowOverride: true,
 		},
+		{
+			id: 'tool.search_plugins.description',
+			label: tNow('promptLabel.tool.search_plugins.description'),
+			description: tNow('promptLabel.tool.search_plugins.description.desc'),
+			zone: 'tool',
+			placeholders: [],
+			allowOverride: true,
+		},
+		{
+			id: 'tool.search_plugins.param.query',
+			label: tNow('promptLabel.tool.search_plugins.param.query'),
+			description: tNow('promptLabel.tool.search_plugins.param.query.desc'),
+			zone: 'tool',
+			placeholders: [],
+			allowOverride: true,
+		},
+		{
+			id: 'tool.install_plugin.description',
+			label: tNow('promptLabel.tool.install_plugin.description'),
+			description: tNow('promptLabel.tool.install_plugin.description.desc'),
+			zone: 'tool',
+			placeholders: [],
+			allowOverride: true,
+		},
+		{
+			id: 'tool.install_plugin.param.pluginId',
+			label: tNow('promptLabel.tool.install_plugin.param.pluginId'),
+			description: tNow('promptLabel.tool.install_plugin.param.pluginId.desc'),
+			zone: 'tool',
+			placeholders: [],
+			allowOverride: true,
+		},
 	];
 }
 

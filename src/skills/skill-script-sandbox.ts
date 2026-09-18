@@ -18,6 +18,8 @@ export interface ScriptRunRequest {
 	code: string;
 	args: string[];
 	allowedDirs: string[];
+	/** 绝对路径 denylist(通常 = vault 根下的 configDir);PP-08 / ADR-018 */
+	deniedDirs?: string[];
 	/** 无心跳超时窗口(ms)— settings.skillScriptTimeout;零心跳满此值判卡死,有心跳满此值返回 still-running 交 LLM 决策(ADR-017 v1.1 §3) */
 	timeoutMs: number;
 	/** 绝对上限(ms),默认 MAX_RUN_MS;测试可注入小值 */
@@ -331,7 +333,13 @@ export class SkillScriptSandbox {
 			});
 
 			armWindow();
-			worker.postMessage({ type: 'run', code: req.code, args: req.args, allowedDirs: req.allowedDirs });
+			worker.postMessage({
+				type: 'run',
+				code: req.code,
+				args: req.args,
+				allowedDirs: req.allowedDirs,
+				deniedDirs: req.deniedDirs ?? [],
+			});
 		});
 	}
 }

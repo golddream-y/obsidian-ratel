@@ -31,7 +31,7 @@ describe('runInVmSandbox', () => {
 		});
 		expect(r.ok).toBe(true);
 		// 修正:结果经 JSON 序列化,字符串带引号(与 Task 3 worker 验收 '"1+2"' 一致;plan 原断言漏了引号)
-		if (r.ok) expect(r.result).toBe('"undefined,undefined,undefined,undefined,object"');
+		if (r.ok) expect(r.result).toBe('undefined,undefined,undefined,undefined,object');
 	});
 
 	it('网络禁用 - fetch 调用直接抛错(不存在)', () => {
@@ -40,6 +40,33 @@ describe('runInVmSandbox', () => {
 			code: `fetch("http://example.com")`,
 			args: [],
 			allowedDirs: [vaultRoot, skillDir],
+		});
+		expect(r.ok).toBe(false);
+	});
+
+	it('fs denylist - 写 configDir 下他人 data.json - 捕获为 scriptError', () => {
+		const configDir = path.join(vaultRoot, '.obsidian');
+		fs.mkdirSync(path.join(configDir, 'plugins', 'calendar'), { recursive: true });
+		const r = runInVmSandbox({
+			code: `fs.writeFileSync('.obsidian/plugins/calendar/data.json', '{}'); 'written'`,
+			args: [],
+			allowedDirs: [vaultRoot, skillDir],
+			deniedDirs: [configDir],
+		});
+		expect(r.ok).toBe(false);
+		if (!r.ok) expect(r.error).toMatch(/配置目录|denied|拒绝/);
+		expect(fs.existsSync(path.join(configDir, 'plugins', 'calendar', 'data.json'))).toBe(false);
+	});
+
+	it('fs denylist - 读 configDir - 捕获为 scriptError', () => {
+		const configDir = path.join(vaultRoot, '.obsidian');
+		fs.mkdirSync(configDir, { recursive: true });
+		fs.writeFileSync(path.join(configDir, 'app.json'), '{}');
+		const r = runInVmSandbox({
+			code: `fs.readFileSync('.obsidian/app.json'); 'leaked'`,
+			args: [],
+			allowedDirs: [vaultRoot, skillDir],
+			deniedDirs: [configDir],
 		});
 		expect(r.ok).toBe(false);
 	});
@@ -72,7 +99,7 @@ describe('runInVmSandbox', () => {
 			allowedDirs: [path.join(vaultRoot, 'scripts')],
 		});
 		expect(r.ok).toBe(true);
-		if (r.ok) expect(r.result).toBe('"blocked"');
+		if (r.ok) expect(r.result).toBe('blocked');
 	});
 
 	it('reportProgress - 脚本主动报进度 - 回调收到消息', () => {
@@ -95,7 +122,7 @@ describe('runInVmSandbox', () => {
 			allowedDirs: [vaultRoot, skillDir],
 		});
 		expect(r.ok).toBe(true);
-		if (r.ok) expect(r.result).toBe('"--input|data.json"');
+		if (r.ok) expect(r.result).toBe('--input|data.json');
 	});
 
 	it('结果序列化 - 对象返回 JSON 字符串', () => {
@@ -171,6 +198,6 @@ describe('runInVmSandbox', () => {
 		});
 		expect(r.ok).toBe(true);
 		// 修正:同上,JSON 序列化字符串带引号
-		if (r.ok) expect(r.result).toBe('"function,function,string"');
+		if (r.ok) expect(r.result).toBe('function,function,string');
 	});
 });
