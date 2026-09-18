@@ -122,6 +122,7 @@ These capabilities are the foundation. They serve proactive intelligence and gra
 | Embeddings | Generated locally by default |
 | Retrieved evidence | Sent only to the model endpoint you configure |
 | MCP parameters | Sent only when an enabled MCP tool is invoked |
+| Community-plugin catalog / GitHub release | Sent only when you use ecosystem tools (`search_plugins` / `install_plugin`); hosts are allowlisted (official catalog + the chosen plugin’s GitHub release). No background refresh, no telemetry, no GitHub PAT. Full catalog stays on disk under the plugin folder and is not stuffed into `data.json` or the model context |
 | Proactive insights | Filtered locally before the minimum necessary evidence is assembled |
 | Vault changes | Follow Safe / Auto / Danger permissions; notifications cannot bypass them |
 | Crash breadcrumbs | Written only under the local plugin `diag/` folder, no message text; on by default, toggle in Developer |

@@ -188,6 +188,8 @@ export interface SettingsStrings {
   'settings.toolPermissions.get_app_config': string;
   'settings.toolPermissions.update_app_config': string;
   'settings.toolPermissions.manage_goal': string;
+  'settings.toolPermissions.search_plugins': string;
+  'settings.toolPermissions.install_plugin': string;
   'settings.toolPermissions.allow': string;
   'settings.toolPermissions.ask': string;
   'settings.toolPermissions.deny': string;
@@ -413,6 +415,8 @@ export interface ToolNameStrings {
   'tool.name.get_app_config': string;
   'tool.name.update_app_config': string;
   'tool.name.run_skill_script': string;
+  'tool.name.search_plugins': string;
+  'tool.name.install_plugin': string;
   'tool.name.mcp': string;
 }
 
@@ -718,6 +722,9 @@ export interface ErrorStrings {
   'error.path.traversal': string;
   'error.path.absolute': string;
   'error.path.configDir': string;
+  'error.path.ecosystem': string;
+  'error.path.ratelSelf': string;
+  'error.path.unknownPlugin': string;
   'error.path.trash': string;
   'error.tool.fileNotFound': string;
   'error.tool.oldStringNotFound': string;
@@ -745,6 +752,17 @@ export interface ErrorStrings {
   'error.probe.requestFailed': string;
   // 关键路径:Worker 未内联错误(main.ts 启动检查)
   'error.worker.notInlined': string;
+  'error.ecosystem.catalogFetch': string;
+  'error.ecosystem.rateLimited': string;
+  'error.ecosystem.badCatalog': string;
+  'error.ecosystem.badRepo': string;
+  'error.ecosystem.manifestFetch': string;
+  'error.ecosystem.badManifest': string;
+  'error.ecosystem.minApp': string;
+  'error.ecosystem.incompleteRelease': string;
+  'error.ecosystem.manifestIdMismatch': string;
+  'error.ecosystem.notInCatalog': string;
+  'error.ecosystem.self': string;
   // 关键路径:检索就绪状态错误
   'error.search.notReady': string;
   // 关键路径:模型 / ORT WASM 下载失败错误(用户可见 Notice,经 ratelError 冒泡)
@@ -914,6 +932,14 @@ export interface PromptLabelStrings {
   'promptLabel.tool.manage_goal.param.objective.desc': string;
   'promptLabel.tool.manage_goal.param.criteriaText': string;
   'promptLabel.tool.manage_goal.param.criteriaText.desc': string;
+  'promptLabel.tool.search_plugins.description': string;
+  'promptLabel.tool.search_plugins.description.desc': string;
+  'promptLabel.tool.search_plugins.param.query': string;
+  'promptLabel.tool.search_plugins.param.query.desc': string;
+  'promptLabel.tool.install_plugin.description': string;
+  'promptLabel.tool.install_plugin.description.desc': string;
+  'promptLabel.tool.install_plugin.param.pluginId': string;
+  'promptLabel.tool.install_plugin.param.pluginId.desc': string;
   'promptLabel.retrieval.wrapperPrefix': string;
   'promptLabel.retrieval.wrapperSuffix': string;
 }
@@ -1160,12 +1186,22 @@ export interface GoalStrings {
   'goal.notice.writeNoteHint': string;
 }
 
+export interface EcosystemStrings {
+  'ecosystem.install.enabled': string;
+  'ecosystem.install.filesOnly': string;
+  'ecosystem.install.officialPage': string;
+  'ecosystem.search.stale': string;
+  'settings.ecosystem.heading': string;
+  'settings.ecosystem.writeEnabled.name': string;
+  'settings.ecosystem.writeEnabled.desc': string;
+}
+
 // ==================== 合并 ====================
 export interface Strings extends
   BaseStrings, SettingsStrings, ChatStrings, ToolNameStrings,
   SlashStrings, NoticeStrings, ModalStrings, StatusStrings,
   DiagnosticsStrings, ErrorStrings, PromptLabelStrings, MemoryStrings,
-  CmdStrings, ToolPermStrings, SkillStrings, GoalStrings {
+  CmdStrings, ToolPermStrings, SkillStrings, GoalStrings, EcosystemStrings {
   // 后续新功能按 namespace 追加 extends
 }
 

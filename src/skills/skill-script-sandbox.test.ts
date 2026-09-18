@@ -39,7 +39,7 @@ describe('SkillScriptSandbox(真实 worker_threads)', () => {
 	it('run - 正常脚本 - 末表达式结果回传', async () => {
 		const sandbox = new SkillScriptSandbox(workerCode);
 		const out = await sandbox.run({ code: `args.join('+')`, args: ['1', '2'], allowedDirs: [], timeoutMs: 5_000 });
-		expect(out).toEqual({ status: 'ok', result: '"1+2"' });
+		expect(out).toEqual({ status: 'ok', result: '1+2' });
 	});
 
 	it('run - 脚本抛错 - scriptError 含消息', async () => {
@@ -68,7 +68,7 @@ describe('SkillScriptSandbox(真实 worker_threads)', () => {
 			onSoftTimeout: () => { softFired = true; },
 		});
 		expect(softFired).toBe(true);
-		expect(out).toEqual({ status: 'ok', result: '"done"' });
+		expect(out).toEqual({ status: 'ok', result: 'done' });
 	});
 
 	it('软超时 - reportProgress 心跳复位 - 不误报', async () => {
@@ -141,7 +141,7 @@ describe('SkillScriptSandbox 心跳分类超时状态机(ADR-017 v1.1)', () => {
 		});
 		expect(out1.status).toBe('stillRunning');
 		const out2 = await sandbox.continueRun();
-		expect(out2).toEqual({ status: 'ok', result: '"done"' });
+		expect(out2).toEqual({ status: 'ok', result: 'done' });
 	});
 
 	it('stillRunning 后 killRun - killed 且 worker 已 terminate', async () => {
@@ -193,7 +193,7 @@ describe('SkillScriptSandbox 心跳分类超时状态机(ADR-017 v1.1)', () => {
 		const out2 = await sandbox.continueRun();
 		expect(out2.status).toBe('stillRunning');
 		const out3 = await sandbox.continueRun();
-		expect(out3).toEqual({ status: 'ok', result: '"done"' });
+		expect(out3).toEqual({ status: 'ok', result: 'done' });
 	});
 
 	it('绝对上限 - 累计超 maxRunMs - maxDuration 击杀且 continue 不重置计时', async () => {
@@ -218,7 +218,7 @@ describe('SkillScriptSandbox 心跳分类超时状态机(ADR-017 v1.1)', () => {
 		});
 		expect(out1.status).toBe('stillRunning');
 		const out2 = await sandbox.run({ code: `'fresh'`, args: [], allowedDirs: [], timeoutMs: 5_000 });
-		expect(out2).toEqual({ status: 'ok', result: '"fresh"' });
+		expect(out2).toEqual({ status: 'ok', result: 'fresh' });
 		// 旧 pending 已被隐含终止清理:后续 continueRun 无可等待对象
 		expect(await sandbox.continueRun()).toEqual({ status: 'noRunning' });
 	});

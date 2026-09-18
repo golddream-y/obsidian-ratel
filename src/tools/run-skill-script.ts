@@ -14,6 +14,7 @@ import type { SkillRegistry } from '../skills/skill-registry';
 import type { ScriptTrustGate } from '../skills/skill-script-permission';
 import type { ScriptRunOutcome, ScriptRunRequest } from '../skills/skill-script-sandbox';
 import { tNow } from '../i18n';
+import { getConfigDirName } from '../utils/path-safety';
 
 /** 连续失败熔断阈值(ADR-017 §5:被杀/超时/崩溃) */
 export const SCRIPT_FAILURE_THRESHOLD = 3;
@@ -48,6 +49,8 @@ export interface RunSkillScriptDeps {
 	timeoutMs: () => number;
 	/** vault 根绝对路径(fs 白名单之一) */
 	vaultRoot: () => string;
+	/** 当前库 configDir 名(相对 vault 根;注入 denylist) */
+	configDirName?: () => string;
 	/** 软超时警告(main → Notice;可选) */
 	onSoftTimeout?: (scriptId: string) => void;
 	/** 熔断提醒(main → Notice;可选) */
@@ -194,11 +197,17 @@ export function createRunSkillScriptTool(
 				return tNow('skill.script.circuitBreak', { id: scriptId, count: SCRIPT_FAILURE_THRESHOLD });
 			}
 
+			const vaultRoot = deps.vaultRoot();
+			const configDir = (deps.configDirName ?? getConfigDirName)();
+			const deniedDirs =
+				configDir.length > 0 ? [path.join(vaultRoot, configDir)] : [];
 			const outcome = await deps.sandbox.run({
 				code,
 				args: scriptArgs,
 				// 关键路径:fs 白名单 = vault 根 + 该 skill 目录(绝对路径,ADR-017 §1)
-				allowedDirs: [deps.vaultRoot(), skillBase],
+				allowedDirs: [vaultRoot, skillBase],
+				// 关键路径(ADR-018 / PP-08):vault 根白名单不能覆盖 configDir
+				deniedDirs,
 				timeoutMs: deps.timeoutMs(),
 				onSoftTimeout: () => deps.onSoftTimeout?.(scriptId),
 			});

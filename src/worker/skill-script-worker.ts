@@ -27,6 +27,7 @@ interface RunMessage {
 	code: string;
 	args: string[];
 	allowedDirs: string[];
+	deniedDirs?: string[];
 }
 
 /** Worker → 主线程消息(与主线程 SandboxWorkerHandle 协议一致) */
@@ -83,6 +84,12 @@ const fallbackDirs: string[] = Array.isArray((workerData as { allowedDirs?: stri
 	? (workerData as { allowedDirs: string[] }).allowedDirs
 	: [];
 
+const fallbackDenied: string[] = Array.isArray(
+	(workerData as { deniedDirs?: string[] } | undefined)?.deniedDirs,
+)
+	? (workerData as { deniedDirs: string[] }).deniedDirs
+	: [];
+
 const port = createPort();
 
 port.onMessage((msg: RunMessage) => {
@@ -91,6 +98,7 @@ port.onMessage((msg: RunMessage) => {
 		code: msg.code,
 		args: msg.args,
 		allowedDirs: msg.allowedDirs ?? fallbackDirs,
+		deniedDirs: msg.deniedDirs ?? fallbackDenied,
 		onProgress: (m) => port.postMessage({ type: 'progress', message: m }),
 		onLog: (level, m) => port.postMessage({ type: 'log', level, message: String(m) }),
 	};

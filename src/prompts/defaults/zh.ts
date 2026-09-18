@@ -223,4 +223,12 @@ export const ZH_DEFAULTS: Record<PromptSectionId, string> = {
 	'tool.manage_goal.param.action': '动作: create / update / list / pause / resume / cancel / complete',
 	'tool.manage_goal.param.objective': '目标陈述(创建后不可变)',
 	'tool.manage_goal.param.criteriaText': '完成标准;须非空且不同于 objective',
+
+	'tool.search_plugins.description':
+		'在官方社区插件清单内按名称/作者/描述/id 检索。只返回少量结果(含作者、下载量、是否已装)。不是 Obsidian 官方授权的商店。整份清单不会进入上下文。',
+	'tool.search_plugins.param.query': '需求描述或插件名,例如「看板」或 calendar',
+
+	'tool.install_plugin.description':
+		'在用户确认后,为当前库安装官方清单内的社区插件。完整模式下载 GitHub release 三件套并尽力启用;若热启用失败必须说明文件已写入、请 Reload。商店保守模式(ecosystemWriteEnabled=false)只打开官方社区插件页,不写他人插件目录。禁止安装 ratel-vault 自己,禁止清单外 URL。Ratel 不是官方插件管理器。',
+	'tool.install_plugin.param.pluginId': '官方 community-plugins.json 中的插件 id',
 };

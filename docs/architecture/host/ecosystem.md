@@ -35,7 +35,7 @@ Obsidian 公开 Plugin API **没有** install / uninstall。社区插件不能�
 2. 热启用失败 → 告知用户 **Reload app without saving** 或到官方社区插件页启用；不得假装已启用。
 3. 不得为热启用去 hook 私有字段到崩溃。
 
-出站：社区清单与 GitHub release；仅用户发起的生态工具触发。域名与失败降级见待立 **ADR-018**。
+出站：社区清单与 GitHub release；仅用户发起的生态工具触发。域名与失败降级见 **[ADR-018](../../adr/2026-09-18-ecosystem-outbound.md)**。
 
 ---
 
@@ -145,7 +145,7 @@ Adapter：`validateEcosystemPath`、清单缓存、GitHub 下载、可选内部 
 
 | 期 | 内容 |
 |---|---|
-| 审核闸 | ADR-018；社区商店口径确认（未过审则本能力可只在自用/BRAT，或降级为「只推荐 + 打开官方安装页」） |
+| 审核闸 | [ADR-018](../../adr/2026-09-18-ecosystem-outbound.md)；`ecosystemWriteEnabled=false` 时只推荐 + 打开官方安装页 |
 | 寻找 | 清单缓存 + `search_plugins` |
 | 装卸 | 写盘 + 确认 + 备份；热启用尽力而为 |
 | 配置/回滚 | `configure_plugin` + 日志；与档案层合流 |
@@ -159,4 +159,4 @@ Adapter：`validateEcosystemPath`、清单缓存、GitHub 下载、可选内部 
 - [S-ECOSYSTEM](../../superpowers/specs/2026-08-20-ecosystem-management-design.md)
 - [plugin-profile](plugin-profile.md)
 - [capability-surface](../agent/capability-surface.md)
-- ADR-018（待立）
+- [ADR-018](../../adr/2026-09-18-ecosystem-outbound.md)
