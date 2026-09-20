@@ -3,9 +3,10 @@
 > **架构正文:** [docs/architecture/host/plugin-profile.md](../../architecture/host/plugin-profile.md)。改代码前以架构文档为准。
 
 > 日期: 2026-09-10
+> 修订: 2026-09-20 — 补「相对第一刀 / Skill 配置」；PP-08 物理墙提前到装卸闭环，档案产品仍后置。见 [S-ECOSYSTEM-CUT1](2026-09-20-ecosystem-first-cut-design.md)
 > 状态: Active
 > Spec ID: **S-PLUGIN-PROFILE**
-> 关联: [支柱 C](../../prd/ecosystem.md)、[PP-01～09 / EC-05～09](../../prd/requirements.md)、[S-ECOSYSTEM](2026-08-20-ecosystem-management-design.md)（安装与写入的手）、[ADR-009](../../adr/2026-07-06-skill-mechanism.md)、[ADR-012](../../adr/2026-07-23-skill-activation-claude-aligned.md)、ADR-018（生态出站，S-ECOSYSTEM 待立）
+> 关联: [支柱 C](../../prd/ecosystem.md)、[PP-01～09 / EC-05～09](../../prd/requirements.md)、[S-ECOSYSTEM](2026-08-20-ecosystem-management-design.md)（安装与写入的手）、[S-ECOSYSTEM-CUT1](2026-09-20-ecosystem-first-cut-design.md)（第一刀）、[ADR-009](../../adr/2026-07-06-skill-mechanism.md)、[ADR-012](../../adr/2026-07-23-skill-activation-claude-aligned.md)、ADR-018（生态出站，S-ECOSYSTEM 待立）
 
 ---
 
@@ -80,9 +81,23 @@
 
 ---
 
-## 7. 参考
+## 7. 相对第一刀 / Skill 配置
+
+本文仍是档案层唯一设计。第一刀**不交付** schema、识别草稿、示例档案、匹配工具、`configure_plugin`。
+
+相对本文提前落地的只有 **PP-08 禁令**（不是档案功能）：
+
+- Skill SOP **可以**教模型调用 S-ECOSYSTEM / CUT1 已交出的生态工具（同一确认闸）。
+- Skill 脚本 **不可以**写 `configDir` / 他人 `data.json`；不得注入生态 adapter。
+- 无档案时仍可探索、安装（本文 §4 已有）；第一刀不得声称「已按最佳实践配好」。
+- `ratel-config` 模式（SOP + 专用工具）可在第三刀复用到他人插件；第一刀不要为了它先做 `configure_plugin`。
+
+分期指针见 [S-ECOSYSTEM-CUT1](2026-09-20-ecosystem-first-cut-design.md) §5.2。不要另开一份平行的 Profile spec。
+
+## 8. 参考
 
 - 架构：[host/plugin-profile.md](../../architecture/host/plugin-profile.md)
 - [S-ECOSYSTEM](2026-08-20-ecosystem-management-design.md)
+- [S-ECOSYSTEM-CUT1](2026-09-20-ecosystem-first-cut-design.md)
 - [prd/ecosystem.md](../../prd/ecosystem.md)
 - 社区清单：https://github.com/obsidianmd/obsidian-releases

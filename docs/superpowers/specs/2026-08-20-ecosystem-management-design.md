@@ -4,9 +4,10 @@
 
 > 日期: 2026-08-20
 > 修订: 2026-09-10 — 产品按阶段对齐 [prd/ecosystem.md](../../prd/ecosystem.md)；执行层架构独立成文；EC-10 宿主能力诚实表述
+> 修订: 2026-09-20 — 补「相对第一刀」；热启用失败口径与 [S-ECOSYSTEM-CUT1](2026-09-20-ecosystem-first-cut-design.md) 对齐；文末分期不再作为施工顺序
 > 状态: Active
 > Spec ID: **S-ECOSYSTEM**
-> 关联: [支柱 C 生态管理](../../prd/ecosystem.md)、[EC-01 ~ EC-10](../../prd/requirements.md)、[S-PLUGIN-PROFILE](2026-09-10-plugin-profile-design.md)（配置档案）、[ADR-014](../../adr/2026-08-03-mcp-host-platform.md)(网络出站先例)、新 ADR-018(待立)
+> 关联: [支柱 C 生态管理](../../prd/ecosystem.md)、[EC-01 ~ EC-10](../../prd/requirements.md)、[S-PLUGIN-PROFILE](2026-09-10-plugin-profile-design.md)（配置档案）、[S-ECOSYSTEM-CUT1](2026-09-20-ecosystem-first-cut-design.md)（0.8.0 后第一份可演示交付）、[ADR-014](../../adr/2026-08-03-mcp-host-platform.md)(网络出站先例)、新 ADR-018(待立)
 
 ## 1. 背景
 
@@ -137,7 +138,7 @@ configDir（名字用户可自定义，启动期已注入）内路径归属：
 ### 4.7 错误处理
 
 - 下载/安装中断：清理半成品目录；无法清理时明确告知残留位置
-- 启用失败：回滚到变更前状态并告知原因
+- 热启用失败：保留已写入的三件套与启用清单（若已写），诚实说明尚未真正跑起来，并指路 Reload app without saving 或官方社区插件页；**不得**假装已启用。下载事务成功 ≠ 运行时已启用。此条覆盖 2026-08-20 旧稿「启用失败则回滚到变更前」（与 EC-02 / 架构正文冲突）。仅当写盘本身失败或半成品无法完成时才回滚/清理
 - 清单拉取失败：用缓存并标注数据日期；缓存不可用时明确说明无法探索，本地管理与回滚不受影响
 - data.json 写入失败：保证原文件未破坏；已破坏时自动恢复备份并告知
 - GitHub 限流（429）：明确错误信息 + 可重试提示
@@ -168,4 +169,17 @@ configDir（名字用户可自定义，启动期已注入）内路径归属：
 - [prd/ecosystem.md](../../prd/ecosystem.md)
 - [ADR-014: MCP Host 平台](../../adr/2026-08-03-mcp-host-platform.md)（opt-in 出站先例）
 - [obsidian-releases 社区清单](https://github.com/obsidianmd/obsidian-releases)
-- 分期：Phase 1 = 4.5/4.6 日志备份基建 + search/install/status；Phase 2 = update/configure/uninstall/restore + open_settings 官方定位
+- 分期：已被 [S-ECOSYSTEM-CUT1](2026-09-20-ecosystem-first-cut-design.md) 取代。旧稿 Phase 1 = 日志基建 + search/install/status、Phase 2 = update/configure/uninstall/restore **不再作为施工顺序**。第一刀 = 装卸闭环（含卸载/恢复）+ Skill 禁写 `configDir`；升级、点名配置、官方设置引导、档案产品后置
+
+## 7. 相对第一刀 / Skill 配置
+
+全量执行层仍是本文。**0.8.0 之后第一份可演示交付**不在本文重写一遍，见 [S-ECOSYSTEM-CUT1](2026-09-20-ecosystem-first-cut-design.md)。
+
+相对本文，第一刀是范围收窄加两处钉死，不是第二套生态模型：
+
+1. **工具：** 交 search / install / uninstall / status / list_changes / restore；**不交** `update_plugin`、`configure_plugin`。
+2. **日志/回滚：** 只服务本刀装/卸；字段形状仍用 §4.5。
+3. **热启用失败：** 以修订后的 §4.7 与 CUT1 为准（留盘说明），不以 2026-08-20 旧句为准。
+4. **Skill：** 自定义 Skill 可以教模型调上述工具（同一 `ask` 闸）；`run_skill_script` 必须物理拒绝整棵 `configDir`。配置档案与 `configure_plugin` 见 S-PLUGIN-PROFILE 的对应节，第一刀零档案产品。
+
+未登记 CUT1 + 合格 plan 之前，不得把本文八工具一次性施工，也不得用未登记的安装器 PR 倒逼本文。
