@@ -19,10 +19,11 @@
 
 | ID | 文件 | 状态 | 创建日期 | 备注 |
 |---|---|---|---|---|
-| S-ECOSYSTEM | [2026-08-20-ecosystem-management-design.md](specs/2026-08-20-ecosystem-management-design.md) | Active | 2026-08-20 | 支柱 C 执行层;ADR-018 已立;第一刀 plan P-ECOSYSTEM-1 |
+| S-ECOSYSTEM | [2026-08-20-ecosystem-management-design.md](specs/2026-08-20-ecosystem-management-design.md) | Active | 2026-08-20 | 支柱 C 执行层全量:对话寻找/安装/升级/卸载/点名配置;架构 [host/ecosystem.md](../architecture/host/ecosystem.md);无官方授权须降级;需 ADR-018;施工顺序以 CUT1 为准 |
+| S-ECOSYSTEM-CUT1 | [2026-09-20-ecosystem-first-cut-design.md](specs/2026-09-20-ecosystem-first-cut-design.md) | Active | 2026-09-20 | 0.8.0 后第一刀:商店内装卸闭环+Skill 禁写 configDir+审核开关;不交 configure/档案/升级;覆盖 S-ECOSYSTEM §4.7 旧「启用失败回滚」;ADR-018 与检索/安装骨架已合入 `v9` 供本机测;相对 CUT1 仍缺卸载等,不向 main 加功能 |
 | S-LLM-RETRY | [2026-09-09-llm-chat-retry.md](specs/2026-09-09-llm-chat-retry.md) | Active | 2026-09-09 | 策略随 0.7.1 发版;UI 见 S-LLM-RETRY-UI;MCP curl 不在范围 |
 | S-LLM-RETRY-UI | [2026-09-11-llm-retry-status-design.md](specs/2026-09-11-llm-retry-status-design.md) | Active | 2026-09-11 | 已合入 develop；打字行 connecting + 三条文案；与 S-LLM-RETRY 一并待归档 |
-| S-PLUGIN-PROFILE | [2026-09-10-plugin-profile-design.md](specs/2026-09-10-plugin-profile-design.md) | Active | 2026-09-10 | 社区插件配置档案:一份 schema 多份实例;架构正文 [architecture/host/plugin-profile.md](../architecture/host/plugin-profile.md);依赖 S-ECOSYSTEM 写入;plan 待写 |
+| S-PLUGIN-PROFILE | [2026-09-10-plugin-profile-design.md](specs/2026-09-10-plugin-profile-design.md) | Active | 2026-09-10 | 社区插件配置档案:一份 schema 多份实例;架构正文 [architecture/host/plugin-profile.md](../architecture/host/plugin-profile.md);写入依赖 S-ECOSYSTEM;第一刀只提前 PP-08 物理墙,档案产品后置;plan 待写 |
 | S-HOST-ACCESS | [2026-09-11-host-access-design.md](specs/2026-09-11-host-access-design.md) | Active | 2026-09-11 | 库外文件+宿主命令:设置总闸默认关,开后走安全/自动/危险且视为破坏性;解析 Skill 另开 spec |
 
 
@@ -32,7 +33,7 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
-| P-ECOSYSTEM-1 | [2026-09-18-ecosystem-first-slice.md](plans/2026-09-18-ecosystem-first-slice.md) | In Progress | S-ECOSYSTEM | 分支 `cursor/pillar-c-adr018-c2e0`;ADR-018 + Skill denylist + 检索/安装骨架 |
+| P-ECOSYSTEM-1 | [2026-09-18-ecosystem-first-slice.md](plans/2026-09-18-ecosystem-first-slice.md) | In Progress | S-ECOSYSTEM-CUT1 | 已合入 `v9`(来自 PR #5);ADR-018 + Skill denylist + 检索/安装骨架;对照 CUT1 仍冻结加功能 |
 | P-LLM-RETRY-UI | [2026-09-14-llm-retry-ui.md](plans/2026-09-14-llm-retry-ui.md) | Completed | S-LLM-RETRY-UI | 拣自 feat/p-llm-retry-ui 合入 develop；打字行 connecting + 三条文案 |
 
 ---
@@ -54,8 +55,8 @@
 
 1. **S-LLM-RETRY + S-LLM-RETRY-UI** — 策略与打字行均已落地,两份 spec 一并待归档
 2. 候选(无 spec,重启时新开):update_frontmatter / Write Gate / append_to_daily(S-EVOLUTION 写侧,见 archive/S-EVOLUTION/)
-3. S-ECOSYSTEM — P-ECOSYSTEM-1 进行中(ADR-018 + 第一刀骨架)
-4. S-PLUGIN-PROFILE — 配置档案底座(schema/规则/识别/示例)可与生态工具分期;写入依赖 S-ECOSYSTEM
+3. **S-ECOSYSTEM-CUT1**(差异化主打的第一刀:装卸闭环 + Skill denylist;口径以 CUT1 spec 为准;`v9` 已含 PR #5 骨架供本机测,不向 main 合入)
+4. S-ECOSYSTEM 余量(升级 / 点名配置 / 官方设置引导)与 S-PLUGIN-PROFILE 档案底座按 CUT1 第二～四刀;写入仍依赖通道 B,禁止第二套写盘
 5. 候选(无 spec):skill-script-sandbox 心跳用例 fake-timers 化 — 存量时序 flake(300ms 真定时器赛跑,P-VISION-1 审查期间实证 base/HEAD 均间歇失败)
 6. S-HOST-ACCESS — 库外访问总闸;不插队;文档解析另开 spec
 
