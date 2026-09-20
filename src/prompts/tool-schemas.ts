@@ -370,6 +370,26 @@ export const TOOL_SCHEMA_SKELETONS: Record<string, SchemaSkeleton> = {
 			required: ['action'],
 		},
 	},
+	search_plugins: {
+		name: 'search_plugins',
+		parameters: {
+			type: 'object',
+			properties: {
+				query: { type: 'string' },
+			},
+			required: ['query'],
+		},
+	},
+	install_plugin: {
+		name: 'install_plugin',
+		parameters: {
+			type: 'object',
+			properties: {
+				pluginId: { type: 'string' },
+			},
+			required: ['pluginId'],
+		},
+	},
 };
 
 export const ALL_TOOL_NAMES = [
@@ -385,4 +405,6 @@ export const ALL_TOOL_NAMES = [
 	'get_app_config',
 	'update_app_config',
 	'manage_goal',
+	'search_plugins',
+	'install_plugin',
 ];

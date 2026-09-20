@@ -20,7 +20,7 @@ export interface ToolPermissionSettings {
 }
 
 // 破坏性 / 高影响工具 — auto 档仍需逐次确认;update_app_config 一次可改多项应用配置,影响面大于单篇笔记
-const DESTRUCTIVE_TOOLS = new Set(['delete_note', 'forget_memory', 'update_app_config']);
+const DESTRUCTIVE_TOOLS = new Set(['delete_note', 'forget_memory', 'update_app_config', 'install_plugin']);
 
 /**
  * 破坏性 / 高影响工具 — auto 档仍需逐次确认；update_app_config 一次可改多项应用配置，影响面大于单篇笔记；MCP 一律视为破坏性。
