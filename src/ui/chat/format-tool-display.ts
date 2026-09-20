@@ -39,6 +39,8 @@ const TOOL_NAME_KEY: Record<string, StringKey> = {
 	get_app_config: 'tool.name.get_app_config',
 	update_app_config: 'tool.name.update_app_config',
 	run_skill_script: 'tool.name.run_skill_script',
+	search_plugins: 'tool.name.search_plugins',
+	install_plugin: 'tool.name.install_plugin',
 };
 
 /**
@@ -151,6 +153,16 @@ export function formatToolDisplayName(
 			const script = extractScriptName(obj.scriptPath);
 			const key = TOOL_NAME_KEY[name];
 			return script && key ? tNow(key, { script }) : name;
+		}
+		case 'search_plugins': {
+			const q = extractShort(obj.query);
+			const key = TOOL_NAME_KEY[name];
+			return q && key ? tNow(key, { query: q }) : name;
+		}
+		case 'install_plugin': {
+			const id = extractShort(obj.pluginId);
+			const key = TOOL_NAME_KEY[name];
+			return id && key ? tNow(key, { id }) : name;
 		}
 		default:
 			return name;

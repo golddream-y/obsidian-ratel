@@ -25,6 +25,11 @@ export interface VmSandboxRequest {
 	args: string[];
 	/** fs 白名单目录(绝对路径;通常 = [vaultRoot, skillDir]) */
 	allowedDirs: string[];
+	/**
+	 * fs 拒绝目录(绝对路径;ADR-018 / ADR-017 v1.2)。
+	 * 关键路径:allowedDirs 含 vault 根时仍必须挡住 configDir,否则脚本能写他人 data.json。
+	 */
+	deniedDirs?: string[];
 	/** 心跳回调 — 脚本 reportProgress() 触发,主线程软超时据此复位 */
 	onProgress?: (message: string) => void;
 	/** console 透传回调 */
@@ -36,12 +41,23 @@ export type VmSandboxResult =
 	| { ok: false; error: string; stack?: string };
 
 /**
- * fs 白名单校验:resolve 后必须落在某个 allowedDir 内,否则抛错。
+ * fs 白名单校验:resolve 后必须落在某个 allowedDir 内,且不得落在 deniedDirs 下。
  *
  * 关键路径:startsWith 必须补 path.sep,防 `/vault-evil` 误匹配 `/vault` 前缀。
+ * 关键路径(PP-08):deniedDirs 在白名单之后仍拦截 — vault 根是允许的,但 configDir 是其子树。
  */
-function resolveAllowed(p: string, allowedDirs: string[], cwd: string): string {
+function resolveAllowed(
+	p: string,
+	allowedDirs: string[],
+	cwd: string,
+	deniedDirs: string[],
+): string {
 	const abs = nodePath.resolve(cwd, p);
+	for (const dir of deniedDirs) {
+		if (abs === dir || abs.startsWith(dir + nodePath.sep)) {
+			throw new Error(`fs 访问被拒绝(禁止访问配置目录): ${p}`);
+		}
+	}
 	for (const dir of allowedDirs) {
 		if (abs === dir || abs.startsWith(dir + nodePath.sep)) return abs;
 	}
@@ -49,8 +65,12 @@ function resolveAllowed(p: string, allowedDirs: string[], cwd: string): string {
 }
 
 /** 受限 fs — 只暴露同步 API,全部过白名单校验;写操作自动建父目录降低脚本样板 */
-function createRestrictedFs(allowedDirs: string[], cwd: string): Record<string, unknown> {
-	const guard = (p: string): string => resolveAllowed(p, allowedDirs, cwd);
+function createRestrictedFs(
+	allowedDirs: string[],
+	cwd: string,
+	deniedDirs: string[],
+): Record<string, unknown> {
+	const guard = (p: string): string => resolveAllowed(p, allowedDirs, cwd, deniedDirs);
 	const guardWrite = (p: string): string => {
 		const abs = guard(p);
 		nodeFs.mkdirSync(nodePath.dirname(abs), { recursive: true });
@@ -118,6 +138,7 @@ export function runInVmSandbox(req: VmSandboxRequest): VmSandboxResult {
 	// 关键路径:入口统一 normalize(每项 nodePath.resolve)— 带尾斜杠的 allowedDir 会让 dir + sep
 	// 拼出双斜杠,startsWith 永假,fs 白名单静默全拒;空数组不抛错(语义 = fs 全拒,T3 测试依赖此场景)
 	const allowedDirs = req.allowedDirs.map((d) => nodePath.resolve(d));
+	const deniedDirs = (req.deniedDirs ?? []).map((d) => nodePath.resolve(d));
 	const cwd = allowedDirs[0] ?? process.cwd();
 	const sandbox: Record<string, unknown> = {
 		args: req.args,
@@ -128,7 +149,7 @@ export function runInVmSandbox(req: VmSandboxRequest): VmSandboxResult {
 			warn: (...a: unknown[]) => req.onLog?.('warn', a.map(String).join(' ')),
 			error: (...a: unknown[]) => req.onLog?.('error', a.map(String).join(' ')),
 		},
-		fs: createRestrictedFs(allowedDirs, cwd),
+		fs: createRestrictedFs(allowedDirs, cwd, deniedDirs),
 		path: {
 			join: (...parts: string[]) => nodePath.join(...parts),
 			resolve: (...parts: string[]) => nodePath.resolve(...parts),

@@ -681,6 +681,7 @@ graph LR
 | ADR-013 图谱检索 | `docs/adr/2026-08-03-graph-retrieval-minimize-human-curation.md` | 少靠人管理:向量保底 + 机会性用边 + 双通道确认 |
 | ADR-014 MCP 平台 | `docs/adr/2026-08-03-mcp-host-platform.md` | 平台级 MCP Host,不自建 websearch;双 transport |
 | ADR-015 能力池 | `docs/adr/2026-08-03-capability-pool.md` | 统一意图选择(能力池),按 kind 路由执行链路 |
+| ADR-018 生态出站 | `docs/adr/2026-09-18-ecosystem-outbound.md` | 官方清单 + GitHub release;第三条网;商店保守开关 |
 | 产品总纲 | `docs/prd/overview.md` | 产品定位与分册入口 |
 | S-PLUGIN-PROFILE | `docs/superpowers/specs/2026-09-10-plugin-profile-design.md` | 插件配置档案需求;正文 [host/plugin-profile.md](host/plugin-profile.md) |
 | S-ECOSYSTEM | `docs/superpowers/specs/2026-08-20-ecosystem-management-design.md` | 对话装卸执行层;正文 [host/ecosystem.md](host/ecosystem.md) |

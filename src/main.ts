@@ -7,7 +7,7 @@
 
 import { EMBEDDING_WORKER_CODE } from '@ratel/embedding-worker-code';
 import { BUILTIN_SKILLS, APP_VERSION } from '@ratel/builtin-skills-code';
-import { FileSystemAdapter, Notice, Plugin, TFile } from 'obsidian';
+import { FileSystemAdapter, Notice, Plugin, TFile, apiVersion, requestUrl } from 'obsidian';
 import fs, { readdirSync } from 'node:fs';
 import path from 'node:path';
 import { type RatelVaultSettings, DEFAULT_SETTINGS, RatelVaultSettingTab, normalizeContextLengthSettings } from './settings';
@@ -155,6 +155,12 @@ import {
 	createManageGoalTool,
 	type ManageGoalPrompts,
 } from './tools/manage-goal';
+import { createSearchPluginsTool } from './tools/search-plugins';
+import { createInstallPluginTool } from './tools/install-plugin';
+import { EcosystemRegistry } from './adapters/ecosystem-registry';
+import { AdapterEcosystemIo } from './adapters/ecosystem-vault';
+import { installCommunityPlugin } from './adapters/ecosystem-install';
+import { openExternalUrl } from './utils/open-external-url';
 import { showGoalActionConfirmModal } from './ui/goal/GoalActionConfirmModal';
 import {
 	applyGoalTerminalChoice,
@@ -220,6 +226,7 @@ export default class RatelVaultPlugin extends Plugin {
 	// 关键路径:W4 — Indexer subagent 实例,供 Librarian 等子代理调用。
 	indexer!: Indexer;
 	toolSessionGrants = new ToolPermissionSessionGrants();
+	private ecosystemRegistry!: EcosystemRegistry;
 	/** 图片附件外置存储(S-VISION v1.3)— onload 装配,目录 <pluginDir>/attachments;会话删除时整目录清走 */
 	attachments!: AttachmentStore;
 	/** 崩溃面包屑（S-RENDER-STABILITY A）— onload 装配；可选链避免中途失败 */
@@ -293,6 +300,10 @@ export default class RatelVaultPlugin extends Plugin {
 		// 关键路径:pluginDir / vaultBase 已在上方构造 Persistence 时解析。
 		// 注入实际 configDir 名,供 path-safety 拦截配置目录访问(兼容用户自定义 configDir)。
 		setConfigDir(this.app.vault.configDir);
+		this.ecosystemRegistry = new EcosystemRegistry(pluginDir, async (url) => {
+			const response = await requestUrl({ url, method: 'GET', throw: false });
+			return { status: response.status, text: response.text };
+		});
 		this.indexDir = path.join(pluginDir, '.index');
 		// 关键路径:启动期 vectraStore 可能尚无 embeddings(本地模型在 onLayoutReady 才下载),
 		// 因此只做目录占位;InlineWorker 场景下会在模型就绪后重新创建带 embeddings 的 store。
@@ -601,6 +612,7 @@ export default class RatelVaultPlugin extends Plugin {
 				// 关键路径:getter 现读 settings,设置面板改 skillScriptTimeout 立即生效
 				timeoutMs: () => this.settings.skillScriptTimeout,
 				vaultRoot: () => this.vault.getRootDir(),
+				configDirName: () => this.app.vault.configDir,
 				onSoftTimeout: () => new Notice(tNow('skill.script.softTimeoutNotice')),
 				onCircuitBreak: (scriptId) => new Notice(tNow('skill.script.circuitNotice', { id: scriptId })),
 			}),
@@ -681,6 +693,41 @@ export default class RatelVaultPlugin extends Plugin {
 				() => this.settings.goalMaxRounds,
 				() => this.lastAskUserText ?? '',
 			),
+		);
+
+		const listInstalledPluginIds = (): Set<string> => {
+			try {
+				const dir = path.join(this.vault.getRootDir(), this.app.vault.configDir, 'plugins');
+				return new Set(readdirSync(dir).filter((name) => name && !name.startsWith('.')));
+			} catch {
+				return new Set();
+			}
+		};
+
+		this.tools.register(
+			createSearchPluginsTool(toolDefMap.get('search_plugins')!, {
+				registry: this.ecosystemRegistry,
+				installedIds: () => listInstalledPluginIds(),
+			}),
+		);
+		this.tools.register(
+			createInstallPluginTool(toolDefMap.get('install_plugin')!, {
+				run: async (pluginId) => {
+					const catalog = await this.ecosystemRegistry.ensureCatalog();
+					const catalogIds = new Set(catalog.plugins.map((p) => p.id));
+					const installedIds = listInstalledPluginIds();
+					const io = new AdapterEcosystemIo(this.app.vault.adapter, () => ({ catalogIds, installedIds }));
+					return installCommunityPlugin(pluginId, {
+						registry: this.ecosystemRegistry,
+						io,
+						configDir: this.app.vault.configDir,
+						writeEnabled: this.settings.ecosystemWriteEnabled,
+						apiVersion,
+						openOfficialPage: (uri) => openExternalUrl(uri),
+						appLike: this.app,
+					});
+				},
+			}),
 		);
 
 		// ==================== MCP Host（ADR-014）====================
