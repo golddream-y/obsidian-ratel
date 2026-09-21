@@ -1,6 +1,6 @@
 # 支柱 C 第一刀 Implementation Plan
 
-> **范围已变（2026-09-21）：** 需求源改为 [S-ECOSYSTEM](../specs/2026-08-20-ecosystem-management-design.md) + [S-PLUGIN-PROFILE](../specs/2026-09-10-plugin-profile-design.md)。CUT1 **Superseded**。本 plan 已落地部分（ADR-018 / denylist / search / install）仍是基线；**不要再按「冻结加功能」执行**，缺的卸/配/档案另写后续 plan。
+> **范围已变（2026-09-21）：** 需求源改为 [S-ECOSYSTEM](../specs/2026-08-20-ecosystem-management-design.md) + [S-PLUGIN-PROFILE](../specs/2026-09-10-plugin-profile-design.md)。CUT1 **Superseded**。本 plan 已落地部分（ADR-018 / denylist / search / install）仍是基线；**不要再按「冻结加功能」执行**，缺的卸/升/配/档案另写后续 plan。
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

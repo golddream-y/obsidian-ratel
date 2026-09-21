@@ -19,7 +19,7 @@
 
 | ID | 文件 | 状态 | 创建日期 | 备注 |
 |---|---|---|---|---|
-| S-ECOSYSTEM | [2026-08-20-ecosystem-management-design.md](specs/2026-08-20-ecosystem-management-design.md) | Active | 2026-08-20 | 2026-09-21「装+配」一次交付:search/install/卸/status/日志/回滚/`configure_plugin`;ADR-018 已立;升级与官方设置引导不做;架构 [host/ecosystem.md](../architecture/host/ecosystem.md) |
+| S-ECOSYSTEM | [2026-08-20-ecosystem-management-design.md](specs/2026-08-20-ecosystem-management-design.md) | Active | 2026-08-20 | 2026-09-21 社区插件底座:search/install/**update**/卸/status/日志/回滚/`configure_plugin`;ADR-018 已立;EC-09 官方设置引导不做;架构 [host/ecosystem.md](../architecture/host/ecosystem.md) |
 | S-LLM-RETRY | [2026-09-09-llm-chat-retry.md](specs/2026-09-09-llm-chat-retry.md) | Active | 2026-09-09 | 策略随 0.7.1 发版;UI 见 S-LLM-RETRY-UI;MCP curl 不在范围 |
 | S-LLM-RETRY-UI | [2026-09-11-llm-retry-status-design.md](specs/2026-09-11-llm-retry-status-design.md) | Active | 2026-09-11 | 已合入 develop；打字行 connecting + 三条文案；与 S-LLM-RETRY 一并待归档 |
 | S-PLUGIN-PROFILE | [2026-09-10-plugin-profile-design.md](specs/2026-09-10-plugin-profile-design.md) | Active | 2026-09-10 | 2026-09-21 与执行层同交付:schema+示例+匹配+草稿;写入硬依赖 `configure_plugin`;架构 [host/plugin-profile.md](../architecture/host/plugin-profile.md) |
@@ -32,7 +32,7 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
-| P-ECOSYSTEM-1 | [2026-09-18-ecosystem-first-slice.md](plans/2026-09-18-ecosystem-first-slice.md) | In Progress | S-ECOSYSTEM | 已合入 `v9`;ADR-018 + denylist + search/install。CUT1 已取代;后续按母 spec 补卸/配/日志,不再冻结加功能 |
+| P-ECOSYSTEM-1 | [2026-09-18-ecosystem-first-slice.md](plans/2026-09-18-ecosystem-first-slice.md) | In Progress | S-ECOSYSTEM | 已合入 `v9`;ADR-018 + denylist + search/install。CUT1 已取代;后续按母 spec 补卸/升/配/日志 |
 | P-LLM-RETRY-UI | [2026-09-14-llm-retry-ui.md](plans/2026-09-14-llm-retry-ui.md) | Completed | S-LLM-RETRY-UI | 拣自 feat/p-llm-retry-ui 合入 develop；打字行 connecting + 三条文案 |
 
 ---
@@ -54,7 +54,7 @@
 
 1. **S-LLM-RETRY + S-LLM-RETRY-UI** — 策略与打字行均已落地,两份 spec 一并待归档
 2. 候选(无 spec,重启时新开):update_frontmatter / Write Gate / append_to_daily(S-EVOLUTION 写侧,见 archive/S-EVOLUTION/)
-3. **S-ECOSYSTEM + S-PLUGIN-PROFILE**（装+配一次交付;v9 已有 search/install 基线;补卸/配/档案;升级不做）
+3. **S-ECOSYSTEM + S-PLUGIN-PROFILE**（社区插件底座一次交付;含 EC-03 更新保配置;v9 已有 search/install;EC-09 不做）
 4. 候选(无 spec):skill-script-sandbox 心跳用例 fake-timers 化 — 存量时序 flake(300ms 真定时器赛跑,P-VISION-1 审查期间实证 base/HEAD 均间歇失败)
 5. S-HOST-ACCESS — 库外访问总闸;不插队;文档解析另开 spec
 
