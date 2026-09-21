@@ -4,7 +4,7 @@
 
 > 日期: 2026-09-10
 > 修订: 2026-09-20 — PP-08 墙曾随 CUT1 提前；档案产品后置
-> 修订: **2026-09-21 — 与 S-ECOSYSTEM「装 + 配」一次交付对齐。** 本交付交出 schema、写作规则、识别草稿、恰好一份示例、只读匹配、可选 `sopSkill`。写入仍只走 `configure_plugin`。CUT1 分期作废。
+> 修订: **2026-09-21 — 与 S-ECOSYSTEM 社区插件底座同交付。** 本交付交出 schema、写作规则、识别草稿、恰好一份示例、只读匹配、可选 `sopSkill`。写入仍只走 `configure_plugin`。已装版本不够可**建议** `update_plugin`，档案层自己不写盘。CUT1 分期作废。
 > 状态: Active
 > Spec ID: **S-PLUGIN-PROFILE**
 > 关联: [支柱 C](../../prd/ecosystem.md)、[PP-01～09](../../prd/requirements.md)、[S-ECOSYSTEM](2026-08-20-ecosystem-management-design.md)（**写入硬依赖**）、[ADR-009](../../adr/2026-07-06-skill-mechanism.md)、[ADR-012](../../adr/2026-07-23-skill-activation-claude-aligned.md)、[ADR-018](../../adr/2026-09-18-ecosystem-outbound.md)
@@ -18,7 +18,7 @@
 本子系统把「这个开源插件该怎么配」做成**可校验的档案**，与「怎么装、怎么写盘」拆开：
 
 - **知识层（本文）：** 一份格式契约 + 多份实例 + 识别草稿 + 匹配。
-- **执行层（S-ECOSYSTEM）：** 安装、点名写入、确认、备份、日志。
+- **执行层（S-ECOSYSTEM）：** 寻找、安装、更新、卸载、点名写入、确认、备份、日志。
 
 Skill 仍只做 SOP（教模型何时调哪套 preset / 哪个工具）。真读写永远走工具。`ratel-config` 的「SOP + 专用工具」可复用到他人插件，白名单来自档案允许 key 减去 `forbid`。
 
@@ -30,7 +30,7 @@ Skill 仍只做 SOP（教模型何时调哪套 preset / 哪个工具）。真读
 
 1. **PP-01 / PP-02：** 全库唯一 Profile schema；档案绑定商店 `pluginId`，清单对不上则不能据此安装。
 2. **PP-03 / PP-04：** 写作规则可产出合法档案；识别器从已装插件生成草稿，默认不生效。
-3. **PP-05～07：** 按意图或 pluginId 匹配 preset；未装则走 `install_plugin`；写入只应用选中 key 子集，经 `configure_plugin`。
+3. **PP-05～07：** 按意图或 pluginId 匹配 preset；未装则走 `install_plugin`；已装版本不满足 range 则建议 `update_plugin`（用户确认后）；写入只应用选中 key 子集，经 `configure_plugin`。
 4. **PP-08：** 禁止脚本写他人配置（执行层 denylist 已在 v9；本文不得再开脚本写盘）。
 5. **PP-09：** 底座含 schema、规则、识别草稿、**恰好一份**示例档案（建议 Calendar「周一开始」，若该插件已不在清单则换一个仍在清单内的插件，spec 不锁死 id）。
 6. 社区作者可以：手写档案（校验后启用）+ 可选同名 SOP Skill。没有 `configure_plugin` 不得声称配置 Skill 已可执行。
@@ -45,7 +45,7 @@ Skill 仍只做 SOP（教模型何时调哪套 preset / 哪个工具）。真读
 - 替代通道 B、确认弹窗、`EcosystemChange`。
 - 商店外 `install.source`；`pluginId === ratel-vault`。
 - 密钥代填。
-- 升级保配置（EC-03）— 属 S-ECOSYSTEM 后续，档案的 `pluginVersionRange` 只用于**拒绝或确认后仍写**，不触发升级工具。
+- 档案层自己执行升级。`pluginVersionRange` 不够时只**建议**执行层 `update_plugin`；用户拒绝则默认不 `configure`，强制写入须 `needsConfirm`。
 
 ---
 
@@ -53,7 +53,7 @@ Skill 仍只做 SOP（教模型何时调哪套 preset / 哪个工具）。真读
 
 | 方向 | 内容 |
 |---|---|
-| **硬依赖 S-ECOSYSTEM** | 消费写入必须调用已落地的 `configure_plugin`；未装先 `install_plugin`。没有这两样，本文只允许加载/匹配/展示预览，**验收不算通过** |
+| **硬依赖 S-ECOSYSTEM** | 消费写入必须调用已落地的 `configure_plugin`；未装先 `install_plugin`；版本不够可先 `update_plugin`。没有 configure/install，本文只允许加载/匹配/展示预览，**验收不算通过** |
 | 软依赖商店缓存 | `pluginId` 校验用 ADR-018 清单；缓存未就绪时档案可加载为 `unverifiedStoreId`，**不得**据此安装 |
 | 已有 Skill 机制 | `sopSkill` 只 `activate_skill`；不改加载协议 |
 | 不依赖 S-HOST-ACCESS | 出库闸不放宽脚本 |
@@ -237,10 +237,15 @@ interface LoadReport {
 意图 → match_plugin_profiles
      → 展示 hit + 展开后 patch 预览
      → 未装且用户确认 → install_plugin（仅 community-store）
-     → 已装版本不满足 pluginVersionRange → 警告，默认不写；用户强制则 needsConfirm
+     → 已装版本不满足 pluginVersionRange
+          → 默认不 configure；向用户展示 range 与已装 version
+          → 用户同意升级 → update_plugin（执行层保 data.json）→ 再检查 range
+          → 用户拒绝升级且仍要写 → needsConfirm 后才 configure
      → 若 sopSkill 存在且用户未拒绝说明 → activate_skill（只注入，不写盘）
      → configure_plugin({ pluginId, patch: 展开后的 key 子集 })
 ```
+
+档案层**不得**自己下载三件套或改 `data.json`。`update_plugin` 失败则停止，不得退回用 install 覆盖。
 
 展开规则：
 
@@ -287,7 +292,7 @@ plugin-profiles/          # builtin 示例 + AUTHORING.md
 | `list_plugin_profiles` | 只读 | 无 | `{ profiles: [{ id, pluginId, pluginName, source, enabled, presets: [{ id, when }] }] }`；不含 draft / unknownPluginId |
 | `match_plugin_profiles` | 只读 | `utterance?: string`；`pluginId?: string`；`tags?: string[]`。至少一项非空 | `{ hits: [{ profileId, pluginId, presetId, score, reasons, patchPreview }] }`；`patchPreview` 已按 §10 展开（仍未写盘） |
 | `draft_plugin_profile` | ask | `pluginId: string`；`dest?: "vault"\|"global"`（默认 vault） | `{ path, draft: true }`。已装才能扫 |
-| `install_plugin` / `configure_plugin` | ask | **S-ECOSYSTEM 实现** | 见该 spec §5.11 |
+| `install_plugin` / `update_plugin` / `configure_plugin` | ask | **S-ECOSYSTEM 实现** | 见该 spec §5.11 |
 
 只读工具进同一 ToolRegistry。`match` 不得调用 `configure_plugin`。
 
@@ -391,6 +396,7 @@ presets:
 | P-E2 | 新 key 标 needsConfirm |
 | P-D1 | draft 工具只写 `.draft.yaml` 或 `enabled: false`；不调 configure/install |
 | P-X1 | 无档案时执行层点名配置仍可用；match 空不得声称已按档案配好 |
+| P-X2 | versionMismatch：不自动 update；建议 `update_plugin` 后才 configure |
 
 合流验收（需 S-ECOSYSTEM 工具）：§12 第 5 条。
 
