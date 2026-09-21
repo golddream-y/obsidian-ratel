@@ -5,7 +5,7 @@
 > 日期: 2026-08-20
 > 修订: 2026-09-10 — 产品按阶段对齐 [prd/ecosystem.md](../../prd/ecosystem.md)
 > 修订: 2026-09-20 — 热启用失败留盘；CUT1 曾收窄施工范围
-> 修订: **2026-09-21 — 社区插件底座一次交付。** [S-ECOSYSTEM-CUT1](../archive/S-ECOSYSTEM-CUT1/2026-09-20-ecosystem-first-cut-design.md) **Superseded**。含探索 / 装 / **升（EC-03）** / 卸 / 点名配 / 日志回滚。官方核心设置引导（EC-09）仍非本交付。
+> 修订: **2026-09-21 — 社区插件底座一次交付。** [S-ECOSYSTEM-CUT1](../archive/S-ECOSYSTEM-CUT1/2026-09-20-ecosystem-first-cut-design.md) **Superseded**。含探索 / 装 / **升（EC-03）** / 卸 / 点名配 / 日志回滚。官方核心设置引导（EC-09）仍非本交付。作者 SOP 文档钉 `plugin-profiles/SKILL-AUTHORING.md`。
 > 状态: Active
 > Spec ID: **S-ECOSYSTEM**
 > 关联: [支柱 C](../../prd/ecosystem.md)、[EC-01～10](../../prd/requirements.md)、[S-PLUGIN-PROFILE](2026-09-10-plugin-profile-design.md)（档案；写入硬依赖本文 `configure_plugin`）、[ADR-014](../../adr/2026-08-03-mcp-host-platform.md)、[ADR-017](../../adr/2026-08-19-skill-script-sandbox-worker-vm.md)、[ADR-018](../../adr/2026-09-18-ecosystem-outbound.md)、[S-HOST-ACCESS](2026-09-11-host-access-design.md)（不得放宽沙箱）
@@ -226,7 +226,7 @@
 
 **禁止：** 脚本写 configDir；脚本当工具运行时；笔记工具 / MCP 默认接通道 B；只靠 prompt「不要写配置目录」。
 
-作者文档（实现期落 `docs/` 或 user-guide 一节，本 spec 钉内容）：列出本交付 **8** 工具名、权限、禁止脚本写配置、示例 SOP 骨架（看板安装 + 更新保配置 + 若有档案则配一周始）。**不**把生态 adapter API 暴露给 Skill。
+作者文档（实现期落 `plugin-profiles/SKILL-AUTHORING.md`，与档案 `AUTHORING.md` 并列；**不**新开第三份 spec）：列出本交付 **8** 个生态工具 + **3** 个档案工具的名字与权限、禁止脚本写配置、示例 SOP 骨架（寻找 → 安装 → 更新保配置 → 有档案则 match 再 configure；version 不够先 `update_plugin`）。**不**把生态 adapter API 暴露给 Skill。builtin 示例 Skill 必须遵守同一份骨架。
 
 ### 5.10 用户可见验收（完整通道）
 
@@ -414,6 +414,7 @@ Engine / `src/core` 不 `import 'obsidian'`。HTTP 只在主线程 adapter。`sr
 | 升且保住设置 | `update_plugin` | **纳入** |
 | 点名改设置 | `configure_plugin` | 有 |
 | 按档案改设置 | Profile 匹配 → 同上 | 见 S-PLUGIN-PROFILE |
+| 别人写装/配 Skill | SOP 只调工具；`SKILL-AUTHORING.md` + builtin 示例 | 有（不单开 marketplace spec） |
 | 卸 | `uninstall_plugin` | 有 |
 | 查/撤 | `list_ecosystem_changes` / `restore_backup` | 有 |
 | 脚本偷改配置 | denylist | v9 已有 |

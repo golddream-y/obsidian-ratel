@@ -4,7 +4,7 @@
 
 > 日期: 2026-09-10
 > 修订: 2026-09-20 — PP-08 墙曾随 CUT1 提前；档案产品后置
-> 修订: **2026-09-21 — 与 S-ECOSYSTEM 社区插件底座同交付。** 本交付交出 schema、写作规则、识别草稿、恰好一份示例、只读匹配、可选 `sopSkill`。写入仍只走 `configure_plugin`。已装版本不够可**建议** `update_plugin`，档案层自己不写盘。CUT1 分期作废。
+> 修订: **2026-09-21 — 与 S-ECOSYSTEM 社区插件底座同交付。** 本交付交出 schema、写作规则、识别草稿、恰好一份示例、只读匹配、可选 `sopSkill`。写入仍只走 `configure_plugin`。已装版本不够可**建议** `update_plugin`，档案层自己不写盘。CUT1 分期作废。list/match 出参含 `sopSkill` / `pluginVersionRange` / `needsConfirm`；draft 的 preset patch 必须为空。
 > 状态: Active
 > Spec ID: **S-PLUGIN-PROFILE**
 > 关联: [支柱 C](../../prd/ecosystem.md)、[PP-01～09](../../prd/requirements.md)、[S-ECOSYSTEM](2026-08-20-ecosystem-management-design.md)（**写入硬依赖**）、[ADR-009](../../adr/2026-07-06-skill-mechanism.md)、[ADR-012](../../adr/2026-07-23-skill-activation-claude-aligned.md)、[ADR-018](../../adr/2026-09-18-ecosystem-outbound.md)
@@ -208,7 +208,7 @@ interface LoadReport {
 
 输入：已装 `manifest.json` + `data.json`（只读，走通道 B 只读或等效；**禁止写入该插件目录**）。
 
-输出：draft：`pluginId` / `pluginName` / `pluginVersionRange`（如 `>=` 当前版本）；`forbid` 启发式 `/token|secret|password|apiKey|webhook|cookie/i`；`presets` 先空壳 `default` + `when: 待作者填写` + 空 patch。现网值可作注释快照，**不得**当已启用 preset 外发。
+输出：draft：`pluginId` / `pluginName` / `pluginVersionRange`（如 `>=` 当前版本）；`forbid` 启发式 `/token|secret|password|apiKey|webhook|cookie/i`；`presets` 先空壳 `id: default` + `when: 待作者填写` + **空 patch**。现网值只允许写在 YAML 注释里，**不得**写进 `patch`（即使 `enabled: false`）。
 
 工具 `draft_plugin_profile`：默认 ask；只写 global 或 vault 的 draft 路径。识别器**禁止**调用 `configure_plugin` / `install_plugin`。
 
@@ -289,8 +289,8 @@ plugin-profiles/          # builtin 示例 + AUTHORING.md
 
 | 工具 | 权限 | 入参 | 出参 |
 |---|---|---|---|
-| `list_plugin_profiles` | 只读 | 无 | `{ profiles: [{ id, pluginId, pluginName, source, enabled, presets: [{ id, when }] }] }`；不含 draft / unknownPluginId |
-| `match_plugin_profiles` | 只读 | `utterance?: string`；`pluginId?: string`；`tags?: string[]`。至少一项非空 | `{ hits: [{ profileId, pluginId, presetId, score, reasons, patchPreview }] }`；`patchPreview` 已按 §10 展开（仍未写盘） |
+| `list_plugin_profiles` | 只读 | 无 | `{ profiles: [{ id, pluginId, pluginName, source, enabled, sopSkill?, pluginVersionRange, presets: [{ id, when }] }] }`；不含 draft / unknownPluginId |
+| `match_plugin_profiles` | 只读 | `utterance?: string`；`pluginId?: string`；`tags?: string[]`。至少一项非空 | `{ hits: [{ profileId, pluginId, presetId, score, reasons, patchPreview, needsConfirm, sopSkill?, pluginVersionRange }] }`；`patchPreview` 已按 §10 展开（仍未写盘）。**不**在本工具内调 install/update/configure；versionMismatch 由调用方对照 `get_plugin_status.version` 与 `pluginVersionRange` 后走 SOP |
 | `draft_plugin_profile` | ask | `pluginId: string`；`dest?: "vault"\|"global"`（默认 vault） | `{ path, draft: true }`。已装才能扫 |
 | `install_plugin` / `update_plugin` / `configure_plugin` | ask | **S-ECOSYSTEM 实现** | 见该 spec §5.11 |
 
