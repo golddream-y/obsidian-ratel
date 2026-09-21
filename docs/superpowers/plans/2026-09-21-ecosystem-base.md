@@ -1111,6 +1111,25 @@ it('update - 新 release 无 styles.css - 旧 styles.css 仍在', async () => {
 	await updateCommunityPlugin('calendar', makeDeps(pluginDir, http(), io, true)); // http() 已 404 styles
 	expect(await io.readText('.obsidian/plugins/calendar/styles.css')).toBe('OLDCSS');
 });
+
+it('update - writeBinary 抛错 - 整目录从备份恢复且 data.json 仍是 seed', async () => {
+	const io = new MemoryEcosystemIo(() => ({ catalogIds: new Set(['calendar']), installedIds: new Set(['calendar']) }));
+	await seedComplete(io, '1.0.0');
+	const orig = io.writeBinary.bind(io);
+	io.writeBinary = async () => { throw new Error('boom'); };
+	await expect(updateCommunityPlugin('calendar', makeDeps(pluginDir, http(), io, true))).rejects.toThrow();
+	io.writeBinary = orig;
+	expect(await io.readText('.obsidian/plugins/calendar/data.json')).toBe('{"weekStart":0,"token":"keep"}');
+	expect(await io.readText('.obsidian/plugins/calendar/main.js')).toBe('OLDJS');
+});
+
+it('update - 无法点分段比较且 confirmIncomparable 拒绝 - 零写', async () => {
+	const io = new MemoryEcosystemIo(() => ({ catalogIds: new Set(['calendar']), installedIds: new Set(['calendar']) }));
+	await seedComplete(io, '1.0.0-beta');
+	const deps = { ...makeDeps(pluginDir, http(), io, true), confirmIncomparable: async () => false };
+	await expect(updateCommunityPlugin('calendar', deps)).rejects.toThrow();
+	expect(await io.readText('.obsidian/plugins/calendar/main.js')).toBe('OLDJS');
+});
 ```
 
 `makeDeps` 与 install 测试 deps 同形，外加 `pluginDir` 供备份。写入失败恢复用例：包装 `io.writeBinary` 第一次抛错，断言 `data.json` 仍是 seed 值。
@@ -1314,7 +1333,9 @@ export interface UpdateResult {
 	message: string;
 }
 
-export type UpdateDeps = InstallDeps;
+export type UpdateDeps = InstallDeps & {
+	confirmIncomparable?: (vers: { local: string; catalog: string }) => Promise<boolean>;
+};
 
 export async function updateCommunityPlugin(pluginId: string, deps: UpdateDeps): Promise<UpdateResult> {
 	if (pluginId === RATEL_PLUGIN_ID) {
@@ -1367,6 +1388,10 @@ export async function updateCommunityPlugin(pluginId: string, deps: UpdateDeps):
 		}
 		if (cmp !== null && cmp < 0) {
 			throw new Error(tNow('error.ecosystem.noDowngrade', { local: localMan.version ?? '', catalog: resolved.version }));
+		}
+		if (cmp === null && (localMan.version ?? '') !== resolved.version) {
+			const ok = deps.confirmIncomparable ? await deps.confirmIncomparable({ local: localMan.version ?? '', catalog: resolved.version }) : true;
+			if (!ok) throw new Error(tNow('error.ecosystem.updateCancelled'));
 		}
 		let dataBefore = '';
 		try { dataBefore = await deps.io.readText(`${pluginRel}/data.json`); } catch { dataBefore = ''; }
@@ -1543,6 +1568,16 @@ describe('configure', () => {
 		await io.writeText('.obsidian/plugins/calendar/manifest.json', '{"id":"calendar"}');
 		await io.writeText('.obsidian/plugins/calendar/data.json', '{}');
 		await expect(applyPluginData('calendar', { weekStart: 1 }, { io, pluginDir, configDir: '.obsidian', writeEnabled: true, confirmedNewKeys: [] })).rejects.toThrow();
+	});
+	it('apply - rename 失败 - 原 JSON 完好', async () => {
+		const io = ioCal();
+		await io.writeText('.obsidian/plugins/calendar/manifest.json', '{"id":"calendar"}');
+		await io.writeText('.obsidian/plugins/calendar/data.json', JSON.stringify({ weekStart: 0 }));
+		const orig = io.rename.bind(io);
+		io.rename = async () => { throw new Error('rename-fail'); };
+		await expect(applyPluginData('calendar', { weekStart: 1 }, { io, pluginDir, configDir: '.obsidian', writeEnabled: true, confirmedNewKeys: ['weekStart'] })).rejects.toThrow();
+		io.rename = orig;
+		expect(JSON.parse(await io.readText('.obsidian/plugins/calendar/data.json'))).toEqual({ weekStart: 0 });
 	});
 	it('configure 工具 - 缺省 op 走 inspect', async () => {
 		const io = ioCal();
@@ -1885,6 +1920,24 @@ describe('restoreEcosystemBackup', () => {
 		setConfigDir('.obsidian');
 		pluginDir = mkdtempSync(path.join(tmpdir(), 'ratel-rs-'));
 	});
+	it('restore - 卸载后还原目录与启用清单', async () => {
+		const io = new MemoryEcosystemIo(() => ({ catalogIds: new Set(['calendar']), installedIds: new Set(['calendar']) }));
+		await io.writeText('.obsidian/plugins/calendar/manifest.json', '{"id":"calendar"}');
+		await io.writeText('.obsidian/plugins/calendar/main.js', 'JS');
+		await io.writeText('.obsidian/community-plugins.json', JSON.stringify(['calendar', 'other']));
+		const change = await appendEcosystemChange(pluginDir, {
+			action: 'uninstall',
+			pluginId: 'calendar',
+			summary: 'calendar',
+			before: { enabledIds: ['calendar', 'other'] },
+		});
+		await snapshotPluginDir({ pluginDir, changeId: change.id, io, pluginRel: '.obsidian/plugins/calendar' });
+		await io.removeRecursive('.obsidian/plugins/calendar');
+		await io.writeText('.obsidian/community-plugins.json', JSON.stringify(['other']));
+		await restoreEcosystemBackup(change.id, { io, pluginDir, configDir: '.obsidian', writeEnabled: true });
+		expect(await io.readText('.obsidian/plugins/calendar/main.js')).toBe('JS');
+		expect(JSON.parse(await io.readText('.obsidian/community-plugins.json'))).toEqual(['calendar', 'other']);
+	});
 	it('restore - 恢复后 data.json 回到 before 并追加 restore', async () => {
 		const io = new MemoryEcosystemIo(() => ({ catalogIds: new Set(['calendar']), installedIds: new Set(['calendar']) }));
 		await io.writeText('.obsidian/plugins/calendar/manifest.json', '{"id":"calendar"}');
@@ -2120,6 +2173,10 @@ export async function restoreEcosystemBackup(
 	return withPluginLock(row.pluginId, async () => {
 		const pluginRel = `${deps.configDir}/plugins/${row.pluginId}`;
 		await restoreSnapshot({ pluginDir: deps.pluginDir, changeId, io: deps.io, pluginRel });
+		const before = row.before as { enabledIds?: string[] } | undefined;
+		if (Array.isArray(before?.enabledIds)) {
+			await deps.io.writeText(`${deps.configDir}/community-plugins.json`, JSON.stringify(before.enabledIds, null, 2));
+		}
 		await appendEcosystemChange(deps.pluginDir, { action: 'restore', pluginId: row.pluginId, summary: changeId });
 		return { ok: true, restoredAction: row.action, message: tNow('ecosystem.restore.done', { id: row.pluginId, action: row.action }) };
 	});
@@ -2447,6 +2504,9 @@ it('draft_plugin_profile - 已装写出 enabled false 且含 apiKey forbid', asy
 	const text = readFileSync(r.path, 'utf-8');
 	expect(text).toContain('enabled: false');
 	expect(text).toContain('apiKey');
+	expect(text).toContain('待作者填写');
+	expect(text).toContain('patch: {}');
+	expect(text).not.toMatch(/^[^#]*weekStart:\s*0/m);
 });
 
 it('draft_plugin_profile - 未装失败', async () => {
@@ -2512,12 +2572,12 @@ import { validateProfile } from '../profiles/validate';
 import type { PluginProfile } from '../profiles/types';
 import type { ProfileDiagnostic, LoadReport } from '../profiles/types';
 
-export interface LoadedProfiles extends LoadReport {
-	get(id: string): PluginProfile | undefined;
-	matchPool: PluginProfile[];
-}
-
 type Source = 'builtin' | 'global' | 'vault';
+
+export interface LoadedProfiles extends LoadReport {
+	get(id: string): (PluginProfile & { source: Source }) | undefined;
+	matchPool: Array<PluginProfile & { source: Source }>;
+}
 
 function dirOf(source: Source, opts: { pluginDir: string; vaultRoot: string; homedir: string }): string {
 	if (source === 'builtin') return path.join(opts.pluginDir, 'plugin-profiles');
@@ -2561,7 +2621,7 @@ export async function loadAllProfiles(opts: {
 				diagnostics.push({ path: full, code: 'schemaInvalid', message: v.errors.join(',') });
 				continue;
 			}
-			const profile = { ...v.profile, enabled: draft ? false : v.profile.enabled !== false };
+			const profile = { ...v.profile, enabled: draft ? false : v.profile.enabled !== false, source };
 			if (seenHere.has(profile.id)) {
 				diagnostics.push({ profileId: profile.id, path: full, code: 'idCollision', message: profile.id });
 				continue;
@@ -2631,7 +2691,7 @@ export function createListPluginProfilesTool(
 ```typescript
 export function createMatchPluginProfilesTool(
 	definition: ToolDefinition,
-	deps: { getPool: () => PluginProfile[] },
+	deps: { getPool: () => PluginProfile[]; getExistingKeys?: (pluginId: string) => Promise<string[]> },
 ): Tool {
 	return {
 		definition,
@@ -2645,12 +2705,19 @@ export function createMatchPluginProfilesTool(
 			}
 			const hits = matchProfiles(deps.getPool(), { utterance: utterance || undefined, pluginId: pluginId || undefined, tags: tags.length ? tags : undefined });
 			return {
-				hits: hits.map((h) => {
+				hits: await Promise.all(hits.map(async (h) => {
 					const profile = deps.getPool().find((p) => p.id === h.profileId)!;
 					const preset = profile.presets.find((p) => p.id === h.presetId)!;
-					const expanded = expandPresetPatch({ preset, forbid: profile.forbid, existingKeys: [] });
-					return { ...h, patchPreview: expanded.patch };
-				}),
+					const existingKeys = deps.getExistingKeys ? await deps.getExistingKeys(profile.pluginId) : [];
+					const expanded = expandPresetPatch({ preset, forbid: profile.forbid, existingKeys });
+					return {
+						...h,
+						patchPreview: expanded.patch,
+						needsConfirm: expanded.needsConfirm,
+						sopSkill: profile.sopSkill,
+						pluginVersionRange: profile.pluginVersionRange,
+					};
+				})),
 			};
 		},
 	};
@@ -2674,31 +2741,31 @@ export function createDraftPluginProfileTool(
 			const pluginId = args.pluginId.trim();
 			const pluginRel = `${deps.configDir}/plugins/${pluginId}`;
 			try {
-				const man = JSON.parse(await deps.io.readText(`${pluginRel}/manifest.json`)) as { id?: string; name?: string };
+				const man = JSON.parse(await deps.io.readText(`${pluginRel}/manifest.json`)) as { id?: string; name?: string; version?: string };
 				if (man.id !== pluginId) throw new Error('bad');
 				let data: Record<string, unknown> = {};
 				try { data = JSON.parse(await deps.io.readText(`${pluginRel}/data.json`)) as Record<string, unknown>; } catch { data = {}; }
 				const forbid = Object.keys(data).filter((k) => FORBID_KEY_RE.test(k));
-				const patchKeys = Object.keys(data).filter((k) => !forbid.includes(k)).slice(0, 15);
 				const dest = args.dest === 'global' ? path.join(deps.homedir, '.ratel', 'plugin-profiles') : path.join(deps.vaultRoot, '.ratel', 'plugin-profiles');
 				mkdirSync(dest, { recursive: true });
 				const filePath = path.join(dest, `${pluginId}-draft.draft.yaml`);
+				const comments = Object.keys(data).map((k) => `# snapshot ${k}: ${JSON.stringify(data[k])}`);
 				const yaml = [
 					'kind: obsidian-plugin-profile',
 					`id: ${pluginId}-draft`,
 					`pluginId: ${pluginId}`,
 					`pluginName: ${man.name ?? pluginId}`,
-					'pluginVersionRange: "*"',
+					`pluginVersionRange: ">=${man.version ?? '0.0.0'}"`,
 					'enabled: false',
 					'install:',
 					'  source: community-store',
 					'forbid:',
 					...forbid.map((k) => `  - ${k}`),
+					...comments,
 					'presets:',
-					'  - id: captured',
-					'    when: captured-from-install',
-					'    patch:',
-					...patchKeys.map((k) => `      ${k}: ${JSON.stringify(data[k])}`),
+					'  - id: default',
+					'    when: 待作者填写',
+					'    patch: {}',
 				].join('\n') + '\n';
 				writeFileSync(filePath, yaml, 'utf-8');
 				return { path: filePath, draft: true };
@@ -2730,8 +2797,8 @@ EOF
 ### Task 7: 接线、i18n、SOP、破坏性集合、文档指针
 
 **Files:**
-- Modify: `src/main.ts`, `src/settings.ts`, `src/core/tool-permissions.ts`, `src/ui/chat/format-tool-display.ts`, `src/prompts/tool-schemas.ts`, `src/prompts/sections.ts`, `src/prompts/defaults/zh.ts`, `src/i18n/{zh,en,types}.ts`
-- Create: `src/skills/builtin/install-community-plugin/SKILL.md`
+- Modify: `src/main.ts`, `src/settings.ts`, `src/core/tool-permissions.ts`, `src/ui/chat/format-tool-display.ts`, `src/ui/components/confirm-modal.ts`, `src/prompts/tool-schemas.ts`, `src/prompts/sections.ts`, `src/prompts/defaults/zh.ts`, `src/i18n/{zh,en,types}.ts`, `src/adapters/ecosystem-registry.ts`（加 `peekCatalog()`，只读内存）
+- Create: `src/skills/builtin/install-community-plugin/SKILL.md`, `plugin-profiles/SKILL-AUTHORING.md`, `src/core/ecosystem-confirm.ts`
 - Modify（文档，本 Task 授权）: `docs/adr/2026-09-18-ecosystem-outbound.md`、`docs/architecture/host/ecosystem.md`
 - Test: `tests/core/tool-permissions.test.ts`、`tests/prompts/sections.test.ts`
 
@@ -3068,14 +3135,26 @@ expect(toolDescIds).toContain('tool.draft_plugin_profile.description');
 		this.tools.register(createListPluginProfilesTool(toolDefMap.get('list_plugin_profiles')!, {
 			run: () => ({
 				profiles: this.pluginProfiles.matchPool.map((p) => ({
-					id: p.id, pluginId: p.pluginId, pluginName: p.pluginName,
-					enabled: p.enabled !== false,
+					id: p.id, pluginId: p.pluginId, pluginName: p.pluginName, source: p.source,
+					enabled: p.enabled !== false, sopSkill: p.sopSkill, pluginVersionRange: p.pluginVersionRange,
 					presets: p.presets.map((x) => ({ id: x.id, when: x.when })),
 				})),
 			}),
 		}));
 		this.tools.register(createMatchPluginProfilesTool(toolDefMap.get('match_plugin_profiles')!, {
 			getPool: () => this.pluginProfiles.matchPool,
+			getExistingKeys: async (pluginId) => {
+				try {
+					const catalog = await this.ecosystemRegistry.ensureCatalog();
+					const io = new AdapterEcosystemIo(this.app.vault.adapter, () => ({
+						catalogIds: new Set(catalog.plugins.map((p) => p.id)),
+						installedIds: listInstalledPluginIds(),
+					}));
+					return (await inspectPluginData(pluginId, { io, configDir: this.app.vault.configDir })).keys;
+				} catch {
+					return [];
+				}
+			},
 		}));
 		this.tools.register(createDraftPluginProfileTool(toolDefMap.get('draft_plugin_profile')!, {
 			io: new AdapterEcosystemIo(this.app.vault.adapter, () => ({
@@ -3126,6 +3205,22 @@ private async reloadPluginProfiles(): Promise<void> {
 
 生态写工具 **只在 adapter 内** `withPluginLock`，main 不要再套一层。
 
+写工具 `run` 开头：
+
+```typescript
+if ((this.app as { restrictedMode?: boolean }).restrictedMode) {
+	throw new Error(tNow('error.ecosystem.restricted'));
+}
+```
+
+`src/ui/components/confirm-modal.ts`：`summarizeToolCall` 那段 `p` 之后，若 `toolCall.name` 属于 `install_plugin` / `update_plugin` / `uninstall_plugin` / `configure_plugin`，再 `createEl('p')` 两行：
+
+1. 从 `this.app` 不直接 fetch；注入可选 `lookup?: (id: string) => { name: string; author: string; downloads: number | null } | undefined`。`showToolConfirmModal` 增加第三参 `lookup`。main 里用 `this.ecosystemRegistry` 已缓存 catalog（`ensureCatalog` 可能出站——**禁止在弹窗里出站**）。lookup 只读内存：给 Registry 加 `peekCatalog(): CatalogSnapshot | null`（未拉过则 null，弹窗只显示 pluginId）。
+2. `update_plugin` 额外一行 `tNow('ecosystem.confirm.noDataJson')`。
+3. `configure_plugin` 把 `JSON.stringify(args.patch)` 截断到 200 字符。
+
+单测 `tests/ui/confirm-modal.test.ts` 可只测纯函数 `formatEcosystemConfirmLines(toolCall, peek)`（放 `src/core/ecosystem-confirm.ts`），避免挂 Obsidian Modal。
+
 - [ ] **Step 4: i18n key（zh + en + types 同一批）**
 
 在 `ToolPermStrings` / `ToolNameStrings` / `ErrorStrings` / `CmdStrings` / `PromptLabelStrings` / `EcosystemStrings` 追加。中文 / 英文：
@@ -3155,6 +3250,10 @@ error.ecosystem.newKey = 将新增 key: {key}，需要确认 / New key {key} nee
 error.ecosystem.badKey = 拒绝写入敏感 key: {key} / Refusing sensitive key {key}
 error.ecosystem.unknownChange = 未知变更 {id} / Unknown change {id}
 error.ecosystem.expiredChange = 备份已过期 {id} / Backup expired {id}
+error.ecosystem.updateCancelled = 已取消无法比较版本的更新 / Cancelled update because versions are incomparable
+error.ecosystem.restricted = 请先在设置关闭「限制社区插件」/ Turn off Restricted mode before ecosystem writes
+ecosystem.confirm.noDataJson = 不改 data.json / Will not modify data.json
+ecosystem.confirm.authorDownloads = {name} · {author} · 下载 {downloads} / {name} · {author} · {downloads} downloads
 profile.match.empty = 没有匹配的插件档案 / No matching plugin profiles
 profile.versionMismatch = 已装 {installed} 不满足 {range} / Installed {installed} does not satisfy {range}
 ```
@@ -3180,12 +3279,39 @@ tags: [plugin, ecosystem]
 1. 调用 search_plugins，只推荐返回列表里的项（作者、下载量或未知、是否已装）。
 2. 用户点名一个 id 后调用 install_plugin；被拒绝或官方页模式则停止，不要改用脚本或笔记工具写配置目录。
 3. 用户要更新已装插件时调用 update_plugin，不要用 install_plugin 覆盖。更新不得改 data.json。
-4. 需要改设置时：先 match_plugin_profiles（若该工具存在）；有 hit 则把预览的 patch 交给 configure_plugin op=apply。
+4. 需要改设置时：先 match_plugin_profiles。有 hit 则：
+   - 调 get_plugin_status（该 pluginId）。未装 → 用户确认后 install_plugin，不要据 unverifiedStoreId 安装。
+   - 已装 version 不满足 hit.pluginVersionRange → 说明 mismatch，用户同意则 update_plugin，拒绝则不要 configure（除非用户明确要写并带上 needsConfirm）。
+   - hit.sopSkill 存在且用户未拒绝说明 → activate_skill（只注入，不写盘）。
+   - 把 patchPreview 交给 configure_plugin op=apply，confirmedNewKeys 用 hit.needsConfirm。
    无 hit 则 configure_plugin op=inspect，再按用户点名的 key apply。密钥类不要填。
 5. 用户要卸：uninstall_plugin。不要自己删 .obsidian。
 ```
 
 禁止在 SOP 里贴整份 `data.json`。
+
+同 Task 创建 `plugin-profiles/SKILL-AUTHORING.md`：
+
+```markdown
+# 写一份社区插件 SOP Skill
+
+放在 vault 或 global 的 Skill 目录，frontmatter 与其它 Skill 相同。正文只许教模型调工具，禁止脚本写 `.obsidian`。
+
+## 工具（权限以设置为准）
+
+只读：search_plugins、get_plugin_status、list_ecosystem_changes、list_plugin_profiles、match_plugin_profiles
+需确认：install_plugin、update_plugin、uninstall_plugin、configure_plugin、restore_backup、draft_plugin_profile
+
+## 流程
+
+与 builtin `install-community-plugin` 五步相同。更新只走 update_plugin。配置只走 configure_plugin。档案 sopSkill 用 activate_skill 注入说明，仍不降 ask。
+
+## 禁止
+
+- run_skill_script 写 configDir / 他人 data.json
+- 贴整份 data.json 让模型 extra 写盘
+- 店外 URL / 管理 ratel-vault
+```
 
 - [ ] **Step 6: ADR / 架构指针**
 
@@ -3267,4 +3393,4 @@ EOF
 
 **4. 并行安全：** Wave 1 T1∥T2；Wave 2 T3∥T4；Wave 3 T5∥T6；Wave 4 T7。同波不改同一文件。
 
-**5. P-ECOSYSTEM-1：** 切片已交付，STATUS 已标 Completed。本文件是底座**唯一** plan，不另开 P-PLUGIN-PROFILE。
+**6. 审查补丁（相对第一版 plan）：** 作者 SOP 文档钉 `plugin-profiles/SKILL-AUTHORING.md`；match/list 回 `sopSkill` / `pluginVersionRange` / `needsConfirm`；draft 空 patch；restore 还原启用清单；update 失败整目录恢复 + 不可比版本二次确认；configure rename 失败原 JSON 完好；确认弹窗补作者/下载量/不改 data.json；受限模式拒绝写盘。
