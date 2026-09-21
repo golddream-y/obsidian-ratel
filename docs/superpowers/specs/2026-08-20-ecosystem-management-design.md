@@ -1,185 +1,378 @@
-# S-ECOSYSTEM — Obsidian 插件生态管理
+# S-ECOSYSTEM — Obsidian 插件生态管理（执行层）
 
-> **架构正文:** [docs/architecture/host/ecosystem.md](../../architecture/host/ecosystem.md)。改代码前以架构文档为准（含：无官方安装授权、未文档 API 降级）。
+> **架构正文:** [docs/architecture/host/ecosystem.md](../../architecture/host/ecosystem.md)。改代码前以架构文档为准（无官方安装授权、未文档 API 降级）。出站以 **[ADR-018](../../adr/2026-09-18-ecosystem-outbound.md)** 为准（已 Accepted）。
 
 > 日期: 2026-08-20
-> 修订: 2026-09-10 — 产品按阶段对齐 [prd/ecosystem.md](../../prd/ecosystem.md)；执行层架构独立成文；EC-10 宿主能力诚实表述
-> 修订: 2026-09-20 — 补「相对第一刀」；热启用失败口径与 [S-ECOSYSTEM-CUT1](2026-09-20-ecosystem-first-cut-design.md) 对齐；文末分期不再作为施工顺序
+> 修订: 2026-09-10 — 产品按阶段对齐 [prd/ecosystem.md](../../prd/ecosystem.md)
+> 修订: 2026-09-20 — 热启用失败留盘；CUT1 曾收窄施工范围
+> 修订: **2026-09-21 —「装 + 配」一次交付。** [S-ECOSYSTEM-CUT1](../archive/S-ECOSYSTEM-CUT1/2026-09-20-ecosystem-first-cut-design.md) **Superseded**：不再作为施工顺序。升级（EC-03）与官方核心设置引导（EC-09）仍非本交付。
 > 状态: Active
 > Spec ID: **S-ECOSYSTEM**
-> 关联: [支柱 C 生态管理](../../prd/ecosystem.md)、[EC-01 ~ EC-10](../../prd/requirements.md)、[S-PLUGIN-PROFILE](2026-09-10-plugin-profile-design.md)（配置档案）、[S-ECOSYSTEM-CUT1](2026-09-20-ecosystem-first-cut-design.md)（0.8.0 后第一份可演示交付）、[ADR-014](../../adr/2026-08-03-mcp-host-platform.md)(网络出站先例)、新 ADR-018(待立)
+> 关联: [支柱 C](../../prd/ecosystem.md)、[EC-01～10](../../prd/requirements.md)、[S-PLUGIN-PROFILE](2026-09-10-plugin-profile-design.md)（档案；写入硬依赖本文 `configure_plugin`）、[ADR-014](../../adr/2026-08-03-mcp-host-platform.md)、[ADR-017](../../adr/2026-08-19-skill-script-sandbox-worker-vm.md)、[ADR-018](../../adr/2026-09-18-ecosystem-outbound.md)、[S-HOST-ACCESS](2026-09-11-host-access-design.md)（不得放宽沙箱）
+
+---
 
 ## 1. 背景
 
-PRD 已将产品定位升级为「主动智能的知识与环境管理 Agent」，生态管理是支柱 C。Obsidian 2000+ 社区插件的发现、安装、配置、更新是各类用户的持续摩擦，且当前 Obsidian AI 竞品均未覆盖。Ratel 作为生长在 Obsidian 内的 Agent，用对话完成「需求 → 推荐 → 确认安装 → 配置 → 可回滚」闭环。
+支柱 C：对话里完成「需求 → 商店内推荐 → 确认安装 → 点名（或按档案 preset）配置 → 能卸、能查、能回滚」。公开 Plugin API 没有 install/uninstall；本能力 = 用户确认后写当前库 + 尽力调未文档 `app.plugins.*`。不得声称官方授权。
 
-现有能力边界：`get_app_config` / `update_app_config` / `open_settings` 只管 Ratel 自身；所有文件操作被 `validateVaultPath` 挡在整个 configDir 之外。本 spec 把管理范围扩到**其他插件与启用清单**，同时保持物理安全边界不变。
+**相对上一刀：** CUT1 只交 search/install 骨架并冻结加功能。本修订把**装卸闭环 + 点名配置**收成同一份执行层设计，好让社区 Skill 既有「装」也有合法「配」的出口。档案 schema 仍在 S-PLUGIN-PROFILE，不在本文发明第二套写盘。
 
-## 2. 目标
+**v9 已落地（本修订视为基线，不再重开 ADR）：** ADR-018、通道 B `validateEcosystemPath`、Skill 脚本 denylist 整棵 `configDir`、`search_plugins` / `install_plugin`、`ecosystemWriteEnabled`（R2 写盘 / R3 开官方页）。
 
-1. 用户用自然语言探索社区插件并得到带作者、下载量、已装标注的推荐（EC-01）
-2. 确认流安装商店插件：写入目录与启用清单，尽力运行时启用，失败须说明（EC-02 / EC-10）
-3. 更新保留用户配置、卸载先备份后移除（EC-03 / EC-04）
-4. 点名 key 最小 diff 修改其他插件配置（EC-05）
-5. **每次环境变更留 append-only 日志，任意变更可回滚**（EC-06 / EC-07 — 本 spec 核心）
-6. 路径白名单物理校验，越界不可达（EC-08）
-7. Obsidian 官方设置只引导不代改（EC-09）
-8. 不声称官方插件管理授权；desktop-only；商店上架前过审核口径（EC-10）
+---
+
+## 2. 目标（本交付一次做完）
+
+桌面、社区插件受限模式已关、完整通道（`ecosystemWriteEnabled=true`）下：
+
+1. **探索（EC-01）：** 自然语言只在官方清单内推荐；含名称、作者、下载量或「未知」、说明、是否已装。整份清单不进模型上下文。
+2. **安装（EC-02 / EC-10）：** 确认后下载该清单条目 GitHub 同名 tag 三件套，写入 `plugins/<id>/` 与启用清单，尽力热启用；失败不得假装已启用。
+3. **卸载（EC-04）：** 确认 → 备份 → 禁用并删目录。
+4. **配置（EC-05）：** `configure_plugin` 读结构或按**点名 key** 最小 diff 写他人 `data.json`；写前展示前后值。档案 preset 展开后走**同一工具**，见 S-PLUGIN-PROFILE。
+5. **留痕与回滚（EC-06 / EC-07 子集）：** 本交付产生的 install / uninstall / configure / restore 均记 append-only 日志；`restore_backup` 能把对应备份恢复。
+6. **物理墙（EC-08 + PP-08）：** 笔记工具进不了 `configDir`；仅通道 B 写白名单路径。Skill 脚本同样进不了 `configDir`。
+7. **Skill 契约：** 社区 SOP 只许教模型调本文工具；同一 `ask` 闸；脚本与 MCP 默认不接通道 B。
+8. **审核开关：** 同一 manifest；关写盘则搜索仍可、安装只开官方页、零写他人目录。UI/README 与旗标一致。
+
+一句话：**说需求 → 商店内推荐 → 点头装上 → 点名或按档案配上 → 能卸能查能回滚；Skill 不能偷改别人配置。**
+
+对本交付的需求覆盖：
+
+| 需求 | 本交付 |
+|---|---|
+| EC-01 探索 | `search_plugins` |
+| EC-02 / EC-10 安装与诚实启用 | `install_plugin` R2/R3 |
+| EC-04 卸载 | `uninstall_plugin` |
+| EC-05 点名配置 | `configure_plugin` |
+| EC-06 / EC-07 子集 | 日志 + `restore_backup`（install/uninstall/configure/restore） |
+| EC-08 + PP-08 | 通道 B + 脚本 denylist |
+| EC-03 升级 | **不做** |
+| EC-09 官方设置 tab | **不做**（失败路径文字指路） |
+
+---
 
 ## 3. 非目标
 
-- 不做插件商店浏览 UI（入口是对话，不复制 Obsidian 原生界面）
-- 不代改 Obsidian 核心配置（app.json / hotkeys.json / core-plugins 等，只引导定位）
-- 不安装商店清单之外的来源（裸 URL、本地旁路包）
-- 不做主题与 CSS snippet 管理
-- 不做 Ratel 自身插件目录的管理（防 Agent 改自己，维持禁区）
-- 不把内部 `app.plugins.installPlugin` 写成稳定公开合约；实现必须可降级到写盘 + 请用户重载
-- 不做模型对着未知结构现编整份 `data.json` — v1 只做点名 key 修改；**经唯一 schema 校验的插件档案 preset** 见 [S-PLUGIN-PROFILE](2026-09-10-plugin-profile-design.md)，展开后仍走本 spec 的最小 diff / 确认 / 回滚
+- **EC-03 升级保配置**（覆盖三件套、跳过 `data.json`）— 另开修订或后续 plan，不塞进本交付。
+- **EC-09** 代开官方核心设置 tab — 失败路径文字指路即可；不扩展 `open_settings` 官方页（可后续）。
+- 商店浏览 UI、店外安装、主题 / CSS snippet、管理 `ratel-vault` 自己、代改 `app.json` / 快捷键 / 核心插件。
+- 模型对着未知结构**现编整份** `data.json`。无档案时只许用户/模型点名 key；有档案时只许档案已声明且非 `forbid` 的 key。
+- 50 份热门插件官方档案（档案产品见 S-PLUGIN-PROFILE，本交付只要求执行层能消费展开后的 map）。
+- 新开能力 `kind`；档案不是第四种执行面。
+- 为商店发两套插件 id；向用户要 GitHub PAT；Worker / Skill 脚本出站拉商店。
+- 借 S-HOST-ACCESS 出库闸放宽脚本 fs。
 
-## 4. 详细设计
+---
 
-### 4.1 三域模型与目录地图
+## 4. 依赖
+
+| 对方 | 关系 |
+|---|---|
+| 已落地 Skill（ADR-009/012）+ 沙箱（ADR-017） | 本文消费：SOP 激活 + denylist |
+| ADR-018 | 出站、缓存、R2/R3、版本定位、热启用留盘 — **已立，本文不再「待立」** |
+| S-PLUGIN-PROFILE | **软依赖**：无档案也能装、也能点名配。有档案时 `configure_plugin` 多收一份已展开的 key map |
+| S-HOST-ACCESS | 约束：出库不得放宽 denylist |
+
+档案层**硬依赖**本文的 `configure_plugin`（见 S-PLUGIN-PROFILE §4）。禁止为档案再开一套写 `data.json` 的通道。
+
+---
+
+## 5. 详细设计
+
+### 5.1 三域与目录
 
 | 域 | 对象 | 能力 |
 |---|---|---|
-| Ratel 自身 | 本插件设置、密钥、技能 | 已有工具（get/update_app_config、open_settings） |
-| Obsidian 官方 | 核心设置 | 只引导：`open_settings` 扩展支持打开官方设置页（`app.setting.open()` + 官方 tab id，unknown 中转，与 `openPluginSettings` 同模式） |
-| 社区生态 | 其他插件与启用清单 | 本 spec 新增 8 工具 |
-
-configDir（名字用户可自定义，启动期已注入）内路径归属：
+| Ratel 自身 | 本插件设置、密钥、技能 | 已有 `get/update_app_config`、`open_settings`、`ratel-config` |
+| Obsidian 官方 | 核心设置 | 本交付不代改；文字指路 |
+| 社区生态 | 其他插件与启用清单 | 本文工具 |
 
 | 路径 | 策略 |
 |---|---|
-| `plugins/<id>/`（清单校验过的社区插件） | ✅ 生态工具可写 |
-| `plugins/ratel-vault/` | ❌ 禁区（Agent 不得改自己） |
-| `community-plugins.json` | ✅ 仅生态工具可写（启用清单） |
-| configDir 其余一切（app.json、hotkeys、workspace、themes…） | ❌ 禁区 |
-| vault 内 `.trash/` 与 configDir | ❌ 维持现有禁区 |
+| `plugins/<id>/`（清单或本地已装校验过的 id） | 仅生态工具可写 |
+| `plugins/ratel-vault/` | 禁区 |
+| `community-plugins.json`（启用清单，字符串数组） | 仅生态工具可写 |
+| configDir 其余 | 禁区 |
+| Skill 脚本对整棵 configDir | 读/写皆拒（denylist，与通道 A 同一套归一化） |
 
-### 4.2 双通道路径校验（物理禁止）
+禁止把路径写死为 `.obsidian`，必须用注入的 `app.vault.configDir`。商店缓存文件名不得覆盖启用清单（ADR-018 §6）。
 
-现有 `validateVaultPath`（[path-safety.ts](../../../src/utils/path-safety.ts)）保持原样——通道 A，所有现有工具继续把整个 configDir 拒之门外。
+### 5.2 双通道 + 脚本墙
 
-新增通道 B `validateEcosystemPath`，仅生态 adapter 调用：
+- **通道 A** `validateVaultPath`：现有笔记工具，整棵 configDir 拒绝。不得 catch 后再放行。
+- **通道 B** `validateEcosystemPath`：仅生态 adapter。放行 `{configDir}/plugins/{id}/**`（`id ≠ ratel-vault`，且 id 在商店清单 **或** 本地已装目录）与 `{configDir}/community-plugins.json`。`..` / 绝对路径 / 反斜杠与通道 A 同一归一化。
+- 生态 IO **不得**缝进 `ObsidianVault`。HTTP 只在主线程 `requestUrl`。
+- `run_skill_script`：`allowedDirs` 仍可含 vault 根，但 resolve 后命中 configDir 必须抛错。单测：写 `configDir/plugins/x/data.json` 失败且不落盘。禁止脚本 `require` 生态 Port / adapter。
 
-- 只放行两种形状：`<configDir>/plugins/<id>/...` 与 `<configDir>/community-plugins.json`
-- `<id>` 必须先通过商店清单或本地已装清单校验（不存在的 id 直接拒绝，杜绝拼路径写任意目录）
-- `<id>` 为 `ratel-vault` 时拒绝
-- `..` 穿越、绝对路径、反斜杠变形沿用通道 A 的归一化与拒绝逻辑
+下架仍在本地的 id：仍可 status / uninstall / restore，不得因清单消失而无法清理。
 
-物理拦截在 adapter 层完成，工具参数只做类型校验；不依赖模型自觉或 prompt 约束。
+### 5.3 出站与版本定位（ADR-018，摘产品钉）
 
-### 4.3 数据源与网络边界
+- 仅官方清单 + 所选插件 GitHub release；无后台刷新；无 PAT。
+- 版本：**仓库 `HEAD/manifest.json` 的 `version` → 同名 tag 三件套**。禁止 `/releases/latest`。写入前 `manifest.id === pluginId`。`minAppVersion` 高于当前应用则拒绝并说明（本交付不做 `versions.json` 兼容回退）。
+- 下载量：同仓库 `community-plugin-stats.json` 的 `downloads`；缺失标「未知」，不得写成 0。
+- 缓存：Ratel `pluginDir` 的 `ecosystem-catalog.json` / `ecosystem-stats.json`，TTL 7 天，不进 `loadData()`。过期仍可搜但必须标注缓存日期。
 
-| 数据 | 来源 | 缓存 |
+### 5.4 工具面（本交付 7 个）
+
+`update_plugin` **不实现**。名称可微调，语义不得扩到升级。
+
+| 工具 | 做什么 | 默认权限 |
 |---|---|---|
-| 社区插件清单（json） | `raw.githubusercontent.com/obsidianmd/obsidian-releases/master/community-plugins.json` | pluginDir 缓存，7 天过期 |
-| 插件 release 版本与产物 | `api.github.com`（版本）/ `github.com`（下载 main.js / manifest.json / styles.css） | 不缓存 |
-| 本地已装/版本/启用态 | 本地 manifest.json + community-plugins.json | 直读 |
+| `search_plugins` | 清单内本地过滤 top N（id、名称、描述、作者、下载量或未知、是否已装） | allow |
+| `get_plugin_status` | 本地已装：id / 名称 / 版本 / 启用态；可选只读 `data.json` **键名列表**（值可省略或脱敏）。不声称「可更新」（无升级工具） | allow |
+| `install_plugin` | 清单 id → 确认 → R2 写盘尽力启用 / R3 开 `obsidian://show-plugin?id=` | ask，破坏性 |
+| `uninstall_plugin` | 确认列将删目录 → 备份 → 禁用 → 删目录 | ask，破坏性 |
+| `configure_plugin` | 见 §5.6 | ask，破坏性 |
+| `list_ecosystem_changes` | 最近 N 条或按 pluginId | allow |
+| `restore_backup` | 指定 changeId 恢复目录 + 启用清单（若备份含） | ask，破坏性 |
 
-- 出站仅发生在用户发起生态操作时；清单 2MB+ 不进模型上下文，本地过滤排序后只返回 top N
-- 网络出站扩展需新 ADR-018（要点：出站域名清单、触发时机、失败降级、README 隐私说明同步）
-- 下载产物前校验 manifest.json 的 id 与目标插件 id 一致（防错包）
+`search_plugins` 的 N **钉为 8**（与现网 `SEARCH_TOP_N` 一致）。实现可改常量名，不得把整份清单塞进工具返回。
 
-### 4.4 工具面（8 个）
+确认弹窗（变更类）：动作、pluginId、名称、作者、下载量（拿得到时）、将改路径或 key 摘要。拒绝则零出站（安装）/ 零写盘。MCP 默认工具与笔记工具**不得**接通道 B。
 
-| 工具 | 做什么 | 备注 |
-|---|---|---|
-| `search_plugins` | 清单内搜索，返回 top N 候选（id、名称、描述、作者、下载量、是否已装） | 本地过滤排序，不把清单喂模型 |
-| `install_plugin` | 清单定位 → 确认 → 下载三件套 → 写入启用清单 → 尽力热启用 | 热启用走未文档 `app.plugins.*`；失败须说明并引导重载，见架构 §1 |
-| `uninstall_plugin` | 禁用 → 备份 → 删目录 | 确认弹窗列将删除的目录 |
-| `update_plugin` | 查最新 release → 备份 → 覆盖三件套 | **跳过 data.json**，配置不丢 |
-| `configure_plugin` | 读目标插件 data.json → 返回结构；或按点名 key 写回 | 写前展示前后值，最小 diff |
-| `get_plugin_status` | 已装清单：id / 名称 / 版本 / 启用态 / 可更新 | 更新的发现入口 |
-| `list_ecosystem_changes` | 查看变更日志（最近 N 条或指定插件） | 支撑「Ratel 对我的环境做过什么」 |
-| `restore_backup` | 从指定 changeId 恢复 | 目录与启用清单一起恢复 |
+### 5.5 安装 / 卸载
 
-所有变更类工具（install/uninstall/update/configure/restore）默认权限 `ask`，走现有 ToolPermission 确认流；确认弹窗展示动作、目标插件、作者、下载量与前后值摘要。
+**安装 R2：** 确认 → 若已完整安装则 already-installed（§5.13）→ 否则拉 tag 三件套 → 校验 id → 写入插件目录 → 写入启用清单 → `typeof === 'function'` 守卫下尽力 `loadManifest(s)` / `enablePluginAndSave`。热启用成功须：**启用清单含 id** 且能观察到插件实例。否则文案：「文件已安装，请 Reload app without saving 或到社区插件页打开」。**不**回滚已成功写盘（推翻 2026-08-20 旧稿「启用失败整笔回滚」）。
 
-### 4.5 变更日志 EcosystemChange（核心 — 敏感操作留痕）
+**安装 R3：** 零写他人目录；打开官方入口；失败则文字引导设置 → 社区插件。从未代装则本设置下不提供「卸 Ratel 装上的那份」——本地本就没有 Ratel 写的目录。
 
-**记录范围**：对 Obsidian 环境的每一次修改，无一例外：
+**卸载：** 仅针对本地已有目录。备份该目录（及若改启用清单则清单快照）→ 禁用 → 删目录。社区插件总开关关闭时：不假装启用成功；先解释去设置打开。
 
-- `install` / `update` / `uninstall`（插件目录变动）
-- `enable` / `disable`（community-plugins.json 写入，含装/卸附带的启用变更单独记一条）
-- `configure`（其他插件 data.json 的每次 key 修改）
-- `restore`（回滚本身也记录 — 回滚的回滚）
+**半成品 / 断网：** 删除目标目录或明确残留路径。下载中断优先清理。
 
-**记录字段**（append-only，一行一条 JSON）：
+### 5.6 `configure_plugin`
+
+这是社区「配置 Skill」的**唯一写盘出口**。
+
+**读（`op: "inspect"` 或省略写时先读）：**
+
+- 入参：`pluginId`（必须已装，否则明确「未安装」，可建议 `install_plugin`，不偷偷装）。
+- 出参：顶层（及点号路径约定下的）key 列表；值默认不回完整密钥。实现须对 key 名匹配 `/token|secret|password|apiKey|webhook|cookie/i` 的值打码。无 `data.json` 当空对象。
+
+**写（`op: "apply"`）：**
+
+- 入参：`pluginId` + `patch: Record<string, unknown>`（点号路径叶子）。**禁止**传入整份替换文件、禁止无 patch 的「按我说的随便写」。
+- 单次最多 20 个 key（防一次掏空未知 JSON）。超过拒绝并请拆次确认。
+- 写前：读原文件 → 只改点名叶子（不覆盖未点名的兄弟）→ 弹窗列出每个 key 的前后值（过长截断 + 哈希）→ 用户确认。
+- 任一 key 命中已加载档案 `forbid` **或**启发式 `/token|secret|password|apiKey|webhook|cookie/i`：**整次 apply 失败**，零写盘，列出被拒 key，密钥类引导打开该插件设置页。禁止「跳过坏 key 写其余」。
+- 已装 `data.json` 中不存在的 key：标 `needsConfirm`「将新增 key」，不得 silent。
+- 成功：原子写（tmp + rename）→ 备份写前文件于该次 changeId → 记 `configure` 日志。对方插件未必热更新设置；允许提示 Reload。不得用 Skill 脚本写盘。
+- 写入失败：原文件保持或从本次备份恢复；不得留下半截 JSON。
+
+档案消费：工具**不解析** YAML。调用方（模型或只读匹配工具的下游）传入已经展开的 `patch`。S-PLUGIN-PROFILE 负责展开与 `forbid` 再减。`configure_plugin` 仍独立再跑一遍启发式 forbid（双闸）。
+
+### 5.7 变更日志与备份
+
+**记录动作（本交付）：** `install` / `uninstall` / `configure` / `restore`。装/卸导致的启用清单变化可并入该条 `before`/`after`，不必强制拆 `enable`/`disable` 独立产品面（实现可拆行，查询须能按 pluginId 看到）。
+
+字段形状维持：
 
 ```json
 {
   "id": "ch_000042",
-  "time": "2026-08-20T14:30:00Z",
-  "action": "update",
+  "time": "2026-09-21T14:30:00Z",
+  "action": "configure",
   "pluginId": "calendar",
-  "summary": "0.4.1 → 0.5.0",
-  "before": { "version": "0.4.1" },
-  "after": { "version": "0.5.0" },
+  "summary": "weekStart 0 → 1",
+  "before": { "weekStart": 0 },
+  "after": { "weekStart": 1 },
   "backupPath": "ecosystem-backups/ch_000042/",
   "status": "recorded"
 }
 ```
 
-- `configure` 的 before/after 记点名 key 的前后值（截断至摘要长度，大值记哈希+长度）
-- `community-plugins.json` 变更记启用数组的前后 diff
-- **存储**：`pluginDir/ecosystem-changes.jsonl`，append-only，不进 vault、不出网、不复制完整正文
-- **状态机**：`recorded`（已记录）→ `restored`（已被回滚）→ `expired`（备份已清理）
-- 用户通过 `list_ecosystem_changes` 在对话中随时查询完整历史
+- 存储：`pluginDir/ecosystem-changes.jsonl`，append-only，不进 vault、不出网。
+- 状态：`recorded` → `restored` → `expired`（备份已清）。
+- 备份：`pluginDir/ecosystem-backups/<changeId>/`。install/uninstall：目录快照 + 启用清单（若动）。configure：写前 `data.json`。每插件最近 3 份，超出清理最旧并标 `expired`。
+- `restore_backup`：确认 → 覆盖/删除目录 + 还原启用清单（若有）+ 还原 data.json（若该 change 是 configure）→ 再记一条 `restore`。
 
-### 4.6 备份与恢复
+### 5.8 错误与降级
 
-- 位置：`pluginDir/ecosystem-backups/<changeId>/`
-- 内容：变动前该插件目录完整快照（目录级复制）+ `community-plugins.json` 快照（若本次涉及）
-- 保留：每插件最近 3 份，超出清理最旧（清理时对应日志条目标 `expired`）
-- 恢复：`restore_backup(changeId)` → 确认 → 目录覆盖/删除 + 启用清单还原 → 记一条 `restore` 变更
-- 恢复后插件需重新启用时走运行时 API，免重启
-
-### 4.7 错误处理
-
-- 下载/安装中断：清理半成品目录；无法清理时明确告知残留位置
-- 热启用失败：保留已写入的三件套与启用清单（若已写），诚实说明尚未真正跑起来，并指路 Reload app without saving 或官方社区插件页；**不得**假装已启用。下载事务成功 ≠ 运行时已启用。此条覆盖 2026-08-20 旧稿「启用失败则回滚到变更前」（与 EC-02 / 架构正文冲突）。仅当写盘本身失败或半成品无法完成时才回滚/清理
-- 清单拉取失败：用缓存并标注数据日期；缓存不可用时明确说明无法探索，本地管理与回滚不受影响
-- data.json 写入失败：保证原文件未破坏；已破坏时自动恢复备份并告知
-- GitHub 限流（429）：明确错误信息 + 可重试提示
-
-### 4.8 i18n 与 UI
-
-- 全部新字符串走 `src/i18n/zh.ts` / `en.ts`（工具显示名、确认弹窗、错误消息）
-- 工具显示名友好化：如「安装插件 calendar」「查看变更历史」
-- 工具卡 busy 状态显示目标插件名（复用 0.5.0 的 label 机制）
-
-## 5. 影响面
-
-| 区域 | 变更 |
+| 情况 | 行为 |
 |---|---|
-| `src/utils/path-safety.ts` | 新增 `validateEcosystemPath`（通道 B） |
-| `src/adapters/ecosystem-vault.ts`（新） | 生态文件 adapter：白名单校验、目录快照、data.json 读写 |
-| `src/adapters/ecosystem-registry.ts`（新） | 商店清单缓存、release 查询、产物下载 |
-| `src/core/ecosystem-change-log.ts`（新） | EcosystemChange append-only 日志 |
-| `src/core/ecosystem-backup.ts`（新） | 备份与恢复 |
-| `src/tools/` | 8 个新工具 |
-| `src/adapters/obsidian-workspace.ts` | `open_settings` 扩展官方设置页定位 |
-| `src/i18n/` | 新 namespace |
-| `adr/2026-08-20-ecosystem-network.md`（新） | ADR-018 网络出站扩展 |
-| 文档 | README 隐私说明、user-guide、CHANGELOG |
+| 无网 + 过期缓存 | 搜索可继续，标注日期；无缓存则探索失败；本地 status / 卸载 / 配置仍可用 |
+| GitHub 429 | 可重试，不得静默当没有这个插件 |
+| `minAppVersion` 过高 | 拒绝安装并说明升级 Obsidian |
+| 社区插件总开关关 | 不写盘装完假装启用 |
+| 清单 id 不存在 | 安装拒绝 |
+| R3 | 安装零写盘 |
 
-## 6. 参考
+### 5.9 社区 Skill 作者契约（执行层）
+
+**允许：** 用户或社区在 vault / global Skill 目录写 `SKILL.md` SOP：需要插件时 `search_plugins` →（可选）`get_plugin_status` → 用户点头后 `install_plugin`；需要改设置时 `configure_plugin`（有档案则先 `match_plugin_profiles` 再 apply 展开结果）；卸 `uninstall_plugin`。Agent Loop 解析 tool_call → ToolRegistry → 现有 `ask`。激活只注入说明，**不**降权限、不跳过弹窗。
+
+**禁止：** 脚本写 configDir；脚本当工具运行时；笔记工具 / MCP 默认接通道 B；只靠 prompt「不要写配置目录」。
+
+作者文档（实现期落 `docs/` 或 user-guide 一节，本 spec 钉内容）：列出本交付 7 工具名、权限、禁止脚本写配置、示例 SOP 骨架（看板安装 + 若有档案则配一周始）。**不**把生态 adapter API 暴露给 Skill。
+
+### 5.10 用户可见验收（完整通道）
+
+1. 「我想要一个看板」→ 少量商店内推荐（作者 / 下载量或未知 / 已装）。
+2. 确认安装 → 三件套 + 启用清单；热启用失败则留盘 + Reload/官方页文案。
+3. 「把日历改成周一开始」→ 有档案则预览 preset key；无档案则 inspect 后点名 key → 确认 → 只那些 key 变。密钥类拒绝代填。
+4. 「卸掉刚才那个」→ 备份 → 删目录 → 日志可查 → restore 能回来。
+5. 自定义 Skill 脚本写他人 `data.json` → 失败且无该文件。
+6. `ecosystemWriteEnabled=false`：可搜；安装开官方页；不写他人插件目录。
+
+### 5.11 工具入参 / 出参（实现不得扩语义）
+
+名称可微调；字段语义不可漂。省略的可选字段按表内默认。
+
+| 工具 | 入参 | 出参要点 |
+|---|---|---|
+| `search_plugins` | `query: string`（必填，trim 后非空） | `{ stale, fetchedAt, note?, results: [{ id, name, author, description, downloads: number\|null, installed, repo }] }`；`downloads === null` 展示「未知」 |
+| `get_plugin_status` | `pluginId: string`；`includeKeys?: boolean`（默认 false） | 未装：明确 `installed: false`，不假装。已装：`id, name, version, enabled, directoryExists`。`includeKeys=true` 时只回 **key 名**；值一律不回（防密钥进上下文）。**不**返回 latest / 可更新 |
+| `install_plugin` | `pluginId: string` | `{ ok, mode: "write"\|"official-page"\|"already-installed", filesWritten, enabled, version?, message }` |
+| `uninstall_plugin` | `pluginId: string` | `{ ok, backedUp, changeId, message }`。目录不存在 → 失败说明，不造假成功 |
+| `configure_plugin` | `pluginId: string`；`op: "inspect"\|"apply"`；apply 时 `patch` 必填 | inspect：`{ keys, values }`（值打码）。apply：`{ changed: [{ key, before, after }], changeId, message }` |
+| `list_ecosystem_changes` | `pluginId?: string`；`limit?: number`（默认 20，上限 100） | 数组，新在前 |
+| `restore_backup` | `changeId: string` | `{ ok, restoredAction, message }`。未知 id / 备份 `expired` → 失败 |
+
+### 5.12 点号路径（apply 唯一写法）
+
+- 分隔符仅 `.`。禁止 `..`、空段、以 `.` 开头或结尾、含 `/` `\` 空白控制字符。
+- 最多 **6** 段。第一期**不支持**数组下标（`items.0` 整次失败）。
+- 从根对象沿段下行；中间段必须已是 plain object（或将新建对象）。不得改数组元素内部。
+- 叶子值必须 JSON 可序列化：`string` / `number` / `boolean` / `null` / 纯 JSON 对象 / 纯 JSON 数组。叶子若是对象或数组，**整颗替换**该叶子，不深合并兄弟。
+- 未点名的兄弟 key 保持原值。禁止传入 `""` 当删 key；本交付不提供 delete-key（需要时用户自己在插件设置页改）。
+
+### 5.13 已装 / 残缺 / 失败清理
+
+| 现状 | `install_plugin` |
+|---|---|
+| 目录存在且 `manifest.json` 的 `id` 匹配 | **already-installed**：不覆盖三件套、不碰 `data.json`。升级是 EC-03，本交付不做 |
+| 目录存在但无合法 manifest（半成品） | 可清该目录后按新装走；须先记日志/备份能拿的残片 |
+| 清单无此 id | 拒绝 |
+| 本轮下载/写入失败 | 只删**本轮新建或确认残缺**的目录；禁止把用户已在用的完整安装 `removeRecursive` 掉（纠正 v9 安装失败一律删目录的过激路径） |
+
+`uninstall_plugin`：只对本地已有目录。下架仍在本地的 id 仍可卸。`pluginId === ratel-vault` 一切写工具拒绝。
+
+并发：同一 `pluginId` 的 install/uninstall/configure/restore **排队**（单锁，按 pluginId）；不同 id 可并行。日志 append 全库一把锁。
+
+### 5.14 端口 `src/ports/ecosystem.ts`（零实现）
+
+```typescript
+interface EcosystemPort {
+  search(query: string): Promise<SearchResult>;
+  status(pluginId: string, opts?: { includeKeys?: boolean }): Promise<PluginStatus>;
+  install(pluginId: string): Promise<InstallResult>;
+  uninstall(pluginId: string): Promise<UninstallResult>;
+  inspectData(pluginId: string): Promise<InspectResult>;
+  applyData(pluginId: string, patch: Record<string, unknown>): Promise<ConfigureResult>;
+  listChanges(opts?: { pluginId?: string; limit?: number }): Promise<EcosystemChange[]>;
+  restore(changeId: string): Promise<RestoreResult>;
+}
+```
+
+**没有** `update`。Engine / `src/core` 不 `import 'obsidian'`。HTTP 只在主线程 adapter。`src/profiles/` 不实现本端口。
+
+### 5.15 设置、权限、破坏性
+
+- `ecosystemWriteEnabled`：已有，默认 `true`；UI 已在高级设置。本交付**不**改默认值、不拆两套 manifest。`update_app_config` / `ratel-config` **不得**代关/代开此开关（不进设置白名单）——与 S-HOST-ACCESS 总闸同纪律。
+- `false` 时：`search_plugins` / `get_plugin_status` / `list_ecosystem_changes` 仍可用；`install_plugin` 只开官方页；`uninstall_plugin` / `configure_plugin` apply / `restore_backup` **拒绝写盘**并说明去设置打开写盘。inspect 只读仍可用。
+- 破坏性集合须列入：`install_plugin`、`uninstall_plugin`、`configure_plugin`、`restore_backup`（auto 档仍确认）。`search_plugins` / `get_plugin_status` / `list_ecosystem_changes` / inspect 只读。
+- 桌面 + 社区插件受限模式已关：否则生态写工具开场失败并指路，不写盘。
+
+### 5.16 社区 SOP 示例骨架（实现期落 builtin Skill，内容以此为准）
+
+文件名建议 `install-community-plugin`（可改，语义不许做成脚本写盘）。`SKILL.md` 正文只教调工具：
+
+```markdown
+# 安装官方商店插件
+
+当用户要用某个社区能力（看板、日历、任务…）而当前库没有对应插件时：
+
+1. 调用 search_plugins，只推荐返回列表里的项（作者、下载量或未知、是否已装）。
+2. 用户点名一个 id 后调用 install_plugin；被拒绝或官方页模式则停止，不要改用脚本或笔记工具写配置目录。
+3. 需要改设置时：先 match_plugin_profiles（若该工具存在）；有 hit 则把预览的 patch 交给 configure_plugin op=apply。
+   无 hit 则 configure_plugin op=inspect，再按用户点名的 key apply。密钥类不要填。
+4. 用户要卸：uninstall_plugin。不要自己删 .obsidian。
+```
+
+禁止在 SOP 里贴整份 `data.json`。激活只注入本文，不降 `ask`。
+
+### 5.17 命令面板
+
+本交付**不**新增强制命令。可选（非验收项）：「重载社区插件清单缓存」——清 TTL 后下次 search 再拉。档案重载命令属 S-PLUGIN-PROFILE。
+
+### 5.18 i18n
+
+工具显示名、确认弹窗、错误、R3 官方页说明、热启用失败、already-installed、forbid 拒绝、stale 缓存，全部走 `src/i18n`。开发者 `console` 用中文。不在本 spec 锁死 key 字符串。
+
+---
+
+## 6. v9 基线 vs 本修订待补
+
+| 已在 v9 | 本交付仍缺 |
+|---|---|
+| ADR-018、README 第三条网口径（以当时切片为准，发版时再对） | `uninstall_plugin` / `get_plugin_status` / `list_ecosystem_changes` / `restore_backup` |
+| denylist、通道 B、search、install、R2/R3 | `configure_plugin` + 日志/备份模块 |
+| | 已装不覆盖；安装失败不得删完整安装（纠正 v9 过激清理） |
+| | 破坏性集合补 uninstall / configure / restore |
+| | 确认弹窗补全（作者/下载量/路径/key） |
+| | 社区 SOP 作者说明 + 至少一份示例安装（或安装+配置）Skill |
+| | 架构正文「ADR-018 待立」改为已立（**改 architecture 前按 AGENTS 确认**） |
+
+---
+
+## 7. 影响面
+
+| 区域 | 变化 |
+|---|---|
+| `src/utils/path-safety.ts` | 通道 B（已有则补本地已装 id / 下架清理） |
+| `src/adapters/ecosystem-*` | registry / vault / runtime / install；**新增** data.json 点名读写 |
+| `src/adapters/ecosystem-install.ts` | 已装不覆盖；失败清理不得删完整安装 |
+| `src/ports/ecosystem.ts` | 新；无 `update` |
+| `src/core/ecosystem-change-log.ts` / `ecosystem-backup.ts` | 新 |
+| `src/core/tool-permissions.ts` | 破坏性集合补 uninstall / configure / restore |
+| `src/tools/` | 补 5 个 + `configure_plugin`；已有 search/install 对齐本修订弹窗、already-installed、错误文案 |
+| `src/skills/script-vm.ts` / `run-skill-script.ts` | denylist 已有；保持 |
+| `src/i18n/` | 工具名、确认、错误 |
+| README / user-guide | 隐私第三条网、斜杠无新增、对话能力、作者 SOP 一节 |
+| 架构 host/ecosystem.md | 指针与 ADR-018 已立（改前确认）；图中 `update_plugin` 应标本交付不做 |
+| S-PLUGIN-PROFILE | 消费端；不改通道 B |
+
+---
+
+## 8. 测试矩阵（本交付必须有单测；对话验收见 §5.10）
+
+| ID | 断言 |
+|---|---|
+| T-A1 | 通道 A：笔记工具写 `configDir/...` 拒绝 |
+| T-B1 | 通道 B：白名单 `plugins/<清单或已装 id>/` 与启用清单放行；`ratel-vault` 拒 |
+| T-B2 | 通道 B：`..` / 绝对路径 / 反斜杠 拒 |
+| T-S1 | `search_plugins` 返回 ≤8；不含整份清单 |
+| T-S2 | 无网 + 过期缓存：可搜且带 stale；无缓存失败 |
+| T-I1 | R2 新装：三件套 + 启用清单含 id |
+| T-I2 | 已有合法 manifest：already-installed，三件套字节不变 |
+| T-I3 | 半成品目录：可清后重装 |
+| T-I4 | 安装失败不得 `removeRecursive` 已完整安装的目录 |
+| T-I5 | R3：零写他人目录，打开 `obsidian://show-plugin?id=` |
+| T-I6 | `minAppVersion` 过高拒绝 |
+| T-I7 | 热启用 API 缺失：filesWritten 真、enabled 假、Reload 文案 |
+| T-U1 | 卸载：备份存在、目录消失、启用清单无 id |
+| T-U2 | 下架仍在本地：仍可卸 |
+| T-C1 | apply 只改点名叶子；兄弟不变 |
+| T-C2 | 20 key 超限拒绝 |
+| T-C3 | forbid / 启发式密钥：整次失败零写盘 |
+| T-C4 | 新 key 必须 needsConfirm |
+| T-C5 | 点号非法 / 数组下标：整次失败 |
+| T-C6 | apply 中途失败：原 JSON 完好 |
+| T-L1 | jsonl append-only；restore 后再记 restore |
+| T-L2 | 每插件备份 >3 份：最旧 expired |
+| T-K1 | 脚本写 `configDir/plugins/x/data.json` 抛错且不落盘 |
+| T-K2 | 开关 false：uninstall/configure/restore 零写盘 |
+
+---
+
+## 9. 参考
 
 - [prd/ecosystem.md](../../prd/ecosystem.md)
-- [ADR-014: MCP Host 平台](../../adr/2026-08-03-mcp-host-platform.md)（opt-in 出站先例）
-- [obsidian-releases 社区清单](https://github.com/obsidianmd/obsidian-releases)
-- 分期：已被 [S-ECOSYSTEM-CUT1](2026-09-20-ecosystem-first-cut-design.md) 取代。旧稿 Phase 1 = 日志基建 + search/install/status、Phase 2 = update/configure/uninstall/restore **不再作为施工顺序**。第一刀 = 装卸闭环（含卸载/恢复）+ Skill 禁写 `configDir`；升级、点名配置、官方设置引导、档案产品后置
-
-## 7. 相对第一刀 / Skill 配置
-
-全量执行层仍是本文。**0.8.0 之后第一份可演示交付**不在本文重写一遍，见 [S-ECOSYSTEM-CUT1](2026-09-20-ecosystem-first-cut-design.md)。
-
-相对本文，第一刀是范围收窄加两处钉死，不是第二套生态模型：
-
-1. **工具：** 交 search / install / uninstall / status / list_changes / restore；**不交** `update_plugin`、`configure_plugin`。
-2. **日志/回滚：** 只服务本刀装/卸；字段形状仍用 §4.5。
-3. **热启用失败：** 以修订后的 §4.7 与 CUT1 为准（留盘说明），不以 2026-08-20 旧句为准。
-4. **Skill：** 自定义 Skill 可以教模型调上述工具（同一 `ask` 闸）；`run_skill_script` 必须物理拒绝整棵 `configDir`。配置档案与 `configure_plugin` 见 S-PLUGIN-PROFILE 的对应节，第一刀零档案产品。
-
-未登记 CUT1 + 合格 plan 之前，不得把本文八工具一次性施工，也不得用未登记的安装器 PR 倒逼本文。
+- [prd/requirements.md](../../prd/requirements.md) EC-01～10（本交付不含 EC-03 / EC-09 产品面）
+- [ADR-018](../../adr/2026-09-18-ecosystem-outbound.md)
+- [S-PLUGIN-PROFILE](2026-09-10-plugin-profile-design.md)
+- [S-ECOSYSTEM-CUT1（已取代）](../archive/S-ECOSYSTEM-CUT1/2026-09-20-ecosystem-first-cut-design.md)
+- [S-HOST-ACCESS](2026-09-11-host-access-design.md)（不得放宽沙箱）
+- 清单：https://github.com/obsidianmd/obsidian-releases

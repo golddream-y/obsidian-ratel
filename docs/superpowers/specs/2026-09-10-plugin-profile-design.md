@@ -1,103 +1,405 @@
 # S-PLUGIN-PROFILE — 社区插件配置档案
 
-> **架构正文:** [docs/architecture/host/plugin-profile.md](../../architecture/host/plugin-profile.md)。改代码前以架构文档为准。
+> **架构正文:** [docs/architecture/host/plugin-profile.md](../../architecture/host/plugin-profile.md)。对象字段与校验以本文 §6～§8 与架构一致；冲突时先改其中一份并交叉引用，禁止两套 schema。
 
 > 日期: 2026-09-10
-> 修订: 2026-09-20 — 补「相对第一刀 / Skill 配置」；PP-08 物理墙提前到装卸闭环，档案产品仍后置。见 [S-ECOSYSTEM-CUT1](2026-09-20-ecosystem-first-cut-design.md)
+> 修订: 2026-09-20 — PP-08 墙曾随 CUT1 提前；档案产品后置
+> 修订: **2026-09-21 — 与 S-ECOSYSTEM「装 + 配」一次交付对齐。** 本交付交出 schema、写作规则、识别草稿、恰好一份示例、只读匹配、可选 `sopSkill`。写入仍只走 `configure_plugin`。CUT1 分期作废。
 > 状态: Active
 > Spec ID: **S-PLUGIN-PROFILE**
-> 关联: [支柱 C](../../prd/ecosystem.md)、[PP-01～09 / EC-05～09](../../prd/requirements.md)、[S-ECOSYSTEM](2026-08-20-ecosystem-management-design.md)（安装与写入的手）、[S-ECOSYSTEM-CUT1](2026-09-20-ecosystem-first-cut-design.md)（第一刀）、[ADR-009](../../adr/2026-07-06-skill-mechanism.md)、[ADR-012](../../adr/2026-07-23-skill-activation-claude-aligned.md)、ADR-018（生态出站，S-ECOSYSTEM 待立）
+> 关联: [支柱 C](../../prd/ecosystem.md)、[PP-01～09](../../prd/requirements.md)、[S-ECOSYSTEM](2026-08-20-ecosystem-management-design.md)（**写入硬依赖**）、[ADR-009](../../adr/2026-07-06-skill-mechanism.md)、[ADR-012](../../adr/2026-07-23-skill-activation-claude-aligned.md)、[ADR-018](../../adr/2026-09-18-ecosystem-outbound.md)
 
 ---
 
 ## 1. 背景
 
-支柱 C 要让 Ratel 替用户装、配社区插件。S-ECOSYSTEM 已规定执行层：商店清单、确认安装、点名 key 改 `data.json`、备份与回滚。其 v1 非目标写明「不做语义级整套配置模板」，是为了防止模型对着未知结构瞎写。
+社区插件设置在各自 `data.json`，没有统一 API。若让模型现编整文件，无法审计、无法回滚语义、也无法开源复用。
 
-用户要的不是内置一份热门插件名单，而是一套**可生成、可识别、可消费**的机制：
+本子系统把「这个开源插件该怎么配」做成**可校验的档案**，与「怎么装、怎么写盘」拆开：
 
-- 按规则产出「规定」（档案），对应某个开源 Obsidian 插件的配置与设置；
-- 底座可以是规则模式，也可以是创建/识别方式；
-- Ratel 消费档案：安装对应插件，按需应用设置。
+- **知识层（本文）：** 一份格式契约 + 多份实例 + 识别草稿 + 匹配。
+- **执行层（S-ECOSYSTEM）：** 安装、点名写入、确认、备份、日志。
 
-这与现有 Skill 不同：Skill 是 SOP（教模型调工具）；档案是**机器可校验的配置契约**。`ratel-config` 的「Skill 教流程 + 工具真读写」可复用，但不能用 `run_skill_script` 写他人 `data.json`。
+Skill 仍只做 SOP（教模型何时调哪套 preset / 哪个工具）。真读写永远走工具。`ratel-config` 的「SOP + 专用工具」可复用到他人插件，白名单来自档案允许 key 减去 `forbid`。
 
-**一份 schema，多份档案。** 每个插件（或同一插件的不同场景）是实例，不是一套新语法。
+**一份 schema，多份档案。** 插件变多只增加文件，不增加语法。
 
 ---
 
-## 2. 目标
+## 2. 目标（与执行层同一交付）
 
-对应 [prd/ecosystem.md](../../prd/ecosystem.md) 阶段 1～2 与阶段 4 的档案侧（装卸是 S-ECOSYSTEM）：
-
-1. **阶段 1 规范：** 全库唯一 Profile schema；插件变多只增加档案文件（PP-01）。档案绑定商店 `pluginId`，对不上则作废（PP-02）。
-2. **阶段 2 创建：** 写作规则可产出合法档案（PP-03）；识别器可从已装插件生成草稿，默认不生效（PP-04）。
-3. **阶段 4 对话配置：** 按意图或 pluginId 匹配 preset（PP-05）；展开为点名 key 交给生态工具（PP-06 / PP-07）；禁止脚本写他人配置（PP-08）。
-4. 第一期底座含 schema、规则、识别草稿、**一份**示例档案（PP-09）。
+1. **PP-01 / PP-02：** 全库唯一 Profile schema；档案绑定商店 `pluginId`，清单对不上则不能据此安装。
+2. **PP-03 / PP-04：** 写作规则可产出合法档案；识别器从已装插件生成草稿，默认不生效。
+3. **PP-05～07：** 按意图或 pluginId 匹配 preset；未装则走 `install_plugin`；写入只应用选中 key 子集，经 `configure_plugin`。
+4. **PP-08：** 禁止脚本写他人配置（执行层 denylist 已在 v9；本文不得再开脚本写盘）。
+5. **PP-09：** 底座含 schema、规则、识别草稿、**恰好一份**示例档案（建议 Calendar「周一开始」，若该插件已不在清单则换一个仍在清单内的插件，spec 不锁死 id）。
+6. 社区作者可以：手写档案（校验后启用）+ 可选同名 SOP Skill。没有 `configure_plugin` 不得声称配置 Skill 已可执行。
 
 ---
 
 ## 3. 非目标
 
-- 每个插件维护一份不同的 schema。
-- 运行时直接读目标插件源码生成并写入配置。
-- 用 Skill 脚本写 `configDir` / 他人 `data.json`。
-- 商店外安装、主题/CSS snippet、代改 Obsidian 核心设置、管理 Ratel 自身目录。
-- 第一期做 50+ 插件官方档案或自动「深度调优」整盘覆盖 `data.json`。
-- 新开能力 `kind`；档案不是第四种执行面。
-- 不替代 S-ECOSYSTEM 的通道 B、确认弹窗、`EcosystemChange`。
-
-**对 S-ECOSYSTEM v1 非目标的收窄：** 禁止模型现编整份 `data.json`；**允许**经唯一 schema 校验的档案 preset 作为写入来源。
+- 每个插件一份不同 schema；运行时读目标插件源码生成并写入。
+- 第一期 50+ 官方档案或「深度调优」整盘覆盖 `data.json`。
+- 新开能力 `kind`。
+- 替代通道 B、确认弹窗、`EcosystemChange`。
+- 商店外 `install.source`；`pluginId === ratel-vault`。
+- 密钥代填。
+- 升级保配置（EC-03）— 属 S-ECOSYSTEM 后续，档案的 `pluginVersionRange` 只用于**拒绝或确认后仍写**，不触发升级工具。
 
 ---
 
-## 4. 需求（产品）
+## 4. 依赖（硬 / 软）
 
-验收口径写在 [prd/requirements.md](../../prd/requirements.md) PP-01～09。产品行为摘要：
+| 方向 | 内容 |
+|---|---|
+| **硬依赖 S-ECOSYSTEM** | 消费写入必须调用已落地的 `configure_plugin`；未装先 `install_plugin`。没有这两样，本文只允许加载/匹配/展示预览，**验收不算通过** |
+| 软依赖商店缓存 | `pluginId` 校验用 ADR-018 清单；缓存未就绪时档案可加载为 `unverifiedStoreId`，**不得**据此安装 |
+| 已有 Skill 机制 | `sopSkill` 只 `activate_skill`；不改加载协议 |
+| 不依赖 S-HOST-ACCESS | 出库闸不放宽脚本 |
 
-- 用户可以说「帮我把日历配成周一开始」，Ratel 匹配档案，展示将改的 key 与前后值，点头后再装/再写。
-- 没有档案时仍可按 EC-01～05 探索、安装、点名改 key，不声称已按最佳实践配好。
-- 密钥类 key 只出现在 `forbid`，Agent 只引导打开该插件设置页（对齐 EC-09 精神，对象换成目标插件设置）。
-- 档案可开源分发（builtin / 用户 global / 本库 vault），同 id 覆盖顺序与 Skill 一致：vault > global > builtin。
-
----
-
-## 5. 详细设计
-
-对象、校验、匹配、消费顺序、端口与分期均以 [架构正文](../../architecture/host/plugin-profile.md) 为准。本 spec 只钉产品决策：一份 schema、商店 pluginId、draft 不生效、写入走生态工具。
+可并行实现：schema / loader / matcher / 示例文件。不可单独发版声称「能配插件」。
 
 ---
 
-## 6. 影响面
+## 5. 与 Skill / 能力池
+
+| | Skill | Plugin Profile |
+|---|---|---|
+| 是什么 | 给模型的 SOP 文本 | 可校验的配置契约 |
+| 激活 | `activate_skill` → Session | 匹配后把 preset 交给 `configure_plugin` |
+| 写设置 | 只许教模型去调工具 | 自身不写 |
+| `kind` | `skill` | 无；经只读工具被发现 |
+
+社区「配置 Skill」= SOP 文本 +（推荐）一份档案。SOP 里写：先 `match_plugin_profiles`，再把 hit 的 patch 交给 `configure_plugin`。禁止在 SOP 里贴整份 `data.json` 让模型 extra 写盘。
+
+---
+
+## 6. 核心对象
+
+落地类型建议 `src/profiles/types.ts`（名称可微调，语义不许漂）。
+
+```typescript
+type ProfileKind = 'obsidian-plugin-profile';
+/** 点号路径；禁止 '..'、禁止以 '.' 开头或结尾 */
+type SettingKey = string;
+
+interface PluginProfile {
+  kind: ProfileKind;
+  id: string;                     // ^[a-z][a-z0-9-]{0,63}$
+  pluginId: string;               // 商店 id
+  pluginName: string;
+  pluginVersionRange: string;     // semver range，如 ">=1.0.0"
+  enabled?: boolean;              // 默认 true；draft 必须 false
+  tags?: string[];
+  sopSkill?: string;              // 可选已有 Skill 名
+  install: { source: 'community-store' };
+  forbid: SettingKey[];
+  presets: ProfilePreset[];
+}
+
+interface ProfilePreset {
+  id: string;
+  when: string;                   // 用户场景，必填
+  patch: Record<SettingKey, unknown>;
+}
+
+interface ProfileMatchQuery {
+  utterance?: string;
+  pluginId?: string;
+  tags?: string[];
+}
+
+interface ProfileMatchHit {
+  profileId: string;
+  pluginId: string;
+  presetId: string;
+  score: number;
+  reasons: string[];
+}
+```
+
+仓库 JSON Schema 与上表一一对应。解析后先 schema，再 §7.3 语义校验。两道都过才进 Registry。
+
+`LoadReport`（`loadAll` 返回）：
+
+```typescript
+interface ProfileDiagnostic {
+  profileId?: string;
+  path: string;
+  code:
+    | 'schemaInvalid'
+    | 'semanticInvalid'
+    | 'unknownPluginId'
+    | 'unverifiedStoreId'
+    | 'versionMismatch'
+    | 'draftSkipped'
+    | 'idCollision'
+    | 'forbidOverlap'
+    | 'parseError';
+  message: string;
+}
+
+interface LoadReport {
+  loaded: number;
+  skipped: number;
+  diagnostics: ProfileDiagnostic[];
+}
+```
+
+诊断进现有 debug 日志，不进遥测。用户可见文案走 i18n。
+
+### 6.1 存放（与 Skill 三源对齐，同 `id`：vault > global > builtin）
+
+| 源 | 路径 |
+|---|---|
+| builtin | `<pluginDir>/plugin-profiles/<id>.yaml` |
+| global | 用户主目录下 `.ratel/plugin-profiles/<id>.yaml`（文档用 `~/.ratel/...` 描述，实现用 os homedir，**源码与仓库不写本机绝对路径**） |
+| vault | `<vaultRoot>/.ratel/plugin-profiles/<id>.yaml` |
+
+接受 `.yml` / `.json`。文件名建议等于 `id`，不一致以文件内 `id` 为准并记诊断。草稿：`<id>.draft.yaml` 或 `enabled: false` — **不进匹配池**。`source`（builtin / global / vault）只在 Registry 内存里，**不写进档案文件**。
+
+---
+
+## 7. 加载与校验
+
+启动与「重载档案」命令同一流水线。单文件失败不得拖垮其它档案。
+
+### 7.1 覆盖
+
+同 `id`：vault > global > builtin。同 id 且同源两份 → 按文件名排序后扫描者丢弃并诊断。
+
+### 7.2 商店清单
+
+`pluginId` 必须能在社区清单查到。清单未就绪：仍加载，状态 `unverifiedStoreId`；匹配可返回，**安装必须等清单校验**。清单就绪后对不上的从匹配池移除（文件可留，诊断 `unknownPluginId`）。
+
+### 7.3 语义校验
+
+| 条件 | 结果 |
+|---|---|
+| `kind` 不是 `obsidian-plugin-profile` | 拒绝 |
+| `install.source` 不是 `community-store` | 拒绝 |
+| `presets` 为空 | 拒绝 |
+| 任一 `patch` key 与 `forbid` 相交 | 拒绝整份 |
+| key 含 `..`、`/`、空白、控制字符 | 拒绝 |
+| `patch` 值为 `undefined` 或不可 JSON 序列化 | 拒绝 |
+| `pluginId` 为 `ratel-vault` | 拒绝 |
+| 同一档案内 `presets[].id` 重复 | 拒绝 |
+| `presets.length > 8` | 拒绝 |
+| 任一 `patch` 的 key 数 > 20 | 拒绝（与 configure 单次上限对齐） |
+
+`patch` key 在当前 `data.json` 不存在：校验阶段**不拒绝**。消费时标 `needsConfirm`。
+
+---
+
+## 8. 创建与识别
+
+### 8.1 写作规则（与 schema 一起版本化，实现期 `plugin-profiles/AUTHORING.md`）
+
+1. 只写用户常改的 5～15 个 key，不要抄整份 `data.json`。
+2. 密钥、token、webhook、cookie 进 `forbid`，不要进 `patch`。
+3. `when` 写用户场景，不写模块名。
+4. 互斥配置不要塞进同一 patch。
+5. 必须通过 schema + §7.3。
+
+人或模型都可当作者；Ratel 运行时不得「自由发挥」补 key。
+
+### 8.2 识别器
+
+输入：已装 `manifest.json` + `data.json`（只读，走通道 B 只读或等效；**禁止写入该插件目录**）。
+
+输出：draft：`pluginId` / `pluginName` / `pluginVersionRange`（如 `>=` 当前版本）；`forbid` 启发式 `/token|secret|password|apiKey|webhook|cookie/i`；`presets` 先空壳 `default` + `when: 待作者填写` + 空 patch。现网值可作注释快照，**不得**当已启用 preset 外发。
+
+工具 `draft_plugin_profile`：默认 ask；只写 global 或 vault 的 draft 路径。识别器**禁止**调用 `configure_plugin` / `install_plugin`。
+
+---
+
+## 9. 匹配
+
+`match` 只在 **enabled 且非 draft 且非 unknownPluginId** 的池上跑。
+
+| 信号 | 权重 |
+|---|---|
+| `query.pluginId` 精确等于档案 `pluginId` | +100 |
+| `query.tags` 与档案 `tags` 交集 | 每个 +20 |
+| `utterance` 子串命中 `pluginName` / `pluginId` / `when` / `tags`（大小写不敏感） | 每命中字段 +10 |
+| 无任何命中 | 不进结果 |
+
+按 `score` 降序，默认最多 5 条；同分按 `profileId` 字母序。`presetId`：utterance 命中某 preset 的 `when` 则用它，否则档案内第一个 preset。
+
+无命中：空列表。模型应退回 `search_plugins` / 点名 `configure_plugin`，**不得**声称已按档案配好。
+
+---
+
+## 10. 消费顺序
+
+```
+意图 → match_plugin_profiles
+     → 展示 hit + 展开后 patch 预览
+     → 未装且用户确认 → install_plugin（仅 community-store）
+     → 已装版本不满足 pluginVersionRange → 警告，默认不写；用户强制则 needsConfirm
+     → 若 sopSkill 存在且用户未拒绝说明 → activate_skill（只注入，不写盘）
+     → configure_plugin({ pluginId, patch: 展开后的 key 子集 })
+```
+
+展开规则：
+
+1. 去掉用户没选的 key；
+2. 去掉 `forbid`（再减一次）；
+3. 已装 `data.json` 中不存在的 key 标 `needsConfirm`；
+4. 点号路径只写叶子，不整枝覆盖未点名兄弟。
+
+`configure_plugin` 可以不认识 Profile 类型，只收 `{ pluginId, patch }`。
+
+---
+
+## 11. 端口、文件与工具
+
+### 11.1 端口 `src/ports/plugin-profile.ts`（零实现）
+
+```typescript
+interface PluginProfilePort {
+  loadAll(): Promise<LoadReport>;
+  get(id: string): PluginProfile | undefined;
+  match(query: ProfileMatchQuery): ProfileMatchHit[];
+  validate(raw: unknown): { ok: true; profile: PluginProfile } | { ok: false; errors: string[] };
+}
+```
+
+识别写 draft 走单独方法，避免只读消费误写。`src/profiles/` 禁止 `import 'obsidian'`。
+
+### 11.2 建议落点
+
+```
+src/profiles/
+src/adapters/plugin-profile-fs.ts
+src/tools/list-plugin-profiles.ts
+src/tools/match-plugin-profiles.ts
+src/tools/draft-plugin-profile.ts
+schemas/obsidian-plugin-profile.schema.json
+plugin-profiles/          # builtin 示例 + AUTHORING.md
+```
+
+### 11.3 工具权限与契约
+
+| 工具 | 权限 | 入参 | 出参 |
+|---|---|---|---|
+| `list_plugin_profiles` | 只读 | 无 | `{ profiles: [{ id, pluginId, pluginName, source, enabled, presets: [{ id, when }] }] }`；不含 draft / unknownPluginId |
+| `match_plugin_profiles` | 只读 | `utterance?: string`；`pluginId?: string`；`tags?: string[]`。至少一项非空 | `{ hits: [{ profileId, pluginId, presetId, score, reasons, patchPreview }] }`；`patchPreview` 已按 §10 展开（仍未写盘） |
+| `draft_plugin_profile` | ask | `pluginId: string`；`dest?: "vault"\|"global"`（默认 vault） | `{ path, draft: true }`。已装才能扫 |
+| `install_plugin` / `configure_plugin` | ask | **S-ECOSYSTEM 实现** | 见该 spec §5.11 |
+
+只读工具进同一 ToolRegistry。`match` 不得调用 `configure_plugin`。
+
+### 11.4 命令面板
+
+必须有：「重载插件档案」，与启动同一 `loadAll()`。失败单文件进诊断，不弹崩溃。
+
+### 11.5 解析与 semver 子集
+
+- 接受 `.yaml` / `.yml` / `.json`。YAML 用**无原生模块**的纯 JS 解析（实现期选型，禁止 node 扩展）。JSON 用标准 `JSON.parse`。
+- `pluginVersionRange` 本交付只认三种：`*`、精确 `x.y.z`、`>=x.y.z`。其它写法校验拒绝。比较算法与现网 `isAppVersionAtLeast` 同类（点分段数字），**不**为此引入完整 semver 库，除非后续 plan 单开。
+
+---
+
+## 12. 验收（本交付）
+
+1. 非法档案（schema 或 forbid∩patch）不进匹配池，其它档案仍可用。
+2. 清单对不上的 `pluginId` 不能触发安装。
+3. 示例档案能被「周一开始 / 日历」一类 utterance 命中，预览 key 与示例 `patch` 一致。
+4. draft 默认匹配不到；人手改为 enabled 后可命中。
+5. 匹配后的 apply 走 `configure_plugin`：确认弹窗、最小 diff、日志可查；脚本写 `data.json` 仍失败。
+6. 无档案时点名配置仍可用（执行层），且不得显示「已按档案最佳实践配好」。
+
+---
+
+## 13. 影响面
 
 | 区域 | 变化 |
 |---|---|
-| 新 | `schemas/obsidian-plugin-profile.schema.json`、`src/ports` 档案端口、加载器、识别草稿、builtin 示例 |
-| S-ECOSYSTEM | `configure_plugin` 增加「从 preset 展开为点名 key」；不改通道 B |
-| Skill | 不改加载协议；可选同名 SOP |
-| [prd/ecosystem.md](../../prd/ecosystem.md) | 插件配置从「仅点名 key」扩展为「点名 key + 档案 preset」 |
-| README 隐私 | 消费安装时仍走生态出站（ADR-018）；档案文件本身默认本地、可随仓库分发不含密钥 |
-| 测试 | schema 校验、清单对不上作废、forbid ∩ patch 非法、draft 不进匹配池 |
+| 新 | schema、profiles 纯逻辑、fs adapter、三只读/草稿工具、一份 builtin 示例、AUTHORING.md、重载命令 |
+| S-ECOSYSTEM | 只增加「收展开后的 patch」；不改通道 B |
+| i18n | 工具名、匹配空、versionMismatch、重载命令 |
+| 测试 | 见 §16 |
+| 架构 plugin-profile.md | 与本文字段对齐（改前确认）；分期表「知识层可先于执行层」对本交付作废——必须同发 |
 
 ---
 
-## 7. 相对第一刀 / Skill 配置
+## 14. 示例档案（builtin，恰好一份）
 
-本文仍是档案层唯一设计。第一刀**不交付** schema、识别草稿、示例档案、匹配工具、`configure_plugin`。
+实现期文件建议 `plugin-profiles/calendar-week-start.yaml`。**`pluginId` 以发版时官方清单为准**；若 `calendar` 已不在清单，换一个仍在清单内、有「周起始」类设置的插件，并改 `when` / `patch` 叶子，不改 schema。
 
-相对本文提前落地的只有 **PP-08 禁令**（不是档案功能）：
+```yaml
+kind: obsidian-plugin-profile
+id: calendar-week-start
+pluginId: calendar
+pluginName: Calendar
+pluginVersionRange: ">=1.0.0"
+enabled: true
+tags: [calendar, week]
+install:
+  source: community-store
+forbid:
+  - token
+  - apiKey
+presets:
+  - id: week-start-monday
+    when: 周一开始
+    patch:
+      weekStart: 1
+```
 
-- Skill SOP **可以**教模型调用 S-ECOSYSTEM / CUT1 已交出的生态工具（同一确认闸）。
-- Skill 脚本 **不可以**写 `configDir` / 他人 `data.json`；不得注入生态 adapter。
-- 无档案时仍可探索、安装（本文 §4 已有）；第一刀不得声称「已按最佳实践配好」。
-- `ratel-config` 模式（SOP + 专用工具）可在第三刀复用到他人插件；第一刀不要为了它先做 `configure_plugin`。
+`weekStart: 1` 仅为示例叶子；识别器不得把用户现网值写成 enabled preset。
 
-分期指针见 [S-ECOSYSTEM-CUT1](2026-09-20-ecosystem-first-cut-design.md) §5.2。不要另开一份平行的 Profile spec。
+### 14.1 AUTHORING.md 必含（实现期落文件）
 
-## 8. 参考
+1. 5～15 个常改 key；密钥进 forbid。
+2. `when` 写场景。
+3. 互斥配置分 preset。
+4. 必须过 schema + §7.3。
+5. 指向 `configure_plugin`，禁止贴整份 data.json。
+6. 存放三源与覆盖顺序。
+
+### 14.2 JSON Schema 要点（实现期 `schemas/obsidian-plugin-profile.schema.json`）
+
+`additionalProperties: false`。必填：`kind`（const）、`id`（pattern）、`pluginId`、`pluginName`、`pluginVersionRange`、`install`、`forbid`（array of string）、`presets`（minItems 1）。`presets[].patch` 的 value 不在 schema 里枚举业务 key。
+
+---
+
+## 15. 失败与诊断
+
+`code` 见 §6 `ProfileDiagnostic`。`forbidOverlap` 与 schema 失败一样跳过该文件。`unverifiedStoreId` 可匹配但**不可**据此 `install_plugin`。`versionMismatch` 只在消费写入时出现，不阻止匹配预览。
+
+---
+
+## 16. 测试矩阵
+
+| ID | 断言 |
+|---|---|
+| P-S1 | schema 失败 / forbid∩patch / 重复 preset id：不进池，其它档案仍可用 |
+| P-S2 | `pluginId === ratel-vault` 拒绝 |
+| P-S3 | 非法 `pluginVersionRange` 拒绝；`*` / 精确 / `>=` 通过 |
+| P-L1 | 同 id：vault > global > builtin |
+| P-L2 | 同源同 id 两文件：按文件名排序后丢后者并 `idCollision` |
+| P-L3 | 单文件坏 YAML：`parseError`，不拖垮 loadAll |
+| P-M1 | draft / `enabled: false` 不进 match |
+| P-M2 | unknownPluginId 不进 match |
+| P-M3 | 权重：pluginId +100；tag 交 +20；utterance 字段 +10；无命中空列表 |
+| P-M4 | 同分按 profileId 字母序；最多 5 条 |
+| P-M5 | utterance「周一开始」命中示例 preset，`patchPreview.weekStart === 1` |
+| P-E1 | 展开去掉 forbid 与未选 key |
+| P-E2 | 新 key 标 needsConfirm |
+| P-D1 | draft 工具只写 `.draft.yaml` 或 `enabled: false`；不调 configure/install |
+| P-X1 | 无档案时执行层点名配置仍可用；match 空不得声称已按档案配好 |
+
+合流验收（需 S-ECOSYSTEM 工具）：§12 第 5 条。
+
+---
+
+## 17. 参考
 
 - 架构：[host/plugin-profile.md](../../architecture/host/plugin-profile.md)
 - [S-ECOSYSTEM](2026-08-20-ecosystem-management-design.md)
-- [S-ECOSYSTEM-CUT1](2026-09-20-ecosystem-first-cut-design.md)
 - [prd/ecosystem.md](../../prd/ecosystem.md)
-- 社区清单：https://github.com/obsidianmd/obsidian-releases
+- [prd/requirements.md](../../prd/requirements.md) PP-01～09
+- [S-ECOSYSTEM-CUT1（已取代）](../archive/S-ECOSYSTEM-CUT1/2026-09-20-ecosystem-first-cut-design.md)
