@@ -32,7 +32,8 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
-| P-ECOSYSTEM-1 | [2026-09-18-ecosystem-first-slice.md](plans/2026-09-18-ecosystem-first-slice.md) | In Progress | S-ECOSYSTEM | 已合入 `v9`;ADR-018 + denylist + search/install。CUT1 已取代;后续按母 spec 补卸/升/配/日志 |
+| P-ECOSYSTEM-1 | [2026-09-18-ecosystem-first-slice.md](plans/2026-09-18-ecosystem-first-slice.md) | Completed | S-ECOSYSTEM | 已合入 `v9`;ADR-018 + denylist + search/install。余量见 P-ECOSYSTEM-2 |
+| P-ECOSYSTEM-2 | [2026-09-21-ecosystem-base.md](plans/2026-09-21-ecosystem-base.md) | Pending | S-ECOSYSTEM + S-PLUGIN-PROFILE | 社区插件底座:卸/升/配/日志/档案;7 Task 四波;TDD |
 | P-LLM-RETRY-UI | [2026-09-14-llm-retry-ui.md](plans/2026-09-14-llm-retry-ui.md) | Completed | S-LLM-RETRY-UI | 拣自 feat/p-llm-retry-ui 合入 develop；打字行 connecting + 三条文案 |
 
 ---
@@ -54,7 +55,7 @@
 
 1. **S-LLM-RETRY + S-LLM-RETRY-UI** — 策略与打字行均已落地,两份 spec 一并待归档
 2. 候选(无 spec,重启时新开):update_frontmatter / Write Gate / append_to_daily(S-EVOLUTION 写侧,见 archive/S-EVOLUTION/)
-3. **S-ECOSYSTEM + S-PLUGIN-PROFILE**（社区插件底座一次交付;含 EC-03 更新保配置;v9 已有 search/install;EC-09 不做）
+3. **P-ECOSYSTEM-2**（S-ECOSYSTEM + S-PLUGIN-PROFILE 底座;含 EC-03）
 4. 候选(无 spec):skill-script-sandbox 心跳用例 fake-timers 化 — 存量时序 flake(300ms 真定时器赛跑,P-VISION-1 审查期间实证 base/HEAD 均间歇失败)
 5. S-HOST-ACCESS — 库外访问总闸;不插队;文档解析另开 spec
 
