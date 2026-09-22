@@ -11,6 +11,7 @@ import * as path from 'node:path';
 import {
 	COMMUNITY_PLUGINS_CATALOG_URL,
 	EcosystemRegistry,
+	compareDottedVersion,
 	rankCommunityPlugins,
 	type CommunityPluginEntry,
 	type HttpGet,
@@ -32,6 +33,15 @@ const SAMPLE: CommunityPluginEntry[] = [
 		repo: 'blacksmithgu/obsidian-dataview',
 	},
 ];
+
+describe('compareDottedVersion', () => {
+	it('compareDottedVersion - 1.10.0 大于 1.9.0', () => {
+		expect(compareDottedVersion('1.10.0', '1.9.0')).toBe(1);
+	});
+	it('compareDottedVersion - beta 无法比较 - null', () => {
+		expect(compareDottedVersion('1.0.0-beta', '1.0.0')).toBeNull();
+	});
+});
 
 describe('rankCommunityPlugins', () => {
 	it('搜索 - 按名称命中 - 返回 top 结果含作者与下载量', () => {

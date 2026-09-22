@@ -725,6 +725,7 @@ export default class RatelVaultPlugin extends Plugin {
 						apiVersion,
 						openOfficialPage: (uri) => openExternalUrl(uri),
 						appLike: this.app,
+						pluginDir,
 					});
 				},
 			}),
