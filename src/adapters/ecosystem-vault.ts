@@ -184,7 +184,6 @@ export class MemoryEcosystemIo implements EcosystemIo {
 	}
 
 	async listPluginIds(configDir: string): Promise<string[]> {
-		this.gate(`${configDir}/plugins`);
 		const ids = new Set<string>();
 		const prefix = `${configDir}/plugins/`;
 		for (const k of this.files.keys()) {
