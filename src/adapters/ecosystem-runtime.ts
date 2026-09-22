@@ -49,3 +49,23 @@ export async function tryEnableCommunityPlugin(
 		return { enabled: false, usedInternalApi: true };
 	}
 }
+
+/**
+ * 尽力禁用社区插件。缺方法或抛错 → disabled=false,不假装成功。
+ *
+ * @param appLike - 宿主 app(只取 plugins)
+ * @param pluginId - 目标 id
+ */
+export async function tryDisableCommunityPlugin(
+	appLike: { plugins?: PluginsHost & { disablePlugin?: (id: string) => void | Promise<void> } },
+	pluginId: string,
+): Promise<{ disabled: boolean }> {
+	const plugins = appLike.plugins;
+	if (!plugins || typeof plugins.disablePlugin !== 'function') return { disabled: false };
+	try {
+		await plugins.disablePlugin(pluginId);
+		return { disabled: true };
+	} catch {
+		return { disabled: false };
+	}
+}
