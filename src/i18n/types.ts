@@ -771,6 +771,8 @@ export interface ErrorStrings {
   'error.ecosystem.noDowngrade': string;
   'error.ecosystem.dataJsonTouched': string;
   'error.ecosystem.updateCancelled': string;
+  'error.ecosystem.unknownChange': string;
+  'error.ecosystem.expiredChange': string;
   // 关键路径:检索就绪状态错误
   'error.search.notReady': string;
   // 关键路径:模型 / ORT WASM 下载失败错误(用户可见 Notice,经 ratelError 冒泡)
@@ -1202,6 +1204,8 @@ export interface EcosystemStrings {
   'ecosystem.update.current': string;
   'ecosystem.update.filesOnly': string;
   'ecosystem.update.enabled': string;
+  'ecosystem.uninstall.done': string;
+  'ecosystem.restore.done': string;
   'ecosystem.search.stale': string;
   'settings.ecosystem.heading': string;
   'settings.ecosystem.writeEnabled.name': string;

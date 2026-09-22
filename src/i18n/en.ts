@@ -754,6 +754,8 @@ export const en: Strings = {
   'error.ecosystem.noDowngrade': 'Local {local} is newer than catalog {catalog}; downgrade refused',
   'error.ecosystem.dataJsonTouched': 'Update must not touch data.json; restored from backup',
   'error.ecosystem.updateCancelled': 'Update cancelled',
+  'error.ecosystem.unknownChange': 'Change record not found: {id}',
+  'error.ecosystem.expiredChange': 'Backup for change {id} has expired; cannot restore',
   // 关键路径:search not ready (user-visible when running search_vault)
   'error.search.notReady': 'Index or Embedding is not ready; please wait or check in Settings → Diagnostics',
   'error.model.downloadFailed': 'Failed to download {name}: {status}',
@@ -1159,6 +1161,8 @@ export const en: Strings = {
   'ecosystem.update.current': '{id} is already {version}',
   'ecosystem.update.filesOnly': 'Updated {id} {from}→{to} without touching data.json; not hot-enabled',
   'ecosystem.update.enabled': 'Updated {id} {from}→{to} without touching data.json and tried to enable',
+  'ecosystem.uninstall.done': 'Uninstalled {id}; backup kept — use list_ecosystem_changes to restore',
+  'ecosystem.restore.done': 'Restored plugin {id} from change ({action})',
   'ecosystem.search.stale': 'Catalog cache is stale (fetched {fetchedAt}); search still used the cache.',
   'settings.ecosystem.heading': 'Community plugin ecosystem',
   'settings.ecosystem.writeEnabled.name': 'Allow installing community plugins into this vault',
