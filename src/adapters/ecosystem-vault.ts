@@ -80,7 +80,13 @@ export class AdapterEcosystemIo implements EcosystemIo {
 	async listPluginIds(configDir: string): Promise<string[]> {
 		const pluginsRel = `${configDir.replace(/\/$/, '')}/plugins`;
 		const listing = await this.adapter.list(pluginsRel);
-		return listing.folders.filter((name) => name !== 'ratel-vault');
+		const ids: string[] = [];
+		for (const entry of listing.folders) {
+			const id = path.basename(entry.replace(/\\/g, '/'));
+			if (!id || id === 'ratel-vault') continue;
+			ids.push(id);
+		}
+		return ids;
 	}
 
 	async copyTree(srcRel: string, dstAbs: string): Promise<void> {
@@ -89,15 +95,13 @@ export class AdapterEcosystemIo implements EcosystemIo {
 			await mkdir(dst, { recursive: true });
 			const listing = await this.adapter.list(rel);
 			for (const file of listing.files) {
-				const fileRel = rel ? `${rel}/${file}` : file;
-				const content = await this.adapter.read(fileRel);
-				const dest = path.join(dst, file);
+				const content = await this.adapter.read(file);
+				const dest = path.join(dst, path.basename(file.replace(/\\/g, '/')));
 				await mkdir(path.dirname(dest), { recursive: true });
 				await writeFile(dest, content, 'utf-8');
 			}
 			for (const folder of listing.folders) {
-				const childRel = rel ? `${rel}/${folder}` : folder;
-				await walk(childRel, path.join(dst, folder));
+				await walk(folder, path.join(dst, path.basename(folder.replace(/\\/g, '/'))));
 			}
 		};
 		await walk(src, dstAbs);
