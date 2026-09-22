@@ -1,0 +1,39 @@
+{
+	"$schema": "https://json-schema.org/draft/07/schema#",
+	"title": "obsidian-plugin-profile",
+	"type": "object",
+	"additionalProperties": false,
+	"required": ["kind", "id", "pluginId", "pluginName", "pluginVersionRange", "install", "forbid", "presets"],
+	"properties": {
+		"kind": { "const": "obsidian-plugin-profile" },
+		"id": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,63}$" },
+		"pluginId": { "type": "string", "minLength": 1 },
+		"pluginName": { "type": "string", "minLength": 1 },
+		"pluginVersionRange": { "type": "string", "pattern": "^(\\*|\\d+\\.\\d+\\.\\d+|>=\\d+\\.\\d+\\.\\d+)$" },
+		"enabled": { "type": "boolean" },
+		"tags": { "type": "array", "items": { "type": "string" } },
+		"sopSkill": { "type": "string" },
+		"install": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["source"],
+			"properties": { "source": { "const": "community-store" } }
+		},
+		"forbid": { "type": "array", "items": { "type": "string" } },
+		"presets": {
+			"type": "array",
+			"minItems": 1,
+			"maxItems": 8,
+			"items": {
+				"type": "object",
+				"additionalProperties": false,
+				"required": ["id", "when", "patch"],
+				"properties": {
+					"id": { "type": "string" },
+					"when": { "type": "string" },
+					"patch": { "type": "object" }
+				}
+			}
+		}
+	}
+}
