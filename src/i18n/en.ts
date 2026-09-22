@@ -748,6 +748,9 @@ export const en: Strings = {
   'error.ecosystem.self': 'The ecosystem tools cannot install or manage ratel-vault itself',
   'error.ecosystem.badKey': 'Invalid setting path: {key}',
   'error.ecosystem.patchSize': 'At most 20 keys per apply, got {n}',
+  'error.ecosystem.writeDisabled': 'Ecosystem writes are disabled; cannot modify plugin data.json',
+  'error.ecosystem.newKey': 'New setting {key} was not confirmed in confirmedNewKeys; write refused',
+  'error.ecosystem.notInstalled': 'Plugin is not installed or manifest is invalid: {id}',
   // 关键路径:search not ready (user-visible when running search_vault)
   'error.search.notReady': 'Index or Embedding is not ready; please wait or check in Settings → Diagnostics',
   'error.model.downloadFailed': 'Failed to download {name}: {status}',
