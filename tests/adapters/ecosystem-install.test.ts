@@ -97,6 +97,7 @@ describe('installCommunityPlugin', () => {
 				opened.push(uri);
 			},
 			appLike: {},
+			pluginDir,
 		});
 		expect(result.mode).toBe('official-page');
 		expect(result.filesWritten).toBe(false);
@@ -120,6 +121,7 @@ describe('installCommunityPlugin', () => {
 			apiVersion: '1.13.0',
 			openOfficialPage: async () => undefined,
 			appLike: {},
+			pluginDir,
 		});
 		expect(result.mode).toBe('write');
 		expect(result.filesWritten).toBe(true);
@@ -142,6 +144,7 @@ describe('installCommunityPlugin', () => {
 				apiVersion: '1.13.0',
 				openOfficialPage: async () => undefined,
 				appLike: {},
+				pluginDir,
 			}),
 		).rejects.toThrow(/自己|itself/i);
 	});
@@ -159,7 +162,35 @@ describe('installCommunityPlugin', () => {
 				apiVersion: '1.13.0',
 				openOfficialPage: async () => undefined,
 				appLike: {},
+				pluginDir,
 			}),
 		).rejects.toThrow();
+	});
+
+	it('已有合法 manifest - already-installed 且不覆盖 main.js', async () => {
+		const fetch = http();
+		const reg = new EcosystemRegistry(pluginDir, fetch);
+		const io = new MemoryEcosystemIo(() => ({ catalogIds: new Set(['calendar']), installedIds: new Set(['calendar']) }));
+		const deps = { registry: reg, io, configDir: '.obsidian', writeEnabled: true, apiVersion: '1.13.0', openOfficialPage: async () => undefined, appLike: {}, pluginDir };
+		await installCommunityPlugin('calendar', deps);
+		io.files.set('.obsidian/plugins/calendar/main.js', 'MARKER');
+		const second = await installCommunityPlugin('calendar', deps);
+		expect(second.mode).toBe('already-installed');
+		expect(io.files.get('.obsidian/plugins/calendar/main.js')).toBe('MARKER');
+	});
+
+	it('安装失败不得删除已完整安装的目录', async () => {
+		const io = new MemoryEcosystemIo(() => ({ catalogIds: new Set(['calendar']), installedIds: new Set(['calendar']) }));
+		await io.writeText('.obsidian/plugins/calendar/manifest.json', JSON.stringify({ id: 'calendar', version: '1.0.0' }));
+		await io.writeText('.obsidian/plugins/calendar/main.js', 'KEEP');
+		const fetch = http({
+			[`https://github.com/${CAL.repo}/releases/download/1.5.10/main.js`]: { status: 500, text: '' },
+		});
+		const reg = new EcosystemRegistry(pluginDir, fetch);
+		await expect(installCommunityPlugin('calendar', {
+			registry: reg, io, configDir: '.obsidian', writeEnabled: true, apiVersion: '1.13.0',
+			openOfficialPage: async () => undefined, appLike: {}, pluginDir,
+		})).rejects.toThrow();
+		expect(io.files.get('.obsidian/plugins/calendar/main.js')).toBe('KEEP');
 	});
 });

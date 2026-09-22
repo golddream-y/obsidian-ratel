@@ -765,6 +765,10 @@ export interface ErrorStrings {
   'error.ecosystem.self': string;
   'error.ecosystem.badKey': string;
   'error.ecosystem.patchSize': string;
+  'error.ecosystem.notInstalled': string;
+  'error.ecosystem.noDowngrade': string;
+  'error.ecosystem.dataJsonTouched': string;
+  'error.ecosystem.updateCancelled': string;
   // 关键路径:检索就绪状态错误
   'error.search.notReady': string;
   // 关键路径:模型 / ORT WASM 下载失败错误(用户可见 Notice,经 ratelError 冒泡)
@@ -1191,7 +1195,11 @@ export interface GoalStrings {
 export interface EcosystemStrings {
   'ecosystem.install.enabled': string;
   'ecosystem.install.filesOnly': string;
+  'ecosystem.install.already': string;
   'ecosystem.install.officialPage': string;
+  'ecosystem.update.current': string;
+  'ecosystem.update.filesOnly': string;
+  'ecosystem.update.enabled': string;
   'ecosystem.search.stale': string;
   'settings.ecosystem.heading': string;
   'settings.ecosystem.writeEnabled.name': string;
