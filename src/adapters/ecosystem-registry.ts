@@ -75,6 +75,33 @@ export function isAppVersionAtLeast(current: string, min: string): boolean {
 }
 
 /**
+ * 比较点分段版本。任一侧含非数字段（如 beta）则返回 null。
+ */
+function parseDottedSegments(v: string): number[] | null {
+	const parts = v.split('.');
+	const nums: number[] = [];
+	for (const p of parts) {
+		if (!/^\d+$/.test(p)) return null;
+		nums.push(parseInt(p, 10));
+	}
+	return nums;
+}
+
+export function compareDottedVersion(a: string, b: string): number | null {
+	const pa = parseDottedSegments(a);
+	const pb = parseDottedSegments(b);
+	if (pa === null || pb === null) return null;
+	const len = Math.max(pa.length, pb.length);
+	for (let i = 0; i < len; i++) {
+		const x = pa[i] ?? 0;
+		const y = pb[i] ?? 0;
+		if (x > y) return 1;
+		if (x < y) return -1;
+	}
+	return 0;
+}
+
+/**
  * 本地过滤商店条目,只把 top N 交给模型(ADR-018:整份清单不进上下文)。
  */
 export function rankCommunityPlugins(

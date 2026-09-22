@@ -760,6 +760,10 @@ const errorZh: ErrorStrings = {
   'error.ecosystem.self': '不允许通过生态工具安装或管理 ratel-vault 自己',
   'error.ecosystem.badKey': '非法设置路径: {key}',
   'error.ecosystem.patchSize': '单次最多 20 个 key,收到 {n}',
+  'error.ecosystem.notInstalled': '未安装插件 {id}，请先 install_plugin',
+  'error.ecosystem.noDowngrade': '本地 {local} 高于商店 {catalog}，拒绝降级',
+  'error.ecosystem.dataJsonTouched': '更新不得改动 data.json，已从备份恢复',
+  'error.ecosystem.updateCancelled': '已取消更新',
   // 关键路径:检索未就绪(用户执行 search_vault 时可见)
   'error.search.notReady': '索引或 Embedding 尚未就绪,请稍候或在设置 → 诊断测试中检查',
   'error.model.downloadFailed': '下载 {name} 失败: {status}',
@@ -1171,7 +1175,11 @@ const goalZh: GoalStrings = {
 const ecosystemZh: EcosystemStrings = {
   'ecosystem.install.enabled': '已写入 {id}@{version} 并尝试启用。Ratel 不是官方插件管理器。',
   'ecosystem.install.filesOnly': '已将 {id}@{version} 写入当前库,但尚未真正跑起来。请命令面板执行 Reload app without saving,或到设置 → 社区插件中打开。不要把这次当成已经启用。',
+  'ecosystem.install.already': '已安装 {id}，未覆盖文件',
   'ecosystem.install.officialPage': '当前为商店保守模式,未写入插件目录。已尝试打开官方页 {uri}(插件 id:{id})。',
+  'ecosystem.update.current': '{id} 已是 {version}，无需更新',
+  'ecosystem.update.filesOnly': '已将 {id} 从 {from} 升到 {to}（未改 data.json），但尚未热启用',
+  'ecosystem.update.enabled': '已将 {id} 从 {from} 升到 {to}（未改 data.json）并尝试启用',
   'ecosystem.search.stale': '清单缓存已过期(拉取于 {fetchedAt}),仍按缓存检索。',
   'settings.ecosystem.heading': '社区插件生态',
   'settings.ecosystem.writeEnabled.name': '允许代装社区插件(写入当前库)',
