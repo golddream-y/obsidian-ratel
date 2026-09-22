@@ -758,6 +758,8 @@ const errorZh: ErrorStrings = {
   'error.ecosystem.manifestIdMismatch': 'Release 内 manifest.id 与商店 id 不一致,已拒绝写入',
   'error.ecosystem.notInCatalog': '只能安装官方社区清单里的插件,未知 id:{id}',
   'error.ecosystem.self': '不允许通过生态工具安装或管理 ratel-vault 自己',
+  'error.ecosystem.badKey': '非法设置路径: {key}',
+  'error.ecosystem.patchSize': '单次最多 20 个 key,收到 {n}',
   // 关键路径:检索未就绪(用户执行 search_vault 时可见)
   'error.search.notReady': '索引或 Embedding 尚未就绪,请稍候或在设置 → 诊断测试中检查',
   'error.model.downloadFailed': '下载 {name} 失败: {status}',

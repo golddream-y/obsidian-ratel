@@ -763,6 +763,8 @@ export interface ErrorStrings {
   'error.ecosystem.manifestIdMismatch': string;
   'error.ecosystem.notInCatalog': string;
   'error.ecosystem.self': string;
+  'error.ecosystem.badKey': string;
+  'error.ecosystem.patchSize': string;
   // 关键路径:检索就绪状态错误
   'error.search.notReady': string;
   // 关键路径:模型 / ORT WASM 下载失败错误(用户可见 Notice,经 ratelError 冒泡)
