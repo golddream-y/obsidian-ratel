@@ -746,6 +746,8 @@ export const en: Strings = {
   'error.ecosystem.manifestIdMismatch': 'manifest.id inside the Release does not match the store id; write refused',
   'error.ecosystem.notInCatalog': 'Only plugins on the official community catalog can be installed; unknown id:{id}',
   'error.ecosystem.self': 'The ecosystem tools cannot install or manage ratel-vault itself',
+  'error.ecosystem.badKey': 'Invalid setting path: {key}',
+  'error.ecosystem.patchSize': 'At most 20 keys per apply, got {n}',
   // 关键路径:search not ready (user-visible when running search_vault)
   'error.search.notReady': 'Index or Embedding is not ready; please wait or check in Settings → Diagnostics',
   'error.model.downloadFailed': 'Failed to download {name}: {status}',
