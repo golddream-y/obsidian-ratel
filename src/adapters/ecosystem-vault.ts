@@ -6,6 +6,8 @@
  */
 
 import type { DataAdapter } from 'obsidian';
+import { mkdir, writeFile, readdir, readFile, stat } from 'node:fs/promises';
+import path from 'node:path';
 import { validateEcosystemPath, type EcosystemPathContext } from '../utils/path-safety';
 
 /**
@@ -18,6 +20,10 @@ export interface EcosystemIo {
 	writeBinary(rel: string, data: ArrayBuffer): Promise<void>;
 	readText(rel: string): Promise<string>;
 	removeRecursive(rel: string): Promise<void>;
+	listPluginIds(configDir: string): Promise<string[]>;
+	copyTree(srcRel: string, dstAbs: string): Promise<void>;
+	restoreTree(srcAbs: string, dstRel: string): Promise<void>;
+	rename(fromRel: string, toRel: string): Promise<void>;
 }
 
 /**
@@ -70,6 +76,63 @@ export class AdapterEcosystemIo implements EcosystemIo {
 		}
 		await this.adapter.remove(p);
 	}
+
+	async listPluginIds(configDir: string): Promise<string[]> {
+		const pluginsRel = `${configDir.replace(/\/$/, '')}/plugins`;
+		const listing = await this.adapter.list(pluginsRel);
+		return listing.folders.filter((name) => name !== 'ratel-vault');
+	}
+
+	async copyTree(srcRel: string, dstAbs: string): Promise<void> {
+		const src = this.gate(srcRel);
+		const walk = async (rel: string, dst: string): Promise<void> => {
+			await mkdir(dst, { recursive: true });
+			const listing = await this.adapter.list(rel);
+			for (const file of listing.files) {
+				const fileRel = rel ? `${rel}/${file}` : file;
+				const content = await this.adapter.read(fileRel);
+				const dest = path.join(dst, file);
+				await mkdir(path.dirname(dest), { recursive: true });
+				await writeFile(dest, content, 'utf-8');
+			}
+			for (const folder of listing.folders) {
+				const childRel = rel ? `${rel}/${folder}` : folder;
+				await walk(childRel, path.join(dst, folder));
+			}
+		};
+		await walk(src, dstAbs);
+	}
+
+	async restoreTree(srcAbs: string, dstRel: string): Promise<void> {
+		const dst = this.gate(dstRel);
+		await this.removeRecursive(dstRel);
+		const walk = async (dir: string, rel: string): Promise<void> => {
+			for (const name of await readdir(dir)) {
+				const p = path.join(dir, name);
+				const r = rel ? `${rel}/${name}` : name;
+				if ((await stat(p)).isDirectory()) {
+					await walk(p, r);
+				} else {
+					const content = await readFile(p, 'utf-8');
+					await this.adapter.write(`${dst}/${r}`, content);
+				}
+			}
+		};
+		await walk(srcAbs, '');
+	}
+
+	async rename(fromRel: string, toRel: string): Promise<void> {
+		const from = this.gate(fromRel);
+		const to = this.gate(toRel);
+		const ad = this.adapter as DataAdapter & { rename?: (from: string, to: string) => Promise<void> };
+		if (typeof ad.rename === 'function') {
+			await ad.rename(from, to);
+			return;
+		}
+		const data = await this.adapter.read(from);
+		await this.adapter.write(to, data);
+		await this.adapter.remove(from);
+	}
 }
 
 /**
@@ -118,5 +181,52 @@ export class MemoryEcosystemIo implements EcosystemIo {
 		for (const k of [...this.files.keys()]) {
 			if (k === p || k.startsWith(`${p}/`)) this.files.delete(k);
 		}
+	}
+
+	async listPluginIds(configDir: string): Promise<string[]> {
+		this.gate(`${configDir}/plugins`);
+		const ids = new Set<string>();
+		const prefix = `${configDir}/plugins/`;
+		for (const k of this.files.keys()) {
+			if (!k.startsWith(prefix)) continue;
+			const id = k.slice(prefix.length).split('/')[0];
+			if (id && id !== 'ratel-vault') ids.add(id);
+		}
+		return [...ids];
+	}
+
+	async copyTree(srcRel: string, dstAbs: string): Promise<void> {
+		const src = this.gate(srcRel);
+		await mkdir(dstAbs, { recursive: true });
+		for (const [k, v] of this.files) {
+			if (k !== src && !k.startsWith(`${src}/`)) continue;
+			const rel = k === src ? '_root' : k.slice(src.length + 1);
+			const dest = path.join(dstAbs, rel);
+			await mkdir(path.dirname(dest), { recursive: true });
+			await writeFile(dest, v, 'utf-8');
+		}
+	}
+
+	async restoreTree(srcAbs: string, dstRel: string): Promise<void> {
+		const dst = this.gate(dstRel);
+		await this.removeRecursive(dstRel);
+		const walk = async (dir: string, rel: string): Promise<void> => {
+			for (const name of await readdir(dir)) {
+				const p = path.join(dir, name);
+				const r = rel ? `${rel}/${name}` : name;
+				if ((await stat(p)).isDirectory()) await walk(p, r);
+				else this.files.set(`${dst}/${r}`, await readFile(p, 'utf-8'));
+			}
+		};
+		await walk(srcAbs, '');
+	}
+
+	async rename(fromRel: string, toRel: string): Promise<void> {
+		const from = this.gate(fromRel);
+		const to = this.gate(toRel);
+		const v = this.files.get(from);
+		if (v === undefined) throw new Error(`missing ${from}`);
+		this.files.set(to, v);
+		this.files.delete(from);
 	}
 }
