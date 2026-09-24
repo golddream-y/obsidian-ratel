@@ -96,7 +96,8 @@ A divider marks a new calendar day (“today / yesterday / a date”). The histo
 ### Tool permission level
 
 Under the input: **Safe** (ask before write or delete) / **Auto** (read and write proceed; delete still confirms) / **Danger** (no confirm).  
-The same control is under Settings → Memory and permissions. A tool set to Deny always stays denied.
+The same control is under Settings → Memory and permissions. A tool set to Deny always stays denied.  
+The same page has “Allow access outside the vault”, off by default. When it is on, the agent can list folders outside the vault, read those files, copy a file into the vault, and run a command on this computer. Those four tools ask by default, in both Safe and Auto. Chat cannot turn the switch on for you.
 
 ---
 
@@ -209,7 +210,7 @@ Type `/` in chat:
 | `/model` | Show the current model |
 | `/reindex` | Force a full reindex |
 
-Type `@` to complete a vault note by name or path. The message keeps the `@relative/path` text and does not pre-read the file. You can also right-click a Markdown file → **Add to Ratel**. Do not paste an absolute path such as `/Users/…`.
+Type `@` to complete a vault note by name or path. The message keeps the `@relative/path` text and does not pre-read the file. You can also right-click a Markdown file → **Add to Ratel**. An absolute path copied from Finder can be pasted into the input. Reading that file needs “Allow access outside the vault” turned on.
 
 Command palette (not in the `/` menu):
 
@@ -227,7 +228,7 @@ Command palette (not in the `/` menu):
 |---|---|
 | **Chat model** | Language, preset (DeepSeek / Ollama / custom), model, API base, keychain status, auto-compact (on by default) |
 | **Note index** | Embedding, chunking / auto-index, rerank. Markdown only. Images are not chunked as notes |
-| **Memory and permissions** | Default goal rounds and “view goals”, memory switch and panel, daily-note convention, tool permission level, every tool including MCP |
+| **Memory and permissions** | Default goal rounds and “view goals”, memory switch and panel, daily-note convention, access outside the vault (off by default), tool permission level, every tool including MCP |
 | **Appearance** | Color mode (follow Obsidian / light / dark), accent swatches, mascot. Affects the Ratel panel only. Preview is immediate |
 | **Advanced** | Context length, model registry, prompt overrides, memory capacity, developer options, diagnostics |
 

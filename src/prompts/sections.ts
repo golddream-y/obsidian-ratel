@@ -642,6 +642,10 @@ function buildSections(): SectionMeta[] {
 		...toolPrompt('list_ecosystem_changes', ['pluginId', 'limit']),
 		...toolPrompt('restore_backup', ['changeId']),
 		...toolPrompt('apply_diary_host', ['folder']),
+		...toolPrompt('list_host_dir', ['path']),
+		...toolPrompt('read_host_file', ['path']),
+		...toolPrompt('import_host_file', ['path', 'dest']),
+		...toolPrompt('run_host_command', ['command']),
 	];
 }
 

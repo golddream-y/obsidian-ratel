@@ -51,6 +51,7 @@
 - 只有配置的模型端点会收到检索内容。
 - MCP 只在调用已启用的工具时出站。安装插件时只访问官方清单和所选插件的 GitHub release。
 - 改笔记、装插件按权限档位。密钥不代填。没有遥测。
+- 库外文件和本机命令默认关闭。打开后，读到的内容可能发给已配置的模型，每次使用仍按权限询问。
 
 细节见 [使用手册](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/user-guide.md)。
 

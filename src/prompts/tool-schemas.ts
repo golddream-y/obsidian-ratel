@@ -439,6 +439,26 @@ export const TOOL_SCHEMA_SKELETONS: Record<string, SchemaSkeleton> = {
 			},
 		},
 	},
+	list_host_dir: {
+		name: 'list_host_dir',
+		parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] },
+	},
+	read_host_file: {
+		name: 'read_host_file',
+		parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] },
+	},
+	import_host_file: {
+		name: 'import_host_file',
+		parameters: {
+			type: 'object',
+			properties: { path: { type: 'string' }, dest: { type: 'string' } },
+			required: ['path', 'dest'],
+		},
+	},
+	run_host_command: {
+		name: 'run_host_command',
+		parameters: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'] },
+	},
 };
 
 export const ALL_TOOL_NAMES = [
@@ -459,4 +479,5 @@ export const ALL_TOOL_NAMES = [
 	'update_plugin', 'uninstall_plugin', 'configure_plugin', 'get_plugin_status',
 	'list_ecosystem_changes', 'restore_backup',
 	'apply_diary_host',
+	'list_host_dir', 'read_host_file', 'import_host_file', 'run_host_command',
 ];

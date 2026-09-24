@@ -17,6 +17,10 @@ describe('isDestructiveTool', () => {
 		expect(isDestructiveTool('configure_plugin')).toBe(true);
 		expect(isDestructiveTool('restore_backup')).toBe(true);
 		expect(isDestructiveTool('apply_diary_host')).toBe(true);
+		expect(isDestructiveTool('list_host_dir')).toBe(true);
+		expect(isDestructiveTool('read_host_file')).toBe(true);
+		expect(isDestructiveTool('import_host_file')).toBe(true);
+		expect(isDestructiveTool('run_host_command')).toBe(true);
 		expect(isDestructiveTool('get_plugin_status')).toBe(false);
 		expect(isDestructiveTool('search_plugins')).toBe(false);
 	});

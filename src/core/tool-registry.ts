@@ -21,6 +21,11 @@ export interface Tool {
 	 * 若为 `true`,此工具只读不写 — agent loop 不会为它触发写钩子(避免搜索/读取等无害操作触发治理)。
 	 */
 	readOnly?: boolean;
+	/**
+	 * 返回 false 时不出现在模型工具清单。未设置则始终可见。
+	 * 执行入口仍保留，由工具自己在关闸时失败。
+	 */
+	listed?: () => boolean;
 }
 
 /**
@@ -86,7 +91,9 @@ export class ToolRegistry {
 	 * @returns 工具 schema 数组。
 	 */
 	definitions(): ToolDefinition[] {
-		return Array.from(this.tools.values()).map((t) => t.definition);
+		return Array.from(this.tools.values())
+			.filter((t) => t.listed?.() !== false)
+			.map((t) => t.definition);
 	}
 
 	/**

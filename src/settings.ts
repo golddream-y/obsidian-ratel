@@ -134,7 +134,8 @@ export interface RatelVaultSettings {
 	/** 终态 goal 超过多少天标为待归档(不自动搬家,spec 4.9) */
 	goalArchiveDays: number;
 
-	// Tool permissions (S-VAULT-TOOLS)
+	/** 库外文件与本机命令。默认关。打开后仍走工具权限确认。 */
+	hostAccessEnabled: boolean;
 	toolPermissions: Record<string, ToolPermission>;
 	/**
 	 * 内置工具默认权限的代数。旧库没有这个字段时，把仍为 ask 的内置工具升到 allow。
@@ -301,8 +302,13 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 		configure_plugin: 'allow',
 		restore_backup: 'allow',
 		apply_diary_host: 'allow',
+		list_host_dir: 'ask',
+		read_host_file: 'ask',
+		import_host_file: 'ask',
+		run_host_command: 'ask',
 	},
 	toolPermissionDefaultsVersion: 1,
+	hostAccessEnabled: false,
 	// 关键路径:默认无任何 override,使用 zh.ts 内置中文模板。
 	promptOverrides: {},
 	toolPermissionLevel: 'safe',
@@ -861,6 +867,18 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			},
 			{
 				type: 'group',
+				cls: agentCls,
+				visible: agentVisible,
+				items: [
+					{
+						name: tNow('settings.hostAccess.name'),
+						desc: tNow('settings.hostAccess.desc'),
+						control: { type: 'toggle', key: 'hostAccessEnabled' },
+					},
+				],
+			},
+			{
+				type: 'group',
 				heading: tNow('settings.toolPermissions.heading'),
 				cls: agentCls,
 				visible: agentVisible,
@@ -1133,6 +1151,10 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			list_ecosystem_changes: 'settings.toolPermissions.list_ecosystem_changes',
 			restore_backup: 'settings.toolPermissions.restore_backup',
 			apply_diary_host: 'settings.toolPermissions.apply_diary_host',
+			list_host_dir: 'settings.toolPermissions.list_host_dir',
+			read_host_file: 'settings.toolPermissions.read_host_file',
+			import_host_file: 'settings.toolPermissions.import_host_file',
+			run_host_command: 'settings.toolPermissions.run_host_command',
 		};
 		const key = map[toolName];
 		return key ? tNow(key) : toolName;
