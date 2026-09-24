@@ -523,6 +523,8 @@ export class OpenAICompatLLM implements LLMClient {
 			model: this.config.model,
 			messages,
 			stream: true,
+			// 关键路径:显式要 usage — DeepSeek 等端点默认不在流末尾返回 token 统计
+			stream_options: { include_usage: true },
 		};
 
 		// 生成参数(测试页或上层调用可覆盖)

@@ -289,6 +289,14 @@ describe('OpenAICompatLLM', () => {
 		expect(assistantMsg).toHaveProperty('tool_calls');
 	});
 
+	it('buildRequestBody - 流式请求 - 上送 stream_options.include_usage', () => {
+		const adapter = new OpenAICompatLLM({ apiBase: 'http://test', apiKey: 'sk-test', model: 'test' });
+		const req: ChatRequest = { messages: [{ role: 'user', content: 'hi' }] };
+		const body = (adapter as unknown as { buildRequestBody: (req: ChatRequest) => Record<string, unknown> }).buildRequestBody(req);
+		expect(body.stream).toBe(true);
+		expect(body.stream_options).toEqual({ include_usage: true });
+	});
+
 	it('buildRequestBody - 无 reasoning - 不上送 reasoning_content 字段', () => {
 		const adapter = new OpenAICompatLLM({ apiBase: 'http://test', apiKey: 'sk-test', model: 'test' });
 		const req: ChatRequest = {
