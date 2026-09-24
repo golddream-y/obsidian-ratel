@@ -247,6 +247,7 @@ export interface SettingsStrings {
   'settings.notice.probeSuccess': string;
   'settings.notice.probeNoRecommendation': string;
   'settings.notice.invalidTokens': string;
+  'settings.notice.contextLengthUnknown': string;
 }
 
 // ==================== Chat UI ====================

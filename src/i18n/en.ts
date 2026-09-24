@@ -247,6 +247,7 @@ export const en: Strings = {
   'settings.notice.probeSuccess': '✓ Recommendation: {value}',
   'settings.notice.probeNoRecommendation': '✓ Configuration valid, but no recommendation returned',
   'settings.notice.invalidTokens': '✗ Invalid token count; range 1024-200000',
+  'settings.notice.contextLengthUnknown': 'No context window found for model {model}; keeping current limit',
 
   // ==================== ChatStrings ====================
   'chat.header.title': 'Ratel',

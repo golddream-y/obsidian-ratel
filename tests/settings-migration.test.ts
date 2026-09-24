@@ -18,6 +18,8 @@ vi.mock('obsidian', () => ({
     PluginSettingTab: class {},
     SettingPage: class {},
     Setting: class {},
+    SettingGroup: class {},
+    Modal: class {},
     Notice: class {},
 }));
 

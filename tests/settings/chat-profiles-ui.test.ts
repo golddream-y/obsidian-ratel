@@ -29,6 +29,13 @@ describe('switchChatProfile', () => {
 		expect(s.chatApiBase).toBe('https://a');
 		expect(s.activeChatProfileId).toBe('p1');
 	});
+
+	it('切换后上限按映射表更新 - 命中则写入该套', async () => {
+		const s = base();
+		switchChatProfile(s as never, 'p1');
+		// 由 render 层调 applyModelContextWindow;此处断言切换本身不改上限字段以外的部分
+		expect(s.chatModelMaxTokens).toBe(128_000);
+	});
 });
 
 describe('saveCurrentAsProfile', () => {

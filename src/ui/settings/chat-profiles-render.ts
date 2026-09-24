@@ -21,6 +21,8 @@ import {
 	setChatProfileSecret,
 } from '../../secrets/ratel-secrets';
 import { tNow } from '../../i18n';
+import { DEFAULT_MODEL_REGISTRY_URL } from '../../ui/tokens/model-context-registry';
+import { applyModelContextWindow } from '../../ui/tokens/apply-model-context';
 
 /**
  * 简单文本输入 Modal — 用于改名 / 另存为名称。
@@ -133,6 +135,22 @@ function renderProfileRow(
 			btn.onClick(async () => {
 				if (isActive) return;
 				switchChatProfile(plugin.settings, profile.id);
+				const registryUrl = plugin.settings.modelRegistryUrl || DEFAULT_MODEL_REGISTRY_URL;
+				const result = await applyModelContextWindow({
+					model: profile.model,
+					registry: plugin.modelContextRegistry,
+					registryUrl,
+					settings: plugin.settings,
+				});
+				if (!result.applied) {
+					new Notice(tNow('settings.notice.contextLengthUnknown', { model: profile.model }), 5000);
+				} else {
+					const activeProfile = plugin.settings.chatProfiles.find((p) => p.id === profile.id);
+					if (activeProfile) {
+						activeProfile.contextLengthPreset = plugin.settings.contextLengthPreset;
+						activeProfile.chatModelMaxTokens = plugin.settings.chatModelMaxTokens;
+					}
+				}
 				await plugin.saveSettings();
 				plugin.rebuildLLM();
 				new Notice(tNow('settings.chatProfiles.switched', { name: profile.name }), 3000);
