@@ -19,9 +19,7 @@
 
 | ID | 文件 | 状态 | 创建日期 | 备注 |
 |---|---|---|---|---|
-| S-ECOSYSTEM | [2026-08-20-ecosystem-management-design.md](specs/2026-08-20-ecosystem-management-design.md) | Active | 2026-08-20 | P-ECOSYSTEM-1 已归档;P-ECOSYSTEM-2 未收口 |
-| S-PLUGIN-PROFILE | [2026-09-10-plugin-profile-design.md](specs/2026-09-10-plugin-profile-design.md) | Active | 2026-09-10 | 2026-09-21 与执行层同交付:schema+示例+匹配+草稿;写入硬依赖 `configure_plugin`;架构 [host/plugin-profile.md](../architecture/host/plugin-profile.md) |
-| S-HOST-ACCESS | [2026-09-11-host-access-design.md](specs/2026-09-11-host-access-design.md) | Active | 2026-09-11 | 库外文件+宿主命令:设置总闸默认关,开后走安全/自动/危险且视为破坏性;解析 Skill 另开 spec |
+| — | — | — | — | 当前无活跃 spec |
 
 
 ---
@@ -30,7 +28,7 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
-| P-ECOSYSTEM-2 | [2026-09-21-ecosystem-base.md](plans/2026-09-21-ecosystem-base.md) | In Progress | S-ECOSYSTEM + S-PLUGIN-PROFILE | 已合入 develop，尚未发版；档案匹配与草稿未并入 |
+| — | — | — | — | 当前无进行中的 plan |
 
 ---
 
@@ -50,13 +48,11 @@
 ## Future execution queue(按顺序)
 
 1. 候选(无 spec,重启时新开):update_frontmatter / Write Gate / append_to_daily(S-EVOLUTION 写侧,见 archive/S-EVOLUTION/)
-2. **P-ECOSYSTEM-2** — In Progress，已合入 develop，尚未发版
-4. 候选(无 spec):skill-script-sandbox 心跳用例 fake-timers 化 — 存量时序 flake(300ms 真定时器赛跑,P-VISION-1 审查期间实证 base/HEAD 均间歇失败)
-5. S-HOST-ACCESS — 库外访问总闸;不插队;文档解析另开 spec
+2. 候选(无 spec):skill-script-sandbox 心跳用例 fake-timers 化 — 存量时序 flake(300ms 真定时器赛跑,P-VISION-1 审查期间实证 base/HEAD 均间歇失败)
 
 
 ---
 
 ## 已归档
 
-见 [ARCHIVE.md](ARCHIVE.md) — 含按月统计图与全部归档记录(77 条 / 66 目录)。
+见 [ARCHIVE.md](ARCHIVE.md) — 含按月统计图与全部归档记录(81 条 / 68 目录)。

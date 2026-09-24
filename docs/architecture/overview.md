@@ -683,8 +683,8 @@ graph LR
 | ADR-015 能力池 | `docs/adr/2026-08-03-capability-pool.md` | 统一意图选择(能力池),按 kind 路由执行链路 |
 | ADR-018 生态出站 | `docs/adr/2026-09-18-ecosystem-outbound.md` | 官方清单 + GitHub release;第三条网;商店保守开关 |
 | 产品总纲 | `docs/prd/overview.md` | 产品定位与分册入口 |
-| S-PLUGIN-PROFILE | `docs/superpowers/specs/2026-09-10-plugin-profile-design.md` | 插件配置档案需求;正文 [host/plugin-profile.md](host/plugin-profile.md) |
-| S-ECOSYSTEM | `docs/superpowers/specs/2026-08-20-ecosystem-management-design.md` | 对话装卸执行层;正文 [host/ecosystem.md](host/ecosystem.md) |
+| S-PLUGIN-PROFILE | `docs/superpowers/archive/S-PLUGIN-PROFILE/2026-09-10-plugin-profile-design.md` | 插件配置档案需求;正文 [host/plugin-profile.md](host/plugin-profile.md) |
+| S-ECOSYSTEM | `docs/superpowers/archive/S-ECOSYSTEM/2026-08-20-ecosystem-management-design.md` | 对话装卸执行层;正文 [host/ecosystem.md](host/ecosystem.md) |
 | S-BASIC-ENV | `docs/superpowers/archive/S-BASIC-ENV/` | 环境感知:时间注入 + WorkspacePort + daily/recent/outline(已归档,0.1.5) |
 | STATUS.md | `docs/superpowers/STATUS.md` | spec / plan 状态追踪 |
 | 归档 | `docs/superpowers/archive/` | 已完成的 spec/plan 历史档案 |

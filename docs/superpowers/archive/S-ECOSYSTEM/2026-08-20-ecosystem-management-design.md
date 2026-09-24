@@ -8,7 +8,7 @@
 > 修订: **2026-09-21 — 社区插件底座一次交付。** [S-ECOSYSTEM-CUT1](../archive/S-ECOSYSTEM-CUT1/2026-09-20-ecosystem-first-cut-design.md) **Superseded**。含探索 / 装 / **升（EC-03）** / 卸 / 点名配 / 日志回滚。官方核心设置引导（EC-09）仍非本交付。作者 SOP 文档钉 `plugin-profiles/SKILL-AUTHORING.md`。
 > 状态: Active
 > Spec ID: **S-ECOSYSTEM**
-> 关联: [支柱 C](../../prd/ecosystem.md)、[EC-01～10](../../prd/requirements.md)、[S-PLUGIN-PROFILE](2026-09-10-plugin-profile-design.md)（档案；写入硬依赖本文 `configure_plugin`）、[ADR-014](../../adr/2026-08-03-mcp-host-platform.md)、[ADR-017](../../adr/2026-08-19-skill-script-sandbox-worker-vm.md)、[ADR-018](../../adr/2026-09-18-ecosystem-outbound.md)、[S-HOST-ACCESS](2026-09-11-host-access-design.md)（不得放宽沙箱）
+> 关联: [支柱 C](../../prd/ecosystem.md)、[EC-01～10](../../prd/requirements.md)、[S-PLUGIN-PROFILE](../S-PLUGIN-PROFILE/2026-09-10-plugin-profile-design.md)（档案；写入硬依赖本文 `configure_plugin`）、[ADR-014](../../adr/2026-08-03-mcp-host-platform.md)、[ADR-017](../../adr/2026-08-19-skill-script-sandbox-worker-vm.md)、[ADR-018](../../adr/2026-09-18-ecosystem-outbound.md)、[S-HOST-ACCESS](../S-HOST-ACCESS/2026-09-11-host-access-design.md)（不得放宽沙箱）
 
 ---
 
@@ -435,5 +435,5 @@ Engine / `src/core` 不 `import 'obsidian'`。HTTP 只在主线程 adapter。`sr
 - [ADR-018](../../adr/2026-09-18-ecosystem-outbound.md)
 - [S-PLUGIN-PROFILE](2026-09-10-plugin-profile-design.md)
 - [S-ECOSYSTEM-CUT1（已取代）](../archive/S-ECOSYSTEM-CUT1/2026-09-20-ecosystem-first-cut-design.md)
-- [S-HOST-ACCESS](2026-09-11-host-access-design.md)（不得放宽沙箱）
+- [S-HOST-ACCESS](../S-HOST-ACCESS/2026-09-11-host-access-design.md)（不得放宽沙箱）
 - 清单：https://github.com/obsidianmd/obsidian-releases

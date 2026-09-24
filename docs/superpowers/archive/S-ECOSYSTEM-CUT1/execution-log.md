@@ -8,7 +8,7 @@
 
 | 项 | 说明 |
 |---|---|
-| 取代者 | [S-ECOSYSTEM](../../specs/2026-08-20-ecosystem-management-design.md) 2026-09-21 修订；档案侧 [S-PLUGIN-PROFILE](../../specs/2026-09-10-plugin-profile-design.md) |
+| 取代者 | [S-ECOSYSTEM](../S-ECOSYSTEM/2026-08-20-ecosystem-management-design.md) 2026-09-21 修订；档案侧 [S-PLUGIN-PROFILE](../S-PLUGIN-PROFILE/2026-09-10-plugin-profile-design.md) |
 | 原因 | 要一次交付装+配与社区 Skill 出口；CUT 分期会把 `configure_plugin` 永远推后 |
 | 仍有效的代码 | `v9` 上 ADR-018、denylist、通道 B、`search_plugins` / `install_plugin`、R2/R3 — 并入母 spec 基线 |
 | P-ECOSYSTEM-1 | 切片已合 `v9`；后续任务按母 spec 补卸/配/日志，不再以本文冻结加功能 |
