@@ -337,7 +337,10 @@ export async function* agentLoop(
 				} catch (err) {
 					toolFailed = true;
 					const message = err instanceof Error ? err.message : String(err);
-					const code = (err as Error & { code?: string }).code ?? 'TOOL_ERROR';
+					// 关键路径:文件系统错误自带 code=ENOENT。若原样上抛,聊天会把它当成整轮失败,
+					// 红条里还会露出绝对路径。索引未就绪仍单独转发,其余一律算工具失败。
+					const rawCode = (err as Error & { code?: string }).code;
+					const code = rawCode === 'INDEX_NOT_READY' ? rawCode : 'TOOL_ERROR';
 					yield { type: 'error', payload: { code, message } };
 					result = `Error: ${message}`;
 					await hooks.runVoid('post-tool-failure', tc);

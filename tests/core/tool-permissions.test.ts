@@ -11,6 +11,16 @@ const deleteCall: ToolCall = { id: '2', name: 'delete_note', args: { path: 'a.md
 const mcpCall: ToolCall = { id: '3', name: 'mcp__srv__tool', args: {} };
 
 describe('isDestructiveTool', () => {
+	it('isDestructiveTool - update/uninstall/configure/restore - true', () => {
+		expect(isDestructiveTool('update_plugin')).toBe(true);
+		expect(isDestructiveTool('uninstall_plugin')).toBe(true);
+		expect(isDestructiveTool('configure_plugin')).toBe(true);
+		expect(isDestructiveTool('restore_backup')).toBe(true);
+		expect(isDestructiveTool('apply_diary_host')).toBe(true);
+		expect(isDestructiveTool('get_plugin_status')).toBe(false);
+		expect(isDestructiveTool('search_plugins')).toBe(false);
+	});
+
 	it('isDestructiveTool - delete_note / forget_memory - true', () => {
 		expect(isDestructiveTool('delete_note')).toBe(true);
 		expect(isDestructiveTool('forget_memory')).toBe(true);

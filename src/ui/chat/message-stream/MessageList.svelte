@@ -52,6 +52,8 @@
 		jumpRequest = null,
 		retryWait = null,
 		retryRemainingMs = 0,
+		skillNames = [],
+		installedSkillNames = [],
 	}: {
 		messages: Message[];
 		sessionId: string;
@@ -64,6 +66,8 @@
 		jumpRequest?: VirtualJumpRequest | null;
 		retryWait?: LlmRetryWait | null;
 		retryRemainingMs?: number;
+		skillNames?: readonly string[];
+		installedSkillNames?: readonly string[];
 	} = $props();
 
 	const ORB_LABEL: Record<OrbState, StringKey> = {
@@ -351,6 +355,8 @@
 					{onOpenPath}
 					navFlash={unit.messageId === highlightId}
 					{citeSearchFallback}
+					{skillNames}
+					{installedSkillNames}
 					fadePlay={computeFadePlay(unit.messageId, enteredIds, motionOn)}
 				/>
 			{/if}

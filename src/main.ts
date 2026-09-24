@@ -6,11 +6,11 @@
  */
 
 import { EMBEDDING_WORKER_CODE } from '@ratel/embedding-worker-code';
-import { BUILTIN_SKILLS, APP_VERSION } from '@ratel/builtin-skills-code';
+import { BUILTIN_SKILLS, BUILTIN_SKILL_PROFILES, APP_VERSION } from '@ratel/builtin-skills-code';
 import { FileSystemAdapter, Notice, Plugin, TFile, apiVersion, requestUrl } from 'obsidian';
 import fs, { readdirSync } from 'node:fs';
 import path from 'node:path';
-import { type RatelVaultSettings, DEFAULT_SETTINGS, RatelVaultSettingTab, normalizeContextLengthSettings } from './settings';
+import { type RatelVaultSettings, DEFAULT_SETTINGS, RatelVaultSettingTab, normalizeContextLengthSettings, applyBuiltinToolPermissionDefaults } from './settings';
 import { normalizeChatPreset } from './settings/chat-preset';
 import { normalizeAppearanceSettings } from './ui/appearance/normalize-appearance-settings';
 import { bumpAppearance } from './ui/appearance/appearance-store';
@@ -157,6 +157,19 @@ import {
 } from './tools/manage-goal';
 import { createSearchPluginsTool } from './tools/search-plugins';
 import { createInstallPluginTool } from './tools/install-plugin';
+import { createUpdatePluginTool } from './tools/update-plugin';
+import { createUninstallPluginTool } from './tools/uninstall-plugin';
+import { createConfigurePluginTool } from './tools/configure-plugin';
+import { createGetPluginStatusTool } from './tools/get-plugin-status';
+import { createListEcosystemChangesTool } from './tools/list-ecosystem-changes';
+import { createRestoreBackupTool } from './tools/restore-backup';
+import { createApplyDiaryHostTool } from './tools/apply-diary-host';
+import { updateCommunityPlugin } from './adapters/ecosystem-update';
+import { uninstallCommunityPlugin } from './adapters/ecosystem-uninstall';
+import { inspectPluginData, applyPluginData } from './adapters/ecosystem-configure';
+import { listInstalledPlugins, getCommunityPluginStatus } from './adapters/ecosystem-status';
+import { restoreEcosystemBackup } from './adapters/ecosystem-restore';
+import { listEcosystemChanges } from './core/ecosystem-change-log';
 import { EcosystemRegistry } from './adapters/ecosystem-registry';
 import { AdapterEcosystemIo } from './adapters/ecosystem-vault';
 import { installCommunityPlugin } from './adapters/ecosystem-install';
@@ -366,7 +379,7 @@ export default class RatelVaultPlugin extends Plugin {
 		// 关键路径:内置 skill 分发(ADR-006 三文件约束) — 构建期内联,启动时幂等落盘;
 		// 无条件执行,version 随应用版本,
 		// 升级自动重写;用户在 vault 源放同名 skill 可覆盖内置版(三源合并 vault > builtin)。
-		const builtinSync = syncBuiltinSkills(builtinSkillsDir, BUILTIN_SKILLS, APP_VERSION);
+		const builtinSync = syncBuiltinSkills(builtinSkillsDir, BUILTIN_SKILLS, APP_VERSION, BUILTIN_SKILL_PROFILES);
 		if (builtinSync.written.length > 0) {
 			devLogger.info('skill', `内置 skill 已更新: ${builtinSync.written.join(', ')}`);
 		}
@@ -730,6 +743,107 @@ export default class RatelVaultPlugin extends Plugin {
 				},
 			}),
 		);
+		this.tools.register(createUpdatePluginTool(toolDefMap.get('update_plugin')!, {
+			run: async (pluginId) => {
+				const catalog = await this.ecosystemRegistry.ensureCatalog();
+				const catalogIds = new Set(catalog.plugins.map((p) => p.id));
+				const installedIds = listInstalledPluginIds();
+				const io = new AdapterEcosystemIo(this.app.vault.adapter, () => ({ catalogIds, installedIds }));
+				return updateCommunityPlugin(pluginId, {
+					registry: this.ecosystemRegistry,
+					io,
+					configDir: this.app.vault.configDir,
+					writeEnabled: this.settings.ecosystemWriteEnabled,
+					apiVersion,
+					openOfficialPage: (uri) => openExternalUrl(uri),
+					appLike: this.app,
+					pluginDir,
+				});
+			},
+		}));
+		this.tools.register(createUninstallPluginTool(toolDefMap.get('uninstall_plugin')!, {
+			run: async (pluginId) => {
+				const catalog = await this.ecosystemRegistry.ensureCatalog();
+				const catalogIds = new Set(catalog.plugins.map((p) => p.id));
+				const installedIds = listInstalledPluginIds();
+				const io = new AdapterEcosystemIo(this.app.vault.adapter, () => ({ catalogIds, installedIds }));
+				return uninstallCommunityPlugin(pluginId, {
+					io,
+					pluginDir,
+					configDir: this.app.vault.configDir,
+					writeEnabled: this.settings.ecosystemWriteEnabled,
+					appLike: this.app,
+				});
+			},
+		}));
+		this.tools.register(createConfigurePluginTool(toolDefMap.get('configure_plugin')!, {
+			inspect: async (id) => {
+				const catalog = await this.ecosystemRegistry.ensureCatalog();
+				const io = new AdapterEcosystemIo(this.app.vault.adapter, () => ({
+					catalogIds: new Set(catalog.plugins.map((p) => p.id)),
+					installedIds: listInstalledPluginIds(),
+				}));
+				return inspectPluginData(id, { io, configDir: this.app.vault.configDir });
+			},
+			apply: async (id, patch, confirmedNewKeys) => {
+				const catalog = await this.ecosystemRegistry.ensureCatalog();
+				const io = new AdapterEcosystemIo(this.app.vault.adapter, () => ({
+					catalogIds: new Set(catalog.plugins.map((p) => p.id)),
+					installedIds: listInstalledPluginIds(),
+				}));
+				return applyPluginData(id, patch, {
+					io,
+					pluginDir,
+					configDir: this.app.vault.configDir,
+					writeEnabled: this.settings.ecosystemWriteEnabled,
+					confirmedNewKeys,
+				});
+			},
+		}));
+		this.tools.register(createGetPluginStatusTool(toolDefMap.get('get_plugin_status')!, {
+			list: async () => {
+				const catalog = await this.ecosystemRegistry.ensureCatalog();
+				const io = new AdapterEcosystemIo(this.app.vault.adapter, () => ({
+					catalogIds: new Set(catalog.plugins.map((p) => p.id)),
+					installedIds: listInstalledPluginIds(),
+				}));
+				return listInstalledPlugins({ io, configDir: this.app.vault.configDir });
+			},
+			status: async (id, opts) => {
+				const catalog = await this.ecosystemRegistry.ensureCatalog();
+				const io = new AdapterEcosystemIo(this.app.vault.adapter, () => ({
+					catalogIds: new Set(catalog.plugins.map((p) => p.id)),
+					installedIds: listInstalledPluginIds(),
+				}));
+				return getCommunityPluginStatus(id, {
+					io,
+					configDir: this.app.vault.configDir,
+					registry: this.ecosystemRegistry,
+					...opts,
+				});
+			},
+		}));
+		this.tools.register(createListEcosystemChangesTool(toolDefMap.get('list_ecosystem_changes')!, {
+			run: (opts) => listEcosystemChanges(pluginDir, opts),
+		}));
+		this.tools.register(createRestoreBackupTool(toolDefMap.get('restore_backup')!, {
+			run: async (changeId) => {
+				const catalog = await this.ecosystemRegistry.ensureCatalog();
+				const io = new AdapterEcosystemIo(this.app.vault.adapter, () => ({
+					catalogIds: new Set(catalog.plugins.map((p) => p.id)),
+					installedIds: listInstalledPluginIds(),
+				}));
+				return restoreEcosystemBackup(changeId, {
+					io,
+					pluginDir,
+					configDir: this.app.vault.configDir,
+					writeEnabled: this.settings.ecosystemWriteEnabled,
+				});
+			},
+		}));
+		this.tools.register(createApplyDiaryHostTool(toolDefMap.get('apply_diary_host')!, {
+			app: this.app,
+		}));
 
 		// ==================== MCP Host（ADR-014）====================
 		// 关键路径:stdio 首次 spawn 弹窗确认；已批准 id 直接放行。
@@ -1406,6 +1520,7 @@ export default class RatelVaultPlugin extends Plugin {
 		normalizeContextLengthSettings(this.settings, loaded);
 		// 关键路径:旧版无 chatPreset 字段时按 Base/模型推断,避免误显示 DeepSeek 预设
 		normalizeChatPreset(this.settings, loaded);
+		applyBuiltinToolPermissionDefaults(this.settings, loaded.toolPermissionDefaultsVersion);
 		// 关键路径:旧版无外观字段或非法值时回落 auto/follow
 		normalizeAppearanceSettings(this.settings);
 		// 契约:stdio 整行 command / mcp-remote → 规范化（常改写为 HTTP）

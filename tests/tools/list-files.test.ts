@@ -41,4 +41,15 @@ describe('list_files tool', () => {
 		expect(result.path).toBe('.');
 		expect(result.files).toContain('a.md');
 	});
+
+	it('目录不存在 - 只报相对路径,不带系统绝对路径', async () => {
+		const vault = createMockVaultPort();
+		vault.listFiles = async () => {
+			const err = new Error("ENOENT: no such file or directory, scandir '/Users/alice/Notes/\">'") as NodeJS.ErrnoException;
+			err.code = 'ENOENT';
+			throw err;
+		};
+		const tool = createListFilesTool(vault, makeToolDef('list_files'));
+		await expect(tool.execute({ path: '">' })).rejects.toThrow('文件不存在: ">');
+	});
 });

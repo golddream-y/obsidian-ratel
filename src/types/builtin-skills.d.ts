@@ -7,6 +7,8 @@
 declare module '@ratel/builtin-skills-code' {
 	/** 内置 skill 清单 — skill 目录名 → SKILL.md 原文 */
 	export const BUILTIN_SKILLS: Record<string, string>;
+	/** 内置 skill 自带的配置 — skill 目录名 → 文件名 → 原文 */
+	export const BUILTIN_SKILL_PROFILES: Record<string, Record<string, string>>;
 	/** 应用版本(manifest.json 的 version,启动落盘时注入 frontmatter) */
 	export const APP_VERSION: string;
 }

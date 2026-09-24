@@ -16,11 +16,20 @@ export const MAX_DOT_SEGMENTS = 6;
  * @returns 非空段数组
  * @throws 空段、数组下标、越界段数等
  */
+/** 路径里不允许分隔符、空白和控制字符。 */
+function hasSeparatorOrControl(key: string): boolean {
+	for (const ch of key) {
+		const code = ch.codePointAt(0) ?? 0;
+		if (ch === '/' || ch === '\\' || code <= 0x1f || ch.trim() === '') return true;
+	}
+	return false;
+}
+
 export function parseSettingKey(key: string): string[] {
 	if (typeof key !== 'string' || !key || key.startsWith('.') || key.endsWith('.') || key.includes('..')) {
 		throw new Error(tNow('error.ecosystem.badKey', { key: String(key) }));
 	}
-	if (/[/\\\s\x00-\x1f]/.test(key)) {
+	if (hasSeparatorOrControl(key)) {
 		throw new Error(tNow('error.ecosystem.badKey', { key }));
 	}
 	const segs = key.split('.');

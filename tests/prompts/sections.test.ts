@@ -33,5 +33,12 @@ describe('prompt sections metadata', () => {
 		const toolDescIds = getSections().filter((s) => s.id.endsWith('.description')).map((s) => s.id);
 		expect(toolDescIds).toContain('tool.read_note.description');
 		expect(toolDescIds).toContain('tool.search_vault.description');
+		expect(toolDescIds).toContain('tool.update_plugin.description');
+		expect(toolDescIds).toContain('tool.uninstall_plugin.description');
+		expect(toolDescIds).toContain('tool.configure_plugin.description');
+		expect(toolDescIds).toContain('tool.get_plugin_status.description');
+		expect(toolDescIds).toContain('tool.list_ecosystem_changes.description');
+		expect(toolDescIds).toContain('tool.restore_backup.description');
+		expect(toolDescIds).toContain('tool.apply_diary_host.description');
 	});
 });

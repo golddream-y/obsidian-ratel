@@ -12,6 +12,11 @@ import {
 	parseSlashGoalInput,
 	splitLeadingSlashCommand,
 	completeUniqueSlashCommand,
+	filterSlashMenu,
+	skillInvokeTexts,
+	slashSelectionLandsInInput,
+	composerEnterSends,
+	matchLeadingSkill,
 	isSlashGoalCreateTurn,
 } from '../../src/ui/chat/input/slash-commands';
 import { shouldCreateSkillManageModal } from '../../src/ui/skills/SkillManageModal';
@@ -90,6 +95,65 @@ describe('slash-commands', () => {
 	it('completeUniqueSlashCommand - 仅 / 多条 - 不补全', () => {
 		expect(completeUniqueSlashCommand('/')).toBeNull();
 	});
+
+	it('filterSlashMenu - 空斜杠 - 命令固定顺序在前,技能按名字在后', () => {
+		const rows = filterSlashMenu('/', [
+			{ name: 'zeta-skill', description: '后', origin: 'builtin' },
+			{ name: 'alpha-skill', description: '前', origin: 'vault' },
+		]);
+		expect(rows.map((row) => row.name)).toEqual([
+			'/new',
+			'/goal',
+			'/compact',
+			'/model',
+			'/reindex',
+			'alpha-skill',
+			'zeta-skill',
+		]);
+		expect(rows[0]!.kind).toBe('command');
+		expect(rows[5]!.kind).toBe('skill');
+		expect(rows[5]!.origin).toBe('vault');
+		expect(rows[0]!.origin).toBeUndefined();
+	});
+
+	it('skillInvokeTexts - 点选技能 - 气泡是 /名字,模型文案另写', () => {
+		const invoke = skillInvokeTexts('calendar-week-start');
+		expect(invoke.text).toBe('/calendar-week-start');
+		expect(invoke.llmText).toContain('calendar-week-start');
+		expect(invoke.llmText).not.toBe(invoke.text);
+	});
+
+	it('slashSelectionLandsInInput - 技能和 /goal - 先落到输入框', () => {
+		expect(slashSelectionLandsInInput({ kind: 'skill', name: 'install-diary-plugins' })).toBe(true);
+		expect(slashSelectionLandsInInput({ kind: 'command', name: '/goal' })).toBe(true);
+		expect(slashSelectionLandsInInput({ kind: 'command', name: '/new' })).toBe(false);
+	});
+
+	it('composerEnterSends - 技能已落到输入框 - 再按回车发送', () => {
+		const skill = { kind: 'skill' as const, name: 'install-diary-plugins' };
+		expect(composerEnterSends('/install-diary-plugins ', skill)).toBe(true);
+		expect(composerEnterSends('/install-diary-plugins 安排今天', skill)).toBe(true);
+		expect(composerEnterSends('/new', { kind: 'command', name: '/new' })).toBe(false);
+	});
+
+	it('matchLeadingSkill - 技能名后有补充 - 拆出 rest', () => {
+		expect(matchLeadingSkill('/diary-month-ledger 安排今天的工作', ['diary-month-ledger', 'diary'])).toEqual({
+			name: 'diary-month-ledger',
+			rest: '安排今天的工作',
+		});
+		expect(matchLeadingSkill('/diary-month-ledger', ['diary-month-ledger'])).toEqual({
+			name: 'diary-month-ledger',
+			rest: '',
+		});
+		expect(matchLeadingSkill('普通句子', ['diary-month-ledger'])).toBeNull();
+	});
+
+	it('filterSlashMenu - /c - 命令与技能都按前缀命中,命令权重在前', () => {
+		const rows = filterSlashMenu('/c', [
+			{ name: 'calendar-week-start', description: '周一开始', origin: 'builtin' },
+		]);
+		expect(rows.map((row) => row.name)).toEqual(['/compact', 'calendar-week-start']);
+	});
 });
 
 describe('parseSlashGoalInput', () => {
@@ -136,6 +200,18 @@ describe('splitLeadingSlashCommand', () => {
 
 	it('splitLeadingSlashCommand - /goalie 不高亮', () => {
 		expect(splitLeadingSlashCommand('/goalie')).toEqual([{ kind: 'text', text: '/goalie' }]);
+	});
+
+	it('splitLeadingSlashCommand - 命中技能全名 - 技能段单独标色', () => {
+		expect(splitLeadingSlashCommand('/install-diary-plugins', ['install-diary-plugins'])).toEqual([
+			{ kind: 'skill', text: '/install-diary-plugins' },
+		]);
+	});
+
+	it('splitLeadingSlashCommand - 未登记的斜杠名 - 不高亮', () => {
+		expect(splitLeadingSlashCommand('/install-diary-plugins', ['diary-month-ledger'])).toEqual([
+			{ kind: 'text', text: '/install-diary-plugins' },
+		]);
 	});
 });
 

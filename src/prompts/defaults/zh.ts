@@ -231,4 +231,8 @@ export const ZH_DEFAULTS: Record<PromptSectionId, string> = {
 	'tool.install_plugin.description':
 		'在用户确认后,为当前库安装官方清单内的社区插件。完整模式下载 GitHub release 三件套并尽力启用;若热启用失败必须说明文件已写入、请 Reload。商店保守模式(ecosystemWriteEnabled=false)只打开官方社区插件页,不写他人插件目录。禁止安装 ratel-vault 自己,禁止清单外 URL。Ratel 不是官方插件管理器。',
 	'tool.install_plugin.param.pluginId': '官方 community-plugins.json 中的插件 id',
+
+	'tool.apply_diary_host.description':
+		'写好日记环境的宿主设置。打开 Templater 本机开关「新建文件时触发」。把核心日记模板设为 Template/Diary/Daily Note Template，目录设为用户确认过的 folder，并创建该文件夹。文件名格式若为空或仍是 YYYY-MM-DD，写成 YYYY/MM-MMMM/YYYY-MM-DD-dddd，当天日记才会进月份目录；已有其它格式保留。界面语言为简体中文时，MMMM 与 dddd 会显示为中文月份和星期。把正在运行的 Dataview 的 enableDataviewJs 设为 true 并保存。folder 省略时用 Work/Diary。只在用户已同意路径和安装日记插件时调用。',
+	'tool.apply_diary_host.param.folder': '用户确认过的日记根，相对库路径，例如 Work/Diary',
 };

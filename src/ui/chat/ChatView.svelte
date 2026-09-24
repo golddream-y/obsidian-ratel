@@ -58,7 +58,7 @@
 		attachToolResult,
 		markToolFailed,
 	} from './message-stream/segment-appender';
-	import { filterCommands, parseSlashGoalInput, splitLeadingSlashCommand, type SlashCommand } from './input/slash-commands';
+	import { composerEnterSends, filterSlashMenu, matchLeadingSkill, parseSlashGoalInput, skillInvokeTexts, slashSelectionLandsInInput, splitLeadingSlashCommand, type SlashMenuItem } from './input/slash-commands';
 	import {
 		extractMentions,
 		formatMentionToken,
@@ -835,12 +835,23 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 		const s = $settingsStore;
 		return evaluateChatSendGate(s, $statusStore, { hasChatApiKey: hasKey });
 	});
+	const slashSkills = $derived.by(() => {
+		void input;
+		return plugin.skillRegistry
+			.getAll()
+			.filter((skill) => plugin.skillRegistry.isEnabled(skill.manifest.name))
+			.map((skill) => ({
+				name: skill.manifest.name,
+				description: skill.manifest.description,
+				origin: skill.source,
+			}));
+	});
 	const slashVisible = $derived.by(() => {
 		const v = input.startsWith('/') && !input.includes(' ');
 		if (!v) return false;
-		return filterCommands(input).length > 0;
+		return filterSlashMenu(input, slashSkills).length > 0;
 	});
-	const inputHighlightSpans = $derived(splitLeadingSlashCommand(input));
+	const inputHighlightSpans = $derived(splitLeadingSlashCommand(input, slashSkills.map((skill) => skill.name)));
 	// 关键路径:/ 与 @ 互斥 — 斜杠优先;mention 补全仅在非 slash 态
 	const mentionVisible = $derived(mentionQuery !== null && !slashVisible);
 	const chatMotionOn = $derived(isChatMotionEnabled($settingsStore));
@@ -1101,15 +1112,17 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 	}
 
 	// ==================== 斜杠命令 ====================
-	function executeSlashCommand(cmd: SlashCommand) {
+	function executeSlashCommand(item: SlashMenuItem) {
+		if (slashSelectionLandsInInput(item)) {
+			const filled = item.kind === 'skill' ? `/${item.name} ` : `${item.name} `;
+			completeSlashIntoInput(filled);
+			if (item.name === '/goal') new Notice(tNow('slash.goal.usage'), 3500);
+			return;
+		}
 		input = '';
-		switch (cmd.name) {
+		switch (item.name) {
 			case '/new':
 				void createNewSession();
-				break;
-			case '/goal':
-				input = '/goal ';
-				new Notice(tNow('slash.goal.usage'), 3500);
 				break;
 			case '/compact':
 				handleCompact();
@@ -1377,6 +1390,20 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 			sessionId,
 		);
 
+		const leadingSkill = matchLeadingSkill(text, slashSkills.map((skill) => skill.name));
+		let modelMessage = opts?.llmText;
+		if (leadingSkill) {
+			const skill = plugin.skillRegistry.get(leadingSkill.name);
+			if (skill && plugin.skillRegistry.isEnabled(leadingSkill.name)) {
+				plugin.skillRegistry.activate(leadingSkill.name);
+				preCtx.appendSkillInstructions(leadingSkill.name, skill.instructions);
+				await preCtx.save();
+				if (!leadingSkill.rest && !modelMessage) {
+					modelMessage = skillInvokeTexts(leadingSkill.name).llmText;
+				}
+			}
+		}
+
 		// 关键路径:用 push + 从数组中取出 Proxy 引用,触发细粒度 DOM 更新
 		const wasEmpty = messages.length === 0;
 		messages.push({
@@ -1446,7 +1473,7 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 				refs.length > 0 ? refs : undefined,
 				{
 					...(opts?.goalRound ? { goalRound: true } : {}),
-					...(opts?.llmText && opts.llmText !== text ? { modelMessage: opts.llmText } : {}),
+					...(modelMessage && modelMessage !== text ? { modelMessage } : {}),
 					preloadedContext: preCtx,
 					onRetryWait: handleRetryWait,
 				},
@@ -1675,8 +1702,11 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 		if (e.key === 'Enter' && !e.shiftKey) {
 			e.preventDefault();
 			const trimmed = input.trim();
-			const exactMatch = filterCommands(trimmed).find((c) => c.name === trimmed);
-			if (exactMatch) {
+			const exactMatch = filterSlashMenu(trimmed, slashSkills).find((item) =>
+				(item.kind === 'skill' ? `/${item.name}` : item.name).toLowerCase() === trimmed.toLowerCase(),
+			);
+			// 关键路径:已落到输入框的技能带尾部空格，再按回车必须发送。
+			if (exactMatch && !composerEnterSends(input, exactMatch)) {
 				executeSlashCommand(exactMatch);
 				return;
 			}
@@ -1917,6 +1947,8 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 				onOpenPath={handleOpenPath}
 				highlightId={navHighlightId}
 				citeSearchFallback={lastCiteSearchResults}
+				skillNames={slashSkills.map((skill) => skill.name)}
+				installedSkillNames={slashSkills.filter((skill) => skill.origin !== 'builtin').map((skill) => skill.name)}
 				jumpRequest={navJumpRequest}
 			/>
 			{#if railVisible}
@@ -2030,6 +2062,7 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 						<SlashMenu
 							bind:this={slashMenuEl}
 							input={input}
+							skills={slashSkills}
 							onSelect={executeSlashCommand}
 							onComplete={completeSlashIntoInput}
 							onClose={() => { input = ''; }}
@@ -2055,8 +2088,11 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 							aria-hidden="true"
 						>
 							{#each inputHighlightSpans as span}
-								{#if span.kind === 'command'}
-									<span class="ratel-slash-token">{span.text}</span>
+								{#if span.kind === 'command' || span.kind === 'skill'}
+									<span class="ratel-slash-token" class:ratel-slash-token--skill={span.kind === 'skill'}>{span.text}</span>
+									{#if span.kind === 'skill' && slashSkills.some((skill) => skill.origin !== 'builtin' && `/${skill.name}` === span.text)}
+										<span class="ratel-skill-installed">{$t('chat.slashMenu.origin.installed')}</span>
+									{/if}
 								{:else}{span.text}{/if}
 							{/each}{#if input.endsWith('\n')}<span>{'\u200b'}</span>{/if}
 						</div>
@@ -2636,6 +2672,21 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 		font-family: inherit;
 		font-weight: inherit;
 		letter-spacing: inherit;
+	}
+
+	.ratel-slash-token--skill {
+		color: var(--color-purple, #7c5cbf);
+	}
+
+	.ratel-skill-installed {
+		margin-left: 6px;
+		font-size: 10px;
+		line-height: 1;
+		padding: 2px 5px;
+		border-radius: 3px;
+		color: var(--color-purple, #7c5cbf);
+		background: color-mix(in srgb, var(--color-purple, #7c5cbf) 16%, transparent);
+		vertical-align: 1px;
 	}
 
 	.ratel-input-shell textarea {

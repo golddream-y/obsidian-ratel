@@ -9,6 +9,7 @@ import type { ToolDefinition } from '../ports/llm';
 import type { VaultPort } from '../ports/vault';
 import { optionalString } from './validate-args';
 import { isExcludedVaultPath } from '../utils/path-safety';
+import { tNow } from '../i18n';
 
 /**
  * 创建 list_files 工具实例 — 列出 vault 内指定目录下的文件。
@@ -27,7 +28,17 @@ export function createListFilesTool(vault: VaultPort, definition: ToolDefinition
 		async execute(args) {
 			const rawPath = optionalString(args, 'path') ?? '';
 			const dir = rawPath === '' || rawPath === '.' ? '' : rawPath;
-			const listing = await vault.listFiles(dir);
+			let listing: { files: string[]; folders: string[] };
+			try {
+				listing = await vault.listFiles(dir);
+			} catch (err) {
+				const code = (err as NodeJS.ErrnoException).code;
+				// 修复:目录不存在时 adapter.list 抛出带绝对路径的 ENOENT,不能原样给用户看。
+				if (code === 'ENOENT' || code === 'ENOTDIR') {
+					throw new Error(tNow('error.tool.fileNotFound', { path: dir || '.' }));
+				}
+				throw err;
+			}
 			return {
 				path: dir || '.',
 				files: listing.files.filter((f) => !isExcludedVaultPath(f)),

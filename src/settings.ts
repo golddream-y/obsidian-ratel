@@ -136,6 +136,11 @@ export interface RatelVaultSettings {
 
 	// Tool permissions (S-VAULT-TOOLS)
 	toolPermissions: Record<string, ToolPermission>;
+	/**
+	 * 内置工具默认权限的代数。旧库没有这个字段时，把仍为 ask 的内置工具升到 allow。
+	 * 用户之后再改成询问或拒绝会保留。
+	 */
+	toolPermissionDefaultsVersion: number;
 	/** 工具权限档位 — safe/auto/danger；取代产品语义上的 trustMode */
 	toolPermissionLevel: ToolPermissionLevel;
 	// 关键路径:Prompt section 级覆盖(来自 Composer registry);空对象 = 全部用 zh.ts 默认。
@@ -255,51 +260,49 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 	goalRoundTokenSoftCap: 0,
 	goalArchiveDays: 7,
 
+	// 内置工具默认允许，设置里也是「允许」。外部 MCP 不在这张表里，解析时仍为询问。
 	toolPermissions: {
 		search_vault: 'allow',
 		read_note: 'allow',
 		grep: 'allow',
 		glob: 'allow',
 		list_files: 'allow',
-		write_note: 'ask',
-		append_note: 'ask',
-		edit_note: 'ask',
-		delete_note: 'ask',
-		// 关键路径:3 个 memory 工具 — search_memory 只读放行;remember / forget_memory 写操作需确认。
+		write_note: 'allow',
+		append_note: 'allow',
+		edit_note: 'allow',
+		delete_note: 'allow',
 		search_memory: 'allow',
-		remember: 'ask',
-		forget_memory: 'ask',
-		// 关键路径:2 个 skill 工具只读放行(不写文件,只改 system prompt)。
+		remember: 'allow',
+		forget_memory: 'allow',
 		activate_skill: 'allow',
 		deactivate_skill: 'allow',
-		// 关键路径(P-SKILL-2):read 只读放行;run 默认 allow — per-script 授权由工具内
-		// ScriptTrustGate 负责,通用 'ask' 会对同一脚本双重弹窗(ADR-017 / plan 关键设计)。
 		read_skill_reference: 'allow',
 		run_skill_script: 'allow',
-		// 关键路径(P-BASIC-ENV):环境感知工具只读放行。
 		get_datetime: 'allow',
 		get_active_note: 'allow',
 		get_daily_note: 'allow',
 		list_recent_notes: 'allow',
 		get_note_outline: 'allow',
-		// 关键路径:图谱读侧工具只读放行。
 		get_links: 'allow',
 		search_by_tag: 'allow',
 		search_by_property: 'allow',
 		get_vault_structure: 'allow',
-		// 关键路径(P-CFG):open_note 纯 UI 导航不写文件,只读放行。
 		open_note: 'allow',
-		// 关键路径(P-CFG):open_settings 纯 UI 导航(打开设置面板定位 tab),只读放行。
 		open_settings: 'allow',
-		// 关键路径(P-CFG):get_app_config 只读快照(密钥仅 boolean 存在性),只读放行。
 		get_app_config: 'allow',
-		// 关键路径(P-CFG):update_app_config 代改设置并落盘,默认 ask 由用户逐次确认。
-		update_app_config: 'ask',
-		// 关键路径(S-GOAL):manage_goal 默认 allow;动作内 Modal 负责 create/resume/cancel/complete 确认
+		update_app_config: 'allow',
 		manage_goal: 'allow',
 		search_plugins: 'allow',
-		install_plugin: 'ask',
+		install_plugin: 'allow',
+		get_plugin_status: 'allow',
+		list_ecosystem_changes: 'allow',
+		update_plugin: 'allow',
+		uninstall_plugin: 'allow',
+		configure_plugin: 'allow',
+		restore_backup: 'allow',
+		apply_diary_host: 'allow',
 	},
+	toolPermissionDefaultsVersion: 1,
 	// 关键路径:默认无任何 override,使用 zh.ts 内置中文模板。
 	promptOverrides: {},
 	toolPermissionLevel: 'safe',
@@ -343,6 +346,29 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 	mcpApprovedSpawns: [],
 	ecosystemWriteEnabled: true,
 };
+
+/** 内置工具默认「允许」的代数。旧库没有该字段时做一次升级。 */
+export const BUILTIN_TOOL_PERMISSION_DEFAULTS_VERSION = 1;
+
+/**
+ * 旧库里内置工具若仍是出厂的 ask，升成 allow。拒绝不动。MCP 不在默认表里，不改。
+ *
+ * @param settings - 已与 DEFAULT 合并的设置
+ * @param loadedVersion - 磁盘上的代数；没有则视为 0
+ */
+export function applyBuiltinToolPermissionDefaults(
+	settings: RatelVaultSettings,
+	loadedVersion: number | undefined,
+): void {
+	const version = loadedVersion ?? 0;
+	if (version >= BUILTIN_TOOL_PERMISSION_DEFAULTS_VERSION) return;
+	for (const name of Object.keys(DEFAULT_SETTINGS.toolPermissions)) {
+		if (settings.toolPermissions[name] === 'ask') {
+			settings.toolPermissions[name] = 'allow';
+		}
+	}
+	settings.toolPermissionDefaultsVersion = BUILTIN_TOOL_PERMISSION_DEFAULTS_VERSION;
+}
 
 /**
  * 规范化 Context Length 相关字段 — loadSettings 后调用(见 ADR-007)。
@@ -1100,6 +1126,13 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			manage_goal: 'settings.toolPermissions.manage_goal',
 			search_plugins: 'settings.toolPermissions.search_plugins',
 			install_plugin: 'settings.toolPermissions.install_plugin',
+			update_plugin: 'settings.toolPermissions.update_plugin',
+			uninstall_plugin: 'settings.toolPermissions.uninstall_plugin',
+			configure_plugin: 'settings.toolPermissions.configure_plugin',
+			get_plugin_status: 'settings.toolPermissions.get_plugin_status',
+			list_ecosystem_changes: 'settings.toolPermissions.list_ecosystem_changes',
+			restore_backup: 'settings.toolPermissions.restore_backup',
+			apply_diary_host: 'settings.toolPermissions.apply_diary_host',
 		};
 		const key = map[toolName];
 		return key ? tNow(key) : toolName;
@@ -1119,6 +1152,13 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			'manage_goal',
 			'search_plugins',
 			'install_plugin',
+			'update_plugin',
+			'uninstall_plugin',
+			'configure_plugin',
+			'get_plugin_status',
+			'list_ecosystem_changes',
+			'restore_backup',
+			'apply_diary_host',
 	];
 
 		const items: SettingGroupItem[] = [

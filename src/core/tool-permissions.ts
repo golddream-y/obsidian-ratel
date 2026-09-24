@@ -20,7 +20,11 @@ export interface ToolPermissionSettings {
 }
 
 // 破坏性 / 高影响工具 — auto 档仍需逐次确认;update_app_config 一次可改多项应用配置,影响面大于单篇笔记
-const DESTRUCTIVE_TOOLS = new Set(['delete_note', 'forget_memory', 'update_app_config', 'install_plugin']);
+const DESTRUCTIVE_TOOLS = new Set([
+	'delete_note', 'forget_memory', 'update_app_config', 'install_plugin',
+	'update_plugin', 'uninstall_plugin', 'configure_plugin', 'restore_backup',
+	'apply_diary_host',
+]);
 
 /**
  * 破坏性 / 高影响工具 — auto 档仍需逐次确认；update_app_config 一次可改多项应用配置，影响面大于单篇笔记；MCP 一律视为破坏性。
@@ -103,6 +107,26 @@ export function summarizeToolCall(toolCall: ToolCall): string {
 			const id = skillName && scriptPath ? `${skillName}/${scriptPath}` : toolCall.name;
 			return tNow('toolPerm.runSkillScript', { id });
 		}
+		case 'install_plugin':
+		case 'update_plugin':
+		case 'uninstall_plugin':
+		case 'configure_plugin': {
+			const id = typeof toolCall.args.pluginId === 'string' ? toolCall.args.pluginId : '';
+			const keyMap = {
+				install_plugin: 'tool.name.install_plugin',
+				update_plugin: 'tool.name.update_plugin',
+				uninstall_plugin: 'tool.name.uninstall_plugin',
+				configure_plugin: 'tool.name.configure_plugin',
+			} as const;
+			const key = keyMap[toolCall.name];
+			return id && key ? tNow(key, { id }) : toolCall.name;
+		}
+		case 'restore_backup': {
+			const id = typeof toolCall.args.changeId === 'string' ? toolCall.args.changeId : '';
+			return id ? tNow('tool.name.restore_backup', { id }) : toolCall.name;
+		}
+		case 'apply_diary_host':
+			return tNow('tool.name.apply_diary_host');
 		case 'manage_goal': {
 			const action = typeof toolCall.args.action === 'string' ? toolCall.args.action : '';
 			const objective = typeof toolCall.args.objective === 'string' ? toolCall.args.objective : '';

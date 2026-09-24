@@ -7,5 +7,8 @@
 /** Vitest 环境不落盘内置 skill,空清单即可 */
 export const BUILTIN_SKILLS: Record<string, string> = {};
 
+/** 测试默认不带内置配置文件 */
+export const BUILTIN_SKILL_PROFILES: Record<string, Record<string, string>> = {};
+
 /** 测试用占位版本号 */
 export const APP_VERSION = '0.0.0-test';

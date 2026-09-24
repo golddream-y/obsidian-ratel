@@ -1,7 +1,8 @@
 # Ratel 使用手册
 
-> 面向日常使用。装好插件、配好模型后，按场景查即可。  
-> 英文读者见文末 [English summary](#english-summary)。
+[English](user-guide.en.md) | [简体中文](user-guide.md)
+
+> 面向日常使用。装好插件、配好模型后，按场景查即可。
 
 ---
 
@@ -303,17 +304,3 @@ Ratel 是 Obsidian 桌面端的 **vault AI Agent**：能问答、能多步翻笔
 | 工具输出特别长会怎样？ | 发给模型的正文截到 3.2 万字符以内（保留头尾要点）；聊天气泡里仍是全文。长任务续跑时最好带上任务原句 |
 
 更多问题可开 [GitHub Issues](https://github.com/golddream-y/obsidian-ratel/issues)。
-
----
-
-## English summary
-
-**Install:** Obsidian → Community plugins → Browse → search **Ratel** → Install & Enable (desktop, 1.13.0+).
-
-**First run:** Configure chat model (+ Keychain `ratel-chat-openai-compatible`, or local Ollama). Wait for indexing. Open chat via the 🦡 ribbon.
-
-**Ask naturally:** topics → semantic search with citations; “today” → injected local time; “this note” → active file; “open that note” → opens it in Obsidian at the heading or block; daily note path is probed only (never auto-created). Config questions go through the built-in config skill (whitelisted changes by chat; keys only via the keychain). **Long-running goals:** `/goal` restates criteria and round budget, then creates after you agree; one incomplete goal at a time; it survives new chats (take over to keep working); complete closes it, archive only from the goal list. Memory lives in `.ratel/memory/`. Skills live under `.ratel/skills/` (or `~/.ratel/skills/`) — installed means enabled (vault wins on name conflicts). Manage them via the Skills button in the status drawer: per-skill toggle (persists across restarts), view full text, edit, or delete with double confirmation; built-ins are read-only and update with the plugin. A skill folder may also ship `scripts/` (sandboxed JavaScript — no network, file access limited to the vault and the skill folder) and `references/` docs the agent runs or reads on demand; each script asks approval on first run (“Always allow” remembers); scripts that keep reporting progress are not killed at the timeout — the agent gets their progress and decides to keep waiting or stop them (stalled scripts with no progress heartbeat are terminated after the timeout, default 30s, configurable 5–120s; absolute cap 10 minutes), and a script failing 3 times in a row (stalled, over the cap, or crashed) is circuit-broken until re-approved.
-
-**Sessions:** Header chip opens recent chats; ✎ edits / AI-summarizes the title. Switching while generating asks first. “Allow for this session” grants by tool name for the whole chat.
-
-**Privacy:** No telemetry. Network only to the model (and optional embed/rerank/MCP) endpoints you configure.

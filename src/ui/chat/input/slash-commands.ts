@@ -6,6 +6,7 @@
  */
 
 import { tNow } from '../../../i18n';
+import type { SkillSource } from '../../../skills/types';
 
 /** 斜杠命令定义 — name 用于匹配,description 用于菜单展示,icon 是 emoji 或 lucide 名 */
 export interface SlashCommand {
@@ -75,6 +76,153 @@ export function filterCommands(input: string): SlashCommand[] {
 	return getSlashCommands().filter((cmd) => cmd.name.toLowerCase().startsWith(lower));
 }
 
+/** 斜杠行种类。权重数字决定排序,以后加类别只加一项,不加分段标题。 */
+export const SLASH_KIND_WEIGHT = {
+	command: 0,
+	skill: 1,
+} as const;
+
+export type SlashKind = keyof typeof SLASH_KIND_WEIGHT;
+
+/** 菜单一行。命令 name 带 `/`,技能 name 是 skill 标识。技能带生效来源。 */
+export interface SlashMenuItem {
+	kind: SlashKind;
+	name: string;
+	description: string;
+	/** 技能生效来源。命令没有这一项。 */
+	origin?: SkillSource;
+}
+
+/** 已启用 skill 的菜单投影,不含目录与禁用项。 */
+export interface SlashSkillCandidate {
+	name: string;
+	description: string;
+	origin: SkillSource;
+}
+
+/**
+ * 同一份斜杠列表:命令与技能混排,用 kind 区分,不按种类拆段。
+ *
+ * 空 `/` 时命令保持产品固定顺序,技能按名字排在后面。
+ * 有前缀时先要求名字前缀命中,再按种类权重,再按名字。
+ *
+ * @param input - 输入框全文
+ * @param skills - 当前已启用 skill
+ */
+export function filterSlashMenu(
+	input: string,
+	skills: readonly SlashSkillCandidate[],
+): SlashMenuItem[] {
+	if (!input.startsWith('/') || input.includes(' ')) {
+		return [];
+	}
+	const typed = input.toLowerCase();
+	const query = typed.slice(1);
+	const filtering = query.length > 0;
+	const rows: Array<SlashMenuItem & { weight: number; order: number }> = [];
+	getSlashCommands().forEach((cmd, index) => {
+		if (!cmd.name.toLowerCase().startsWith(typed)) return;
+		rows.push({
+			kind: 'command',
+			name: cmd.name,
+			description: cmd.description,
+			weight: SLASH_KIND_WEIGHT.command,
+			order: index,
+		});
+	});
+	for (const skill of skills) {
+		if (!skill.name.toLowerCase().startsWith(query)) continue;
+		rows.push({
+			kind: 'skill',
+			name: skill.name,
+			description: skill.description,
+			origin: skill.origin,
+			weight: SLASH_KIND_WEIGHT.skill,
+			order: 0,
+		});
+	}
+	rows.sort((a, b) => {
+		if (a.weight !== b.weight) return a.weight - b.weight;
+		if (!filtering && a.kind === 'command' && b.kind === 'command') return a.order - b.order;
+		return a.name.localeCompare(b.name);
+	});
+	return rows.map(({ kind, name, description, origin }) => ({ kind, name, description, origin }));
+}
+
+/**
+ * 斜杠点选技能时的两段文案。
+ * 气泡与 Cursor / Claude 一样显示 `/名字`；另一段只发给模型，要求按已写入的做法开工。
+ *
+ * @param name - skill 标识
+ */
+export function skillInvokeTexts(name: string): { text: string; llmText: string } {
+	return {
+		text: `/${name}`,
+		llmText: tNow('chat.slashMenu.skillRunModel', { name }),
+	};
+}
+
+/**
+ * 选中后先落到输入框，等用户再按回车发送。
+ * 技能和要补一句的命令走这条；没有参数的命令直接执行。
+ *
+ * @param item - 斜杠菜单当前行
+ */
+export function slashSelectionLandsInInput(item: Pick<SlashMenuItem, 'kind' | 'name'>): boolean {
+	if (item.kind === 'skill') return true;
+	return item.name === '/goal';
+}
+
+/**
+ * 菜单没有吃掉这次回车时，当前输入是否应当直接发送。
+ * 技能和 `/goal` 落到输入框后带空格，再按回车必须发送，不能再次补全进输入框。
+ *
+ * @param input - 输入框原文，含末尾空格
+ * @param exact - 去掉空格后精确命中的菜单行；没有则为 undefined
+ */
+export function composerEnterSends(
+	input: string,
+	exact: Pick<SlashMenuItem, 'kind' | 'name'> | undefined,
+): boolean {
+	if (input.includes(' ')) return true;
+	if (!exact) return true;
+	return slashSelectionLandsInInput(exact);
+}
+
+/**
+ * 发送文本是否以某个已启用技能名开头。
+ *
+ * @param text - 用户将要发送的原文
+ * @param skillNames - 已启用技能名，不含 `/`
+ * @returns 命中的技能名，以及技能名后面的补充说明；没有补充时 rest 为空
+ */
+export function matchLeadingSkill(
+	text: string,
+	skillNames: readonly string[],
+): { name: string; rest: string } | null {
+	const trimmed = text.trim();
+	if (!trimmed.startsWith('/')) return null;
+	const names = [...skillNames].filter((name) => name.length > 0).sort((a, b) => b.length - a.length);
+	for (const name of names) {
+		const token = `/${name}`;
+		if (trimmed.toLowerCase() === token.toLowerCase()) return { name, rest: '' };
+		if (trimmed.toLowerCase().startsWith(`${token.toLowerCase()} `)) {
+			return { name, rest: trimmed.slice(token.length).trim() };
+		}
+	}
+	return null;
+}
+
+export function completeUniqueSlashItem(
+	input: string,
+	skills: readonly SlashSkillCandidate[],
+): string | null {
+	const matches = filterSlashMenu(input, skills);
+	if (matches.length !== 1) return null;
+	const only = matches[0]!;
+	return only.kind === 'skill' ? `/${only.name} ` : `${only.name} `;
+}
+
 /**
  * Tab 补全:筛到只剩一条时补成 `/命令 `。
  *
@@ -135,38 +283,60 @@ export function isSlashGoalCreateTurn(text: string): boolean {
 	return Boolean(parsed?.objective);
 }
 
-/** 输入高亮片段 — 完整斜杠命令用强调色,其余普通色 */
+/** 输入高亮片段 — 命令与技能用不同颜色,其余普通色 */
 export interface SlashHighlightSpan {
-	kind: 'command' | 'text';
+	kind: 'command' | 'skill' | 'text';
 	text: string;
 }
 
 /**
- * 把输入拆成「完整斜杠命令 + 其余」。
+ * 把输入拆成「完整斜杠名 + 其余」。
  *
- * 只高亮登记表里的全名(`/goal` `/new` …),`/g` 或 `/goalie` 不高亮。
+ * 命令（`/goal` `/new` …）与已启用技能名都会高亮，颜色由 kind 区分。
+ * `/g`、`/goalie` 以及未登记的名字不高亮。
  *
  * @param input - 输入框或用户气泡原文
+ * @param skillNames - 当前已启用的 skill 标识，不含 `/`
  */
-export function splitLeadingSlashCommand(input: string): SlashHighlightSpan[] {
+export function splitLeadingSlashCommand(
+	input: string,
+	skillNames: readonly string[] = [],
+): SlashHighlightSpan[] {
 	if (!input.startsWith('/')) {
 		return [{ kind: 'text', text: input }];
 	}
-	const names = getSlashCommands()
+	const commandNames = getSlashCommands()
 		.map((c) => c.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
 		.sort((a, b) => b.length - a.length);
-	const re = new RegExp(`^(${names.join('|')})(?=\\s|$)`, 'i');
-	const match = re.exec(input);
-	if (!match) {
+	const commandRe = new RegExp(`^(${commandNames.join('|')})(?=\\s|$)`, 'i');
+	const commandMatch = commandRe.exec(input);
+	if (commandMatch) {
+		return splitMatchedToken(input, commandMatch[0], 'command');
+	}
+	const skills = skillNames
+		.map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+		.filter((name) => name.length > 0)
+		.sort((a, b) => b.length - a.length);
+	if (skills.length === 0) {
 		return [{ kind: 'text', text: input }];
 	}
-	const cmd = match[0];
-	const rest = input.slice(cmd.length);
-	if (!rest) {
-		return [{ kind: 'command', text: cmd }];
+	const skillRe = new RegExp(`^(/(?:${skills.join('|')}))(?=\\s|$)`, 'i');
+	const skillMatch = skillRe.exec(input);
+	if (!skillMatch) {
+		return [{ kind: 'text', text: input }];
 	}
+	return splitMatchedToken(input, skillMatch[0], 'skill');
+}
+
+function splitMatchedToken(
+	input: string,
+	token: string,
+	kind: 'command' | 'skill',
+): SlashHighlightSpan[] {
+	const rest = input.slice(token.length);
+	if (!rest) return [{ kind, text: token }];
 	return [
-		{ kind: 'command', text: cmd },
+		{ kind, text: token },
 		{ kind: 'text', text: rest },
 	];
 }
