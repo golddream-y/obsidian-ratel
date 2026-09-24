@@ -166,7 +166,7 @@ import { createRestoreBackupTool } from './tools/restore-backup';
 import { createApplyDiaryHostTool } from './tools/apply-diary-host';
 import { updateCommunityPlugin } from './adapters/ecosystem-update';
 import { uninstallCommunityPlugin } from './adapters/ecosystem-uninstall';
-import { inspectPluginData, applyPluginData } from './adapters/ecosystem-configure';
+import { inspectPluginData, applyPluginData, syncLoadedPluginSettings } from './adapters/ecosystem-configure';
 import { listInstalledPlugins, getCommunityPluginStatus } from './adapters/ecosystem-status';
 import { restoreEcosystemBackup } from './adapters/ecosystem-restore';
 import { listEcosystemChanges } from './core/ecosystem-change-log';
@@ -791,13 +791,16 @@ export default class RatelVaultPlugin extends Plugin {
 					catalogIds: new Set(catalog.plugins.map((p) => p.id)),
 					installedIds: listInstalledPluginIds(),
 				}));
-				return applyPluginData(id, patch, {
+				const result = await applyPluginData(id, patch, {
 					io,
 					pluginDir,
 					configDir: this.app.vault.configDir,
 					writeEnabled: this.settings.ecosystemWriteEnabled,
 					confirmedNewKeys,
 				});
+				const loaded = (this.app as { plugins?: { plugins?: Record<string, { settings?: Record<string, unknown>; saveSettings?: () => Promise<void>; saveData?: (data: unknown) => Promise<void> }> } }).plugins?.plugins?.[id];
+				await syncLoadedPluginSettings(loaded, patch);
+				return result;
 			},
 		}));
 		this.tools.register(createGetPluginStatusTool(toolDefMap.get('get_plugin_status')!, {

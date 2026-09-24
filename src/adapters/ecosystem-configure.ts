@@ -74,10 +74,34 @@ export async function applyPluginData(
 		const next = applyLeafPatch(data, patch);
 		const change = await appendEcosystemChange(deps.pluginDir, { action: 'configure', pluginId, summary: Object.keys(patch).join(','), before: data, after: next });
 		await snapshotPluginDir({ pluginDir: deps.pluginDir, changeId: change.id, io: deps.io, pluginRel });
+		// 先写临时文件并解析，确认是合法 JSON，再覆盖 data.json。
+		// Obsidian 的 rename 在目标已存在时抛 Destination file already exists，不能用来替换。
 		const tmp = `${pluginRel}/data.json.tmp`;
-		await deps.io.writeText(tmp, JSON.stringify(next, null, 2));
+		const body = JSON.stringify(next, null, 2);
+		await deps.io.writeText(tmp, body);
 		JSON.parse(await deps.io.readText(tmp));
-		await deps.io.rename(tmp, `${pluginRel}/data.json`);
+		await deps.io.writeText(`${pluginRel}/data.json`, body);
+		try {
+			await deps.io.removeRecursive(tmp);
+		} catch {
+			// 临时文件留着不影响已经写入的配置
+		}
 		return { changed: Object.keys(patch).map((key) => ({ key, before: data[key], after: patch[key] })), changeId: change.id };
 	});
+}
+
+/**
+ * 把刚写入 data.json 的补丁同步到已加载插件的内存。
+ * 只改文件时，插件仍用旧设置，时间轴上新建的任务会落到默认标题下。
+ */
+export async function syncLoadedPluginSettings(
+	plugin: { settings?: Record<string, unknown>; saveSettings?: () => Promise<void>; saveData?: (data: unknown) => Promise<void> } | null | undefined,
+	patch: Record<string, unknown>,
+): Promise<boolean> {
+	if (!plugin?.settings) return false;
+	const next = applyLeafPatch(plugin.settings, patch);
+	for (const key of Object.keys(next)) plugin.settings[key] = next[key];
+	if (plugin.saveSettings) await plugin.saveSettings();
+	else if (plugin.saveData) await plugin.saveData(plugin.settings);
+	return true;
 }

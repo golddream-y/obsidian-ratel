@@ -119,6 +119,6 @@ Obsidian 按界面语言设置 `moment.locale`（简体中文对应 `zh-cn`）�
 | `src/skills/builtin/install-diary-plugins/SKILL.md` | 安装与宿主设置 |
 | `src/skills/builtin/diary-month-ledger/SKILL.md` | 晨间、收尾、月末 |
 | `src/adapters/diary-host.ts` | `apply_diary_host` 的写盘 |
-| `src/skills/builtin/calendar-week-start/` | 只改一个 `data.json` 叶子的短例子，含同级 yaml |
+| `plugin-profiles/calendar-week-start.yaml` | 只改一个 `data.json` 叶子的档案示例，不是内置技能 |
 
-当前内置技能四份：`ratel-config`、`calendar-week-start`、`install-diary-plugins`、`diary-month-ledger`。
+当前内置技能三份：`ratel-config`、`install-diary-plugins`、`diary-month-ledger`。
