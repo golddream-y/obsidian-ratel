@@ -14,6 +14,48 @@ import {
 } from '../ui/tokens/context-length-presets';
 import { applyLangPreference, type LangPreference } from '../i18n';
 import { devLogger } from '../logging/dev-logger';
+import type { ChatProfile } from './chat-profiles';
+
+/** 当前四字段写入 settings 后,需同步回活跃套的 profile 字段名 */
+const ACTIVE_PROFILE_FIELD_BY_SETTING_KEY: Partial<
+	Record<'chatApiBase' | 'chatModel' | 'contextLengthPreset' | 'chatModelMaxTokens', keyof ChatProfile>
+> = {
+	chatApiBase: 'apiBase',
+	chatModel: 'model',
+	contextLengthPreset: 'contextLengthPreset',
+	chatModelMaxTokens: 'chatModelMaxTokens',
+};
+
+/**
+ * 手改当前四字段时,把新值写回 `chatProfiles` 里活跃那一套,避免切换配置时用旧快照覆盖。
+ *
+ * @param settings - 插件设置(已写入新值)
+ * @param key - 刚写入的 setting key
+ */
+function mirrorChatFieldToActiveProfile(
+	settings: RatelVaultSettings,
+	key: 'chatApiBase' | 'chatModel' | 'contextLengthPreset' | 'chatModelMaxTokens',
+): void {
+	const activeId = settings.activeChatProfileId;
+	if (!activeId) return;
+	const profile = settings.chatProfiles.find((p) => p.id === activeId);
+	if (!profile) return;
+
+	const profileField = ACTIVE_PROFILE_FIELD_BY_SETTING_KEY[key];
+	if (!profileField) return;
+
+	if (key === 'chatApiBase') {
+		profile.apiBase = settings.chatApiBase;
+	} else if (key === 'chatModel') {
+		profile.model = settings.chatModel;
+	} else if (key === 'contextLengthPreset') {
+		profile.contextLengthPreset = settings.contextLengthPreset;
+		// 关键路径:applyContextLengthPreset 会同步 chatModelMaxTokens,活跃套须一并更新
+		profile.chatModelMaxTokens = settings.chatModelMaxTokens;
+	} else if (key === 'chatModelMaxTokens') {
+		profile.chatModelMaxTokens = settings.chatModelMaxTokens;
+	}
+}
 
 /**
  * 设置应用的最小宿主接口 — RatelVaultPlugin 结构兼容,测试用 mock。
@@ -92,5 +134,15 @@ export function applySettingValue(plugin: SettingApplier, key: string, value: un
 	// 关键路径:language 切换后立即应用,触发 langStore 更新,Svelte 组件自动重渲染
 	if (key === 'language') {
 		applyLangPreference(value as LangPreference);
+	}
+
+	// 关键路径:四字段与活跃套双向一致,否则 switchChatProfile 会用 profile 旧值覆盖用户刚改的 settings
+	if (
+		key === 'chatModel' ||
+		key === 'chatApiBase' ||
+		key === 'contextLengthPreset' ||
+		key === 'chatModelMaxTokens'
+	) {
+		mirrorChatFieldToActiveProfile(plugin.settings, key);
 	}
 }
