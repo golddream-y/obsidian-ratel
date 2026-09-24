@@ -45,3 +45,37 @@ export function normalizeChatProfiles(
 	settings.chatProfiles = [profile];
 	settings.activeChatProfileId = profile.id;
 }
+
+/** 切到指定一套:把该套字段写入当前四字段。 */
+export function switchChatProfile(settings: RatelVaultSettings, id: string): void {
+	const target = settings.chatProfiles.find((p) => p.id === id);
+	if (!target) return;
+	settings.chatApiBase = target.apiBase;
+	settings.chatModel = target.model;
+	settings.contextLengthPreset = target.contextLengthPreset;
+	settings.chatModelMaxTokens = target.chatModelMaxTokens;
+	settings.activeChatProfileId = target.id;
+}
+
+/** 把当前四字段另存为新一套,active 指向新套。 */
+export function saveCurrentAsProfile(settings: RatelVaultSettings, name: string): ChatProfile {
+	const profile: ChatProfile = {
+		id: newChatProfileId(),
+		name,
+		apiBase: settings.chatApiBase,
+		model: settings.chatModel,
+		contextLengthPreset: settings.contextLengthPreset,
+		chatModelMaxTokens: settings.chatModelMaxTokens,
+	};
+	settings.chatProfiles = [...settings.chatProfiles, profile];
+	settings.activeChatProfileId = profile.id;
+	return profile;
+}
+
+/** 删除一套。当前这套拒绝删除。 */
+export function deleteChatProfile(settings: RatelVaultSettings, id: string): void {
+	if (settings.activeChatProfileId === id) {
+		throw new Error('不能删除当前这套配置,请先切到另一套');
+	}
+	settings.chatProfiles = settings.chatProfiles.filter((p) => p.id !== id);
+}
