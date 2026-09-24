@@ -593,6 +593,8 @@ export interface StatusStrings {
   'status.drawer.embedKind.api': string;
   'status.drawer.section.context': string;
   'status.drawer.label.usedMax': string;
+  'status.drawer.contextSource.estimate': string;
+  'status.drawer.contextSource.api': string;
   'status.drawer.usedMaxValue': string;
   'status.drawer.compactButton': string;
   'status.drawer.docCount': string;

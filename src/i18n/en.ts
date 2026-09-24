@@ -580,6 +580,8 @@ export const en: Strings = {
   'status.drawer.embedKind.api': 'API',
   'status.drawer.section.context': 'Context',
   'status.drawer.label.usedMax': 'Used / Max',
+  'status.drawer.contextSource.estimate': 'estimate',
+  'status.drawer.contextSource.api': 'API',
   'status.drawer.usedMaxValue': '{used} / {max}',
   'status.drawer.compactButton': 'Compact context',
   'status.drawer.docCount': '({count} docs)',

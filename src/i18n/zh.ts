@@ -590,6 +590,8 @@ const statusZh: StatusStrings = {
   'status.drawer.embedKind.api': 'API',
   'status.drawer.section.context': '上下文',
   'status.drawer.label.usedMax': '已用 / 上限',
+  'status.drawer.contextSource.estimate': '估算',
+  'status.drawer.contextSource.api': 'API',
   'status.drawer.usedMaxValue': '{used} / {max}',
   'status.drawer.compactButton': '压缩上下文',
   'status.drawer.docCount': '({count} 篇)',
