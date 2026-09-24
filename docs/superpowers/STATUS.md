@@ -19,7 +19,8 @@
 
 | ID | 文件 | 状态 | 创建日期 | 备注 |
 |---|---|---|---|---|
-| — | — | — | — | 当前无活跃 spec |
+| S-CHAT-PROFILES | [2026-09-24-chat-profiles-design.md](specs/2026-09-24-chat-profiles-design.md) | Active | 2026-09-24 | 多套对话模型配置与切换；每套独立密钥；对话工具不能代切 |
+| S-CONTEXT-ACCURACY | [2026-09-24-context-accuracy-design.md](specs/2026-09-24-context-accuracy-design.md) | Active | 2026-09-24 | 上下文真值（include_usage、各步合计）与上限跟随模型 |
 
 
 ---
@@ -28,7 +29,8 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
-| — | — | — | — | 当前无进行中的 plan |
+| P-CONTEXT-ACCURACY | [2026-09-24-context-accuracy.md](plans/2026-09-24-context-accuracy.md) | Pending | S-CONTEXT-ACCURACY | 4 Task：include_usage、step 合计、抽屉标注、上限跟随 |
+| P-CHAT-PROFILES | [2026-09-24-chat-profiles.md](plans/2026-09-24-chat-profiles.md) | Pending | S-CHAT-PROFILES | 5 Task：数据形态、密钥、白名单、UI、上限跟随（依赖 P-CONTEXT-ACCURACY Task 4） |
 
 ---
 
