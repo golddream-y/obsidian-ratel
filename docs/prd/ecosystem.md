@@ -26,7 +26,7 @@ Ratel 的管理对象从知识库扩展到工作环境。需求按用户能感�
 
 **阶段 1 — 配置规范**
 
-全库一份插件配置档案格式（不是每个插件一套 schema）。规定档案必须绑定商店 `pluginId`、点名可写 key、禁忌 key（密钥等永不代写）、场景 preset。详见 [S-PLUGIN-PROFILE](../superpowers/specs/2026-09-10-plugin-profile-design.md)。
+全库一份插件配置档案格式（不是每个插件一套 schema）。规定档案必须绑定商店 `pluginId`、点名可写 key、禁忌 key（密钥等永不代写）、场景 preset。详见 [S-PLUGIN-PROFILE](../superpowers/archive/S-PLUGIN-PROFILE/2026-09-10-plugin-profile-design.md)。
 
 **阶段 2 — 创建配置 skill（档案）**
 

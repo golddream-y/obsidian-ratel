@@ -2,7 +2,7 @@
 
 > 领域:Host | 对话发现、安装、升级、卸载其他社区插件；确认、备份、回滚
 >
-> 本文是支柱 C **执行层**的架构正文。配置档案（规范 / 创建 / 对话按 preset 配）见 [plugin-profile](plugin-profile.md)。产品阶段与需求编号见 [prd/ecosystem.md](../../prd/ecosystem.md)、[prd/requirements.md](../../prd/requirements.md)、[S-ECOSYSTEM](../../superpowers/specs/2026-08-20-ecosystem-management-design.md)。
+> 本文是支柱 C **执行层**的架构正文。配置档案（规范 / 创建 / 对话按 preset 配）见 [plugin-profile](plugin-profile.md)。产品阶段与需求编号见 [prd/ecosystem.md](../../prd/ecosystem.md)、[prd/requirements.md](../../prd/requirements.md)、[S-ECOSYSTEM](../../superpowers/archive/S-ECOSYSTEM/2026-08-20-ecosystem-management-design.md)。
 
 ---
 
@@ -159,7 +159,7 @@ Adapter：`validateEcosystemPath`、清单缓存、GitHub 下载、可选内部 
 
 ## 7. 参考
 
-- [S-ECOSYSTEM](../../superpowers/specs/2026-08-20-ecosystem-management-design.md)
+- [S-ECOSYSTEM](../../superpowers/archive/S-ECOSYSTEM/2026-08-20-ecosystem-management-design.md)
 - [plugin-profile](plugin-profile.md)
 - [capability-surface](../agent/capability-surface.md)
 - [ADR-018](../../adr/2026-09-18-ecosystem-outbound.md)

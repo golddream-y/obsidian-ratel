@@ -412,8 +412,8 @@ plugin-profiles/       # builtin 示例 + AUTHORING.md（实现期）
 
 ## 11. 参考
 
-- [S-PLUGIN-PROFILE](../../superpowers/specs/2026-09-10-plugin-profile-design.md)
-- [S-ECOSYSTEM](../../superpowers/specs/2026-08-20-ecosystem-management-design.md)
+- [S-PLUGIN-PROFILE](../../superpowers/archive/S-PLUGIN-PROFILE/2026-09-10-plugin-profile-design.md)
+- [S-ECOSYSTEM](../../superpowers/archive/S-ECOSYSTEM/2026-08-20-ecosystem-management-design.md)
 - [ADR-009 Skill](../../adr/2026-07-06-skill-mechanism.md) · [ADR-012 激活](../../adr/2026-07-23-skill-activation-claude-aligned.md)
 - [capability-surface](../agent/capability-surface.md)
 - [overview](../overview.md) Host `plugin-profile`

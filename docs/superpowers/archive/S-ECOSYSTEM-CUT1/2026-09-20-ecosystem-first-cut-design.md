@@ -1,7 +1,7 @@
 # S-ECOSYSTEM-CUT1 — 支柱 C 第一刀：对话装卸闭环与 Skill 配置墙
 
 > **状态: Superseded（2026-09-21）**  
-> 被 [S-ECOSYSTEM 2026-09-21 修订](../../specs/2026-08-20-ecosystem-management-design.md) + [S-PLUGIN-PROFILE 2026-09-21 修订](../../specs/2026-09-10-plugin-profile-design.md) 取代。  
+> 被 [S-ECOSYSTEM 2026-09-21 修订](../S-ECOSYSTEM/2026-08-20-ecosystem-management-design.md) + [S-PLUGIN-PROFILE 2026-09-21 修订](../S-PLUGIN-PROFILE/2026-09-10-plugin-profile-design.md) 取代。  
 > 「装 + 配」一次交付，不再按本文件第二～四刀施工。v9 上 search/install/denylist/ADR-018 仍有效，作为执行层基线并入母 spec。  
 > 下文保留为历史范围说明，**新 plan 不得以本文为唯一需求源**。
 
@@ -9,7 +9,7 @@
 > 状态: **Superseded（2026-09-21）**
 > Spec ID: **S-ECOSYSTEM-CUT1**
 > 基线: 已发版 **0.8.0**（现网无对话找/装/卸其他社区插件）
-> 关联: [S-ECOSYSTEM](../../specs/2026-08-20-ecosystem-management-design.md)（执行层全量）、[S-PLUGIN-PROFILE](../../specs/2026-09-10-plugin-profile-design.md)（档案与 PP-08）、[S-HOST-ACCESS](../../specs/2026-09-11-host-access-design.md)（不借道放宽沙箱）、[prd/ecosystem.md](../../prd/ecosystem.md)、[ADR-014](../../adr/2026-08-03-mcp-host-platform.md)、ADR-018（生态出站，**未立本 spec 不得当产品闸已过**）
+> 关联: [S-ECOSYSTEM](../S-ECOSYSTEM/2026-08-20-ecosystem-management-design.md)（执行层全量）、[S-PLUGIN-PROFILE](../S-PLUGIN-PROFILE/2026-09-10-plugin-profile-design.md)（档案与 PP-08）、[S-HOST-ACCESS](../S-HOST-ACCESS/2026-09-11-host-access-design.md)（不借道放宽沙箱）、[prd/ecosystem.md](../../prd/ecosystem.md)、[ADR-014](../../adr/2026-08-03-mcp-host-platform.md)、ADR-018（生态出站，**未立本 spec 不得当产品闸已过**）
 
 ---
 
@@ -171,9 +171,9 @@ ADR 正文须回答：出站域名白名单（清单 raw、release 下载、stat
 
 ## 7. 参考
 
-- [S-ECOSYSTEM](../../specs/2026-08-20-ecosystem-management-design.md)
-- [S-PLUGIN-PROFILE](../../specs/2026-09-10-plugin-profile-design.md)
-- [S-HOST-ACCESS](../../specs/2026-09-11-host-access-design.md)
+- [S-ECOSYSTEM](../S-ECOSYSTEM/2026-08-20-ecosystem-management-design.md)
+- [S-PLUGIN-PROFILE](../S-PLUGIN-PROFILE/2026-09-10-plugin-profile-design.md)
+- [S-HOST-ACCESS](../S-HOST-ACCESS/2026-09-11-host-access-design.md)
 - 架构：[host/ecosystem.md](../../architecture/host/ecosystem.md)、[host/plugin-profile.md](../../architecture/host/plugin-profile.md)
 - PRD：[ecosystem.md](../../prd/ecosystem.md)、[requirements.md](../../prd/requirements.md) EC / PP、[trust.md](../../prd/trust.md)
 - [ADR-014](../../adr/2026-08-03-mcp-host-platform.md)、[ADR-017](../../adr/2026-08-19-skill-script-sandbox-worker-vm.md)

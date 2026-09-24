@@ -1,7 +1,7 @@
 # S-HOST-ACCESS — 库外访问与宿主命令
 
 > 日期: 2026-09-11
-> 状态: Active
+> 状态: Archived
 > Spec ID: **S-HOST-ACCESS**
 > 关联: [tool-permissions](../../../src/core/tool-permissions.ts)（安全 / 自动 / 危险）、[config-whitelist](../../../src/settings/config-whitelist.ts)、[ADR-017](../../adr/2026-08-19-skill-script-sandbox-worker-vm.md)（Skill 脚本仍禁止 shell / 出库 fs）
 

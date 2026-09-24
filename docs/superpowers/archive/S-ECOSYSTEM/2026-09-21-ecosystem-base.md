@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript / vitest / 现有 i18n 与工具权限门 / `yaml`（纯 JS，无原生模块）解析档案 / Obsidian `requestUrl` + `DataAdapter`。
 
-**Spec:** [S-ECOSYSTEM](../specs/2026-08-20-ecosystem-management-design.md) + [S-PLUGIN-PROFILE](../specs/2026-09-10-plugin-profile-design.md)。基线切片 [P-ECOSYSTEM-1](2026-09-18-ecosystem-first-slice.md) 已合 `v9`，本 plan **不再冻结加功能**。
+**Spec:** [S-ECOSYSTEM](2026-08-20-ecosystem-management-design.md) + [S-PLUGIN-PROFILE](../S-PLUGIN-PROFILE/2026-09-10-plugin-profile-design.md)。基线切片 [P-ECOSYSTEM-1](2026-09-18-ecosystem-first-slice.md) 已合 `v9`，本 plan **不再冻结加功能**。
 
 **范围：底座只此一份 plan。** 不另开 `P-PLUGIN-PROFILE`（档案硬依赖 `configure_plugin`，拆开无法单独验收）。不覆盖 S-HOST-ACCESS / S-LLM-RETRY（已有或另排）。
 

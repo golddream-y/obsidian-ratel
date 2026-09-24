@@ -6,7 +6,7 @@
 **关联**:
 - [ADR-014](2026-08-03-mcp-host-platform.md)(平台化方向的先例 — Ratel 定位是平台)
 - [ADR-017](2026-08-19-skill-script-sandbox-worker-vm.md)(Skill 是数据不是代码插件,暂不需要插件框架)
-- [S-ECOSYSTEM](../superpowers/specs/2026-08-20-ecosystem-management-design.md)(生态管理 — 对话安装/配置/回滚**其他** Obsidian 社区插件,见下文「非触发」)
+- [S-ECOSYSTEM](../superpowers/archive/S-ECOSYSTEM/2026-08-20-ecosystem-management-design.md)(生态管理 — 对话安装/配置/回滚**其他** Obsidian 社区插件,见下文「非触发」)
 
 ---
 

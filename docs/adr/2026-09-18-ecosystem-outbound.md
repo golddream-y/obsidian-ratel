@@ -7,7 +7,7 @@
 - [ADR-006](2026-06-28-release-asset-distribution.md)(商店/BRAT 三件套契约:`main.js` + `manifest.json` + 可选 `styles.css`)
 - [ADR-014](2026-08-03-mcp-host-platform.md)(第二条网:用户显式配置 MCP 后才出站;本 ADR 是**并列的第三条网**,不是 MCP opt-in)
 - [ADR-017](2026-08-19-skill-script-sandbox-worker-vm.md)(Skill 脚本沙箱;本 ADR 补 PP-08:脚本不得写 `configDir`)
-- [S-ECOSYSTEM](../superpowers/specs/2026-08-20-ecosystem-management-design.md)
+- [S-ECOSYSTEM](../superpowers/archive/S-ECOSYSTEM/2026-08-20-ecosystem-management-design.md)
 - 架构正文 [host/ecosystem.md](../architecture/host/ecosystem.md)
 
 ---
