@@ -24,6 +24,7 @@ import {
 	resolveMcpSecret,
 	hasMcpSecret,
 } from '../../src/secrets/ratel-secrets';
+import type { ChatSecretSettings } from '../../src/secrets/ratel-secrets';
 import type { App } from 'obsidian';
 
 /**
@@ -199,6 +200,31 @@ describe('ratel-secrets', () => {
 	});
 
 	// ==================== RATEL_SECRET_IDS 完整性 ====================
+	describe('chat profile 密钥', () => {
+		const settingsWithProfile = (activeId: string) => ({
+			chatApiBase: 'https://api.deepseek.com',
+			chatProfiles: [
+				{ id: 'p1', name: 'A', apiBase: 'https://a', model: 'm1', contextLengthPreset: '128k', chatModelMaxTokens: 128_000 },
+				{ id: 'p2', name: 'B', apiBase: 'https://b', model: 'm2', contextLengthPreset: '128k', chatModelMaxTokens: 128_000 },
+			],
+			activeChatProfileId: activeId,
+		}) as unknown as ChatSecretSettings;
+
+		it('当前套有自己的密钥 - 用 profile 槽位', () => {
+			const app = mockApp({ 'ratel-chat-profile-p2': 'sk-b', [RATEL_SECRET_IDS.chatOpenAICompatible]: 'sk-old' });
+			expect(resolveChatApiKey(app, settingsWithProfile('p2'))).toBe('sk-b');
+		});
+
+		it('当前套无 profile 密钥 - 回退旧槽位', () => {
+			const app = mockApp({ [RATEL_SECRET_IDS.chatOpenAICompatible]: 'sk-old' });
+			expect(resolveChatApiKey(app, settingsWithProfile('p1'))).toBe('sk-old');
+		});
+
+		it('getChatSecretId - 返回当前套的 profile 密钥名', () => {
+			expect(getChatSecretId(settingsWithProfile('p2'))).toBe('ratel-chat-profile-p2');
+		});
+	});
+
 	describe('RATEL_SECRET_IDS', () => {
 		it('RATEL_SECRET_IDS - 包含全部 5 个密钥名', () => {
 			expect(RATEL_SECRET_IDS.chatOpenAICompatible).toBe('ratel-chat-openai-compatible');

@@ -18,6 +18,8 @@ vi.mock('obsidian', () => ({
     PluginSettingTab: class {},
     SettingPage: class {},
     Setting: class {},
+    SettingGroup: class {},
+    Modal: class {},
     Notice: class {},
 }));
 
@@ -26,6 +28,7 @@ vi.mock('../src/main', () => ({
 }));
 
 import { normalizeContextLengthSettings, DEFAULT_SETTINGS, applyBuiltinToolPermissionDefaults, type RatelVaultSettings } from '../src/settings';
+import { normalizeChatProfiles } from '../src/settings/chat-profiles';
 
 /**
  * 模拟 src/main.ts:loadSettings 的合并逻辑,验证旧字段兼容性。
@@ -137,4 +140,31 @@ describe('Settings 迁移', () => {
         const merged = simulateLoadSettings({ chatModelMaxTokens: 128_000 });
         expect(merged.contextLengthPreset).toBe('128k');
     });
+});
+
+describe('normalizeChatProfiles', () => {
+	it('旧库无 chatProfiles - 用当前四字段合成唯一一套', () => {
+		const settings = {
+			chatPreset: 'deepseek',
+			chatModel: 'deepseek-v4-flash',
+			chatApiBase: 'https://api.deepseek.com',
+			contextLengthPreset: '256k',
+			chatModelMaxTokens: 256_000,
+		} as unknown as RatelVaultSettings;
+		normalizeChatProfiles(settings, {});
+		expect(settings.chatProfiles).toHaveLength(1);
+		expect(settings.chatProfiles[0]).toMatchObject({
+			name: 'DeepSeek',
+			apiBase: 'https://api.deepseek.com',
+			model: 'deepseek-v4-flash',
+		});
+		expect(settings.activeChatProfileId).toBe(settings.chatProfiles[0]!.id);
+	});
+
+	it('已有 chatProfiles - 不覆盖', () => {
+		const existing = [{ id: 'p1', name: 'A', apiBase: 'http://a', model: 'm1', contextLengthPreset: '128k', chatModelMaxTokens: 128_000 }];
+		const settings = { chatProfiles: existing, activeChatProfileId: 'p1' } as unknown as RatelVaultSettings;
+		normalizeChatProfiles(settings, { chatProfiles: existing });
+		expect(settings.chatProfiles).toBe(existing);
+	});
 });

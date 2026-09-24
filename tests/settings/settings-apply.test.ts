@@ -44,3 +44,35 @@ describe('applySettingValue - LLM 相关副作用分发', () => {
 		expect(plugin.syncCrashBreadcrumbs).toHaveBeenCalledWith(false);
 	});
 });
+
+describe('applySettingValue - 活跃对话配置同步', () => {
+	it('写入 chatModel - 有活跃套 - 仅更新该套 model,其它套不变', () => {
+		const plugin = makePlugin();
+		plugin.settings.chatProfiles = [
+			{
+				id: 'p-active',
+				name: '当前',
+				apiBase: 'https://a',
+				model: 'old-active',
+				contextLengthPreset: '128k',
+				chatModelMaxTokens: 128_000,
+			},
+			{
+				id: 'p-other',
+				name: '其它',
+				apiBase: 'https://b',
+				model: 'other-model',
+				contextLengthPreset: '256k',
+				chatModelMaxTokens: 256_000,
+			},
+		];
+		plugin.settings.activeChatProfileId = 'p-active';
+		plugin.settings.chatModel = 'old-active';
+
+		applySettingValue(plugin, 'chatModel', 'new-active-model');
+
+		expect(plugin.settings.chatModel).toBe('new-active-model');
+		expect(plugin.settings.chatProfiles[0].model).toBe('new-active-model');
+		expect(plugin.settings.chatProfiles[1].model).toBe('other-model');
+	});
+});

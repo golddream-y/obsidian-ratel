@@ -53,6 +53,7 @@ import { applySettingValue } from './settings/settings-apply';
 // 关键路径:外观类型从 presets 导入,避免 appearance-presets ↔ settings 循环依赖
 import type { UiAccentId, UiColorScheme } from './ui/appearance/appearance-presets';
 import { renderAppearanceSettings } from './ui/appearance/appearance-settings-render';
+import { renderChatProfiles } from './ui/settings/chat-profiles-render';
 import type { McpServerConfig } from './ports/mcp';
 import { parseMcpToolName } from './ui/mcp/parse-mcp-tool-name';
 
@@ -93,6 +94,9 @@ export interface RatelVaultSettings {
 	contextLengthPreset: ContextLengthPresetId;
 	/** 空字符串 = LiteLLM 默认映射表 URL */
 	modelRegistryUrl: string;
+	/** 多套对话配置;activeChatProfileId 指向当前这套 */
+	chatProfiles: import('./settings/chat-profiles').ChatProfile[];
+	activeChatProfileId: string;
 
 	// Embedding
 	embedProvider: 'local' | 'api';
@@ -227,6 +231,8 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 	chatModelMaxTokens: 256_000,
 	autoCompactEnabled: true,
 	modelRegistryUrl: '',
+	chatProfiles: [],
+	activeChatProfileId: '',
 
 	embedProvider: 'local',
 	embedLocalModel: 'Xenova/bge-small-zh-v1.5',
@@ -661,6 +667,10 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 				cls: chatCls,
 				visible: chatVisible,
 				items: [
+					{
+						name: tNow('settings.chatProfiles.heading'),
+						render: renderChatProfiles(this.app, this.plugin),
+					},
 					{
 						name: tNow('settings.chatModel.model.name'),
 						desc: tNow('settings.chatModel.model.desc'),

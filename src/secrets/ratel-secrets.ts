@@ -46,6 +46,8 @@ export type EndpointAuthKind = 'builtin' | 'ollama-local' | 'openai-compatible' 
 /** Chat 密钥相关设置字段(最小接口抽取,避免 import main) */
 export interface ChatSecretSettings {
 	chatApiBase: string;
+	chatProfiles?: Array<{ id: string }>;
+	activeChatProfileId?: string;
 }
 
 /** Embedding 密钥相关设置字段 */
@@ -146,6 +148,20 @@ function getSecret(app: App, id: string): string | null {
 	}
 }
 
+// ==================== Chat profile 密钥 ====================
+
+/** 一套对话配置的钥匙串密钥名。 */
+export function chatProfileSecretId(profileId: string): string {
+	return `ratel-chat-profile-${profileId}`;
+}
+
+/** 当前这套配置的密钥名(active profile 优先,无 profile 时回退旧槽位)。 */
+function currentChatSecretId(settings: ChatSecretSettings): string {
+	const s = settings as ChatSecretSettings & { chatProfiles?: Array<{ id: string }>; activeChatProfileId?: string };
+	const active = s.chatProfiles?.find((p) => p.id === s.activeChatProfileId);
+	return active ? chatProfileSecretId(active.id) : RATEL_SECRET_IDS.chatOpenAICompatible;
+}
+
 // ==================== resolve / has ====================
 
 /**
@@ -157,7 +173,9 @@ function getSecret(app: App, id: string): string | null {
  */
 export function resolveChatApiKey(app: App, settings: ChatSecretSettings): string | null {
 	if (!requiresChatApiKey(settings)) return null;
-	return getSecret(app, RATEL_SECRET_IDS.chatOpenAICompatible);
+	const profileKey = getSecret(app, currentChatSecretId(settings));
+	// 关键路径:旧库升级后 profile 槽位可能还没写,回退到旧固定槽位
+	return profileKey ?? getSecret(app, RATEL_SECRET_IDS.chatOpenAICompatible);
 }
 
 /**
@@ -218,7 +236,7 @@ export function hasRerankApiKey(app: App): boolean {
  * @returns 密钥名;无需 Key 时返回 null
  */
 export function getChatSecretId(settings: ChatSecretSettings): string | null {
-	return requiresChatApiKey(settings) ? RATEL_SECRET_IDS.chatOpenAICompatible : null;
+	return requiresChatApiKey(settings) ? currentChatSecretId(settings) : null;
 }
 
 /**
@@ -272,4 +290,14 @@ export function resolveMcpSecret(app: App, serverId: string): string | null {
  */
 export function hasMcpSecret(app: App, serverId: string): boolean {
 	return !!resolveMcpSecret(app, serverId);
+}
+
+/** 写入一套配置的密钥。 */
+export function setChatProfileSecret(app: App, profileId: string, value: string): void {
+	app.secretStorage?.setSecret(chatProfileSecretId(profileId), value);
+}
+
+/** 删除一套配置的密钥。 */
+export function deleteChatProfileSecret(app: App, profileId: string): void {
+	app.secretStorage?.deleteSecret(chatProfileSecretId(profileId));
 }
