@@ -73,6 +73,7 @@
 	import { formatChatError } from './chat-error';
 	import { compactSession } from './compact-session';
 	import { loadSessionContextUsage } from './session-context-usage';
+	import { resolveApiUsedTokens } from './context-usage-writeback';
 	import { decidePostTurnCompact, decidePreSendCompact } from './compact-auto';
 	import { reloadPreloadedContextAfterCompact } from '../../core/preloaded-context';
 	import { CompactCircuitBreaker } from '../../core/compact-project';
@@ -1555,18 +1556,16 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 						scrollToBottom();
 						break;
 					case 'message.end':
-						// 第 3 层:API 真值校准(若 LLM 返回 usage)
-						if (event.payload.promptTokens && event.payload.completionTokens) {
-							lastTurnApiTokens =
-								event.payload.promptTokens + event.payload.completionTokens;
+						// 第 3 层:API 真值校准 — 多步工具调用用各步合计,不用最后一步
+						const apiUsed = resolveApiUsedTokens(event.payload);
+						if (apiUsed != null) {
+							lastTurnApiTokens = apiUsed;
 							am.tokenUsage = {
-								promptTokens: event.payload.promptTokens,
-								completionTokens: event.payload.completionTokens,
+								promptTokens: event.payload.stepPromptTokens ?? event.payload.promptTokens ?? 0,
+								completionTokens: event.payload.stepCompletionTokens ?? event.payload.completionTokens ?? 0,
 							};
 							plugin.userStatus.patchContextUsage({
-								usedTokens: lastTurnApiTokens,
-								// 修复:禁止用回合开始时的闭包快照写回 store — 回合进行中改设置会被旧值盖掉,
-								// 抽屉上限永远反映当前配置(回合预算仍按发送时快照,互不影响)
+								usedTokens: apiUsed,
 								maxTokens: getEffectiveChatModelMaxTokens(plugin.settings),
 								source: 'api',
 							});
