@@ -226,6 +226,7 @@ export interface SettingsStrings {
   'settings.notice.probeFailed': string;
   'settings.notice.probeSuccess': string;
   'settings.notice.probeNoRecommendation': string;
+  'settings.notice.contextLengthUnknown': string;
   'settings.notice.invalidTokens': string;
 }
 

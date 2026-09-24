@@ -1374,7 +1374,7 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 	 */
 	async setControlValue(key: string, value: unknown): Promise<void> {
 		// 关键路径:写入与副作用统一走 settings-apply(与 update_app_config 工具共享,防止两处漂移)
-		applySettingValue(this.plugin, key, value);
+		await applySettingValue(this.plugin, key, value);
 		// 刷新统一由 saveSettings 触发(面板交互必然 isConnected,此处再调 update 会同 tick 双重渲染)
 		await this.plugin.saveSettings();
 	}

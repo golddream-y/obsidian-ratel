@@ -28,6 +28,8 @@ export interface SettingApplier {
 	rebuildEmbeddingAdapter(): void;
 	syncToolDefinitions(): void;
 	syncCrashBreadcrumbs?(enabled: boolean): void;
+	/** 改模型后按映射表写上限;未命中时由宿主决定提示 */
+	applyModelContextWindow?(model: string): Promise<{ applied: boolean; tokens?: number }>;
 }
 
 /**
@@ -40,7 +42,7 @@ export interface SettingApplier {
  * @param key - control key,可为嵌套 key 如 "toolPermissions.search_vault"
  * @param value - 新值(调用方保证类型;枚举非法值静默忽略,与旧行为一致)
  */
-export function applySettingValue(plugin: SettingApplier, key: string, value: unknown): void {
+export async function applySettingValue(plugin: SettingApplier, key: string, value: unknown): Promise<void> {
 	// 嵌套 key 分发
 	if (key.startsWith('toolPermissions.')) {
 		const toolName = key.slice('toolPermissions.'.length);
@@ -92,5 +94,9 @@ export function applySettingValue(plugin: SettingApplier, key: string, value: un
 	// 关键路径:language 切换后立即应用,触发 langStore 更新,Svelte 组件自动重渲染
 	if (key === 'language') {
 		applyLangPreference(value as LangPreference);
+	}
+	// 关键路径:改模型后上限跟着变;查不到保留旧值,Notice 由调用方发
+	if (key === 'chatModel' && plugin.applyModelContextWindow) {
+		await plugin.applyModelContextWindow(String(value));
 	}
 }
