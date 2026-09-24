@@ -2678,14 +2678,21 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 	}
 
 	.ratel-skill-installed {
-		margin-left: 6px;
+		/* 关键路径:脱离文字流,零宽零高 — 否则高亮层比 textarea 宽出标签宽度,
+		   幽灵文字与光标错位(光标叠在字上)。标签视觉上浮在 token 之后,不影响对齐。 */
+		position: absolute;
+		width: 0;
+		height: 0;
+		overflow: visible;
+		white-space: nowrap;
 		font-size: 10px;
 		line-height: 1;
 		padding: 2px 5px;
 		border-radius: 3px;
 		color: var(--color-purple, #7c5cbf);
 		background: color-mix(in srgb, var(--color-purple, #7c5cbf) 16%, transparent);
-		vertical-align: 1px;
+		pointer-events: none;
+		transform: translate(4px, -1px);
 	}
 
 	.ratel-input-shell textarea {
