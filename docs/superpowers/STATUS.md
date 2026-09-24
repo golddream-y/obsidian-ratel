@@ -19,9 +19,7 @@
 
 | ID | 文件 | 状态 | 创建日期 | 备注 |
 |---|---|---|---|---|
-| S-ECOSYSTEM | [2026-08-20-ecosystem-management-design.md](specs/2026-08-20-ecosystem-management-design.md) | Active | 2026-08-20 | 2026-09-21 社区插件底座:search/install/**update**/卸/status/日志/回滚/`configure_plugin`;ADR-018 已立;EC-09 官方设置引导不做;架构 [host/ecosystem.md](../architecture/host/ecosystem.md) |
-| S-LLM-RETRY | [2026-09-09-llm-chat-retry.md](specs/2026-09-09-llm-chat-retry.md) | Active | 2026-09-09 | 策略随 0.7.1 发版;UI 见 S-LLM-RETRY-UI;MCP curl 不在范围 |
-| S-LLM-RETRY-UI | [2026-09-11-llm-retry-status-design.md](specs/2026-09-11-llm-retry-status-design.md) | Active | 2026-09-11 | 已合入 develop；打字行 connecting + 三条文案；与 S-LLM-RETRY 一并待归档 |
+| S-ECOSYSTEM | [2026-08-20-ecosystem-management-design.md](specs/2026-08-20-ecosystem-management-design.md) | Active | 2026-08-20 | P-ECOSYSTEM-1 已归档;P-ECOSYSTEM-2 未收口 |
 | S-PLUGIN-PROFILE | [2026-09-10-plugin-profile-design.md](specs/2026-09-10-plugin-profile-design.md) | Active | 2026-09-10 | 2026-09-21 与执行层同交付:schema+示例+匹配+草稿;写入硬依赖 `configure_plugin`;架构 [host/plugin-profile.md](../architecture/host/plugin-profile.md) |
 | S-HOST-ACCESS | [2026-09-11-host-access-design.md](specs/2026-09-11-host-access-design.md) | Active | 2026-09-11 | 库外文件+宿主命令:设置总闸默认关,开后走安全/自动/危险且视为破坏性;解析 Skill 另开 spec |
 
@@ -32,9 +30,7 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
-| P-ECOSYSTEM-1 | [2026-09-18-ecosystem-first-slice.md](plans/2026-09-18-ecosystem-first-slice.md) | Completed | S-ECOSYSTEM | 已合入 `v9`;ADR-018 + denylist + search/install。余量见 P-ECOSYSTEM-2 |
-| P-ECOSYSTEM-2 | [2026-09-21-ecosystem-base.md](plans/2026-09-21-ecosystem-base.md) | In Progress | S-ECOSYSTEM + S-PLUGIN-PROFILE | 分支 feat/p-ecosystem-2;Wave 1 T1∥T2 |
-| P-LLM-RETRY-UI | [2026-09-14-llm-retry-ui.md](plans/2026-09-14-llm-retry-ui.md) | Completed | S-LLM-RETRY-UI | 拣自 feat/p-llm-retry-ui 合入 develop；打字行 connecting + 三条文案 |
+| P-ECOSYSTEM-2 | [2026-09-21-ecosystem-base.md](plans/2026-09-21-ecosystem-base.md) | In Progress | S-ECOSYSTEM + S-PLUGIN-PROFILE | 已合入 develop，尚未发版；档案匹配与草稿未并入 |
 
 ---
 
@@ -53,9 +49,8 @@
 
 ## Future execution queue(按顺序)
 
-1. **S-LLM-RETRY + S-LLM-RETRY-UI** — 策略与打字行均已落地,两份 spec 一并待归档
-2. 候选(无 spec,重启时新开):update_frontmatter / Write Gate / append_to_daily(S-EVOLUTION 写侧,见 archive/S-EVOLUTION/)
-3. **P-ECOSYSTEM-2** — In Progress，分支 `feat/p-ecosystem-2`
+1. 候选(无 spec,重启时新开):update_frontmatter / Write Gate / append_to_daily(S-EVOLUTION 写侧,见 archive/S-EVOLUTION/)
+2. **P-ECOSYSTEM-2** — In Progress，已合入 develop，尚未发版
 4. 候选(无 spec):skill-script-sandbox 心跳用例 fake-timers 化 — 存量时序 flake(300ms 真定时器赛跑,P-VISION-1 审查期间实证 base/HEAD 均间歇失败)
 5. S-HOST-ACCESS — 库外访问总闸;不插队;文档解析另开 spec
 
@@ -64,4 +59,4 @@
 
 ## 已归档
 
-见 [ARCHIVE.md](ARCHIVE.md) — 含按月统计图与全部归档记录(74 条 / 63 目录)。
+见 [ARCHIVE.md](ARCHIVE.md) — 含按月统计图与全部归档记录(77 条 / 66 目录)。
