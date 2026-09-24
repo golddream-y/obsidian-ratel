@@ -197,6 +197,12 @@ export interface SettingsStrings {
   'settings.toolPermissions.list_ecosystem_changes': string;
   'settings.toolPermissions.restore_backup': string;
   'settings.toolPermissions.apply_diary_host': string;
+  'settings.toolPermissions.list_host_dir': string;
+  'settings.toolPermissions.read_host_file': string;
+  'settings.toolPermissions.import_host_file': string;
+  'settings.toolPermissions.run_host_command': string;
+  'settings.hostAccess.name': string;
+  'settings.hostAccess.desc': string;
   'settings.toolPermissions.allow': string;
   'settings.toolPermissions.ask': string;
   'settings.toolPermissions.deny': string;
@@ -380,6 +386,7 @@ export interface ChatStrings {
   'chat.mention.stripAria': string;
   'chat.mention.removeAria': string;
   'chat.mention.absoluteRejected': string;
+  'chat.mention.absoluteNeedsHost': string;
   'chat.compact.running': string;
   'chat.compact.done': string;
   'chat.compact.failed': string;
@@ -437,6 +444,10 @@ export interface ToolNameStrings {
   'tool.name.list_ecosystem_changes': string;
   'tool.name.restore_backup': string;
   'tool.name.apply_diary_host': string;
+  'tool.name.list_host_dir': string;
+  'tool.name.read_host_file': string;
+  'tool.name.import_host_file': string;
+  'tool.name.run_host_command': string;
   'tool.name.mcp': string;
 }
 
@@ -754,6 +765,9 @@ export interface ErrorStrings {
   'error.tool.invalidArg': string;
   'error.tool.rejected': string;
   'error.tool.rejectedDisabled': string;
+  'error.tool.hostAccessOff': string;
+  'error.tool.hostPathInsideVault': string;
+  'error.tool.hostFileTooLarge': string;
   'error.compact.emptySummary': string;
   'error.compact.failed': string;
   // 关键路径:Embedding / Vector / Tokenizer 适配器用户可见错误
@@ -1008,6 +1022,24 @@ export interface PromptLabelStrings {
   'promptLabel.tool.apply_diary_host.description.desc': string;
   'promptLabel.tool.apply_diary_host.param.folder': string;
   'promptLabel.tool.apply_diary_host.param.folder.desc': string;
+  'promptLabel.tool.list_host_dir.description': string;
+  'promptLabel.tool.list_host_dir.description.desc': string;
+  'promptLabel.tool.list_host_dir.param.path': string;
+  'promptLabel.tool.list_host_dir.param.path.desc': string;
+  'promptLabel.tool.read_host_file.description': string;
+  'promptLabel.tool.read_host_file.description.desc': string;
+  'promptLabel.tool.read_host_file.param.path': string;
+  'promptLabel.tool.read_host_file.param.path.desc': string;
+  'promptLabel.tool.import_host_file.description': string;
+  'promptLabel.tool.import_host_file.description.desc': string;
+  'promptLabel.tool.import_host_file.param.path': string;
+  'promptLabel.tool.import_host_file.param.path.desc': string;
+  'promptLabel.tool.import_host_file.param.dest': string;
+  'promptLabel.tool.import_host_file.param.dest.desc': string;
+  'promptLabel.tool.run_host_command.description': string;
+  'promptLabel.tool.run_host_command.description.desc': string;
+  'promptLabel.tool.run_host_command.param.command': string;
+  'promptLabel.tool.run_host_command.param.command.desc': string;
   'promptLabel.retrieval.wrapperPrefix': string;
   'promptLabel.retrieval.wrapperSuffix': string;
 }

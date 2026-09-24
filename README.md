@@ -51,6 +51,7 @@ Search is not keywords alone. Meaning, keywords, links, backlinks, and propertie
 - Only the model endpoint you configure receives retrieved text.
 - MCP sends data only when an enabled tool is called. Installing a plugin contacts only the official catalog and that plugin's GitHub release.
 - Note edits and plugin installs follow the permission level you set. Keys are not filled in for you. No telemetry.
+- Reading files outside the vault and running commands are off by default. When you turn them on, what gets read may be sent to the model you configured, and each use still asks for permission.
 
 Details are in the [User Guide](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/user-guide.en.md).
 

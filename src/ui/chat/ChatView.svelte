@@ -1730,16 +1730,15 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 	}
 
 	/**
-	 * 整段粘贴本机绝对路径时拦截 — 避免 @Users/... 假相对路径进对话。
-	 * 斜杠命令(`/goal …`)以 `/` 开头但不是文件系统路径,必须放行。
+	 * 本机绝对路径可以贴进输入框，交给库外工具。不当成 @ 笔记引用。
+	 * 总闸关着时只提示去设置打开，不拦粘贴。斜杠命令不是路径，不提示。
 	 */
 	function handlePaste(e: ClipboardEvent) {
 		const raw = (e.clipboardData?.getData('text') ?? '').trim();
 		if (!raw || raw.includes('\n')) return;
-		if (isPastedAbsoluteFsPath(raw) && !isSafeVaultMentionPath(raw.replace(/^@/, ''))) {
-			e.preventDefault();
-			new Notice(tNow('chat.mention.absoluteRejected'), 4000);
-		}
+		if (!isPastedAbsoluteFsPath(raw) || isSafeVaultMentionPath(raw.replace(/^@/, ''))) return;
+		if (plugin.settings.hostAccessEnabled) return;
+		new Notice(tNow('chat.mention.absoluteNeedsHost'), 5000);
 	}
 
 	function triggerFileInput() {

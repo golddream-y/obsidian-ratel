@@ -23,7 +23,7 @@ export interface ToolPermissionSettings {
 const DESTRUCTIVE_TOOLS = new Set([
 	'delete_note', 'forget_memory', 'update_app_config', 'install_plugin',
 	'update_plugin', 'uninstall_plugin', 'configure_plugin', 'restore_backup',
-	'apply_diary_host',
+	'apply_diary_host', 'list_host_dir', 'read_host_file', 'import_host_file', 'run_host_command',
 ]);
 
 /**
@@ -127,6 +127,17 @@ export function summarizeToolCall(toolCall: ToolCall): string {
 		}
 		case 'apply_diary_host':
 			return tNow('tool.name.apply_diary_host');
+		case 'list_host_dir':
+		case 'read_host_file':
+			return path ? tNow(`tool.name.${toolCall.name}` as 'tool.name.read_host_file', { path }) : toolCall.name;
+		case 'import_host_file': {
+			const dest = typeof toolCall.args.dest === 'string' ? toolCall.args.dest : '';
+			return dest ? tNow('tool.name.import_host_file', { path: dest }) : toolCall.name;
+		}
+		case 'run_host_command': {
+			const command = typeof toolCall.args.command === 'string' ? toolCall.args.command : '';
+			return command ? tNow('tool.name.run_host_command', { command }) : toolCall.name;
+		}
 		case 'manage_goal': {
 			const action = typeof toolCall.args.action === 'string' ? toolCall.args.action : '';
 			const objective = typeof toolCall.args.objective === 'string' ? toolCall.args.objective : '';

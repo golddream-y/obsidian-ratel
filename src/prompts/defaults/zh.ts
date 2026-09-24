@@ -235,4 +235,18 @@ export const ZH_DEFAULTS: Record<PromptSectionId, string> = {
 	'tool.apply_diary_host.description':
 		'写好日记环境的宿主设置。打开 Templater 本机开关「新建文件时触发」。把核心日记模板设为 Template/Diary/Daily Note Template，目录设为用户确认过的 folder，并创建该文件夹。文件名格式若为空或仍是 YYYY-MM-DD，写成 YYYY/MM-MMMM/YYYY-MM-DD-dddd，当天日记才会进月份目录；已有其它格式保留。界面语言为简体中文时，MMMM 与 dddd 会显示为中文月份和星期。把正在运行的 Dataview 的 enableDataviewJs 设为 true 并保存。folder 省略时用 Work/Diary。只在用户已同意路径和安装日记插件时调用。',
 	'tool.apply_diary_host.param.folder': '用户确认过的日记根，相对库路径，例如 Work/Diary',
+
+	'tool.list_host_dir.description':
+		'列出库外目录的一层文件和文件夹。路径必须在当前库之外。总闸关闭时不要调用。不改这些文件。',
+	'tool.list_host_dir.param.path': '库外目录的绝对路径',
+	'tool.read_host_file.description':
+		'读取库外文本文件，上限 256KB。用户贴进对话的本机绝对路径用本工具，不要用 read_note。读到的正文会进入对话，可能发给已配置的模型。不改原文件。',
+	'tool.read_host_file.param.path': '库外文件的绝对路径',
+	'tool.import_host_file.description':
+		'把库外文件原样拷进当前库。目标是库内相对路径。不改库外原文件，也不解析文档正文。',
+	'tool.import_host_file.param.path': '库外文件的绝对路径',
+	'tool.import_host_file.param.dest': '拷进库后的相对路径，例如 Inbox/report.docx',
+	'tool.run_host_command.description':
+		'在用户本机执行一条命令。可能改文件或产生其它副作用。超时 30 秒。总闸关闭时不要调用。',
+	'tool.run_host_command.param.command': '要执行的命令',
 };

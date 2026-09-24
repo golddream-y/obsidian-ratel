@@ -164,6 +164,12 @@ import { createGetPluginStatusTool } from './tools/get-plugin-status';
 import { createListEcosystemChangesTool } from './tools/list-ecosystem-changes';
 import { createRestoreBackupTool } from './tools/restore-backup';
 import { createApplyDiaryHostTool } from './tools/apply-diary-host';
+import {
+	createImportHostFileTool,
+	createListHostDirTool,
+	createReadHostFileTool,
+	createRunHostCommandTool,
+} from './tools/host-access';
 import { updateCommunityPlugin } from './adapters/ecosystem-update';
 import { uninstallCommunityPlugin } from './adapters/ecosystem-uninstall';
 import { inspectPluginData, applyPluginData, syncLoadedPluginSettings } from './adapters/ecosystem-configure';
@@ -847,6 +853,26 @@ export default class RatelVaultPlugin extends Plugin {
 		this.tools.register(createApplyDiaryHostTool(toolDefMap.get('apply_diary_host')!, {
 			app: this.app,
 		}));
+		const hostAccess = {
+			enabled: () => this.settings.hostAccessEnabled === true,
+			vaultRoot: () => (this.app.vault.adapter as FileSystemAdapter).getBasePath(),
+		};
+		this.tools.register(createListHostDirTool(toolDefMap.get('list_host_dir')!, hostAccess));
+		this.tools.register(createReadHostFileTool(toolDefMap.get('read_host_file')!, hostAccess));
+		this.tools.register(createImportHostFileTool(toolDefMap.get('import_host_file')!, {
+			...hostAccess,
+			writeBinary: async (vaultPath, data) => {
+				const adapter = this.app.vault.adapter as FileSystemAdapter;
+				const dir = vaultPath.includes('/') ? vaultPath.slice(0, vaultPath.lastIndexOf('/')) : '';
+				if (dir && !(await adapter.exists(dir))) {
+					await this.app.vault.createFolder(dir);
+				}
+				const copy = new ArrayBuffer(data.byteLength);
+				new Uint8Array(copy).set(data);
+				await adapter.writeBinary(vaultPath, copy);
+			},
+		}));
+		this.tools.register(createRunHostCommandTool(toolDefMap.get('run_host_command')!, hostAccess));
 
 		// ==================== MCP Host（ADR-014）====================
 		// 关键路径:stdio 首次 spawn 弹窗确认；已批准 id 直接放行。

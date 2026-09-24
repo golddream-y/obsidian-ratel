@@ -25,6 +25,7 @@ const PRIVILEGE_ESCALATION_KEYS = [
 	'crashBreadcrumbs',
 	'agentMaxSteps',
 	'modelRegistryUrl',
+	'hostAccessEnabled',
 	// 嵌套 key 形态同样拒绝
 	'toolPermissions.delete_note',
 	'promptOverrides.agent.base',
