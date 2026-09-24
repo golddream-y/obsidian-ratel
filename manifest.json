@@ -1,9 +1,9 @@
 {
 	"id": "ratel-vault",
 	"name": "Ratel",
-	"version": "0.9.0",
+	"version": "0.9.1",
 	"minAppVersion": "1.13.0",
-	"description": "Make Obsidian simpler to use. Set up a scene in chat, remember where your notes live, and keep cited search and goals in the vault. DeepSeek or Ollama. Local embeddings, no telemetry.",
+	"description": "Make your vault simpler to use. Set up a scene in chat, remember how you work, and keep cited search and goals. DeepSeek or Ollama. Local embeddings, no telemetry.",
 	"author": "golddream-y",
 	"authorUrl": "https://github.com/golddream-y",
 	"isDesktopOnly": true,
