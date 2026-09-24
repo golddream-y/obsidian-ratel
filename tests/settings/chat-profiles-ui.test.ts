@@ -4,11 +4,17 @@
  * @module tests/settings/chat-profiles-ui
  */
 import { describe, it, expect } from 'vitest';
+import type { App } from 'obsidian';
 import {
 	switchChatProfile,
 	saveCurrentAsProfile,
 	deleteChatProfile,
 } from '../../src/settings/chat-profiles';
+import {
+	chatProfileSecretId,
+	resolveChatApiKey,
+	setChatProfileSecret,
+} from '../../src/secrets/ratel-secrets';
 
 const base = () => ({
 	chatModel: 'm-current',
@@ -45,6 +51,52 @@ describe('saveCurrentAsProfile', () => {
 		expect(s.chatProfiles).toHaveLength(2);
 		expect(created.name).toBe('我的工作');
 		expect(s.activeChatProfileId).toBe(created.id);
+	});
+
+	it('另存为 CP-07 - 密钥仅在源套槽位 - 先读后存复制到新套', () => {
+		const s = base();
+		const store: Record<string, string> = { 'ratel-chat-profile-p1': 'sk-source-only' };
+		const app = {
+			secretStorage: {
+				getSecret: (id: string) => store[id] ?? null,
+				setSecret: (id: string, value: string) => {
+					store[id] = value;
+				},
+			},
+		} as unknown as App;
+
+		const sourceProfileId = s.activeChatProfileId;
+		const key = resolveChatApiKey(app, {
+			chatApiBase: s.chatApiBase,
+			chatProfiles: s.chatProfiles,
+			activeChatProfileId: sourceProfileId,
+		});
+		expect(key).toBe('sk-source-only');
+
+		const created = saveCurrentAsProfile(s as never, '副本');
+		if (key) {
+			setChatProfileSecret(app, created.id, key);
+		}
+		expect(store[chatProfileSecretId(created.id)]).toBe('sk-source-only');
+	});
+
+	it('另存为 CP-07 - 先切 active 再读密钥 - 无法复制源套槽位', () => {
+		const s = base();
+		const store: Record<string, string> = { 'ratel-chat-profile-p1': 'sk-source-only' };
+		const app = {
+			secretStorage: {
+				getSecret: (id: string) => store[id] ?? null,
+			},
+		} as unknown as App;
+
+		const created = saveCurrentAsProfile(s as never, '副本');
+		const keyAfterSwitch = resolveChatApiKey(app, {
+			chatApiBase: s.chatApiBase,
+			chatProfiles: s.chatProfiles,
+			activeChatProfileId: s.activeChatProfileId,
+		});
+		expect(keyAfterSwitch).toBeNull();
+		expect(created.id).not.toBe('p1');
 	});
 });
 

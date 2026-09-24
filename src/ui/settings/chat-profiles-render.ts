@@ -99,8 +99,14 @@ export function renderChatProfiles(
 						tNow('settings.chatProfiles.saveAsPromptPlaceholder'),
 						'',
 						async (name) => {
+							// 关键路径:另存前先读源套密钥;saveCurrentAsProfile 会把 active 切到新套
+							const sourceProfileId = plugin.settings.activeChatProfileId;
+							const key = resolveChatApiKey(app, {
+								chatApiBase: plugin.settings.chatApiBase,
+								chatProfiles: plugin.settings.chatProfiles,
+								activeChatProfileId: sourceProfileId,
+							});
 							const created = saveCurrentAsProfile(plugin.settings, name);
-							const key = resolveChatApiKey(app, plugin.settings);
 							if (key) {
 								setChatProfileSecret(app, created.id, key);
 							}
@@ -199,8 +205,8 @@ function renderProfileRow(
 			.addText((text) => {
 				text.inputEl.type = 'password';
 				text.setPlaceholder(tNow('settings.chatProfiles.apiKey.placeholder'));
-				text.onChange(async (value) => {
-					const trimmed = value.trim();
+				text.inputEl.addEventListener('change', () => {
+					const trimmed = text.getValue().trim();
 					if (!trimmed) return;
 					setChatProfileSecret(app, profile.id, trimmed);
 					text.setValue('');
