@@ -9,21 +9,21 @@
 
 ## 统计
 
-**按月归档记录数**(共 74 条,63 个目录)
+**按月归档记录数**(共 77 条,66 个目录)
 
 ```mermaid
 xychart-beta
     title "按月归档记录数"
     x-axis ["2026-06", "2026-07", "2026-08", "2026-09"]
     y-axis "记录数" 0 --> 26
-    bar [17, 23, 26, 8]
+    bar [17, 23, 26, 11]
 ```
 
 **归档形态分布**
 
 ```mermaid
 pie showData title 归档形态分布
-    "完成归档" : 66
+    "完成归档" : 69
     "Abandoned(未实施/中途废弃)" : 4
     "Superseded(被取代)" : 4
 ```
@@ -34,6 +34,9 @@ pie showData title 归档形态分布
 
 | ID | 归档目录 | 日期 | 备注 |
 |---|---|---|---|
+| S-LLM-RETRY | [archive/S-LLM-RETRY/](archive/S-LLM-RETRY/) | 09-24 | 重试策略随 0.7.1 发版 |
+| S-LLM-RETRY-UI | [archive/S-LLM-RETRY-UI/](archive/S-LLM-RETRY-UI/) | 09-24 | 打字行 connecting 与三条文案已合入 develop |
+| P-ECOSYSTEM-1 | [archive/S-ECOSYSTEM/](archive/S-ECOSYSTEM/) | 09-24 | 第一刀已合入 v9。母 spec 仍活跃，P-ECOSYSTEM-2 未收口 |
 | S-ECOSYSTEM-CUT1 | [archive/S-ECOSYSTEM-CUT1/](archive/S-ECOSYSTEM-CUT1/) | 09-21 | **Superseded** by S-ECOSYSTEM + S-PLUGIN-PROFILE 2026-09-21「装+配」一次交付;v9 骨架并入母 spec |
 | S-CHAT-TIME | [archive/S-CHAT-TIME/](archive/S-CHAT-TIME/) | 09-17 | P-CHAT-TIME;随 0.8.0 发版；日分割线 + 列表日历 + env 距上一轮 |
 | S-RENDER-STABILITY | [archive/S-RENDER-STABILITY/](archive/S-RENDER-STABILITY/) | 09-16 | A `446c70f` + B `fe52523` 合入 develop;分期 C(vectra/窗口/动效)另开 spec |
