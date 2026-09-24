@@ -29,8 +29,8 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
-| P-CONTEXT-ACCURACY | [2026-09-24-context-accuracy.md](plans/2026-09-24-context-accuracy.md) | Pending | S-CONTEXT-ACCURACY | 4 Task：include_usage、step 合计、抽屉标注、上限跟随 |
-| P-CHAT-PROFILES | [2026-09-24-chat-profiles.md](plans/2026-09-24-chat-profiles.md) | Pending | S-CHAT-PROFILES | 5 Task：数据形态、密钥、白名单、UI、上限跟随（依赖 P-CONTEXT-ACCURACY Task 4） |
+| P-CONTEXT-ACCURACY | [2026-09-24-context-accuracy.md](plans/2026-09-24-context-accuracy.md) | Completed | S-CONTEXT-ACCURACY | 已合 develop（merge 7205e07）；4 Task + CA-01 4xx 取舍 |
+| P-CHAT-PROFILES | [2026-09-24-chat-profiles.md](plans/2026-09-24-chat-profiles.md) | Completed | S-CHAT-PROFILES | 已合 develop（merge a0c0a09）；5 Task + 另存密钥/回写修复 |
 
 ---
 
