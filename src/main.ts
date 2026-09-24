@@ -12,6 +12,7 @@ import fs, { readdirSync } from 'node:fs';
 import path from 'node:path';
 import { type RatelVaultSettings, DEFAULT_SETTINGS, RatelVaultSettingTab, normalizeContextLengthSettings, applyBuiltinToolPermissionDefaults } from './settings';
 import { normalizeChatPreset } from './settings/chat-preset';
+import { normalizeChatProfiles } from './settings/chat-profiles';
 import { normalizeAppearanceSettings } from './ui/appearance/normalize-appearance-settings';
 import { bumpAppearance } from './ui/appearance/appearance-store';
 import { publishSettingsSnapshot } from './ui/settings-store';
@@ -1549,6 +1550,7 @@ export default class RatelVaultPlugin extends Plugin {
 		normalizeContextLengthSettings(this.settings, loaded);
 		// 关键路径:旧版无 chatPreset 字段时按 Base/模型推断,避免误显示 DeepSeek 预设
 		normalizeChatPreset(this.settings, loaded);
+		normalizeChatProfiles(this.settings, loaded);
 		applyBuiltinToolPermissionDefaults(this.settings, loaded.toolPermissionDefaultsVersion);
 		// 关键路径:旧版无外观字段或非法值时回落 auto/follow
 		normalizeAppearanceSettings(this.settings);

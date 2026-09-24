@@ -93,6 +93,9 @@ export interface RatelVaultSettings {
 	contextLengthPreset: ContextLengthPresetId;
 	/** 空字符串 = LiteLLM 默认映射表 URL */
 	modelRegistryUrl: string;
+	/** 多套对话配置;activeChatProfileId 指向当前这套 */
+	chatProfiles: import('./settings/chat-profiles').ChatProfile[];
+	activeChatProfileId: string;
 
 	// Embedding
 	embedProvider: 'local' | 'api';
@@ -227,6 +230,8 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 	chatModelMaxTokens: 256_000,
 	autoCompactEnabled: true,
 	modelRegistryUrl: '',
+	chatProfiles: [],
+	activeChatProfileId: '',
 
 	embedProvider: 'local',
 	embedLocalModel: 'Xenova/bge-small-zh-v1.5',
