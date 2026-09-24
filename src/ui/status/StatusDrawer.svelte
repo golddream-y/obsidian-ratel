@@ -140,7 +140,10 @@
 		<div class="ratel-drawer-section-title">{$t('status.drawer.section.context')}</div>
 		<div class="ratel-drawer-row">
 			<span class="ratel-drawer-label">{$t('status.drawer.label.usedMax')}</span>
-			<span class="ratel-drawer-value ratel-drawer-mono">{usage.usedTokens.toLocaleString()} / {usage.maxTokens.toLocaleString()} tokens</span>
+			<span class="ratel-drawer-value ratel-drawer-mono">
+				{usage.usedTokens.toLocaleString()} / {usage.maxTokens.toLocaleString()} tokens
+				· {usage.source === 'api' ? $t('status.drawer.contextSource.api') : $t('status.drawer.contextSource.estimate')}
+			</span>
 		</div>
 		<div
 			class="ratel-drawer-meter"

@@ -79,7 +79,7 @@ export function createUpdateAppConfigTool(
 				if (verdict.ok) {
 					// 关键路径:与设置面板共用 applySettingValue,副作用分发一致
 					try {
-						applySettingValue(host, key, value);
+						await applySettingValue(host, key, value);
 						applied.push(key);
 						results.push({ key, ok: true });
 					} catch (err) {

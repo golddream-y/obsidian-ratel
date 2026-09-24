@@ -226,6 +226,7 @@ export const en: Strings = {
   'settings.notice.probeFailed': '✗ {message}',
   'settings.notice.probeSuccess': '✓ Recommendation: {value}',
   'settings.notice.probeNoRecommendation': '✓ Configuration valid, but no recommendation returned',
+  'settings.notice.contextLengthUnknown': 'No context window found for {model}; keeping the current limit',
   'settings.notice.invalidTokens': '✗ Invalid token count; range 1024-200000',
 
   // ==================== ChatStrings ====================
@@ -580,6 +581,8 @@ export const en: Strings = {
   'status.drawer.embedKind.api': 'API',
   'status.drawer.section.context': 'Context',
   'status.drawer.label.usedMax': 'Used / Max',
+  'status.drawer.contextSource.estimate': 'estimate',
+  'status.drawer.contextSource.api': 'API',
   'status.drawer.usedMaxValue': '{used} / {max}',
   'status.drawer.compactButton': 'Compact context',
   'status.drawer.docCount': '({count} docs)',

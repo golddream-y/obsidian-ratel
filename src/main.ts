@@ -113,7 +113,8 @@ import { get } from 'svelte/store';
 import { ensurePluginGitignore } from './utils/gitignore-writer';
 import { sha256 } from './utils/hash';
 import { IndexManifest, migrateLegacyIndexManifest, resolveIndexManifestPath } from './core/index-manifest';
-import { ModelContextRegistry } from './ui/tokens/model-context-registry';
+import { DEFAULT_MODEL_REGISTRY_URL, ModelContextRegistry } from './ui/tokens/model-context-registry';
+import { applyModelContextWindow as applyModelContextWindowFromRegistry } from './ui/tokens/apply-model-context';
 import os from 'os';
 // 关键路径:P-SKILL-1-CORE — Skill 机制(三源加载 + 注册表 + 激活器 + 2 工具)。
 import { SkillLoader } from './skills/skill-loader';
@@ -1416,6 +1417,26 @@ export default class RatelVaultPlugin extends Plugin {
 	 */
 	rebuildLLM(): void {
 		this.llm = this.createChatLlm();
+	}
+
+	/**
+	 * 改聊天模型后按映射表写入上下文上限;未命中时提示并保留当前上限。
+	 *
+	 * @param model - 新模型标识
+	 * @returns 是否已写入推荐上限
+	 */
+	async applyModelContextWindow(model: string): Promise<{ applied: boolean; tokens?: number }> {
+		const registryUrl = this.settings.modelRegistryUrl || DEFAULT_MODEL_REGISTRY_URL;
+		const result = await applyModelContextWindowFromRegistry({
+			model,
+			registry: this.modelContextRegistry,
+			registryUrl,
+			settings: this.settings,
+		});
+		if (!result.applied) {
+			new Notice(tNow('settings.notice.contextLengthUnknown', { model }), 5000);
+		}
+		return result;
 	}
 
 	/**

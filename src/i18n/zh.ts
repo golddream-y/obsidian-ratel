@@ -230,6 +230,7 @@ const settingsZh: SettingsStrings = {
   'settings.notice.probeFailed': '✗ {message}',
   'settings.notice.probeSuccess': '✓ 已获取推荐: {value}',
   'settings.notice.probeNoRecommendation': '✓ 配置有效,但未返回推荐值',
+  'settings.notice.contextLengthUnknown': '未查到 {model} 的上下文窗口，沿用当前上限',
   'settings.notice.invalidTokens': '✗ token 数无效,范围 1024-200000',
 };
 
@@ -590,6 +591,8 @@ const statusZh: StatusStrings = {
   'status.drawer.embedKind.api': 'API',
   'status.drawer.section.context': '上下文',
   'status.drawer.label.usedMax': '已用 / 上限',
+  'status.drawer.contextSource.estimate': '估算',
+  'status.drawer.contextSource.api': 'API',
   'status.drawer.usedMaxValue': '{used} / {max}',
   'status.drawer.compactButton': '压缩上下文',
   'status.drawer.docCount': '({count} 篇)',
