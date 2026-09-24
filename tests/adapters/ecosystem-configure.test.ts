@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { setConfigDir } from '../../src/utils/path-safety';
 import { MemoryEcosystemIo } from '../../src/adapters/ecosystem-vault';
-import { inspectPluginData, applyPluginData } from '../../src/adapters/ecosystem-configure';
+import { inspectPluginData, applyPluginData, syncLoadedPluginSettings } from '../../src/adapters/ecosystem-configure';
 import { createConfigurePluginTool } from '../../src/tools/configure-plugin';
 
 let pluginDir: string;
@@ -57,15 +57,40 @@ describe('configure', () => {
 		await io.writeText('.obsidian/plugins/calendar/data.json', '{}');
 		await expect(applyPluginData('calendar', { weekStart: 1 }, { io, pluginDir, configDir: '.obsidian', writeEnabled: true, confirmedNewKeys: [] })).rejects.toThrow();
 	});
-	it('apply - rename 失败 - 原 JSON 完好', async () => {
+	it('apply - 覆盖 data.json 失败 - 原 JSON 完好', async () => {
 		const io = ioCal();
 		await io.writeText('.obsidian/plugins/calendar/manifest.json', '{"id":"calendar"}');
 		await io.writeText('.obsidian/plugins/calendar/data.json', JSON.stringify({ weekStart: 0 }));
-		const orig = io.rename.bind(io);
-		io.rename = async () => { throw new Error('rename-fail'); };
+		const orig = io.writeText.bind(io);
+		io.writeText = async (rel, data) => {
+			if (rel.endsWith('/data.json')) throw new Error('write-fail');
+			await orig(rel, data);
+		};
 		await expect(applyPluginData('calendar', { weekStart: 1 }, { io, pluginDir, configDir: '.obsidian', writeEnabled: true, confirmedNewKeys: ['weekStart'] })).rejects.toThrow();
-		io.rename = orig;
+		io.writeText = orig;
 		expect(JSON.parse(await io.readText('.obsidian/plugins/calendar/data.json'))).toEqual({ weekStart: 0 });
+	});
+	it('syncLoadedPluginSettings - 已加载插件 - 改内存里的标题并保存', async () => {
+		const settings: Record<string, unknown> = { plannerHeading: 'Day planner', plannerHeadingLevel: 1 };
+		let saved = false;
+		const ok = await syncLoadedPluginSettings(
+			{ settings, saveSettings: async () => { saved = true; } },
+			{ plannerHeading: '🧸 今天的任务记录：', plannerHeadingLevel: 5 },
+		);
+		expect(ok).toBe(true);
+		expect(saved).toBe(true);
+		expect(settings.plannerHeading).toBe('🧸 今天的任务记录：');
+		expect(settings.plannerHeadingLevel).toBe(5);
+	});
+	it('apply - rename 在目标已存在时会失败 - 仍覆盖 data.json', async () => {
+		const io = ioCal();
+		await io.writeText('.obsidian/plugins/calendar/manifest.json', '{"id":"calendar"}');
+		await io.writeText('.obsidian/plugins/calendar/data.json', JSON.stringify({ weekStart: 0, plannerHeading: 'Day planner' }));
+		io.rename = async () => {
+			throw new Error('Destination file already exists!');
+		};
+		await applyPluginData('calendar', { plannerHeading: '🧸 今天的任务记录：' }, { io, pluginDir, configDir: '.obsidian', writeEnabled: true, confirmedNewKeys: ['plannerHeading'] });
+		expect(JSON.parse(await io.readText('.obsidian/plugins/calendar/data.json')).plannerHeading).toBe('🧸 今天的任务记录：');
 	});
 	it('configure 工具 - 缺省 op 走 inspect', async () => {
 		const io = ioCal();

@@ -1,43 +1,44 @@
 ---
 name: install-diary-plugins
-description: 安装 Templater 与 Dataview，写入日记和月度模板、插件设置，并打开新建触发、写好核心日记模板。用户说「装日记插件」时使用。不写当天日记。
+description: 装好日记环境，让每天的工作任务能记下时段，并出现在 Day Planner 时间轴。用户说「装日记插件」时使用。不写当天的任务。
 activation: auto
 tags: [diary, plugins]
 ---
 
-# 安装日记插件并配置模板
+# 装好能记下工作时段的日记
 
-晨间、收尾、月末复盘是 `diary-month-ledger`。本技能只做环境和模板。不要调用 `read_skill_reference`。
+装好之后，在「🧸 今天的任务记录：」下写 `08:50 - 10:50 做某事`，Day Planner 会把这段排上时间轴。晨间怎么排、收尾、月末是 `diary-month-ledger`。不要调用 `read_skill_reference`。
 
 ## 语言
 
 先 `get_app_config`，看 `config.language`。
 
-- `zh`：下面两段模板按原文写入，不问翻译。
-- `en`：同一次确认里问要不要把模板里的中文标题和提示译成英文。同意才译。Templater、dataviewjs、路径和文件名不译。不同意就仍用中文原文。
+- `zh`：模板按原文写入，不问翻译。
+- `en`：同一次确认里问要不要把中文标题和提示译成英文。同意才译。代码、路径、文件名不译。不同意就用中文。
 - `auto`：用户这条消息是中文就按 `zh`，是英文就按 `en`。
 
 ## 要落地的东西
 
-一次确认里说清下面全部，用户同意后连续做完。缺什么做哪项，已经有的跳过。
+一次确认里说清下面全部，用户同意后连续做完。缺的才做。
 
-1. 插件：`templater-obsidian`、`dataview`。未安装才 `install_plugin`。
+1. 插件：`templater-obsidian`、`dataview`、`obsidian-day-planner`。未安装才 `install_plugin`。
 2. 模板文件（不存在才 `write_note`，已存在不覆盖）：
    - `Template/Diary/Daily Note Template.md`
    - `Template/Month/Month Note Template.md`
-   中文时正文用下面两段原样写入。英文且用户同意翻译时，只译标题和提示句。
+   英文且同意才译标题和提示。
 3. 设置，用 `configure_plugin` 的 `op: apply`，只改点名字段，不整份覆盖：
    - `templater-obsidian`：`templates_folder` 为 `Template`，`trigger_on_file_creation_mode` 为 `folder`。新键放进 `confirmedNewKeys`。
    - `dataview`：`enableDataviewJs` 为 `true`。新键放进 `confirmedNewKeys`。
-4. 日记根。同一次确认里问：建议 `Work/Diary`，要不要改。同意后才 `apply_diary_host`，`folder` 用确认后的路径。它会设模板、建文件夹、打开新建触发和正在运行的 Dataview JS。格式为空或仍是 `YYYY-MM-DD` 时写成 `YYYY/MM-MMMM/YYYY-MM-DD-dddd`，当天日记进月份目录。
+   - `obsidian-day-planner`：`plannerHeading` 为 `🧸 今天的任务记录：`，`plannerHeadingLevel` 为 `5`，`zoomLevel` 为 `2`，`timelineIcon` 为 `calendar-with-checkmark`，`eventFormatOnCreation` 为 `task`，`sortTasksInPlanAfterEdit` 为 `false`，`taskStatusOnCreation` 为一个空格。新键放进 `confirmedNewKeys`。
+4. 日记根。同一次确认里问：建议 `Work/Diary`，要不要改。同意后才 `apply_diary_host`。它会设模板、建文件夹、打开新建触发和正在运行的 Dataview JS。格式为空或 `YYYY-MM-DD` 时写成 `YYYY/MM-MMMM/YYYY-MM-DD-dddd`。
 5. 两个模板正文里的 `Work/Diary` 全部换成确认后的根，再 `write_note`。根就是 `Work/Diary` 时原文照写。
-6. 当月台账 `{日记根}/{年}/{MM}-{MMMM}/{YYYY-MM}.md` 不存在就按月度模板创建。当天日记已在、脚本没跑过时必须补上。
-7. 日记根下已有平铺的 `{YYYY-MM-DD}.md` 时，读出正文，写到月份目录的 `{YYYY-MM-DD}-{dddd}.md`，再 `delete_note` 删掉根上那份。
-8. 路径定了就 `remember`：`type=global`，`source=model`，`section` 为 `日记 [pinned]`。一条写清日记目录 `{根}/{年}/{MM}-{MMMM}/` 和月任务台账 `{YYYY-MM}.md`。相同路径跳过；变了先 `forget_memory`。
+6. 当月台账不存在就按月度模板创建。当天日记已在、脚本没跑过时必须补上。
+7. 日记根下已有平铺的 `{YYYY-MM-DD}.md` 时，读出后写到月份目录，再 `delete_note` 删掉根上那份。
+8. 路径定了就 `remember`：`type=global`，`source=model`，`section` 为 `日记 [pinned]`。写清日记目录和月任务路径。相同则跳过。
 
 ## 配完怎么用
 
-做完后告诉用户：以后用 `/diary-month-ledger`。晨间说「安排今天的工作」，收尾说「同步今天的进展」，月末说「月末复盘」。当天日记用 Obsidian 的日记命令新建，应出现在月份目录里。
+做完后必须告诉用户：工作任务写在「🧸 今天的任务记录：」下。⚠️ Day Planner 改过标题后，必须完全退出 Obsidian 再打开才生效，只 Reload 不够。安排、收尾、月末用 `/diary-month-ledger`。
 
 ## 红线
 

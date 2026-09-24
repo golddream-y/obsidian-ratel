@@ -8,7 +8,7 @@
 
 **Ratel is an Agent inside Obsidian. It makes Obsidian simpler to use and configure.**
 
-Someone can put a working setup into a skill: which plugins to install, how to configure them, and where folders go. Someone else says what they want, and Ratel installs that same environment and remembers the folders. In that vault, it can also find what you wrote by meaning and links, and edit notes under the permission level you set.
+It can install and configure plugins, remember how you work, recall notes by meaning, keywords, and links together, answer with citations you can open, and edit notes under the permission level you set.
 
 [User Guide](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/user-guide.en.md) · [Changelog](https://github.com/golddream-y/obsidian-ratel/blob/main/CHANGELOG.md)
 
@@ -16,19 +16,13 @@ Someone can put a working setup into a skill: which plugins to install, how to c
 
 A skill records a setup that already works: which plugins to install, which templates to write, which switches to turn on, and where folders go. Running the skill copies that environment into the current vault.
 
-A diary and a monthly task ledger are two built-in examples:
+A diary with a monthly task ledger is one built-in setup. Say “install the diary plugins,” and Ratel installs Templater, Dataview, and Day Planner, writes the daily and monthly templates, points core daily notes at the same folder, and remembers those folders.
 
-```text
-Install the diary plugins
-```
+You can write your own setup as a skill. See the [scene skill guide](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/contributing/scene-skill.md). A skill can call what a plugin can do: which plugins to install, which settings to change, and where folders go. Someone else runs that skill and gets the same environment. A skill is a Markdown folder. Give that folder to someone else; they put it in their own vault and can use it.
 
-This installs Templater and Dataview, writes the daily and monthly templates, and points core daily notes at the same folder. The diary folder and the monthly task folder are saved to memory, so the next chat uses them directly.
+## Recall by meaning, keywords, and links
 
-Developers can write their own setup as a skill. See the [scene skill guide](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/contributing/scene-skill.md). A skill is Markdown and can travel with a vault.
-
-## Find what you wrote
-
-Search by meaning, keywords, and links between notes. `[1]` and `[2]` in an answer open the original note. The active note, recent edits, and heading outlines are available as context. Ask to open a note at a heading or a block.
+Search is not keywords alone. Meaning, keywords, links, backlinks, and properties are used together. `[1]` and `[2]` in an answer open the original note. The active note, recent edits, and heading outlines are available as context. Ask to open a note at a heading or a block.
 
 ## Let the Agent work in the vault
 
@@ -37,14 +31,14 @@ Search by meaning, keywords, and links between notes. `[1]` and `[2]` in an answ
 
 ## Extensions
 
-- **Models:** choose chat, embedding, and reranking models independently. DeepSeek, Claude, Ollama, or a compatible endpoint. The index is generated on this machine by default.
+- **Models:** choose chat, embedding, and reranking models independently. DeepSeek, Ollama, or a compatible endpoint. The index is generated on this machine by default.
 - **Skills:** reusable methods in Markdown, with optional scripts and reference files.
 - **MCP:** connect web search and other external tools. Each server and each tool is authorized separately.
 - **Subagents:** split retrieval, review, and synthesis into separate roles.
 - **Images:** attach images in chat.
 - **Prompts:** override individual prompt sections without forking the plugin.
 
-## Not yet
+## Not finished yet
 
 - Check journals and goals on a schedule, and notify only when there is something worth saying. Results go to an inbox. Only high-priority items raise an Obsidian Notice. Quiet hours, a daily limit, snooze, and ignore are planned. A notification cannot bypass write permission.
 - List broken links, orphan notes, duplicates, and stale notes.

@@ -7,22 +7,26 @@ import { describe, it, expect } from 'vitest';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { parse as parseYaml } from 'yaml';
 import { loadSkillProfiles } from '../../src/profiles/skill-profile';
 import { expandPresetPatch } from '../../src/profiles/expand';
 
-const skillDir = path.join('src/skills/builtin/calendar-week-start');
+function skillDirWithExampleYaml(): string {
+	const dir = mkdtempSync(path.join(tmpdir(), 'ratel-skill-profile-'));
+	const yaml = readFileSync('plugin-profiles/calendar-week-start.yaml', 'utf-8');
+	writeFileSync(path.join(dir, 'calendar-week-start.yaml'), yaml);
+	return dir;
+}
 
-describe('内置 Calendar 技能', () => {
-	it('loadSkillProfiles - 技能目录内的正式 YAML - 通过校验且草稿不执行', () => {
-		const loaded = loadSkillProfiles(skillDir);
+describe('技能目录里的插件配置', () => {
+	it('loadSkillProfiles - 正式 YAML - 通过校验', () => {
+		const loaded = loadSkillProfiles(skillDirWithExampleYaml());
 		expect(loaded.errors).toEqual([]);
 		expect(loaded.active.map((hit) => hit.profile.id)).toEqual(['calendar-week-start']);
 		expect(loaded.active[0]?.profile.pluginId).toBe('calendar');
 	});
 
 	it('expandPresetPatch - week-start-monday - 只交出 weekStart', () => {
-		const loaded = loadSkillProfiles(skillDir);
+		const loaded = loadSkillProfiles(skillDirWithExampleYaml());
 		const profile = loaded.active[0]?.profile;
 		const preset = profile?.presets.find((item) => item.id === 'week-start-monday');
 		expect(preset).toBeTruthy();
@@ -33,16 +37,6 @@ describe('内置 Calendar 技能', () => {
 		});
 		expect(expanded.patch).toEqual({ weekStart: 1 });
 		expect(expanded.needsConfirm).toEqual([]);
-	});
-
-	it('技能正文 - 指向同目录契约与 configure_plugin', () => {
-		const skill = readFileSync(path.join(skillDir, 'SKILL.md'), 'utf-8');
-		const yamlText = readFileSync(path.join(skillDir, 'calendar-week-start.yaml'), 'utf-8');
-		const raw = parseYaml(yamlText) as { presets: Array<{ id: string; patch: { weekStart: number } }> };
-		expect(skill).toContain('configure_plugin');
-		expect(skill).toContain('read_skill_reference');
-		expect(skill).not.toContain('calendar-week-start.yaml');
-		expect(raw.presets[0]?.patch.weekStart).toBe(1);
 	});
 
 	it('loadSkillProfiles - 草稿与 enabled false - 不进入可执行列表', () => {
