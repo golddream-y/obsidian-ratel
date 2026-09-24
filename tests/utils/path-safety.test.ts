@@ -85,9 +85,14 @@ describe('validateEcosystemPath', () => {
 		).toThrow();
 	});
 
-	it('app.json / 其它配置 - 拒绝', () => {
+	it('点名宿主文件 daily-notes.json - 放行', () => {
+		expect(validateEcosystemPath('.obsidian/daily-notes.json', ctx)).toBe('.obsidian/daily-notes.json');
+	});
+
+	it('app.json / 外观 / 快捷键 - 拒绝', () => {
 		expect(() => validateEcosystemPath('.obsidian/app.json', ctx)).toThrow();
 		expect(() => validateEcosystemPath('.obsidian/hotkeys.json', ctx)).toThrow();
+		expect(() => validateEcosystemPath('.obsidian/appearance.json', ctx)).toThrow();
 		expect(() => validateEcosystemPath('.obsidian/themes/x/theme.css', ctx)).toThrow();
 	});
 

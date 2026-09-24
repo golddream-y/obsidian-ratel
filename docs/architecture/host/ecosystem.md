@@ -12,7 +12,7 @@
 
 本子系统在**桌面端**用配置目录写盘 +（若存在）未文档化的 `app.plugins.*`，把商店清单里的插件装进当前库。入口是对话，不复制官方商店 UI。
 
-**不讲：** 主题与 CSS、商店外 URL、代改核心设置、管理 `ratel-vault` 自己。
+**不讲：** 主题与 CSS、商店外 URL、整份改 `app.json` / 外观 / 快捷键、管理 `ratel-vault` 自己。点名的宿主设置（核心日记文件、插件本机开关）可以写，规则与点名改插件字段相同。
 
 ---
 
@@ -87,7 +87,8 @@ flowchart LR
 
 - 允许：`<configDir>/plugins/<清单或已装校验过的 id>/…`（`id ≠ ratel-vault`）
 - 允许：`<configDir>/community-plugins.json`
-- 其余配置文件一律拒绝
+- 允许：点名宿主文件，目前是 `<configDir>/daily-notes.json`。插件本机开关不在文件路径上，由工具按固定键写入 localStorage
+- 拒绝：`app.json`、外观、快捷键、主题，以及清单外的任意配置文件
 
 ---
 
@@ -128,6 +129,8 @@ flowchart LR
 `configure_plugin`、`list_ecosystem_changes`、`restore_backup` 语义仍以 S-ECOSYSTEM 为准：点名 key、前后值、append-only 日志。档案 preset 展开后走同一 `configure_plugin`，不另开写盘通道。
 
 改他人 `data.json` 后，对方插件未必热重载设置；架构允许「已写入，需重载或打开该插件设置页才看见」。不得声称所有插件都会立刻生效。
+
+宿主设置与插件 `data.json` 同一条规矩：键由工具写死，只改点名字段，不碰密钥和 `shell_path`。存放位置可以是插件 `data.json`、点名宿主文件，或该插件的本机存储。日记根不写死：第一次确认给出建议路径并问要不要改，同意后写入核心日记设置，并在库里创建该文件夹。内置工具默认允许，外部 MCP 仍询问。
 
 ---
 

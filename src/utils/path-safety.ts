@@ -30,6 +30,14 @@ export function getConfigDirName(): string {
 /** Ratel 自身插件 id — 通道 B 永拒,禁止管理自己 */
 export const RATEL_PLUGIN_ID = 'ratel-vault';
 
+/**
+ * 点名宿主配置文件（configDir 下的文件名，不含目录）。
+ *
+ * 不在社区插件 data.json 里的设置，只要文件名在这份清单上，通道 B 就放行。
+ * 模型不能另指路径。app.json、外观、快捷键、主题不在清单里。
+ */
+export const HOST_CONFIG_FILES = ['daily-notes.json'] as const;
+
 export interface EcosystemPathContext {
 	/** 官方商店清单内的 id */
 	catalogIds: ReadonlySet<string>;
@@ -123,6 +131,7 @@ function assertSafeVaultRelativePath(path: string): string {
  * 允许:
  * - `{configDir}/community-plugins.json`
  * - `{configDir}/plugins/{id}/**` 且 id ≠ ratel-vault,且 id 在清单或本地已装集合中
+ * - `{configDir}/{HOST_CONFIG_FILES}` 点名宿主文件（如核心日记），不是「凡核心配置都可写」
  *
  * 禁止缝进 ObsidianVault;笔记工具必须继续走 validateVaultPath。
  *
@@ -139,6 +148,10 @@ export function validateEcosystemPath(path: string, ctx: EcosystemPathContext): 
 	}
 
 	if (normalized === `${cfg}/community-plugins.json`) {
+		return normalized;
+	}
+
+	if ((HOST_CONFIG_FILES as readonly string[]).some((name) => normalized === `${cfg}/${name}`)) {
 		return normalized;
 	}
 

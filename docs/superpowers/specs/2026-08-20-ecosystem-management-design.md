@@ -87,7 +87,7 @@
 | 域 | 对象 | 能力 |
 |---|---|---|
 | Ratel 自身 | 本插件设置、密钥、技能 | 已有 `get/update_app_config`、`open_settings`、`ratel-config` |
-| Obsidian 官方 | 核心设置 | 本交付不代改；文字指路 |
+| Obsidian 官方 | 核心与本机设置 | 点名白名单可代改（日记目录、模板、插件本机开关）；外观、快捷键、`app.json` 只引导 |
 | 社区生态 | 其他插件与启用清单 | 本文工具 |
 
 | 路径 | 策略 |
@@ -95,7 +95,8 @@
 | `plugins/<id>/`（清单或本地已装校验过的 id） | 仅生态工具可写 |
 | `plugins/ratel-vault/` | 禁区 |
 | `community-plugins.json`（启用清单，字符串数组） | 仅生态工具可写 |
-| configDir 其余 | 禁区 |
+| `daily-notes.json` | 点名宿主文件，仅固定字段可写 |
+| configDir 其余（`app.json`、外观、快捷键、主题） | 禁区 |
 | Skill 脚本对整棵 configDir | 读/写皆拒（denylist，与通道 A 同一套归一化） |
 
 禁止把路径写死为 `.obsidian`，必须用注入的 `app.vault.configDir`。商店缓存文件名不得覆盖启用清单（ADR-018 §6）。

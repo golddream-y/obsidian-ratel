@@ -390,6 +390,55 @@ export const TOOL_SCHEMA_SKELETONS: Record<string, SchemaSkeleton> = {
 			required: ['pluginId'],
 		},
 	},
+	update_plugin: {
+		name: 'update_plugin',
+		parameters: { type: 'object', properties: { pluginId: { type: 'string' } }, required: ['pluginId'] },
+	},
+	uninstall_plugin: {
+		name: 'uninstall_plugin',
+		parameters: { type: 'object', properties: { pluginId: { type: 'string' } }, required: ['pluginId'] },
+	},
+	configure_plugin: {
+		name: 'configure_plugin',
+		parameters: {
+			type: 'object',
+			properties: {
+				pluginId: { type: 'string' },
+				op: { type: 'string' },
+				patch: { type: 'object' },
+				confirmedNewKeys: { type: 'array', items: { type: 'string' } },
+			},
+			required: ['pluginId'],
+		},
+	},
+	get_plugin_status: {
+		name: 'get_plugin_status',
+		parameters: {
+			type: 'object',
+			properties: {
+				pluginId: { type: 'string' },
+				includeKeys: { type: 'boolean' },
+				checkUpdate: { type: 'boolean' },
+			},
+		},
+	},
+	list_ecosystem_changes: {
+		name: 'list_ecosystem_changes',
+		parameters: { type: 'object', properties: { pluginId: { type: 'string' }, limit: { type: 'number' } } },
+	},
+	restore_backup: {
+		name: 'restore_backup',
+		parameters: { type: 'object', properties: { changeId: { type: 'string' } }, required: ['changeId'] },
+	},
+	apply_diary_host: {
+		name: 'apply_diary_host',
+		parameters: {
+			type: 'object',
+			properties: {
+				folder: { type: 'string' },
+			},
+		},
+	},
 };
 
 export const ALL_TOOL_NAMES = [
@@ -407,4 +456,7 @@ export const ALL_TOOL_NAMES = [
 	'manage_goal',
 	'search_plugins',
 	'install_plugin',
+	'update_plugin', 'uninstall_plugin', 'configure_plugin', 'get_plugin_status',
+	'list_ecosystem_changes', 'restore_backup',
+	'apply_diary_host',
 ];

@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { syncBuiltinSkills } from '../../src/skills/builtin-writer';
@@ -46,6 +46,14 @@ describe('syncBuiltinSkills', () => {
 		expect(r2.written).toHaveLength(0);
 	});
 
+	it('version 相同但正文变了 - 重写说明', () => {
+		syncBuiltinSkills(dir, { 'ratel-config': SKILL_MD }, '0.3.0');
+		const changed = SKILL_MD.replace('# 正文', '# 改过的正文');
+		const r2 = syncBuiltinSkills(dir, { 'ratel-config': changed }, '0.3.0');
+		expect(r2.written).toEqual(['ratel-config']);
+		expect(readFileSync(path.join(dir, 'ratel-config', 'SKILL.md'), 'utf-8')).toContain('# 改过的正文');
+	});
+
 	it('version 不同 - 重写为新版本', () => {
 		syncBuiltinSkills(dir, { 'ratel-config': SKILL_MD }, '0.3.0');
 		const r2 = syncBuiltinSkills(dir, { 'ratel-config': SKILL_MD }, '0.4.0');
@@ -74,5 +82,27 @@ describe('syncBuiltinSkills', () => {
 		const r = syncBuiltinSkills(dir, {}, '0.3.0');
 		expect(r.written).toHaveLength(0);
 		expect(r.skipped).toHaveLength(0);
+	});
+
+	it('同版本跳过说明 - 仍写出同目录配置', () => {
+		syncBuiltinSkills(dir, { 'calendar-week-start': SKILL_MD }, '0.3.0');
+		const r = syncBuiltinSkills(
+			dir,
+			{ 'calendar-week-start': SKILL_MD },
+			'0.3.0',
+			{ 'calendar-week-start': { 'calendar-week-start.yaml': 'kind: obsidian-plugin-profile\n' } },
+		);
+		expect(r.skipped).toEqual(['calendar-week-start']);
+		expect(readFileSync(path.join(dir, 'calendar-week-start', 'calendar-week-start.yaml'), 'utf-8')).toContain('kind:');
+	});
+
+	it('配置文件名含路径穿越 - 不写出', () => {
+		syncBuiltinSkills(
+			dir,
+			{ 'calendar-week-start': SKILL_MD },
+			'0.3.0',
+			{ 'calendar-week-start': { '../escape.yaml': 'no' } },
+		);
+		expect(existsSync(path.join(dir, 'escape.yaml'))).toBe(false);
 	});
 });

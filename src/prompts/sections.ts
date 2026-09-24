@@ -635,7 +635,33 @@ function buildSections(): SectionMeta[] {
 			placeholders: [],
 			allowOverride: true,
 		},
+		...toolPrompt('update_plugin', ['pluginId']),
+		...toolPrompt('uninstall_plugin', ['pluginId']),
+		...toolPrompt('configure_plugin', ['pluginId', 'op', 'patch']),
+		...toolPrompt('get_plugin_status', ['pluginId', 'includeKeys', 'checkUpdate']),
+		...toolPrompt('list_ecosystem_changes', ['pluginId', 'limit']),
+		...toolPrompt('restore_backup', ['changeId']),
+		...toolPrompt('apply_diary_host', ['folder']),
 	];
+}
+
+/**
+ * 工具说明段。description 加每个参数一块，文案走 promptLabel。
+ *
+ * @param name - 工具名
+ * @param params - 参数名
+ * @returns 可覆盖的 prompt section
+ */
+function toolPrompt(name: string, params: string[]) {
+	const section = (id: string) => ({
+		id,
+		label: tNow(`promptLabel.${id}` as 'promptLabel.tool.install_plugin.description'),
+		description: tNow(`promptLabel.${id}.desc` as 'promptLabel.tool.install_plugin.description.desc'),
+		zone: 'tool' as const,
+		placeholders: [] as string[],
+		allowOverride: true,
+	});
+	return [section(`tool.${name}.description`), ...params.map((param) => section(`tool.${name}.param.${param}`))];
 }
 
 /**

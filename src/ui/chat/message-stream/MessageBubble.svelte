@@ -52,6 +52,8 @@
 		showAttachments = true,
 		showFooter = true,
 		streaming = false,
+		skillNames = [],
+		installedSkillNames = [],
 	}: {
 		msg: Message;
 		isLast: boolean;
@@ -66,6 +68,8 @@
 		showAttachments?: boolean;
 		showFooter?: boolean;
 		streaming?: boolean;
+		skillNames?: readonly string[];
+		installedSkillNames?: readonly string[];
 	} = $props();
 
 	const isAssistantStreaming = $derived(isLast && isRunning && msg.role === 'assistant');
@@ -130,6 +134,8 @@
 				{onOpenPath}
 				{motionOn}
 				messageId={msg.id}
+				{skillNames}
+				{installedSkillNames}
 			/>
 		{:else if block.kind === 'trace'}
 			<div class="ratel-trace">

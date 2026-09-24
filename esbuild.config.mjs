@@ -73,6 +73,19 @@ function inlineSkillScriptWorkerPlugin() {
  * 将 src/skills/builtin 下各 skill 目录内的 SKILL.md 与 manifest version 内联进 main.js。
  * 商店 release 只有 main.js 三文件,内置 skill 靠运行时落盘分发(ADR-006 同思路)。
  */
+/**
+ * 技能目录里与 SKILL.md 同放的正式配置。草稿不打进发行包。
+ *
+ * @param fileName - 技能目录内的文件名
+ * @returns 是否随内置技能落盘
+ */
+function isBundledProfileName(fileName) {
+	if (fileName.endsWith('.draft.yaml') || fileName.endsWith('.draft.yml') || fileName.endsWith('.draft.json')) {
+		return false;
+	}
+	return fileName.endsWith('.yaml') || fileName.endsWith('.yml') || fileName.endsWith('.json');
+}
+
 function inlineBuiltinSkillsPlugin() {
 	return {
 		name: 'inline-builtin-skills',
@@ -83,19 +96,28 @@ function inlineBuiltinSkillsPlugin() {
 			}));
 			build.onLoad({ filter: /.*/, namespace: 'ratel-builtin-skills' }, () => {
 				const skills = {};
+				const profiles = {};
 				if (existsSync(BUILTIN_SKILLS_DIR)) {
 					for (const entry of readdirSync(BUILTIN_SKILLS_DIR, { withFileTypes: true })) {
 						if (!entry.isDirectory()) continue;
-						const skillMd = path.join(BUILTIN_SKILLS_DIR, entry.name, 'SKILL.md');
+						const skillDir = path.join(BUILTIN_SKILLS_DIR, entry.name);
+						const skillMd = path.join(skillDir, 'SKILL.md');
 						if (existsSync(skillMd)) {
 							skills[entry.name] = readFileSync(skillMd, 'utf-8');
 						}
+						const bundled = {};
+						for (const fileName of readdirSync(skillDir)) {
+							if (!isBundledProfileName(fileName)) continue;
+							bundled[fileName] = readFileSync(path.join(skillDir, fileName), 'utf-8');
+						}
+						if (Object.keys(bundled).length > 0) profiles[entry.name] = bundled;
 					}
 				}
 				const manifest = JSON.parse(readFileSync(path.resolve(__dirname, 'manifest.json'), 'utf-8'));
 				return {
 					contents:
 						`export const BUILTIN_SKILLS = ${JSON.stringify(skills)};\n` +
+						`export const BUILTIN_SKILL_PROFILES = ${JSON.stringify(profiles)};\n` +
 						`export const APP_VERSION = ${JSON.stringify(manifest.version)};\n`,
 					loader: 'js',
 				};

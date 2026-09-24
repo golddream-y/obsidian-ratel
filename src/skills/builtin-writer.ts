@@ -16,21 +16,23 @@ import { devLogger } from '../logging/dev-logger';
  * 设计要点:
  * - 目录契约:SkillFsAdapter 只扫 skills/ 的直接子目录且必须含 SKILL.md,
  *   写出路径 <skillsDir>/<目录名>/SKILL.md 与之严格对齐。
- * - 幂等判断:磁盘 SKILL.md frontmatter version == appVersion 则零写入;
- *   不存在 / 无 version / 版本不同一律重写(升级自动刷新)。
+ * - 幂等判断:落盘全文与本次要写的内容一致则零写入。
+ *   同一应用版本里正文有改动也会重写,否则内置技能说明升级不出去。
  * - 单个 skill 写出失败 try/catch + warn,不阻塞其余 skill 与插件启动。
  *
  * @param skillsDir - pluginDir/skills
  * @param builtinSkills - skill 目录名 → SKILL.md 原文(来自构建期内联清单)
  * @param appVersion - manifest.json 的 version,写进 frontmatter
+ * @param profiles - skill 目录名 → 同目录配置文件名 → 原文。与 SKILL.md 一起落盘
  * @returns written=本次写出的目录名;skipped=已同版本跳过的
  * @example
- *   const { written, skipped } = syncBuiltinSkills(skillsDir, BUILTIN_SKILLS, APP_VERSION);
+ *   const { written, skipped } = syncBuiltinSkills(skillsDir, BUILTIN_SKILLS, APP_VERSION, BUILTIN_SKILL_PROFILES);
  */
 export function syncBuiltinSkills(
 	skillsDir: string,
 	builtinSkills: Record<string, string>,
 	appVersion: string,
+	profiles: Record<string, Record<string, string>> = {},
 ): { written: string[]; skipped: string[] } {
 	const written: string[] = [];
 	const skipped: string[] = [];
@@ -39,38 +41,55 @@ export function syncBuiltinSkills(
 		const skillDir = path.join(skillsDir, name);
 		const skillMdPath = path.join(skillDir, 'SKILL.md');
 		try {
-			// 关键路径:幂等判断 — 磁盘版本与当前应用版本一致则零写入
-			if (fs.existsSync(skillMdPath)) {
-				const diskVersion = extractVersion(fs.readFileSync(skillMdPath, 'utf-8'));
-				if (diskVersion === appVersion) {
-					skipped.push(name);
-					continue;
-				}
+			// 关键路径:全文一致才跳过。只比 version 会把同一版本里改过的说明留在磁盘上。
+			const next = withVersionFrontmatter(raw, appVersion);
+			if (fs.existsSync(skillMdPath) && fs.readFileSync(skillMdPath, 'utf-8') === next) {
+				skipped.push(name);
+			} else {
+				fs.mkdirSync(skillDir, { recursive: true });
+				fs.writeFileSync(skillMdPath, next);
+				written.push(name);
 			}
-			fs.mkdirSync(skillDir, { recursive: true });
-			fs.writeFileSync(skillMdPath, withVersionFrontmatter(raw, appVersion));
-			written.push(name);
 		} catch (err) {
 			// 关键路径:写出失败不阻塞启动,skill 只是不能覆盖升级,vault/global 源照常加载
 			devLogger.warn('skill', `内置 skill 写出失败: ${name}`, err);
+			continue;
+		}
+		// 配置文件与 SKILL.md 同目录。版本未变时仍补齐或刷新契约，避免只升级 YAML 时被跳过。
+		try {
+			writeProfileFiles(skillDir, profiles[name]);
+		} catch (err) {
+			devLogger.warn('skill', `内置 skill 配置写出失败: ${name}`, err);
 		}
 	}
 	return { written, skipped };
 }
 
 /**
- * 从 SKILL.md frontmatter 提取 version。
+ * 把技能自带的配置写到技能目录。文件名只允许当前目录下的基名。
  *
- * @param content - SKILL.md 全文
- * @returns version 字符串;无 frontmatter / 无 version / 解析失败返回 null
+ * @param skillDir - 已存在或即将创建的技能目录
+ * @param files - 文件名 → 原文
  */
-function extractVersion(content: string): string | null {
-	try {
-		const data = matter(content).data as Record<string, unknown>;
-		return typeof data.version === 'string' ? data.version : null;
-	} catch {
-		return null;
+function writeProfileFiles(skillDir: string, files: Record<string, string> | undefined): void {
+	if (!files) return;
+	fs.mkdirSync(skillDir, { recursive: true });
+	for (const [fileName, content] of Object.entries(files)) {
+		if (!isProfileBasename(fileName)) continue;
+		const target = path.join(skillDir, fileName);
+		if (fs.existsSync(target) && fs.readFileSync(target, 'utf-8') === content) continue;
+		fs.writeFileSync(target, content);
 	}
+}
+
+/**
+ * 拒绝路径穿越。只接受当前目录下的配置文件名。
+ *
+ * @param fileName - 调用方给出的文件名
+ * @returns 是否可安全落盘
+ */
+function isProfileBasename(fileName: string): boolean {
+	return fileName.length > 0 && !fileName.includes('/') && !fileName.includes('\\') && !fileName.includes('..');
 }
 
 /**

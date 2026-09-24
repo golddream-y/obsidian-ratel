@@ -41,6 +41,13 @@ const TOOL_NAME_KEY: Record<string, StringKey> = {
 	run_skill_script: 'tool.name.run_skill_script',
 	search_plugins: 'tool.name.search_plugins',
 	install_plugin: 'tool.name.install_plugin',
+	update_plugin: 'tool.name.update_plugin',
+	uninstall_plugin: 'tool.name.uninstall_plugin',
+	configure_plugin: 'tool.name.configure_plugin',
+	get_plugin_status: 'tool.name.get_plugin_status',
+	list_ecosystem_changes: 'tool.name.list_ecosystem_changes',
+	restore_backup: 'tool.name.restore_backup',
+	apply_diary_host: 'tool.name.apply_diary_host',
 };
 
 /**
@@ -159,10 +166,24 @@ export function formatToolDisplayName(
 			const key = TOOL_NAME_KEY[name];
 			return q && key ? tNow(key, { query: q }) : name;
 		}
-		case 'install_plugin': {
+		case 'install_plugin':
+		case 'update_plugin':
+		case 'uninstall_plugin':
+		case 'configure_plugin':
+		case 'get_plugin_status': {
 			const id = extractShort(obj.pluginId);
 			const key = TOOL_NAME_KEY[name];
+			if (name === 'get_plugin_status' && !id) return tNow('tool.name.get_plugin_status_all');
 			return id && key ? tNow(key, { id }) : name;
+		}
+		case 'restore_backup': {
+			const id = extractShort(obj.changeId);
+			const key = TOOL_NAME_KEY[name];
+			return id && key ? tNow(key, { id }) : name;
+		}
+		case 'list_ecosystem_changes': {
+			const key = TOOL_NAME_KEY[name];
+			return key ? tNow(key) : name;
 		}
 		default:
 			return name;

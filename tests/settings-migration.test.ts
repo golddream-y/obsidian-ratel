@@ -25,7 +25,7 @@ vi.mock('../src/main', () => ({
     default: class RatelVaultPlugin {},
 }));
 
-import { normalizeContextLengthSettings, DEFAULT_SETTINGS, type RatelVaultSettings } from '../src/settings';
+import { normalizeContextLengthSettings, DEFAULT_SETTINGS, applyBuiltinToolPermissionDefaults, type RatelVaultSettings } from '../src/settings';
 
 /**
  * 模拟 src/main.ts:loadSettings 的合并逻辑,验证旧字段兼容性。
@@ -86,11 +86,31 @@ describe('Settings 迁移', () => {
         expect(merged.embedProvider).toBe(DEFAULT_SETTINGS.embedProvider);
     });
 
+    it('旧库内置工具仍为 ask - 升到 allow，拒绝保留', () => {
+        const merged = simulateLoadSettings({
+            toolPermissions: { write_note: 'ask', delete_note: 'deny', install_plugin: 'ask' },
+        });
+        applyBuiltinToolPermissionDefaults(merged, undefined);
+        expect(merged.toolPermissions.write_note).toBe('allow');
+        expect(merged.toolPermissions.install_plugin).toBe('allow');
+        expect(merged.toolPermissions.delete_note).toBe('deny');
+        expect(merged.toolPermissionDefaultsVersion).toBe(1);
+    });
+
+    it('已升级过的库 - 用户把内置工具改回询问 - 保留询问', () => {
+        const merged = simulateLoadSettings({
+            toolPermissionDefaultsVersion: 1,
+            toolPermissions: { write_note: 'ask' },
+        });
+        applyBuiltinToolPermissionDefaults(merged, 1);
+        expect(merged.toolPermissions.write_note).toBe('ask');
+    });
+
     it('toolPermissions 为空对象时合并 DEFAULT 默认值', () => {
         const merged = simulateLoadSettings({ toolPermissions: {} });
 
         expect(merged.toolPermissions.read_note).toBe('allow');
-        expect(merged.toolPermissions.write_note).toBe('ask');
+        expect(merged.toolPermissions.write_note).toBe('allow');
         expect(merged.toolPermissions.manage_goal).toBe('allow');
     });
 

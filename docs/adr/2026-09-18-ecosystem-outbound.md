@@ -113,6 +113,7 @@ UI / README 必须与旗标一致。禁止商店包对外写「说一声就装�
 
 - `{configDir}/plugins/{id}/**`,且 `id ≠ ratel-vault`,且 id 在商店清单 **或** 本地已装目录中已校验
 - `{configDir}/community-plugins.json`
+- `{configDir}/daily-notes.json`（点名宿主文件；不是放行全部核心配置）
 
 禁止写死 `.obsidian`;必须用注入的 `app.vault.configDir`。  
 清单已下架但本地仍有目录的 id:**仍可**查状态 / 卸载 / 从本刀备份恢复,不得因下架而无法清理。
@@ -144,7 +145,8 @@ UI / README 必须与旗标一致。禁止商店包对外写「说一声就装�
 - 商店外安装
 - 管理 `ratel-vault` 自己
 - 把 2MB 清单塞进 `data.json`
-- 主题 / CSS snippet / 代改 `app.json` 与核心插件
+- 主题 / CSS snippet / 代改 `app.json`、外观、快捷键
+- 把「不在 data.json」当成不可写。点名宿主文件与插件本机开关可以写，仍是叶子字段、确认后写入、不碰密钥
 - 本刀不实现 `update_plugin`、`configure_plugin`、卸载回滚全集(可后续同一支柱)
 
 ---

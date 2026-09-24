@@ -78,6 +78,6 @@ export async function applyPluginData(
 		await deps.io.writeText(tmp, JSON.stringify(next, null, 2));
 		JSON.parse(await deps.io.readText(tmp));
 		await deps.io.rename(tmp, `${pluginRel}/data.json`);
-		return { changed: Object.keys(patch).map((key) => ({ key, before: (data as Record<string, unknown>)[key], after: patch[key] })), changeId: change.id };
+		return { changed: Object.keys(patch).map((key) => ({ key, before: data[key], after: patch[key] })), changeId: change.id };
 	});
 }

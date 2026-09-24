@@ -6,156 +6,88 @@
 [![Obsidian](https://img.shields.io/badge/Obsidian-1.13.0%2B-7c3aed?style=flat-square)](https://obsidian.md)
 [![仅桌面](https://img.shields.io/badge/平台-桌面端-0ea5e9?style=flat-square)](https://obsidian.md)
 
-**让你的 Obsidian 知识库主动工作。**
+**Ratel 是 Obsidian 里的 Agent。它让 Obsidian 的使用和配置更加简单。**
 
-Ratel 是主动智能的图知识管理 Agent。它理解你的日记、目标和双链笔记，在合适的时间带着来源复盘、提醒、发现知识问题，并在你确认后协助行动。
+一个使用者可以把自己的工作方式放进一个技能：装哪些插件、怎么设置、目录放哪。另一个人说出用法，Ratel 就按这个技能把同样的环境装好，并记住目录。在这个库里，它也能按语义和链接找到写过的内容，并按权限改笔记。
 
----
+[使用手册](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/user-guide.md) · [更新日志](https://github.com/golddream-y/obsidian-ratel/blob/main/CHANGELOG.md)
 
-## 从等待提问，到主动参与
+## 复制一套别人的最佳工作方式
 
-普通的 Vault Chat 只有在你发问后才开始工作。Ratel 的目标是让知识库在合适的时间主动参与：
+技能里写的是一个使用者已经验证过的做法：装哪些插件、写哪些模板、打开哪些开关、目录放在哪。运行这个技能，就把这套环境复制到当前库。
 
-1. Heartbeat 检查新的日记、目标、近期修改和知识关系。
-2. 本地规则先判断是否真的有值得提醒的内容。
-3. Ratel 生成带来源的昨日简报、今日建议或知识治理洞察。
-4. 洞察进入收件箱；高价值内容通过 Obsidian Notice 提醒。
-5. 你可以查看来源、继续追问、稍后处理、忽略，或确认写入笔记。
+日记和月度任务是内置的两个例子：
 
-主动不等于擅自行动。通知可以自动出现，Vault 修改仍由你决定。
+```text
+装日记插件
+```
 
----
+这一次会安装 Templater 和 Dataview，写入日记模板和月报模板，并把核心日记指到同一目录。日记目录和月任务目录会写入记忆，之后的新对话直接使用。
 
-## Ratel 如何让知识库主动工作
+开发者可以按 [场景技能手册](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/contributing/scene-skill.md) 把自己的工作方式写成技能。技能是 Markdown，可以随库分发。
 
-### 在合适的时候，带来值得处理的信息（正在建设）
+## 找到写过的东西
 
-Ratel 不要求你维护第二套任务数据库。你可以通过普通 Markdown 记忆告诉它日记、月度目标和常用位置。
+按语义、关键词和笔记之间的链接查找。回答中的 `[1]`、`[2]` 可打开原笔记。当前笔记、最近修改和标题大纲会作为上下文。按标题或块打开笔记。
 
-- 每日首次触发时生成昨日简报；
-- 同时存在月度目标和今日日记时，补充今日建议；
-- 找不到常用位置时只询问一次；你回答“没有”后不再重复打扰；
-- 所有主动结果先进入洞察收件箱；
-- 状态栏提供稳定入口，高价值洞察才弹出 Obsidian Notice；
-- 支持安静时段、每日上限、稍后、忽略和继续追问。
+## 让 Agent 在库里做事
 
-### 不只搜索笔记，也理解它们之间的关系
+- 检索、阅读、归纳，并按权限写入笔记。
+- 长期目标跨对话还在。创建前先确认完成标准；底栏会提醒，新对话可以接着做。
 
-Ratel 把检索、链接、引用、治理和知识挖掘组织成一条完整知识工作流。
+## 扩展
 
-- **融合检索**：语义与关键词多路召回，并利用双链、反链和属性补充结构信号；
-- **可点击引用**：回答中的 `[1][2]` 可以直接打开原笔记；
-- **知识熵治理（正在建设）**：发现断链、孤儿笔记、重复内容、过时信息和长期未完成事项；
-- **知识挖掘（正在建设）**：从分散笔记发现主题、关系、冲突与知识缺口，生成带来源的综述；
+- **模型**：对话、嵌入、重排可以分开选。支持 DeepSeek、Claude、Ollama 和兼容端点。索引默认在本机生成。
+- **Skill**：用 Markdown 写可复用的做法，可带脚本和参考资料。
+- **MCP**：接入网页搜索等外部工具。服务器和工具分别授权。
+- **Subagent**：把检索、审查、整理拆开做。
+- **图片**：对话可附图片。
+- **提示词**：按区段覆盖默认提示词，不必 fork 插件。
 
-### 从发现问题，到协助行动
+## 还没有
 
-你可以查看来源、继续追问、稍后处理、忽略，或让 Ratel 整理、补链并写入笔记。任何 Vault 修改仍然遵循你的权限设置。
-
----
-
-## 当前可以做什么
-
-**找回记过但忘了位置的内容**
-
-> 「性能优化相关笔记写了什么？」
-
-Ratel 组合语义、关键词和笔记关系检索，回答保留可点击来源。
-
-**立一个跨对话还在的长期目标**
-
-> 「/goal 这周把三季度读书笔记收完」
-
-目标跟着库走，不绑死某一场对话。聊天里先确认完成标准再创建；底栏和输入区上方会提醒，新对话可以接管接着干。
-
-**完成多步知识工作**
-
-> 「把产品规划相关笔记整理成一份背景文档。」
-
-Agent 可以检索、阅读、归纳并写入；改删操作遵循当前权限档位。
-
-**理解当前 Obsidian 环境**
-
-> 「概括当前这篇，并告诉我它和最近修改的项目笔记有什么关系。」
-
-活动笔记、日记路径、最近修改和标题大纲都是 Agent 可用的上下文。
-
-**打开正在聊的那篇笔记**
-
-> 「打开那篇读书笔记，跳到它的第二章。」
-
-说一声「打开那篇」，`open_note` 直接在 Obsidian 里翻开并定位到你说的标题或块。
-
-**对话式配置与排障**
-
-> 「帮我换个模型。」「索引怎么不跑了？」
-
-内置 ratel-config skill 读取配置现状、在白名单内代改，并引导你去对应设置面板；密钥只引导去钥匙串，不会代填。
-
-**记住偏好并扩展工作流**
-
-> 「记住我更喜欢先给结论，再列证据。」
-
-记忆以普通 Markdown 保存在 `.ratel/memory/`——重要偏好加 `[pinned]` 永不被截断，最相关的主题记忆每轮自动带入。你还可以添加 `SKILL.md`、MCP Server 或使用 Subagent 扩展复杂工作流。
-
----
-
-## 开放 Agent 底座
-
-- **模型自由**：对话、嵌入与重排模型可以独立选择；支持 DeepSeek、Claude、Ollama 和自定义兼容端点。
-- **带图**：对话可附图片。
-- **记忆分层**：钉住的偏好永不被截断，相关主题记忆每轮自动带入对话。
-- **Skill**：用 Markdown 定义可复用的工作方法；技能还可自带脚本与参考资料，由 Agent 在沙箱中按需运行或查阅。
-- **MCP**：接入网页搜索和其他外部工具，Server 与工具分别授权。
-- **Subagent**：把复杂研究拆给检索、审查和整理角色。
-- **Prompt 可定制**：按区段覆盖默认提示词，不需要 fork 插件。
-
-这些能力是底座。它们服务于主动智能和图知识管理，而不是要求用户先搭建一套复杂系统。
-
----
+- 到点查看日记和目标，并在值得说时提醒。结果进入收件箱，高优先级才弹出 Notice。支持安静时段、每日上限、稍后和忽略。通知不能绕过写入权限。
+- 自动列出断链、孤儿笔记、重复和过时内容。
+- 从多篇笔记归纳主题、冲突和缺口。
+- 黑名单。落地后，被排除的内容不会进入索引、模型上下文、MCP 参数、日志或通知。
 
 ## 隐私与安全
 
-| 数据或操作 | 默认行为 |
-|---|---|
-| Vault 索引 | 保存在本机 |
-| Embedding | 默认在本机生成 |
-| 检索证据 | 只发送给你配置的模型端点 |
-| MCP 参数 | 只在调用已启用的 MCP 工具时发送 |
-| 社区插件清单 / GitHub release | 只在你使用生态工具（`search_plugins` / `install_plugin`）时出站；域名白名单为官方清单与所选插件的 GitHub release。无后台刷新、无遥测、不向你要 GitHub PAT。整份清单缓存在插件目录，不进 `data.json`、不进模型上下文 |
-| 主动洞察 | 先本地筛选，再构建当前任务需要的最小证据 |
-| Vault 修改 | 遵循安全 / 自动 / 危险权限档位；主动通知不能绕过权限 |
-| 崩溃面包屑 | 仅写入本机插件目录 `diag/`，不含对话正文；默认开，开发者区可关 |
-| 遥测 | 无 |
+- 索引和记忆保存在本机。
+- 只有配置的模型端点会收到检索内容。
+- MCP 只在调用已启用的工具时出站。安装插件时只访问官方清单和所选插件的 GitHub release。
+- 改笔记、装插件按权限档位。密钥不代填。没有遥测。
 
-黑名单能力落地后，被排除的内容将不会进入索引、候选检测、模型上下文、MCP 参数、日志或通知。
-
----
+细节见 [使用手册](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/user-guide.md)。
 
 ## 安装
 
-Obsidian → **设置** → **社区插件** → **浏览** → 搜索 **Ratel** → **安装** → **启用**。
+1. Obsidian → **设置** → **社区插件** → **浏览**，搜索 **Ratel**，安装并启用。
+2. **设置 → Ratel → 对话模型**，选择 DeepSeek / Ollama 预设或填写自定义接口。
+3. 等待首次索引完成。点击侧栏 🦡，或运行 **Ratel: Ask vault**。
 
 需要 **Obsidian 1.13.0+**，**仅桌面端**。
-
-然后打开 **设置 → Ratel → 对话模型**，选择 DeepSeek / Ollama 场景预设或自定义 Base，等待首次索引完成，再点击侧栏 🦡 或运行 **Ratel: Ask vault**。
-
-完整说明见 [使用手册](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/user-guide.md)。
-
----
 
 ## 文档
 
 | 文档 | 内容 |
 |---|---|
 | [产品总纲](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/prd/overview.md) | 产品定位、完整能力与发展方向 |
-| [使用手册](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/user-guide.md) | 上手、场景、斜杠命令、FAQ |
+| [使用手册](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/user-guide.md) | 上手、斜杠命令、FAQ |
 | [更新日志](https://github.com/golddream-y/obsidian-ratel/blob/main/CHANGELOG.md) | 完整发版历史 |
 | [架构](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/architecture/overview.md) | 端口、Agent Loop、工具与 Worker |
+| [场景技能手册](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/contributing/scene-skill.md) | 开发者如何把自己的工作方式写成一个技能 |
 
 问题与建议：[GitHub Issues](https://github.com/golddream-y/obsidian-ratel/issues)。
 
----
+## 赞助
+
+自愿，不影响任何功能。
+
+- 爱发电：[afdian.com/a/golddream](https://afdian.com/a/golddream)
+- Ko-fi：[ko-fi.com/golddream_y](https://ko-fi.com/golddream_y)
+
+说明见 [赞助页](https://github.com/golddream-y/obsidian-ratel/blob/main/SPONSOR.zh-CN.md)。
 
 ## License
 
