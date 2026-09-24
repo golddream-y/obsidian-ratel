@@ -252,7 +252,6 @@ const settingsZh: SettingsStrings = {
   'settings.notice.probeNoRecommendation': '✓ 配置有效,但未返回推荐值',
   'settings.notice.contextLengthUnknown': '未查到 {model} 的上下文窗口，沿用当前上限',
   'settings.notice.invalidTokens': '✗ token 数无效,范围 1024-200000',
-  'settings.notice.contextLengthUnknown': '未查到模型 {model} 的上下文窗口,沿用当前上限',
 };
 
 const chatZh: ChatStrings = {
