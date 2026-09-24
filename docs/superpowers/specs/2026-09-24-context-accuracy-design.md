@@ -43,7 +43,7 @@
 
 ### 5.1 请求侧
 
-`llm-openai-compat` 的流式请求体加 `stream_options: { include_usage: true }`。Ollama 与部分旧端点会忽略未知字段；若某端点因此报错，降级路径（`chatViaRequestUrl`）已经存在，不新增分支。`usage` 解析逻辑不变。
+`llm-openai-compat` 的流式请求体加 `stream_options: { include_usage: true }`。主流 OpenAI 兼容端点（DeepSeek、Ollama 等）会忽略未知字段。**明确假设：不处理「严格校验并返回 HTTP 4xx」的端点**——`chatViaRequestUrl` 只在网络异常时降级，且降级请求体仍带 `stream_options`，不会在 4xx 时剥离重试。`usage` 解析逻辑不变。
 
 ### 5.2 真值写回
 
