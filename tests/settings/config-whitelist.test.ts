@@ -26,6 +26,8 @@ const PRIVILEGE_ESCALATION_KEYS = [
 	'agentMaxSteps',
 	'modelRegistryUrl',
 	'hostAccessEnabled',
+	'chatProfiles',
+	'activeChatProfileId',
 	// 嵌套 key 形态同样拒绝
 	'toolPermissions.delete_note',
 	'promptOverrides.agent.base',
