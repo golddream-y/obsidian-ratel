@@ -222,4 +222,62 @@ describe('resolveToolPermission', () => {
 		);
 		expect(confirm).toHaveBeenCalledTimes(2);
 	});
+
+	it('resolveToolPermission - 允许档写 AGENTS.md - 仍确认', async () => {
+		let confirmed = false;
+		await resolveToolPermission(
+			{ id: '1', name: 'write_note', args: { path: 'Work/AGENTS.md' } },
+			{ toolPermissionLevel: 'safe', toolPermissions: { write_note: 'allow' } },
+			new ToolPermissionSessionGrants(),
+			async () => {
+				confirmed = true;
+				return 'allow';
+			},
+		);
+		expect(confirmed).toBe(true);
+	});
+
+	it('resolveToolPermission - 危险档写 AGENTS.md - 仍确认', async () => {
+		let confirmed = false;
+		await resolveToolPermission(
+			{ id: '1', name: 'delete_note', args: { path: 'AGENTS.md' } },
+			{ toolPermissionLevel: 'danger', toolPermissions: { delete_note: 'allow' } },
+			new ToolPermissionSessionGrants(),
+			async () => {
+				confirmed = true;
+				return 'allow';
+			},
+		);
+		expect(confirmed).toBe(true);
+	});
+
+	it('resolveToolPermission - 拒绝档写 AGENTS.md - 不弹确认', async () => {
+		let confirmed = false;
+		await expect(
+			resolveToolPermission(
+				{ id: '1', name: 'write_note', args: { path: 'AGENTS.md' } },
+				{ toolPermissionLevel: 'safe', toolPermissions: { write_note: 'deny' } },
+				new ToolPermissionSessionGrants(),
+				async () => {
+					confirmed = true;
+					return 'allow';
+				},
+			),
+		).rejects.toThrow();
+		expect(confirmed).toBe(false);
+	});
+
+	it('resolveToolPermission - 允许档写普通笔记 - 不确认', async () => {
+		let confirmed = false;
+		await resolveToolPermission(
+			{ id: '1', name: 'write_note', args: { path: 'Work/note.md' } },
+			{ toolPermissionLevel: 'safe', toolPermissions: { write_note: 'allow' } },
+			new ToolPermissionSessionGrants(),
+			async () => {
+				confirmed = true;
+				return 'allow';
+			},
+		);
+		expect(confirmed).toBe(false);
+	});
 });
