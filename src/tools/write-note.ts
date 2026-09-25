@@ -9,6 +9,7 @@ import type { ToolDefinition } from '../ports/llm';
 import type { VaultPort } from '../ports/vault';
 import { requireString } from './validate-args';
 import { tNow } from '../i18n';
+import { applyNoteAgentsGate, type NoteAgentsToolDeps } from './note-agents';
 
 /**
  * 创建 write_note 工具实例 — 创建或覆盖笔记(带 frontmatter 模板)。
@@ -20,7 +21,11 @@ import { tNow } from '../i18n';
  *   const tool = createWriteNoteTool(vault, toolDef);
  *   tools.register(tool);
  */
-export function createWriteNoteTool(vault: VaultPort, definition: ToolDefinition): Tool {
+export function createWriteNoteTool(
+	vault: VaultPort,
+	definition: ToolDefinition,
+	getAgents?: () => NoteAgentsToolDeps | undefined,
+): Tool {
 	return {
 		definition,
 		readOnly: false,
@@ -30,6 +35,18 @@ export function createWriteNoteTool(vault: VaultPort, definition: ToolDefinition
 				throw new Error(tNow('error.tool.invalidContent'));
 			}
 			const content = args.content;
+			const agents = getAgents?.();
+			if (agents) {
+				const gate = await applyNoteAgentsGate({
+					op: 'write',
+					notePath: path,
+					seen: agents.seen,
+					readAgentsFile: agents.readAgentsFile,
+				});
+				if (!gate.proceed) {
+					return gate.attachment;
+				}
+			}
 			const existed = await vault.fileExists(path);
 			await vault.writeFile(path, content);
 			return { path, created: !existed };

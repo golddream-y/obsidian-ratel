@@ -6,7 +6,7 @@
 
 import type { BaseStrings, SettingsStrings, ChatStrings, ToolNameStrings,
   SlashStrings, NoticeStrings, ModalStrings, StatusStrings,
-  DiagnosticsStrings, ErrorStrings, PromptLabelStrings, MemoryStrings,
+  DiagnosticsStrings, ErrorStrings, PromptLabelStrings, MemoryStrings, NoteAgentsStrings,
   CmdStrings, ToolPermStrings, SkillStrings,   GoalStrings,
   EcosystemStrings,
   Strings,
@@ -854,6 +854,8 @@ const promptLabelZh: PromptLabelStrings = {
   // 关键路径:记忆系统注入提示 section(用户可在 Prompt overrides 面板覆盖默认中文模板)
   'promptLabel.memory.systemPrompt': '记忆系统注入提示',
   'promptLabel.memory.systemPrompt.desc': '启动时注入到 system 与检索结果之间;占位符 {{globalContent}} + {{topicList}}',
+  'promptLabel.noteAgents.root': '笔记约束（库根）',
+  'promptLabel.noteAgents.root.desc': '每轮注入库根 AGENTS.md,位于记忆段之后',
   // 关键路径:Skill 机制 Discovery 段
   'promptLabel.agent.skills': 'Skill Discovery 段',
   'promptLabel.agent.skills.desc': '已加载 skill 的 name+description 列表,供 LLM 自主判断是否使用',
@@ -1289,6 +1291,10 @@ const goalZh: GoalStrings = {
   'goal.notice.writeNoteHint': '请在对话中说明要把总结写入哪篇笔记;写完后再选择留列表或归档',
 };
 
+const noteAgentsZh: NoteAgentsStrings = {
+  'noteAgents.truncated': '较远的约束已截断。',
+};
+
 const ecosystemZh: EcosystemStrings = {
   'ecosystem.install.enabled': '已写入 {id}@{version} 并尝试启用。Ratel 不是官方插件管理器。',
   'ecosystem.install.filesOnly': '已将 {id}@{version} 写入当前库,但尚未真正跑起来。请命令面板执行 Reload app without saving,或到设置 → 社区插件中打开。不要把这次当成已经启用。',
@@ -1318,6 +1324,7 @@ export const zh: Strings = {
   ...errorZh,
   ...promptLabelZh,
   ...memoryZh,
+  ...noteAgentsZh,
   ...cmdZh,
   ...toolPermZh,
   ...skillZh,

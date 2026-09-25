@@ -865,6 +865,8 @@ export interface PromptLabelStrings {
   // 关键路径:记忆系统注入提示 section(用户可在 Prompt overrides 面板覆盖默认中文模板)
   'promptLabel.memory.systemPrompt': string;
   'promptLabel.memory.systemPrompt.desc': string;
+  'promptLabel.noteAgents.root': string;
+  'promptLabel.noteAgents.root.desc': string;
   // 关键路径:Skill 机制 Discovery 段 section(allowOverride: false,不出现在 Prompt overrides 面板)
   'promptLabel.agent.skills': string;
   'promptLabel.agent.skills.desc': string;
@@ -1309,6 +1311,10 @@ export interface GoalStrings {
   'goal.notice.writeNoteHint': string;
 }
 
+export interface NoteAgentsStrings {
+  'noteAgents.truncated': string;
+}
+
 export interface EcosystemStrings {
   'ecosystem.install.enabled': string;
   'ecosystem.install.filesOnly': string;
@@ -1329,7 +1335,7 @@ export interface EcosystemStrings {
 export interface Strings extends
   BaseStrings, SettingsStrings, ChatStrings, ToolNameStrings,
   SlashStrings, NoticeStrings, ModalStrings, StatusStrings,
-  DiagnosticsStrings, ErrorStrings, PromptLabelStrings, MemoryStrings,
+  DiagnosticsStrings, ErrorStrings, PromptLabelStrings, MemoryStrings, NoteAgentsStrings,
   CmdStrings, ToolPermStrings, SkillStrings, GoalStrings, EcosystemStrings {
   // 后续新功能按 namespace 追加 extends
 }

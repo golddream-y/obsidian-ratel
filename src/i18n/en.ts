@@ -839,6 +839,8 @@ export const en: Strings = {
   'promptLabel.injection.searchResults.body.desc': 'Per-result template; the wrapper is hardcoded by Composer',
   'promptLabel.memory.systemPrompt': 'Memory system prompt',
   'promptLabel.memory.systemPrompt.desc': 'Injected between system and search results at startup; placeholders {{globalContent}} + {{topicList}}',
+  'promptLabel.noteAgents.root': 'Note constraints (vault root)',
+  'promptLabel.noteAgents.root.desc': 'Root AGENTS.md each turn, after memory section',
   // 关键路径:Skill 机制 Discovery 段
   'promptLabel.agent.skills': 'Skill Discovery section',
   'promptLabel.agent.skills.desc': 'Loaded skill name+description list for LLM auto-routing',
@@ -1267,6 +1269,7 @@ export const en: Strings = {
   'goal.notice.completed': 'Goal completed · {objective} · Tokens in {input} / out {output}',
   'goal.notice.corrupt': 'Isolated {count} corrupt goal file(s) to corrupt/',
   'goal.notice.writeNoteHint': 'Ask in chat which note should receive the summary; then choose keep or archive',
+  'noteAgents.truncated': 'Distant constraints were truncated.',
   'ecosystem.install.enabled': 'Wrote {id}@{version} and tried to enable it. Ratel is not an official plugin manager.',
   'ecosystem.install.filesOnly': 'Wrote {id}@{version} into this vault, but it is not actually running yet. Use Reload app without saving, or enable it under Settings → Community plugins. Do not treat this as enabled.',
   'ecosystem.install.already': '{id} is already installed; files were not overwritten',

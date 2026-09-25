@@ -15,6 +15,7 @@
 export const INJECTION_SOURCE_IDS = [
 	'env', // 本地时间等环境行
 	'memory', // 记忆 global + topics top-K(S-SR-LAYERING)
+	'noteAgents', // 库根 AGENTS.md(S-NOTE-AGENTS)
 	'skills', // Skill Discovery 段
 	'goal', // S-GOAL 复述锚定(ephemeral 不入 transcript)
 ] as const;

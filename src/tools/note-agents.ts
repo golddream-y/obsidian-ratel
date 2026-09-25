@@ -4,6 +4,8 @@
  * @module tools/note-agents
  */
 
+import { tNow } from '../i18n';
+
 export const AGENTS_FILE_NAME = 'AGENTS.md';
 export const AGENTS_FILE_MAX_BYTES = 8192;
 export const AGENTS_CHAIN_MAX_BYTES = 16384;
@@ -133,4 +135,67 @@ export class AgentsChainSeen {
 	mark(notePath: string): void {
 		this.seen.add(this.key(notePath));
 	}
+}
+
+/** 笔记工具可选注入：本轮已见记录 + 按目录读 AGENTS.md */
+export interface NoteAgentsToolDeps {
+	seen: AgentsChainSeen;
+	readAgentsFile: (dir: string) => Promise<string | null>;
+}
+
+async function loadNestedAgentLayers(
+	notePath: string,
+	readAgentsFile: (dir: string) => Promise<string | null>,
+): Promise<{ dir: string; text: string }[]> {
+	const layers: { dir: string; text: string }[] = [];
+	for (const dir of nestedDirs(notePath)) {
+		const text = await readAgentsFile(dir);
+		if (text !== null && text.trim().length > 0) {
+			layers.push({ dir, text });
+		}
+	}
+	return layers;
+}
+
+function formatGateAttachment(joined: { text: string; truncated: boolean }): string {
+	if (!joined.text.trim()) return '';
+	if (!joined.truncated) return joined.text;
+	return `${joined.text}\n\n${tNow('noteAgents.truncated')}`;
+}
+
+/**
+ * 读/写笔记前的 AGENTS 链闸门：读操作附嵌套层约束；写操作未见过嵌套约束时退回正文。
+ *
+ * @param input - 操作类型、笔记路径、本轮已见与读文件函数
+ * @returns proceed 为 false 时调用方应把 attachment 当工具结果返回且不写盘
+ */
+export async function applyNoteAgentsGate(input: {
+	op: 'read' | 'write';
+	notePath: string;
+	seen: AgentsChainSeen;
+	readAgentsFile: (dir: string) => Promise<string | null>;
+}): Promise<{ proceed: boolean; attachment: string }> {
+	const nested = nestedDirs(input.notePath);
+
+	if (input.op === 'read') {
+		const layers = await loadNestedAgentLayers(input.notePath, input.readAgentsFile);
+		input.seen.mark(input.notePath);
+		if (layers.length === 0) {
+			return { proceed: true, attachment: '' };
+		}
+		const joined = joinAgentsChain(layers);
+		return { proceed: true, attachment: formatGateAttachment(joined) };
+	}
+
+	if (nested.length === 0 || input.seen.has(input.notePath)) {
+		return { proceed: true, attachment: '' };
+	}
+
+	const layers = await loadNestedAgentLayers(input.notePath, input.readAgentsFile);
+	input.seen.mark(input.notePath);
+	if (layers.length === 0) {
+		return { proceed: true, attachment: '' };
+	}
+	const joined = joinAgentsChain(layers);
+	return { proceed: false, attachment: formatGateAttachment(joined) };
 }

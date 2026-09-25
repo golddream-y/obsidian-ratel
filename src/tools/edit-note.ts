@@ -9,6 +9,7 @@ import type { ToolDefinition } from '../ports/llm';
 import type { VaultPort } from '../ports/vault';
 import { requireString } from './validate-args';
 import { tNow } from '../i18n';
+import { applyNoteAgentsGate, type NoteAgentsToolDeps } from './note-agents';
 
 function countOccurrences(haystack: string, needle: string): number {
 	if (!needle) return 0;
@@ -33,7 +34,11 @@ function countOccurrences(haystack: string, needle: string): number {
  *   const tool = createEditNoteTool(vault, toolDef);
  *   tools.register(tool);
  */
-export function createEditNoteTool(vault: VaultPort, definition: ToolDefinition): Tool {
+export function createEditNoteTool(
+	vault: VaultPort,
+	definition: ToolDefinition,
+	getAgents?: () => NoteAgentsToolDeps | undefined,
+): Tool {
 	return {
 		definition,
 		readOnly: false,
@@ -47,6 +52,19 @@ export function createEditNoteTool(vault: VaultPort, definition: ToolDefinition)
 			}
 			const oldString = args.old_string;
 			const newString = args.new_string;
+
+			const agents = getAgents?.();
+			if (agents) {
+				const gate = await applyNoteAgentsGate({
+					op: 'write',
+					notePath: path,
+					seen: agents.seen,
+					readAgentsFile: agents.readAgentsFile,
+				});
+				if (!gate.proceed) {
+					return gate.attachment;
+				}
+			}
 
 			if (!(await vault.fileExists(path))) {
 				throw new Error(tNow('error.tool.fileNotFound', { path }));
