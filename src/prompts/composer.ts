@@ -14,6 +14,7 @@ import type { InternalTask, OverrideMap, PromptContext, PromptSectionId } from '
 import { TOOL_SCHEMA_SKELETONS } from './tool-schemas';
 import { truncateUtf8Bytes } from './injection/injector';
 import { tNow } from '../i18n';
+import { AGENTS_FILE_MAX_BYTES, truncateUtf8 } from '../tools/note-agents';
 
 /**
  * 检索结果外框前缀 — 不可被 override 删除。
@@ -325,6 +326,23 @@ export function composeMemorySystemPrompt(
  */
 export function composeSkillsDiscovery(discoveryText: string): string {
 	return discoveryText;
+}
+
+/**
+ * 组装库根 AGENTS.md 系统段 — 位于记忆注入之后。
+ *
+ * @param rootContent - 库根 AGENTS.md 全文;空则返回空串
+ * @returns 带 i18n 段首的系统段正文
+ */
+export function composeNoteAgentsRootPrompt(rootContent: string): string {
+	if (!rootContent.trim()) return '';
+	const cut = truncateUtf8(rootContent, AGENTS_FILE_MAX_BYTES);
+	const heading = tNow('promptLabel.noteAgents.root');
+	const parts = [heading, cut.text];
+	if (cut.truncated) {
+		parts.push(tNow('noteAgents.truncated'));
+	}
+	return parts.join('\n\n');
 }
 
 /**

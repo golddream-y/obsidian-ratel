@@ -14,7 +14,12 @@ import type { Intent } from './intent-classifier';
 // 关键路径:中英混合 token 估算,比 length/4 更准(中文 1.5 字符/token,英文 4 字符/token)
 import { estimateTokens } from '../ui/tokens/token-estimator';
 // 关键路径:系统提示词与检索结果外框统一由 Composer 组装,保证 prompt 注入防护(外框不可删)与 section 覆盖机制生效
-import { composeAgentSystem, composeMemorySystemPrompt, formatSearchResultsBlock } from '../prompts/composer';
+import {
+	composeAgentSystem,
+	composeMemorySystemPrompt,
+	composeNoteAgentsRootPrompt,
+	formatSearchResultsBlock,
+} from '../prompts/composer';
 // 关键路径(S-SR-LAYERING):记忆分层注入选项(pinned 恒留 + normal 预算 + relatedTopics 块)
 import type { MemoryLayeringOptions } from '../prompts/composer';
 // 关键路径(S-SR-LAYERING):动态 system 段(env/memory/skills)统一走 PromptInjector 组装
@@ -98,6 +103,8 @@ export class ContextManager {
 	 * 空串表示不注入(未加载记忆或 global.md 为空)。
 	 */
 	private memorySystemPrompt: string = '';
+	/** 库根 AGENTS.md 注入段 — 位于 memory 之后(S-NOTE-AGENTS) */
+	private noteAgentsSystemPrompt: string = '';
 	/**
 	 * Skill Discovery 段 — 启动时由 setSkillsContext() 设置,
 	 * 注入位置在 memorySystemPrompt 之后、searchResults 之前。
@@ -135,6 +142,7 @@ export class ContextManager {
 		// 关键路径(S-SR-LAYERING):动态段统一走 injector;setter 签名不变,仅内部状态写入。
 		this.injector.register({ id: 'env', build: () => this.envContextLine || null });
 		this.injector.register({ id: 'memory', build: () => this.memorySystemPrompt || null });
+		this.injector.register({ id: 'noteAgents', build: () => this.noteAgentsSystemPrompt || null });
 		this.injector.register({ id: 'skills', build: () => this.skillsDiscovery || null });
 		this.injector.register({
 			id: 'goal',
@@ -353,6 +361,15 @@ export class ContextManager {
 	 * @param overrides - 可选 prompt section 覆盖;缺省用 deps.getOverrides()
 	 * @param layering - 可选分层注入选项(S-SR-LAYERING);不传走旧路径(20KB 截断全文)
 	 */
+	/**
+	 * 设置库根 AGENTS.md 上下文 — 每轮 ask 调用,注入到 memory 段之后。
+	 *
+	 * @param rootContent - 库根 AGENTS.md 全文;读失败或空则清空
+	 */
+	setNoteAgentsRoot(rootContent: string): void {
+		this.noteAgentsSystemPrompt = composeNoteAgentsRootPrompt(rootContent);
+	}
+
 	setMemoryContext(
 		globalContent: string,
 		indexEntries: TopicIndexEntry[],

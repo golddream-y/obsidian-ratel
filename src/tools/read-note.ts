@@ -9,6 +9,7 @@ import type { Tool } from '../core/tool-registry';
 import type { ToolDefinition } from '../ports/llm';
 import type { VaultPort } from '../ports/vault';
 import { requireString } from './validate-args';
+import { applyNoteAgentsGate, type NoteAgentsToolDeps } from './note-agents';
 
 /**
  * 构造 `read_note` 工具实例。
@@ -27,7 +28,11 @@ import { requireString } from './validate-args';
  *   const tool = createReadNoteTool(obsidianVault, def);
  *   registry.register(tool);
  */
-export function createReadNoteTool(vault: VaultPort, definition: ToolDefinition): Tool {
+export function createReadNoteTool(
+	vault: VaultPort,
+	definition: ToolDefinition,
+	getAgents?: () => NoteAgentsToolDeps | undefined,
+): Tool {
 	return {
 		definition,
 		readOnly: true,
@@ -50,6 +55,19 @@ export function createReadNoteTool(vault: VaultPort, definition: ToolDefinition)
 
 			if (backlinks.size > 0) {
 				result.backlinks = Array.from(backlinks.keys());
+			}
+
+			const agents = getAgents?.();
+			if (agents) {
+				const gate = await applyNoteAgentsGate({
+					op: 'read',
+					notePath: path,
+					seen: agents.seen,
+					readAgentsFile: agents.readAgentsFile,
+				});
+				if (gate.attachment) {
+					result.agentsConstraints = gate.attachment;
+				}
 			}
 
 			return result;

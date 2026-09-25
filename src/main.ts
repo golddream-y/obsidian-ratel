@@ -51,6 +51,7 @@ import { createWriteNoteTool } from './tools/write-note';
 import { createAppendNoteTool } from './tools/append-note';
 import { createEditNoteTool } from './tools/edit-note';
 import { createDeleteNoteTool } from './tools/delete-note';
+import { AGENTS_FILE_NAME, AgentsChainSeen, type NoteAgentsToolDeps } from './tools/note-agents';
 // 关键路径:用户记忆系统 — MemoryStore 管理 .ratel/memory/ 文件 + .memory-index/ vectra 索引,
 // 3 个工具(search_memory / remember / forget_memory)复用 memoryStore 与 embeddingPort。
 import { MemoryStore } from './core/memory-store';
@@ -236,6 +237,8 @@ export default class RatelVaultPlugin extends Plugin {
 	private skillActivator!: SkillActivator;
 	/** ADR-012:当前 ask 的 ContextManager,供 activate/deactivate 工具写 transcript */
 	private currentAskCtx: ContextManager | null = null;
+	/** S-NOTE-AGENTS:当前 agent-loop 回合的约束链已见记录(每轮 ask 新建) */
+	private noteAgentsTurn?: NoteAgentsToolDeps;
 	modelManager!: ModelManager;
 	modelContextRegistry!: ModelContextRegistry;
 	indexController!: IndexController;
@@ -512,7 +515,9 @@ export default class RatelVaultPlugin extends Plugin {
 		// 关键路径:用当前 settings.promptOverrides 生成 definition,让用户在设置面板的覆盖立即生效。
 		const toolDefs = composeToolDefinitions(this.settings.promptOverrides, ALL_TOOL_NAMES);
 		const toolDefMap = new Map(toolDefs.map((d) => [d.name, d]));
-		this.tools.register(createReadNoteTool(this.vault, toolDefMap.get('read_note')!));
+		this.tools.register(
+			createReadNoteTool(this.vault, toolDefMap.get('read_note')!, () => this.noteAgentsTurn),
+		);
 
 		// 关键路径:W4 — 构造 MultiQuerySearcher,编排改写 + 多查询 + RRF + 可选 Rerank。
 		// Reranker 仅在钥匙串有 ratel-rerank-bailian 密钥时注入;无密钥自动降级为仅 RRF。
@@ -554,10 +559,18 @@ export default class RatelVaultPlugin extends Plugin {
 		this.tools.register(createGrepTool(this.vault, toolDefMap.get('grep')!));
 		this.tools.register(createGlobTool(this.vault, toolDefMap.get('glob')!));
 		this.tools.register(createListFilesTool(this.vault, toolDefMap.get('list_files')!));
-		this.tools.register(createWriteNoteTool(this.vault, toolDefMap.get('write_note')!));
-		this.tools.register(createAppendNoteTool(this.vault, toolDefMap.get('append_note')!));
-		this.tools.register(createEditNoteTool(this.vault, toolDefMap.get('edit_note')!));
-		this.tools.register(createDeleteNoteTool(this.vault, toolDefMap.get('delete_note')!));
+		this.tools.register(
+			createWriteNoteTool(this.vault, toolDefMap.get('write_note')!, () => this.noteAgentsTurn),
+		);
+		this.tools.register(
+			createAppendNoteTool(this.vault, toolDefMap.get('append_note')!, () => this.noteAgentsTurn),
+		);
+		this.tools.register(
+			createEditNoteTool(this.vault, toolDefMap.get('edit_note')!, () => this.noteAgentsTurn),
+		);
+		this.tools.register(
+			createDeleteNoteTool(this.vault, toolDefMap.get('delete_note')!, () => this.noteAgentsTurn),
+		);
 		// 关键路径:记忆工具 — 3 个新工具,复用 memoryStore 与主线程 embeddingPort。
 		// search_memory 是只读工具(查询记忆);remember / forget_memory 是写工具(触发 pre/post write hook)。
 		this.tools.register(
@@ -1795,6 +1808,31 @@ export default class RatelVaultPlugin extends Plugin {
 			devLogger.error('memory', '记忆加载失败,会话继续无记忆注入', err);
 		}
 
+		try {
+			const rootAgentsPath = AGENTS_FILE_NAME;
+			if (await this.vault.fileExists(rootAgentsPath)) {
+				ctx.setNoteAgentsRoot(await this.vault.readFile(rootAgentsPath));
+			} else {
+				ctx.setNoteAgentsRoot('');
+			}
+		} catch (err) {
+			devLogger.warn('noteAgents', '库根 AGENTS.md 读取失败,跳过注入', err);
+			ctx.setNoteAgentsRoot('');
+		}
+
+		this.noteAgentsTurn = {
+			seen: new AgentsChainSeen(),
+			readAgentsFile: async (dir: string) => {
+				const rel = dir ? `${dir}/${AGENTS_FILE_NAME}` : AGENTS_FILE_NAME;
+				try {
+					if (!(await this.vault.fileExists(rel))) return null;
+					return await this.vault.readFile(rel);
+				} catch {
+					return null;
+				}
+			},
+		};
+
 		// 关键路径:注入意图分类器,让 agentLoop 在 addUserMessage 后判断意图。
 		// 闭包捕获 this.llm,与 agentLoop 解耦。
 		// 关键路径:把 overrides 透传给 intent-classifier,让内部 LLM 也走 Composer + 用户自定义 section。
@@ -1914,6 +1952,7 @@ export default class RatelVaultPlugin extends Plugin {
 			if (failed) this.breadcrumbs?.mark('ask.error', sessionId);
 			this.breadcrumbs?.mark('ask.end', sessionId);
 			this.currentAskCtx = null;
+			this.noteAgentsTurn = undefined;
 			// 关键路径:消费方提前结束 for-await 或 agentLoop 抛错也要记账(C1)
 			await this.finalizeAskRound(sessionId, signal, opts, collectedEvents);
 		}
