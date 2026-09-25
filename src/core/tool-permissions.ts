@@ -88,6 +88,30 @@ export function extractToolPath(toolCall: ToolCall): string | undefined {
 	return typeof p === 'string' ? p : undefined;
 }
 
+const AGENTS_MD_NOTE_TOOLS = new Set([
+	'write_note',
+	'edit_note',
+	'append_note',
+	'delete_note',
+]);
+
+/**
+ * 是否必须对 AGENTS.md 的写/删单独确认。
+ *
+ * 允许档、危险档、本会话授权、goal grant 均不跳过；仅 deny 仍直接拒绝。
+ *
+ * @param toolCall - 待执行的工具调用
+ * @returns 目标路径最后一段恰好为 AGENTS.md 且为笔记写删工具时为 true
+ */
+export function mustConfirmAgentsMd(toolCall: ToolCall): boolean {
+	if (!AGENTS_MD_NOTE_TOOLS.has(toolCall.name)) return false;
+	const path = extractToolPath(toolCall);
+	if (!path) return false;
+	const segments = path.split(/[/\\]/);
+	const last = segments[segments.length - 1];
+	return last === 'AGENTS.md';
+}
+
 export function summarizeToolCall(toolCall: ToolCall): string {
 	const path = extractToolPath(toolCall);
 	switch (toolCall.name) {
@@ -170,6 +194,14 @@ export async function resolveToolPermission(
 	// 关键路径: deny 优先于档位、goal grant 与会话 grant(spec 4.6)
 	if (perm === 'deny') {
 		throw new Error(tNow('error.tool.rejectedDisabled', { toolName: toolCall.name }));
+	}
+	// 关键路径: 改 AGENTS.md 不受 allow/danger/会话/goal 短路，须单独确认
+	if (mustConfirmAgentsMd(toolCall)) {
+		const decision = await confirm(toolCall);
+		if (decision === 'deny') {
+			throw new Error(tNow('error.tool.rejected'));
+		}
+		return;
 	}
 	// 关键路径(S-GOAL): goal grant 在 deny 之后、会话 grant 之前
 	if (goalGrantCheck?.(toolCall)) return;
