@@ -30,7 +30,7 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
-| P-NOTE-AGENTS | [2026-09-26-note-agents-md.md](plans/2026-09-26-note-agents-md.md) | In Progress | S-NOTE-AGENTS | Task 1 链与 Task 2 确认并行；Task 3 等两者合并 |
+| P-NOTE-AGENTS | [2026-09-26-note-agents-md.md](plans/2026-09-26-note-agents-md.md) | Completed | S-NOTE-AGENTS | 已合 develop。链、强制确认、读/写闸门与库根注入 |
 | P-CONTEXT-ACCURACY | [2026-09-24-context-accuracy.md](plans/2026-09-24-context-accuracy.md) | Completed | S-CONTEXT-ACCURACY | 已合 develop（merge 7205e07）；4 Task + CA-01 4xx 取舍 |
 | P-CHAT-PROFILES | [2026-09-24-chat-profiles.md](plans/2026-09-24-chat-profiles.md) | Completed | S-CHAT-PROFILES | 已合 develop（merge a0c0a09）；5 Task + 另存密钥/回写修复 |
 
