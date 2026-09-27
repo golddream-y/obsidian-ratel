@@ -9,21 +9,21 @@
 
 ## 统计
 
-**按月归档记录数**(共 81 条,68 个目录)
+**按月归档记录数**(共 83 条,70 个目录)
 
 ```mermaid
 xychart-beta
     title "按月归档记录数"
     x-axis ["2026-06", "2026-07", "2026-08", "2026-09"]
     y-axis "记录数" 0 --> 26
-    bar [17, 23, 26, 15]
+    bar [17, 23, 26, 17]
 ```
 
 **归档形态分布**
 
 ```mermaid
 pie showData title 归档形态分布
-    "完成归档" : 72
+    "完成归档" : 74
     "Abandoned(未实施/中途废弃)" : 4
     "Superseded(被取代)" : 5
 ```
@@ -34,6 +34,8 @@ pie showData title 归档形态分布
 
 | ID | 归档目录 | 日期 | 备注 |
 |---|---|---|---|
+| S-TURN-CARRY | [archive/S-TURN-CARRY/](archive/S-TURN-CARRY/) | 09-27 | 收笔护栏合入 develop `76e0d86`。短正文再请求一次；85% 压缩未改 |
+| S-NOTE-AGENTS | [archive/S-NOTE-AGENTS/](archive/S-NOTE-AGENTS/) | 09-27 | 库内 AGENTS.md。链、强制确认、读/写闸门与库根注入，合入 develop `199e5ff` |
 | S-HOST-ACCESS | [archive/S-HOST-ACCESS/](archive/S-HOST-ACCESS/) | 09-24 | 库外访问随 0.10.0 发布。总闸默认关，开后走现有权限确认 |
 | S-PLUGIN-PROFILE | [archive/S-PLUGIN-PROFILE/](archive/S-PLUGIN-PROFILE/) | 09-24 | **Superseded**：档案匹配和草稿不做。用法写在技能里 |
 | S-LLM-RETRY | [archive/S-LLM-RETRY/](archive/S-LLM-RETRY/) | 09-24 | 重试策略随 0.7.1 发版 |

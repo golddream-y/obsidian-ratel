@@ -8,6 +8,8 @@
 
 定义 Ratel Vault 的全部用户可配置项,渲染 Obsidian 设置面板,并在配置变更时触发热重载(重建 LLM / Embedding 适配器)。
 
+界面分五页。以后改设置的规格先改 [`docs/prototype/settings-chat-setup.html`](../../prototype/settings-chat-setup.html)，再写 spec。
+
 **不做的事**:
 - 不负责持久化读写(属于 [persistence](persistence.md),通过 `plugin.saveSettings()` 调用)
 - 不负责 LLM / Embedding 适配器构造(属于 [llm/model-management](../llm/model-management.md),通过 `plugin.rebuildLLM()` / `plugin.rebuildEmbeddingAdapter()` 触发)

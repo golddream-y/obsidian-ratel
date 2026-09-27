@@ -13,7 +13,9 @@
 - Chat 主对话 system prompt(direct / rag)
 - 内部 LLM 任务(意图分类、查询改写)
 - 工具 function-calling 的 `description` 与参数说明
-- 运行时注入块(工具列表、知识库检索结果)
+- 运行时注入块(工具列表、知识库检索结果、库根 `AGENTS.md`)
+
+库根笔记约束的加载规则不在 section registry 里配。它是用户库里的文件，按路径发现。子目录约束在读到该路径时再附上。见 [note-agents](note-agents.md)。
 
 **不做的事:**
 

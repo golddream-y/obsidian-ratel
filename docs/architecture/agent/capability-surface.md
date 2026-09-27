@@ -27,6 +27,8 @@
 
 > **插件档案不是第四种 `kind`。** 档案是配置契约（[host/plugin-profile](../host/plugin-profile.md)），经只读匹配工具被发现，写入仍走 `kind=tool` 的生态工具（安装 / `configure_plugin`）。
 
+> **库内 `AGENTS.md` 也不是一种 `kind`。** 它是笔记约束，由 Harness 按路径注入上下文，不进能力池、不进斜杠菜单。加载、覆盖和改文件时的确认见 [note-agents](note-agents.md)。
+
 ---
 
 ## 1. 能力池(对模型的统一视图)

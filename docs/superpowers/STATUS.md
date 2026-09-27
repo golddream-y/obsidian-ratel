@@ -19,8 +19,10 @@
 
 | ID | 文件 | 状态 | 创建日期 | 备注 |
 |---|---|---|---|---|
-| S-NOTE-AGENTS | [2026-09-26-note-agents-md-design.md](specs/2026-09-26-note-agents-md-design.md) | Active | 2026-09-26 | 库内 AGENTS.md。自审：强制确认必须挡在允许/危险档/会话授权之前；链从文件所在目录起算 |
-| S-CHAT-PROFILES | [2026-09-24-chat-profiles-design.md](specs/2026-09-24-chat-profiles-design.md) | Active | 2026-09-24 | 多套对话模型配置与切换；每套独立密钥；对话工具不能代切 |
+| S-CHAT-SETUP | [2026-09-27-chat-setup-design.md](specs/2026-09-27-chat-setup-design.md) | Active | 2026-09-27 | 对话模型收成一套；长设置进二级页。原型 settings-chat-setup.html |
+| S-LOOP-STABILITY | [2026-09-26-loop-stability-design.md](specs/2026-09-26-loop-stability-design.md) | Active | 2026-09-26 | 步数将尽先收束；空步只续一次；工具 60 秒兜底超时 |
+| S-RUN-STATUS | [2026-09-26-run-status-design.md](specs/2026-09-26-run-status-design.md) | Active | 2026-09-26 | 撰写中后随机短句；等待三句；工具友好名；第 n 步 |
+| S-CHAT-PROFILES | [2026-09-24-chat-profiles-design.md](specs/2026-09-24-chat-profiles-design.md) | Active | 2026-09-24 | 多套配置已落地。待做：顶栏模型名展开菜单切换，不再弹只读框 |
 | S-CONTEXT-ACCURACY | [2026-09-24-context-accuracy-design.md](specs/2026-09-24-context-accuracy-design.md) | Active | 2026-09-24 | 上下文真值（include_usage、各步合计）与上限跟随模型 |
 
 
@@ -30,7 +32,9 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
-| P-NOTE-AGENTS | [2026-09-26-note-agents-md.md](plans/2026-09-26-note-agents-md.md) | Completed | S-NOTE-AGENTS | 已合 develop。链、强制确认、读/写闸门与库根注入 |
+| P-CHAT-SETUP | [2026-09-27-chat-setup.md](plans/2026-09-27-chat-setup.md) | Pending | S-CHAT-SETUP | 两步：当前套编辑；长设置改二级页 |
+| P-RUN-STATUS | [2026-09-27-run-status.md](plans/2026-09-27-run-status.md) | Completed | S-RUN-STATUS | 状态行纯函数 + 消息球接线已提交。图标只留在合适的句子上 |
+| P-CHAT-PROFILE-MENU | [2026-09-27-chat-profile-menu.md](plans/2026-09-27-chat-profile-menu.md) | Completed | S-CHAT-PROFILES | 顶栏菜单，提交 29069b9。设置页「设为当前」尚未改调共用函数 |
 | P-CONTEXT-ACCURACY | [2026-09-24-context-accuracy.md](plans/2026-09-24-context-accuracy.md) | Completed | S-CONTEXT-ACCURACY | 已合 develop（merge 7205e07）；4 Task + CA-01 4xx 取舍 |
 | P-CHAT-PROFILES | [2026-09-24-chat-profiles.md](plans/2026-09-24-chat-profiles.md) | Completed | S-CHAT-PROFILES | 已合 develop（merge a0c0a09）；5 Task + 另存密钥/回写修复 |
 

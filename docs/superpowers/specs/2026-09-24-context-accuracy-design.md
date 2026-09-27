@@ -12,13 +12,13 @@
 状态栏和抽屉里的上下文百分比有两层：发送前按中英文字符估算；模型返回 `usage` 后用真值盖掉。真值这一层有三个问题：
 
 1. 流式请求没有发 `stream_options: { include_usage: true }`。DeepSeek 这类端点默认不在流末尾给 `usage`，真值经常根本不出现，界面一直停在估算。
-2. 就算给了，写回的是「最后一步的输入 + 输出」。一轮里模型连着调几个工具时，每步输入都含完整历史，取最后一步会虚高。各步输入合计（`stepPromptTokens`）已经算出来了，只是没用它。
+2. 写回抽屉的数曾经把每一轮里各步的输入输出加总。每一步都会重送整段历史，加总会远超窗口。窗口占用应取最后一步的输入加上该步输出。各步合计仍留给目标的消耗统计，不拿来画上下文百分比。
 3. 上限是手选或探测写入的固定值。换模型不跟着变，估算除以旧上限，百分比失真。估算本身也不计工具结果和图片。
 
 ## 2. 目标
 
 1. 流式请求显式要 `usage`，端点支持时一定能拿到真值。
-2. 真值写回用「本轮各步输入合计 + 输出合计」，不是最后一步。
+2. 真值写回用「最后一步的输入 + 该步输出」，表示当前窗口占用。各步合计不写进上下文百分比。
 3. 换模型时上限跟着变；查不到就明确提示，不静默沿用。
 4. 估算路径标注为估算，真值路径标注为真值，界面能看出当前是哪一种。
 
@@ -34,7 +34,7 @@
 | ID | 需求 | 验收口径 |
 |---|---|---|
 | CA-01 | 流式请求带 `include_usage` | 支持该参数的端点在流末尾返回 usage；不支持的端点不因此报错 |
-| CA-02 | 真值用各步合计 | 多步工具调用后，状态栏 usedTokens = Σ step prompt + Σ step completion |
+| CA-02 | 真值用最后一步 | 多步工具调用后，状态栏 usedTokens = 最后一步 prompt + 该步 completion。没有最后一步字段时才退回各步合计 |
 | CA-03 | 估算与真值可区分 | 状态抽屉在 token 数旁标注「估算」或「API」；`ContextUsage.source` 已存在，补 UI 展示 |
 | CA-04 | 换模型更新上限 | 切换模型/配置时按映射表写上限；查不到给 Notice，不沿用旧值 |
 | CA-05 | 上限变化即重算 | 上限改变后，已有会话的百分比用新上限重算，不等下一次发送 |
@@ -47,7 +47,7 @@
 
 ### 5.2 真值写回
 
-`agent-loop` 已经在 `message.end` 带了 `stepPromptTokens` / `stepCompletionTokens`。ChatView 的 `message.end` 处理改为：优先用 `stepPromptTokens + stepCompletionTokens` 写回 `usedTokens`；没有 step 合计时回退到单步 `promptTokens + completionTokens`；都没有时保留估算。`source` 字段在真值路径写 `'api'`，估算路径写 `'estimate'`。状态抽屉在 `usedTokens / maxTokens` 旁加一个小标注：`source === 'api'` 显示「API」，否则显示「估算」。
+`agent-loop` 在 `message.end` 同时带最后一步的 `promptTokens` / `completionTokens`，以及各步合计 `stepPromptTokens` / `stepCompletionTokens`。上下文百分比用最后一步的输入加该步输出。没有最后一步字段时才退回各步合计。都没有时保留估算。`source` 为 `'api'` 时抽屉标「API」，否则标「估算」。
 
 ### 5.3 上限跟随
 

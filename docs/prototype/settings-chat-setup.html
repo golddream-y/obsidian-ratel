@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ratel 设置 — 对话模型</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --ink: #12110f;
+      --line: rgba(245, 236, 220, 0.1);
+      --line-strong: rgba(245, 236, 220, 0.16);
+      --paper: #f3ece0;
+      --paper-muted: rgba(243, 236, 224, 0.55);
+      --paper-faint: rgba(243, 236, 224, 0.38);
+      --copper: #c9956c;
+      --copper-soft: rgba(201, 149, 108, 0.16);
+      --sage: #8faf8a;
+      --radius: 10px;
+      --font: "Instrument Sans", system-ui, sans-serif;
+      --mono: "IBM Plex Mono", ui-monospace, monospace;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      font-family: var(--font);
+      color: var(--paper);
+      background:
+        radial-gradient(ellipse 80% 60% at 20% 0%, rgba(201, 149, 108, 0.09), transparent 55%),
+        #0a0908;
+    }
+    .stage { width: min(560px, 100%); display: flex; flex-direction: column; gap: 10px; align-items: center; }
+    .stage-label { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--paper-faint); }
+    .panel {
+      width: 100%;
+      background: var(--ink);
+      border: 1px solid var(--line-strong);
+      border-radius: 14px;
+      overflow: hidden;
+    }
+    .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--line); padding: 0 8px; }
+    .tab {
+      appearance: none; background: none; border: 0; color: var(--paper-faint);
+      font: inherit; font-size: 13px; padding: 12px 10px; cursor: pointer;
+      border-bottom: 2px solid transparent;
+    }
+    .tab.on { color: var(--paper); border-bottom-color: var(--copper); }
+    .page[hidden] { display: none !important; }
+    .static { display: flex; flex-direction: column; gap: 16px; }
+    .item {
+      display: flex; justify-content: space-between; gap: 16px; align-items: baseline;
+      padding: 8px 0; border-bottom: 1px solid var(--line);
+    }
+    .item .n { font-size: 14px; color: var(--paper); }
+    .item .d { font-size: 12px; color: var(--paper-faint); margin-top: 2px; }
+    .item .v { font-size: 12px; color: var(--paper-muted); white-space: nowrap; }
+    .body { padding: 16px 18px 20px; flex-direction: column; gap: 18px; }
+    .drill {
+      appearance: none; width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--line);
+      background: transparent; color: inherit; font: inherit; padding: 12px 0;
+      display: flex; justify-content: space-between; cursor: pointer;
+    }
+    .subpage { display: none; padding: 16px 18px 20px; flex-direction: column; gap: 14px; }
+    #sub [data-sub] { display: none; }
+    #sub [data-sub].show { display: block; }
+    .back {
+      appearance: none; border: 0; background: transparent; color: var(--copper);
+      font: inherit; font-size: 13px; padding: 0; cursor: pointer; text-align: left;
+    }
+    .page { display: none; }
+    .page.is-on { display: flex; }
+    .tabs { position: relative; z-index: 2; }
+    h2 { margin: 0 0 8px; font-size: 12px; font-weight: 500; letter-spacing: 0.04em; color: var(--paper-muted); }
+    .profiles { display: flex; flex-direction: column; gap: 6px; }
+    .profile {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      width: 100%; text-align: left; border: 1px solid var(--line); background: transparent;
+      color: inherit; border-radius: 8px; padding: 10px 12px; cursor: pointer; font: inherit;
+    }
+    .profile.on { border-color: rgba(201, 149, 108, 0.45); background: var(--copper-soft); }
+    .profile .name { font-size: 14px; font-weight: 500; }
+    .profile .meta { font-family: var(--mono); font-size: 11px; color: var(--paper-muted); margin-top: 2px; }
+    .mark { font-size: 11px; color: var(--copper); }
+    .row-actions { display: flex; gap: 8px; margin-top: 8px; }
+    button.ghost, button.texty {
+      appearance: none; border: 1px solid var(--line-strong); background: transparent;
+      color: var(--paper-muted); font: inherit; font-size: 12px; border-radius: 999px;
+      padding: 6px 10px; cursor: pointer;
+    }
+    button.texty { border: 0; padding-left: 0; }
+    label.field { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--paper-muted); }
+    .seg { display: flex; gap: 6px; }
+    .seg button {
+      appearance: none; border: 1px solid var(--line-strong); background: transparent;
+      color: var(--paper-muted); font: inherit; font-size: 13px; border-radius: 999px;
+      padding: 7px 12px; cursor: pointer;
+    }
+    .seg button.on { color: var(--ink); background: var(--paper); border-color: var(--paper); }
+    input[type="text"], input[type="number"], input[type="password"] {
+      width: 100%; background: #0c0b0a; color: var(--paper); border: 1px solid var(--line-strong);
+      border-radius: 8px; padding: 9px 10px; font: inherit; font-size: 14px;
+    }
+    input.mono { font-family: var(--mono); font-size: 13px; }
+    .window {
+      border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px;
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .window p { margin: 0; font-size: 14px; color: var(--paper); }
+    .window .hint { font-size: 12px; color: var(--paper-faint); }
+    .detail {
+      margin: 2px 0 8px 14px;
+      padding: 12px 12px 14px;
+      border-left: 2px solid var(--copper);
+      background: rgba(243, 236, 224, 0.03);
+      border-radius: 0 8px 8px 0;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .detail-title { margin: 0; font-size: 13px; font-weight: 500; color: var(--paper); }
+    .key { margin: 8px 0 0; font-family: var(--mono); font-size: 12px; color: var(--paper-faint); }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="stage">
+    <div class="stage-label">设置 · 五页</div>
+    <div class="panel">
+      <div class="tabs" role="tablist" aria-label="设置分组">
+        <button class="tab on" type="button" data-page="chat" role="tab">对话模型</button>
+        <button class="tab" type="button" data-page="index" role="tab">笔记索引</button>
+        <button class="tab" type="button" data-page="agent" role="tab">记忆与权限</button>
+        <button class="tab" type="button" data-page="look" role="tab">外观</button>
+        <button class="tab" type="button" data-page="advanced" role="tab">高级</button>
+      </div>
+      <div class="body page is-on" data-page="chat">
+        <section>
+          <h2>界面语言</h2>
+          <div class="seg" aria-label="语言">
+            <button type="button" class="on">跟随系统</button>
+            <button type="button">中文</button>
+            <button type="button">English</button>
+          </div>
+        </section>
+        <section>
+          <h2>已保存的配置</h2>
+          <div class="profiles" id="list"></div>
+          <div class="detail" id="detail">
+            <p class="detail-title" id="detail-title"></p>
+            <label class="field">名称
+              <input id="pname" type="text" autocomplete="off">
+            </label>
+            <div>
+              <h2>提供商</h2>
+              <div class="seg" id="providers" role="group" aria-label="提供商">
+                <button type="button" data-provider="deepseek">DeepSeek</button>
+                <button type="button" data-provider="ollama">Ollama（本地）</button>
+                <button type="button" data-provider="custom">自定义</button>
+              </div>
+              <label class="field" id="base-field" hidden style="margin-top:12px">地址
+                <input id="base" class="mono" type="text" autocomplete="off">
+              </label>
+              <p class="key" id="key-note"></p>
+            </div>
+            <label class="field">模型名
+              <input id="model" class="mono" type="text" autocomplete="off">
+            </label>
+            <div>
+              <h2>上下文长度</h2>
+              <div class="window">
+                <p id="window-line"></p>
+                <p class="hint" id="window-hint"></p>
+                <label class="field" id="window-edit" hidden>自己的上限
+                  <input id="window-num" type="number" min="1024" step="1024">
+                </label>
+                <button class="texty" id="shrink" type="button">改得更小</button>
+              </div>
+            </div>
+          </div>
+          <div class="row-actions">
+            <button class="ghost" type="button">把当前配置存为一套</button>
+          </div>
+        </section>
+        <section>
+          <h2>自动压缩</h2>
+          <div class="item"><div><div class="n">自动压缩上下文</div><div class="d">接近上限时压缩发给模型的内容，气泡都留着</div></div><div class="v">开</div></div>
+        </section>
+      </div>
+      <div class="body page" data-page="index">
+        <div class="static">
+          <section>
+            <h2>嵌入模型</h2>
+            <div class="item"><div><div class="n">提供方</div><div class="d">本地内置，或外部接口。本地改完需重启插件</div></div><div class="v">本地 / API</div></div>
+            <div class="item"><div><div class="n">本地模型</div><div class="d">仅本地时出现</div></div><div class="v">文本</div></div>
+            <div class="item"><div><div class="n">本地向量维度</div><div class="d">仅本地时出现</div></div><div class="v">数字</div></div>
+            <div class="item"><div><div class="n">API 地址</div><div class="d">仅外部时出现。本地 Ollama 不需要密钥</div></div><div class="v">文本</div></div>
+            <div class="item"><div><div class="n">API 模型</div><div class="d">仅外部时出现</div></div><div class="v">文本</div></div>
+            <div class="item"><div><div class="n">API 向量维度</div><div class="d">仅外部时出现</div></div><div class="v">数字</div></div>
+          </section>
+          <section>
+            <h2>索引</h2>
+            <div class="item"><div><div class="n">分块大小</div></div><div class="v">100–1000</div></div>
+            <div class="item"><div><div class="n">分块重叠</div></div><div class="v">0–200</div></div>
+            <div class="item"><div><div class="n">自动索引</div><div class="d">启动时扫描库的变更并增量索引</div></div><div class="v">开</div></div>
+          </section>
+          <section>
+            <h2>精排（百炼，可选）</h2>
+            <div class="item"><div><div class="n">API 地址</div></div><div class="v">文本</div></div>
+            <div class="item"><div><div class="n">模型</div></div><div class="v">文本</div></div>
+            <div class="item"><div><div class="n">密钥</div><div class="d">未配置就自动关闭。本地地址不需要密钥</div></div><div class="v">钥匙串</div></div>
+          </section>
+        </div>
+      </div>
+      <div class="body page" data-page="agent">
+        <div class="static">
+          <section>
+            <h2>目标模式</h2>
+            <div class="item"><div><div class="n">默认回合上限</div><div class="d">新建目标没写上限时用这个</div></div><div class="v">1–100</div></div>
+            <div class="item"><div><div class="n">单回合 token 软上限</div><div class="d">0 表示关闭。碰到后本回合收尾，不算受阻</div></div><div class="v">数字</div></div>
+            <div class="item"><div><div class="n">待归档天数</div><div class="d">终态目标超过天数后标为待归档，不自动搬走</div></div><div class="v">1–365</div></div>
+            <div class="item"><div><div class="n">打开目标管理</div></div><div class="v">按钮</div></div>
+          </section>
+          <section>
+            <h2>记忆系统</h2>
+            <div class="item"><div><div class="n">启用记忆</div></div><div class="v">开关</div></div>
+            <div class="item"><div><div class="n">自动写入</div></div><div class="v">开关</div></div>
+            <div class="item"><div><div class="n">查看记忆</div></div><div class="v">按钮</div></div>
+          </section>
+          <section>
+            <h2>日记约定</h2>
+            <div class="item"><div><div class="n">日记文件夹</div><div class="d">相对库根，留空表示根目录。只探测，不自动创建</div></div><div class="v">文本</div></div>
+            <div class="item"><div><div class="n">文件名格式</div><div class="d">YYYY / MM / DD，默认 YYYY-MM-DD</div></div><div class="v">文本</div></div>
+          </section>
+          <section>
+            <h2>库外</h2>
+            <div class="item"><div><div class="n">允许访问库外</div><div class="d">默认关闭。打开后仍按每个工具询问</div></div><div class="v">关</div></div>
+          </section>
+          <button class="drill" type="button" data-sub="perms"><span>工具权限</span><span>允许 / 询问 / 拒绝</span></button>
+          <section>
+            <h2>MCP</h2>
+            <div class="item"><div><div class="n">打开 MCP 管理</div><div class="d">已安装列表、HTTP、本地命令或粘贴 JSON</div></div><div class="v">按钮</div></div>
+          </section>
+        </div>
+      </div>
+      <div class="body page" data-page="look">
+        <div class="static">
+          <section>
+            <h2>外观</h2>
+            <div class="item"><div><div class="n">预览</div><div class="d">只影响 Ratel 面板</div></div><div class="v">样例</div></div>
+            <div class="item"><div><div class="n">颜色模式</div><div class="d">跟随 Obsidian、浅色、深色</div></div><div class="v">跟随</div></div>
+            <div class="item"><div><div class="n">强调色</div><div class="d">跟随、铜、红、紫、靛、蓝、青、绿、橙、粉</div></div><div class="v">铜</div></div>
+          </section>
+          <section>
+            <h2>聊天装饰</h2>
+            <div class="item"><div><div class="n">对话位置轨</div><div class="d">阅读位置和回到底部</div></div><div class="v">开</div></div>
+            <div class="item"><div><div class="n">位置轨靠边</div><div class="d">左或右</div></div><div class="v">右侧</div></div>
+            <div class="item"><div><div class="n">聊天动效</div></div><div class="v">开</div></div>
+            <div class="item"><div><div class="n">捣蛋鬼</div><div class="d">可拖。关动效或系统减少动画时变为静脸</div></div><div class="v">开</div></div>
+          </section>
+        </div>
+      </div>
+      <div class="body page" data-page="advanced">
+        <div class="static">
+          <p class="key">不常用的整页放在这里。点进去是单独一页，不铺在五个主页上。</p>
+          <button class="drill" type="button" data-sub="registry"><span>模型映射表</span><span>地址</span></button>
+          <button class="drill" type="button" data-sub="eco"><span>对话里改其他插件</span><span>开关</span></button>
+          <button class="drill" type="button" data-sub="prompts"><span>提示词覆盖</span><span>按段</span></button>
+          <button class="drill" type="button" data-sub="memlim"><span>记忆上限</span><span>五个数字</span></button>
+          <button class="drill" type="button" data-sub="dev"><span>开发者</span><span>日志与步数</span></button>
+          <button class="drill" type="button" data-sub="diag"><span>诊断</span><span>入口</span></button>
+        </div>
+      </div>
+      <div class="subpage" id="sub" data-sub="">
+        <button class="back" id="sub-back" type="button">返回</button>
+        <div data-sub="perms">
+          <h2>工具权限</h2>
+          <div class="item"><div><div class="n">语义搜索、读取、全文搜索、路径匹配、列出文件</div></div><div class="v">允许</div></div>
+          <div class="item"><div><div class="n">写入、追加、编辑、删除</div></div><div class="v">询问</div></div>
+          <div class="item"><div><div class="n">搜索记忆、记住、忘掉</div></div><div class="v">允许</div></div>
+          <div class="item"><div><div class="n">技能：使用、关闭、读参考、跑脚本</div></div><div class="v">允许</div></div>
+          <div class="item"><div><div class="n">时间、当前笔记、日记、最近、大纲、链接、标签、属性、库结构、打开笔记</div></div><div class="v">允许</div></div>
+          <div class="item"><div><div class="n">打开设置、读配置、改配置、管理目标</div></div><div class="v">询问</div></div>
+          <div class="item"><div><div class="n">社区插件：搜索、安装、升级、卸载、配置、状态、变更、恢复</div></div><div class="v">询问</div></div>
+          <div class="item"><div><div class="n">库外：列出、读取、拷进库、运行命令</div></div><div class="v">询问</div></div>
+        </div>
+        <div data-sub="registry">
+          <h2>模型映射表</h2>
+          <div class="item"><div><div class="n">映射表地址</div><div class="d">留空使用内置。要返回 JSON</div></div><div class="v">文本</div></div>
+          <div class="item"><div><div class="n">恢复默认</div></div><div class="v">按钮</div></div>
+        </div>
+        <div data-sub="eco">
+          <h2>对话里改其他插件</h2>
+          <div class="item"><div><div class="n">允许写入</div><div class="d">关掉后，对话不能改别的插件</div></div><div class="v">开关</div></div>
+        </div>
+        <div data-sub="prompts">
+          <h2>提示词覆盖</h2>
+          <div class="item"><div><div class="n">按段自定义系统提示</div><div class="d">检索结果的安全外框不能改。可预览，可恢复本段默认</div></div><div class="v">编辑</div></div>
+        </div>
+        <div data-sub="memlim">
+          <h2>记忆上限</h2>
+          <div class="item"><div><div class="n">磁盘上限</div></div><div class="v">MB</div></div>
+          <div class="item"><div><div class="n">注入上限</div></div><div class="v">KB</div></div>
+          <div class="item"><div><div class="n">动态段上限</div></div><div class="v">KB</div></div>
+          <div class="item"><div><div class="n">上下文合计上限</div></div><div class="v">KB</div></div>
+          <div class="item"><div><div class="n">相关主题条数</div></div><div class="v">0–10</div></div>
+        </div>
+        <div data-sub="dev">
+          <h2>开发者</h2>
+          <div class="item"><div><div class="n">调试日志</div></div><div class="v">开关</div></div>
+          <div class="item"><div><div class="n">崩溃记录</div><div class="d">记下发送阶段，不含对话正文</div></div><div class="v">开关</div></div>
+          <div class="item"><div><div class="n">单轮最大步数</div></div><div class="v">5–200</div></div>
+          <div class="item"><div><div class="n">技能脚本超时</div></div><div class="v">5–120 秒</div></div>
+        </div>
+        <div data-sub="diag">
+          <h2>诊断</h2>
+          <div class="item"><div><div class="n">诊断页</div><div class="d">从高级进入，不占主页一栏</div></div><div class="v">入口</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script>
+    const KNOWN = {
+      "deepseek-v4-flash": 1048576,
+      "deepseek-v4-pro": 1048576,
+    };
+    const PRESET = {
+      deepseek: { base: "https://api.deepseek.com", model: "deepseek-v4-flash", key: true },
+      ollama: { base: "http://localhost:11434/v1", model: "llama3.2", key: false },
+      custom: { base: "", model: "", key: true },
+    };
+    const profiles = [
+      { id: "a", name: "工作 DeepSeek", provider: "deepseek", model: "deepseek-v4-flash", base: PRESET.deepseek.base, window: 1048576, customWindow: false },
+      { id: "d", name: "复杂文案", provider: "deepseek", model: "deepseek-v4-pro", base: PRESET.deepseek.base, window: 1048576, customWindow: false },
+      { id: "e", name: "日常轻量", provider: "deepseek", model: "deepseek-v4-flash", base: PRESET.deepseek.base, window: 131072, customWindow: true },
+      { id: "b", name: "本地 Ollama", provider: "ollama", model: "llama3.2", base: PRESET.ollama.base, window: null, customWindow: false },
+      { id: "c", name: "备用接口", provider: "custom", model: "my-model", base: "https://example.com/v1", window: null, customWindow: false },
+    ];
+    let active = "a";
+
+    const list = document.getElementById("list");
+    const detail = document.getElementById("detail");
+    const pname = document.getElementById("pname");
+    const model = document.getElementById("model");
+    const base = document.getElementById("base");
+    const baseField = document.getElementById("base-field");
+    const keyNote = document.getElementById("key-note");
+    const windowLine = document.getElementById("window-line");
+    const windowHint = document.getElementById("window-hint");
+    const windowEdit = document.getElementById("window-edit");
+    const windowNum = document.getElementById("window-num");
+    const shrink = document.getElementById("shrink");
+
+    function current() { return profiles.find((p) => p.id === active); }
+
+    function lookup(name) { return Object.prototype.hasOwnProperty.call(KNOWN, name) ? KNOWN[name] : null; }
+
+    function renderList() {
+      list.replaceChildren();
+      for (const p of profiles) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "profile" + (p.id === active ? " on" : "");
+        const left = document.createElement("span");
+        const n = document.createElement("div");
+        n.className = "name";
+        n.textContent = p.name;
+        const m = document.createElement("div");
+        m.className = "meta";
+        m.textContent = p.model;
+        left.append(n, m);
+        const mark = document.createElement("span");
+        mark.className = "mark";
+        mark.textContent = p.id === active ? "当前" : "";
+        btn.append(left, mark);
+        btn.addEventListener("click", () => { active = p.id; render(); });
+        list.append(btn);
+        if (p.id === active) list.append(detail);
+      }
+    }
+
+    function renderProviders(p) {
+      for (const btn of document.querySelectorAll("#providers button")) {
+        btn.classList.toggle("on", btn.dataset.provider === p.provider);
+      }
+      const showBase = p.provider === "custom";
+      baseField.hidden = !showBase;
+      base.value = p.base;
+      keyNote.textContent = PRESET[p.provider].key
+        ? "密钥在钥匙串里，离开输入框时保存，这里不回显。"
+        : "本地地址不需要密钥。";
+    }
+
+    function renderWindow(p) {
+      const found = p.customWindow ? null : lookup(p.model);
+      if (p.customWindow) {
+        windowLine.textContent = "这一套自己的上限是 " + Number(p.window).toLocaleString("zh-CN");
+        windowHint.textContent = "模型名不变时，不会被查表盖掉。改了模型名会重新查。";
+        windowEdit.hidden = false;
+        windowNum.value = p.window || "";
+        shrink.hidden = true;
+      } else if (found) {
+        windowLine.textContent = "这个模型的窗口是 " + found.toLocaleString("zh-CN");
+        windowHint.textContent = "没有 128k / 256k / 1M 的档位。";
+        windowEdit.hidden = true;
+        shrink.hidden = false;
+      } else {
+        windowLine.textContent = "未查到 " + (p.model || "这个模型") + " 的窗口";
+        windowHint.textContent = "填一个数字。不要沿用上一个模型的上限。";
+        windowEdit.hidden = false;
+        windowNum.value = p.window || "";
+        shrink.hidden = true;
+      }
+    }
+
+    function render() {
+      const p = current();
+      document.getElementById("detail-title").textContent = "「" + p.name + "」的提供商、模型和窗口";
+      renderList();
+      pname.value = p.name;
+      model.value = p.model;
+      renderProviders(p);
+      renderWindow(p);
+    }
+
+    document.getElementById("providers").addEventListener("click", (ev) => {
+      const btn = ev.target.closest("button");
+      if (!btn) return;
+      const p = current();
+      const id = btn.dataset.provider;
+      if (p.provider === id) return;
+      p.provider = id;
+      p.base = PRESET[id].base;
+      if (id !== "custom") p.model = PRESET[id].model;
+      p.customWindow = false;
+      p.window = lookup(p.model);
+      render();
+    });
+
+    pname.addEventListener("change", () => { current().name = pname.value.trim() || current().name; render(); });
+    model.addEventListener("change", () => {
+      const p = current();
+      p.model = model.value.trim();
+      p.customWindow = false;
+      p.window = lookup(p.model);
+      render();
+    });
+    base.addEventListener("change", () => { current().base = base.value.trim(); });
+    shrink.addEventListener("click", () => {
+      const p = current();
+      const found = lookup(p.model) || 1048576;
+      p.customWindow = true;
+      p.window = Math.floor(found / 2);
+      render();
+    });
+    windowNum.addEventListener("change", () => {
+      const p = current();
+      p.window = Number(windowNum.value) || p.window;
+      if (lookup(p.model) && p.window !== lookup(p.model)) p.customWindow = true;
+      render();
+    });
+
+    document.querySelector(".tabs").addEventListener("click", (ev) => {
+      const btn = ev.target.closest(".tab");
+      if (!btn) return;
+      const page = btn.dataset.page;
+      document.getElementById("sub").classList.remove("is-on");
+      document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("on", t === btn));
+      document.querySelectorAll(".page").forEach((el) => el.classList.toggle("is-on", el.dataset.page === page));
+    });
+    let subFrom = "advanced";
+    document.querySelector(".panel").addEventListener("click", (ev) => {
+      const drill = ev.target.closest(".drill");
+      if (!drill) return;
+      subFrom = drill.closest(".page").dataset.page;
+      document.querySelectorAll(".page").forEach((el) => el.classList.remove("is-on"));
+      const sub = document.getElementById("sub");
+      sub.classList.add("is-on");
+      sub.querySelectorAll("[data-sub]").forEach((el) => el.classList.toggle("show", el.dataset.sub === drill.dataset.sub));
+    });
+    document.getElementById("sub-back").addEventListener("click", () => {
+      document.getElementById("sub").classList.remove("is-on");
+      document.querySelectorAll(".page").forEach((el) => el.classList.toggle("is-on", el.dataset.page === subFrom));
+    });
+
+    render();
+  </script>
+</body>
+</html>

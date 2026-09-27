@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript strict、vitest、Obsidian 插件。
 
-**Spec:** [2026-09-26-note-agents-md-design.md](../specs/2026-09-26-note-agents-md-design.md)
+**Spec:** [2026-09-26-note-agents-md-design.md](2026-09-26-note-agents-md-design.md)
 
 ## Global Constraints
 

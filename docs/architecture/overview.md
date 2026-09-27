@@ -239,6 +239,7 @@ graph TB
 | **Agent** | agent-loop | 主循环:思考 → 调工具 → 拿结果 → 生成回答 | [agent/agent-loop.md](agent/agent-loop.md) |
 | **Agent** | context-manager | 上下文管理:消息历史 / 搜索结果注入 / 上下文压缩(系统提示词见 prompt-management) | [agent/context-manager.md](agent/context-manager.md) |
 | **Agent** | prompt-management | 提示词 registry + Composer:中文模板 / 动态注入 / section 覆盖 | [agent/prompt-management.md](agent/prompt-management.md) |
+| **Agent** | note-agents | 库内 AGENTS.md:库根每轮注入,子目录碰到路径再叠加;改约束文件强制确认 | [agent/note-agents.md](agent/note-agents.md) |
 | **Agent** | tools | 工具系统:注册、发现、调用、返回格式(含环境感知只读工具) | [agent/tools.md](agent/tools.md) |
 | **Agent** | hooks | 知识治理钩子:pre-write / post-write 阶段化扩展点 | [agent/hooks.md](agent/hooks.md) |
 | **Agent** | goal-mode | 跨会话持久目标:意图 + 完成标准 + 预算;人在场续跑 | [agent/goal-mode.md](agent/goal-mode.md) |
@@ -682,6 +683,7 @@ graph LR
 | ADR-014 MCP 平台 | `docs/adr/2026-08-03-mcp-host-platform.md` | 平台级 MCP Host,不自建 websearch;双 transport |
 | ADR-015 能力池 | `docs/adr/2026-08-03-capability-pool.md` | 统一意图选择(能力池),按 kind 路由执行链路 |
 | ADR-018 生态出站 | `docs/adr/2026-09-18-ecosystem-outbound.md` | 官方清单 + GitHub release;第三条网;商店保守开关 |
+| ADR-020 收笔护栏 | `docs/adr/2026-09-27-turn-completion-guard.md` | 正文过短而思考更长时再请求一次;85% 压缩不动 |
 | 产品总纲 | `docs/prd/overview.md` | 产品定位与分册入口 |
 | S-PLUGIN-PROFILE | `docs/superpowers/archive/S-PLUGIN-PROFILE/2026-09-10-plugin-profile-design.md` | 插件配置档案需求;正文 [host/plugin-profile.md](host/plugin-profile.md) |
 | S-ECOSYSTEM | `docs/superpowers/archive/S-ECOSYSTEM/2026-08-20-ecosystem-management-design.md` | 对话装卸执行层;正文 [host/ecosystem.md](host/ecosystem.md) |
