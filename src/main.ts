@@ -1812,8 +1812,10 @@ export default class RatelVaultPlugin extends Plugin {
 			const rootAgentsPath = AGENTS_FILE_NAME;
 			if (await this.vault.fileExists(rootAgentsPath)) {
 				ctx.setNoteAgentsRoot(await this.vault.readFile(rootAgentsPath));
+				this.breadcrumbs?.mark('agents.file', sessionId, rootAgentsPath);
 			} else {
 				ctx.setNoteAgentsRoot('');
+				this.breadcrumbs?.mark('agents.file', sessionId, `${rootAgentsPath}:none`);
 			}
 		} catch (err) {
 			devLogger.warn('noteAgents', '库根 AGENTS.md 读取失败,跳过注入', err);
@@ -1826,7 +1828,10 @@ export default class RatelVaultPlugin extends Plugin {
 				const rel = dir ? `${dir}/${AGENTS_FILE_NAME}` : AGENTS_FILE_NAME;
 				try {
 					if (!(await this.vault.fileExists(rel))) return null;
-					return await this.vault.readFile(rel);
+					const text = await this.vault.readFile(rel);
+					// 关键路径:嵌套约束是闸门里读的,不是 read_note。记路径才能事后核对。
+					this.breadcrumbs?.mark('agents.file', sessionId, rel);
+					return text;
 				} catch {
 					return null;
 				}

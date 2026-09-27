@@ -48,13 +48,13 @@ describe('shouldCarryShortOutline', () => {
 		})).toBe(false);
 	});
 
-	it('shouldCarryShortOutline - 思考不比正文长 - false', () => {
+	it('shouldCarryShortOutline - 思考为空且只有一句标题 - true', () => {
 		expect(shouldCarryShortOutline({
-			visibleChars: 40,
-			reasoningChars: 40,
+			visibleChars: 35,
+			reasoningChars: 0,
 			wroteNote: false,
 			alreadyCarried: false,
-		})).toBe(false);
+		})).toBe(true);
 	});
 
 	it('shouldCarryShortOutline - 已经续过 - false', () => {

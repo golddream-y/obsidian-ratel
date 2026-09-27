@@ -3,8 +3,8 @@ import { INJECTION_SOURCE_IDS } from '../../src/prompts/injection/ids';
 import { PromptInjector, truncateUtf8Bytes } from '../../src/prompts/injection/injector';
 
 describe('INJECTION_SOURCE_IDS', () => {
-	it('登记表 - 含 env/memory/skills/goal 四源且无重复', () => {
-		expect([...INJECTION_SOURCE_IDS]).toEqual(['env', 'memory', 'skills', 'goal']);
+	it('登记表 - 含 env/memory/noteAgents/skills/goal 五源且无重复', () => {
+		expect([...INJECTION_SOURCE_IDS]).toEqual(['env', 'memory', 'noteAgents', 'skills', 'goal']);
 		expect(new Set(INJECTION_SOURCE_IDS).size).toBe(INJECTION_SOURCE_IDS.length);
 	});
 });

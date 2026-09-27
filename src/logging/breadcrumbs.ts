@@ -12,7 +12,7 @@ export const BREADCRUMB_PHASES = [
 	'send.enqueue', 'send.precheck', 'send.compact',
 	'ask.begin', 'ask.embed.begin', 'ask.embed.end',
 	'loop.load', 'loop.classify', 'llm.request', 'llm.first-delta',
-	'loop.tool', 'ask.end', 'ask.error',
+	'loop.tool', 'agents.file', 'ask.end', 'ask.error',
 	'crash.suspect',
 ] as const;
 export type BreadcrumbPhase = (typeof BREADCRUMB_PHASES)[number];

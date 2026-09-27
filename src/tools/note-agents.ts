@@ -163,6 +163,8 @@ function formatGateAttachment(joined: { text: string; truncated: boolean }): str
 	return `${joined.text}\n\n${tNow('noteAgents.truncated')}`;
 }
 
+const GATE_RETRY_NOTE = '请立刻用相同参数再次调用刚才的工具，这次会真正执行。不要只回复标题。';
+
 /**
  * 读/写笔记前的 AGENTS 链闸门：读操作附嵌套层约束；写操作未见过嵌套约束时退回正文。
  *
@@ -197,5 +199,9 @@ export async function applyNoteAgentsGate(input: {
 		return { proceed: true, attachment: '' };
 	}
 	const joined = joinAgentsChain(layers);
-	return { proceed: false, attachment: formatGateAttachment(joined) };
+	const attachment = formatGateAttachment(joined);
+	return {
+		proceed: false,
+		attachment: attachment ? `${attachment}\n\n${GATE_RETRY_NOTE}` : GATE_RETRY_NOTE,
+	};
 }

@@ -43,6 +43,7 @@ describe('applyNoteAgentsGate', () => {
 		});
 		expect(gate.proceed).toBe(false);
 		expect(gate.attachment).toContain('先读我再写');
+		expect(gate.attachment).toContain('再次调用刚才的工具');
 	});
 
 	it('applyNoteAgentsGate - 写嵌套笔记已 mark - 可继续', async () => {

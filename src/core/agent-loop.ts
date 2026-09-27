@@ -324,7 +324,10 @@ export async function* agentLoop(
 			// 关键路径:一轮内逐个执行工具调用(对 UI 展示为逐条 tool.call/tool.result),
 			// 每个工具独立过权限门控与钩子,单个失败不阻断其他工具。
 			for (const tc of toolCalls) {
-				onBreadcrumb?.('loop.tool', `${step}:${tc.name}`);
+				const pathHint = ['path', 'file', 'note', 'filePath']
+					.map((key) => tc.args[key])
+					.find((value) => typeof value === 'string' && value.trim().length > 0);
+				onBreadcrumb?.('loop.tool', pathHint ? `${step}:${tc.name}:${pathHint}` : `${step}:${tc.name}`);
 				if (signal?.aborted) {
 					yield { type: 'error', payload: { code: 'CANCELLED', message: '用户取消' } };
 					loopExitedViaBreak = true;
