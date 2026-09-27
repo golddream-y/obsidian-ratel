@@ -32,7 +32,7 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
-| P-CHAT-SETUP | [2026-09-27-chat-setup.md](plans/2026-09-27-chat-setup.md) | Pending | S-CHAT-SETUP | 两步：当前套编辑；长设置改二级页 |
+| P-CHAT-SETUP | [2026-09-27-chat-setup.md](plans/2026-09-27-chat-setup.md) | In Progress | S-CHAT-SETUP | 分支 feat-chat-setup。两步：当前套编辑；长设置改二级页 |
 | P-RUN-STATUS | [2026-09-27-run-status.md](plans/2026-09-27-run-status.md) | Completed | S-RUN-STATUS | 状态行纯函数 + 消息球接线已提交。图标只留在合适的句子上 |
 | P-CHAT-PROFILE-MENU | [2026-09-27-chat-profile-menu.md](plans/2026-09-27-chat-profile-menu.md) | Completed | S-CHAT-PROFILES | 顶栏菜单，提交 29069b9。设置页「设为当前」尚未改调共用函数 |
 | P-CONTEXT-ACCURACY | [2026-09-24-context-accuracy.md](plans/2026-09-24-context-accuracy.md) | Completed | S-CONTEXT-ACCURACY | 已合 develop（merge 7205e07）；4 Task + CA-01 4xx 取舍 |
