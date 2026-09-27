@@ -17,6 +17,7 @@ import { devLogger } from '../logging/dev-logger';
 import { isPromptTooLong } from './compact-project';
 import { mapSearchResults } from './search-result-mapper';
 import { isLikelyVisionApiError } from './vision-api-error';
+import { shouldCarryShortOutline, CARRY_SYSTEM } from './turn-carry';
 
 /**
  * Agent Loop 的默认最大步数上限,防止工具调用陷入死循环。
@@ -151,6 +152,12 @@ export async function* agentLoop(
 
 	try {
 		let loopExitedViaBreak = false;
+		// 关键路径:本轮用户消息内是否已成功写笔记 — 成功后不再触发短正文续写。
+		let wroteNote = false;
+		// 关键路径:每轮用户消息最多续写一次。
+		let alreadyCarried = false;
+		// 关键路径:下一步 llm.chat 出站副本末尾追加 CARRY_SYSTEM,不写入 session。
+		let appendCarrySystemOnNextChat = false;
 
 		// 单步循环:每轮产生一段 assistant 回复 + 零到多次工具调用。
 		for (let step = 0; step < effectiveMaxSteps; step++) {
@@ -177,11 +184,16 @@ export async function* agentLoop(
 				// session 内消息保持 KB 级引用不被污染;store 未注入时原样直通。
 				onBreadcrumb?.('llm.request', step);
 				let sawFirstDelta = false;
+				let chatMessages = overlayLastUserContent(
+					await ctx.toMessagesResolved(attachmentStore, intent),
+					req.modelMessage,
+				);
+				if (appendCarrySystemOnNextChat) {
+					chatMessages = [...chatMessages, { role: 'system', content: CARRY_SYSTEM }];
+					appendCarrySystemOnNextChat = false;
+				}
 				const stream = llm.chat({
-					messages: overlayLastUserContent(
-						await ctx.toMessagesResolved(attachmentStore, intent),
-						req.modelMessage,
-					),
+					messages: chatMessages,
 					tools: tools.definitions(),
 					signal,
 					onRetryWait: req.onRetryWait,
@@ -283,9 +295,24 @@ export async function* agentLoop(
 				// 有工具调用 → 继续执行工具(截断的 toolCall args 可能有 raw 字段),然后让下一轮 LLM 续传。
 			}
 
-			// 无 toolCall → 这一步就是纯文本回答,直接收尾。
+			// 无 toolCall → 纯文本收笔;短正文且思考更长时同一轮再请求一次(见 turn-carry)。
 			if (toolCalls.length === 0) {
 				ctx.addAssistantMessage(accumulatedText, accumulatedReasoning || undefined);
+				const finishOk =
+					finishReason !== 'length' && finishReason !== 'content_filter';
+				if (
+					finishOk &&
+					shouldCarryShortOutline({
+						visibleChars: [...accumulatedText].length,
+						reasoningChars: [...accumulatedReasoning].length,
+						wroteNote,
+						alreadyCarried,
+					})
+				) {
+					alreadyCarried = true;
+					appendCarrySystemOnNextChat = true;
+					continue;
+				}
 				loopExitedViaBreak = true;
 				break;
 			}
@@ -395,6 +422,13 @@ export async function* agentLoop(
 				// 写后钩子:与 pre-tool-use 对称(仅成功时)。
 				if (!toolFailed) {
 					await hooks.runVoid('post-tool-use', tc);
+					if (
+						tc.name === 'write_note' ||
+						tc.name === 'edit_note' ||
+						tc.name === 'append_note'
+					) {
+						wroteNote = true;
+					}
 				}
 
 				// 把 assistant tool call + 工具结果写回 session。
