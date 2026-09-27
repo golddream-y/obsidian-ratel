@@ -32,6 +32,9 @@
 		thumbRatio,
 	} from './nav/chat-nav-rail';
 	import SessionMenu from './session/SessionMenu.svelte';
+	import ChatProfileMenu from './ChatProfileMenu.svelte';
+	import { activateChatProfile } from './activate-chat-profile';
+	import { openRatelVaultSettingsTab } from './open-ratel-settings-tab';
 	import { sessionHasContent } from './session/session-content';
 	import {
 		SESSION_ENTER_MS,
@@ -77,7 +80,6 @@
 	import { decidePostTurnCompact, decidePreSendCompact } from './compact-auto';
 	import { reloadPreloadedContextAfterCompact } from '../../core/preloaded-context';
 	import { CompactCircuitBreaker } from '../../core/compact-project';
-	import { ModelInfoModal } from './model-info-modal';
 	import { FeedbackModal } from './feedback-modal';
 	import { openSponsorPage } from './sponsor-links';
 	import { openChatNote } from './open-chat-note';
@@ -134,13 +136,20 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 		appearanceUnsub = appearanceRevision.subscribe(() => syncAppearance());
 		void bootstrapSession();
 		const onDocClick = (e: MouseEvent) => {
-			if (!sessionMenuOpen) return;
+			if (!sessionMenuOpen && !profileMenuOpen) return;
 			const t = e.target as Node | null;
 			if (!t) return;
 			// 关键路径:用 DOM 查询,避免 onMount 闭包未捕获到后声明的 \$state 绑定
-			const float = chatRoot?.querySelector('.ratel-session-menu-float');
-			if (historyBtnEl?.contains(t) || (float instanceof Node && float.contains(t))) return;
+			const sessionFloat = chatRoot?.querySelector('.ratel-session-menu-float');
+			const profileFloat = chatRoot?.querySelector('.ratel-chat-profile-menu-float');
+			if (historyBtnEl?.contains(t) || (sessionFloat instanceof Node && sessionFloat.contains(t))) {
+				return;
+			}
+			if (modelBtnEl?.contains(t) || (profileFloat instanceof Node && profileFloat.contains(t))) {
+				return;
+			}
 			sessionMenuOpen = false;
+			profileMenuOpen = false;
 		};
 		document.addEventListener('click', onDocClick);
 		return () => document.removeEventListener('click', onDocClick);
@@ -169,6 +178,8 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 		return () => leaf.classList.remove('is-ratel-empty');
 	});
 	let isRunning = $state(false);
+	/** 本轮 assistant 的 message.start 次数，从 1 计 */
+	let runStep = $state(1);
 	let retryWait = $state<LlmRetryWait | null>(null);
 	let retryRemainingMs = $state(0);
 	let retryCountdownTimer: number | null = null;
@@ -187,6 +198,8 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 	let sessionMenuOpen = $state(false);
 	let sessionMenuFloatEl = $state<HTMLDivElement | null>(null);
 	let historyBtnEl = $state<HTMLButtonElement | null>(null);
+	let profileMenuOpen = $state(false);
+	let modelBtnEl = $state<HTMLButtonElement | null>(null);
 	let switching = $state(false);
 	let sessionLoading = $state(false);
 	let sessionLoadingLabel = $state('');
@@ -344,8 +357,28 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 		void openChatNote(plugin.app, path);
 	}
 
-	function openModelInfo(): void {
-		new ModelInfoModal(plugin.app, plugin).open();
+	function toggleProfileMenu(): void {
+		profileMenuOpen = !profileMenuOpen;
+		if (profileMenuOpen) sessionMenuOpen = false;
+	}
+
+	function openProfileMenu(): void {
+		sessionMenuOpen = false;
+		profileMenuOpen = true;
+	}
+
+	async function handleChatProfileSelect(id: string): Promise<void> {
+		if (id === plugin.settings.activeChatProfileId) {
+			profileMenuOpen = false;
+			return;
+		}
+		await activateChatProfile(plugin, id);
+		profileMenuOpen = false;
+	}
+
+	function handleManageProfilesInSettings(): void {
+		profileMenuOpen = false;
+		openRatelVaultSettingsTab(plugin.app);
 	}
 
 	function removePendingAttachment(id: string): void {
@@ -874,6 +907,8 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 		}),
 	);
 	const modelName = $derived($settingsStore.chatModel);
+	const chatProfiles = $derived($settingsStore.chatProfiles ?? []);
+	const activeChatProfileId = $derived($settingsStore.activeChatProfileId);
 	const embedKind = $derived($settingsStore.embedProvider);
 	const permLevel = $derived(($settingsStore.toolPermissionLevel ?? 'safe') as ToolPermissionLevel);
 
@@ -1129,7 +1164,7 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 				handleCompact();
 				break;
 			case '/model':
-				new ModelInfoModal(plugin.app, plugin).open();
+				openProfileMenu();
 				break;
 			case '/reindex':
 				plugin.indexController.reindex().catch((err) => devLogger.error('index', '/reindex 失败', err));
@@ -1437,6 +1472,7 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 		const ac = new AbortController();
 		abortController = ac;
 		isRunning = true;
+		runStep = 0;
 		goalRoundSteps = 0;
 		// 关键路径:不在此 patch model=checking — 否则 StatusStrip「思考中」
 		// 与 MessageList 打字指示双重叠;model 状态只由 FeedbackController 维护。
@@ -1482,6 +1518,9 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 
 			for await (const event of events) {
 				switch (event.type) {
+					case 'message.start':
+						if (event.payload.role === 'assistant') runStep += 1;
+						break;
 					case 'compact.applied': {
 						if (event.payload.sessionId !== sessionId) break;
 						const inFlight =
@@ -1556,13 +1595,13 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 						scrollToBottom();
 						break;
 					case 'message.end':
-						// 第 3 层:API 真值校准 — 多步工具调用用各步合计,不用最后一步
+						// 窗口占用看最后一步的输入+输出。各步合计是本轮消耗，会把同一段历史加很多次。
 						const apiUsed = resolveApiUsedTokens(event.payload);
 						if (apiUsed != null) {
 							lastTurnApiTokens = apiUsed;
 							am.tokenUsage = {
-								promptTokens: event.payload.stepPromptTokens ?? event.payload.promptTokens ?? 0,
-								completionTokens: event.payload.stepCompletionTokens ?? event.payload.completionTokens ?? 0,
+								promptTokens: event.payload.promptTokens ?? event.payload.stepPromptTokens ?? 0,
+								completionTokens: event.payload.completionTokens ?? event.payload.stepCompletionTokens ?? 0,
 							};
 							plugin.userStatus.patchContextUsage({
 								usedTokens: apiUsed,
@@ -1866,7 +1905,10 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 					onclick={(e) => {
 						e.stopPropagation();
 						sessionMenuOpen = !sessionMenuOpen;
-						if (sessionMenuOpen) void refreshSessionIndex();
+						if (sessionMenuOpen) {
+							profileMenuOpen = false;
+							void refreshSessionIndex();
+						}
 					}}
 				>
 					<span class="ratel-session-chip-label">
@@ -1890,11 +1932,27 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 				</button>
 			</div>
 			<button
+				bind:this={modelBtnEl}
 				type="button"
 				class="ratel-header-model"
-				onclick={openModelInfo}
+				aria-expanded={profileMenuOpen}
 				aria-label={$t('chat.header.modelChip', { model: modelName })}
+				onclick={(e) => {
+					e.stopPropagation();
+					toggleProfileMenu();
+				}}
 			>{modelName}</button>
+			{#if profileMenuOpen}
+				<div class="ratel-chat-profile-menu-float">
+					<ChatProfileMenu
+						profiles={chatProfiles}
+						activeId={activeChatProfileId}
+						open={true}
+						onSelect={(id) => void handleChatProfileSelect(id)}
+						onManageInSettings={handleManageProfilesInSettings}
+					/>
+				</div>
+			{/if}
 			{#if sessionMenuOpen}
 				<div class="ratel-session-menu-float" bind:this={sessionMenuFloatEl}>
 					<SessionMenu
@@ -1940,6 +1998,7 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 				{isRunning}
 				{retryWait}
 				{retryRemainingMs}
+				runStep={runStep}
 				bind:containerRef={messagesEl}
 				onScroll={handleScroll}
 				onOpenPath={handleOpenPath}
@@ -2347,12 +2406,14 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 		transition: border-color 0.15s, color 0.15s;
 	}
 
-	.ratel-header-model:hover {
+	.ratel-header-model:hover,
+	.ratel-header-model[aria-expanded='true'] {
 		color: var(--ratel-cite, var(--interactive-accent));
 		border-color: var(--ratel-copper-glow);
 	}
 
-	.ratel-session-menu-float {
+	.ratel-session-menu-float,
+	.ratel-chat-profile-menu-float {
 		position: absolute;
 		top: calc(100% + 8px);
 		right: 0;

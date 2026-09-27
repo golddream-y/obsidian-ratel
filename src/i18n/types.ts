@@ -255,6 +255,8 @@ export interface ChatStrings {
   'chat.header.title': string;
   'chat.header.tagline': string;
   'chat.header.modelChip': string;
+  'chat.profileMenu.ariaLabel': string;
+  'chat.profileMenu.manageInSettings': string;
   'chat.empty.welcome': string;
   'chat.empty.hint': string;
   'chat.empty.hint.1': string;

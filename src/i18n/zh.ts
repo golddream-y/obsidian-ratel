@@ -258,6 +258,8 @@ const chatZh: ChatStrings = {
   'chat.header.title': 'Ratel',
   'chat.header.tagline': 'graph-native',
   'chat.header.modelChip': '模型信息:{model}',
+  'chat.profileMenu.ariaLabel': '已保存的对话配置',
+  'chat.profileMenu.manageInSettings': '在设置中管理',
   'chat.empty.welcome': '想从库里查找什么？',
   'chat.empty.hint': '直接提问，或输入 / 看命令',
   'chat.empty.hint.1': '直接提问，或输入 / 看命令',

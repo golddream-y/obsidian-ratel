@@ -253,6 +253,8 @@ export const en: Strings = {
   'chat.header.title': 'Ratel',
   'chat.header.tagline': 'graph-native',
   'chat.header.modelChip': 'Model info: {model}',
+  'chat.profileMenu.ariaLabel': 'Saved chat profiles',
+  'chat.profileMenu.manageInSettings': 'Manage in settings',
   'chat.empty.welcome': 'What would you like to look up in your vault?',
   'chat.empty.hint': 'Ask a question, or type / for commands',
   'chat.empty.hint.1': 'Ask a question, or type / for commands',
