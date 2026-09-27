@@ -298,8 +298,8 @@ export async function* agentLoop(
 			// 无 toolCall → 纯文本收笔;短正文且思考更长时同一轮再请求一次(见 turn-carry)。
 			if (toolCalls.length === 0) {
 				ctx.addAssistantMessage(accumulatedText, accumulatedReasoning || undefined);
-				const finishOk =
-					finishReason !== 'length' && finishReason !== 'content_filter';
+				// 关键路径:仅正常停笔(null/stop)才续写;tool_calls 等其它 finishReason 不推。
+				const finishOk = finishReason === null || finishReason === 'stop';
 				if (
 					finishOk &&
 					shouldCarryShortOutline({
