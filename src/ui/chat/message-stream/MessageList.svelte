@@ -21,12 +21,17 @@
 	import type { LlmRetryWait } from '../../../ports/llm';
 	import ThinkingOrb from '../../orbs/ThinkingOrb.svelte';
 	import { mapOrbState, type RatelOrbBusyKind } from '../../orbs/map-orb-state';
-	import type { OrbState } from '../../orbs/types';
 	import EmptyStage from '../../motion/empty/EmptyStage.svelte';
 	import { isChatMotionEnabled } from '../../motion/prefs';
 	import { settings$ as settingsStore } from '../../settings-store';
 	import { computeFadePlay, reseedEnteredIds } from '../../motion/enter/fade-play-policy';
 	import { formatDayDividerLabel, shouldShowDayDivider } from '../../../utils/chat-time';
+	import {
+		COMPOSING_FLAVOR_KEYS,
+		composeRunStatusLine,
+		RUN_STATUS_ROTATE_MS,
+		WAIT_LINE_KEYS,
+	} from '../run-status-line';
 
 	/**
 	 * MessageList props。
@@ -52,6 +57,7 @@
 		jumpRequest = null,
 		retryWait = null,
 		retryRemainingMs = 0,
+		runStep = 1,
 		skillNames = [],
 		installedSkillNames = [],
 	}: {
@@ -66,21 +72,11 @@
 		jumpRequest?: VirtualJumpRequest | null;
 		retryWait?: LlmRetryWait | null;
 		retryRemainingMs?: number;
+		/** 本轮模型步数，从 1 计；第 2 步起显示在状态行末尾 */
+		runStep?: number;
 		skillNames?: readonly string[];
 		installedSkillNames?: readonly string[];
 	} = $props();
-
-	const ORB_LABEL: Record<OrbState, StringKey> = {
-		working: 'orb.state.working',
-		searching: 'orb.state.searching',
-		solving: 'orb.state.solving',
-		listening: 'orb.state.listening',
-		connecting: 'orb.state.connecting',
-		weaving: 'orb.state.weaving',
-		composing: 'orb.state.composing',
-		breathing: 'orb.state.breathing',
-		shaping: 'orb.state.shaping',
-	};
 
 	/**
 	 * 整段 Agent 回合都显示底部 orb(不再只在空窗期)。
@@ -112,12 +108,44 @@
 
 	const busyOrbState = $derived(mapOrbState(busyKind));
 
-	const busyText = $derived.by((): { key: StringKey; params?: Record<string, string | number> } => {
-		if (showBusyOrb && retryWait != null) {
-			const { key, params } = retryWaitLabel(retryWait, retryRemainingMs);
-			return { key, params };
+	let rotateTick = $state(0);
+	$effect(() => {
+		if (!showBusyOrb || retryWait != null) return;
+		const timer = setInterval(() => {
+			rotateTick += 1;
+		}, RUN_STATUS_ROTATE_MS);
+		return () => clearInterval(timer);
+	});
+
+	const busyLabel = $derived.by(() => {
+		const last = showBusyOrb ? messages[messages.length - 1] : undefined;
+		const segments = last?.role === 'assistant' ? last.segments : [];
+		let toolText: string | null = null;
+		for (let i = segments.length - 1; i >= 0; i--) {
+			const seg = segments[i]!;
+			if (seg.type === 'tool' && seg.toolCall.status === 'calling') {
+				toolText = seg.toolCall.displayName;
+				break;
+			}
 		}
-		return { key: ORB_LABEL[busyOrbState] };
+		const streaming = segments.some(
+			(seg) => (seg.type === 'text' || seg.type === 'think') && seg.text.trim().length > 0,
+		);
+		const retry = showBusyOrb && retryWait != null
+			? retryWaitLabel(retryWait, retryRemainingMs)
+			: null;
+		return composeRunStatusLine({
+			retryText: retry ? $t(retry.key, retry.params) : null,
+			toolText,
+			streaming,
+			step: runStep,
+			tick: rotateTick,
+		}, {
+			composing: $t('orb.run.composing'),
+			wait: WAIT_LINE_KEYS.map((key) => $t(key)),
+			flavor: COMPOSING_FLAVOR_KEYS.map((key) => $t(key)),
+			step: (step) => $t('orb.run.step', { step }),
+		});
 	});
 	const motionOn = $derived(isChatMotionEnabled($settingsStore));
 
@@ -365,8 +393,12 @@
 	<div class="ratel-virtual-spacer" style:height={`${range.paddingBottom}px`}></div>
 	{#if showBusyOrb}
 		<div class="ratel-typing">
-			<ThinkingOrb orbState={busyOrbState} size={24} />
-			<span class="ratel-typing-text">{$t(busyText.key, busyText.params)}</span>
+			<span class="ratel-typing-orb" aria-hidden="true">
+				<ThinkingOrb orbState={busyOrbState} size={24} />
+			</span>
+			{#key busyLabel}
+				<span class="ratel-typing-text" class:is-fade={motionOn} title={busyLabel}>{busyLabel}</span>
+			{/key}
 		</div>
 	{/if}
 </div>
@@ -427,11 +459,40 @@
 		display: flex;
 		align-items: center;
 		gap: 8px;
+		width: 100%;
+		min-height: 32px;
+		box-sizing: border-box;
 		font-family: var(--font-monospace);
 	}
 
+	.ratel-typing-orb {
+		flex: 0 0 auto;
+		display: flex;
+	}
+
 	.ratel-typing-text {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+		line-height: 16px;
 		opacity: 0.85;
+	}
+
+	.ratel-typing-text.is-fade {
+		animation: ratel-typing-in 0.45s ease;
+	}
+
+	@keyframes ratel-typing-in {
+		from {
+			opacity: 0;
+			transform: translateY(3px);
+		}
+		to {
+			opacity: 0.85;
+			transform: none;
+		}
 	}
 
 	.ratel-compact-divider {
