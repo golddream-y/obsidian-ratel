@@ -15,7 +15,7 @@ import {
 	switchChatProfile,
 	syncChatWindow,
 } from '../../settings/chat-profiles';
-import { applySettingValue, resolveRegistryUrl } from '../../settings/settings-apply';
+import { applySettingValue } from '../../settings/settings-apply';
 import {
 	chatProfileSecretId,
 	deleteChatProfileSecret,
@@ -152,9 +152,9 @@ function renderProfileRow(
 			btn.onClick(async () => {
 				switchChatProfile(plugin.settings, profile.id);
 				// S-CHAT-SETUP:切换后按该套模型重查窗口;查不到清空旧上限,不静默沿用
+				const catalog = plugin.modelsDevCatalog ? await plugin.modelsDevCatalog.ensureCatalog() : null;
 				const result = await syncChatWindow(plugin.settings, {
-					registry: plugin.modelContextRegistry,
-					registryUrl: resolveRegistryUrl(plugin.settings),
+					catalog,
 					clearOnMiss: true,
 				});
 				if (!result.applied && !result.skipped) {
@@ -326,9 +326,9 @@ function renderProfileWindow(
 	// 查表是异步的:先渲染 loading,结果回来后原位补 desc 与控件
 	setting.setDesc(tNow('settings.chatProfiles.window.loading'));
 	void (async () => {
+		const catalog = plugin.modelsDevCatalog ? await plugin.modelsDevCatalog.ensureCatalog() : null;
 		const result = await syncChatWindow(plugin.settings, {
-			registry: plugin.modelContextRegistry,
-			registryUrl: resolveRegistryUrl(plugin.settings),
+			catalog,
 			// 仅展示:查不到保留旧值(不落盘),避免打开设置就清空
 			clearOnMiss: false,
 		});

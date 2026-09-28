@@ -14,8 +14,8 @@ import {
 	type ContextLengthPresetId,
 } from '../ui/tokens/context-length-presets';
 import { DEFAULT_MODEL_REGISTRY_URL } from '../ui/tokens/model-context-registry';
-import { inferChatProvider, lookupModelContext, syncChatWindow } from './chat-profiles';
-import type { ModelsDevCatalog } from './model-catalog';
+import { inferChatProvider, syncChatWindow } from './chat-profiles';
+import { lookupCatalogLimits, type ModelsDevCatalog } from './model-catalog';
 import { applyLangPreference, type LangPreference } from '../i18n';
 import { devLogger } from '../logging/dev-logger';
 import type { ChatProfile, ModelContextLookup } from './chat-profiles';
@@ -98,6 +98,12 @@ function findActiveProfile(settings: RatelVaultSettings) {
 	return settings.chatProfiles.find((p) => p.id === settings.activeChatProfileId);
 }
 
+/** 读取 models.dev 缓存。宿主没挂缓存时视为名单不可用。 */
+async function loadChatCatalog(plugin: SettingApplier): Promise<ModelsDevCatalog | null> {
+	if (!plugin.modelsDevCatalog) return null;
+	return plugin.modelsDevCatalog.ensureCatalog();
+}
+
 /**
  * 写入一个设置 key 并分发副作用(不落盘、不刷新 UI — 由调用方收尾)。
  *
@@ -119,17 +125,43 @@ export async function applySettingValue(plugin: SettingApplier, key: string, val
 		// sectionId 是运行时 string,需 cast 为 Record<string,...> 才能用任意 string 索引。
 		(plugin.settings.promptOverrides as Record<string, string | undefined>)[sectionId] = value as string;
 		plugin.syncToolDefinitions();
+	} else if (key === 'chatProvider') {
+		// S-MODEL-CATALOG:名单供应商写入 providerId；有 api 才写地址，空 api 清空且不编造
+		const id = String(value);
+		const catalog = await loadChatCatalog(plugin);
+		const active = findActiveProfile(plugin.settings);
+		if (active) {
+			active.providerId = id;
+			active.windowUserSet = false;
+		}
+		if (id === 'ollama') {
+			applyChatPreset(plugin.settings, 'ollama');
+		} else if (id === 'custom') {
+			plugin.settings.chatPreset = 'custom';
+			plugin.settings.chatApiBase = '';
+		} else {
+			const api = catalog?.[id]?.api;
+			const trimmed = typeof api === 'string' ? api.trim() : '';
+			plugin.settings.chatApiBase = trimmed;
+			plugin.settings.chatPreset = id === 'deepseek' ? 'deepseek' : 'custom';
+		}
+		if (active) {
+			active.apiBase = plugin.settings.chatApiBase;
+			active.model = plugin.settings.chatModel;
+			active.contextLengthPreset = plugin.settings.contextLengthPreset;
+			active.chatModelMaxTokens = plugin.settings.chatModelMaxTokens;
+		}
+		plugin.rebuildLLM();
+		await syncChatWindow(plugin.settings, { catalog, clearOnMiss: true });
 	} else if (key === 'chatPreset') {
-		// S-CHAT-SETUP:提供商变更走现有预设写入(DeepSeek/Ollama 覆盖 Base+模型),
-		// 写入后镜像四字段回活跃套、清 windowUserSet,再按映射表查窗口
+		// S-CHAT-SETUP:提供商变更走现有预设写入(DeepSeek/Ollama 覆盖 Base+模型)
 		applyChatPreset(plugin.settings, value as ChatPresetId);
 		if (value === 'custom' && inferChatProvider(plugin.settings.chatApiBase) !== 'custom') {
-			// 关键路径:切「自定义」= 清空地址由用户填写(提供商由地址推断,不清则跳回官方);
-			// 已是自定义地址则保留,避免重复写入丢掉用户地址。模型名保留。
 			plugin.settings.chatApiBase = '';
 		}
 		const active = findActiveProfile(plugin.settings);
 		if (active) {
+			active.providerId = String(value);
 			active.apiBase = plugin.settings.chatApiBase;
 			active.model = plugin.settings.chatModel;
 			active.contextLengthPreset = plugin.settings.contextLengthPreset;
@@ -137,13 +169,8 @@ export async function applySettingValue(plugin: SettingApplier, key: string, val
 			active.windowUserSet = false;
 		}
 		plugin.rebuildLLM();
-		if (plugin.modelContextRegistry) {
-			await syncChatWindow(plugin.settings, {
-				registry: plugin.modelContextRegistry,
-				registryUrl: resolveRegistryUrl(plugin.settings),
-				clearOnMiss: true,
-			});
-		}
+		const catalog = await loadChatCatalog(plugin);
+		await syncChatWindow(plugin.settings, { catalog, clearOnMiss: true });
 	} else if (key === 'contextLengthPreset') {
 		// 修复:下拉只写 preset 时 chatModelMaxTokens 仍是旧值,抽屉上限不跟着变
 		applyContextLengthPreset(plugin.settings, value as ContextLengthPresetId);
@@ -154,17 +181,14 @@ export async function applySettingValue(plugin: SettingApplier, key: string, val
 		if (!Number.isFinite(n) || n <= 0) return;
 		let tokens = n;
 		let userSet = true;
-		if (plugin.modelContextRegistry) {
-			// 共享查表辅助(与 syncChatWindow 同口径):大于查到的窗口时钳到表值
-			const found = await lookupModelContext(
-				plugin.modelContextRegistry,
-				resolveRegistryUrl(plugin.settings),
-				plugin.settings.chatModel,
-			);
-			if (found != null && n > found) {
-				tokens = found;
-				userSet = false;
-			}
+		const catalog = await loadChatCatalog(plugin);
+		const activeForClamp = findActiveProfile(plugin.settings);
+		const found = catalog
+			? lookupCatalogLimits(catalog, activeForClamp?.providerId || 'custom', plugin.settings.chatModel)
+			: undefined;
+		if (found && n > found.context) {
+			tokens = found.context;
+			userSet = false;
 		}
 		const applied = applyContextRecommendation(tokens);
 		plugin.settings.contextLengthPreset = applied.preset;
@@ -197,17 +221,13 @@ export async function applySettingValue(plugin: SettingApplier, key: string, val
 		// S-CHAT-SETUP:提供商不另存字段,由地址推断 — 官方 DeepSeek/Ollama 地址保持对应预设,其余视为自定义
 		plugin.settings.chatPreset = inferChatProvider(String(value));
 	}
-	if (key === 'chatModel' && plugin.modelContextRegistry) {
-		// S-CHAT-SETUP:改模型名清掉 windowUserSet 重查窗口;查不到清空旧上限,不静默沿用
+	if (key === 'chatModel') {
 		const active = findActiveProfile(plugin.settings);
 		if (active) {
 			active.windowUserSet = false;
 		}
-		await syncChatWindow(plugin.settings, {
-			registry: plugin.modelContextRegistry,
-			registryUrl: resolveRegistryUrl(plugin.settings),
-			clearOnMiss: true,
-		});
+		const catalog = await loadChatCatalog(plugin);
+		await syncChatWindow(plugin.settings, { catalog, clearOnMiss: true });
 	}
 	// 关键路径:embedLocalModel 当前是只读字段(内置模型),不会触发 setControlValue,
 	// 但保险起见排除,避免未来误触发 rebuild。

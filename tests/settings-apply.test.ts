@@ -7,14 +7,18 @@
 import { describe, it, expect, vi } from 'vitest';
 import { applySettingValue } from '../src/settings/settings-apply';
 import { DEFAULT_SETTINGS, type RatelVaultSettings } from '../src/settings';
-import type { ModelContextLookup } from '../src/settings/chat-profiles';
+import type { ModelsDevCatalog } from '../src/settings/model-catalog';
 
-// 关键路径:registry mock — 与 ModelContextLookup 结构兼容,不依赖真实网络
-const makeRegistry = (map: Record<string, number>): ModelContextLookup => ({
-	ensureRegistry: async () => map,
-	lookupContextLength: (model: string, m: unknown) =>
-		(m as Record<string, number | undefined>)[model],
-});
+function catalogFor(providerId: string, model: string, context: number, output = 1024): ModelsDevCatalog {
+	return {
+		[providerId]: {
+			id: providerId,
+			models: {
+				[model]: { id: model, limit: { context, output }, tool_call: true },
+			},
+		},
+	};
+}
 
 // 关键路径:mock 最小宿主 — settings + 三个副作用回调;
 // vi.fn<() => void>() 显式签名使其可赋给 SettingApplier 的回调类型
@@ -145,9 +149,8 @@ describe('applySettingValue - S-CHAT-SETUP 展开区语义', () => {
 		return p;
 	}
 
-	it('chatPreset 切 Ollama - 镜像四字段回活跃套、清 windowUserSet 并按映射表写窗口', async () => {
+	it('chatPreset 切 Ollama - 镜像四字段回活跃套、清 windowUserSet，本地模型不在名单里所以清空窗口', async () => {
 		const p = withProfiles(mockApplier());
-		p.modelContextRegistry = makeRegistry({ 'llama3.2': 128_000 });
 		p.settings.chatProfiles[0]!.windowUserSet = true;
 
 		await applySettingValue(p, 'chatPreset', 'ollama');
@@ -156,17 +159,14 @@ describe('applySettingValue - S-CHAT-SETUP 展开区语义', () => {
 		expect(p.settings.chatModel).toBe('llama3.2');
 		expect(p.settings.chatProfiles[0]!.apiBase).toBe('http://localhost:11434/v1');
 		expect(p.settings.chatProfiles[0]!.model).toBe('llama3.2');
+		expect(p.settings.chatProfiles[0]!.providerId).toBe('ollama');
 		expect(p.settings.chatProfiles[0]!.windowUserSet).toBe(false);
-		// 换提供商后窗口按映射表写入,不再沿用旧值
-		expect(p.settings.chatModelMaxTokens).toBe(128_000);
-		expect(p.settings.chatProfiles[0]!.chatModelMaxTokens).toBe(128_000);
+		expect(p.settings.chatModelMaxTokens).toBe(0);
 		expect(p.rebuildLLM).toHaveBeenCalledTimes(1);
 	});
 
-	it('chatPreset 切自定义 - 官方地址被清空、模型名保留并重查窗口', async () => {
+	it('chatPreset 切自定义 - 官方地址被清空、模型名保留，名单没有 custom 所以清空窗口', async () => {
 		const p = withProfiles(mockApplier());
-		p.modelContextRegistry = makeRegistry({ m1: 200_000 });
-		// 关键路径:切自定义前地址是官方 DeepSeek(会被清空),模型名保留
 		p.settings.chatApiBase = 'https://api.deepseek.com';
 		p.settings.chatProfiles[0]!.apiBase = 'https://api.deepseek.com';
 		p.settings.chatProfiles[0]!.windowUserSet = true;
@@ -177,8 +177,9 @@ describe('applySettingValue - S-CHAT-SETUP 展开区语义', () => {
 		expect(p.settings.chatApiBase).toBe('');
 		expect(p.settings.chatModel).toBe('m1');
 		expect(p.settings.chatProfiles[0]!.apiBase).toBe('');
+		expect(p.settings.chatProfiles[0]!.providerId).toBe('custom');
 		expect(p.settings.chatProfiles[0]!.windowUserSet).toBe(false);
-		expect(p.settings.chatModelMaxTokens).toBe(200_000);
+		expect(p.settings.chatModelMaxTokens).toBe(0);
 	});
 
 	it('chatPreset 切自定义 - 地址已是自定义 - 不清空用户地址', async () => {
@@ -190,10 +191,13 @@ describe('applySettingValue - S-CHAT-SETUP 展开区语义', () => {
 		expect(p.settings.chatApiBase).toBe('https://a');
 	});
 
-	it('chatModel 变更 - 清活跃套 windowUserSet 并按映射表写窗口', async () => {
+	it('chatModel 变更 - 清活跃套 windowUserSet 并按名单写窗口', async () => {
 		const p = withProfiles(mockApplier());
-		p.modelContextRegistry = makeRegistry({ 'new-model': 200_000 });
+		p.settings.chatProfiles[0]!.providerId = 'deepseek';
 		p.settings.chatProfiles[0]!.windowUserSet = true;
+		p.modelsDevCatalog = {
+			ensureCatalog: async () => catalogFor('deepseek', 'new-model', 200_000),
+		};
 
 		await applySettingValue(p, 'chatModel', 'new-model');
 
@@ -205,7 +209,8 @@ describe('applySettingValue - S-CHAT-SETUP 展开区语义', () => {
 
 	it('chatModel 变更未查到 - 清空旧上限不静默沿用', async () => {
 		const p = withProfiles(mockApplier());
-		p.modelContextRegistry = makeRegistry({});
+		p.settings.chatProfiles[0]!.providerId = 'deepseek';
+		p.modelsDevCatalog = { ensureCatalog: async () => catalogFor('deepseek', 'other', 200_000) };
 
 		await applySettingValue(p, 'chatModel', 'unknown-model');
 
@@ -217,7 +222,8 @@ describe('applySettingValue - S-CHAT-SETUP 展开区语义', () => {
 
 	it('chatModelMaxTokens 用户改小 - 写入并标记 windowUserSet', async () => {
 		const p = withProfiles(mockApplier());
-		p.modelContextRegistry = makeRegistry({ m1: 256_000 });
+		p.settings.chatProfiles[0]!.providerId = 'deepseek';
+		p.modelsDevCatalog = { ensureCatalog: async () => catalogFor('deepseek', 'm1', 256_000) };
 
 		await applySettingValue(p, 'chatModelMaxTokens', 100_000);
 
@@ -225,13 +231,13 @@ describe('applySettingValue - S-CHAT-SETUP 展开区语义', () => {
 		expect(p.settings.contextLengthPreset).toBe('custom');
 		expect(p.settings.chatProfiles[0]!.chatModelMaxTokens).toBe(100_000);
 		expect(p.settings.chatProfiles[0]!.windowUserSet).toBe(true);
-		// 非活跃套不受影响
 		expect(p.settings.chatProfiles[1]!.chatModelMaxTokens).toBe(128_000);
 	});
 
 	it('chatModelMaxTokens 大于查到的窗口 - 钳到查到的值且不标 windowUserSet', async () => {
 		const p = withProfiles(mockApplier());
-		p.modelContextRegistry = makeRegistry({ m1: 200_000 });
+		p.settings.chatProfiles[0]!.providerId = 'deepseek';
+		p.modelsDevCatalog = { ensureCatalog: async () => catalogFor('deepseek', 'm1', 200_000) };
 
 		await applySettingValue(p, 'chatModelMaxTokens', 500_000);
 
@@ -247,5 +253,43 @@ describe('applySettingValue - S-CHAT-SETUP 展开区语义', () => {
 
 		expect(p.settings.chatModelMaxTokens).toBe(256_000);
 		expect(p.settings.chatProfiles[0]!.chatModelMaxTokens).toBe(256_000);
+	});
+
+	it('chatProvider - 名单供应商 api 为空 - 清空地址且不编造', async () => {
+		const p = withProfiles(mockApplier());
+		p.settings.chatApiBase = 'https://api.deepseek.com';
+		p.settings.chatProfiles[0]!.providerId = 'deepseek';
+		p.settings.chatProfiles[0]!.apiBase = 'https://api.deepseek.com';
+		p.modelsDevCatalog = {
+			ensureCatalog: async () => ({
+				openai: { id: 'openai', name: 'OpenAI', api: '', models: {} },
+			}),
+		};
+		await applySettingValue(p, 'chatProvider', 'openai');
+		expect(p.settings.chatProfiles[0]!.providerId).toBe('openai');
+		expect(p.settings.chatApiBase).toBe('');
+	});
+
+	it('chatProvider - 有 api - 写入该地址并清 windowUserSet', async () => {
+		const p = withProfiles(mockApplier());
+		p.settings.chatProfiles[0]!.windowUserSet = true;
+		p.settings.chatProfiles[0]!.providerId = 'custom';
+		p.settings.chatModel = 'qwen-flash';
+		p.modelsDevCatalog = {
+			ensureCatalog: async () => ({
+				alibaba: {
+					id: 'alibaba',
+					name: 'Alibaba',
+					api: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+					models: {
+						'qwen-flash': { id: 'qwen-flash', limit: { context: 1_000_000, output: 32_768 }, tool_call: true },
+					},
+				},
+			}),
+		};
+		await applySettingValue(p, 'chatProvider', 'alibaba');
+		expect(p.settings.chatApiBase).toBe('https://dashscope-intl.aliyuncs.com/compatible-mode/v1');
+		expect(p.settings.chatProfiles[0]!.windowUserSet).toBe(false);
+		expect(p.settings.chatModelMaxTokens).toBe(1_000_000);
 	});
 });
