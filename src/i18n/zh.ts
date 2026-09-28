@@ -114,6 +114,8 @@ const settingsZh: SettingsStrings = {
   'settings.advanced.heading': '高级',
   'settings.advanced.registryUrl.name': '模型映射表 URL',
   'settings.advanced.registryUrl.desc': '留空使用内置默认;自定义 URL 需返回 JSON',
+  'settings.advanced.registryPage.name': '模型映射表',
+  'settings.advanced.registryPage.desc': '映射表地址与恢复默认',
   'settings.advanced.resetButton': '恢复默认',
   'settings.advanced.secretHint.title': 'Chat API 密钥',
   'settings.advanced.secretHint.configured': '状态: ✅ 已配置',
@@ -149,6 +151,8 @@ const settingsZh: SettingsStrings = {
   'settings.autoCompactEnabled.name': '自动压缩上下文',
   'settings.autoCompactEnabled.desc': '上下文接近上限时自动压缩,保留全部对话气泡',
   'settings.developer.heading': '开发者',
+  'settings.developer.page.name': '开发者',
+  'settings.developer.page.desc': '调试日志、崩溃记录、单轮最大步数、技能脚本超时',
   'settings.developer.debugLog.name': 'Debug 日志',
   'settings.developer.crashBreadcrumbs.name': '崩溃面包屑',
   'settings.developer.crashBreadcrumbs.desc': '把发送各阶段写到插件目录本地日志，不含对话正文。关闭后停止写入，下次启动仍读取历史。',
@@ -177,6 +181,8 @@ const settingsZh: SettingsStrings = {
   'settings.daily.format.name': '日记文件名格式',
   'settings.daily.format.desc': '支持 YYYY / MM / DD 占位符,默认 YYYY-MM-DD',
   'settings.toolPermissions.heading': '工具权限',
+  'settings.toolPermissions.page.name': '工具权限',
+  'settings.toolPermissions.page.desc': '每个工具允许 / 询问 / 拒绝',
   'settings.toolPermissions.mcpSection': 'MCP 工具权限',
   'settings.mcp.openManage': '打开 MCP 管理',
   'settings.mcp.openManage.desc': '从抽屉也可打开。先看已安装列表，再添加 HTTP/本地命令或粘贴 JSON。',
@@ -229,6 +235,8 @@ const settingsZh: SettingsStrings = {
   'settings.toolPermissions.ask': '询问',
   'settings.toolPermissions.deny': '拒绝',
   'settings.promptOverrides.heading': '提示词覆盖',
+  'settings.promptOverrides.page.name': '提示词覆盖',
+  'settings.promptOverrides.page.desc': '按段编辑、预览、恢复本段默认',
   'settings.promptOverrides.useCustom': '使用自定义',
   'settings.promptOverrides.resetButton': '恢复本段默认',
   'settings.promptOverrides.placeholderHint': '请勿删除占位符: {placeholders}',
@@ -1110,6 +1118,8 @@ const memoryZh: MemoryStrings = {
   // Settings 面板 — Memory group(6 个设置项 + viewMemory action)
   'memory.settings.heading': '记忆系统',
   'memory.settings.limitsHeading': '记忆容量上限',
+  'memory.settings.limitsPage.name': '记忆上限',
+  'memory.settings.limitsPage.desc': '磁盘、注入、动态段、上下文合计、相关主题条数',
   'memory.settings.enabled.name': '启用记忆功能',
   'memory.settings.enabled.desc': '关闭后 Agent 不读写记忆',
   'memory.settings.autoWrite.name': '自动记忆写入',
@@ -1339,6 +1349,8 @@ const ecosystemZh: EcosystemStrings = {
   'settings.ecosystem.heading': '社区插件生态',
   'settings.ecosystem.writeEnabled.name': '允许代装社区插件(写入当前库)',
   'settings.ecosystem.writeEnabled.desc': '关闭后仍可对话检索官方清单,安装改为打开官方社区插件页,不写他人插件目录。提交社区商店审核时应关闭。Ratel 不会声称获得官方授权。',
+  'settings.ecosystem.page.name': '对话里改其他插件',
+  'settings.ecosystem.page.desc': '一个开关:是否允许对话代装社区插件(写入当前库)',
 };
 
 export const zh: Strings = {
