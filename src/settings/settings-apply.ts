@@ -10,8 +10,12 @@ import type { ToolPermission } from '../core/tool-permissions';
 import { applyChatPreset, type ChatPresetId } from './chat-preset';
 import {
 	applyContextLengthPreset,
+	applyContextRecommendation,
 	type ContextLengthPresetId,
 } from '../ui/tokens/context-length-presets';
+import type { ModelContextLookup } from '../ui/tokens/apply-model-context';
+import { DEFAULT_MODEL_REGISTRY_URL } from '../ui/tokens/model-context-registry';
+import { inferChatProvider, syncChatWindow } from './chat-profiles';
 import { applyLangPreference, type LangPreference } from '../i18n';
 import { devLogger } from '../logging/dev-logger';
 import type { ChatProfile } from './chat-profiles';
@@ -70,8 +74,18 @@ export interface SettingApplier {
 	rebuildEmbeddingAdapter(): void;
 	syncToolDefinitions(): void;
 	syncCrashBreadcrumbs?(enabled: boolean): void;
-	/** 改模型后按映射表写上限;未命中时由宿主决定提示 */
-	applyModelContextWindow?(model: string): Promise<{ applied: boolean; tokens?: number }>;
+	/** 映射表注册中心 — 缺省时窗口查表逻辑整体跳过(测试 mock 常用) */
+	modelContextRegistry?: ModelContextLookup;
+}
+
+/** 映射表 URL — 空串回落 LiteLLM 默认地址 */
+function resolveRegistryUrl(settings: RatelVaultSettings): string {
+	return settings.modelRegistryUrl || DEFAULT_MODEL_REGISTRY_URL;
+}
+
+/** 取活跃套 profile(无 activeChatProfileId 或未命中时返回 undefined) */
+function findActiveProfile(settings: RatelVaultSettings) {
+	return settings.chatProfiles.find((p) => p.id === settings.activeChatProfileId);
 }
 
 /**
@@ -96,12 +110,62 @@ export async function applySettingValue(plugin: SettingApplier, key: string, val
 		(plugin.settings.promptOverrides as Record<string, string | undefined>)[sectionId] = value as string;
 		plugin.syncToolDefinitions();
 	} else if (key === 'chatPreset') {
-		// 关键路径:预设写入多字段,不能只赋 chatPreset 一个 key
+		// S-CHAT-SETUP:提供商变更走现有预设写入(DeepSeek/Ollama 覆盖 Base+模型),
+		// 写入后镜像四字段回活跃套、清 windowUserSet,再按映射表查窗口
 		applyChatPreset(plugin.settings, value as ChatPresetId);
+		if (value === 'custom' && inferChatProvider(plugin.settings.chatApiBase) !== 'custom') {
+			// 关键路径:切「自定义」= 清空地址由用户填写(提供商由地址推断,不清则跳回官方);
+			// 已是自定义地址则保留,避免重复写入丢掉用户地址。模型名保留。
+			plugin.settings.chatApiBase = '';
+		}
+		const active = findActiveProfile(plugin.settings);
+		if (active) {
+			active.apiBase = plugin.settings.chatApiBase;
+			active.model = plugin.settings.chatModel;
+			active.contextLengthPreset = plugin.settings.contextLengthPreset;
+			active.chatModelMaxTokens = plugin.settings.chatModelMaxTokens;
+			active.windowUserSet = false;
+		}
 		plugin.rebuildLLM();
+		if (plugin.modelContextRegistry) {
+			await syncChatWindow(plugin.settings, {
+				registry: plugin.modelContextRegistry,
+				registryUrl: resolveRegistryUrl(plugin.settings),
+				clearOnMiss: true,
+			});
+		}
 	} else if (key === 'contextLengthPreset') {
 		// 修复:下拉只写 preset 时 chatModelMaxTokens 仍是旧值,抽屉上限不跟着变
 		applyContextLengthPreset(plugin.settings, value as ContextLengthPresetId);
+	} else if (key === 'chatModelMaxTokens') {
+		// S-CHAT-SETUP:窗口一行数字框。非法值(非正数/NaN)静默忽略;
+		// 大于查到的窗口时钳到查到的值(钳定值即表值,不标 windowUserSet)
+		const n = Number(value);
+		if (!Number.isFinite(n) || n <= 0) return;
+		let tokens = n;
+		let userSet = true;
+		if (plugin.modelContextRegistry) {
+			const map = await plugin.modelContextRegistry.ensureRegistry(
+				resolveRegistryUrl(plugin.settings),
+			);
+			const found =
+				map != null
+					? plugin.modelContextRegistry.lookupContextLength(plugin.settings.chatModel, map)
+					: undefined;
+			if (found != null && n > found) {
+				tokens = found;
+				userSet = false;
+			}
+		}
+		const applied = applyContextRecommendation(tokens);
+		plugin.settings.contextLengthPreset = applied.preset;
+		plugin.settings.chatModelMaxTokens = applied.chatModelMaxTokens;
+		const active = findActiveProfile(plugin.settings);
+		if (active) {
+			active.contextLengthPreset = applied.preset;
+			active.chatModelMaxTokens = applied.chatModelMaxTokens;
+			active.windowUserSet = userSet;
+		}
 	} else if (key === 'toolPermissionLevel') {
 		// 关键路径:仅接受三档枚举,防止写入非法字符串
 		if (value === 'safe' || value === 'auto' || value === 'danger') {
@@ -118,9 +182,23 @@ export async function applySettingValue(plugin: SettingApplier, key: string, val
 
 	// 副作用分发
 	if (key === 'chatModel' || key === 'chatApiBase') {
-		// 关键路径:手改模型或 Base → 场景预设自动切到 custom
-		plugin.settings.chatPreset = 'custom';
 		plugin.rebuildLLM();
+	}
+	if (key === 'chatApiBase') {
+		// S-CHAT-SETUP:提供商不另存字段,由地址推断 — 官方 DeepSeek/Ollama 地址保持对应预设,其余视为自定义
+		plugin.settings.chatPreset = inferChatProvider(String(value));
+	}
+	if (key === 'chatModel' && plugin.modelContextRegistry) {
+		// S-CHAT-SETUP:改模型名清掉 windowUserSet 重查窗口;查不到清空旧上限,不静默沿用
+		const active = findActiveProfile(plugin.settings);
+		if (active) {
+			active.windowUserSet = false;
+		}
+		await syncChatWindow(plugin.settings, {
+			registry: plugin.modelContextRegistry,
+			registryUrl: resolveRegistryUrl(plugin.settings),
+			clearOnMiss: true,
+		});
 	}
 	// 关键路径:embedLocalModel 当前是只读字段(内置模型),不会触发 setControlValue,
 	// 但保险起见排除,避免未来误触发 rebuild。
@@ -136,10 +214,6 @@ export async function applySettingValue(plugin: SettingApplier, key: string, val
 	// 关键路径:language 切换后立即应用,触发 langStore 更新,Svelte 组件自动重渲染
 	if (key === 'language') {
 		applyLangPreference(value as LangPreference);
-	}
-	// 关键路径:改模型后上限跟着变;查不到保留旧值,Notice 由调用方发
-	if (key === 'chatModel' && plugin.applyModelContextWindow) {
-		await plugin.applyModelContextWindow(String(value));
 	}
 	// 关键路径:四字段与活跃套双向一致,否则 switchChatProfile 会用 profile 旧值覆盖用户刚改的 settings
 	if (

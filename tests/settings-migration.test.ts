@@ -130,6 +130,17 @@ describe('Settings 迁移', () => {
         expect(merged.chatModelMaxTokens).toBe(256_000);
     });
 
+    it('custom + 0(查表未命中待填)- 重启后保持 custom/0 不静默回填 256k', () => {
+        // S-CHAT-SETUP:改模型名后映射表未命中会写 custom/0(等用户在展开区填数字)。
+        // 若迁移回填 256k,重启后数字框会静默出现一个既非查表也非用户填的数。
+        const merged = simulateLoadSettings({
+            contextLengthPreset: 'custom',
+            chatModelMaxTokens: 0,
+        });
+        expect(merged.contextLengthPreset).toBe('custom');
+        expect(merged.chatModelMaxTokens).toBe(0);
+    });
+
     it('64000 → custom', () => {
         const merged = simulateLoadSettings({ chatModelMaxTokens: 64_000 });
         expect(merged.contextLengthPreset).toBe('custom');

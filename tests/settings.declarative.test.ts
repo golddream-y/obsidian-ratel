@@ -47,12 +47,16 @@ describe('RatelVaultSettingTab 嵌套 key 读取与声明式定义', () => {
 		expect(tab.getControlValue('chatModel')).toBe('claude-3-5-sonnet');
 	});
 
-	it('getSettingDefinitions - 含四 Tab 与 chatPreset key - 非空', () => {
+	it('getSettingDefinitions - 对话组保留 chatProfiles render - 场景预设/模型名/地址/窗口不再单独成控件', () => {
 		const defs = tab.getSettingDefinitions();
 		expect(defs.length).toBeGreaterThan(0);
 		const json = JSON.stringify(defs);
-		expect(json).toContain('chatPreset');
-		expect(json).toContain('chatModel');
+		// S-CHAT-SETUP:上述字段由「已保存的配置」展开区(render 回调)承接,不再有独立 control key
+		expect(json).not.toContain('"chatPreset"');
+		expect(json).not.toContain('"chatModel"');
+		expect(json).not.toContain('"chatApiBase"');
+		expect(json).not.toContain('"contextLengthPreset"');
+		expect(json).not.toContain('"chatModelMaxTokens"');
 		expect(json).toContain('toolPermissions.');
 	});
 

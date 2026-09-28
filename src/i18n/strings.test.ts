@@ -43,11 +43,11 @@ describe('i18n 翻译表完整性', () => {
   it('StringKey 类型可枚举常见 key', () => {
     // 编译期断言:StringKey 接受 'common.ok',不接受未知 key
     const _k1: StringKey = 'common.ok';
-    const _k2: StringKey = 'settings.chatModel.heading';
+    const _k2: StringKey = 'settings.chatProfiles.heading';
     // 关键路径:P-MEMORY-UI 重构后用 'memory.settings.heading'(原 memory.tool.saveMemory 已删)
     const _k3: StringKey = 'memory.settings.heading';
     expect(_k1).toBe('common.ok');
-    expect(_k2).toBe('settings.chatModel.heading');
+    expect(_k2).toBe('settings.chatProfiles.heading');
     expect(_k3).toBe('memory.settings.heading');
   });
 });

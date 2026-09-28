@@ -55,14 +55,14 @@ describe('update_app_config', () => {
 		expect(result.results).toEqual([{ key: 'chunkSize', ok: true }]);
 	});
 
-	it('chatModel 写入 - 触发 rebuildLLM 且场景预设切到 custom', async () => {
+	it('chatModel 写入 - 触发 rebuildLLM 且提供商按地址推断保持 deepseek', async () => {
 		const host = makeHost();
 		const tool = createUpdateAppConfigTool(host, makeToolDef('update_app_config'));
 		await tool.execute({ updates: { chatModel: 'deepseek-reasoner' } });
 
 		expect(host.settings.chatModel).toBe('deepseek-reasoner');
-		// 关键路径:applySettingValue 副作用 — 手改模型后 chatPreset 自动切 custom
-		expect(host.settings.chatPreset).toBe('custom');
+		// 关键路径:S-CHAT-SETUP — 提供商由地址推断,官方 DeepSeek 地址上改模型名不切 custom
+		expect(host.settings.chatPreset).toBe('deepseek');
 		expect(host.rebuildLLM).toHaveBeenCalled();
 	});
 

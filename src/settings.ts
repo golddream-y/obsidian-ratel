@@ -7,7 +7,6 @@
 
 import {
 	App,
-	Notice,
 	PluginSettingTab,
 	Setting,
 	type SettingDefinitionItem,
@@ -19,21 +18,9 @@ import type RatelVaultPlugin from './main';
 // 关键路径:声明式 settings 每次渲染重新调用 tNow,无需 store 订阅
 import { tNow, type LangPreference, type StringKey } from './i18n';
 import type { ToolPermission, ToolPermissionLevel } from './core/tool-permissions';
-import {
-	hasChatApiKey,
-	requiresChatApiKey,
-	resolveChatApiKey,
-} from './secrets/ratel-secrets';
 import type { ContextLengthPresetId } from './ui/tokens/context-length-presets';
-import {
-	applyContextRecommendation,
-	CUSTOM_TOKEN_MAX,
-	CUSTOM_TOKEN_MIN,
-	inferPresetFromTokens,
-	presetToTokens,
-} from './ui/tokens/context-length-presets';
+import { inferPresetFromTokens, presetToTokens } from './ui/tokens/context-length-presets';
 import { DEFAULT_MODEL_REGISTRY_URL } from './ui/tokens/model-context-registry';
-import { probeChatConnection } from './ui/tokens/probe-model';
 import type { OverrideMap } from './prompts/types';
 import { listEditableSections } from './prompts';
 // 关键路径:声明式 settings 子页面与 render wrapper
@@ -401,23 +388,10 @@ export function normalizeContextLengthSettings(
 		settings.chatModelMaxTokens = inferred.chatModelMaxTokens;
 	} else if (settings.contextLengthPreset !== 'custom') {
 		settings.chatModelMaxTokens = presetToTokens(settings.contextLengthPreset);
-	} else if (settings.chatModelMaxTokens <= 0) {
-		const inferred = inferPresetFromTokens(0);
-		settings.contextLengthPreset = inferred.preset;
-		settings.chatModelMaxTokens = inferred.chatModelMaxTokens;
 	}
+	// 修复(S-CHAT-SETUP):custom + 0 是「查表未命中,等用户填」的合法状态,不再静默回填 256k;
+	// 运行时由 getEffectiveChatModelMaxTokens 回落默认档,设置页用数字框引导填写。
 	return settings;
-}
-
-// 关键路径:封装为函数,每次 getSettingDefinitions 调用时重新求值 tNow,语言切换后立即生效
-function contextLengthPresetOptions(): Record<ContextLengthPresetId, string> {
-	return {
-		'128k': '128k (128,000)',
-		'200k': '200k (200,000)',
-		'256k': '256k (256,000)',
-		'1M': '1M (1,048,576)',
-		custom: tNow('settings.contextLength.preset.custom'),
-	};
 }
 
 /**
@@ -642,27 +616,6 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			},
 			{
 				type: 'group',
-				heading: tNow('settings.chatPreset.heading'),
-				cls: chatCls,
-				visible: chatVisible,
-				items: [
-					{
-						name: tNow('settings.chatPreset.name'),
-						desc: tNow('settings.chatPreset.desc'),
-						control: {
-							type: 'dropdown',
-							key: 'chatPreset',
-							options: {
-								deepseek: tNow('settings.chatPreset.deepseek'),
-								ollama: tNow('settings.chatPreset.ollama'),
-								custom: tNow('settings.chatPreset.custom'),
-							},
-						},
-					},
-				],
-			},
-			{
-				type: 'group',
 				heading: tNow('settings.chatModel.heading'),
 				cls: chatCls,
 				visible: chatVisible,
@@ -670,20 +623,6 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 					{
 						name: tNow('settings.chatProfiles.heading'),
 						render: renderChatProfiles(this.app, this.plugin),
-					},
-					{
-						name: tNow('settings.chatModel.model.name'),
-						desc: tNow('settings.chatModel.model.desc'),
-						control: { type: 'text', key: 'chatModel', placeholder: 'deepseek-v4-flash' },
-					},
-					{
-						name: tNow('settings.chatModel.apiBase.name'),
-						desc: tNow('settings.chatModel.apiBase.desc'),
-						control: {
-							type: 'text',
-							key: 'chatApiBase',
-							placeholder: 'https://api.deepseek.com',
-						},
 					},
 					{
 						name: tNow('settings.advanced.secretHint.title'),
@@ -956,38 +895,6 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			},
 
 			// ==================== Tab:高级 ====================
-			{
-				type: 'group',
-				heading: tNow('settings.contextLength.heading'),
-				cls: advancedCls,
-				visible: advancedVisible,
-				items: [
-					{
-						name: tNow('settings.contextLength.dropdown.name'),
-						desc: tNow('settings.contextLength.dropdown.desc'),
-						control: {
-							type: 'dropdown',
-							key: 'contextLengthPreset',
-							options: contextLengthPresetOptions(),
-						},
-					},
-					{
-						name: tNow('settings.contextLength.probeButton'),
-						action: (el) => void this.handleProbeContext(el),
-					},
-					{
-						name: tNow('settings.contextLength.customTokens.name'),
-						desc: tNow('settings.contextLength.customTokens.desc'),
-						control: {
-							type: 'number',
-							key: 'chatModelMaxTokens',
-							min: CUSTOM_TOKEN_MIN,
-							max: CUSTOM_TOKEN_MAX,
-						},
-						visible: () => this.plugin.settings.contextLengthPreset === 'custom',
-					},
-				],
-			},
 			{
 				type: 'group',
 				heading: tNow('settings.advanced.heading'),
@@ -1298,55 +1205,6 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 		});
 
 		return items;
-	}
-
-	/**
-	 * 处理「获取推荐」按钮点击。
-	 *
-	 * 关键路径:发送 probe 请求,成功后 setControlValue 落值(saveSettings 统一触发面板重渲染)。
-	 *
-	 * @param btnEl - action 行元素,用于显示「获取中…」加载态
-	 */
-	private async handleProbeContext(btnEl: HTMLElement): Promise<void> {
-		if (
-			requiresChatApiKey(this.plugin.settings) &&
-			!hasChatApiKey(this.app, this.plugin.settings)
-		) {
-			new Notice(tNow('settings.notice.noChatKey'), 5000);
-			return;
-		}
-		const originalText = btnEl.textContent ?? tNow('settings.contextLength.probeButton');
-		btnEl.textContent = tNow('settings.contextLength.probeLoading');
-		btnEl.setAttribute('disabled', 'true');
-
-		const registryUrl = this.plugin.settings.modelRegistryUrl || DEFAULT_MODEL_REGISTRY_URL;
-		const result = await probeChatConnection({
-			apiBase: this.plugin.settings.chatApiBase,
-			apiKey: resolveChatApiKey(this.app, this.plugin.settings) ?? '',
-			model: this.plugin.settings.chatModel,
-			registry: this.plugin.modelContextRegistry,
-			registryUrl,
-		});
-
-		btnEl.textContent = originalText;
-		btnEl.removeAttribute('disabled');
-
-		if (!result.ok) {
-			new Notice(tNow('settings.notice.probeFailed', { message: result.error }), 5000);
-			return;
-		}
-
-		if (result.recommendedTokens != null) {
-			const applied = applyContextRecommendation(result.recommendedTokens);
-			await this.setControlValue('contextLengthPreset', applied.preset);
-			await this.setControlValue('chatModelMaxTokens', applied.chatModelMaxTokens);
-			new Notice(
-				tNow('settings.notice.probeSuccess', { value: `${result.recommendedTokens.toLocaleString()} tokens` }),
-				4000,
-			);
-		} else {
-			new Notice(tNow('settings.notice.probeNoRecommendation'), 5000);
-		}
 	}
 
 	/**
