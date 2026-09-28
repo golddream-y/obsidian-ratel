@@ -100,3 +100,17 @@ export function listCatalogProviders(catalog: ModelsDevCatalog): CatalogProvider
 	rows.sort((a, b) => a.name.localeCompare(b.name, 'en'));
 	return rows;
 }
+
+/** 下拉里的「手填」选项值，不会是合法模型 id */
+export const CATALOG_MODEL_HAND = '__hand';
+
+/**
+ * 当前模型在过滤列表里就选中它，否则选手填。
+ *
+ * @param modelIds - listCatalogModels 的结果
+ * @param current - 这一套已保存的模型 id
+ * @returns 下拉 value
+ */
+export function modelPickValue(modelIds: readonly string[], current: string): string {
+	return modelIds.includes(current) ? current : CATALOG_MODEL_HAND;
+}

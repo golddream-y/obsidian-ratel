@@ -105,6 +105,9 @@ export interface SettingsStrings {
   'settings.chatProfiles.window.userSet': string;
   'settings.chatProfiles.window.userSetHint': string;
   'settings.chatProfiles.window.shrink': string;
+  'settings.chatProfiles.window.output': string;
+  'settings.chatProfiles.catalogMissing': string;
+  'settings.chatProfiles.model.hand': string;
   'settings.advanced.heading': string;
   'settings.advanced.registryUrl.name': string;
   'settings.advanced.registryUrl.desc': string;

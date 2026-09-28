@@ -8,6 +8,7 @@ import {
 	listCatalogModels,
 	listCatalogProviders,
 	lookupCatalogLimits,
+	modelPickValue,
 	type ModelsDevCatalog,
 } from '../../src/settings/model-catalog';
 
@@ -94,5 +95,13 @@ describe('listCatalogProviders', () => {
 	it('listCatalogProviders - 按 name 排序 - DeepSeek 在 OpenAI 前', () => {
 		const ids = listCatalogProviders(catalog).map((row) => row.id);
 		expect(ids.indexOf('deepseek')).toBeLessThan(ids.indexOf('openai'));
+	});
+});
+
+describe('modelPickValue', () => {
+	it('modelPickValue - 不在过滤列表 - 返回手填标记', () => {
+		expect(modelPickValue(['deepseek-v4-flash'], 'deepseek-v4-flash')).toBe('deepseek-v4-flash');
+		expect(modelPickValue(['deepseek-v4-flash'], 'my-model')).toBe('__hand');
+		expect(modelPickValue([], 'llama3.2')).toBe('__hand');
 	});
 });
