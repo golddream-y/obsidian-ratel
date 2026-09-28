@@ -245,7 +245,6 @@ const settingsZh: SettingsStrings = {
   'settings.diagnostics.tab.llm': 'LLM',
   'settings.diagnostics.tab.rerank': 'Rerank',
   'settings.notice.contextLengthUnknown': '未查到 {model} 的上下文窗口，已清空旧上限，请在「对话模型」页填写',
-  'settings.notice.invalidTokens': '✗ token 数无效,范围 1024-200000',
 };
 
 const chatZh: ChatStrings = {

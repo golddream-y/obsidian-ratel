@@ -21,6 +21,25 @@ export const DEEPSEEK_CHAT_MODEL = 'deepseek-v4-flash';
 /** 本地 Ollama OpenAI 兼容 Base(与钥匙串 localhost 判定一致) */
 export const OLLAMA_CHAT_API_BASE = 'http://localhost:11434/v1';
 
+/** 本地 Ollama 根地址(不带 /v1 的旧写法)— 与 OLLAMA_CHAT_API_BASE 同为 Ollama 判定地址 */
+export const OLLAMA_LOCAL_ROOT = 'http://localhost:11434';
+
+/**
+ * 归一化 API Base:剥掉尾部斜杠,使任意输入可与常量地址清单直接比对。
+ *
+ * @param apiBase - 原始地址(前后空白由调用方按各自口径处理)
+ * @returns 去尾斜杠后的地址
+ */
+export function normalizeChatApiBase(apiBase: string): string {
+	return apiBase.replace(/\/$/, '');
+}
+
+/** 本地 Ollama 判定地址清单(带 /v1 与不带两种写法,已归一化)— normalizeChatPreset 与 inferChatProvider 共用单一真相 */
+export const OLLAMA_LOCAL_BASES: readonly string[] = [
+	normalizeChatApiBase(OLLAMA_CHAT_API_BASE),
+	normalizeChatApiBase(OLLAMA_LOCAL_ROOT),
+];
+
 /** Ollama 预设占位模型名(用户可改) */
 export const OLLAMA_CHAT_MODEL = 'llama3.2';
 
@@ -72,18 +91,15 @@ export function normalizeChatPreset(
 	if (raw?.chatPreset != null) {
 		return;
 	}
-	const base = settings.chatApiBase.replace(/\/$/, '');
-	const deepseekBase = DEEPSEEK_CHAT_API_BASE.replace(/\/$/, '');
-	const ollamaBase = OLLAMA_CHAT_API_BASE.replace(/\/$/, '');
-	const ollamaBaseAlt = 'http://localhost:11434';
+	// 关键路径:与 inferChatProvider(实时推断)口径不同 — 迁移必须保守,
+	// 地址之外还要求默认模型名匹配,避免把用户已改模型的老库误标成 ollama/deepseek 预设。
+	const base = normalizeChatApiBase(settings.chatApiBase);
+	const deepseekBase = normalizeChatApiBase(DEEPSEEK_CHAT_API_BASE);
 	if (base === deepseekBase && settings.chatModel === DEEPSEEK_CHAT_MODEL) {
 		settings.chatPreset = 'deepseek';
 		return;
 	}
-	if (
-		(base === ollamaBase || base === ollamaBaseAlt) &&
-		settings.chatModel === OLLAMA_CHAT_MODEL
-	) {
+	if (OLLAMA_LOCAL_BASES.includes(base) && settings.chatModel === OLLAMA_CHAT_MODEL) {
 		settings.chatPreset = 'ollama';
 		return;
 	}

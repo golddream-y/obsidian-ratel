@@ -15,7 +15,7 @@ import {
 	switchChatProfile,
 	syncChatWindow,
 } from '../../settings/chat-profiles';
-import { applySettingValue } from '../../settings/settings-apply';
+import { applySettingValue, resolveRegistryUrl } from '../../settings/settings-apply';
 import {
 	chatProfileSecretId,
 	deleteChatProfileSecret,
@@ -24,7 +24,6 @@ import {
 	setChatProfileSecret,
 } from '../../secrets/ratel-secrets';
 import { tNow } from '../../i18n';
-import { DEFAULT_MODEL_REGISTRY_URL } from '../../ui/tokens/model-context-registry';
 import { CUSTOM_TOKEN_MAX, CUSTOM_TOKEN_MIN } from '../../ui/tokens/context-length-presets';
 
 /**
@@ -155,7 +154,7 @@ function renderProfileRow(
 				// S-CHAT-SETUP:切换后按该套模型重查窗口;查不到清空旧上限,不静默沿用
 				const result = await syncChatWindow(plugin.settings, {
 					registry: plugin.modelContextRegistry,
-					registryUrl: plugin.settings.modelRegistryUrl || DEFAULT_MODEL_REGISTRY_URL,
+					registryUrl: resolveRegistryUrl(plugin.settings),
 					clearOnMiss: true,
 				});
 				if (!result.applied && !result.skipped) {
@@ -329,7 +328,7 @@ function renderProfileWindow(
 	void (async () => {
 		const result = await syncChatWindow(plugin.settings, {
 			registry: plugin.modelContextRegistry,
-			registryUrl: plugin.settings.modelRegistryUrl || DEFAULT_MODEL_REGISTRY_URL,
+			registryUrl: resolveRegistryUrl(plugin.settings),
 			// 仅展示:查不到保留旧值(不落盘),避免打开设置就清空
 			clearOnMiss: false,
 		});

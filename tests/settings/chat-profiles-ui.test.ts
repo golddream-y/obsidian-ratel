@@ -12,8 +12,8 @@ import {
 	inferChatProvider,
 	syncChatWindow,
 	type ChatProfile,
+	type ModelContextLookup,
 } from '../../src/settings/chat-profiles';
-import type { ModelContextLookup } from '../../src/ui/tokens/apply-model-context';
 import {
 	chatProfileSecretId,
 	resolveChatApiKey,
@@ -52,7 +52,7 @@ describe('switchChatProfile', () => {
 	it('切换后上限按映射表更新 - 命中则写入该套', async () => {
 		const s = base();
 		switchChatProfile(s as never, 'p1');
-		// 由 render 层调 applyModelContextWindow;此处断言切换本身不改上限字段以外的部分
+		// 查表由调用方 syncChatWindow 负责;此处断言切换本身不改上限字段以外的部分
 		expect(s.chatModelMaxTokens).toBe(128_000);
 	});
 });

@@ -241,7 +241,6 @@ export const en: Strings = {
   'settings.diagnostics.tab.llm': 'LLM',
   'settings.diagnostics.tab.rerank': 'Rerank',
   'settings.notice.contextLengthUnknown': 'No context window found for {model}; the previous limit was cleared — set one on the Chat Models page',
-  'settings.notice.invalidTokens': '✗ Invalid token count; range 1024-200000',
 
   // ==================== ChatStrings ====================
   'chat.header.title': 'Ratel',

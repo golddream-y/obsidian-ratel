@@ -2,7 +2,7 @@
  * @file src/settings/settings-apply.ts
  * @description 共享的设置写入与副作用分发 — SettingTab 与 update_app_config 工具的唯一入口
  * @module settings/settings-apply
- * @depends settings, settings/chat-preset, ui/tokens/context-length-presets, i18n, logging/dev-logger, core/tool-permissions
+ * @depends settings, settings/chat-preset, settings/chat-profiles, ui/tokens/context-length-presets, ui/tokens/model-context-registry, i18n, logging/dev-logger, core/tool-permissions
  */
 
 import type { RatelVaultSettings } from '../settings';
@@ -13,12 +13,11 @@ import {
 	applyContextRecommendation,
 	type ContextLengthPresetId,
 } from '../ui/tokens/context-length-presets';
-import type { ModelContextLookup } from '../ui/tokens/apply-model-context';
 import { DEFAULT_MODEL_REGISTRY_URL } from '../ui/tokens/model-context-registry';
-import { inferChatProvider, syncChatWindow } from './chat-profiles';
+import { inferChatProvider, lookupModelContext, syncChatWindow } from './chat-profiles';
 import { applyLangPreference, type LangPreference } from '../i18n';
 import { devLogger } from '../logging/dev-logger';
-import type { ChatProfile } from './chat-profiles';
+import type { ChatProfile, ModelContextLookup } from './chat-profiles';
 
 /** 当前四字段写入 settings 后,需同步回活跃套的 profile 字段名 */
 const ACTIVE_PROFILE_FIELD_BY_SETTING_KEY: Partial<
@@ -78,8 +77,16 @@ export interface SettingApplier {
 	modelContextRegistry?: ModelContextLookup;
 }
 
-/** 映射表 URL — 空串回落 LiteLLM 默认地址 */
-function resolveRegistryUrl(settings: RatelVaultSettings): string {
+/**
+ * 解析映射表 URL — 用户留空时回落 LiteLLM 默认地址。
+ *
+ * 关键路径:设置页展开区、切换套、窗口钳制三处共用,
+ * 保证「modelRegistryUrl || 默认地址」的查表口径只有这一份。
+ *
+ * @param settings - 插件设置
+ * @returns 有效的映射表 URL
+ */
+export function resolveRegistryUrl(settings: RatelVaultSettings): string {
 	return settings.modelRegistryUrl || DEFAULT_MODEL_REGISTRY_URL;
 }
 
@@ -145,13 +152,12 @@ export async function applySettingValue(plugin: SettingApplier, key: string, val
 		let tokens = n;
 		let userSet = true;
 		if (plugin.modelContextRegistry) {
-			const map = await plugin.modelContextRegistry.ensureRegistry(
+			// 共享查表辅助(与 syncChatWindow 同口径):大于查到的窗口时钳到表值
+			const found = await lookupModelContext(
+				plugin.modelContextRegistry,
 				resolveRegistryUrl(plugin.settings),
+				plugin.settings.chatModel,
 			);
-			const found =
-				map != null
-					? plugin.modelContextRegistry.lookupContextLength(plugin.settings.chatModel, map)
-					: undefined;
 			if (found != null && n > found) {
 				tokens = found;
 				userSet = false;

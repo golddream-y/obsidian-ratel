@@ -2,14 +2,14 @@
  * @file src/ui/chat/activate-chat-profile.ts
  * @description 将指定套对话配置设为当前 — 与设置页「设为当前」同序
  * @module ui/chat/activate-chat-profile
- * @depends obsidian, ../../settings/chat-profiles, ../tokens/model-context-registry
+ * @depends obsidian, ../../settings/chat-profiles, ../../settings/settings-apply
  */
 
 import { Notice } from 'obsidian';
 import type RatelVaultPlugin from '../../main';
 import { switchChatProfile, syncChatWindow } from '../../settings/chat-profiles';
+import { resolveRegistryUrl } from '../../settings/settings-apply';
 import { tNow } from '../../i18n';
-import { DEFAULT_MODEL_REGISTRY_URL } from '../tokens/model-context-registry';
 
 /**
  * 切换 active 套配置:写回当前四字段、按映射表同步窗口、持久化并重建 LLM。
@@ -28,7 +28,7 @@ export async function activateChatProfile(plugin: RatelVaultPlugin, profileId: s
 	switchChatProfile(plugin.settings, profileId);
 	const result = await syncChatWindow(plugin.settings, {
 		registry: plugin.modelContextRegistry,
-		registryUrl: plugin.settings.modelRegistryUrl || DEFAULT_MODEL_REGISTRY_URL,
+		registryUrl: resolveRegistryUrl(plugin.settings),
 		clearOnMiss: true,
 	});
 	if (!result.applied && !result.skipped) {

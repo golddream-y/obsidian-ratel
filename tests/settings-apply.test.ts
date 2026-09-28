@@ -7,7 +7,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { applySettingValue } from '../src/settings/settings-apply';
 import { DEFAULT_SETTINGS, type RatelVaultSettings } from '../src/settings';
-import type { ModelContextLookup } from '../src/ui/tokens/apply-model-context';
+import type { ModelContextLookup } from '../src/settings/chat-profiles';
 
 // 关键路径:registry mock — 与 ModelContextLookup 结构兼容,不依赖真实网络
 const makeRegistry = (map: Record<string, number>): ModelContextLookup => ({

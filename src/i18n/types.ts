@@ -241,7 +241,6 @@ export interface SettingsStrings {
   'settings.diagnostics.tab.llm': string;
   'settings.diagnostics.tab.rerank': string;
   'settings.notice.contextLengthUnknown': string;
-  'settings.notice.invalidTokens': string;
 }
 
 // ==================== Chat UI ====================
