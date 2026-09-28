@@ -18,6 +18,8 @@ const RATEL_GITIGNORE_LINES = [
 	'diag/',
 	'model-context-registry.json',
 	'model-context-registry.meta.json',
+	'models-dev.json',
+	'models-dev.meta.json',
 	// 关键路径:旧版清单在插件根目录,易被 Remotely Save 等同步工具删掉;保留忽略以防残留
 	'index-manifest.json',
 	'index-manifest.json.tmp',

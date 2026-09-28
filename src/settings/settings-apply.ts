@@ -15,6 +15,7 @@ import {
 } from '../ui/tokens/context-length-presets';
 import { DEFAULT_MODEL_REGISTRY_URL } from '../ui/tokens/model-context-registry';
 import { inferChatProvider, lookupModelContext, syncChatWindow } from './chat-profiles';
+import type { ModelsDevCatalog } from './model-catalog';
 import { applyLangPreference, type LangPreference } from '../i18n';
 import { devLogger } from '../logging/dev-logger';
 import type { ChatProfile, ModelContextLookup } from './chat-profiles';
@@ -75,6 +76,8 @@ export interface SettingApplier {
 	syncCrashBreadcrumbs?(enabled: boolean): void;
 	/** 映射表注册中心 — 缺省时窗口查表逻辑整体跳过(测试 mock 常用) */
 	modelContextRegistry?: ModelContextLookup;
+	/** models.dev 名单缓存 — 对话窗口查表用。缺省时视为名单不可用 */
+	modelsDevCatalog?: { ensureCatalog(): Promise<ModelsDevCatalog | null> };
 }
 
 /**
