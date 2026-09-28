@@ -102,11 +102,11 @@
       padding: 7px 12px; cursor: pointer;
     }
     .seg button.on { color: var(--ink); background: var(--paper); border-color: var(--paper); }
-    input[type="text"], input[type="number"], input[type="password"] {
+    input[type="text"], input[type="number"], input[type="password"], select {
       width: 100%; background: #0c0b0a; color: var(--paper); border: 1px solid var(--line-strong);
       border-radius: 8px; padding: 9px 10px; font: inherit; font-size: 14px;
     }
-    input.mono { font-family: var(--mono); font-size: 13px; }
+    select.mono, input.mono { font-family: var(--mono); font-size: 13px; }
     .window {
       border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px;
       display: flex; flex-direction: column; gap: 8px;
@@ -130,7 +130,7 @@
 </head>
 <body>
   <div class="stage">
-    <div class="stage-label">设置 · 五页</div>
+    <div class="stage-label">设置 · 对话模型（models.dev）</div>
     <div class="panel">
       <div class="tabs" role="tablist" aria-label="设置分组">
         <button class="tab on" type="button" data-page="chat" role="tab">对话模型</button>
@@ -156,25 +156,25 @@
             <label class="field">名称
               <input id="pname" type="text" autocomplete="off">
             </label>
-            <div>
-              <h2>提供商</h2>
-              <div class="seg" id="providers" role="group" aria-label="提供商">
-                <button type="button" data-provider="deepseek">DeepSeek</button>
-                <button type="button" data-provider="ollama">Ollama（本地）</button>
-                <button type="button" data-provider="custom">自定义</button>
-              </div>
-              <label class="field" id="base-field" hidden style="margin-top:12px">地址
-                <input id="base" class="mono" type="text" autocomplete="off">
-              </label>
-              <p class="key" id="key-note"></p>
-            </div>
-            <label class="field">模型名
+            <label class="field">提供商
+              <select id="provider"></select>
+            </label>
+            <p class="key" id="base-line"></p>
+            <label class="field" id="base-field" hidden>地址
+              <input id="base" class="mono" type="text" autocomplete="off">
+            </label>
+            <p class="key" id="key-note"></p>
+            <label class="field">模型
+              <select id="model-pick" class="mono"></select>
+            </label>
+            <label class="field" id="model-field" hidden>模型名
               <input id="model" class="mono" type="text" autocomplete="off">
             </label>
             <div>
-              <h2>上下文长度</h2>
+              <h2>窗口与单次输出</h2>
               <div class="window">
                 <p id="window-line"></p>
+                <p id="output-line"></p>
                 <p class="hint" id="window-hint"></p>
                 <label class="field" id="window-edit" hidden>自己的上限
                   <input id="window-num" type="number" min="1024" step="1024">
@@ -325,20 +325,91 @@
     </div>
   </div>
   <script>
-    const KNOWN = {
-      "deepseek-v4-flash": 1048576,
-      "deepseek-v4-pro": 1048576,
-    };
-    const PRESET = {
-      deepseek: { base: "https://api.deepseek.com", model: "deepseek-v4-flash", key: true },
-      ollama: { base: "http://localhost:11434/v1", model: "llama3.2", key: false },
-      custom: { base: "", model: "", key: true },
+    const OTHER = "__other";
+    const CATALOG = {
+      deepseek: {
+        name: "DeepSeek",
+        base: "https://api.deepseek.com",
+        key: true,
+        models: [
+          { id: "deepseek-v4-flash", context: 1000000, output: 393216 },
+          { id: "deepseek-v4-pro", context: 1000000, output: 393216 },
+          { id: "deepseek-flash", context: 1000000, output: 393216 },
+        ],
+      },
+      openai: {
+        name: "OpenAI",
+        base: "https://api.openai.com/v1",
+        key: true,
+        models: [
+          { id: "gpt-5.4", context: 1050000, output: 128000 },
+          { id: "gpt-5.4-pro", context: 1050000, output: 128000 },
+          { id: "gpt-3.5-turbo", context: 16385, output: 4096 },
+        ],
+      },
+      anthropic: {
+        name: "Anthropic",
+        base: "https://api.anthropic.com",
+        key: true,
+        models: [
+          { id: "claude-sonnet-4-5", context: 1000000, output: 64000 },
+          { id: "claude-opus-4-5", context: 200000, output: 64000 },
+          { id: "claude-haiku-4-5", context: 200000, output: 64000 },
+        ],
+      },
+      google: {
+        name: "Google",
+        base: "https://generativelanguage.googleapis.com/v1beta/openai",
+        key: true,
+        models: [
+          { id: "gemini-flash-latest", context: 1048576, output: 65536 },
+        ],
+      },
+      alibaba: {
+        name: "Alibaba",
+        base: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+        key: true,
+        models: [
+          { id: "qwen-flash", context: 1000000, output: 32768 },
+          { id: "qwen3.7-max", context: 1000000, output: 131072 },
+        ],
+      },
+      groq: {
+        name: "Groq",
+        base: "https://api.groq.com/openai/v1",
+        key: true,
+        models: [
+          { id: "llama-3.3-70b-versatile", context: 131072, output: 32768 },
+          { id: "llama-3.1-8b-instant", context: 131072, output: 131072 },
+        ],
+      },
+      xai: {
+        name: "xAI",
+        base: "https://api.x.ai/v1",
+        key: true,
+        models: [
+          { id: "grok-4.7", context: 500000, output: 500000 },
+          { id: "grok-4.3", context: 1000000, output: 30000 },
+        ],
+      },
+      mistral: {
+        name: "Mistral",
+        base: "https://api.mistral.ai/v1",
+        key: true,
+        models: [
+          { id: "mistral-large-2411", context: 131072, output: 16384 },
+          { id: "codestral-latest", context: 256000, output: 4096 },
+        ],
+      },
+      ollama: { name: "Ollama（本地）", base: "http://localhost:11434/v1", key: false, models: [] },
+      custom: { name: "自定义", base: "", key: true, models: [] },
     };
     const profiles = [
-      { id: "a", name: "工作 DeepSeek", provider: "deepseek", model: "deepseek-v4-flash", base: PRESET.deepseek.base, window: 1048576, customWindow: false },
-      { id: "d", name: "复杂文案", provider: "deepseek", model: "deepseek-v4-pro", base: PRESET.deepseek.base, window: 1048576, customWindow: false },
-      { id: "e", name: "日常轻量", provider: "deepseek", model: "deepseek-v4-flash", base: PRESET.deepseek.base, window: 131072, customWindow: true },
-      { id: "b", name: "本地 Ollama", provider: "ollama", model: "llama3.2", base: PRESET.ollama.base, window: null, customWindow: false },
+      { id: "a", name: "工作 DeepSeek", provider: "deepseek", model: "deepseek-v4-flash", base: CATALOG.deepseek.base, window: 1000000, customWindow: false },
+      { id: "d", name: "复杂文案", provider: "deepseek", model: "deepseek-v4-pro", base: CATALOG.deepseek.base, window: 1000000, customWindow: false },
+      { id: "e", name: "日常轻量", provider: "deepseek", model: "deepseek-v4-flash", base: CATALOG.deepseek.base, window: 131072, customWindow: true },
+      { id: "g", name: "快问 Groq", provider: "groq", model: "llama-3.1-8b-instant", base: CATALOG.groq.base, window: 131072, customWindow: false },
+      { id: "b", name: "本地 Ollama", provider: "ollama", model: "llama3.2", base: CATALOG.ollama.base, window: null, customWindow: false },
       { id: "c", name: "备用接口", provider: "custom", model: "my-model", base: "https://example.com/v1", window: null, customWindow: false },
     ];
     let active = "a";
@@ -346,11 +417,16 @@
     const list = document.getElementById("list");
     const detail = document.getElementById("detail");
     const pname = document.getElementById("pname");
+    const provider = document.getElementById("provider");
+    const modelPick = document.getElementById("model-pick");
     const model = document.getElementById("model");
+    const modelField = document.getElementById("model-field");
     const base = document.getElementById("base");
     const baseField = document.getElementById("base-field");
+    const baseLine = document.getElementById("base-line");
     const keyNote = document.getElementById("key-note");
     const windowLine = document.getElementById("window-line");
+    const outputLine = document.getElementById("output-line");
     const windowHint = document.getElementById("window-hint");
     const windowEdit = document.getElementById("window-edit");
     const windowNum = document.getElementById("window-num");
@@ -358,7 +434,12 @@
 
     function current() { return profiles.find((p) => p.id === active); }
 
-    function lookup(name) { return Object.prototype.hasOwnProperty.call(KNOWN, name) ? KNOWN[name] : null; }
+    function entry(providerId, modelId) {
+      const models = (CATALOG[providerId] && CATALOG[providerId].models) || [];
+      return models.find((m) => m.id === modelId) || null;
+    }
+
+    function fmt(n) { return Number(n).toLocaleString("zh-CN"); }
 
     function renderList() {
       list.replaceChildren();
@@ -384,34 +465,59 @@
       }
     }
 
-    function renderProviders(p) {
-      for (const btn of document.querySelectorAll("#providers button")) {
-        btn.classList.toggle("on", btn.dataset.provider === p.provider);
+    function fillSelect(select, options, value) {
+      select.replaceChildren();
+      for (const opt of options) {
+        const el = document.createElement("option");
+        el.value = opt.value;
+        el.textContent = opt.label;
+        select.append(el);
       }
-      const showBase = p.provider === "custom";
-      baseField.hidden = !showBase;
+      select.value = value;
+    }
+
+    function renderProviders(p) {
+      const spec = CATALOG[p.provider];
+      fillSelect(provider, Object.entries(CATALOG).map(([id, item]) => ({ value: id, label: item.name })), p.provider);
+      const listed = spec.models.some((m) => m.id === p.model);
+      const hand = spec.models.length === 0 || !listed;
+      fillSelect(modelPick, [
+        ...spec.models.map((m) => ({ value: m.id, label: m.id })),
+        { value: OTHER, label: spec.models.length ? "其他（手填）" : "手填模型名" },
+      ], hand ? OTHER : p.model);
+      modelField.hidden = !hand;
+      model.value = p.model;
+      const editableBase = p.provider === "custom" || p.provider === "ollama";
+      baseField.hidden = !editableBase;
+      baseLine.hidden = editableBase || !spec.base;
+      baseLine.textContent = spec.base;
       base.value = p.base;
-      keyNote.textContent = PRESET[p.provider].key
+      keyNote.textContent = spec.key
         ? "密钥在钥匙串里，离开输入框时保存，这里不回显。"
-        : "本地地址不需要密钥。";
+        : "本地地址不需要密钥。名单里没有本机模型。";
     }
 
     function renderWindow(p) {
-      const found = p.customWindow ? null : lookup(p.model);
+      const found = entry(p.provider, p.model);
       if (p.customWindow) {
-        windowLine.textContent = "这一套自己的上限是 " + Number(p.window).toLocaleString("zh-CN");
-        windowHint.textContent = "模型名不变时，不会被查表盖掉。改了模型名会重新查。";
+        windowLine.textContent = "这一套自己的窗口上限是 " + fmt(p.window);
+        outputLine.textContent = found ? "单次输出上限 " + fmt(found.output) : "";
+        windowHint.textContent = "窗口改小后，换模型会重新按供应商和模型 id 查表。";
         windowEdit.hidden = false;
         windowNum.value = p.window || "";
         shrink.hidden = true;
       } else if (found) {
-        windowLine.textContent = "这个模型的窗口是 " + found.toLocaleString("zh-CN");
-        windowHint.textContent = "没有 128k / 256k / 1M 的档位。";
+        windowLine.textContent = "窗口 " + fmt(found.context);
+        outputLine.textContent = "单次输出上限 " + fmt(found.output);
+        windowHint.textContent = "数字来自 models.dev，按供应商和模型 id 一起查。同名换一家，窗口可能不同。";
         windowEdit.hidden = true;
         shrink.hidden = false;
       } else {
         windowLine.textContent = "未查到 " + (p.model || "这个模型") + " 的窗口";
-        windowHint.textContent = "填一个数字。不要沿用上一个模型的上限。";
+        outputLine.textContent = "";
+        windowHint.textContent = p.provider === "ollama"
+          ? "本机模型不在名单里，填一个数字。"
+          : "填一个数字。不要沿用上一个模型的上限。";
         windowEdit.hidden = false;
         windowNum.value = p.window || "";
         shrink.hidden = true;
@@ -423,22 +529,33 @@
       document.getElementById("detail-title").textContent = "「" + p.name + "」的提供商、模型和窗口";
       renderList();
       pname.value = p.name;
-      model.value = p.model;
       renderProviders(p);
       renderWindow(p);
     }
 
-    document.getElementById("providers").addEventListener("click", (ev) => {
-      const btn = ev.target.closest("button");
-      if (!btn) return;
+    provider.addEventListener("change", () => {
       const p = current();
-      const id = btn.dataset.provider;
-      if (p.provider === id) return;
+      const id = provider.value;
+      const spec = CATALOG[id];
       p.provider = id;
-      p.base = PRESET[id].base;
-      if (id !== "custom") p.model = PRESET[id].model;
+      p.base = spec.base;
+      p.model = spec.models[0] ? spec.models[0].id : "";
       p.customWindow = false;
-      p.window = lookup(p.model);
+      p.window = spec.models[0] ? spec.models[0].context : null;
+      render();
+    });
+    modelPick.addEventListener("change", () => {
+      const p = current();
+      if (modelPick.value === OTHER) {
+        p.model = "";
+        p.customWindow = false;
+        p.window = null;
+      } else {
+        const found = entry(p.provider, modelPick.value);
+        p.model = modelPick.value;
+        p.customWindow = false;
+        p.window = found ? found.context : null;
+      }
       render();
     });
 
@@ -447,21 +564,23 @@
       const p = current();
       p.model = model.value.trim();
       p.customWindow = false;
-      p.window = lookup(p.model);
+      const found = entry(p.provider, p.model);
+      p.window = found ? found.context : null;
       render();
     });
     base.addEventListener("change", () => { current().base = base.value.trim(); });
     shrink.addEventListener("click", () => {
       const p = current();
-      const found = lookup(p.model) || 1048576;
+      const found = entry(p.provider, p.model);
       p.customWindow = true;
-      p.window = Math.floor(found / 2);
+      p.window = Math.floor((found ? found.context : 1000000) / 2);
       render();
     });
     windowNum.addEventListener("change", () => {
       const p = current();
+      const found = entry(p.provider, p.model);
       p.window = Number(windowNum.value) || p.window;
-      if (lookup(p.model) && p.window !== lookup(p.model)) p.customWindow = true;
+      if (found && p.window !== found.context) p.customWindow = true;
       render();
     });
 
