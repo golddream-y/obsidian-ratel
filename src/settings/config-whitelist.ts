@@ -91,7 +91,7 @@ const ENUM_CONSTRAINTS: Readonly<Record<string, readonly string[]>> = {
 /**
  * 数值约束表 — min/max 与设置面板控件校验一致。
  *
- * 关键路径:chatModelMaxTokens 用 CUSTOM_TOKEN_MIN/MAX(高级页 number 控件);
+ * 关键路径:chatModelMaxTokens 用 CUSTOM_TOKEN_MIN/MAX(对话模型页当前套展开区 number 控件);
  * chunk/chunkOverlap 用索引页 slider 边界;memory 四项用高级页 number 边界。
  * memoryTopicsAutoInjectK 用高级页 number 边界。
  * embedApiDimensions 无 UI 控件,按主流 Embedding 模型维度范围给 1~8192。

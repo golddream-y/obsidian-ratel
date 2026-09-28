@@ -95,6 +95,25 @@
 	/* no-op marker */
 }
 
+/* ==================== 已保存的对话配置(S-CHAT-SETUP) ==================== */
+/* 当套展开区:缩进 + 左侧强调线,与行内按钮的其余套区分 */
+.ratel-chat-profile-detail {
+	display: flex;
+	flex-direction: column;
+	margin: 4px 0 12px 12px;
+	padding: 4px 12px 8px;
+	border-left: 2px solid var(--interactive-accent);
+	border-radius: 4px;
+	background: var(--background-secondary);
+}
+.ratel-chat-profile-detail .setting-item {
+	border: none;
+	padding: 6px 0;
+}
+.ratel-chat-profile-detail .setting-item-heading {
+	margin-top: 2px;
+}
+
 /* ==================== 钥匙串 checklist ==================== */
 .ratel-secret-checklist {
 	margin: 0.25em 0 0;

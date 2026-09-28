@@ -7,11 +7,8 @@
 
 import {
 	App,
-	Notice,
 	PluginSettingTab,
-	Setting,
 	type SettingDefinitionItem,
-	type SettingGroupItem,
 } from 'obsidian';
 // 关键路径:RatelVaultPlugin 仅作类型标注使用,用 import type 避免运行时拉起 main.ts
 // (main.ts 会载入 ChatView.svelte,在 vitest 环境无 svelte 插件无法解析)
@@ -19,23 +16,9 @@ import type RatelVaultPlugin from './main';
 // 关键路径:声明式 settings 每次渲染重新调用 tNow,无需 store 订阅
 import { tNow, type LangPreference, type StringKey } from './i18n';
 import type { ToolPermission, ToolPermissionLevel } from './core/tool-permissions';
-import {
-	hasChatApiKey,
-	requiresChatApiKey,
-	resolveChatApiKey,
-} from './secrets/ratel-secrets';
 import type { ContextLengthPresetId } from './ui/tokens/context-length-presets';
-import {
-	applyContextRecommendation,
-	CUSTOM_TOKEN_MAX,
-	CUSTOM_TOKEN_MIN,
-	inferPresetFromTokens,
-	presetToTokens,
-} from './ui/tokens/context-length-presets';
-import { DEFAULT_MODEL_REGISTRY_URL } from './ui/tokens/model-context-registry';
-import { probeChatConnection } from './ui/tokens/probe-model';
+import { inferPresetFromTokens, presetToTokens } from './ui/tokens/context-length-presets';
 import type { OverrideMap } from './prompts/types';
-import { listEditableSections } from './prompts';
 // 关键路径:声明式 settings 子页面与 render wrapper
 import { DiagnosticsSettingPage } from './ui/settings/diagnostics-setting-page';
 import {
@@ -43,10 +26,13 @@ import {
 	renderEmbedSecretHint,
 	renderRerankSecretHint,
 } from './ui/settings/secret-hint-render';
-import {
-	renderPromptOverrideSection,
-	renderPromptPreviewButton,
-} from './ui/settings/prompt-override-render';
+// 关键路径(S-CHAT-SETUP CS-07):二级页声明式定义 — 长设置各占一页,主页只留入口
+import { buildToolPermissionsSettingPage } from './ui/settings/tool-permissions-setting-page';
+import { buildModelRegistrySettingPage } from './ui/settings/model-registry-setting-page';
+import { buildEcosystemSettingPage } from './ui/settings/ecosystem-setting-page';
+import { buildPromptOverridesSettingPage } from './ui/settings/prompt-overrides-setting-page';
+import { buildMemoryLimitsSettingPage } from './ui/settings/memory-limits-setting-page';
+import { buildDeveloperSettingPage } from './ui/settings/developer-setting-page';
 import type { ChatPresetId } from './settings/chat-preset';
 // 关键路径:setControlValue 写入与副作用统一走 settings-apply(与 update_app_config 工具共享)
 import { applySettingValue } from './settings/settings-apply';
@@ -55,7 +41,6 @@ import type { UiAccentId, UiColorScheme } from './ui/appearance/appearance-prese
 import { renderAppearanceSettings } from './ui/appearance/appearance-settings-render';
 import { renderChatProfiles } from './ui/settings/chat-profiles-render';
 import type { McpServerConfig } from './ports/mcp';
-import { parseMcpToolName } from './ui/mcp/parse-mcp-tool-name';
 
 /** 设置顶栏 Tab ID 清单(仅 UI 态,不落盘)— focusTab 校验与顶部导航共用的单一事实源 */
 export const SETTINGS_UI_TABS = ['chat', 'index', 'agent', 'appearance', 'advanced'] as const;
@@ -401,23 +386,10 @@ export function normalizeContextLengthSettings(
 		settings.chatModelMaxTokens = inferred.chatModelMaxTokens;
 	} else if (settings.contextLengthPreset !== 'custom') {
 		settings.chatModelMaxTokens = presetToTokens(settings.contextLengthPreset);
-	} else if (settings.chatModelMaxTokens <= 0) {
-		const inferred = inferPresetFromTokens(0);
-		settings.contextLengthPreset = inferred.preset;
-		settings.chatModelMaxTokens = inferred.chatModelMaxTokens;
 	}
+	// 修复(S-CHAT-SETUP):custom + 0 是「查表未命中,等用户填」的合法状态,不再静默回填 256k;
+	// 运行时由 getEffectiveChatModelMaxTokens 回落默认档,设置页用数字框引导填写。
 	return settings;
-}
-
-// 关键路径:封装为函数,每次 getSettingDefinitions 调用时重新求值 tNow,语言切换后立即生效
-function contextLengthPresetOptions(): Record<ContextLengthPresetId, string> {
-	return {
-		'128k': '128k (128,000)',
-		'200k': '200k (200,000)',
-		'256k': '256k (256,000)',
-		'1M': '1M (1,048,576)',
-		custom: tNow('settings.contextLength.preset.custom'),
-	};
 }
 
 /**
@@ -425,10 +397,12 @@ function contextLengthPresetOptions(): Record<ContextLengthPresetId, string> {
  *
  * 设计要点:
  * - 1.13.0 起用 `getSettingDefinitions()` 声明式 API,删除 deprecated `display()`
- * - 顶栏四 Tab(对话模型 / 笔记索引 / 记忆与权限 / 高级)用声明式 `visible` 切换,
+ * - 顶栏五 Tab(对话模型 / 笔记索引 / 记忆与权限 / 外观 / 高级)用声明式 `visible` 切换,
  *   搜索激活时全部展开;不用 CSS is-hidden(Obsidian 不随 refresh 更新 cls)
  * - `getControlValue`/`setControlValue` override 处理嵌套 key 与副作用(rebuild/sync)
- * - 诊断放在「高级」末尾的 `SettingDefinitionPage`
+ * - 长设置(工具权限、映射表、生态、提示词、记忆上限、开发者、诊断)各占一个
+ *   `SettingDefinitionPage` 二级页,主页只留入口(S-CHAT-SETUP CS-07);
+ *   页内控件与迁移前完全一致,返回栈由设置框架自带
  */
 export class RatelVaultSettingTab extends PluginSettingTab {
 	plugin: RatelVaultPlugin;
@@ -557,13 +531,11 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 		const indexCls = this.panelCls('index');
 		const agentCls = this.panelCls('agent');
 		const appearanceCls = this.panelCls('appearance');
-		const advancedCls = this.panelCls('advanced');
 		const chatVisible = () => this.isPanelVisible('chat');
 		const indexVisible = () => this.isPanelVisible('index');
 		const agentVisible = () => this.isPanelVisible('agent');
 		const appearanceVisible = () => this.isPanelVisible('appearance');
 		const advancedVisible = () => this.isPanelVisible('advanced');
-		const onAdvancedOrSearch = () => this.isPanelVisible('advanced');
 
 		return [
 			// ==================== 顶栏 Tab 条 ====================
@@ -642,27 +614,6 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			},
 			{
 				type: 'group',
-				heading: tNow('settings.chatPreset.heading'),
-				cls: chatCls,
-				visible: chatVisible,
-				items: [
-					{
-						name: tNow('settings.chatPreset.name'),
-						desc: tNow('settings.chatPreset.desc'),
-						control: {
-							type: 'dropdown',
-							key: 'chatPreset',
-							options: {
-								deepseek: tNow('settings.chatPreset.deepseek'),
-								ollama: tNow('settings.chatPreset.ollama'),
-								custom: tNow('settings.chatPreset.custom'),
-							},
-						},
-					},
-				],
-			},
-			{
-				type: 'group',
 				heading: tNow('settings.chatModel.heading'),
 				cls: chatCls,
 				visible: chatVisible,
@@ -670,20 +621,6 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 					{
 						name: tNow('settings.chatProfiles.heading'),
 						render: renderChatProfiles(this.app, this.plugin),
-					},
-					{
-						name: tNow('settings.chatModel.model.name'),
-						desc: tNow('settings.chatModel.model.desc'),
-						control: { type: 'text', key: 'chatModel', placeholder: 'deepseek-v4-flash' },
-					},
-					{
-						name: tNow('settings.chatModel.apiBase.name'),
-						desc: tNow('settings.chatModel.apiBase.desc'),
-						control: {
-							type: 'text',
-							key: 'chatApiBase',
-							placeholder: 'https://api.deepseek.com',
-						},
 					},
 					{
 						name: tNow('settings.advanced.secretHint.title'),
@@ -887,13 +824,9 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 					},
 				],
 			},
-			{
-				type: 'group',
-				heading: tNow('settings.toolPermissions.heading'),
-				cls: agentCls,
-				visible: agentVisible,
-				items: this.buildToolPermissionItems(),
-			},
+			// S-CHAT-SETUP(CS-07):工具权限收进二级页 — 主页只留入口,
+			// 页内仍是权限档位 + 每个工具允许/询问/拒绝(含 MCP 工具),字段不减
+			buildToolPermissionsSettingPage(this.plugin, agentVisible),
 			{
 				type: 'group',
 				cls: agentCls,
@@ -956,397 +889,22 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			},
 
 			// ==================== Tab:高级 ====================
-			{
-				type: 'group',
-				heading: tNow('settings.contextLength.heading'),
-				cls: advancedCls,
-				visible: advancedVisible,
-				items: [
-					{
-						name: tNow('settings.contextLength.dropdown.name'),
-						desc: tNow('settings.contextLength.dropdown.desc'),
-						control: {
-							type: 'dropdown',
-							key: 'contextLengthPreset',
-							options: contextLengthPresetOptions(),
-						},
-					},
-					{
-						name: tNow('settings.contextLength.probeButton'),
-						action: (el) => void this.handleProbeContext(el),
-					},
-					{
-						name: tNow('settings.contextLength.customTokens.name'),
-						desc: tNow('settings.contextLength.customTokens.desc'),
-						control: {
-							type: 'number',
-							key: 'chatModelMaxTokens',
-							min: CUSTOM_TOKEN_MIN,
-							max: CUSTOM_TOKEN_MAX,
-						},
-						visible: () => this.plugin.settings.contextLengthPreset === 'custom',
-					},
-				],
-			},
-			{
-				type: 'group',
-				heading: tNow('settings.advanced.heading'),
-				cls: advancedCls,
-				visible: advancedVisible,
-				items: [
-					{
-						name: tNow('settings.advanced.registryUrl.name'),
-						desc: tNow('settings.advanced.registryUrl.desc'),
-						control: {
-							type: 'text',
-							key: 'modelRegistryUrl',
-							placeholder: DEFAULT_MODEL_REGISTRY_URL,
-						},
-					},
-					{
-						name: tNow('settings.advanced.resetButton'),
-						action: () => {
-							this.plugin.settings.modelRegistryUrl = '';
-							void this.plugin.saveSettings().then(() => this.update());
-						},
-					},
-					{
-						name: tNow('settings.ecosystem.writeEnabled.name'),
-						desc: tNow('settings.ecosystem.writeEnabled.desc'),
-						control: { type: 'toggle', key: 'ecosystemWriteEnabled' },
-					},
-				],
-			},
-			{
-				type: 'group',
-				heading: tNow('settings.promptOverrides.heading'),
-				cls: advancedCls,
-				visible: advancedVisible,
-				items: this.buildPromptOverrideItems(),
-			},
-			{
-				type: 'group',
-				heading: tNow('memory.settings.limitsHeading'),
-				cls: advancedCls,
-				visible: advancedVisible,
-				items: [
-					{
-						name: tNow('memory.settings.storageLimit.name'),
-						desc: tNow('memory.settings.storageLimit.desc'),
-						control: { type: 'number', key: 'memoryStorageLimitMB', min: 1, max: 1000 },
-					},
-					{
-						name: tNow('memory.settings.injectLimit.name'),
-						desc: tNow('memory.settings.injectLimit.desc'),
-						control: { type: 'number', key: 'memoryInjectLimitKB', min: 1, max: 500 },
-					},
-					{
-						name: tNow('memory.settings.dynamicLimit.name'),
-						desc: tNow('memory.settings.dynamicLimit.desc'),
-						control: { type: 'number', key: 'memoryDynamicLimitKB', min: 1, max: 500 },
-					},
-					{
-						name: tNow('memory.settings.contextTotalLimit.name'),
-						desc: tNow('memory.settings.contextTotalLimit.desc'),
-						control: { type: 'number', key: 'memoryContextTotalLimitKB', min: 1, max: 500 },
-					},
-					{
-						name: tNow('memory.settings.topicsAutoInject.name'),
-						desc: tNow('memory.settings.topicsAutoInject.desc'),
-						control: { type: 'number', key: 'memoryTopicsAutoInjectK', min: 0, max: 10 },
-					},
-				],
-			},
-			{
-				type: 'group',
-				heading: tNow('settings.developer.heading'),
-				cls: advancedCls,
-				visible: advancedVisible,
-				items: [
-					{
-						name: tNow('settings.developer.debugLog.name'),
-						control: { type: 'toggle', key: 'debugLog' },
-					},
-					{
-						name: tNow('settings.developer.crashBreadcrumbs.name'),
-						desc: tNow('settings.developer.crashBreadcrumbs.desc'),
-						control: { type: 'toggle', key: 'crashBreadcrumbs' },
-					},
-					{
-					name: tNow('settings.developer.agentMaxSteps.name'),
-					desc: tNow('settings.developer.agentMaxSteps.desc'),
-					control: {
-						type: 'slider',
-						key: 'agentMaxSteps',
-						min: 5,
-						max: 200,
-						step: 5,
-					},
-				},
-				{
-					name: tNow('settings.skill.scriptTimeout.name'),
-					desc: tNow('settings.skill.scriptTimeout.desc'),
-					control: {
-						type: 'slider',
-						key: 'skillScriptTimeout',
-						// 关键路径:存储单位是 ms,但用户心智是秒 — 滑块范围 5s-120s。
-						// displayFormat(Obsidian 1.13.1 API)把 ms 值换算为秒显示;
-						// 1.13.0 上该字段被忽略,降级显示 ms 裸值,滑块功能不受损。
-						displayFormat: (ms) => `${ms / 1000} ${tNow('settings.skill.scriptTimeout.unit')}`,
-						min: 5000,
-						max: 120000,
-						step: 5000,
-					},
-				},
-				],
-			},
+			// S-CHAT-SETUP(CS-07):映射表、生态、提示词覆盖、记忆上限、开发者、诊断
+			// 各占一个二级页 — 主页只留入口,页内控件与迁移前完全一致,返回由框架自带
+			buildModelRegistrySettingPage(this, advancedVisible),
+			buildEcosystemSettingPage(advancedVisible),
+			buildPromptOverridesSettingPage(this, advancedVisible),
+			buildMemoryLimitsSettingPage(advancedVisible),
+			buildDeveloperSettingPage(advancedVisible),
 			{
 				type: 'page',
 				name: tNow('settings.diagnostics.page.name'),
 				desc: tNow('settings.diagnostics.page.desc'),
 				// 关键路径:page 无 cls,只能用 visible;搜索中放开以免诊断入口在索引外
-				visible: onAdvancedOrSearch,
+				visible: advancedVisible,
 				page: () => new DiagnosticsSettingPage(this.app, this.plugin),
 			},
 		];
-	}
-
-	/**
-	 * 构建 Tool permissions group 的 items。
-	 *
-	 * 关键路径:信任模式 toggle + 9 个工具 dropdown,
-	 * key 用 `toolPermissions.<name>` 嵌套格式,getControlValue/setControlValue 会分发。
-	 */
-	private buildToolPermissionItems(): SettingGroupItem[] {
-		// 关键路径:工具名 → i18n key 映射,tNow 运行时读取当前语言
-		const labelByKey = (toolName: string): string => {
-			const map: Record<string, StringKey> = {
-			search_vault: 'settings.toolPermissions.search_vault',
-			read_note: 'settings.toolPermissions.read_note',
-			grep: 'settings.toolPermissions.grep',
-			glob: 'settings.toolPermissions.glob',
-			list_files: 'settings.toolPermissions.list_files',
-			write_note: 'settings.toolPermissions.write_note',
-			append_note: 'settings.toolPermissions.append_note',
-			edit_note: 'settings.toolPermissions.edit_note',
-			delete_note: 'settings.toolPermissions.delete_note',
-			// 关键路径:3 个 memory 工具友好名(与 ui.tool_name.* 区分,这是设置面板的权限标签)
-			search_memory: 'settings.toolPermissions.search_memory',
-			remember: 'settings.toolPermissions.remember',
-			forget_memory: 'settings.toolPermissions.forget_memory',
-			activate_skill: 'settings.toolPermissions.activate_skill',
-			deactivate_skill: 'settings.toolPermissions.deactivate_skill',
-			read_skill_reference: 'settings.toolPermissions.read_skill_reference',
-			run_skill_script: 'settings.toolPermissions.run_skill_script',
-			get_datetime: 'settings.toolPermissions.get_datetime',
-			get_active_note: 'settings.toolPermissions.get_active_note',
-			get_daily_note: 'settings.toolPermissions.get_daily_note',
-			list_recent_notes: 'settings.toolPermissions.list_recent_notes',
-			get_note_outline: 'settings.toolPermissions.get_note_outline',
-			get_links: 'settings.toolPermissions.get_links',
-			search_by_tag: 'settings.toolPermissions.search_by_tag',
-			search_by_property: 'settings.toolPermissions.search_by_property',
-			get_vault_structure: 'settings.toolPermissions.get_vault_structure',
-			open_note: 'settings.toolPermissions.open_note',
-			open_settings: 'settings.toolPermissions.open_settings',
-			get_app_config: 'settings.toolPermissions.get_app_config',
-			update_app_config: 'settings.toolPermissions.update_app_config',
-			manage_goal: 'settings.toolPermissions.manage_goal',
-			search_plugins: 'settings.toolPermissions.search_plugins',
-			install_plugin: 'settings.toolPermissions.install_plugin',
-			update_plugin: 'settings.toolPermissions.update_plugin',
-			uninstall_plugin: 'settings.toolPermissions.uninstall_plugin',
-			configure_plugin: 'settings.toolPermissions.configure_plugin',
-			get_plugin_status: 'settings.toolPermissions.get_plugin_status',
-			list_ecosystem_changes: 'settings.toolPermissions.list_ecosystem_changes',
-			restore_backup: 'settings.toolPermissions.restore_backup',
-			apply_diary_host: 'settings.toolPermissions.apply_diary_host',
-			list_host_dir: 'settings.toolPermissions.list_host_dir',
-			read_host_file: 'settings.toolPermissions.read_host_file',
-			import_host_file: 'settings.toolPermissions.import_host_file',
-			run_host_command: 'settings.toolPermissions.run_host_command',
-		};
-		const key = map[toolName];
-		return key ? tNow(key) : toolName;
-	};
-		const allTools = [
-			'search_vault', 'read_note', 'grep', 'glob', 'list_files',
-			'write_note', 'append_note', 'edit_note', 'delete_note',
-			'search_memory', 'remember', 'forget_memory',
-			'activate_skill', 'deactivate_skill',
-			'read_skill_reference', 'run_skill_script',
-			'get_datetime', 'get_active_note', 'get_daily_note', 'list_recent_notes', 'get_note_outline',
-			'get_links', 'search_by_tag', 'search_by_property', 'get_vault_structure',
-			'open_note',
-			'open_settings',
-			'get_app_config',
-			'update_app_config',
-			'manage_goal',
-			'search_plugins',
-			'install_plugin',
-			'update_plugin',
-			'uninstall_plugin',
-			'configure_plugin',
-			'get_plugin_status',
-			'list_ecosystem_changes',
-			'restore_backup',
-			'apply_diary_host',
-	];
-
-		const items: SettingGroupItem[] = [
-			{
-				name: tNow('settings.toolPermissionLevel.name'),
-				desc: tNow('settings.toolPermissionLevel.desc'),
-				control: {
-					type: 'dropdown',
-					key: 'toolPermissionLevel',
-					options: {
-						safe: tNow('settings.toolPermissionLevel.safe'),
-						auto: tNow('settings.toolPermissionLevel.auto'),
-						danger: tNow('settings.toolPermissionLevel.danger'),
-					},
-				},
-			},
-		];
-
-		for (const name of allTools) {
-			items.push({
-				name: labelByKey(name),
-				desc: name,
-				control: {
-					type: 'dropdown',
-					key: `toolPermissions.${name}`,
-					options: {
-						allow: tNow('settings.toolPermissions.allow'),
-						ask: tNow('settings.toolPermissions.ask'),
-						deny: tNow('settings.toolPermissions.deny'),
-					},
-				},
-			});
-		}
-
-		const mcpToolNames = (this.plugin.tools?.definitions() ?? [])
-			.map((d) => d.name)
-			.filter((name) => name.startsWith('mcp__'))
-			.sort();
-
-		if (mcpToolNames.length > 0) {
-			items.push({
-				name: tNow('settings.toolPermissions.mcpSection'),
-				searchable: false,
-				render: (setting) => {
-					new Setting(setting.settingEl)
-						.setName(tNow('settings.toolPermissions.mcpSection'))
-						.setHeading();
-				},
-			});
-
-			const permissionOptions = {
-				allow: tNow('settings.toolPermissions.allow'),
-				ask: tNow('settings.toolPermissions.ask'),
-				deny: tNow('settings.toolPermissions.deny'),
-			};
-
-			for (const name of mcpToolNames) {
-				const parsed = parseMcpToolName(name);
-				const label = parsed
-					? `${parsed.serverId} · ${parsed.toolName}`
-					: name;
-				items.push({
-					name: label,
-					desc: name,
-					control: {
-						type: 'dropdown',
-						key: `toolPermissions.${name}`,
-						options: permissionOptions,
-					},
-				});
-			}
-		}
-
-		return items;
-	}
-
-	/**
-	 * 构建 Prompt overrides group 的 items。
-	 *
-	 * 关键路径:
-	 * - 说明段用 SettingDefinitionEmpty(只有 name + desc)
-	 * - 每个 section 用 SettingDefinitionRender,内部 toggle + textarea + warn + 恢复按钮
-	 * - 预览按钮用 SettingDefinitionRender(内部 new Setting + addButton)
-	 */
-	private buildPromptOverrideItems(): SettingGroupItem[] {
-		const items: SettingGroupItem[] = [
-			{
-				name: tNow('settings.promptOverrides.instructions'),
-				desc: tNow('settings.promptOverrides.instructionsDesc'),
-			},
-		];
-
-		for (const meta of listEditableSections()) {
-			items.push({
-				name: `${meta.label} (${meta.zone})`,
-				desc: meta.description,
-				render: renderPromptOverrideSection(this, this.plugin, meta),
-			});
-		}
-
-		items.push({
-			name: tNow('settings.promptOverrides.previewButton'),
-			desc: tNow('settings.promptOverrides.previewDesc'),
-			render: renderPromptPreviewButton(this.plugin),
-		});
-
-		return items;
-	}
-
-	/**
-	 * 处理「获取推荐」按钮点击。
-	 *
-	 * 关键路径:发送 probe 请求,成功后 setControlValue 落值(saveSettings 统一触发面板重渲染)。
-	 *
-	 * @param btnEl - action 行元素,用于显示「获取中…」加载态
-	 */
-	private async handleProbeContext(btnEl: HTMLElement): Promise<void> {
-		if (
-			requiresChatApiKey(this.plugin.settings) &&
-			!hasChatApiKey(this.app, this.plugin.settings)
-		) {
-			new Notice(tNow('settings.notice.noChatKey'), 5000);
-			return;
-		}
-		const originalText = btnEl.textContent ?? tNow('settings.contextLength.probeButton');
-		btnEl.textContent = tNow('settings.contextLength.probeLoading');
-		btnEl.setAttribute('disabled', 'true');
-
-		const registryUrl = this.plugin.settings.modelRegistryUrl || DEFAULT_MODEL_REGISTRY_URL;
-		const result = await probeChatConnection({
-			apiBase: this.plugin.settings.chatApiBase,
-			apiKey: resolveChatApiKey(this.app, this.plugin.settings) ?? '',
-			model: this.plugin.settings.chatModel,
-			registry: this.plugin.modelContextRegistry,
-			registryUrl,
-		});
-
-		btnEl.textContent = originalText;
-		btnEl.removeAttribute('disabled');
-
-		if (!result.ok) {
-			new Notice(tNow('settings.notice.probeFailed', { message: result.error }), 5000);
-			return;
-		}
-
-		if (result.recommendedTokens != null) {
-			const applied = applyContextRecommendation(result.recommendedTokens);
-			await this.setControlValue('contextLengthPreset', applied.preset);
-			await this.setControlValue('chatModelMaxTokens', applied.chatModelMaxTokens);
-			new Notice(
-				tNow('settings.notice.probeSuccess', { value: `${result.recommendedTokens.toLocaleString()} tokens` }),
-				4000,
-			);
-		} else {
-			new Notice(tNow('settings.notice.probeNoRecommendation'), 5000);
-		}
 	}
 
 	/**

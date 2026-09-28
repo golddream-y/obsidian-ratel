@@ -1,8 +1,8 @@
 /**
  * @file src/ui/settings/chat-profiles-render.ts
- * @description 设置页「已保存的配置」列表 — 切换、改名、删除、另存
+ * @description 设置页「已保存的配置」列表 — 切换、当前套展开区(名称/提供商/模型名/窗口)、另存、删除
  * @module ui/settings/chat-profiles-render
- * @depends obsidian, ../../settings/chat-profiles, ../../secrets/ratel-secrets, ../../i18n
+ * @depends obsidian, ../../settings/chat-profiles, ../../settings/settings-apply, ../../secrets/ratel-secrets, ../../i18n
  */
 
 import { App, Modal, Notice, Setting, SettingGroup } from 'obsidian';
@@ -10,9 +10,12 @@ import type RatelVaultPlugin from '../../main';
 import type { ChatProfile } from '../../settings/chat-profiles';
 import {
 	deleteChatProfile,
+	inferChatProvider,
 	saveCurrentAsProfile,
 	switchChatProfile,
+	syncChatWindow,
 } from '../../settings/chat-profiles';
+import { applySettingValue, resolveRegistryUrl } from '../../settings/settings-apply';
 import {
 	chatProfileSecretId,
 	deleteChatProfileSecret,
@@ -21,8 +24,7 @@ import {
 	setChatProfileSecret,
 } from '../../secrets/ratel-secrets';
 import { tNow } from '../../i18n';
-import { DEFAULT_MODEL_REGISTRY_URL } from '../../ui/tokens/model-context-registry';
-import { applyModelContextWindow } from '../../ui/tokens/apply-model-context';
+import { CUSTOM_TOKEN_MAX, CUSTOM_TOKEN_MIN } from '../../ui/tokens/context-length-presets';
 
 /**
  * 简单文本输入 Modal — 用于改名 / 另存为名称。
@@ -68,6 +70,11 @@ class TextPromptModal extends Modal {
 /**
  * 渲染已保存配置列表(声明式 render 回调)。
  *
+ * 设计要点(S-CHAT-SETUP):
+ * - 只有当前套(activeChatProfileId 指向)在行下展开编辑区,未选中的行不展开;
+ * - 编辑区:名称、提供商(由地址推断,不另存字段)、模型名、上下文窗口一行、密钥;
+ * - 所有写入统一走 applySettingValue,与 update_app_config 工具同路径。
+ *
  * @param app - Obsidian App
  * @param plugin - 插件实例
  * @returns SettingDefinitionRender 的 render 函数
@@ -85,7 +92,11 @@ export function renderChatProfiles(
 		const activeId = plugin.settings.activeChatProfileId;
 
 		for (const profile of profiles) {
-			renderProfileRow(app, plugin, root, profile, profile.id === activeId);
+			const isActive = profile.id === activeId;
+			renderProfileRow(app, plugin, root, profile, isActive);
+			if (isActive) {
+				renderProfileDetail(app, plugin, root, profile);
+			}
 		}
 
 		new Setting(root)
@@ -120,7 +131,7 @@ export function renderChatProfiles(
 }
 
 /**
- * 渲染单套配置行。
+ * 渲染单套配置行。当前套不放按钮(在下方展开区编辑);其余套可设为当前 / 改名 / 删除。
  */
 function renderProfileRow(
 	app: App,
@@ -132,30 +143,22 @@ function renderProfileRow(
 	const row = root.createDiv({ cls: 'ratel-chat-profile-row' });
 	const summary = `${profile.name} · ${profile.model} · ${profile.apiBase}`;
 	const nameSuffix = isActive ? ` (${tNow('settings.chatProfiles.activeMark')})` : '';
+	const rowSetting = new Setting(row).setName(summary + nameSuffix);
+	if (isActive) return;
 
-	new Setting(row)
-		.setName(summary + nameSuffix)
+	rowSetting
 		.addButton((btn) => {
 			btn.setButtonText(tNow('settings.chatProfiles.setActive'));
-			btn.setDisabled(isActive);
 			btn.onClick(async () => {
-				if (isActive) return;
 				switchChatProfile(plugin.settings, profile.id);
-				const registryUrl = plugin.settings.modelRegistryUrl || DEFAULT_MODEL_REGISTRY_URL;
-				const result = await applyModelContextWindow({
-					model: profile.model,
+				// S-CHAT-SETUP:切换后按该套模型重查窗口;查不到清空旧上限,不静默沿用
+				const result = await syncChatWindow(plugin.settings, {
 					registry: plugin.modelContextRegistry,
-					registryUrl,
-					settings: plugin.settings,
+					registryUrl: resolveRegistryUrl(plugin.settings),
+					clearOnMiss: true,
 				});
-				if (!result.applied) {
+				if (!result.applied && !result.skipped) {
 					new Notice(tNow('settings.notice.contextLengthUnknown', { model: profile.model }), 5000);
-				} else {
-					const activeProfile = plugin.settings.chatProfiles.find((p) => p.id === profile.id);
-					if (activeProfile) {
-						activeProfile.contextLengthPreset = plugin.settings.contextLengthPreset;
-						activeProfile.chatModelMaxTokens = plugin.settings.chatModelMaxTokens;
-					}
 				}
 				await plugin.saveSettings();
 				plugin.rebuildLLM();
@@ -179,13 +182,8 @@ function renderProfileRow(
 		})
 		.addButton((btn) => {
 			btn.setButtonText(tNow('settings.chatProfiles.delete'));
-			btn.setDisabled(isActive);
 			btn.setWarning();
 			btn.onClick(async () => {
-				if (isActive) {
-					new Notice(tNow('settings.chatProfiles.deleteActiveBlocked'), 5000);
-					return;
-				}
 				try {
 					deleteChatProfile(plugin.settings, profile.id);
 				} catch {
@@ -197,9 +195,76 @@ function renderProfileRow(
 				new Notice(tNow('settings.chatProfiles.deleted', { name: profile.name }), 3000);
 			});
 		});
+}
 
-	if (requiresChatApiKey({ chatApiBase: profile.apiBase })) {
-		new Setting(row)
+/**
+ * 渲染当前套展开区:名称、提供商、地址(仅自定义)、密钥、模型名、上下文窗口一行。
+ */
+function renderProfileDetail(
+	app: App,
+	plugin: RatelVaultPlugin,
+	root: HTMLElement,
+	profile: ChatProfile,
+): void {
+	const detail = root.createDiv({ cls: 'ratel-chat-profile-detail' });
+
+	new Setting(detail)
+		.setName(tNow('settings.chatProfiles.detail.title', { name: profile.name }))
+		.setHeading();
+
+	// 名称 — 只改 profile.name,不涉及四字段
+	new Setting(detail)
+		.setName(tNow('settings.chatProfiles.name.name'))
+		.addText((text) => {
+			text.setValue(profile.name);
+			text.inputEl.addEventListener('change', () => {
+				void (async () => {
+					const trimmed = text.getValue().trim();
+					if (!trimmed || trimmed === profile.name) return;
+					profile.name = trimmed;
+					await plugin.saveSettings();
+				})();
+			});
+		});
+
+	// 提供商 — 由地址推断;DeepSeek/Ollama 走预设写入,自定义清空地址由用户填写
+	const provider = inferChatProvider(plugin.settings.chatApiBase);
+	new Setting(detail)
+		.setName(tNow('settings.chatProfiles.provider.name'))
+		.addDropdown((drop) => {
+			drop.addOptions({
+				deepseek: tNow('settings.chatPreset.deepseek'),
+				ollama: tNow('settings.chatPreset.ollama'),
+				custom: tNow('settings.chatPreset.custom'),
+			});
+			drop.setValue(provider);
+			drop.onChange(async (value) => {
+				await applySettingValue(plugin, 'chatPreset', value);
+				await plugin.saveSettings();
+			});
+		});
+
+	// 地址 — 仅自定义时显示(官方 DeepSeek / Ollama 地址由预设写死)
+	if (provider === 'custom') {
+		new Setting(detail)
+			.setName(tNow('settings.chatProfiles.apiBase.name'))
+			.addText((text) => {
+				text.setPlaceholder('https://your-endpoint/v1');
+				text.setValue(plugin.settings.chatApiBase);
+				text.inputEl.addEventListener('change', () => {
+					void (async () => {
+						const trimmed = text.getValue().trim();
+						if (!trimmed) return;
+						await applySettingValue(plugin, 'chatApiBase', trimmed);
+						await plugin.saveSettings();
+					})();
+				});
+			});
+	}
+
+	// 密钥 — 仅当前套展开区;本地 Ollama 免密钥,不进 data.json
+	if (requiresChatApiKey({ chatApiBase: plugin.settings.chatApiBase })) {
+		new Setting(detail)
 			.setName(tNow('settings.chatProfiles.apiKey.name'))
 			.setDesc(tNow('settings.chatProfiles.apiKey.desc', { id: chatProfileSecretId(profile.id) }))
 			.addText((text) => {
@@ -214,4 +279,107 @@ function renderProfileRow(
 				});
 			});
 	}
+
+	// 模型名 — 改后按映射表重查窗口(见 applySettingValue chatModel 分支)
+	new Setting(detail)
+		.setName(tNow('settings.chatProfiles.model.name'))
+		.addText((text) => {
+			text.setValue(plugin.settings.chatModel);
+			text.inputEl.addEventListener('change', () => {
+				void (async () => {
+					const trimmed = text.getValue().trim();
+					if (!trimmed) return;
+					await applySettingValue(plugin, 'chatModel', trimmed);
+					await plugin.saveSettings();
+				})();
+			});
+		});
+
+	renderProfileWindow(plugin, detail, profile);
+}
+
+/**
+ * 渲染上下文窗口一行(当前套展开区末行)。
+ *
+ * 三态:
+ * - windowUserSet:用户改小过 — 「这一套自己的上限是 N」+ 数字框;
+ * - 查表命中 — 「这个模型的窗口是 N」+「改得更小」按钮(不出现档位下拉);
+ * - 查不到 — 「未查到 X 的窗口」+ 数字框,不静默沿用上一个模型的上限。
+ */
+function renderProfileWindow(
+	plugin: RatelVaultPlugin,
+	detail: HTMLElement,
+	profile: ChatProfile,
+): void {
+	const setting = new Setting(detail).setName(tNow('settings.chatProfiles.window.heading'));
+
+	if (profile.windowUserSet) {
+		setting.setDesc(
+			tNow('settings.chatProfiles.window.userSet', {
+				tokens: plugin.settings.chatModelMaxTokens.toLocaleString(),
+			}) + '\n' + tNow('settings.chatProfiles.window.userSetHint'),
+		);
+		addWindowNumberInput(setting, plugin);
+		return;
+	}
+
+	// 查表是异步的:先渲染 loading,结果回来后原位补 desc 与控件
+	setting.setDesc(tNow('settings.chatProfiles.window.loading'));
+	void (async () => {
+		const result = await syncChatWindow(plugin.settings, {
+			registry: plugin.modelContextRegistry,
+			registryUrl: resolveRegistryUrl(plugin.settings),
+			// 仅展示:查不到保留旧值(不落盘),避免打开设置就清空
+			clearOnMiss: false,
+		});
+		// 关键路径:查到且值变化才落盘;saveSettings 会触发整页重渲染,本元素随之重建
+		if (result.changed) {
+			await plugin.saveSettings();
+			return;
+		}
+		if (result.tokens != null) {
+			const found = result.tokens;
+			setting.setDesc(
+				tNow('settings.chatProfiles.window.found', { tokens: found.toLocaleString() }) +
+					'\n' +
+					tNow('settings.chatProfiles.window.foundHint'),
+			);
+			setting.addButton((btn) => {
+				btn.setButtonText(tNow('settings.chatProfiles.window.shrink'));
+				btn.onClick(async () => {
+					await applySettingValue(plugin, 'chatModelMaxTokens', Math.floor(found / 2));
+					await plugin.saveSettings();
+				});
+			});
+		} else {
+			setting.setDesc(
+				tNow('settings.chatProfiles.window.unknown', { model: plugin.settings.chatModel }) +
+					'\n' +
+					tNow('settings.chatProfiles.window.unknownHint'),
+			);
+			addWindowNumberInput(setting, plugin);
+		}
+	})();
+}
+
+/** 窗口数字框 — min/max 与旧高级页一致,写入走 chatModelMaxTokens 分支(含大于查到值的钳制) */
+function addWindowNumberInput(setting: Setting, plugin: RatelVaultPlugin): void {
+	setting.addText((text) => {
+		text.inputEl.type = 'number';
+		text.inputEl.min = String(CUSTOM_TOKEN_MIN);
+		text.inputEl.max = String(CUSTOM_TOKEN_MAX);
+		// 关键路径:查不到时可能已被清成 0,预填空而非 0,引导用户填写
+		const current = plugin.settings.chatModelMaxTokens;
+		if (current > 0) {
+			text.setValue(String(current));
+		}
+		text.inputEl.addEventListener('change', () => {
+			void (async () => {
+				const n = Number.parseInt(text.getValue(), 10);
+				if (!Number.isFinite(n) || n <= 0) return;
+				await applySettingValue(plugin, 'chatModelMaxTokens', n);
+				await plugin.saveSettings();
+			})();
+		});
+	});
 }

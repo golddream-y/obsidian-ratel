@@ -67,17 +67,10 @@ export interface SettingsStrings {
   'settings.chatNavRailSide.desc': string;
   'settings.chatNavRailSide.left': string;
   'settings.chatNavRailSide.right': string;
-  'settings.chatPreset.heading': string;
-  'settings.chatPreset.name': string;
-  'settings.chatPreset.desc': string;
   'settings.chatPreset.deepseek': string;
   'settings.chatPreset.ollama': string;
   'settings.chatPreset.custom': string;
   'settings.chatModel.heading': string;
-  'settings.chatModel.model.name': string;
-  'settings.chatModel.model.desc': string;
-  'settings.chatModel.apiBase.name': string;
-  'settings.chatModel.apiBase.desc': string;
   'settings.chatProfiles.heading': string;
   'settings.chatProfiles.setActive': string;
   'settings.chatProfiles.rename': string;
@@ -98,18 +91,25 @@ export interface SettingsStrings {
   'settings.chatProfiles.apiKey.desc': string;
   'settings.chatProfiles.apiKey.placeholder': string;
   'settings.chatProfiles.apiKey.saved': string;
-  'settings.contextLength.heading': string;
-  'settings.contextLength.dropdown.name': string;
-  'settings.contextLength.dropdown.desc': string;
-  'settings.contextLength.probeButton': string;
-  'settings.contextLength.probeLoading': string;
-  'settings.contextLength.customTokens.name': string;
-  'settings.contextLength.customTokens.desc': string;
-  'settings.contextLength.preset.custom': string;
-  'settings.contextLength.preset.default': string;
+  'settings.chatProfiles.detail.title': string;
+  'settings.chatProfiles.name.name': string;
+  'settings.chatProfiles.provider.name': string;
+  'settings.chatProfiles.apiBase.name': string;
+  'settings.chatProfiles.model.name': string;
+  'settings.chatProfiles.window.heading': string;
+  'settings.chatProfiles.window.loading': string;
+  'settings.chatProfiles.window.found': string;
+  'settings.chatProfiles.window.foundHint': string;
+  'settings.chatProfiles.window.unknown': string;
+  'settings.chatProfiles.window.unknownHint': string;
+  'settings.chatProfiles.window.userSet': string;
+  'settings.chatProfiles.window.userSetHint': string;
+  'settings.chatProfiles.window.shrink': string;
   'settings.advanced.heading': string;
   'settings.advanced.registryUrl.name': string;
   'settings.advanced.registryUrl.desc': string;
+  'settings.advanced.registryPage.name': string;
+  'settings.advanced.registryPage.desc': string;
   'settings.advanced.resetButton': string;
   'settings.advanced.secretHint.title': string;
   'settings.advanced.secretHint.configured': string;
@@ -145,6 +145,8 @@ export interface SettingsStrings {
   'settings.autoCompactEnabled.name': string;
   'settings.autoCompactEnabled.desc': string;
   'settings.developer.heading': string;
+  'settings.developer.page.name': string;
+  'settings.developer.page.desc': string;
   'settings.developer.debugLog.name': string;
   'settings.developer.crashBreadcrumbs.name': string;
   'settings.developer.crashBreadcrumbs.desc': string;
@@ -174,6 +176,8 @@ export interface SettingsStrings {
   'settings.daily.format.name': string;
   'settings.daily.format.desc': string;
   'settings.toolPermissions.heading': string;
+  'settings.toolPermissions.page.name': string;
+  'settings.toolPermissions.page.desc': string;
   'settings.toolPermissions.mcpSection': string;
   'settings.mcp.openManage': string;
   'settings.mcp.openManage.desc': string;
@@ -227,6 +231,8 @@ export interface SettingsStrings {
   'settings.toolPermissions.ask': string;
   'settings.toolPermissions.deny': string;
   'settings.promptOverrides.heading': string;
+  'settings.promptOverrides.page.name': string;
+  'settings.promptOverrides.page.desc': string;
   'settings.promptOverrides.useCustom': string;
   'settings.promptOverrides.resetButton': string;
   'settings.promptOverrides.placeholderHint': string;
@@ -242,12 +248,7 @@ export interface SettingsStrings {
   'settings.diagnostics.tab.embedding': string;
   'settings.diagnostics.tab.llm': string;
   'settings.diagnostics.tab.rerank': string;
-  'settings.notice.noChatKey': string;
-  'settings.notice.probeFailed': string;
-  'settings.notice.probeSuccess': string;
-  'settings.notice.probeNoRecommendation': string;
   'settings.notice.contextLengthUnknown': string;
-  'settings.notice.invalidTokens': string;
 }
 
 // ==================== Chat UI ====================
@@ -1134,6 +1135,8 @@ export interface MemoryStrings {
   // Settings 面板 — Memory group
   'memory.settings.heading': string;
   'memory.settings.limitsHeading': string;
+  'memory.settings.limitsPage.name': string;
+  'memory.settings.limitsPage.desc': string;
   'memory.settings.enabled.name': string;
   'memory.settings.enabled.desc': string;
   'memory.settings.autoWrite.name': string;
@@ -1366,6 +1369,8 @@ export interface EcosystemStrings {
   'settings.ecosystem.heading': string;
   'settings.ecosystem.writeEnabled.name': string;
   'settings.ecosystem.writeEnabled.desc': string;
+  'settings.ecosystem.page.name': string;
+  'settings.ecosystem.page.desc': string;
 }
 
 // ==================== 合并 ====================

@@ -20,7 +20,7 @@
 | ID | 文件 | 状态 | 创建日期 | 备注 |
 |---|---|---|---|---|
 | S-MODEL-CATALOG | [2026-09-28-model-catalog-design.md](specs/2026-09-28-model-catalog-design.md) | Active | 2026-09-28 | 供应商名单；按供应商+模型 id 查窗口和单次输出。不改已落地的设置页结构 |
-| S-CHAT-SETUP | [2026-09-27-chat-setup-design.md](specs/2026-09-27-chat-setup-design.md) | Active | 2026-09-27 | 对话模型收成一套；长设置进二级页。实现在 feat-chat-setup，尚未合入 develop |
+| S-CHAT-SETUP | [2026-09-27-chat-setup-design.md](specs/2026-09-27-chat-setup-design.md) | Active | 2026-09-27 | 对话模型收成一套；长设置进二级页。已合入 develop |
 | S-LOOP-STABILITY | [2026-09-26-loop-stability-design.md](specs/2026-09-26-loop-stability-design.md) | Active | 2026-09-26 | 步数将尽先收束；空步只续一次；工具 60 秒兜底超时 |
 | S-RUN-STATUS | [2026-09-26-run-status-design.md](specs/2026-09-26-run-status-design.md) | Active | 2026-09-26 | 撰写中后随机短句；等待三句；工具友好名；第 n 步 |
 | S-CHAT-PROFILES | [2026-09-24-chat-profiles-design.md](specs/2026-09-24-chat-profiles-design.md) | Active | 2026-09-24 | 多套配置已落地。待做：顶栏模型名展开菜单切换，不再弹只读框 |
@@ -34,7 +34,7 @@
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
 | P-MODEL-CATALOG | [2026-09-28-model-catalog.md](plans/2026-09-28-model-catalog.md) | Pending | S-MODEL-CATALOG | 四步：名单纯函数、缓存、providerId 与精确窗口、设置下拉 |
-| P-CHAT-SETUP | [2026-09-27-chat-setup.md](plans/2026-09-27-chat-setup.md) | Pending | S-CHAT-SETUP | 两步已在 feat-chat-setup 实现。develop 上这份 plan 尚未合入 |
+| P-CHAT-SETUP | [2026-09-27-chat-setup.md](plans/2026-09-27-chat-setup.md) | Completed | S-CHAT-SETUP | 已合入 develop。Sandbox 预览随名单一起做 |
 | P-RUN-STATUS | [2026-09-27-run-status.md](plans/2026-09-27-run-status.md) | Completed | S-RUN-STATUS | 状态行纯函数 + 消息球接线已提交。图标只留在合适的句子上 |
 | P-CHAT-PROFILE-MENU | [2026-09-27-chat-profile-menu.md](plans/2026-09-27-chat-profile-menu.md) | Completed | S-CHAT-PROFILES | 顶栏菜单，提交 29069b9。设置页「设为当前」尚未改调共用函数 |
 | P-CONTEXT-ACCURACY | [2026-09-24-context-accuracy.md](plans/2026-09-24-context-accuracy.md) | Completed | S-CONTEXT-ACCURACY | 已合 develop（merge 7205e07）；4 Task + CA-01 4xx 取舍 |
