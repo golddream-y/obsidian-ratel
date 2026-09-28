@@ -33,7 +33,7 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
-| P-MODEL-CATALOG | [2026-09-28-model-catalog.md](plans/2026-09-28-model-catalog.md) | Pending | S-MODEL-CATALOG | 四步：名单纯函数、缓存、providerId 与精确窗口、设置下拉 |
+| P-MODEL-CATALOG | [2026-09-28-model-catalog.md](plans/2026-09-28-model-catalog.md) | In Progress | S-MODEL-CATALOG | 分支 feat-model-catalog。四步：名单纯函数、缓存、providerId 与精确窗口、设置下拉 |
 | P-CHAT-SETUP | [2026-09-27-chat-setup.md](plans/2026-09-27-chat-setup.md) | Completed | S-CHAT-SETUP | 已合入 develop。Sandbox 预览随名单一起做 |
 | P-RUN-STATUS | [2026-09-27-run-status.md](plans/2026-09-27-run-status.md) | Completed | S-RUN-STATUS | 状态行纯函数 + 消息球接线已提交。图标只留在合适的句子上 |
 | P-CHAT-PROFILE-MENU | [2026-09-27-chat-profile-menu.md](plans/2026-09-27-chat-profile-menu.md) | Completed | S-CHAT-PROFILES | 顶栏菜单，提交 29069b9。设置页「设为当前」尚未改调共用函数 |
