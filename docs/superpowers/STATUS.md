@@ -33,7 +33,7 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
-| P-LOOP-STABILITY | [2026-09-29-loop-stability.md](plans/2026-09-29-loop-stability.md) | Pending | S-LOOP-STABILITY | 三步：纯判断、接到循环、工具 60 秒截止 |
+| P-LOOP-STABILITY | [2026-09-29-loop-stability.md](plans/2026-09-29-loop-stability.md) | Completed | S-LOOP-STABILITY | 已合入 develop。收束、空步一次、工具 60 秒 |
 | P-MODEL-CATALOG | [2026-09-28-model-catalog.md](plans/2026-09-28-model-catalog.md) | Completed | S-MODEL-CATALOG | 已合入 develop。拉不到名单时用旧缓存或退回手填 |
 | P-CHAT-SETUP | [2026-09-27-chat-setup.md](plans/2026-09-27-chat-setup.md) | Completed | S-CHAT-SETUP | 已合入 develop。Sandbox 预览随名单一起做 |
 | P-RUN-STATUS | [2026-09-27-run-status.md](plans/2026-09-27-run-status.md) | Completed | S-RUN-STATUS | 状态行纯函数 + 消息球接线已提交。图标只留在合适的句子上 |

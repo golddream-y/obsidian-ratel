@@ -18,6 +18,13 @@ import { isPromptTooLong } from './compact-project';
 import { mapSearchResults } from './search-result-mapper';
 import { isLikelyVisionApiError } from './vision-api-error';
 import { shouldCarryShortOutline, CARRY_SYSTEM } from './turn-carry';
+import {
+	TOOL_DEADLINE_MS,
+	shouldAppendWrapUp,
+	shouldContinueEmptyStep,
+	withToolDeadline,
+} from './loop-stability';
+import { tNow } from '../i18n';
 
 /**
  * Agent Loop 的默认最大步数上限,防止工具调用陷入死循环。
@@ -69,7 +76,7 @@ export function overlayLastUserContent(
  * - 取消机制:传入 `AbortSignal` 后,每轮循环开始前检查 `aborted` 状态,中止时 yield error 并 break。
  * - 支持一轮内多个工具调用(并行/批量场景):收集全部 toolCall delta 后逐个执行,结果逐条入库。
  * - 截断检测:
- *   - MAX_STEPS 命中时,yield error 事件告知 UI,并在 assistant 消息末尾追加截断提示。
+ *   - MAX_STEPS 命中时,在 assistant 消息末尾追加一句步数用完,不再同时发出 error。
  *   - finishReason === 'length' 时,yield error 事件,追加截断提示,但继续循环(给模型续传机会)。
  *
  * @param req - 用户消息请求(含 sessionId 与 message)
@@ -158,6 +165,9 @@ export async function* agentLoop(
 		let alreadyCarried = false;
 		// 关键路径:下一步 llm.chat 出站副本末尾追加 CARRY_SYSTEM,不写入 session。
 		let appendCarrySystemOnNextChat = false;
+		let sawTool = false;
+		let emptyContinued = false;
+		let appendEmptyStepOnNextChat = false;
 
 		// 单步循环:每轮产生一段 assistant 回复 + 零到多次工具调用。
 		for (let step = 0; step < effectiveMaxSteps; step++) {
@@ -191,6 +201,13 @@ export async function* agentLoop(
 				if (appendCarrySystemOnNextChat) {
 					chatMessages = [...chatMessages, { role: 'system', content: CARRY_SYSTEM }];
 					appendCarrySystemOnNextChat = false;
+				}
+				if (appendEmptyStepOnNextChat) {
+					chatMessages = [...chatMessages, { role: 'system', content: tNow('loop.emptyStep') }];
+					appendEmptyStepOnNextChat = false;
+				}
+				if (shouldAppendWrapUp(step, effectiveMaxSteps)) {
+					chatMessages = [...chatMessages, { role: 'system', content: tNow('loop.wrapUp') }];
 				}
 				const stream = llm.chat({
 					messages: chatMessages,
@@ -297,6 +314,18 @@ export async function* agentLoop(
 
 			// 无 toolCall → 纯文本收笔;短正文且思考更长时同一轮再请求一次(见 turn-carry)。
 			if (toolCalls.length === 0) {
+				if (shouldContinueEmptyStep({
+					step,
+					sawTool,
+					alreadyContinued: emptyContinued,
+					text: accumulatedText,
+					reasoning: accumulatedReasoning,
+					toolCallCount: 0,
+				})) {
+					emptyContinued = true;
+					appendEmptyStepOnNextChat = true;
+					continue;
+				}
 				ctx.addAssistantMessage(accumulatedText, accumulatedReasoning || undefined);
 				// 关键路径:仅正常停笔(null/stop)才续写;tool_calls 等其它 finishReason 不推。
 				const finishOk = finishReason === null || finishReason === 'stop';
@@ -320,6 +349,7 @@ export async function* agentLoop(
 			// 关键路径:本轮思考全文在拆分多条 tool_calls 时复用到每条 assistant 消息 —
 			// DeepSeek thinking 模式要求含 tool_calls 的 assistant 都带回 reasoning_content。
 			const turnReasoning = accumulatedReasoning || undefined;
+			sawTool = true;
 
 			// 关键路径:一轮内逐个执行工具调用(对 UI 展示为逐条 tool.call/tool.result),
 			// 每个工具独立过权限门控与钩子,单个失败不阻断其他工具。
@@ -363,13 +393,21 @@ export async function* agentLoop(
 				let result: unknown;
 				let toolFailed = false;
 				try {
-					result = await tools.execute(tc);
+					result = await withToolDeadline(
+						tools.execute(tc),
+						TOOL_DEADLINE_MS,
+						signal,
+						tNow('loop.toolTimeout'),
+					);
 				} catch (err) {
+					const rawCode = (err as Error & { code?: string }).code;
+					if (rawCode === 'CANCELLED' || signal?.aborted) {
+						yield { type: 'error', payload: { code: 'CANCELLED', message: '用户取消' } };
+						loopExitedViaBreak = true;
+						break;
+					}
 					toolFailed = true;
 					const message = err instanceof Error ? err.message : String(err);
-					// 关键路径:文件系统错误自带 code=ENOENT。若原样上抛,聊天会把它当成整轮失败,
-					// 红条里还会露出绝对路径。索引未就绪仍单独转发,其余一律算工具失败。
-					const rawCode = (err as Error & { code?: string }).code;
 					const code = rawCode === 'INDEX_NOT_READY' ? rawCode : 'TOOL_ERROR';
 					yield { type: 'error', payload: { code, message } };
 					result = `Error: ${message}`;
@@ -453,15 +491,8 @@ export async function* agentLoop(
 		// 此时模型在最后一步执行了工具但没机会产出最终回答(用户看到的"跑到一半停了")。
 		if (!loopExitedViaBreak) {
 			devLogger.warn('agent', `Agent Loop 达到 maxSteps=${effectiveMaxSteps} 上限,强制结束`);
-			const notice = '\n\n---\n⚠️ **思考步数已达上限,回答可能不完整。** 可以继续对话让模型完成报告。';
+			const notice = `\n\n${tNow('loop.stepLimit')}`;
 			yield { type: 'message.delta', payload: { text: notice } };
-			yield {
-				type: 'error',
-				payload: {
-					code: 'LLM_ERROR',
-					message: `思考步数达到上限(${effectiveMaxSteps}步),回答可能不完整。`,
-				},
-			};
 			ctx.addAssistantMessage(notice);
 		}
 	} finally {

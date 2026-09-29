@@ -829,6 +829,10 @@ export interface ErrorStrings {
   'error.tool.invalidArg': string;
   'error.tool.rejected': string;
   'error.tool.rejectedDisabled': string;
+  'loop.wrapUp': string;
+  'loop.emptyStep': string;
+  'loop.stepLimit': string;
+  'loop.toolTimeout': string;
   'error.tool.hostAccessOff': string;
   'error.tool.hostPathInsideVault': string;
   'error.tool.hostFileTooLarge': string;
