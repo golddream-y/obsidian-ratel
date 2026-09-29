@@ -63,10 +63,28 @@ export class ModelsDevCatalogCache {
 
 		const stale = await this.readCacheIgnoringTtl();
 		if (stale) {
-			devLogger.warn('main', '模型名单拉取失败,使用过期缓存');
+			const fetchedAt = await this.readFetchedAt();
+			const when = fetchedAt ? `，上次拉取 ${new Date(fetchedAt).toISOString()}` : '';
+			devLogger.warn(
+				'main',
+				`models.dev 这次没拿到。改用插件目录里的旧名单${when}。供应商和模型下拉仍可用，窗口数字可能不是最新的。`,
+			);
 			return stale;
 		}
+		devLogger.warn(
+			'main',
+			'models.dev 这次没拿到，插件目录里也没有旧名单。对话模型页只保留本地 Ollama 和自定义，窗口需要手填。已保存的地址、模型和密钥不变。',
+		);
 		return null;
+	}
+
+	private async readFetchedAt(): Promise<number | null> {
+		try {
+			const meta = JSON.parse(await readFile(this.metaPath(), 'utf-8')) as CatalogMeta;
+			return typeof meta.fetchedAt === 'number' ? meta.fetchedAt : null;
+		} catch {
+			return null;
+		}
 	}
 
 	private async readCacheIfFresh(): Promise<ModelsDevCatalog | null> {
@@ -97,21 +115,22 @@ export class ModelsDevCatalogCache {
 		try {
 			const response = await this.fetchFn({ url, method: 'GET', throw: false });
 			if (response.status < 200 || response.status >= 300) {
-				devLogger.warn('main', `模型名单 HTTP ${response.status}`);
+				devLogger.warn('main', `models.dev 返回 HTTP ${response.status}，不用这次响应`);
 				return null;
 			}
 			const text = response.text;
 			if (text.length > CATALOG_MAX_BYTES) {
-				devLogger.warn('main', `模型名单过大(${text.length} bytes),丢弃`);
+				devLogger.warn('main', `models.dev 响应有 ${text.length} 字节，超过 8MB，丢弃`);
 				return null;
 			}
 			const parsed = JSON.parse(text) as unknown;
 			if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+				devLogger.warn('main', 'models.dev 响应不是供应商名单，丢弃');
 				return null;
 			}
 			return parsed as ModelsDevCatalog;
 		} catch (err) {
-			devLogger.warn('main', '模型名单拉取/解析失败', err);
+			devLogger.warn('main', 'models.dev 请求或解析失败', err);
 			return null;
 		}
 	}
