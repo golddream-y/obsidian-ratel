@@ -149,8 +149,8 @@ describe('agentLoop', () => {
 
 		const toolCallCount = events.filter((e) => e.type === 'tool.call').length;
 		expect(toolCallCount).toBeLessThanOrEqual(50);
-		// 关键路径:达到步数上限时应 yield error 事件通知 UI
-		expect(events.some((e) => e.type === 'error')).toBe(true);
+		expect(events.some((e) => e.type === 'error' && e.payload.code === 'LLM_ERROR')).toBe(false);
+		expect(events.some((e) => e.type === 'message.delta' && e.payload.text.includes('这一轮步数用完了'))).toBe(true);
 	});
 
 	it('maxSteps 可配置 - 传入 5 - 5 步后强制停止', async () => {
@@ -192,7 +192,8 @@ describe('agentLoop', () => {
 
 		const toolCallCount = events.filter((e) => e.type === 'tool.call').length;
 		expect(toolCallCount).toBeLessThanOrEqual(5);
-		expect(events.some((e) => e.type === 'error')).toBe(true);
+		expect(events.some((e) => e.type === 'error' && e.payload.code === 'LLM_ERROR')).toBe(false);
+		expect(events.some((e) => e.type === 'message.delta' && e.payload.text.includes('这一轮步数用完了'))).toBe(true);
 	});
 
 	it('saves session after completion', async () => {
@@ -1450,5 +1451,102 @@ describe('agentLoop', () => {
 			/* drain */
 		}
 		expect(seen?.onRetryWait).toBe(cb);
+	});
+
+	it('空步 - 第二步没有产出 - 再请求一次后结束', async () => {
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence, undefined, 8000);
+		let calls = 0;
+		const llm: LLMClient = {
+			async *chat(): AsyncIterable<ChatDelta> {
+				calls += 1;
+				if (calls === 1) {
+					yield { text: '', toolCall: { id: 'c1', name: 'read_note', args: { path: 'a.md' } } };
+					return;
+				}
+				if (calls === 2) return;
+				yield { text: '说完了。' + '正文'.repeat(120) };
+			},
+			embed: async () => [],
+			countTokens: () => 10,
+		};
+		const tools = new ToolRegistry();
+		tools.register({
+			definition: { name: 'read_note', description: 'Read', parameters: {} },
+			execute: async () => '内容',
+		});
+		const events: AgentEvent[] = [];
+		for await (const event of agentLoop(
+			{ sessionId: 's1', message: '继续' },
+			ctx,
+			llm,
+			tools,
+			new HookRegistry(),
+		)) {
+			events.push(event);
+		}
+		expect(calls).toBe(3);
+		expect(events.some((e) => e.type === 'message.delta' && e.payload.text.startsWith('说完了'))).toBe(true);
+	});
+
+	it('空步 - 第一步就空 - 不再请求', async () => {
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence, undefined, 8000);
+		let calls = 0;
+		const llm: LLMClient = {
+			async *chat(): AsyncIterable<ChatDelta> {
+				calls += 1;
+			},
+			embed: async () => [],
+			countTokens: () => 10,
+		};
+		for await (const _ of agentLoop(
+			{ sessionId: 's1', message: '空' },
+			ctx,
+			llm,
+			new ToolRegistry(),
+			new HookRegistry(),
+		)) {
+			/* drain */
+		}
+		expect(calls).toBe(1);
+	});
+
+	it('收束 - 剩余 5 步 - 出站有说明且会话里没有', async () => {
+		const sessions = new Map<string, Session>();
+		const persistence = createMockPersistence(sessions);
+		const ctx = new ContextManager(persistence, undefined, 8000);
+		const seen: string[] = [];
+		const llm: LLMClient = {
+			async *chat(req: ChatRequest): AsyncIterable<ChatDelta> {
+				seen.push(req.messages.map((m) => m.content).join('\n'));
+				yield { text: '', toolCall: { id: 'c1', name: 'read_note', args: {} } };
+			},
+			embed: async () => [],
+			countTokens: () => 10,
+		};
+		const tools = new ToolRegistry();
+		tools.register({
+			definition: { name: 'read_note', description: 'Read', parameters: {} },
+			execute: async () => 'x',
+		});
+		for await (const _ of agentLoop(
+			{ sessionId: 's1', message: '长任务' },
+			ctx,
+			llm,
+			tools,
+			new HookRegistry(),
+			undefined,
+			undefined,
+			undefined,
+			6,
+		)) {
+			/* drain */
+		}
+		expect(seen[0]).not.toContain('不要再开新的工具链');
+		expect(seen[1]).toContain('不要再开新的工具链');
+		const saved = sessions.get('s1');
+		const blob = JSON.stringify(saved?.messages ?? []);
+		expect(blob).not.toContain('不要再开新的工具链');
 	});
 });

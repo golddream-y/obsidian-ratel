@@ -33,7 +33,7 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
-| P-LOOP-STABILITY | [2026-09-29-loop-stability.md](plans/2026-09-29-loop-stability.md) | Pending | S-LOOP-STABILITY | 三步：纯判断、接到循环、工具 60 秒截止 |
+| P-LOOP-STABILITY | [2026-09-29-loop-stability.md](plans/2026-09-29-loop-stability.md) | Completed | S-LOOP-STABILITY | 分支 feat-loop-stability。收束、空步一次、工具 60 秒。尚未合入 develop |
 | P-MODEL-CATALOG | [2026-09-28-model-catalog.md](plans/2026-09-28-model-catalog.md) | Pending | S-MODEL-CATALOG | 四步：名单纯函数、缓存、providerId 与精确窗口、设置下拉。实现在 feat-model-catalog |
 | P-CHAT-SETUP | [2026-09-27-chat-setup.md](plans/2026-09-27-chat-setup.md) | Completed | S-CHAT-SETUP | 已合入 develop。Sandbox 预览随名单一起做 |
 | P-RUN-STATUS | [2026-09-27-run-status.md](plans/2026-09-27-run-status.md) | Completed | S-RUN-STATUS | 状态行纯函数 + 消息球接线已提交。图标只留在合适的句子上 |
