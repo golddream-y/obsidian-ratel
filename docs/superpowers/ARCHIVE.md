@@ -9,21 +9,21 @@
 
 ## 统计
 
-**按月归档记录数**(共 83 条,70 个目录)
+**按月归档记录数**(共 87 条,74 个目录)
 
 ```mermaid
 xychart-beta
     title "按月归档记录数"
     x-axis ["2026-06", "2026-07", "2026-08", "2026-09"]
     y-axis "记录数" 0 --> 26
-    bar [17, 23, 26, 17]
+    bar [17, 23, 26, 21]
 ```
 
 **归档形态分布**
 
 ```mermaid
 pie showData title 归档形态分布
-    "完成归档" : 74
+    "完成归档" : 78
     "Abandoned(未实施/中途废弃)" : 4
     "Superseded(被取代)" : 5
 ```
@@ -34,6 +34,10 @@ pie showData title 归档形态分布
 
 | ID | 归档目录 | 日期 | 备注 |
 |---|---|---|---|
+| S-LOOP-STABILITY | [archive/S-LOOP-STABILITY/](archive/S-LOOP-STABILITY/) | 09-29 | 收束、空步一次、工具 60 秒。合入 develop `2571096` |
+| S-RUN-STATUS | [archive/S-RUN-STATUS/](archive/S-RUN-STATUS/) | 09-29 | 状态行。合入 develop `3cdc842` |
+| S-CONTEXT-ACCURACY | [archive/S-CONTEXT-ACCURACY/](archive/S-CONTEXT-ACCURACY/) | 09-29 | 窗口占用看最后一步。合入 develop `7205e07` |
+| S-CHAT-SETUP | [archive/S-CHAT-SETUP/](archive/S-CHAT-SETUP/) | 09-29 | 当前套编辑与长设置二级页。合入 develop `1bb9317` |
 | S-TURN-CARRY | [archive/S-TURN-CARRY/](archive/S-TURN-CARRY/) | 09-27 | 收笔护栏合入 develop `76e0d86`。短正文再请求一次；85% 压缩未改 |
 | S-NOTE-AGENTS | [archive/S-NOTE-AGENTS/](archive/S-NOTE-AGENTS/) | 09-27 | 库内 AGENTS.md。链、强制确认、读/写闸门与库根注入，合入 develop `199e5ff` |
 | S-HOST-ACCESS | [archive/S-HOST-ACCESS/](archive/S-HOST-ACCESS/) | 09-24 | 库外访问随 0.10.0 发布。总闸默认关，开后走现有权限确认 |
