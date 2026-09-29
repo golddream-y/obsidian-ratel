@@ -116,6 +116,7 @@ import { ensurePluginGitignore } from './utils/gitignore-writer';
 import { sha256 } from './utils/hash';
 import { IndexManifest, migrateLegacyIndexManifest, resolveIndexManifestPath } from './core/index-manifest';
 import { ModelContextRegistry } from './ui/tokens/model-context-registry';
+import { ModelsDevCatalogCache } from './settings/model-catalog-cache';
 import os from 'os';
 // 关键路径:P-SKILL-1-CORE — Skill 机制(三源加载 + 注册表 + 激活器 + 2 工具)。
 import { SkillLoader } from './skills/skill-loader';
@@ -240,6 +241,8 @@ export default class RatelVaultPlugin extends Plugin {
 	private noteAgentsTurn?: NoteAgentsToolDeps;
 	modelManager!: ModelManager;
 	modelContextRegistry!: ModelContextRegistry;
+	/** S-MODEL-CATALOG: models.dev 名单缓存。打开对话模型页时才拉取 */
+	modelsDevCatalog!: ModelsDevCatalogCache;
 	indexController!: IndexController;
 	// 关键路径:索引 backend 引用 — smartReindex 直接调 this.indexBackend.fullReindex(),
 	// 避免 this.indexController['indexManager']['backend'] 反模式访问私有字段。
@@ -356,6 +359,7 @@ export default class RatelVaultPlugin extends Plugin {
 			}),
 		});
 		this.modelContextRegistry = new ModelContextRegistry(pluginDir);
+		this.modelsDevCatalog = new ModelsDevCatalogCache(pluginDir);
 
 		// ==================== 用户记忆系统 ====================
 		// 关键路径:记忆目录在 vault 内的 .ratel/memory/,用户可见可编辑;

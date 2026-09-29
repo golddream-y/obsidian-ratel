@@ -1,6 +1,6 @@
 /**
  * @file src/ui/settings/chat-profiles-render.ts
- * @description 设置页「已保存的配置」列表 — 切换、当前套展开区(名称/提供商/模型名/窗口)、另存、删除
+ * @description 设置页「已保存的配置」列表 — 切换、当前套展开区(名称/供应商名单/模型/窗口)
  * @module ui/settings/chat-profiles-render
  * @depends obsidian, ../../settings/chat-profiles, ../../settings/settings-apply, ../../secrets/ratel-secrets, ../../i18n
  */
@@ -15,7 +15,16 @@ import {
 	switchChatProfile,
 	syncChatWindow,
 } from '../../settings/chat-profiles';
-import { applySettingValue, resolveRegistryUrl } from '../../settings/settings-apply';
+import {
+	CATALOG_MODEL_HAND,
+	LOCAL_PROVIDER_CUSTOM,
+	LOCAL_PROVIDER_OLLAMA,
+	listCatalogModels,
+	listCatalogProviders,
+	modelPickValue,
+	type ModelsDevCatalog,
+} from '../../settings/model-catalog';
+import { applySettingValue } from '../../settings/settings-apply';
 import {
 	chatProfileSecretId,
 	deleteChatProfileSecret,
@@ -152,9 +161,9 @@ function renderProfileRow(
 			btn.onClick(async () => {
 				switchChatProfile(plugin.settings, profile.id);
 				// S-CHAT-SETUP:切换后按该套模型重查窗口;查不到清空旧上限,不静默沿用
+				const catalog = plugin.modelsDevCatalog ? await plugin.modelsDevCatalog.ensureCatalog() : null;
 				const result = await syncChatWindow(plugin.settings, {
-					registry: plugin.modelContextRegistry,
-					registryUrl: resolveRegistryUrl(plugin.settings),
+					catalog,
 					clearOnMiss: true,
 				});
 				if (!result.applied && !result.skipped) {
@@ -227,26 +236,59 @@ function renderProfileDetail(
 			});
 		});
 
-	// 提供商 — 由地址推断;DeepSeek/Ollama 走预设写入,自定义清空地址由用户填写
-	const provider = inferChatProvider(plugin.settings.chatApiBase);
-	new Setting(detail)
-		.setName(tNow('settings.chatProfiles.provider.name'))
-		.addDropdown((drop) => {
-			drop.addOptions({
-				deepseek: tNow('settings.chatPreset.deepseek'),
-				ollama: tNow('settings.chatPreset.ollama'),
-				custom: tNow('settings.chatPreset.custom'),
-			});
-			drop.setValue(provider);
-			drop.onChange(async (value) => {
-				await applySettingValue(plugin, 'chatPreset', value);
-				await plugin.saveSettings();
-			});
-		});
+	// 提供商与模型依赖名单，先占位，拉到缓存后再填
+	const providerHost = detail.createDiv();
+	void (async () => {
+		const catalog = plugin.modelsDevCatalog ? await plugin.modelsDevCatalog.ensureCatalog() : null;
+		if (!providerHost.isConnected) return;
+		renderProviderAndModel(app, plugin, providerHost, profile, catalog);
+	})();
 
-	// 地址 — 仅自定义时显示(官方 DeepSeek / Ollama 地址由预设写死)
-	if (provider === 'custom') {
-		new Setting(detail)
+	renderProfileWindow(plugin, detail, profile);
+}
+
+/**
+ * 名单到达后画出提供商、地址、密钥和模型。
+ * 有 api 的供应商只展示地址；空 api、本地和自定义才可编辑。
+ */
+function renderProviderAndModel(
+	app: App,
+	plugin: RatelVaultPlugin,
+	host: HTMLElement,
+	profile: ChatProfile,
+	catalog: ModelsDevCatalog | null,
+): void {
+	const providerId = profile.providerId || inferChatProvider(plugin.settings.chatApiBase);
+	const rows = catalog ? listCatalogProviders(catalog) : [];
+	const options: Record<string, string> = {};
+	for (const row of rows) options[row.id] = row.name;
+	options[LOCAL_PROVIDER_OLLAMA] = tNow('settings.chatPreset.ollama');
+	options[LOCAL_PROVIDER_CUSTOM] = tNow('settings.chatPreset.custom');
+	if (!options[providerId]) options[providerId] = providerId;
+
+	const providerSetting = new Setting(host).setName(tNow('settings.chatProfiles.provider.name'));
+	if (!catalog) providerSetting.setDesc(tNow('settings.chatProfiles.catalogMissing'));
+	providerSetting.addDropdown((drop) => {
+		drop.addOptions(options);
+		drop.setValue(providerId);
+		drop.onChange(async (value) => {
+			await applySettingValue(plugin, 'chatProvider', value);
+			await plugin.saveSettings();
+		});
+	});
+
+	const listed = rows.find((row) => row.id === providerId);
+	const editableBase =
+		providerId === LOCAL_PROVIDER_OLLAMA ||
+		providerId === LOCAL_PROVIDER_CUSTOM ||
+		!listed ||
+		listed.api === null;
+	if (!editableBase && listed?.api) {
+		new Setting(host)
+			.setName(tNow('settings.chatProfiles.apiBase.name'))
+			.setDesc(listed.api);
+	} else if (editableBase) {
+		new Setting(host)
 			.setName(tNow('settings.chatProfiles.apiBase.name'))
 			.addText((text) => {
 				text.setPlaceholder('https://your-endpoint/v1');
@@ -262,9 +304,8 @@ function renderProfileDetail(
 			});
 	}
 
-	// 密钥 — 仅当前套展开区;本地 Ollama 免密钥,不进 data.json
 	if (requiresChatApiKey({ chatApiBase: plugin.settings.chatApiBase })) {
-		new Setting(detail)
+		new Setting(host)
 			.setName(tNow('settings.chatProfiles.apiKey.name'))
 			.setDesc(tNow('settings.chatProfiles.apiKey.desc', { id: chatProfileSecretId(profile.id) }))
 			.addText((text) => {
@@ -280,8 +321,39 @@ function renderProfileDetail(
 			});
 	}
 
-	// 模型名 — 改后按映射表重查窗口(见 applySettingValue chatModel 分支)
-	new Setting(detail)
+	const handOnly = providerId === LOCAL_PROVIDER_OLLAMA || providerId === LOCAL_PROVIDER_CUSTOM || !catalog;
+	if (handOnly) {
+		addModelText(plugin, host);
+		return;
+	}
+	const modelIds = listCatalogModels(catalog, providerId);
+	const picked = modelPickValue(modelIds, plugin.settings.chatModel);
+	new Setting(host)
+		.setName(tNow('settings.chatProfiles.model.name'))
+		.addDropdown((drop) => {
+			const modelOptions: Record<string, string> = {};
+			for (const id of modelIds) modelOptions[id] = id;
+			modelOptions[CATALOG_MODEL_HAND] = tNow('settings.chatProfiles.model.hand');
+			drop.addOptions(modelOptions);
+			drop.setValue(picked);
+			drop.onChange(async (value) => {
+				if (value === CATALOG_MODEL_HAND) {
+					if (host.querySelector('[data-hand-model]')) return;
+					const wrap = host.createDiv();
+					wrap.dataset.handModel = '1';
+					addModelText(plugin, wrap);
+					return;
+				}
+				await applySettingValue(plugin, 'chatModel', value);
+				await plugin.saveSettings();
+			});
+		});
+	if (picked === CATALOG_MODEL_HAND) addModelText(plugin, host);
+}
+
+/** 手填模型名。变更后按当前供应商精确查窗口。 */
+function addModelText(plugin: RatelVaultPlugin, host: HTMLElement): void {
+	new Setting(host)
 		.setName(tNow('settings.chatProfiles.model.name'))
 		.addText((text) => {
 			text.setValue(plugin.settings.chatModel);
@@ -294,8 +366,6 @@ function renderProfileDetail(
 				})();
 			});
 		});
-
-	renderProfileWindow(plugin, detail, profile);
 }
 
 /**
@@ -314,21 +384,27 @@ function renderProfileWindow(
 	const setting = new Setting(detail).setName(tNow('settings.chatProfiles.window.heading'));
 
 	if (profile.windowUserSet) {
-		setting.setDesc(
+		const baseDesc =
 			tNow('settings.chatProfiles.window.userSet', {
 				tokens: plugin.settings.chatModelMaxTokens.toLocaleString(),
-			}) + '\n' + tNow('settings.chatProfiles.window.userSetHint'),
-		);
+			}) + '\n' + tNow('settings.chatProfiles.window.userSetHint');
+		setting.setDesc(baseDesc);
 		addWindowNumberInput(setting, plugin);
+		void (async () => {
+			const catalog = plugin.modelsDevCatalog ? await plugin.modelsDevCatalog.ensureCatalog() : null;
+			const result = await syncChatWindow(plugin.settings, { catalog, clearOnMiss: false });
+			if (!setting.settingEl.isConnected || !result.output) return;
+			setting.setDesc(baseDesc + '\n' + tNow('settings.chatProfiles.window.output', { tokens: result.output.toLocaleString() }));
+		})();
 		return;
 	}
 
 	// 查表是异步的:先渲染 loading,结果回来后原位补 desc 与控件
 	setting.setDesc(tNow('settings.chatProfiles.window.loading'));
 	void (async () => {
+		const catalog = plugin.modelsDevCatalog ? await plugin.modelsDevCatalog.ensureCatalog() : null;
 		const result = await syncChatWindow(plugin.settings, {
-			registry: plugin.modelContextRegistry,
-			registryUrl: resolveRegistryUrl(plugin.settings),
+			catalog,
 			// 仅展示:查不到保留旧值(不落盘),避免打开设置就清空
 			clearOnMiss: false,
 		});
@@ -339,11 +415,14 @@ function renderProfileWindow(
 		}
 		if (result.tokens != null) {
 			const found = result.tokens;
-			setting.setDesc(
+			let desc =
 				tNow('settings.chatProfiles.window.found', { tokens: found.toLocaleString() }) +
-					'\n' +
-					tNow('settings.chatProfiles.window.foundHint'),
-			);
+				'\n' +
+				tNow('settings.chatProfiles.window.foundHint');
+			if (result.output) {
+				desc += '\n' + tNow('settings.chatProfiles.window.output', { tokens: result.output.toLocaleString() });
+			}
+			setting.setDesc(desc);
 			setting.addButton((btn) => {
 				btn.setButtonText(tNow('settings.chatProfiles.window.shrink'));
 				btn.onClick(async () => {

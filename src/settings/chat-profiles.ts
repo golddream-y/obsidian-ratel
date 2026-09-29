@@ -13,38 +13,17 @@ import {
 	normalizeChatApiBase,
 	type ChatPresetId,
 } from './chat-preset';
+import { LOCAL_PROVIDER_CUSTOM, lookupCatalogLimits, type ModelsDevCatalog } from './model-catalog';
 import type { RatelVaultSettings } from '../settings';
 
 /**
  * 映射表最小查询接口 — 与 ModelContextRegistry 结构兼容,测试用 mock。
- * 关键路径:原居 ui/tokens/apply-model-context;该模块随死代码清理删除后,
- * 类型移到引用最集中的本模块(syncChatWindow / lookupModelContext / SettingApplier 共用)。
+ * 对话窗口不再走这张表,高级映射表页仍用 ModelContextRegistry。
  */
 export type ModelContextLookup = {
 	ensureRegistry(url: string): Promise<unknown>;
 	lookupContextLength(model: string, map: unknown): number | undefined;
 };
-
-/**
- * 按模型名查映射表 — `ensureRegistry + lookupContextLength + null 守卫` 的共享入口。
- *
- * 设计要点:syncChatWindow 与 settings-apply 的窗口钳制共用,保证两处查表口径一致;
- * registryUrl 由调用方解析(`resolveRegistryUrl`),本函数不读 settings,
- * 以兼容 ChatWindowSyncDeps「URL 由调用方注入」的既有契约。
- *
- * @param registry - 映射表注册中心
- * @param registryUrl - 已解析的映射表 URL(空串回落默认由调用方处理)
- * @param model - 模型标识
- * @returns 命中的窗口 token 数;映射表不可用或未命中时 undefined
- */
-export async function lookupModelContext(
-	registry: ModelContextLookup,
-	registryUrl: string,
-	model: string,
-): Promise<number | undefined> {
-	const map = await registry.ensureRegistry(registryUrl);
-	return map != null ? registry.lookupContextLength(model, map) : undefined;
-}
 
 /** 一套对话配置。id 稳定,改名不改 id。 */
 export interface ChatProfile {
@@ -60,6 +39,11 @@ export interface ChatProfile {
 	 * 旧 data.json 无此字段,undefined 视为未锁定。
 	 */
 	windowUserSet?: boolean;
+	/**
+	 * 供应商 id。名单内用 models.dev 的 id；本地为 ollama；其余为 custom。
+	 * 旧 data.json 无此字段，由 migrateChatProviderIds 补上。
+	 */
+	providerId?: string;
 }
 
 /** 生成稳定 id(创建时一次,之后不变)。 */
@@ -78,7 +62,11 @@ export function normalizeChatProfiles(
 	settings: RatelVaultSettings,
 	raw?: Partial<RatelVaultSettings>,
 ): void {
-	if (raw?.chatProfiles != null && Array.isArray(raw.chatProfiles)) return;
+	// 关键路径:已有数组时函数会立刻返回，迁移必须在 return 之前
+	if (raw?.chatProfiles != null && Array.isArray(raw.chatProfiles)) {
+		migrateChatProviderIds(settings);
+		return;
+	}
 	const profile: ChatProfile = {
 		id: newChatProfileId(),
 		name: settings.chatPreset === 'ollama' ? 'Ollama' : settings.chatPreset === 'custom' ? '自定义' : 'DeepSeek',
@@ -86,9 +74,22 @@ export function normalizeChatProfiles(
 		model: settings.chatModel,
 		contextLengthPreset: settings.contextLengthPreset,
 		chatModelMaxTokens: settings.chatModelMaxTokens,
+		providerId: inferChatProvider(settings.chatApiBase),
 	};
 	settings.chatProfiles = [profile];
 	settings.activeChatProfileId = profile.id;
+}
+
+/**
+ * 给没有 providerId 的旧套补上供应商。只按地址分成 deepseek / ollama / custom。
+ *
+ * @param settings - 已与磁盘合并的设置
+ */
+export function migrateChatProviderIds(settings: RatelVaultSettings): void {
+	for (const profile of settings.chatProfiles ?? []) {
+		if (profile.providerId) continue;
+		profile.providerId = inferChatProvider(profile.apiBase);
+	}
 }
 
 /** 切到指定一套:把该套字段写入当前四字段。 */
@@ -116,6 +117,9 @@ export function saveCurrentAsProfile(settings: RatelVaultSettings, name: string)
 	};
 	if (source?.windowUserSet) {
 		profile.windowUserSet = true;
+	}
+	if (source?.providerId) {
+		profile.providerId = source.providerId;
 	}
 	settings.chatProfiles = [...settings.chatProfiles, profile];
 	settings.activeChatProfileId = profile.id;
@@ -149,8 +153,8 @@ export function inferChatProvider(apiBase: string): ChatPresetId {
 
 /** syncChatWindow 的查表依赖 */
 export interface ChatWindowSyncDeps {
-	registry: ModelContextLookup;
-	registryUrl: string;
+	/** 已加载的 models.dev 名单；没有缓存时为 null */
+	catalog: ModelsDevCatalog | null;
 	/** 查不到时是否清空旧上限(改模型/换提供商/切换套时 true,仅打开设置展示时 false) */
 	clearOnMiss: boolean;
 }
@@ -165,37 +169,40 @@ export interface ChatWindowSyncResult {
 	changed: boolean;
 	/** 查表命中的窗口 token 数 */
 	tokens?: number;
+	/** 查表命中的单次输出上限；只用于展示，不写入设置 */
+	output?: number;
 }
 
 /**
- * 按当前模型名查映射表,把窗口写进当前四字段并镜像活跃套 — 设置页展开区与切换套共用。
+ * 按供应商 id + 模型 id 查名单，把窗口写进当前四字段并镜像活跃套。
  *
  * 设计要点:
- * - 活跃套 `windowUserSet` 为真时直接跳过:用户改小过的窗口不被查表盖掉;
- * - 命中 → `applyContextRecommendation` 写 preset + tokens(非档位整数落 custom);
- * - 未命中且 `clearOnMiss` → 写 custom/0 清空旧上限,不静默沿用上一个模型的上限;
- * - `changed` 按值是否实际变化计算,调用方只在 changed 时 saveSettings。
+ * - 活跃套 `windowUserSet` 为真时不覆盖窗口；若名单命中，仍返回 output 供界面显示
+ * - 命中 → `applyContextRecommendation` 写 preset + tokens
+ * - 未命中且 `clearOnMiss` → 写 custom/0，不沿用上一个模型的上限
  *
- * @param settings - 插件设置(按 settings.chatModel 查表)
- * @param deps.registry - 映射表注册中心
- * @param deps.registryUrl - 映射表 URL(调用方已并入默认值)
+ * @param settings - 插件设置
+ * @param deps.catalog - 已加载名单，没有时传 null
  * @param deps.clearOnMiss - 查不到时是否清空旧上限
- * @returns applied/skipped/changed 与命中 tokens
+ * @returns applied/skipped/changed，以及命中的 tokens / output
  */
 export async function syncChatWindow(
 	settings: RatelVaultSettings,
 	deps: ChatWindowSyncDeps,
 ): Promise<ChatWindowSyncResult> {
 	const active = settings.chatProfiles.find((p) => p.id === settings.activeChatProfileId);
-	// 关键路径:用户改小过的窗口不被查表盖掉 — 同模型跳过
+	const providerId = active?.providerId || LOCAL_PROVIDER_CUSTOM;
+	const limits = deps.catalog
+		? lookupCatalogLimits(deps.catalog, providerId, settings.chatModel)
+		: undefined;
+	const output = limits && limits.output > 0 ? limits.output : undefined;
+
 	if (active?.windowUserSet) {
-		return { applied: false, skipped: true, changed: false };
+		return { applied: false, skipped: true, changed: false, output };
 	}
 
-	const tokens = await lookupModelContext(deps.registry, deps.registryUrl, settings.chatModel);
-
-	if (tokens != null) {
-		const applied = applyContextRecommendation(tokens);
+	if (limits) {
+		const applied = applyContextRecommendation(limits.context);
 		const changed =
 			settings.contextLengthPreset !== applied.preset ||
 			settings.chatModelMaxTokens !== applied.chatModelMaxTokens;
@@ -205,7 +212,7 @@ export async function syncChatWindow(
 			active.contextLengthPreset = applied.preset;
 			active.chatModelMaxTokens = applied.chatModelMaxTokens;
 		}
-		return { applied: true, skipped: false, changed, tokens };
+		return { applied: true, skipped: false, changed, tokens: limits.context, output };
 	}
 
 	if (deps.clearOnMiss) {

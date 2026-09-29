@@ -8,7 +8,6 @@
 import { Notice } from 'obsidian';
 import type RatelVaultPlugin from '../../main';
 import { switchChatProfile, syncChatWindow } from '../../settings/chat-profiles';
-import { resolveRegistryUrl } from '../../settings/settings-apply';
 import { tNow } from '../../i18n';
 
 /**
@@ -26,9 +25,9 @@ export async function activateChatProfile(plugin: RatelVaultPlugin, profileId: s
 	if (profileId === plugin.settings.activeChatProfileId) return;
 
 	switchChatProfile(plugin.settings, profileId);
+	const catalog = plugin.modelsDevCatalog ? await plugin.modelsDevCatalog.ensureCatalog() : null;
 	const result = await syncChatWindow(plugin.settings, {
-		registry: plugin.modelContextRegistry,
-		registryUrl: resolveRegistryUrl(plugin.settings),
+		catalog,
 		clearOnMiss: true,
 	});
 	if (!result.applied && !result.skipped) {

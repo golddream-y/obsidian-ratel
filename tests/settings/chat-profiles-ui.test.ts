@@ -10,10 +10,11 @@ import {
 	saveCurrentAsProfile,
 	deleteChatProfile,
 	inferChatProvider,
+	migrateChatProviderIds,
 	syncChatWindow,
 	type ChatProfile,
-	type ModelContextLookup,
 } from '../../src/settings/chat-profiles';
+import type { ModelsDevCatalog } from '../../src/settings/model-catalog';
 import {
 	chatProfileSecretId,
 	resolveChatApiKey,
@@ -21,12 +22,16 @@ import {
 	setChatProfileSecret,
 } from '../../src/secrets/ratel-secrets';
 
-// 关键路径:registry mock — 与 ModelContextLookup 结构兼容,查表逻辑不依赖真实网络
-const makeRegistry = (map: Record<string, number>): ModelContextLookup => ({
-	ensureRegistry: async () => map,
-	lookupContextLength: (model: string, m: unknown) =>
-		(m as Record<string, number | undefined>)[model],
-});
+function catalogOf(providerId: string, model: string, context: number, output = 1024): ModelsDevCatalog {
+	return {
+		[providerId]: {
+			id: providerId,
+			models: {
+				[model]: { id: model, limit: { context, output }, tool_call: true },
+			},
+		},
+	};
+}
 
 const base = () => ({
 	chatModel: 'm-current',
@@ -35,7 +40,7 @@ const base = () => ({
 	chatModelMaxTokens: 256_000,
 	// 关键路径:标注 ChatProfile[] 使 windowUserSet 可选字段对测试可见(旧 data.json 无此字段)
 	chatProfiles: [
-		{ id: 'p1', name: 'A', apiBase: 'https://a', model: 'm1', contextLengthPreset: '128k' as const, chatModelMaxTokens: 128_000 },
+		{ id: 'p1', name: 'A', apiBase: 'https://a', model: 'm1', providerId: 'acme', contextLengthPreset: '128k' as const, chatModelMaxTokens: 128_000 },
 	] as ChatProfile[],
 	activeChatProfileId: 'p1',
 });
@@ -153,8 +158,7 @@ describe('syncChatWindow - 窗口一行查表写入', () => {
 	it('查表命中 - 写入 preset 与 tokens 并镜像活跃套', async () => {
 		const s = base();
 		const result = await syncChatWindow(s as never, {
-			registry: makeRegistry({ 'm-current': 200_000 }),
-			registryUrl: '',
+			catalog: catalogOf('acme', 'm-current', 200_000),
 			clearOnMiss: true,
 		});
 		expect(result.applied).toBe(true);
@@ -168,8 +172,7 @@ describe('syncChatWindow - 窗口一行查表写入', () => {
 	it('查表命中且值未变 - changed 为 false(防重渲染循环)', async () => {
 		const s = base();
 		const result = await syncChatWindow(s as never, {
-			registry: makeRegistry({ 'm-current': 256_000 }),
-			registryUrl: '',
+			catalog: catalogOf('acme', 'm-current', 256_000),
 			clearOnMiss: true,
 		});
 		expect(result.applied).toBe(true);
@@ -180,20 +183,19 @@ describe('syncChatWindow - 窗口一行查表写入', () => {
 		const s = base();
 		s.chatProfiles[0]!.windowUserSet = true;
 		const result = await syncChatWindow(s as never, {
-			registry: makeRegistry({ 'm-current': 1_048_576 }),
-			registryUrl: '',
+			catalog: catalogOf('acme', 'm-current', 1_048_576, 393_216),
 			clearOnMiss: true,
 		});
 		expect(result.skipped).toBe(true);
 		expect(result.applied).toBe(false);
+		expect(result.output).toBe(393_216);
 		expect(s.chatModelMaxTokens).toBe(256_000);
 	});
 
 	it('查不到且 clearOnMiss - 清空旧上限写 custom/0 并镜像活跃套', async () => {
 		const s = base();
 		const result = await syncChatWindow(s as never, {
-			registry: makeRegistry({}),
-			registryUrl: '',
+			catalog: {},
 			clearOnMiss: true,
 		});
 		expect(result.applied).toBe(false);
@@ -207,8 +209,7 @@ describe('syncChatWindow - 窗口一行查表写入', () => {
 	it('查不到且保留旧值(clearOnMiss=false)- 不写入', async () => {
 		const s = base();
 		const result = await syncChatWindow(s as never, {
-			registry: makeRegistry({}),
-			registryUrl: '',
+			catalog: {},
 			clearOnMiss: false,
 		});
 		expect(result.applied).toBe(false);
@@ -222,12 +223,48 @@ describe('syncChatWindow - 窗口一行查表写入', () => {
 		// 关键路径:旧 data.json 无 windowUserSet,undefined 视为未锁定
 		expect(s.chatProfiles[0]!.windowUserSet).toBeUndefined();
 		const result = await syncChatWindow(s as never, {
-			registry: makeRegistry({ 'm-current': 128_000 }),
-			registryUrl: '',
+			catalog: catalogOf('acme', 'm-current', 128_000),
 			clearOnMiss: true,
 		});
 		expect(result.applied).toBe(true);
 		expect(s.chatModelMaxTokens).toBe(128_000);
+	});
+
+	it('syncChatWindow - 同一模型 id 不同 providerId - 写入各自窗口', async () => {
+		const s = base();
+		s.chatProfiles[0]!.providerId = 'deepseek';
+		s.chatModel = 'deepseek-v4-flash';
+		const catalog: ModelsDevCatalog = {
+			deepseek: {
+				id: 'deepseek',
+				models: { 'deepseek-v4-flash': { id: 'deepseek-v4-flash', limit: { context: 1_000_000, output: 393_216 }, tool_call: true } },
+			},
+			reseller: {
+				id: 'reseller',
+				models: { 'deepseek-v4-flash': { id: 'deepseek-v4-flash', limit: { context: 524_288, output: 8192 }, tool_call: true } },
+			},
+		};
+		await syncChatWindow(s as never, { catalog, clearOnMiss: true });
+		expect(s.chatModelMaxTokens).toBe(1_000_000);
+		s.chatProfiles[0]!.providerId = 'reseller';
+		s.chatProfiles[0]!.windowUserSet = false;
+		const second = await syncChatWindow(s as never, { catalog, clearOnMiss: true });
+		expect(second.tokens).toBe(524_288);
+		expect(second.output).toBe(8192);
+		expect(s.chatModelMaxTokens).toBe(524_288);
+	});
+});
+
+describe('migrateChatProviderIds', () => {
+	it('migrateChatProviderIds - 无 providerId - 只推断 deepseek、ollama、custom', () => {
+		const s = base();
+		s.chatProfiles = [
+			{ id: 'a', name: 'D', apiBase: 'https://api.deepseek.com', model: 'deepseek-v4-flash', contextLengthPreset: 'custom', chatModelMaxTokens: 1 },
+			{ id: 'b', name: 'O', apiBase: 'http://localhost:11434/v1', model: 'llama3.2', contextLengthPreset: 'custom', chatModelMaxTokens: 1 },
+			{ id: 'c', name: 'X', apiBase: 'https://api.openai.com/v1', model: 'gpt-5.4', contextLengthPreset: 'custom', chatModelMaxTokens: 1 },
+		];
+		migrateChatProviderIds(s as never);
+		expect(s.chatProfiles.map((p) => p.providerId)).toEqual(['deepseek', 'ollama', 'custom']);
 	});
 });
 
