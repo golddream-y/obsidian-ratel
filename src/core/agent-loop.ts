@@ -25,6 +25,8 @@ import {
 	withToolDeadline,
 } from './loop-stability';
 import { tNow } from '../i18n';
+import { measureOutbound } from './outbound-measure';
+import { recordUsageCalibration } from './usage-calibration';
 
 /**
  * Agent Loop 的默认最大步数上限,防止工具调用陷入死循环。
@@ -246,6 +248,11 @@ export async function* agentLoop(
 						stepPromptTokensSum += delta.usage.promptTokens;
 						stepCompletionTokensSum += delta.usage.completionTokens;
 						lastUsage = delta.usage;
+						recordUsageCalibration(
+							ctx.sessionId,
+							measureOutbound(chatMessages, tools.definitions()).total,
+							delta.usage.promptTokens,
+						);
 					}
 				}
 			} catch (err) {

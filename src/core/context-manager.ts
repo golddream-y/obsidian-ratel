@@ -11,8 +11,10 @@ import type { ToolCall, ToolDefinition, AttachmentRef } from '../ports/llm';
 import type { StoredAttachment } from './attachment-store';
 // 关键路径:Intent 复用意图分类器定义,避免类型重复声明导致两端不同步
 import type { Intent } from './intent-classifier';
-// 关键路径:中英混合 token 估算,比 length/4 更准(中文 1.5 字符/token,英文 4 字符/token)
+// 关键路径:出站字段分项估算 + API usage 校准,比仅拼 content 更接近真值
 import { estimateTokens } from '../ui/tokens/token-estimator';
+import { measureOutbound } from './outbound-measure';
+import { usageCalibrationRatio } from './usage-calibration';
 // 关键路径:系统提示词与检索结果外框统一由 Composer 组装,保证 prompt 注入防护(外框不可删)与 section 覆盖机制生效
 import {
 	composeAgentSystem,
@@ -700,16 +702,15 @@ export class ContextManager {
 	 * @returns token 估算值(向上取整)。
 	 */
 	tokenCount(): number {
-		// 关键路径:用 estimateTokens 中英混合估算,比 length/4 更准。
-		const text = this.toMessages().map((m) => m.content).join('');
-		return estimateTokens(text);
+		const measured = measureOutbound(this.toMessages()).total;
+		return Math.round(measured * usageCalibrationRatio(this.sessionId));
 	}
 
 	/**
 	 * 返回当前上下文使用率快照 — 供 StatusLine / StatusDrawer 显示百分比与详情。
 	 *
 	 * 关键路径:
-	 * - usedTokens 复用 toMessages() 输出做 4 字符/token 估算(与 tokenCount 同算法)
+	 * - usedTokens 复用 measureOutbound(toMessages()) × usageCalibrationRatio(与 tokenCount 同算法)
 	 * - maxTokens 由调用方从 settings.chatModelMaxTokens 传入,避免本类耦合 settings
 	 * - attachmentTokens 由调用方累加 pendingAttachments$ 中每项 estimatedTokens
 	 * - percentage 在 maxTokens=0 时防除零返回 0
@@ -724,8 +725,8 @@ export class ContextManager {
 		attachmentTokens = 0,
 		intent: Intent = 'direct',
 	): { usedTokens: number; maxTokens: number; attachmentTokens: number; percentage: number } {
-		const text = this.toMessages(intent).map((m) => m.content).join('');
-		const usedTokens = estimateTokens(text);
+		const measured = measureOutbound(this.toMessages(intent)).total;
+		const usedTokens = Math.round(measured * usageCalibrationRatio(this.sessionId));
 		const total = usedTokens + attachmentTokens;
 		const percentage = maxTokens > 0 ? Math.round((total / maxTokens) * 100) : 0;
 		return { usedTokens, maxTokens, attachmentTokens, percentage };
