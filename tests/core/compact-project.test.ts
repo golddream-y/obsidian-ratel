@@ -13,6 +13,7 @@ import {
 	extractRestoredNotePaths,
 	isPromptTooLong,
 	microcompactMessages,
+	offloadStalePayload,
 	projectView,
 	shouldAutoCompact,
 } from '../../src/core/compact-project';
@@ -111,6 +112,89 @@ describe('microcompactMessages', () => {
 	});
 });
 
+describe('offloadStalePayload', () => {
+	it('offloadStalePayload - 上轮思考过程 - 不再回传，本轮保留', () => {
+		const first = { role: 'user' as const, content: '先写' };
+		const out = offloadStalePayload([
+			first,
+			{
+				role: 'assistant',
+				content: '',
+				reasoning: '旧思考',
+				toolCallId: 'a',
+				toolName: 'read_note',
+				toolArgs: { path: 'a.md' },
+			},
+			{ role: 'tool', content: '全文', toolCallId: 'a' },
+			{ role: 'user', content: '继续' },
+			{
+				role: 'assistant',
+				content: '',
+				reasoning: '本轮思考',
+				toolCallId: 'b',
+				toolName: 'read_note',
+				toolArgs: { path: 'b.md' },
+			},
+		]);
+		expect(out[0]).toBe(first);
+		expect(out[1]!.reasoning).toBeUndefined();
+		expect(out[4]!.reasoning).toBe('本轮思考');
+	});
+
+	it('offloadStalePayload - 两轮各写一次 - 上一轮参数变占位，本轮正文保留', () => {
+		const chapter = '第一章正文';
+		const out = offloadStalePayload([
+			{ role: 'user', content: '写' },
+			asstTool('w1', 'write_note', { path: '第001章.md', content: chapter }),
+			tool('w1', 'ok'),
+			{ role: 'user', content: '继续' },
+			asstTool('w2', 'write_note', { path: '第002章.md', content: '第二章' }),
+			tool('w2', 'ok'),
+		]);
+		expect(out[1]!.toolArgs).toEqual({
+			path: '第001章.md',
+			content: `[written] path=第001章.md chars=${chapter.length}`,
+		});
+		expect(out[4]!.toolArgs).toEqual({ path: '第002章.md', content: '第二章' });
+	});
+
+	it('offloadStalePayload - 同一轮连写两次 - 只保留最后一次正文', () => {
+		const out = offloadStalePayload([
+			{ role: 'user', content: '继续' },
+			asstTool('w1', 'write_note', { path: '第001章.md', content: '旧章' }),
+			tool('w1', 'ok'),
+			asstTool('w2', 'write_note', { path: '第002章.md', content: '新章' }),
+			tool('w2', 'ok'),
+		]);
+		expect(String(out[1]!.toolArgs!.content)).toMatch(/^\[written\]/);
+		expect(out[3]!.toolArgs!.content).toBe('新章');
+	});
+
+	it('offloadStalePayload - 写入结果是 Error - 参数保留', () => {
+		const out = offloadStalePayload([
+			{ role: 'user', content: '写' },
+			asstTool('w1', 'write_note', { path: '第001章.md', content: '没写上' }),
+			tool('w1', 'Error: 拒绝'),
+			{ role: 'user', content: '继续' },
+		]);
+		expect(out[1]!.toolArgs!.content).toBe('没写上');
+	});
+
+	it('offloadStalePayload - edit_note 的 old_string 与 new_string - 都换成占位', () => {
+		const out = offloadStalePayload([
+			{ role: 'user', content: '改' },
+			asstTool('e1', 'edit_note', { path: 'a.md', old_string: '旧句', new_string: '新句' }),
+			tool('e1', 'ok'),
+			{ role: 'user', content: '下一轮' },
+		]);
+		expect(out[1]!.toolArgs).toEqual({
+			path: 'a.md',
+			old_string: '[written] path=a.md chars=2',
+			new_string: '[written] path=a.md chars=2',
+		});
+	});
+});
+
 describe('projectView', () => {
 	it('projectView - 无标记 - tail 为全文 head 为空', () => {
 		const messages: ChatMessage[] = [
@@ -140,6 +224,18 @@ describe('projectView', () => {
 		expect(p.head.some((m) => m.content.includes('按需 read_note'))).toBe(false);
 		expect(p.tail).toHaveLength(1);
 		expect(p.tail[0]!.content).toBe('新');
+	});
+
+	it('projectView - 无标记且含上轮写入 - tail 中上轮正文已是占位', () => {
+		const messages: ChatMessage[] = [
+			{ role: 'user', content: '写' },
+			asstTool('w1', 'write_note', { path: 'a.md', content: '正文' }),
+			tool('w1', 'ok'),
+			{ role: 'user', content: '继续' },
+		];
+		const { tail } = projectView(messages, undefined);
+		const write = tail.find((m) => m.toolName === 'write_note');
+		expect(write?.toolArgs?.content).toBe('[written] path=a.md chars=2');
 	});
 });
 

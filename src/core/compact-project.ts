@@ -22,6 +22,13 @@ export const MIN_TRANSCRIPT_TO_COMPACT = 3;
 /** 全量摘要 system 消息前缀 */
 export const COMPACT_SUMMARY_PREFIX = '[compact 摘要]\n';
 
+/** 写笔记类工具 — 成功落库后上送时可移出正文字段 */
+export const WRITE_TOOL_NAMES = ['write_note', 'append_note', 'edit_note'] as const;
+/** 写入工具参数里视为正文的字段 */
+export const WRITE_BODY_FIELDS = ['content', 'old_string', 'new_string'] as const;
+
+const WRITE_TOOLS = new Set<string>(WRITE_TOOL_NAMES);
+
 /** 可 microcompact 的工具名 */
 export const FOLDABLE_TOOL_NAMES = new Set([
 	'search_vault',
@@ -111,6 +118,117 @@ export function microcompactMessages(
 }
 
 /**
+ * 最后一条 user 消息的下标;无 user 则 -1。
+ */
+function findLastUserIndex(messages: ChatMessage[]): number {
+	for (let i = messages.length - 1; i >= 0; i--) {
+		if (messages[i]!.role === 'user') return i;
+	}
+	return -1;
+}
+
+/**
+ * 从 assistant 下标向后找配对 tool 结果。
+ */
+function resolveToolResultForward(
+	messages: ChatMessage[],
+	assistantIndex: number,
+): ChatMessage | null {
+	const asst = messages[assistantIndex];
+	if (!asst || asst.role !== 'assistant' || !asst.toolCallId) return null;
+	const id = asst.toolCallId;
+	for (let i = assistantIndex + 1; i < messages.length; i++) {
+		const next = messages[i]!;
+		if (next.role === 'tool' && next.toolCallId === id) return next;
+		if (next.role === 'user' || next.role === 'assistant') break;
+	}
+	return null;
+}
+
+/** 写入已成功落库(有 tool 结果且非 Error:) */
+function isSuccessfulWrite(messages: ChatMessage[], assistantIndex: number): boolean {
+	const asst = messages[assistantIndex];
+	if (!asst || asst.role !== 'assistant' || !asst.toolName || !asst.toolCallId) return false;
+	if (!WRITE_TOOLS.has(asst.toolName)) return false;
+	const result = resolveToolResultForward(messages, assistantIndex);
+	if (!result) return false;
+	return !result.content.startsWith('Error:');
+}
+
+/**
+ * 已落库写入的正文字段占位(面向模型,不走 i18n)。
+ */
+function formatWrittenPlaceholder(path: unknown, charCount: number): string {
+	const pathPart =
+		typeof path === 'string' && path.trim() ? ` path=${path.trim()}` : '';
+	return `[written]${pathPart} chars=${charCount}`;
+}
+
+/**
+ * 复制 assistant 并移出 toolArgs 中的正文字段为占位。
+ */
+function offloadWriteToolArgs(
+	msg: ChatMessage,
+	path: unknown,
+): ChatMessage {
+	const args = { ...(msg.toolArgs ?? {}) };
+	for (const field of WRITE_BODY_FIELDS) {
+		const value = args[field];
+		if (typeof value !== 'string') continue;
+		args[field] = formatWrittenPlaceholder(path, value.length);
+	}
+	return { ...msg, toolArgs: args };
+}
+
+/**
+ * 移出旧轮思考过程与已成功落库的写入参数 — 返回副本,不改事实源。
+ *
+ * @param messages - 待上送的消息序列
+ */
+export function offloadStalePayload(messages: ChatMessage[]): ChatMessage[] {
+	const lastUser = findLastUserIndex(messages);
+
+	const successfulWriteIndices: number[] = [];
+	for (let i = 0; i < messages.length; i++) {
+		if (isSuccessfulWrite(messages, i)) successfulWriteIndices.push(i);
+	}
+
+	let keepFullBodyIndex = -1;
+	for (const idx of successfulWriteIndices) {
+		if (idx > lastUser) keepFullBodyIndex = idx;
+	}
+
+	const out: ChatMessage[] = [];
+	for (let i = 0; i < messages.length; i++) {
+		const msg = messages[i]!;
+		if (msg.role !== 'assistant') {
+			out.push(msg);
+			continue;
+		}
+
+		const stripReasoning = i < lastUser && msg.reasoning !== undefined;
+		const offloadWrite =
+			isSuccessfulWrite(messages, i) && i !== keepFullBodyIndex;
+
+		if (!stripReasoning && !offloadWrite) {
+			out.push(msg);
+			continue;
+		}
+
+		let next: ChatMessage = msg;
+		if (stripReasoning) {
+			const { reasoning: _r, ...rest } = msg;
+			next = rest as ChatMessage;
+		}
+		if (offloadWrite) {
+			next = offloadWriteToolArgs(next, next.toolArgs?.path);
+		}
+		out.push(next);
+	}
+	return out;
+}
+
+/**
  * 从区间内提取最近读过的笔记路径(近者优先、去重、最多 MAX_RESTORED_NOTE_PATHS)。
  *
  * @param messages - 完整消息序列
@@ -152,7 +270,9 @@ export function projectView(
 	if (!latest) {
 		return {
 			head: [],
-			tail: sanitizeToolMessageOrder(microcompactMessages(messages)),
+			tail: offloadStalePayload(
+				sanitizeToolMessageOrder(microcompactMessages(messages)),
+			),
 		};
 	}
 	const head: ChatMessage[] = [
@@ -169,7 +289,9 @@ export function projectView(
 		});
 	}
 	const tailSlice = messages.slice(latest.afterIndex + 1);
-	const tail = sanitizeToolMessageOrder(microcompactMessages(tailSlice));
+	const tail = offloadStalePayload(
+		sanitizeToolMessageOrder(microcompactMessages(tailSlice)),
+	);
 	return { head, tail };
 }
 
