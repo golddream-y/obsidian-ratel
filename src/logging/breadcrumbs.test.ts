@@ -26,7 +26,7 @@ describe('面包屑纯函数', () => {
 	it('BREADCRUMB_PHASES - 含全部阶段 - 顺序与字面量一致', () => {
 		expect(BREADCRUMB_PHASES).toEqual([
 			'plugin.load', 'plugin.unload', 'heartbeat',
-			'send.enqueue', 'send.precheck', 'send.compact',
+			'send.enqueue', 'send.precheck', 'send.compact', 'compact.decide', 'compact.result',
 			'ask.begin', 'ask.embed.begin', 'ask.embed.end',
 			'loop.load', 'loop.classify', 'llm.request', 'llm.first-delta',
 			'loop.tool', 'agents.file', 'ask.end', 'ask.error',

@@ -9,7 +9,7 @@ import path from 'node:path';
 
 export const BREADCRUMB_PHASES = [
 	'plugin.load', 'plugin.unload', 'heartbeat',
-	'send.enqueue', 'send.precheck', 'send.compact',
+	'send.enqueue', 'send.precheck', 'send.compact', 'compact.decide', 'compact.result',
 	'ask.begin', 'ask.embed.begin', 'ask.embed.end',
 	'loop.load', 'loop.classify', 'llm.request', 'llm.first-delta',
 	'loop.tool', 'agents.file', 'ask.end', 'ask.error',
