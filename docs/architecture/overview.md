@@ -237,7 +237,8 @@ graph TB
 | **Agent** | chat | 对话体验(端到端):用户输入 → Agent Loop → 流式渲染 | [agent/chat.md](agent/chat.md) |
 | **Agent** | capability-surface | 能力池:统一意图选择 + 按 kind 路由执行 + 工具生命周期(注册→发现→执行→销毁) | [agent/capability-surface.md](agent/capability-surface.md) |
 | **Agent** | agent-loop | 主循环:思考 → 调工具 → 拿结果 → 生成回答 | [agent/agent-loop.md](agent/agent-loop.md) |
-| **Agent** | context-manager | 上下文管理:消息历史 / 搜索结果注入 / 上下文压缩(系统提示词见 prompt-management) | [agent/context-manager.md](agent/context-manager.md) |
+| **Agent** | context-manager | 上下文管理:消息历史 / 搜索结果注入 / 上送包组装(系统提示词见 prompt-management) | [agent/context-manager.md](agent/context-manager.md) |
+| **Agent** | context-compaction | 上下文压缩:预算 / 移出 / 增量任务状态 / 压后恢复;聊天记录不改 | [agent/context-compaction.md](agent/context-compaction.md) |
 | **Agent** | prompt-management | 提示词 registry + Composer:中文模板 / 动态注入 / section 覆盖 | [agent/prompt-management.md](agent/prompt-management.md) |
 | **Agent** | note-agents | 库内 AGENTS.md:库根每轮注入,子目录碰到路径再叠加;改约束文件强制确认 | [agent/note-agents.md](agent/note-agents.md) |
 | **Agent** | tools | 工具系统:注册、发现、调用、返回格式(含环境感知只读工具) | [agent/tools.md](agent/tools.md) |
@@ -598,7 +599,7 @@ graph LR
 | 15 | LLM 调用 | [agent/agent-loop](agent/agent-loop.md) | LLMClient.chat + requestUrl 绕过 CORS |
 | 16 | 流式输出 | [llm/streaming](llm/streaming.md) | SSE 解析,ChatView 逐字渲染 |
 | 17 | 搜索结果卡片 | [agent/chat](agent/chat.md) | search.result 事件 → ChatView 渲染编号+路径+分数 |
-| 18 | 上下文压缩 | [agent/context-manager](agent/context-manager.md) | 三层:截断 → 滑动窗口 → LLM 摘要 |
+| 18 | 上下文压缩 | [agent/context-compaction](agent/context-compaction.md) | 先移出可取回的内容,再增量更新任务状态;压后保留近期原文与工作集 |
 | 19 | 工具调用 UI | [agent/chat](agent/chat.md) | tool.call / tool.result 事件,显示工具名+结果摘要 |
 | 20 | 取消机制 | [agent/agent-loop](agent/agent-loop.md) | AbortSignal,3 个检查点 |
 | 21 | 主动智能 | 远期 | Heartbeat + 分析 + 推荐 |

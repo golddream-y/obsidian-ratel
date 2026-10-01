@@ -3,81 +3,83 @@
 [English](https://github.com/golddream-y/obsidian-ratel/blob/main/README.md) | [简体中文](https://github.com/golddream-y/obsidian-ratel/blob/main/README.zh-CN.md)
 
 [![License](https://img.shields.io/github/license/golddream-y/obsidian-ratel?style=flat-square)](https://github.com/golddream-y/obsidian-ratel/blob/main/LICENSE)
-[![Obsidian](https://img.shields.io/badge/Obsidian-1.13.0%2B-7c3aed?style=flat-square)](https://obsidian.md)
+[![Obsidian](https://img.shields.io/badge/Obsidian-1.13.1%2B-7c3aed?style=flat-square)](https://obsidian.md)
 [![Desktop only](https://img.shields.io/badge/platform-desktop-0ea5e9?style=flat-square)](https://obsidian.md)
 
-**Ratel is an Agent inside Obsidian. It makes Obsidian simpler to use and configure.**
+**Ratel is an agent inside Obsidian. Say what you want, and it installs the plugins, templates, and folders into the current vault.**
 
-It can install and configure plugins, remember how you work, recall notes by meaning, keywords, and links together, answer with citations you can open, and edit notes under the permission level you set.
+Obsidian is easy to write in and hard to configure. Templater syntax, Dataview queries, and Day Planner formats are each enough to stop someone. One sentence in chat is enough for Ratel to install the plugins, write the templates, and point the folders.
 
 [User Guide](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/user-guide.en.md) · [Changelog](https://github.com/golddream-y/obsidian-ratel/blob/main/CHANGELOG.md)
 
-## Copy someone else's working setup
+## A working setup, in one sentence
 
-A skill records a setup that already works: which plugins to install, which templates to write, which switches to turn on, and where folders go. Running the skill copies that environment into the current vault.
+Say “install the diary plugins.” Ratel installs Templater, Dataview, and Day Planner, writes the daily and monthly templates, points core daily notes at that folder, and remembers where those folders are.
 
-A diary with a monthly task ledger is one built-in setup. Say “install the diary plugins,” and Ratel installs Templater, Dataview, and Day Planner, writes the daily and monthly templates, points core daily notes at the same folder, and remembers those folders.
+> After you change Day Planner’s heading format, quit Obsidian completely and open it again. Otherwise the change does not apply.
 
-You can write your own setup as a skill. See the [scene skill guide](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/contributing/scene-skill.md). A skill can call what a plugin can do: which plugins to install, which settings to change, and where folders go. Someone else runs that skill and gets the same environment. A skill is a Markdown folder. Give that folder to someone else; they put it in their own vault and can use it.
+That setup is a scene skill: a Markdown folder. Write down a way of working you have already tried, and give the folder to someone else. They put it in their vault and get the same plugins, templates, and paths. How to write one is in the [scene skill guide](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/contributing/scene-skill.md).
 
-## Recall by meaning, keywords, and links
+A short recording belongs here: from the sentence “install the diary plugins” to the templates showing up in the vault.
 
-Search is not keywords alone. Meaning, keywords, links, backlinks, and properties are used together. `[1]` and `[2]` in an answer open the original note. The active note, recent edits, and heading outlines are available as context. Ask to open a note at a heading or a block.
-
-## Let the Agent work in the vault
-
-- Search, read, and summarize, then write notes under the permission level you set.
-- A long-running goal stays with the vault. Chat confirms the done criteria before creating it. The status bar reminds you, and a new chat can take it over.
-
-## Extensions
-
-- **Models:** choose chat, embedding, and reranking models independently. DeepSeek, Ollama, or a compatible endpoint. The index is generated on this machine by default.
-- **Skills:** reusable methods in Markdown, with optional scripts and reference files.
-- **MCP:** connect web search and other external tools. Each server and each tool is authorized separately.
-- **Subagents:** split retrieval, review, and synthesis into separate roles.
-- **Images:** attach images in chat.
-- **Prompts:** override individual prompt sections without forking the plugin.
-
-## Not finished yet
-
-- Check journals and goals on a schedule, and notify only when there is something worth saying. Results go to an inbox. Only high-priority items raise an Obsidian Notice. Quiet hours, a daily limit, snooze, and ignore are planned. A notification cannot bypass write permission.
-- List broken links, orphan notes, duplicates, and stale notes.
-- Synthesize themes, conflicts, and gaps across notes.
-- A blacklist. Once it lands, excluded content will not enter the index, model context, MCP parameters, logs, or notifications.
-
-## Privacy and safety
-
-- The index and memory stay on this machine.
-- Only the model endpoint you configure receives retrieved text.
-- MCP sends data only when an enabled tool is called. Installing a plugin contacts only the official catalog and that plugin's GitHub release.
-- Note edits and plugin installs follow the permission level you set. Keys are not filled in for you. No telemetry.
-- Reading files outside the vault and running commands are off by default. When you turn them on, what gets read may be sent to the model you configured, and each use still asks for permission.
-
-Details are in the [User Guide](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/user-guide.en.md).
-
-## Install
+## Quick start
 
 1. Obsidian → **Settings** → **Community plugins** → **Browse**, search **Ratel**, install, and enable.
-2. **Settings → Ratel → Chat model.** Choose a DeepSeek or Ollama preset, or enter a custom endpoint.
-3. Wait for the first index. Click the 🦡 ribbon, or run **Ratel: Ask vault**.
+2. **Settings → Ratel → Chat model.** Choose DeepSeek or local Ollama, or enter your own endpoint.
+3. Wait for the first index to finish. Click the badger in the ribbon, or press `Cmd/Ctrl+P` and run **Ratel: Ask vault**.
 
-Requires **Obsidian 1.13.0+**, **desktop only**.
+Requires **Obsidian 1.13.1 or newer**. Desktop only.
 
-## Docs
+## Why not a plugin you already have
 
-| Doc | Contents |
+The community already has plugins that talk to a vault. Ratel is different in this:
+
+> Most of them help you ask the vault. Ratel can also set Obsidian up.
+
+Answering questions is one of its abilities. The part that is harder to copy is the environment itself: which plugins to install, which settings to change, where the templates and folders go, and how to hand that tested environment to someone else as a folder.
+
+If you only want to chat with your notes, an existing plugin is enough. If you are stuck on configuration, or you want to give someone a whole way of working, Ratel is built for that.
+
+## What you need
+
+| | |
 |---|---|
-| [Product overview](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/prd/overview.md) | Positioning, capabilities, and direction |
-| [User Guide](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/user-guide.en.md) | Setup, slash commands, FAQ |
-| [Changelog](https://github.com/golddream-y/obsidian-ratel/blob/main/CHANGELOG.md) | Release history |
-| [Architecture](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/architecture/overview.md) | Ports, agent loop, tools, and workers |
-| [Scene skill guide](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/contributing/scene-skill.md) | How a developer writes a skill that installs and configures a setup |
+| Chat model | A cloud model needs your own API key. Ratel does not fill keys into other plugins, and it does not write keys into plugin data or sync them with the vault. |
+| No separate fee | Local Ollama can run chat offline. Embeddings are generated on this machine by default. Ratel itself is free and has no paid tier. |
+| Model charges | Whatever the provider you chose publishes. |
 
-Issues and ideas: [GitHub Issues](https://github.com/golddream-y/obsidian-ratel/issues).
+## Privacy and data boundary
+
+- Embeddings are generated on this machine by default and are not uploaded.
+- Retrieved note text is sent only to the model endpoint you configure. An external tool sends data only when that tool is enabled and this call actually uses it. Installing a community plugin contacts only the official plugin directory and that plugin’s GitHub release.
+- Keys stay in the system keychain. They are not written into plugin data and are not synced with the vault.
+- There is no telemetry.
+- Note edits and plugin installs follow the permission level you set: Safe, Auto, or Danger. Each tool can also be set to allow, ask, or deny. Deny overrides the level and any grant for the current session.
+- Reading files outside the vault and running commands on this computer are off. Chat cannot turn that switch on for you. If you turn it on, what is read may still be sent to the configured model, and each use asks again.
+
+## Inside the vault
+
+Search uses meaning, keywords, links, backlinks, and properties together. `[1]` and `[2]` in an answer open the heading or block in the original note. The active note, recent edits, and heading outlines are available as context.
+
+If search, reading, or a summary leads to a note edit, that edit still follows the permission rules above.
+
+Goals that last across chats, scripts inside skills, and external tools are in the [User Guide](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/user-guide.en.md).
+
+## Documentation
+
+| Document | Contents |
+|---|---|
+| [User Guide](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/user-guide.en.md) | Chat, slash commands, and common questions |
+| [Changelog](https://github.com/golddream-y/obsidian-ratel/blob/main/CHANGELOG.md) | Changes in released versions |
+| [Product overview](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/prd/overview.md) | Scope and what comes next |
+| [Scene skill guide](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/contributing/scene-skill.md) | Package a setup for someone else |
+| [Architecture](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/architecture/overview.md) | Module boundaries and runtime structure |
+
+Questions and suggestions: [GitHub Issues](https://github.com/golddream-y/obsidian-ratel/issues).
 
 ## Sponsor
 
-Optional. Sponsorship does not change any feature.
+Optional. Nothing in the plugin changes if you do.
 
 - Afdian: [afdian.com/a/golddream](https://afdian.com/a/golddream)
 - Ko-fi: [ko-fi.com/golddream_y](https://ko-fi.com/golddream_y)

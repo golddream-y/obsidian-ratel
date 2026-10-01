@@ -1577,7 +1577,7 @@ export default class RatelVaultPlugin extends Plugin {
 	}
 
 	/** 持久化当前设置到 Obsidian data.json(与 Persistence 字段 merge,互不覆盖)。 */
-	async saveSettings() {
+	async saveSettings(options?: { refreshSettingsTab?: boolean }) {
 		// 契约:落盘前再规范化，避免 UI 把整行 shell 写回 data.json
 		this.settings.mcpServers = (this.settings.mcpServers ?? []).map(normalizeMcpServerConfig);
 		const existing = ((await this.loadData()) ?? {}) as Record<string, unknown>;
@@ -1601,7 +1601,7 @@ export default class RatelVaultPlugin extends Plugin {
 		bumpAppearance();
 		// 关键路径:Agent 工具(update_app_config)改配置后,设置面板若正打开需重渲染 —
 		// 数据层已 mutate 同一 settings 对象,但声明式控件非响应式,显示层会陈旧。
-		if (this.settingTab?.containerEl?.isConnected) {
+		if (options?.refreshSettingsTab !== false && this.settingTab?.containerEl?.isConnected) {
 			this.settingTab.update();
 		}
 	}

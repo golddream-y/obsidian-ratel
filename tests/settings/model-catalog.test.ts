@@ -5,6 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+	filterCatalogProviders,
 	listCatalogModels,
 	listCatalogProviders,
 	lookupCatalogLimits,
@@ -42,6 +43,12 @@ const catalog: ModelsDevCatalog = {
 				tool_call: true,
 			},
 		},
+	},
+	volcengine: {
+		id: 'volcengine',
+		name: 'Volcengine Ark',
+		api: 'https://ark.cn-beijing.volces.com/api/v3',
+		models: {},
 	},
 	openai: {
 		id: 'openai',
@@ -89,12 +96,34 @@ describe('listCatalogModels', () => {
 describe('listCatalogProviders', () => {
 	it('listCatalogProviders - api 空串 - api 为 null', () => {
 		const openai = listCatalogProviders(catalog).find((row) => row.id === 'openai');
-		expect(openai).toEqual({ id: 'openai', name: 'OpenAI', api: null });
+		expect(openai).toEqual({ id: 'openai', name: 'OpenAI', api: null, doc: null });
 	});
 
 	it('listCatalogProviders - 按 name 排序 - DeepSeek 在 OpenAI 前', () => {
 		const ids = listCatalogProviders(catalog).map((row) => row.id);
 		expect(ids.indexOf('deepseek')).toBeLessThan(ids.indexOf('openai'));
+	});
+});
+
+describe('filterCatalogProviders', () => {
+	const rows = listCatalogProviders(catalog);
+
+	it('filterCatalogProviders - 空白检索 - 只留短名单且 Reseller 不在其中', () => {
+		const ids = filterCatalogProviders(rows, '').map((row) => row.id);
+		expect(ids).toEqual(['deepseek', 'volcengine', 'openai']);
+		expect(ids).not.toContain('reseller');
+	});
+
+	it('filterCatalogProviders - 中文别名火山 - 命中 Volcengine Ark', () => {
+		expect(filterCatalogProviders(rows, '火山').map((row) => row.id)).toEqual(['volcengine']);
+	});
+
+	it('filterCatalogProviders - 名称片段 - 命中 Reseller', () => {
+		expect(filterCatalogProviders(rows, 'resell').map((row) => row.id)).toEqual(['reseller']);
+	});
+
+	it('filterCatalogProviders - id 片段 - 不区分大小写', () => {
+		expect(filterCatalogProviders(rows, 'OPEN').map((row) => row.id)).toEqual(['openai']);
 	});
 });
 

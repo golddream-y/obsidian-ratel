@@ -15,6 +15,7 @@ import {
 } from './chat-preset';
 import { LOCAL_PROVIDER_CUSTOM, lookupCatalogLimits, type ModelsDevCatalog } from './model-catalog';
 import type { RatelVaultSettings } from '../settings';
+import { providerSecretSlug } from '../secrets/ratel-secrets';
 
 /**
  * 映射表最小查询接口 — 与 ModelContextRegistry 结构兼容,测试用 mock。
@@ -44,6 +45,10 @@ export interface ChatProfile {
 	 * 旧 data.json 无此字段，由 migrateChatProviderIds 补上。
 	 */
 	providerId?: string;
+	/**
+	 * 同一供应商下的密钥序号，创建后不变。钥匙串名是 ratel-chat-供应商-序号。
+	 */
+	keySerial?: number;
 }
 
 /** 生成稳定 id(创建时一次,之后不变)。 */
@@ -65,6 +70,7 @@ export function normalizeChatProfiles(
 	// 关键路径:已有数组时函数会立刻返回，迁移必须在 return 之前
 	if (raw?.chatProfiles != null && Array.isArray(raw.chatProfiles)) {
 		migrateChatProviderIds(settings);
+		assignChatKeySerials(settings.chatProfiles ?? []);
 		return;
 	}
 	const profile: ChatProfile = {
@@ -75,6 +81,7 @@ export function normalizeChatProfiles(
 		contextLengthPreset: settings.contextLengthPreset,
 		chatModelMaxTokens: settings.chatModelMaxTokens,
 		providerId: inferChatProvider(settings.chatApiBase),
+		keySerial: 1,
 	};
 	settings.chatProfiles = [profile];
 	settings.activeChatProfileId = profile.id;
@@ -89,6 +96,53 @@ export function migrateChatProviderIds(settings: RatelVaultSettings): void {
 	for (const profile of settings.chatProfiles ?? []) {
 		if (profile.providerId) continue;
 		profile.providerId = inferChatProvider(profile.apiBase);
+	}
+}
+
+/**
+ * 同一供应商下下一个没用过的序号。
+ *
+ * @param profiles - 已有配置
+ * @param providerId - 供应商 id
+ * @returns 从 1 起的序号
+ */
+export function nextChatKeySerial(
+	profiles: Array<{ providerId?: string; keySerial?: number }>,
+	providerId: string,
+): number {
+	const slug = providerSecretSlug(providerId);
+	const used = new Set(
+		profiles
+			.filter((profile) => providerSecretSlug(profile.providerId || 'custom') === slug)
+			.map((profile) => profile.keySerial)
+			.filter((serial): serial is number => typeof serial === 'number' && serial > 0),
+	);
+	let n = 1;
+	while (used.has(n)) n += 1;
+	return n;
+}
+
+/**
+ * 给没有序号、或序号和同一供应商撞车的配置补一个稳定序号。已有且不重复的不改。
+ *
+ * @param profiles - 全部对话配置
+ */
+export function assignChatKeySerials(
+	profiles: Array<{ providerId?: string; keySerial?: number }>,
+): void {
+	const taken = new Map<string, Set<number>>();
+	for (const profile of profiles) {
+		const slug = providerSecretSlug(profile.providerId || 'custom');
+		const used = taken.get(slug) ?? new Set<number>();
+		if (profile.keySerial && profile.keySerial > 0 && !used.has(profile.keySerial)) {
+			used.add(profile.keySerial);
+		} else {
+			let n = 1;
+			while (used.has(n)) n += 1;
+			profile.keySerial = n;
+			used.add(n);
+		}
+		taken.set(slug, used);
 	}
 }
 
@@ -121,6 +175,7 @@ export function saveCurrentAsProfile(settings: RatelVaultSettings, name: string)
 	if (source?.providerId) {
 		profile.providerId = source.providerId;
 	}
+	profile.keySerial = nextChatKeySerial(settings.chatProfiles, profile.providerId || 'custom');
 	settings.chatProfiles = [...settings.chatProfiles, profile];
 	settings.activeChatProfileId = profile.id;
 	return profile;
@@ -129,7 +184,7 @@ export function saveCurrentAsProfile(settings: RatelVaultSettings, name: string)
 /** 删除一套。当前这套拒绝删除。 */
 export function deleteChatProfile(settings: RatelVaultSettings, id: string): void {
 	if (settings.activeChatProfileId === id) {
-		throw new Error('不能删除当前这套配置,请先切到另一套');
+		throw new Error('不能删除正在使用的配置，请先切换到另一个');
 	}
 	settings.chatProfiles = settings.chatProfiles.filter((p) => p.id !== id);
 }

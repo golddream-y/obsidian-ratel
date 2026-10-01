@@ -22,7 +22,6 @@ import type { OverrideMap } from './prompts/types';
 // 关键路径:声明式 settings 子页面与 render wrapper
 import { DiagnosticsSettingPage } from './ui/settings/diagnostics-setting-page';
 import {
-	renderChatSecretHint,
 	renderEmbedSecretHint,
 	renderRerankSecretHint,
 } from './ui/settings/secret-hint-render';
@@ -39,7 +38,7 @@ import { applySettingValue } from './settings/settings-apply';
 // 关键路径:外观类型从 presets 导入,避免 appearance-presets ↔ settings 循环依赖
 import type { UiAccentId, UiColorScheme } from './ui/appearance/appearance-presets';
 import { renderAppearanceSettings } from './ui/appearance/appearance-settings-render';
-import { renderChatProfiles } from './ui/settings/chat-profiles-render';
+import { buildChatProfileList } from './ui/settings/chat-profiles-render';
 import type { McpServerConfig } from './ports/mcp';
 
 /** 设置顶栏 Tab ID 清单(仅 UI 态,不落盘)— focusTab 校验与顶部导航共用的单一事实源 */
@@ -416,6 +415,27 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 	constructor(app: App, plugin: RatelVaultPlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
+		this.refreshListWhenSettingsOpens();
+	}
+
+	/**
+	 * 设置窗口关掉再开，仍用第一次画出的列表。名称已经改过也不会重读。
+	 * 每次打开设置时重画。
+	 */
+	private refreshListWhenSettingsOpens(): void {
+		const modal = (this.app as unknown as {
+			setting?: { open: (...args: unknown[]) => unknown; ratelRefreshInstalled?: boolean };
+		}).setting;
+		if (!modal?.open || modal.ratelRefreshInstalled) return;
+		const orig = modal.open.bind(modal);
+		modal.open = (...args: unknown[]) => {
+			const result = orig(...args);
+			window.setTimeout(() => {
+				if (this.containerEl?.isConnected) this.update();
+			}, 0);
+			return result;
+		};
+		modal.ratelRefreshInstalled = true;
 	}
 
 	/**
@@ -613,19 +633,16 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 				],
 			},
 			{
+				...buildChatProfileList(this.app, this.plugin),
+				cls: chatCls,
+				visible: chatVisible,
+			},
+			{
 				type: 'group',
-				heading: tNow('settings.chatModel.heading'),
+				heading: tNow('settings.context.heading'),
 				cls: chatCls,
 				visible: chatVisible,
 				items: [
-					{
-						name: tNow('settings.chatProfiles.heading'),
-						render: renderChatProfiles(this.app, this.plugin),
-					},
-					{
-						name: tNow('settings.advanced.secretHint.title'),
-						render: renderChatSecretHint(this.app, this.plugin),
-					},
 					{
 						name: tNow('settings.autoCompactEnabled.name'),
 						desc: tNow('settings.autoCompactEnabled.desc'),

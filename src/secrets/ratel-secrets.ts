@@ -124,7 +124,7 @@ export function requiresEmbedApiKey(settings: EmbedSecretSettings): boolean {
  * 从 Obsidian secretStorage 读取密钥并 trim。
  *
  * 关键路径:
- * - SecretStorage API 缺失时兜底日志(minAppVersion 1.13.0 已阻止老版,理论上不可达)。
+ * - SecretStorage API 缺失时兜底日志(minAppVersion 1.13.1 已阻止老版,理论上不可达)。
  * - OS 钥匙串异常(如 macOS Keychain 拒绝访问)不冒泡,视为未配置,避免阻断 rebuild。
  *
  * @param app - Obsidian App 实例
@@ -135,7 +135,7 @@ function getSecret(app: App, id: string): string | null {
 	try {
 		if (!app.secretStorage?.getSecret) {
 			// 修复:SecretStorage API 缺失,理论上 minAppVersion 已阻止,兜底日志。
-			devLogger.error('secrets', 'SecretStorage API 不可用,需 Obsidian ≥ 1.13.0');
+			devLogger.error('secrets', 'SecretStorage API 不可用,需 Obsidian ≥ 1.13.1');
 			return null;
 		}
 		// 关键路径:直接在 secretStorage 上调用,避免提取方法导致 this 丢失。
@@ -150,16 +150,41 @@ function getSecret(app: App, id: string): string | null {
 
 // ==================== Chat profile 密钥 ====================
 
-/** 一套对话配置的钥匙串密钥名。 */
-export function chatProfileSecretId(profileId: string): string {
+/** 一套对话配置的钥匙串名：ratel-chat-供应商-序号。 */
+export function chatProfileSecretId(profile: { id: string; providerId?: string; keySerial?: number }): string {
+	const slug = providerSecretSlug(profile.providerId || 'custom');
+	const serial = profile.keySerial && profile.keySerial > 0 ? profile.keySerial : 1;
+	return `ratel-chat-${slug}-${serial}`;
+}
+
+/**
+ * 钥匙串名里的供应商片段。只留小写字母和数字。
+ *
+ * @param providerId - 供应商 id
+ * @returns 短横线连接的片段
+ */
+export function providerSecretSlug(providerId: string): string {
+	const slug = providerId
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, '-')
+		.replace(/^-+|-+$/g, '')
+		.slice(0, 32);
+	return slug || 'custom';
+}
+
+/** 旧版按配置 id 命名的钥匙串项，读取时回退。 */
+export function legacyChatProfileSecretId(profileId: string): string {
 	return `ratel-chat-profile-${profileId}`;
 }
 
 /** 当前这套配置的密钥名(active profile 优先,无 profile 时回退旧槽位)。 */
 function currentChatSecretId(settings: ChatSecretSettings): string {
-	const s = settings as ChatSecretSettings & { chatProfiles?: Array<{ id: string }>; activeChatProfileId?: string };
+	const s = settings as ChatSecretSettings & {
+		chatProfiles?: Array<{ id: string; providerId?: string; keySerial?: number }>;
+		activeChatProfileId?: string;
+	};
 	const active = s.chatProfiles?.find((p) => p.id === s.activeChatProfileId);
-	return active ? chatProfileSecretId(active.id) : RATEL_SECRET_IDS.chatOpenAICompatible;
+	return active ? chatProfileSecretId(active) : RATEL_SECRET_IDS.chatOpenAICompatible;
 }
 
 // ==================== resolve / has ====================
@@ -174,8 +199,19 @@ function currentChatSecretId(settings: ChatSecretSettings): string {
 export function resolveChatApiKey(app: App, settings: ChatSecretSettings): string | null {
 	if (!requiresChatApiKey(settings)) return null;
 	const profileKey = getSecret(app, currentChatSecretId(settings));
-	// 关键路径:旧库升级后 profile 槽位可能还没写,回退到旧固定槽位
-	return profileKey ?? getSecret(app, RATEL_SECRET_IDS.chatOpenAICompatible);
+	if (profileKey) return profileKey;
+	const s = settings as ChatSecretSettings & {
+		chatProfiles?: Array<{ id: string }>;
+		activeChatProfileId?: string;
+	};
+	const active = s.chatProfiles?.find((p) => p.id === s.activeChatProfileId);
+	const legacy = active ? getSecret(app, legacyChatProfileSecretId(active.id)) : null;
+	// 关键路径:旧库仍用 ratel-chat-profile-<id>，读到后抄到新名字
+	if (legacy && active) {
+		setChatProfileSecret(app, active, legacy);
+		return legacy;
+	}
+	return getSecret(app, RATEL_SECRET_IDS.chatOpenAICompatible);
 }
 
 /**
@@ -292,12 +328,25 @@ export function hasMcpSecret(app: App, serverId: string): boolean {
 	return !!resolveMcpSecret(app, serverId);
 }
 
-/** 写入一套配置的密钥。 */
-export function setChatProfileSecret(app: App, profileId: string, value: string): void {
-	app.secretStorage?.setSecret(chatProfileSecretId(profileId), value);
+/** 读取一套配置的密钥。先看新名字，没有再看旧的 ratel-chat-profile-<id>。 */
+export function readChatProfileSecret(
+	app: App,
+	profile: { id: string; providerId?: string; keySerial?: number },
+): string | null {
+	return getSecret(app, chatProfileSecretId(profile)) ?? getSecret(app, legacyChatProfileSecretId(profile.id));
 }
 
-/** 删除一套配置的密钥。 */
-export function deleteChatProfileSecret(app: App, profileId: string): void {
-	app.secretStorage?.deleteSecret(chatProfileSecretId(profileId));
+/** 写入一套配置的密钥。 */
+export function setChatProfileSecret(
+	app: App,
+	profile: { id: string; providerId?: string; keySerial?: number },
+	value: string,
+): void {
+	app.secretStorage?.setSecret?.(chatProfileSecretId(profile), value);
+}
+
+/** 删除一套配置的密钥，包括旧版按 id 命名的那一项。 */
+export function deleteChatProfileSecret(app: App, profileId: string, profile?: { id: string; providerId?: string; keySerial?: number }): void {
+	if (profile) app.secretStorage?.deleteSecret?.(chatProfileSecretId(profile));
+	app.secretStorage?.deleteSecret?.(legacyChatProfileSecretId(profileId));
 }

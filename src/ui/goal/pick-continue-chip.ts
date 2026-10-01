@@ -78,7 +78,8 @@ export function pickContinueChip(input: {
 
 /**
  * 条已经在展示同一条未完成目标时不再叠 chip,避免「条 + 继续」双状态。
- * 接管 / 多条遗留 pending 仍要 chip(条点不开那两个动作)。
+ * 接管仍留 chip,但状态条已经写出目标全文时,按钮不再重复标题。
+ * 多条遗留 pending 仍要 chip(条点不开那个动作)。
  *
  * @param chip - pickContinueChip 结果
  * @param stripKind - pickGoalStrip 的 kind

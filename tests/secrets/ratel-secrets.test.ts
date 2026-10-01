@@ -20,6 +20,8 @@ import {
 	getChatSecretId,
 	getEmbedSecretId,
 	getRerankSecretId,
+	chatProfileSecretId,
+	providerSecretSlug,
 	mcpSecretId,
 	resolveMcpSecret,
 	hasMcpSecret,
@@ -204,8 +206,8 @@ describe('ratel-secrets', () => {
 		const settingsWithProfile = (activeId: string) => ({
 			chatApiBase: 'https://api.deepseek.com',
 			chatProfiles: [
-				{ id: 'p1', name: 'A', apiBase: 'https://a', model: 'm1', contextLengthPreset: '128k', chatModelMaxTokens: 128_000 },
-				{ id: 'p2', name: 'B', apiBase: 'https://b', model: 'm2', contextLengthPreset: '128k', chatModelMaxTokens: 128_000 },
+				{ id: 'p1', name: 'A', providerId: 'custom', keySerial: 1, apiBase: 'https://a', model: 'm1', contextLengthPreset: '128k', chatModelMaxTokens: 128_000 },
+				{ id: 'p2', name: 'B', providerId: 'deepseek', keySerial: 1, apiBase: 'https://b', model: 'm2', contextLengthPreset: '128k', chatModelMaxTokens: 128_000 },
 			],
 			activeChatProfileId: activeId,
 		}) as unknown as ChatSecretSettings;
@@ -221,7 +223,14 @@ describe('ratel-secrets', () => {
 		});
 
 		it('getChatSecretId - 返回当前套的 profile 密钥名', () => {
-			expect(getChatSecretId(settingsWithProfile('p2'))).toBe('ratel-chat-profile-p2');
+			expect(getChatSecretId(settingsWithProfile('p2'))).toBe('ratel-chat-deepseek-1');
+		});
+
+		it('chatProfileSecretId - 供应商名含空格或符号 - 名称里没有空格', () => {
+			expect(providerSecretSlug('Z AI')).toBe('z-ai');
+			expect(providerSecretSlug('z.ai')).toBe('z-ai');
+			expect(chatProfileSecretId({ id: 'p', providerId: 'Z AI', keySerial: 2 })).toBe('ratel-chat-z-ai-2');
+			expect(chatProfileSecretId({ id: 'p', providerId: 'Z AI', keySerial: 2 })).not.toMatch(/\s/);
 		});
 	});
 

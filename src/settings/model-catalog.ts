@@ -21,7 +21,10 @@ export interface CatalogLimits {
 export interface CatalogProviderRow {
 	id: string;
 	name: string;
+	/** 官方接口地址。名单没给时为 null，不得编造。 */
 	api: string | null;
+	/** 官方文档地址。不是说明文字，名单里没有描述字段。 */
+	doc: string | null;
 }
 
 export interface ModelsDevModel {
@@ -35,6 +38,7 @@ export interface ModelsDevProvider {
 	id: string;
 	name?: string;
 	api?: string | null;
+	doc?: string | null;
 	models?: Record<string, ModelsDevModel>;
 }
 
@@ -91,14 +95,102 @@ export function listCatalogProviders(catalog: ModelsDevCatalog): CatalogProvider
 		if (!provider?.id) continue;
 		if (provider.id === LOCAL_PROVIDER_OLLAMA || provider.id === LOCAL_PROVIDER_CUSTOM) continue;
 		const api = typeof provider.api === 'string' ? provider.api.trim() : '';
+		const doc = typeof provider.doc === 'string' ? provider.doc.trim() : '';
 		rows.push({
 			id: provider.id,
 			name: provider.name?.trim() || provider.id,
 			api: api || null,
+			doc: doc || null,
 		});
 	}
 	rows.sort((a, b) => a.name.localeCompare(b.name, 'en'));
 	return rows;
+}
+
+/**
+ * 空白检索时先列出的供应商。
+ * 这是我们挑的短名单，不是 models.dev 的分组或热度（名单里没有这两项）。
+ */
+export const PINNED_PROVIDER_IDS = [
+	'deepseek',
+	'volcengine',
+	'alibaba-cn',
+	'alibaba',
+	'zhipuai',
+	'zai',
+	'moonshotai-cn',
+	'siliconflow-cn',
+	'siliconflow',
+	'stepfun',
+	'minimax-cn',
+	'openai',
+	'anthropic',
+	'google',
+	'xai',
+	'mistral',
+	'groq',
+	'openrouter',
+] as const;
+
+/**
+ * 检索用的中文别名。名单名称是英文，搜「火山」否则对不上 Volcengine Ark。
+ * 只用于匹配和展示，不写入配置。
+ */
+const PROVIDER_SEARCH_ALIASES: Record<string, string> = {
+	deepseek: '深度求索',
+	volcengine: '火山引擎 方舟',
+	'volcengine-coding-plan': '火山引擎 方舟',
+	'alibaba-cn': '阿里云 百炼 通义',
+	alibaba: '阿里云 百炼 通义',
+	'alibaba-coding-plan': '阿里云',
+	'alibaba-coding-plan-cn': '阿里云',
+	zhipuai: '智谱',
+	'zhipuai-coding-plan': '智谱',
+	zai: '智谱',
+	'zai-coding-plan': '智谱',
+	'moonshotai-cn': '月之暗面 Kimi',
+	moonshotai: '月之暗面 Kimi',
+	'siliconflow-cn': '硅基流动',
+	siliconflow: '硅基流动',
+	stepfun: '阶跃星辰',
+	'minimax-cn': '稀宇 MiniMax',
+	minimax: '稀宇 MiniMax',
+};
+
+/** 展示在名称后面的中文别名。没有则返回空串。 */
+export function providerSearchAlias(id: string): string {
+	return PROVIDER_SEARCH_ALIASES[id] ?? '';
+}
+
+/**
+ * 按检索词过滤供应商。空白时只返回短名单里实际存在的行，顺序跟短名单一致。
+ *
+ * @param rows - listCatalogProviders 的结果
+ * @param query - 用户输入，匹配名称或 id
+ * @returns 要放进下拉的行，不含本地 Ollama 和自定义
+ */
+export function filterCatalogProviders(
+	rows: readonly CatalogProviderRow[],
+	query: string,
+): CatalogProviderRow[] {
+	const q = query.trim().toLowerCase();
+	if (!q) {
+		const byId = new Map(rows.map((row) => [row.id, row]));
+		const pinned: CatalogProviderRow[] = [];
+		for (const id of PINNED_PROVIDER_IDS) {
+			const row = byId.get(id);
+			if (row) pinned.push(row);
+		}
+		return pinned;
+	}
+	return rows
+		.filter((row) => {
+			const alias = providerSearchAlias(row.id).toLowerCase();
+			return row.name.toLowerCase().includes(q)
+				|| row.id.toLowerCase().includes(q)
+				|| alias.includes(q);
+		})
+		.sort((a, b) => a.name.localeCompare(b.name, 'en'));
 }
 
 /** 下拉里的「手填」选项值，不会是合法模型 id */

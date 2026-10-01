@@ -100,9 +100,9 @@ describe('saveCurrentAsProfile', () => {
 
 		const created = saveCurrentAsProfile(s as never, '副本');
 		if (key) {
-			setChatProfileSecret(app, created.id, key);
+			setChatProfileSecret(app, created, key);
 		}
-		expect(store[chatProfileSecretId(created.id)]).toBe('sk-source-only');
+		expect(store[chatProfileSecretId(created)]).toBe('sk-source-only');
 	});
 
 	it('另存为 CP-07 - 先切 active 再读密钥 - 无法复制源套槽位', () => {

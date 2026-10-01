@@ -1249,6 +1249,7 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 				plugin.settings.promptOverrides,
 			);
 			if (result.skipped) {
+				plugin.breadcrumbs?.mark('compact.result', compactingSessionId, 'skip;reason=short');
 				if (sessionId === compactingSessionId) {
 					messages = messages.filter((m) => m.id !== runningId);
 					if (!opts.auto) {
@@ -1269,6 +1270,7 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 				new Notice(tNow('chat.compacted'), 2500);
 			}
 			compactCircuit.succeed(compactingSessionId);
+			plugin.breadcrumbs?.mark('compact.result', compactingSessionId, 'ok');
 			plugin.userStatus.patchContextUsage({
 				usedTokens: ctx.tokenCount(),
 				maxTokens: getEffectiveChatModelMaxTokens(plugin.settings),
@@ -1276,11 +1278,13 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 			});
 		} catch (err) {
 			compactCircuit.fail(compactingSessionId);
+			const message = err instanceof Error ? err.message : String(err);
+			const failReason = message.replace(/\n/g, ' ').replace(/\|/g, '_').slice(0, 80);
+			plugin.breadcrumbs?.mark('compact.result', compactingSessionId, `fail;reason=${failReason}`);
 			if (sessionId === compactingSessionId) {
 				messages = messages.map((m) =>
 					m.id === runningId ? { ...m, compactPhase: 'failed' as const } : m,
 				);
-				const message = err instanceof Error ? err.message : String(err);
 				if (!opts.auto) {
 					new Notice(tNow('chat.error.compactFailed', { message }), 5000);
 				}
@@ -1404,16 +1408,20 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 		await preCtx.load(sessionId);
 		plugin.breadcrumbs?.mark('send.precheck', sessionId, preCtx.getTranscript().length);
 		const preUsage = preCtx.getContextUsage(maxTokens, attachmentTokens);
+		const willPreSendCompact = decidePreSendCompact({
+			enabled: plugin.settings.autoCompactEnabled !== false,
+			percentage: preUsage.percentage,
+			circuitOpen: compactCircuit.isOpen(sessionId),
+			isRunning,
+			isCompacting,
+		});
+		plugin.breadcrumbs?.mark(
+			'compact.decide',
+			sessionId,
+			`action=${willPreSendCompact ? 'summary' : 'none'};pct=${preUsage.percentage};used=${preUsage.usedTokens};max=${maxTokens};source=estimate`,
+		);
 		let compactPathTaken = false;
-		if (
-			decidePreSendCompact({
-				enabled: plugin.settings.autoCompactEnabled !== false,
-				percentage: preUsage.percentage,
-				circuitOpen: compactCircuit.isOpen(sessionId),
-				isRunning,
-				isCompacting,
-			})
-		) {
+		if (willPreSendCompact) {
 			plugin.breadcrumbs?.mark('send.compact', sessionId);
 			await runCompactInChat({ auto: true });
 			compactPathTaken = true;
@@ -1635,21 +1643,32 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 
 			// 关键路径:整轮结束后自动压 — 不在流式中途插队
 			let postTurnPercentage: number;
+			let postTurnUsedTokens: number;
+			let postTurnSource: 'api' | 'estimate';
 			if (lastTurnApiTokens != null) {
+				postTurnUsedTokens = lastTurnApiTokens;
+				postTurnSource = 'api';
 				postTurnPercentage =
 					maxTokens > 0 ? Math.round((lastTurnApiTokens / maxTokens) * 100) : 0;
 			} else {
 				const postCtx = plugin.createContext();
 				await postCtx.load(sessionId);
-				postTurnPercentage = postCtx.getContextUsage(maxTokens).percentage;
+				const postUsage = postCtx.getContextUsage(maxTokens);
+				postTurnUsedTokens = postUsage.usedTokens;
+				postTurnPercentage = postUsage.percentage;
+				postTurnSource = 'estimate';
 			}
-			if (
-				decidePostTurnCompact({
-					enabled: plugin.settings.autoCompactEnabled !== false,
-					percentage: postTurnPercentage,
-					circuitOpen: compactCircuit.isOpen(sessionId),
-				})
-			) {
+			const willPostTurnCompact = decidePostTurnCompact({
+				enabled: plugin.settings.autoCompactEnabled !== false,
+				percentage: postTurnPercentage,
+				circuitOpen: compactCircuit.isOpen(sessionId),
+			});
+			plugin.breadcrumbs?.mark(
+				'compact.decide',
+				sessionId,
+				`action=${willPostTurnCompact ? 'summary' : 'none'};pct=${postTurnPercentage};used=${postTurnUsedTokens};max=${maxTokens};source=${postTurnSource}`,
+			);
+			if (willPostTurnCompact) {
 				plugin.breadcrumbs?.mark('send.compact', sessionId);
 				await runCompactInChat({ auto: true });
 			}
@@ -2079,9 +2098,13 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 										objective: truncateObjective(continueChip.objective ?? ''),
 									})}
 								{:else if continueChip.kind === 'takeover'}
-									{tNow('goal.chip.takeover', {
-										objective: truncateObjective(continueChip.objective ?? ''),
-									})}
+									{#if goalStrip.kind === 'active-elsewhere'}
+										{tNow('goal.chip.takeoverShort')}
+									{:else}
+										{tNow('goal.chip.takeover', {
+											objective: truncateObjective(continueChip.objective ?? ''),
+										})}
+									{/if}
 								{:else if continueChip.kind === 'single-pending'}
 									{tNow('goal.chip.singlePending', {
 										objective: truncateObjective(continueChip.objective ?? ''),

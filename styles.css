@@ -95,20 +95,47 @@
 	/* no-op marker */
 }
 
-/* ==================== 已保存的对话配置(S-CHAT-SETUP) ==================== */
-/* 当套展开区:缩进 + 左侧强调线,与行内按钮的其余套区分 */
+/* ==================== 已保存的对话配置 ==================== */
+/* 行距交给 Obsidian 的 setting-group，这里只保留密钥框的垂直对齐。 */
 .ratel-chat-profile-detail {
 	display: flex;
 	flex-direction: column;
-	margin: 4px 0 12px 12px;
-	padding: 4px 12px 8px;
-	border-left: 2px solid var(--interactive-accent);
-	border-radius: 4px;
-	background: var(--background-secondary);
 }
 .ratel-chat-profile-detail .setting-item {
-	border: none;
-	padding: 6px 0;
+	align-items: center;
+}
+/* 说明折行后，输入框仍跟整行垂直居中。眼睛和输入框同高，避免把这一行顶偏。 */
+.ratel-chat-profile-detail .setting-item-control {
+	align-self: center;
+	align-items: center;
+}
+.ratel-chat-profile-detail .setting-item-description {
+	display: block;
+	height: auto;
+	max-height: none;
+	overflow: visible;
+	white-space: normal;
+	-webkit-line-clamp: unset;
+}
+.ratel-chat-profile-detail .setting-item-control .extra-setting-button {
+	align-self: center;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	box-sizing: border-box;
+	width: var(--input-height);
+	height: var(--input-height);
+	padding: 0;
+	line-height: normal;
+}
+.ratel-provider-section {
+	margin: 16px 0 4px;
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+	font-weight: 600;
+}
+.ratel-provider-pick {
+	cursor: pointer;
 }
 .ratel-chat-profile-detail .setting-item-heading {
 	margin-top: 2px;

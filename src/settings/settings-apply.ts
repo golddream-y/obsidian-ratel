@@ -14,8 +14,8 @@ import {
 	type ContextLengthPresetId,
 } from '../ui/tokens/context-length-presets';
 import { DEFAULT_MODEL_REGISTRY_URL } from '../ui/tokens/model-context-registry';
-import { inferChatProvider, syncChatWindow } from './chat-profiles';
-import { lookupCatalogLimits, type ModelsDevCatalog } from './model-catalog';
+import { inferChatProvider, syncChatWindow, assignChatKeySerials } from './chat-profiles';
+import { listCatalogModels, lookupCatalogLimits, type ModelsDevCatalog } from './model-catalog';
 import { applyLangPreference, type LangPreference } from '../i18n';
 import { devLogger } from '../logging/dev-logger';
 import type { ChatProfile, ModelContextLookup } from './chat-profiles';
@@ -144,6 +144,13 @@ export async function applySettingValue(plugin: SettingApplier, key: string, val
 			const trimmed = typeof api === 'string' ? api.trim() : '';
 			plugin.settings.chatApiBase = trimmed;
 			plugin.settings.chatPreset = id === 'deepseek' ? 'deepseek' : 'custom';
+			// 当前模型不属于新供应商时，换成这一家的第一个可用模型，窗口才能查到。
+			if (catalog) {
+				const models = listCatalogModels(catalog, id);
+				if (models.length > 0 && !models.includes(plugin.settings.chatModel)) {
+					plugin.settings.chatModel = models[0];
+				}
+			}
 		}
 		if (active) {
 			active.apiBase = plugin.settings.chatApiBase;
@@ -151,6 +158,7 @@ export async function applySettingValue(plugin: SettingApplier, key: string, val
 			active.contextLengthPreset = plugin.settings.contextLengthPreset;
 			active.chatModelMaxTokens = plugin.settings.chatModelMaxTokens;
 		}
+		assignChatKeySerials(plugin.settings.chatProfiles);
 		plugin.rebuildLLM();
 		await syncChatWindow(plugin.settings, { catalog, clearOnMiss: true });
 	} else if (key === 'chatPreset') {

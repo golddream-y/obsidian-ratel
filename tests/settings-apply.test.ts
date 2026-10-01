@@ -292,4 +292,34 @@ describe('applySettingValue - S-CHAT-SETUP 展开区语义', () => {
 		expect(p.settings.chatProfiles[0]!.windowUserSet).toBe(false);
 		expect(p.settings.chatModelMaxTokens).toBe(1_000_000);
 	});
+
+	it('chatProvider - 当前模型不属于新供应商 - 换成该供应商的模型并查出窗口', async () => {
+		const p = withProfiles(mockApplier());
+		p.settings.chatModel = 'glm-5.1';
+		p.settings.chatProfiles[0]!.model = 'glm-5.1';
+		p.settings.chatProfiles[0]!.providerId = 'zai';
+		p.modelsDevCatalog = {
+			ensureCatalog: async () => ({
+				deepseek: {
+					id: 'deepseek',
+					name: 'DeepSeek',
+					api: 'https://api.deepseek.com',
+					models: {
+						'deepseek-v4-flash': {
+							id: 'deepseek-v4-flash',
+							limit: { context: 1_000_000, output: 393_216 },
+							tool_call: true,
+						},
+					},
+				},
+			}),
+		};
+
+		await applySettingValue(p, 'chatProvider', 'deepseek');
+
+		expect(p.settings.chatApiBase).toBe('https://api.deepseek.com');
+		expect(p.settings.chatModel).toBe('deepseek-v4-flash');
+		expect(p.settings.chatProfiles[0]!.model).toBe('deepseek-v4-flash');
+		expect(p.settings.chatModelMaxTokens).toBe(1_000_000);
+	});
 });

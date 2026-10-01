@@ -23,7 +23,7 @@ Ratel is a desktop **vault AI Agent** for Obsidian. It answers questions, reads 
 2. **Browse** → search **Ratel** → install and enable
 3. The 🦡 icon appears in the left ribbon
 
-> Requires Obsidian **1.13.0+**, **desktop only**.
+> Requires Obsidian **1.13.1+**, **desktop only**.
 
 ### 2.2 First open
 
@@ -283,7 +283,7 @@ Mascot (can be turned off): a draggable block in the message area. Its face foll
 | Question | Answer |
 |---|---|
 | Does `/compact` delete the chat? | No. It compresses what is sent to the model. Bubbles stay. It can also run automatically near the context limit (turn that off in settings) |
-| Why 1.13.0+? | Keychain and the declarative settings API |
+| Why 1.13.1+? | Keychain, declarative settings, and showing the current value on a settings list |
 | Where is the key? | Obsidian Keychain, not `data.json` |
 | Does every launch reindex everything? | No. Smart reindex uses a hash diff and skips unchanged files |
 | `/reindex` versus automatic indexing? | `/reindex` clears and rebuilds. Everyday edits are incremental |
