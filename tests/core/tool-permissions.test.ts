@@ -3,12 +3,23 @@ import {
 	ToolPermissionSessionGrants,
 	resolveToolPermission,
 	isDestructiveTool,
+	mustConfirmAgentsMd,
 } from '../../src/core/tool-permissions';
 import type { ToolCall } from '../../src/ports/llm';
 
 const writeCall: ToolCall = { id: '1', name: 'write_note', args: { path: 'a.md', content: 'x' } };
 const deleteCall: ToolCall = { id: '2', name: 'delete_note', args: { path: 'a.md' } };
 const mcpCall: ToolCall = { id: '3', name: 'mcp__srv__tool', args: {} };
+
+describe('mustConfirmAgentsMd', () => {
+	it('mustConfirmAgentsMd - apply_patch 的 Update File 指向 AGENTS.md - 要确认', () => {
+		expect(mustConfirmAgentsMd({
+			id: '1',
+			name: 'apply_patch',
+			args: { patch: '*** Begin Patch\n*** Update File: Work/AGENTS.md\n@@\n 甲\n+乙\n*** End Patch\n' },
+		})).toBe(true);
+	});
+});
 
 describe('isDestructiveTool', () => {
 	it('isDestructiveTool - update/uninstall/configure/restore - true', () => {

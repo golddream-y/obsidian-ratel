@@ -6,6 +6,7 @@
 
 import type { ToolCall } from '../ports/llm';
 import { tNow } from '../i18n';
+import { peekUpdateFilePath } from '../tools/apply-patch-text';
 import { parseMcpToolName } from '../ui/mcp/parse-mcp-tool-name';
 
 export type ToolPermission = 'allow' | 'ask' | 'deny';
@@ -84,15 +85,21 @@ export class ToolPermissionSessionGrants {
 }
 
 export function extractToolPath(toolCall: ToolCall): string | undefined {
-	const p = toolCall.args.path;
+	if (toolCall.name === 'apply_patch' && typeof toolCall.args.patch === 'string') {
+		return peekUpdateFilePath(toolCall.args.patch);
+	}
+	const p = toolCall.args.path ?? toolCall.args.from;
 	return typeof p === 'string' ? p : undefined;
 }
 
 const AGENTS_MD_NOTE_TOOLS = new Set([
 	'write_note',
 	'edit_note',
+	'apply_patch',
 	'append_note',
 	'delete_note',
+	'move_note',
+	'copy_note',
 ]);
 
 /**
@@ -122,8 +129,14 @@ export function summarizeToolCall(toolCall: ToolCall): string {
 			return path ? tNow('toolPerm.appendNote', { path }) : tNow('settings.toolPermissions.append_note');
 		case 'edit_note':
 			return path ? tNow('toolPerm.editNote', { path }) : tNow('settings.toolPermissions.edit_note');
+		case 'apply_patch':
+			return path ? tNow('toolPerm.applyPatch', { path }) : tNow('settings.toolPermissions.apply_patch');
 		case 'delete_note':
 			return path ? tNow('toolPerm.deleteNote', { path }) : tNow('settings.toolPermissions.delete_note');
+		case 'move_note':
+			return path ? tNow('toolPerm.moveNote', { path }) : tNow('settings.toolPermissions.move_note');
+		case 'copy_note':
+			return path ? tNow('toolPerm.copyNote', { path }) : tNow('settings.toolPermissions.copy_note');
 		case 'run_skill_script': {
 			// 关键路径:展示 skill/script 粒度,用户知道自己在放行什么
 			const skillName = typeof toolCall.args.skillName === 'string' ? toolCall.args.skillName : '';

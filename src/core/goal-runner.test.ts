@@ -48,6 +48,8 @@ function fakeVault(overrides?: Partial<VaultPort>): VaultPort {
 		listFiles: async () => ({ files: [], folders: [] }),
 		fileExists: async () => false,
 		processFile: async (_p, fn) => fn(''),
+		renameFile: async () => {},
+		copyFile: async () => {},
 		...overrides,
 	};
 }

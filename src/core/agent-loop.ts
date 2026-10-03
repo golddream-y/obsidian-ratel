@@ -25,6 +25,7 @@ import {
 	withToolDeadline,
 } from './loop-stability';
 import { tNow } from '../i18n';
+import { isTruncatedToolArgs, TRUNCATED_TOOL_ARGS_ERROR } from './truncated-tool-call';
 import { measureOutbound } from './outbound-measure';
 import { recordUsageCalibration } from './usage-calibration';
 
@@ -372,6 +373,16 @@ export async function* agentLoop(
 				}
 				yield { type: 'tool.call', payload: { name: tc.name, args: tc.args } };
 
+				// 关键路径:输出被 max_tokens 截断时参数只剩 raw，执行会把缺字段报成路径错误。
+				if (isTruncatedToolArgs(tc.args)) {
+					const message = TRUNCATED_TOOL_ARGS_ERROR;
+					yield { type: 'tool.result', payload: { name: tc.name, result: `Error: ${message}` } };
+					ctx.addAssistantToolCall(tc, accumulatedText, turnReasoning);
+					ctx.addToolResult(tc.id, `Error: ${message}`);
+					accumulatedText = '';
+					continue;
+				}
+
 				// 权限门控(信任模式/用户确认)
 				if (toolPermissionCheck) {
 					try {
@@ -419,6 +430,9 @@ export async function* agentLoop(
 					yield { type: 'error', payload: { code, message } };
 					result = `Error: ${message}`;
 					await hooks.runVoid('post-tool-failure', tc);
+				}
+				if (typeof result === 'string' && result.startsWith('Error:')) {
+					toolFailed = true;
 				}
 
 				yield { type: 'tool.result', payload: { name: tc.name, result } };

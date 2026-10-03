@@ -151,10 +151,9 @@ describe('offloadStalePayload', () => {
 			asstTool('w2', 'write_note', { path: '第002章.md', content: '第二章' }),
 			tool('w2', 'ok'),
 		]);
-		expect(out[1]!.toolArgs).toEqual({
-			path: '第001章.md',
-			content: `[written] path=第001章.md chars=${chapter.length}`,
-		});
+		expect(out[1]!.toolArgs).toEqual({ path: '第001章.md' });
+		expect(out[2]!.content).toContain('read_note');
+		expect(out[2]!.content).not.toContain(chapter);
 		expect(out[4]!.toolArgs).toEqual({ path: '第002章.md', content: '第二章' });
 	});
 
@@ -166,7 +165,8 @@ describe('offloadStalePayload', () => {
 			asstTool('w2', 'write_note', { path: '第002章.md', content: '新章' }),
 			tool('w2', 'ok'),
 		]);
-		expect(String(out[1]!.toolArgs!.content)).toMatch(/^\[written\]/);
+		expect(out[1]!.toolArgs).toEqual({ path: '第001章.md' });
+		expect(out[1]!.toolArgs).not.toHaveProperty('content');
 		expect(out[3]!.toolArgs!.content).toBe('新章');
 	});
 
@@ -187,11 +187,7 @@ describe('offloadStalePayload', () => {
 			tool('e1', 'ok'),
 			{ role: 'user', content: '下一轮' },
 		]);
-		expect(out[1]!.toolArgs).toEqual({
-			path: 'a.md',
-			old_string: '[written] path=a.md chars=2',
-			new_string: '[written] path=a.md chars=2',
-		});
+		expect(out[1]!.toolArgs).toEqual({ path: 'a.md' });
 	});
 });
 
@@ -235,7 +231,7 @@ describe('projectView', () => {
 		];
 		const { tail } = projectView(messages, undefined);
 		const write = tail.find((m) => m.toolName === 'write_note');
-		expect(write?.toolArgs?.content).toBe('[written] path=a.md chars=2');
+		expect(write?.toolArgs).toEqual({ path: 'a.md' });
 	});
 });
 

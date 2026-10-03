@@ -40,6 +40,7 @@ import { projectView } from './compact-project';
 import { sanitizeToolMessageOrder } from './tool-message-align';
 import { pruneOverlongText } from './tool-result-prune';
 import { composeEnvContext, lastUserCreatedAt } from '../utils/chat-time';
+import { formatEnvContextLine } from '../utils/local-datetime';
 
 /** 写入会话时补 createdAt；调用方已带则保留 */
 function stampCreatedAt(msg: ChatMessage): ChatMessage {
@@ -51,6 +52,20 @@ function stampCreatedAt(msg: ChatMessage): ChatMessage {
 function stripCreatedAt(msg: ChatMessage): ChatMessage {
 	const { createdAt: _drop, ...rest } = msg;
 	return rest;
+}
+
+/**
+ * 出站副本在用户消息末尾附上该条的发送时间。不改 session 原文，气泡里看不到。
+ * 没有 createdAt 的旧消息不附，避免把历史标成现在。
+ */
+function withUserSendTime(msg: ChatMessage): ChatMessage {
+	const bare = stripCreatedAt(msg);
+	if (bare.role !== 'user' || typeof msg.createdAt !== 'number' || typeof bare.content !== 'string') {
+		return bare;
+	}
+	const line = formatEnvContextLine(new Date(msg.createdAt)).replace('当前本地时间:', '本条发送于');
+	if (bare.content.endsWith(line)) return bare;
+	return { ...bare, content: bare.content ? `${bare.content}\n\n${line}` : line };
 }
 
 /**
@@ -372,6 +387,16 @@ export class ContextManager {
 		this.noteAgentsSystemPrompt = composeNoteAgentsRootPrompt(rootContent);
 	}
 
+	/**
+	 * 追加本轮新碰到的子目录约束。空串不改。库根段保持在前。
+	 */
+	appendNoteAgentsChain(text: string): void {
+		if (!text.trim()) return;
+		this.noteAgentsSystemPrompt = this.noteAgentsSystemPrompt
+			? `${this.noteAgentsSystemPrompt}\n\n${text}`
+			: text;
+	}
+
 	setMemoryContext(
 		globalContent: string,
 		indexEntries: TopicIndexEntry[],
@@ -531,8 +556,8 @@ export class ContextManager {
 		}
 		messages.push(
 			...this.pruneSearchBlocks(this.searchResultsMessages),
-			...head.map(stripCreatedAt),
-			...trimmedTail.map(stripCreatedAt),
+			...head.map(withUserSendTime),
+			...trimmedTail.map(withUserSendTime),
 		);
 		return messages;
 	}

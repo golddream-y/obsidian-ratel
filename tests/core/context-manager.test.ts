@@ -115,7 +115,8 @@ describe('ContextManager', () => {
 		// system + user
 		expect(msgs).toHaveLength(2);
 		expect(msgs[1]!.role).toBe('user');
-		expect(msgs[1]!.content).toBe('What is X?');
+		expect(msgs[1]!.content.startsWith('What is X?')).toBe(true);
+		expect(msgs[1]!.content).toContain('本条发送于');
 	});
 
 	it('adds tool result to context', async () => {
@@ -676,6 +677,19 @@ describe('resetSession', () => {
 		ctx.addUserMessage('hi');
 		const u = ctx.getTranscript().find((m) => m.role === 'user');
 		expect(typeof u?.createdAt).toBe('number');
+	});
+
+	it('toMessages - 用户消息 - 出站末尾带发送时间且不改气泡', async () => {
+		const ctx = createCtx(createMockPersistence());
+		await ctx.load('s-send-time');
+		ctx.addUserMessage('改一下9月账');
+		const stored = ctx.getTranscript().find((m) => m.role === 'user');
+		const sentAt = new Date(2026, 8, 30, 21, 4, 0, 0).getTime();
+		stored!.createdAt = sentAt;
+		const outbound = ctx.toMessages().find((m) => m.role === 'user');
+		expect(stored?.content).toBe('改一下9月账');
+		expect(outbound?.content.startsWith('改一下9月账')).toBe(true);
+		expect(outbound?.content).toContain('本条发送于 2026-09-30 21:04');
 	});
 
 	it('toMessages - 历史 user - 出站对象无 createdAt 键', async () => {

@@ -155,27 +155,16 @@ function isSuccessfulWrite(messages: ChatMessage[], assistantIndex: number): boo
 	return !result.content.startsWith('Error:');
 }
 
-/**
- * 已落库写入的正文字段占位(面向模型,不走 i18n)。
- */
-function formatWrittenPlaceholder(path: unknown, charCount: number): string {
-	const pathPart =
-		typeof path === 'string' && path.trim() ? ` path=${path.trim()}` : '';
-	return `[written]${pathPart} chars=${charCount}`;
-}
+/** 告知模型正文在库里。不放进 content，避免被原样写入。面向模型，不走 i18n。 */
+const OFFLOAD_WRITE_NOTE = '正文已在笔记中，需要时用 read_note 读取。不要把占位标记写入 content。';
 
 /**
- * 复制 assistant 并移出 toolArgs 中的正文字段为占位。
+ * 复制 assistant，删掉正文字段，只留 path 等短字段。
  */
-function offloadWriteToolArgs(
-	msg: ChatMessage,
-	path: unknown,
-): ChatMessage {
+function stripWriteBody(msg: ChatMessage): ChatMessage {
 	const args = { ...(msg.toolArgs ?? {}) };
 	for (const field of WRITE_BODY_FIELDS) {
-		const value = args[field];
-		if (typeof value !== 'string') continue;
-		args[field] = formatWrittenPlaceholder(path, value.length);
+		delete args[field];
 	}
 	return { ...msg, toolArgs: args };
 }
@@ -198,6 +187,7 @@ export function offloadStalePayload(messages: ChatMessage[]): ChatMessage[] {
 		if (idx > lastUser) keepFullBodyIndex = idx;
 	}
 
+	const offloadedCallIds = new Set<string>();
 	const out: ChatMessage[] = [];
 	for (let i = 0; i < messages.length; i++) {
 		const msg = messages[i]!;
@@ -221,11 +211,19 @@ export function offloadStalePayload(messages: ChatMessage[]): ChatMessage[] {
 			next = rest as ChatMessage;
 		}
 		if (offloadWrite) {
-			next = offloadWriteToolArgs(next, next.toolArgs?.path);
+			next = stripWriteBody(next);
+			if (next.toolCallId) offloadedCallIds.add(next.toolCallId);
 		}
 		out.push(next);
 	}
-	return out;
+	if (offloadedCallIds.size === 0) return out;
+	return out.map((msg) => {
+		if (msg.role !== 'tool' || !msg.toolCallId || !offloadedCallIds.has(msg.toolCallId)) {
+			return msg;
+		}
+		if (msg.content.includes(OFFLOAD_WRITE_NOTE)) return msg;
+		return { ...msg, content: `${msg.content}\n${OFFLOAD_WRITE_NOTE}` };
+	});
 }
 
 /**
