@@ -112,7 +112,7 @@ export async function openReleaseNotesTab(plugin: RatelVaultPlugin, markSeen: bo
 	if (existing.length === 0) {
 		await leaf.setViewState({ type: VIEW_TYPE_RELEASE_NOTES, active: true });
 	}
-	plugin.app.workspace.revealLeaf(leaf);
+	await plugin.app.workspace.revealLeaf(leaf);
 	if (markSeen && plugin.settings.lastSeenRelease !== plugin.manifest.version) {
 		plugin.settings.lastSeenRelease = plugin.manifest.version;
 		await plugin.saveSettings();

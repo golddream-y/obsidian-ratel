@@ -94,7 +94,7 @@ export function withToolDeadline<T>(
 			(err) => {
 				clearTimeout(timer);
 				signal?.removeEventListener('abort', onAbort);
-				reject(err);
+				reject(err instanceof Error ? err : new Error(String(err)));
 			},
 		);
 	});

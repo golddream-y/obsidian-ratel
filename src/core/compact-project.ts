@@ -208,7 +208,7 @@ export function offloadStalePayload(messages: ChatMessage[]): ChatMessage[] {
 		let next: ChatMessage = msg;
 		if (stripReasoning) {
 			const { reasoning: _r, ...rest } = msg;
-			next = rest as ChatMessage;
+			next = rest;
 		}
 		if (offloadWrite) {
 			next = stripWriteBody(next);

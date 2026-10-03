@@ -347,6 +347,8 @@ export function setChatProfileSecret(
 
 /** 删除一套配置的密钥，包括旧版按 id 命名的那一项。 */
 export function deleteChatProfileSecret(app: App, profileId: string, profile?: { id: string; providerId?: string; keySerial?: number }): void {
-	if (profile) app.secretStorage?.deleteSecret?.(chatProfileSecretId(profile));
-	app.secretStorage?.deleteSecret?.(legacyChatProfileSecretId(profileId));
+	// 部分宿主扩展提供删除方法，公开类型未声明；保持可选调用而不假定其存在。
+	const storage = app.secretStorage as (typeof app.secretStorage & { deleteSecret?: (id: string) => void }) | undefined;
+	if (profile) storage?.deleteSecret?.(chatProfileSecretId(profile));
+	storage?.deleteSecret?.(legacyChatProfileSecretId(profileId));
 }

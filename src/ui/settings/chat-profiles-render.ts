@@ -53,7 +53,7 @@ class TextPromptModal extends Modal {
 		private title: string,
 		private placeholder: string,
 		private initial: string,
-		private onSubmit: (value: string) => void,
+		private onSubmit: (value: string) => void | Promise<void>,
 	) {
 		super(app);
 	}
@@ -78,7 +78,7 @@ class TextPromptModal extends Modal {
 				btn.onClick(() => {
 					const trimmed = value.trim();
 					if (!trimmed) return;
-					this.onSubmit(trimmed);
+					void this.onSubmit(trimmed);
 					this.close();
 				});
 			});
@@ -198,6 +198,11 @@ export class ChatProfileSettingPage extends SettingPage {
 	}
 
 	display(): void {
+		this.renderPage();
+	}
+
+	/** 宿主 display 保留为入口，页面内刷新复用独立渲染方法。 */
+	private renderPage(): void {
 		const { containerEl } = this;
 		containerEl.empty();
 		const profile = this.plugin.settings.chatProfiles.find((item) => item.id === this.profileId);
@@ -216,7 +221,7 @@ export class ChatProfileSettingPage extends SettingPage {
 						await commitProviderChoice(this.plugin, profile, providerId);
 						this.pickingProvider = false;
 						if (!containerEl.isConnected) return;
-						this.display();
+						this.renderPage();
 					})();
 				},
 			});
@@ -245,14 +250,14 @@ export class ChatProfileSettingPage extends SettingPage {
 						await this.plugin.saveSettings({ refreshSettingsTab: false });
 						this.plugin.rebuildLLM();
 						new Notice(tNow('settings.chatProfiles.switched', { name: profile.name }), 3000);
-						this.display();
+						this.renderPage();
 					});
 				});
 		}
 
 		renderProfileDetail(this.app, this.plugin, body, profile, () => {
 			this.pickingProvider = true;
-			this.display();
+			this.renderPage();
 		}, () => {
 			const root = this.plugin.settingTab?.containerEl;
 			if (root) this.writeListRow(root);
