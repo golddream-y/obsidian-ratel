@@ -9,11 +9,19 @@ import type { ContextLengthPresetId } from '../ui/tokens/context-length-presets'
 import { applyContextRecommendation } from '../ui/tokens/context-length-presets';
 import {
 	DEEPSEEK_CHAT_API_BASE,
+	OLLAMA_CHAT_API_BASE,
+	OLLAMA_CHAT_MODEL,
 	OLLAMA_LOCAL_BASES,
 	normalizeChatApiBase,
 	type ChatPresetId,
 } from './chat-preset';
-import { LOCAL_PROVIDER_CUSTOM, lookupCatalogLimits, type ModelsDevCatalog } from './model-catalog';
+import {
+	LOCAL_PROVIDER_CUSTOM,
+	LOCAL_PROVIDER_OLLAMA,
+	listCatalogModels,
+	lookupCatalogLimits,
+	type ModelsDevCatalog,
+} from './model-catalog';
 import type { RatelVaultSettings } from '../settings';
 import { providerSecretSlug } from '../secrets/ratel-secrets';
 
@@ -281,4 +289,131 @@ export async function syncChatWindow(
 		return { applied: false, skipped: false, changed };
 	}
 	return { applied: false, skipped: false, changed: false };
+}
+
+/**
+ * 顶栏应显示的模型。当前套有自己的模型名时用它，否则用全局 chatModel。
+ *
+ * @param settings - 含当前套 id、配置列表和全局模型名
+ * @returns 顶栏和菜单高亮行应对齐的模型名
+ */
+export function resolveHeaderChatModel(settings: {
+	chatModel: string;
+	activeChatProfileId: string;
+	chatProfiles?: ReadonlyArray<{ id: string; model: string }>;
+}): string {
+	const active = settings.chatProfiles?.find((profile) => profile.id === settings.activeChatProfileId);
+	return active?.model || settings.chatModel;
+}
+
+/**
+ * 点菜单里的某一套时，是否还要把该套写回当前四字段。
+ * 已经是当前套且模型、地址、窗口都一致时不必再切。
+ *
+ * @param settings - 当前设置
+ * @param profileId - 点中的套 id
+ * @returns true 表示需要 switchChatProfile
+ */
+export function profileSelectNeedsSwitch(settings: RatelVaultSettings, profileId: string): boolean {
+	const profile = settings.chatProfiles?.find((item) => item.id === profileId);
+	if (!profile) return false;
+	if (profileId !== settings.activeChatProfileId) return true;
+	return settings.chatModel !== profile.model
+		|| settings.chatApiBase !== profile.apiBase
+		|| settings.contextLengthPreset !== profile.contextLengthPreset
+		|| settings.chatModelMaxTokens !== profile.chatModelMaxTokens;
+}
+
+/**
+ * 把模型名写进指定套，不碰全局 chatModel。改模型后窗口锁定取消，下次切到这套再查表。
+ *
+ * @param profile - 正在编辑的那一套
+ * @param model - 新模型名
+ */
+export function writeStoredProfileModel(profile: ChatProfile, model: string): void {
+	profile.model = model;
+	profile.windowUserSet = false;
+}
+
+/**
+ * 把窗口数字写进指定套，不碰全局上限。
+ *
+ * @param profile - 正在编辑的那一套
+ * @param tokens - 窗口 token 数
+ * @param userSet - true 表示用户改过，同模型不再被查表覆盖
+ */
+export function writeStoredProfileWindow(profile: ChatProfile, tokens: number, userSet: boolean): void {
+	const applied = applyContextRecommendation(tokens);
+	profile.contextLengthPreset = applied.preset;
+	profile.chatModelMaxTokens = applied.chatModelMaxTokens;
+	profile.windowUserSet = userSet;
+}
+
+/**
+ * 把供应商写进指定套，不碰当前对话的模型、地址和窗口。
+ * 新供应商的名单里没有当前模型时，换成这一家的第一个可用模型。
+ *
+ * @param settings - 插件设置，只用来给这一套分配不重复的密钥序号
+ * @param profile - 正在编辑的那一套
+ * @param providerId - 供应商 id
+ * @param catalog - 已加载名单；没有时不改模型，地址按供应商规则写
+ */
+export function assignStoredProfileProvider(
+	settings: RatelVaultSettings,
+	profile: ChatProfile,
+	providerId: string,
+	catalog: ModelsDevCatalog | null,
+): void {
+	profile.providerId = providerId;
+	profile.windowUserSet = false;
+	if (providerId === LOCAL_PROVIDER_OLLAMA) {
+		profile.apiBase = OLLAMA_CHAT_API_BASE;
+		profile.model = OLLAMA_CHAT_MODEL;
+	} else if (providerId === LOCAL_PROVIDER_CUSTOM) {
+		profile.apiBase = '';
+	} else {
+		const api = catalog?.[providerId]?.api;
+		profile.apiBase = typeof api === 'string' ? api.trim() : '';
+		if (catalog) {
+			const models = listCatalogModels(catalog, providerId);
+			if (models.length > 0 && !models.includes(profile.model)) {
+				profile.model = models[0]!;
+			}
+		}
+	}
+	ensureOwnKeySerial(settings, profile);
+}
+
+/**
+ * 只给这一套补密钥序号。序号还没被同一供应商的其他套占用时保持原值。
+ *
+ * @param settings - 插件设置
+ * @param profile - 正在编辑的那一套
+ */
+export function ensureOwnKeySerial(settings: RatelVaultSettings, profile: ChatProfile): void {
+	const providerId = profile.providerId || LOCAL_PROVIDER_CUSTOM;
+	const others = (settings.chatProfiles ?? []).filter((item) => item.id !== profile.id);
+	const slug = providerSecretSlug(providerId);
+	const used = new Set(
+		others
+			.filter((item) => providerSecretSlug(item.providerId || LOCAL_PROVIDER_CUSTOM) === slug)
+			.map((item) => item.keySerial)
+			.filter((serial): serial is number => typeof serial === 'number' && serial > 0),
+	);
+	if (profile.keySerial && profile.keySerial > 0 && !used.has(profile.keySerial)) return;
+	profile.keySerial = nextChatKeySerial(others, providerId);
+}
+
+/**
+ * 当前套改完之后，把这一套的模型、地址和窗口抄到全局四字段。
+ * 不读其他套，也不把全局值写回其他套。
+ *
+ * @param settings - 插件设置
+ * @param profile - 刚刚改过的当前套
+ */
+export function projectProfileToSettings(settings: RatelVaultSettings, profile: ChatProfile): void {
+	settings.chatApiBase = profile.apiBase;
+	settings.chatModel = profile.model;
+	settings.contextLengthPreset = profile.contextLengthPreset;
+	settings.chatModelMaxTokens = profile.chatModelMaxTokens;
 }

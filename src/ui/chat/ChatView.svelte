@@ -96,7 +96,8 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 	import { getEffectiveChatModelMaxTokens } from '../../utils/context-window';
 	import { applyRatelAppearance } from '../appearance/apply-ratel-appearance';
 	import { appearanceRevision } from '../appearance/appearance-store';
-	import { settings$ as settingsStore } from '../settings-store';
+	import { publishSettingsSnapshot, settings$ as settingsStore } from '../settings-store';
+	import { profileSelectNeedsSwitch, resolveHeaderChatModel } from '../../settings/chat-profiles';
 	import TitleDissolve from '../motion/title/TitleDissolve.svelte';
 	import EchoText from '../motion/title/EchoText.svelte';
 	import ClickSpark from '../motion/brand/ClickSpark.svelte';
@@ -359,7 +360,15 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 
 	function toggleProfileMenu(): void {
 		profileMenuOpen = !profileMenuOpen;
-		if (profileMenuOpen) sessionMenuOpen = false;
+		if (!profileMenuOpen) return;
+		sessionMenuOpen = false;
+		const id = plugin.settings.activeChatProfileId;
+		if (id && profileSelectNeedsSwitch(plugin.settings, id)) {
+			// 当前套的模型和全局模型不一致时，先把这一套写回，发出去的才是顶栏上的模型。
+			void activateChatProfile(plugin, id);
+			return;
+		}
+		publishSettingsSnapshot(plugin.settings);
 	}
 
 	function openProfileMenu(): void {
@@ -368,7 +377,7 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 	}
 
 	async function handleChatProfileSelect(id: string): Promise<void> {
-		if (id === plugin.settings.activeChatProfileId) {
+		if (!profileSelectNeedsSwitch(plugin.settings, id)) {
 			profileMenuOpen = false;
 			return;
 		}
@@ -906,7 +915,7 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 			userTyping: input.trim().length > 0,
 		}),
 	);
-	const modelName = $derived($settingsStore.chatModel);
+	const modelName = $derived(resolveHeaderChatModel($settingsStore));
 	const chatProfiles = $derived($settingsStore.chatProfiles ?? []);
 	const activeChatProfileId = $derived($settingsStore.activeChatProfileId);
 	const embedKind = $derived($settingsStore.embedProvider);

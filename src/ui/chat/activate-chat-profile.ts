@@ -7,7 +7,7 @@
 
 import { Notice } from 'obsidian';
 import type RatelVaultPlugin from '../../main';
-import { switchChatProfile, syncChatWindow } from '../../settings/chat-profiles';
+import { profileSelectNeedsSwitch, switchChatProfile, syncChatWindow } from '../../settings/chat-profiles';
 import { tNow } from '../../i18n';
 
 /**
@@ -22,7 +22,8 @@ import { tNow } from '../../i18n';
 export async function activateChatProfile(plugin: RatelVaultPlugin, profileId: string): Promise<void> {
 	const profile = plugin.settings.chatProfiles.find((p) => p.id === profileId);
 	if (!profile) return;
-	if (profileId === plugin.settings.activeChatProfileId) return;
+	if (!profileSelectNeedsSwitch(plugin.settings, profileId)) return;
+	const alreadyActive = profileId === plugin.settings.activeChatProfileId;
 
 	switchChatProfile(plugin.settings, profileId);
 	const catalog = plugin.modelsDevCatalog ? await plugin.modelsDevCatalog.ensureCatalog() : null;
@@ -35,5 +36,7 @@ export async function activateChatProfile(plugin: RatelVaultPlugin, profileId: s
 	}
 	await plugin.saveSettings();
 	plugin.rebuildLLM();
-	new Notice(tNow('settings.chatProfiles.switched', { name: profile.name }), 3000);
+	if (!alreadyActive) {
+		new Notice(tNow('settings.chatProfiles.switched', { name: profile.name }), 3000);
+	}
 }

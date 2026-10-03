@@ -47,6 +47,23 @@ describe('settings-store', () => {
 		expect(snap.toolPermissions.read_note).toBe('ask');
 	});
 
+	it('cloneSettingsSnapshot - 改 chatProfiles 源的模型 - 快照里的套独立', () => {
+		const live = {
+			...DEFAULT_SETTINGS,
+			chatProfiles: [{
+				id: 'p1',
+				name: 'A',
+				apiBase: 'https://a',
+				model: 'qwen',
+				contextLengthPreset: '256k' as const,
+				chatModelMaxTokens: 256_000,
+			}],
+		};
+		const snap = cloneSettingsSnapshot(live);
+		live.chatProfiles[0]!.model = 'claude';
+		expect(snap.chatProfiles[0]!.model).toBe('qwen');
+	});
+
 	it('cloneSettingsSnapshot - 改 promptOverrides 源 - 快照独立', () => {
 		const live = {
 			...DEFAULT_SETTINGS,

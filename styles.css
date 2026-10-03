@@ -1,4 +1,15 @@
 /* Ratel Vault styles */
+
+.ratel-release-notes.markdown-preview-view {
+	padding: 0 8px 32px;
+}
+
+.ratel-release-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+	margin-top: 1.2em;
+}
 /* release 0.1.14: bump digest so store attestation is not shared with prior releases */
 
 /* ==================== Prompt Overrides(高级) ==================== */

@@ -30,6 +30,10 @@ export function cloneSettingsSnapshot(settings: RatelVaultSettings): Readonly<Ra
 	if (Array.isArray(ext.mcpApprovedSpawns)) {
 		(base as typeof ext).mcpApprovedSpawns = [...ext.mcpApprovedSpawns];
 	}
+	// 关键路径:配置套是嵌套对象。不拷贝的话，菜单小字会跟着后来的原地修改变，顶栏却还是发布时的模型名。
+	if (Array.isArray(settings.chatProfiles)) {
+		base.chatProfiles = settings.chatProfiles.map((profile) => ({ ...profile }));
+	}
 	return base;
 }
 

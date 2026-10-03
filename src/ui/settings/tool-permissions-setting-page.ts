@@ -61,7 +61,10 @@ function buildToolPermissionItems(plugin: RatelVaultPlugin): SettingDefinitionIt
 			write_note: 'settings.toolPermissions.write_note',
 			append_note: 'settings.toolPermissions.append_note',
 			edit_note: 'settings.toolPermissions.edit_note',
+			apply_patch: 'settings.toolPermissions.apply_patch',
 			delete_note: 'settings.toolPermissions.delete_note',
+			move_note: 'settings.toolPermissions.move_note',
+			copy_note: 'settings.toolPermissions.copy_note',
 			// 关键路径:3 个 memory 工具友好名(与 ui.tool_name.* 区分,这是设置面板的权限标签)
 			search_memory: 'settings.toolPermissions.search_memory',
 			remember: 'settings.toolPermissions.remember',
@@ -103,7 +106,7 @@ function buildToolPermissionItems(plugin: RatelVaultPlugin): SettingDefinitionIt
 	};
 	const allTools = [
 		'search_vault', 'read_note', 'grep', 'glob', 'list_files',
-		'write_note', 'append_note', 'edit_note', 'delete_note',
+		'write_note', 'append_note', 'edit_note', 'apply_patch', 'delete_note', 'move_note', 'copy_note',
 		'search_memory', 'remember', 'forget_memory',
 		'activate_skill', 'deactivate_skill',
 		'read_skill_reference', 'run_skill_script',

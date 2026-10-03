@@ -196,6 +196,8 @@ export interface RatelVaultSettings {
 	 * 是否允许把社区插件写入当前库(ADR-018 R2)。false = 商店保守包 R3,只打开官方页。
 	 */
 	ecosystemWriteEnabled: boolean;
+	/** 已看过更新说明的插件版本。与 manifest.version 不同时再打开一次 */
+	lastSeenRelease: string;
 }
 
 /**
@@ -261,7 +263,10 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 		write_note: 'allow',
 		append_note: 'allow',
 		edit_note: 'allow',
+		apply_patch: 'allow',
 		delete_note: 'allow',
+		move_note: 'allow',
+		copy_note: 'allow',
 		search_memory: 'allow',
 		remember: 'allow',
 		forget_memory: 'allow',
@@ -341,6 +346,7 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 	mcpServers: [],
 	mcpApprovedSpawns: [],
 	ecosystemWriteEnabled: true,
+	lastSeenRelease: '',
 };
 
 /** 内置工具默认「允许」的代数。旧库没有该字段时做一次升级。 */

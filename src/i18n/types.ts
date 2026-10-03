@@ -207,7 +207,10 @@ export interface SettingsStrings {
   'settings.toolPermissions.write_note': string;
   'settings.toolPermissions.append_note': string;
   'settings.toolPermissions.edit_note': string;
+  'settings.toolPermissions.apply_patch': string;
   'settings.toolPermissions.delete_note': string;
+  'settings.toolPermissions.move_note': string;
+  'settings.toolPermissions.copy_note': string;
   // 关键路径:3 个 memory 工具的权限面板友好名
   'settings.toolPermissions.search_memory': string;
   'settings.toolPermissions.remember': string;
@@ -490,7 +493,10 @@ export interface ToolNameStrings {
   'tool.name.list_files': string;
   'tool.name.write_note': string;
   'tool.name.edit_note': string;
+  'tool.name.apply_patch': string;
   'tool.name.delete_note': string;
+  'tool.name.move_note': string;
+  'tool.name.copy_note': string;
   'tool.name.append_note': string;
   'tool.name.grep': string;
   'tool.name.glob': string;
@@ -649,6 +655,20 @@ export interface ModalStrings {
   'modal.mcpSpawn.body': string;
   'modal.mcpSpawn.confirm': string;
   'modal.mcpSpawn.cancel': string;
+  'modal.release.title': string;
+  'modal.release.lead': string;
+  'modal.release.changesHeading': string;
+  'modal.release.change.compact': string;
+  'modal.release.change.move': string;
+  'modal.release.change.agents': string;
+  'modal.release.change.counts': string;
+  'modal.release.change.profiles': string;
+  'modal.release.change.obsidian': string;
+  'modal.release.setupHeading': string;
+  'modal.release.setup.provider': string;
+  'modal.release.setup.model': string;
+  'modal.release.setup.switch': string;
+  'modal.release.openSettings': string;
 }
 
 // ==================== Status / Drawer ====================
@@ -836,10 +856,23 @@ export interface ErrorStrings {
   'error.path.ratelSelf': string;
   'error.path.unknownPlugin': string;
   'error.path.trash': string;
-  'error.tool.fileNotFound': string;
+	'error.tool.fileNotFound': string;
+	'error.tool.sourceMissing': string;
+	'error.tool.destExists': string;
+	'error.tool.samePath': string;
   'error.tool.oldStringNotFound': string;
   'error.tool.oldStringMultipleMatches': string;
+  'error.tool.patchParse': string;
+  'error.tool.patchMulti': string;
+  'error.tool.patchAdd': string;
+  'error.tool.patchDelete': string;
+  'error.tool.patchMove': string;
+  'error.tool.patchEmpty': string;
+  'error.tool.patchMismatch': string;
+  'error.tool.patchAmbiguous': string;
+  'error.tool.patchEof': string;
   'error.tool.invalidContent': string;
+  'error.tool.offloadMarker': string;
   'error.tool.invalidQuery': string;
   'error.tool.invalidArg': string;
   'error.tool.rejected': string;
@@ -960,12 +993,34 @@ export interface PromptLabelStrings {
   'promptLabel.tool.list_files.description.desc': string;
   'promptLabel.tool.write_note.description': string;
   'promptLabel.tool.write_note.description.desc': string;
+  'promptLabel.tool.write_note.param.path': string;
+  'promptLabel.tool.write_note.param.path.desc': string;
+  'promptLabel.tool.write_note.param.content': string;
+  'promptLabel.tool.write_note.param.content.desc': string;
   'promptLabel.tool.append_note.description': string;
   'promptLabel.tool.append_note.description.desc': string;
+  'promptLabel.tool.append_note.param.path': string;
+  'promptLabel.tool.append_note.param.path.desc': string;
+  'promptLabel.tool.append_note.param.content': string;
+  'promptLabel.tool.append_note.param.content.desc': string;
   'promptLabel.tool.edit_note.description': string;
   'promptLabel.tool.edit_note.description.desc': string;
+  'promptLabel.tool.edit_note.param.path': string;
+  'promptLabel.tool.edit_note.param.path.desc': string;
+  'promptLabel.tool.edit_note.param.old_string': string;
+  'promptLabel.tool.edit_note.param.old_string.desc': string;
+  'promptLabel.tool.edit_note.param.new_string': string;
+  'promptLabel.tool.edit_note.param.new_string.desc': string;
+  'promptLabel.tool.apply_patch.description': string;
+  'promptLabel.tool.apply_patch.description.desc': string;
+  'promptLabel.tool.apply_patch.param.patch': string;
+  'promptLabel.tool.apply_patch.param.patch.desc': string;
   'promptLabel.tool.delete_note.description': string;
   'promptLabel.tool.delete_note.description.desc': string;
+  'promptLabel.tool.move_note.description': string;
+  'promptLabel.tool.move_note.description.desc': string;
+  'promptLabel.tool.copy_note.description': string;
+  'promptLabel.tool.copy_note.description.desc': string;
   // 关键路径:2 个 skill 工具 section 元数据
   'promptLabel.tool.activate_skill.description': string;
   'promptLabel.tool.activate_skill.description.desc': string;
@@ -1133,6 +1188,7 @@ export interface PromptLabelStrings {
 // 关键路径:Obsidian addCommand 的 name 字段(用户在命令面板可见)
 export interface CmdStrings {
   'cmd.askVault': string;
+  'cmd.showReleaseNotes': string;
   'cmd.showIndexStatus': string;
   'cmd.rebuildIndex': string;
   'cmd.pauseIndex': string;
@@ -1146,7 +1202,10 @@ export interface ToolPermStrings {
   'toolPerm.writeNote': string;
   'toolPerm.appendNote': string;
   'toolPerm.editNote': string;
+  'toolPerm.applyPatch': string;
   'toolPerm.deleteNote': string;
+  'toolPerm.moveNote': string;
+  'toolPerm.copyNote': string;
   'toolPerm.runSkillScript': string;
   'toolPerm.manageGoal': string;
 }

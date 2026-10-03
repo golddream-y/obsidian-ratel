@@ -14,7 +14,7 @@ import {
 	type ContextLengthPresetId,
 } from '../ui/tokens/context-length-presets';
 import { DEFAULT_MODEL_REGISTRY_URL } from '../ui/tokens/model-context-registry';
-import { inferChatProvider, syncChatWindow, assignChatKeySerials } from './chat-profiles';
+import { ensureOwnKeySerial, inferChatProvider, syncChatWindow } from './chat-profiles';
 import { listCatalogModels, lookupCatalogLimits, type ModelsDevCatalog } from './model-catalog';
 import { applyLangPreference, type LangPreference } from '../i18n';
 import { devLogger } from '../logging/dev-logger';
@@ -158,7 +158,7 @@ export async function applySettingValue(plugin: SettingApplier, key: string, val
 			active.contextLengthPreset = plugin.settings.contextLengthPreset;
 			active.chatModelMaxTokens = plugin.settings.chatModelMaxTokens;
 		}
-		assignChatKeySerials(plugin.settings.chatProfiles);
+		if (active) ensureOwnKeySerial(plugin.settings, active);
 		plugin.rebuildLLM();
 		await syncChatWindow(plugin.settings, { catalog, clearOnMiss: true });
 	} else if (key === 'chatPreset') {

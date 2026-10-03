@@ -46,7 +46,7 @@ describe('applySettingValue - LLM 相关副作用分发', () => {
 });
 
 describe('applySettingValue - 活跃对话配置同步', () => {
-	it('写入 chatModel - 有活跃套 - 仅更新该套 model,其它套不变', () => {
+	it('写入 chatModel - 有活跃套 - 仅更新该套 model,其它套不变', async () => {
 		const plugin = makePlugin();
 		plugin.settings.chatProfiles = [
 			{
@@ -69,7 +69,7 @@ describe('applySettingValue - 活跃对话配置同步', () => {
 		plugin.settings.activeChatProfileId = 'p-active';
 		plugin.settings.chatModel = 'old-active';
 
-		applySettingValue(plugin, 'chatModel', 'new-active-model');
+		await applySettingValue(plugin, 'chatModel', 'new-active-model');
 
 		expect(plugin.settings.chatModel).toBe('new-active-model');
 		expect(plugin.settings.chatProfiles[0].model).toBe('new-active-model');

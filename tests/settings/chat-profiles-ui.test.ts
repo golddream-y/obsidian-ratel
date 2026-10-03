@@ -6,12 +6,16 @@
 import { describe, it, expect } from 'vitest';
 import type { App } from 'obsidian';
 import {
+	assignStoredProfileProvider,
+	profileSelectNeedsSwitch,
+	resolveHeaderChatModel,
 	switchChatProfile,
 	saveCurrentAsProfile,
 	deleteChatProfile,
 	inferChatProvider,
 	migrateChatProviderIds,
 	syncChatWindow,
+	writeStoredProfileModel,
 	type ChatProfile,
 } from '../../src/settings/chat-profiles';
 import type { ModelsDevCatalog } from '../../src/settings/model-catalog';
@@ -265,6 +269,109 @@ describe('migrateChatProviderIds', () => {
 		];
 		migrateChatProviderIds(s as never);
 		expect(s.chatProfiles.map((p) => p.providerId)).toEqual(['deepseek', 'ollama', 'custom']);
+	});
+});
+
+describe('顶栏与非当前套写入', () => {
+	it('resolveHeaderChatModel - 有当前套 - 用这一套的模型', () => {
+		const s = base();
+		s.chatModel = 'drifted';
+		expect(resolveHeaderChatModel(s)).toBe('m1');
+	});
+
+	it('resolveHeaderChatModel - 没有当前套 - 用全局模型', () => {
+		const s = base();
+		s.activeChatProfileId = '';
+		expect(resolveHeaderChatModel(s)).toBe('m-current');
+	});
+
+	it('profileSelectNeedsSwitch - 已是当前套且模型一致 - 不必再切', () => {
+		const s = base();
+		switchChatProfile(s as never, 'p1');
+		expect(profileSelectNeedsSwitch(s as never, 'p1')).toBe(false);
+	});
+
+	it('profileSelectNeedsSwitch - 已是当前套但模型不一致 - 需要再对齐', () => {
+		const s = base();
+		switchChatProfile(s as never, 'p1');
+		s.chatModel = 'drifted';
+		expect(profileSelectNeedsSwitch(s as never, 'p1')).toBe(true);
+	});
+
+	it('writeStoredProfileModel - 改非当前套 - 不动全局模型', () => {
+		const s = base();
+		s.chatProfiles.push({
+			id: 'p2',
+			name: 'B',
+			apiBase: 'https://b',
+			model: 'm2',
+			contextLengthPreset: '128k',
+			chatModelMaxTokens: 128_000,
+			windowUserSet: true,
+		});
+		writeStoredProfileModel(s.chatProfiles[1]!, 'claude');
+		expect(s.chatProfiles[1]!.model).toBe('claude');
+		expect(s.chatProfiles[1]!.windowUserSet).toBe(false);
+		expect(s.chatModel).toBe('m-current');
+		expect(s.chatProfiles[0]!.model).toBe('m1');
+	});
+
+	it('assignStoredProfileProvider - 改第一套 - 第二套的模型地址窗口和密钥序号不变', () => {
+		const s = base();
+		s.chatProfiles[0]!.keySerial = 1;
+		s.chatProfiles.push({
+			id: 'p2',
+			name: 'B',
+			apiBase: 'https://b',
+			model: 'keep-me',
+			providerId: 'other',
+			contextLengthPreset: '128k',
+			chatModelMaxTokens: 111,
+			keySerial: 2,
+		});
+		assignStoredProfileProvider(s as never, s.chatProfiles[0]!, 'acme', catalogOf('acme', 'acme-model', 8000));
+		expect(s.chatProfiles[1]!.model).toBe('keep-me');
+		expect(s.chatProfiles[1]!.apiBase).toBe('https://b');
+		expect(s.chatProfiles[1]!.chatModelMaxTokens).toBe(111);
+		expect(s.chatProfiles[1]!.keySerial).toBe(2);
+		expect(s.chatModel).toBe('m-current');
+	});
+
+	it('syncChatWindow - 改当前套窗口 - 另一套的窗口和模型不变', async () => {
+		const s = base();
+		s.chatProfiles.push({
+			id: 'p2',
+			name: 'B',
+			apiBase: 'https://b',
+			model: 'keep-me',
+			providerId: 'other',
+			contextLengthPreset: '128k',
+			chatModelMaxTokens: 111,
+		});
+		await syncChatWindow(s as never, {
+			catalog: catalogOf('acme', 'm-current', 200_000),
+			clearOnMiss: true,
+		});
+		expect(s.chatProfiles[1]!.model).toBe('keep-me');
+		expect(s.chatProfiles[1]!.chatModelMaxTokens).toBe(111);
+	});
+
+	it('assignStoredProfileProvider - 改非当前套的供应商 - 不覆盖当前模型', () => {
+		const s = base();
+		s.chatProfiles.push({
+			id: 'p2',
+			name: 'B',
+			apiBase: 'https://b',
+			model: 'old',
+			providerId: 'other',
+			contextLengthPreset: '128k',
+			chatModelMaxTokens: 128_000,
+		});
+		assignStoredProfileProvider(s as never, s.chatProfiles[1]!, 'acme', catalogOf('acme', 'acme-model', 8000));
+		expect(s.chatModel).toBe('m-current');
+		expect(s.chatProfiles[0]!.model).toBe('m1');
+		expect(s.chatProfiles[1]!.providerId).toBe('acme');
+		expect(s.chatProfiles[1]!.model).toBe('acme-model');
 	});
 });
 
