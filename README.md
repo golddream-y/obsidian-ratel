@@ -2,6 +2,10 @@
 
 **English** · [简体中文](README.zh-CN.md)
 
+[![License](https://img.shields.io/github/license/golddream-y/obsidian-ratel?style=flat-square)](https://github.com/golddream-y/obsidian-ratel/blob/main/LICENSE)
+[![Obsidian](https://img.shields.io/badge/Obsidian-1.13.1%2B-7c3aed?style=flat-square)](https://obsidian.md)
+[![Desktop only](https://img.shields.io/badge/platform-desktop-0ea5e9?style=flat-square)](https://obsidian.md)
+
 **Find your notes, finish the work, and set up your Obsidian workflow.**
 
 Ratel is an AI assistant that can read notes and take action inside Obsidian. Ask it to find answers in old notes, turn scattered material into a document, or install and configure a daily-note workflow. It remembers your folders and preferences, answers with sources you can open, and follows your tool permissions.

@@ -2,6 +2,10 @@
 
 [English](README.md) · **简体中文**
 
+[![License](https://img.shields.io/github/license/golddream-y/obsidian-ratel?style=flat-square)](https://github.com/golddream-y/obsidian-ratel/blob/main/LICENSE)
+[![Obsidian](https://img.shields.io/badge/Obsidian-1.13.1%2B-7c3aed?style=flat-square)](https://obsidian.md)
+[![仅桌面](https://img.shields.io/badge/平台-桌面-0ea5e9?style=flat-square)](https://obsidian.md)
+
 **在 Obsidian 里，找回笔记、完成整理、配好工作环境。**
 
 Ratel 是能读取笔记并执行操作的 AI 助手。你可以让它从旧笔记中找答案、整理成文档，也可以让它安装并配置一套日记工作方式。它记住你的目录和偏好，回答附带可打开的来源，操作遵循你设置的权限。
