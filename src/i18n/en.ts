@@ -6,9 +6,17 @@
  * 关键路径:占位符 {xxx} 必须与 zh.ts 一致,翻译时保留原样。
  */
 
-import type { Strings } from './types';
+import type { Strings, ToolArgsStrings } from './types';
+
+const toolArgsEn: ToolArgsStrings = {
+  'toolArgs.invalidJson': 'Tool arguments are invalid JSON. The tool was not executed.',
+  'toolArgs.invalidShape': 'Tool arguments are {type}; a JSON object is required. The tool was not executed.',
+  'toolArgs.outputLimit': 'The response reached its output limit and its arguments could not be parsed. The tool was not executed.',
+  'toolArgs.legacyUnparsed': 'Arguments in this older call were not parsed; the cause is unknown. The tool was not executed.',
+};
 
 export const en: Strings = {
+  ...toolArgsEn,
   // ==================== BaseStrings ====================
   'common.ok': 'OK',
   'common.cancel': 'Cancel',

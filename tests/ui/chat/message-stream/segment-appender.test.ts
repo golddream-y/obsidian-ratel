@@ -131,3 +131,43 @@ describe('segment-appender', () => {
 		expect(seg.toolCall.errorMessage).toBe('路径越界');
 	});
 });
+
+
+describe('工具参数即时失败', () => {
+  it.each(['invalid-json', 'invalid-shape', 'output-limit', 'legacy-unparsed'] as const)(
+    'appendToolCall - %s - 参数失败即时标红并替换展开结果', (kind) => {
+      const msg = newAssistantMsg();
+      const argsIssue = { kind, raw: 'secret notes/private.md', actualType: 'array' };
+      appendToolCall(msg, { name: 'apply_patch', displayName: '猜测路径', args: {}, argsIssue, status: 'calling', startAt: 1 });
+      const seg = msg.segments[0]!;
+      expect(seg.type).toBe('tool');
+      if (seg.type !== 'tool') return;
+      expect(seg.toolCall.status).toBe('failed');
+      expect(seg.toolCall.displayName).toBe('apply_patch');
+      expect(seg.toolCall.errorMessage).toContain('未执行');
+      attachToolResult(msg, 'apply_patch', 'Error: 输出被截断，改用移动复制');
+      expect(msg.segments).toHaveLength(1);
+      expect(seg.toolCall.result).toBe(`Error: ${seg.toolCall.errorMessage}`);
+      expect(seg.toolCall.result).not.toContain('移动复制');
+    });
+  it('attachToolResult - 结果元数据与空降调用 - 显示本地化失败', () => {
+    const msg = newAssistantMsg();
+    attachToolResult(msg, 'apply_patch', 'raw error', { kind: 'invalid-json', raw: 'secret' });
+    expect(msg.segments[0]).toMatchObject({ toolCall: { status: 'failed', result: 'Error: 工具参数不是合法 JSON，未执行。' } });
+  });
+  it('appendToolCall - 合法 MCP raw/null - 正常执行展示不变', () => {
+    const msg = newAssistantMsg();
+    appendToolCall(msg, { name: 'mcp__raw', displayName: 'MCP', args: { raw: '业务内容' }, argsIssue: null, status: 'calling', startAt: 1 });
+    attachToolResult(msg, 'mcp__raw', { ok: true }, null);
+    expect(msg.segments[0]).toMatchObject({ toolCall: { displayName: 'MCP', status: 'done', argsIssue: null, result: { ok: true } } });
+  });
+});
+
+
+it('appendToolCall - 旧 raw 参数 - 展开视图不接收原文', () => {
+  const msg = newAssistantMsg();
+  appendToolCall(msg, { name: 'apply_patch', displayName: 'apply_patch', args: { raw: 'secret' }, argsIssue: { kind: 'legacy-unparsed', raw: 'secret' }, status: 'calling', startAt: 1 });
+  const seg = msg.segments[0]!;
+  if (seg.type !== 'tool') throw new Error('缺少工具段');
+  expect(seg.toolCall.args).toEqual({});
+});

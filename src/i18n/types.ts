@@ -1455,12 +1455,20 @@ export interface EcosystemStrings {
   'settings.ecosystem.page.desc': string;
 }
 
+/** 工具参数未执行原因的用户界面翻译。 */
+export interface ToolArgsStrings {
+  'toolArgs.invalidJson': string;
+  'toolArgs.invalidShape': string;
+  'toolArgs.outputLimit': string;
+  'toolArgs.legacyUnparsed': string;
+}
+
 // ==================== 合并 ====================
 export interface Strings extends
   BaseStrings, SettingsStrings, ChatStrings, ToolNameStrings,
   SlashStrings, NoticeStrings, ModalStrings, StatusStrings,
   DiagnosticsStrings, ErrorStrings, PromptLabelStrings, MemoryStrings, NoteAgentsStrings,
-  CmdStrings, ToolPermStrings, SkillStrings, GoalStrings, EcosystemStrings {
+  CmdStrings, ToolPermStrings, SkillStrings, GoalStrings, EcosystemStrings, ToolArgsStrings {
   // 后续新功能按 namespace 追加 extends
 }
 

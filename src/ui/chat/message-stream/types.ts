@@ -5,6 +5,7 @@
  * @depends ../../chat-error(类型)
  */
 
+import type { ToolArgsIssue } from '../../../ports/llm';
 import type { DiagError } from '../chat-error';
 
 /**
@@ -15,6 +16,8 @@ export interface ToolCallEntry {
 	name: string;
 	displayName: string;
 	args: unknown;
+	/** 参数失败证据；null 表示成功解析，包括合法 MCP raw 参数。 */
+	argsIssue?: ToolArgsIssue | null;
 	status: 'calling' | 'done' | 'failed';
 	result?: unknown;
 	errorMessage?: string;

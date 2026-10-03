@@ -1588,13 +1588,14 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 								resolveMcpServerLabel,
 							}),
 							args: event.payload.args,
+							argsIssue: event.payload.argsIssue,
 							status: 'calling',
 							startAt: Date.now(),
 						});
 						scrollToBottom();
 						break;
 					case 'tool.result':
-						attachToolResult(am, event.payload.name, event.payload.result);
+						attachToolResult(am, event.payload.name, event.payload.result, event.payload.argsIssue);
 						scrollToBottom();
 						break;
 					case 'search.result':
@@ -1611,7 +1612,7 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 						}
 						scrollToBottom();
 						break;
-					case 'message.end':
+					case 'message.end': {
 						// 窗口占用看最后一步的输入+输出。各步合计是本轮消耗，会把同一段历史加很多次。
 						const apiUsed = resolveApiUsedTokens(event.payload);
 						if (apiUsed != null) {
@@ -1630,6 +1631,7 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 						void maybeGenerateTitle();
 						void refreshSessionIndex();
 						break;
+					}
 					case 'error':
 						handleAgentError(am, event.payload.code, event.payload.message, lastToolName);
 						break;

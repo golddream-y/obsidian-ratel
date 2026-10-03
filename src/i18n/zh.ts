@@ -8,7 +8,7 @@ import type { BaseStrings, SettingsStrings, ChatStrings, ToolNameStrings,
   SlashStrings, NoticeStrings, ModalStrings, StatusStrings,
   DiagnosticsStrings, ErrorStrings, PromptLabelStrings, MemoryStrings, NoteAgentsStrings,
   CmdStrings, ToolPermStrings, SkillStrings,   GoalStrings,
-  EcosystemStrings,
+  EcosystemStrings, ToolArgsStrings,
   Strings,
 } from './types';
 
@@ -1435,7 +1435,15 @@ const ecosystemZh: EcosystemStrings = {
   'settings.ecosystem.page.desc': '一个开关:是否允许对话代装社区插件(写入当前库)',
 };
 
+const toolArgsZh: ToolArgsStrings = {
+  'toolArgs.invalidJson': '工具参数不是合法 JSON，未执行。',
+  'toolArgs.invalidShape': '工具参数顶层是 {type}，必须是 JSON 对象，未执行。',
+  'toolArgs.outputLimit': '响应达到输出长度上限，参数无法解析，未执行。',
+  'toolArgs.legacyUnparsed': '旧调用的参数未解析，原因未知，未执行。',
+};
+
 export const zh: Strings = {
+  ...toolArgsZh,
   ...baseZh,
   ...settingsZh,
   ...chatZh,

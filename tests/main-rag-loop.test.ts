@@ -24,7 +24,11 @@ vi.mock('obsidian', () => ({
 			onClickEvent: vi.fn(),
 		});
 	},
-	PluginSettingTab: class {},
+	PluginSettingTab: class {
+    app: unknown;
+    // 修复:设置页构造依赖宿主 app，替身须保持父类注入契约。
+    constructor(app: unknown) { this.app = app; }
+  },
 	SettingPage: class {},
 	Setting: class {},
 	Notice: class {},

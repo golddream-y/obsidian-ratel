@@ -8,6 +8,8 @@
 import type { ChatMessage } from '../../../ports/llm';
 import type { CompactMarker } from '../../../ports/persistence';
 import type { StoredAttachment } from '../../../core/attachment-store';
+import { getToolArgsIssue } from '../../../core/tool-args';
+import { formatToolArgsUserError } from '../tool-args-error';
 import { mapSearchResults } from '../../../core/search-result-mapper';
 import { formatToolDisplayName, type FormatToolDisplayOptions } from '../format-tool-display';
 import { newMessageId } from './new-message-id';
@@ -143,6 +145,8 @@ function buildUiEntries(
 						const toolCallId = cur.toolCallId;
 						const toolName = cur.toolName;
 						const toolArgs = cur.toolArgs ?? {};
+						const argsIssue = getToolArgsIssue(toolArgs, cur.toolArgsIssue);
+						const userError = argsIssue ? formatToolArgsUserError(argsIssue) : undefined;
 						i++;
 						let result: unknown = undefined;
 						let status: ToolCallEntry['status'] = 'done';
@@ -160,12 +164,19 @@ function buildUiEntries(
 							}
 							i++;
 						}
+						// 修复:旧结果正文可能误称截断；只在 UI 副本替换，不回写历史证据。
+						if (userError) {
+							status = 'failed';
+							if (result !== undefined) result = `Error: ${userError}`;
+						}
 						const entry: ToolCallEntry = {
 							name: toolName,
-							displayName: formatToolDisplayName(toolName, toolArgs, {
+							displayName: argsIssue ? toolName : formatToolDisplayName(toolName, toolArgs, {
 								resolveMcpServerLabel: opts?.resolveMcpServerLabel,
 							}),
-							args: toolArgs,
+							args: argsIssue ? {} : toolArgs,
+							argsIssue,
+							...(userError ? { errorMessage: userError } : {}),
 							status,
 							result,
 							startAt: 0,

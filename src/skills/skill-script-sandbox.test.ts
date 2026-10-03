@@ -5,7 +5,7 @@
  * @depends esbuild(仅测试内现场打包,write:false)
  */
 
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 import * as esbuild from 'esbuild';
 import { fileURLToPath } from 'node:url';
 import { SkillScriptSandbox, wrapBrowserWorker } from './skill-script-sandbox';
@@ -288,23 +288,29 @@ describe('SkillScriptSandbox 浏览器 Worker 适配(Obsidian 渲染进程路径
 	});
 
 	it('浏览器协议 - progress 心跳更新 lastProgress - error 事件映射 crashed', async () => {
-		const fake = new FakeBrowserWorker();
-		const sandbox = new SkillScriptSandbox('code', () => wrapBrowserWorker(fake as unknown as Worker));
-		// 关键路径:窗口 300ms,发完心跳即到点 → stillRunning(不真等 5s)
-		const pending = sandbox.run({ code: 'x', args: [], allowedDirs: [], timeoutMs: 300 });
-		await new Promise((r) => window.setTimeout(r, 0));
-		fake.emit('message', { type: 'progress', message: '已处理 3/45' });
-		// 窗口到点(有心跳)→ stillRunning,worker 不 terminate
-		fake.emit('message', { type: 'progress', message: '已处理 4/45' });
-		const out = await pending;
-		expect(out.status).toBe('stillRunning');
-		if (out.status !== 'stillRunning') return;
-		expect(out.lastProgress).toBe('已处理 4/45');
-		expect(fake.terminated).toBe(false);
-		// 挂起中 error → crashed 且 worker 回收
-		const next = sandbox.continueRun();
-		fake.emit('error', { message: 'harness boom' });
-		await expect(next).resolves.toMatchObject({ status: 'crashed', detail: 'harness boom' });
-		expect(fake.terminated).toBe(true);
+		vi.useFakeTimers();
+		try {
+			const fake = new FakeBrowserWorker();
+			const sandbox = new SkillScriptSandbox('code', () => wrapBrowserWorker(fake as unknown as Worker));
+			const pending = sandbox.run({ code: 'x', args: [], allowedDirs: [], timeoutMs: 300 });
+			// 修复:推进初始化微任务及窗口时间，避免机器负载使心跳在真实窗口外到达。
+			await vi.advanceTimersByTimeAsync(0);
+			expect(fake.posted[0]).toMatchObject({ type: 'run' });
+			fake.emit('message', { type: 'progress', message: '已处理 3/45' });
+			await vi.advanceTimersByTimeAsync(200);
+			fake.emit('message', { type: 'progress', message: '已处理 4/45' });
+			await vi.advanceTimersByTimeAsync(100);
+			const out = await pending;
+			expect(out.status).toBe('stillRunning');
+			if (out.status !== 'stillRunning') return;
+			expect(out.lastProgress).toBe('已处理 4/45');
+			expect(fake.terminated).toBe(false);
+			const next = sandbox.continueRun();
+			fake.emit('error', { message: 'harness boom' });
+			await expect(next).resolves.toMatchObject({ status: 'crashed', detail: 'harness boom' });
+			expect(fake.terminated).toBe(true);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 });
