@@ -155,6 +155,8 @@ function buildUiEntries(
 							}
 							if (typeof toolMsg.content === 'string' && toolMsg.content.startsWith('Error:')) {
 								status = 'failed';
+							} else if (typeof result === 'string' && result.startsWith('Error:')) {
+								status = 'failed';
 							}
 							i++;
 						}

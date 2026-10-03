@@ -75,6 +75,22 @@ describe('composeToolDefinitions', () => {
 		expect(defs[0]!.parameters.properties.path.description).toContain('路径');
 	});
 
+	it('write_note - content 参数说明要求同一次带上全文', () => {
+		const defs = composeToolDefinitions({}, ['write_note']);
+		expect(defs[0]!.description).toContain('不能省略');
+		expect(defs[0]!.parameters.properties.content.description).toContain('全文');
+		const edit = composeToolDefinitions({}, ['edit_note'])[0]!;
+		expect(edit.description).toContain('不能只传 path');
+		expect(edit.parameters.properties.old_string.description).toContain('原文');
+		expect(edit.parameters.properties.new_string.description).toContain('文本');
+		expect(edit.description).toContain('apply_patch');
+		const patch = composeToolDefinitions({}, ['apply_patch'])[0]!;
+		expect(patch.description).toContain('*** Begin Patch');
+		expect(patch.description).toContain('*** Update File: notes/a.md');
+		expect(patch.description).toContain('\n 甲\n');
+		expect(patch.parameters.properties.patch.description).toContain('不要另传 path');
+	});
+
 	it('未知工具名 - 抛错', () => {
 		expect(() => composeToolDefinitions({}, ['unknown_tool'])).toThrow('Unknown tool schema');
 	});

@@ -88,6 +88,37 @@ describe('segment-appender', () => {
 		expect(seg.toolCall.result).toBe('result');
 	});
 
+	it('attachToolResult - 结果以 Error 开头 - 标为失败', () => {
+		const msg = newAssistantMsg();
+		appendToolCall(msg, {
+			name: 'write_note', displayName: 'write_note x.md', args: {},
+			status: 'calling', startAt: 1,
+		});
+		attachToolResult(msg, 'write_note', 'Error: 未改动文件。');
+		const seg = msg.segments[0] as { type: 'tool'; toolCall: { status: string; errorMessage?: string } };
+		expect(seg.toolCall.status).toBe('failed');
+		expect(seg.toolCall.errorMessage).toContain('未改动文件');
+	});
+
+	it('attachToolResult - 失败事件已标红 - 回填到同一行不再追加', () => {
+		const msg = newAssistantMsg();
+		appendToolCall(msg, {
+			name: 'write_note', displayName: '写入 第004章.md', args: { path: '第004章.md' },
+			status: 'calling', startAt: 1,
+		});
+		markToolFailed(msg, 'write_note', 'content 必须是字符串');
+		attachToolResult(msg, 'write_note', 'Error: content 必须是字符串');
+		expect(msg.segments).toHaveLength(1);
+		const seg = msg.segments[0] as {
+			type: 'tool';
+			toolCall: { status: string; displayName: string; errorMessage?: string; result: unknown };
+		};
+		expect(seg.toolCall.status).toBe('failed');
+		expect(seg.toolCall.displayName).toBe('写入 第004章.md');
+		expect(seg.toolCall.errorMessage).toBe('content 必须是字符串');
+		expect(seg.toolCall.result).toBe('Error: content 必须是字符串');
+	});
+
 	it('markToolFailed - 标记最近 calling 同名工具段为 failed', () => {
 		const msg = newAssistantMsg();
 		appendToolCall(msg, {

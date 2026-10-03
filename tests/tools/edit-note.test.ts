@@ -7,8 +7,12 @@ describe('edit_note tool', () => {
 	it('唯一匹配 - 替换成功', async () => {
 		const vault = createMockVaultPort({ files: { 'a.md': 'foo bar baz' } });
 		const tool = createEditNoteTool(vault, makeToolDef('edit_note'));
-		const res = await tool.execute({ path: 'a.md', old_string: 'bar', new_string: 'qux' }) as { replaced: boolean };
-		expect(res.replaced).toBe(true);
+		const res = await tool.execute({ path: 'a.md', old_string: 'bar', new_string: 'qux' }) as {
+			text: { length: { chars: number }; words: { latin: number } };
+		};
+		expect(Object.keys(res).sort()).toEqual(['path', 'text']);
+		expect(res.text.length.chars).toBe('foo qux baz'.length);
+		expect(res.text.words.latin).toBe(3);
 		expect(await vault.readFile('a.md')).toBe('foo qux baz');
 	});
 

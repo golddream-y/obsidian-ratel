@@ -137,10 +137,42 @@ export class AgentsChainSeen {
 	}
 }
 
-/** 笔记工具可选注入：本轮已见记录 + 按目录读 AGENTS.md */
+/**
+ * 收集本轮尚未注入的子目录 AGENTS.md。库根不包含在内。
+ * 同一条目录链再调用返回空串。
+ */
+export async function collectUnseenAgentsChain(
+	notePath: string,
+	seen: AgentsChainSeen,
+	readAgentsFile: (dir: string) => Promise<string | null>,
+): Promise<string> {
+	if (seen.has(notePath)) return '';
+	const layers = await loadNestedAgentLayers(notePath, readAgentsFile);
+	seen.mark(notePath);
+	if (layers.length === 0) return '';
+	const joined = joinAgentsChain(layers);
+	return formatGateAttachment(joined);
+}
+
+/** 笔记工具可选注入：本轮已见记录 + 按目录读 AGENTS.md + 写入上下文 */
 export interface NoteAgentsToolDeps {
 	seen: AgentsChainSeen;
 	readAgentsFile: (dir: string) => Promise<string | null>;
+	appendChain?: (text: string) => void;
+}
+
+/**
+ * 把路径上尚未注入的子目录约束交给 appendChain。不阻止后续写盘。
+ */
+export async function injectAgentsForPaths(
+	deps: NoteAgentsToolDeps | undefined,
+	paths: string[],
+): Promise<void> {
+	if (!deps) return;
+	for (const notePath of paths) {
+		const text = await collectUnseenAgentsChain(notePath, deps.seen, deps.readAgentsFile);
+		if (text.trim()) deps.appendChain?.(text);
+	}
 }
 
 async function loadNestedAgentLayers(
@@ -163,13 +195,8 @@ function formatGateAttachment(joined: { text: string; truncated: boolean }): str
 	return `${joined.text}\n\n${tNow('noteAgents.truncated')}`;
 }
 
-const GATE_RETRY_NOTE = '请立刻用相同参数再次调用刚才的工具，这次会真正执行。不要只回复标题。';
-
 /**
- * 读/写笔记前的 AGENTS 链闸门：读操作附嵌套层约束；写操作未见过嵌套约束时退回正文。
- *
- * @param input - 操作类型、笔记路径、本轮已见与读文件函数
- * @returns proceed 为 false 时调用方应把 attachment 当工具结果返回且不写盘
+ * 读操作仍可附上已收集的约束文本。写操作不再拦住。
  */
 export async function applyNoteAgentsGate(input: {
 	op: 'read' | 'write';
@@ -199,9 +226,5 @@ export async function applyNoteAgentsGate(input: {
 		return { proceed: true, attachment: '' };
 	}
 	const joined = joinAgentsChain(layers);
-	const attachment = formatGateAttachment(joined);
-	return {
-		proceed: false,
-		attachment: attachment ? `${attachment}\n\n${GATE_RETRY_NOTE}` : GATE_RETRY_NOTE,
-	};
+	return { proceed: true, attachment: formatGateAttachment(joined) };
 }

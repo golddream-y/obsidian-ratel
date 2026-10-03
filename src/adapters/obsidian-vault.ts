@@ -94,6 +94,48 @@ export class ObsidianVault implements VaultPort {
 	}
 
 	/**
+	 * 移动或改名。走 fileManager，按用户设置更新链接。
+	 */
+	async renameFile(from: string, to: string): Promise<void> {
+		const src = validateVaultPath(from);
+		const dest = validateVaultPath(to);
+		if (src === dest) throw new Error(tNow('error.tool.samePath'));
+		const file = this.app.vault.getAbstractFileByPath(src);
+		if (!file) throw new Error(tNow('error.tool.sourceMissing', { path: src }));
+		if (this.app.vault.getAbstractFileByPath(dest)) {
+			throw new Error(tNow('error.tool.destExists', { path: dest }));
+		}
+		await this.ensureParentFolder(dest);
+		await this.app.fileManager.renameFile(file, dest);
+	}
+
+	/**
+	 * 按字节复制。不改其他笔记里的链接。
+	 */
+	async copyFile(from: string, to: string): Promise<void> {
+		const src = validateVaultPath(from);
+		const dest = validateVaultPath(to);
+		if (src === dest) throw new Error(tNow('error.tool.samePath'));
+		const file = this.app.vault.getAbstractFileByPath(src);
+		if (!file) throw new Error(tNow('error.tool.sourceMissing', { path: src }));
+		if (this.app.vault.getAbstractFileByPath(dest)) {
+			throw new Error(tNow('error.tool.destExists', { path: dest }));
+		}
+		await this.ensureParentFolder(dest);
+		await this.app.vault.adapter.copy(src, dest);
+	}
+
+	/** 目标父目录不存在时创建。与 writeFile 相同。 */
+	private async ensureParentFolder(dest: string): Promise<void> {
+		const slash = dest.lastIndexOf('/');
+		if (slash <= 0) return;
+		const dir = dest.slice(0, slash);
+		if (!this.app.vault.getAbstractFileByPath(dir)) {
+			await this.app.vault.createFolder(dir);
+		}
+	}
+
+	/**
 	 * 把整个文件夹移入回收站(S-SKILL-UX 供 SkillManageModal 删库内技能目录)。
 	 *
 	 * @param path - vault 相对文件夹路径(如 `.ratel/skills/<name>`)

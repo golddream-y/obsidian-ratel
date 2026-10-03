@@ -127,6 +127,16 @@ export interface VaultPort {
 	trashFile(path: string): Promise<void>;
 
 	/**
+	 * 移动或改名。实现必须走 FileManager.renameFile，以便按用户设置更新链接。
+	 */
+	renameFile(from: string, to: string): Promise<void>;
+
+	/**
+	 * 按字节复制文件或文件夹。不修改其他笔记里的链接。
+	 */
+	copyFile(from: string, to: string): Promise<void>;
+
+	/**
 	 * 把整个文件夹移入回收站(可恢复;S-SKILL-UX 删库内技能目录用)。
 	 * @param path - vault 相对文件夹路径。
 	 */

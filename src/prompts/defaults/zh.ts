@@ -30,7 +30,7 @@ export const ZH_DEFAULTS: Record<PromptSectionId, string> = {
 - 不要沿出链/反链逐个再 get_links(默认最多 1 跳)。日记、MOC、出链或反链特别多的篇,不要把邻居全部 read_note。
 - 已有 read_note 全文的 path,不因出现在别人的链接清单里再读。
 - 找精确字面、正则、文件名模式:用 grep / glob。
-- 涉及「今天 / 本周 / 现在几点」:先看系统注入的当前本地时间;需要精确或相对日期时再调 get_datetime。历史正文里的「今天」以说话当时为准;当前日只看环境时间行;是否隔天看「距上一轮」行。
+- 涉及「今天 / 本周 / 现在几点」:先看系统注入的当前本地时间，以及每条用户消息末尾的「本条发送于」。该行是那一条发出的时间，不是现在。当前日期以最后一条用户消息的发送时间和系统时间行为准。更早正文里的「今天」对应该条的发送时间。需要精确到秒、ISO 或相对日期时再调 get_datetime。是否隔天也可看「距上一轮」行。
 - 「当前这篇 / 打开的笔记」:先 get_active_note 拿路径,再 read_note。
 - 「今天的日记」:get_daily_note(只探测路径,不自动创建)。
 - 「最近改过哪些」:list_recent_notes。
@@ -128,11 +128,30 @@ export const ZH_DEFAULTS: Record<PromptSectionId, string> = {
 
 	'tool.list_files.description': '列出 vault 某目录下的文件与子文件夹(非递归)。',
 
-	'tool.write_note.description': '创建新笔记或覆盖已有笔记全文。',
-	'tool.append_note.description': '在笔记末尾追加内容。',
+	'tool.write_note.description':
+		'创建新笔记或覆盖已有笔记全文。已有笔记只改其中几处时用 apply_patch，不要把整篇放进 content。每次调用都要同时带上 path 和 content。content 是要写入的全文，必须是字符串，不能省略，不能传对象。成功时返回 text。报告中文字数用 text.length.han，拉丁词数用 text.words.latin。不要用 text.length.codePoints 当字数，不要自己估算。',
+	'tool.write_note.param.path': 'vault 相对路径',
+	'tool.write_note.param.content': '要写入的全文。必填字符串，与 path 在同一次调用里给出。',
+	'tool.append_note.description':
+		'在笔记末尾追加内容。每次调用都要同时带上 path 和 content。content 是要追加的正文，必须是字符串，不能省略。文件不存在则创建。成功时返回 text，统计的是追加后的全文。报告中文字数用 text.length.han，拉丁词数用 text.words.latin。不要用 text.length.codePoints 当字数，不要自己估算。',
+	'tool.append_note.param.path': 'vault 相对路径',
+	'tool.append_note.param.content': '要追加的正文。必填字符串，与 path 在同一次调用里给出。',
 	'tool.edit_note.description':
-		'在笔记中精确替换一段文本。old_string 必须与文件内容完全一致(含缩进),且在文件中唯一。',
+		'只替换文件里唯一出现的一段。改几处、或要带着前后文定位时，用 apply_patch。每次调用都要同时带上 path、old_string、new_string，三者都必须是字符串，不能只传 path。old_string 必须与文件内容完全一致(含缩进)，且在文件中唯一。成功时返回 text，统计的是替换后的全文。报告中文字数用 text.length.han，拉丁词数用 text.words.latin。不要用 text.length.codePoints 当字数，不要自己估算。',
+	'tool.edit_note.param.path': 'vault 相对路径',
+	'tool.edit_note.param.old_string': '要替换的原文，须与文件完全一致且只出现一次。必填字符串。',
+	'tool.edit_note.param.new_string': '替换进去的文本。必填字符串。',
+	'tool.apply_patch.description':
+		'局部修改一篇已有笔记，优先用本工具。文件必须已经存在，不会新建。参数只有 patch，路径写在补丁里，不要另传 path。一次只能有一个 *** Update File: 库内相对路径。*** Add File 改用 write_note，*** Delete File 改用 delete_note，*** Move to 改用 move_note。新建或大部分正文都要换掉时用 write_note。@@ 单独起一行，同一行后面的字不参与匹配。从下一行起，每行第一个字符是标记：空格是必须逐字匹配的上下文，- 是删除，+ 是插入。这个字符不写入文件，后面的文字原样比较，不 trim。可以有多处 @@，按顺序套用，一处里至少要有一行 + 或 -。对不上、对上多处，或写了 *** End of File 却不在文件末尾，整次不改文件。最短示例：\n*** Begin Patch\n*** Update File: notes/a.md\n@@\n 甲\n-乙\n+乙二\n*** End Patch\n成功时返回 text，统计的是改完后的全文。报告中文字数用 text.length.han，拉丁词数用 text.words.latin。不要用 text.length.codePoints 当字数，不要自己估算。',
+	'tool.apply_patch.param.patch':
+		'补丁全文，必填字符串。以 *** Begin Patch 开头、*** End Patch 结尾。里面恰好一行 *** Update File: 库内相对路径。@@ 的下一行起，行首空格是上下文，- 删除，+ 插入。不要另传 path。',
 	'tool.delete_note.description': '将笔记移到回收站(可恢复)。',
+	'tool.move_note.description': '移动或重命名已有笔记或文件夹。文件已在库里、只是换路径时用这个，不要 read_note 再 write_note。链接按用户的设置更新。',
+	'tool.move_note.param.from': '当前路径',
+	'tool.move_note.param.to': '新路径',
+	'tool.copy_note.description': '把已有笔记或文件夹按字节复制到新路径，原文件保留。其他笔记里的链接仍指向原文件。要去掉原文件用 move_note。',
+	'tool.copy_note.param.from': '当前路径',
+	'tool.copy_note.param.to': '新路径',
 
 	'tool.search_memory.description': '搜索用户已建立的记忆(偏好、决策、技术栈相关历史)。仅检索 topics/ 下的主题记忆文件,不检索全局基础记忆。当对话涉及特定技术栈、项目或领域时,先调用此工具查询相关记忆再回答。',
 	'tool.search_memory.param.query': '搜索查询文本',

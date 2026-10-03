@@ -8,6 +8,15 @@ export function requireString(args: Record<string, unknown>, key: string, label:
 	return v;
 }
 
+/**
+ * 拒绝把上送占位符当作正文落盘。模型会照抄历史里的标记。
+ */
+export function rejectOffloadMarker(value: string): void {
+	if (value.startsWith('[written]')) {
+		throw new Error(tNow('error.tool.offloadMarker'));
+	}
+}
+
 export function optionalString(args: Record<string, unknown>, key: string): string | undefined {
 	const v = args[key];
 	return typeof v === 'string' ? v : undefined;

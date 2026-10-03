@@ -30,6 +30,7 @@ const { mockTFile, mockApp } = vi.hoisted(() => {
 				list: vi.fn(),
 				exists: vi.fn(),
 				read: vi.fn(),
+				copy: vi.fn(),
 			},
 			on: vi.fn((event: string, cb: (file: unknown, oldPath?: string) => void) => {
 				if (!eventListeners.has(event)) eventListeners.set(event, new Set());
@@ -47,6 +48,7 @@ const { mockTFile, mockApp } = vi.hoisted(() => {
 		// 不再走 vault.trash 的 try/catch 降级路径。
 		fileManager: {
 			trashFile: vi.fn(),
+			renameFile: vi.fn(),
 		},
 		metadataCache: {
 			resolvedLinks: {} as Record<string, Record<string, number>>,
@@ -434,5 +436,40 @@ describe('ObsidianVault', () => {
 
 		await expect(vault.trashFile('del.md')).rejects.toThrow('trash failed');
 		expect(mockApp.fileManager.trashFile).toHaveBeenCalledWith(file);
+	});
+
+	it('renameFile - 委托 fileManager.renameFile - 不走只改路径的接口', async () => {
+		const file = mockFile('a.md');
+		mockApp.vault.getAbstractFileByPath.mockImplementation((p: string) => (p === 'a.md' ? file : null));
+		mockApp.fileManager.renameFile.mockResolvedValue(undefined);
+		await vault.renameFile('a.md', 'b.md');
+		expect(mockApp.fileManager.renameFile).toHaveBeenCalledWith(file, 'b.md');
+	});
+
+	it('renameFile - 目标已存在 - 不调用 renameFile', async () => {
+		const src = mockFile('a.md');
+		const dest = mockFile('b.md');
+		mockApp.vault.getAbstractFileByPath.mockImplementation((p: string) => (p === 'a.md' ? src : dest));
+		await expect(vault.renameFile('a.md', 'b.md')).rejects.toThrow(/已存在/);
+		expect(mockApp.fileManager.renameFile).not.toHaveBeenCalled();
+	});
+
+	it('renameFile - 父目录不存在 - 先创建目录', async () => {
+		const file = mockFile('a.md');
+		mockApp.vault.getAbstractFileByPath.mockImplementation((p: string) => (p === 'a.md' ? file : null));
+		mockApp.fileManager.renameFile.mockResolvedValue(undefined);
+		mockApp.vault.createFolder.mockResolvedValue(undefined);
+		await vault.renameFile('a.md', 'dir/b.md');
+		expect(mockApp.vault.createFolder).toHaveBeenCalledWith('dir');
+		expect(mockApp.fileManager.renameFile).toHaveBeenCalledWith(file, 'dir/b.md');
+	});
+
+	it('copyFile - 委托 adapter.copy - 不调用 renameFile', async () => {
+		const file = mockFile('a.md');
+		mockApp.vault.getAbstractFileByPath.mockImplementation((p: string) => (p === 'a.md' ? file : null));
+		mockApp.vault.adapter.copy.mockResolvedValue(undefined);
+		await vault.copyFile('a.md', 'b.md');
+		expect(mockApp.vault.adapter.copy).toHaveBeenCalledWith('a.md', 'b.md');
+		expect(mockApp.fileManager.renameFile).not.toHaveBeenCalled();
 	});
 });

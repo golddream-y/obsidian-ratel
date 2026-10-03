@@ -7,9 +7,10 @@
 import type { Tool } from '../core/tool-registry';
 import type { ToolDefinition } from '../ports/llm';
 import type { VaultPort } from '../ports/vault';
-import { requireString } from './validate-args';
+import { rejectOffloadMarker, requireString } from './validate-args';
 import { tNow } from '../i18n';
-import { applyNoteAgentsGate, type NoteAgentsToolDeps } from './note-agents';
+import { injectAgentsForPaths, type NoteAgentsToolDeps } from './note-agents';
+import { measureNoteText } from './note-text-stats';
 
 function countOccurrences(haystack: string, needle: string): number {
 	if (!needle) return 0;
@@ -52,19 +53,11 @@ export function createEditNoteTool(
 			}
 			const oldString = args.old_string;
 			const newString = args.new_string;
+			rejectOffloadMarker(oldString);
+			rejectOffloadMarker(newString);
 
 			const agents = getAgents?.();
-			if (agents) {
-				const gate = await applyNoteAgentsGate({
-					op: 'write',
-					notePath: path,
-					seen: agents.seen,
-					readAgentsFile: agents.readAgentsFile,
-				});
-				if (!gate.proceed) {
-					return gate.attachment;
-				}
-			}
+			await injectAgentsForPaths(agents, [path]);
 
 			if (!(await vault.fileExists(path))) {
 				throw new Error(tNow('error.tool.fileNotFound', { path }));
@@ -80,7 +73,8 @@ export function createEditNoteTool(
 			}
 
 			await vault.processFile(path, (c) => c.replace(oldString, newString));
-			return { path, replaced: true };
+			const text = measureNoteText(await vault.readFile(path));
+			return { path, text };
 		},
 	};
 }

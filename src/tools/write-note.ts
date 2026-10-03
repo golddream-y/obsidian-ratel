@@ -7,9 +7,10 @@
 import type { Tool } from '../core/tool-registry';
 import type { ToolDefinition } from '../ports/llm';
 import type { VaultPort } from '../ports/vault';
-import { requireString } from './validate-args';
+import { rejectOffloadMarker, requireString } from './validate-args';
 import { tNow } from '../i18n';
-import { applyNoteAgentsGate, type NoteAgentsToolDeps } from './note-agents';
+import { injectAgentsForPaths, type NoteAgentsToolDeps } from './note-agents';
+import { measureNoteText } from './note-text-stats';
 
 /**
  * 创建 write_note 工具实例 — 创建或覆盖笔记(带 frontmatter 模板)。
@@ -35,21 +36,12 @@ export function createWriteNoteTool(
 				throw new Error(tNow('error.tool.invalidContent'));
 			}
 			const content = args.content;
+			rejectOffloadMarker(content);
 			const agents = getAgents?.();
-			if (agents) {
-				const gate = await applyNoteAgentsGate({
-					op: 'write',
-					notePath: path,
-					seen: agents.seen,
-					readAgentsFile: agents.readAgentsFile,
-				});
-				if (!gate.proceed) {
-					return gate.attachment;
-				}
-			}
-			const existed = await vault.fileExists(path);
+			await injectAgentsForPaths(agents, [path]);
 			await vault.writeFile(path, content);
-			return { path, created: !existed };
+			const text = measureNoteText(await vault.readFile(path));
+			return { path, text };
 		},
 	};
 }

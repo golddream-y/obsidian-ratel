@@ -75,6 +75,19 @@ export function createMockVaultPort(state: MockVaultState = { files: {} }): Vaul
 			return { files, folders: [] };
 		},
 		fileExists: async (path) => path in state.files,
+		renameFile: async (from, to) => {
+			if (from === to) throw new Error('same path');
+			if (!(from in state.files)) throw new Error(`File not found: ${from}`);
+			if (to in state.files) throw new Error(`Destination exists: ${to}`);
+			state.files[to] = state.files[from]!;
+			delete state.files[from];
+		},
+		copyFile: async (from, to) => {
+			if (from === to) throw new Error('same path');
+			if (!(from in state.files)) throw new Error(`File not found: ${from}`);
+			if (to in state.files) throw new Error(`Destination exists: ${to}`);
+			state.files[to] = state.files[from]!;
+		},
 		processFile: async (path, fn) => {
 			const current = state.files[path] ?? '';
 			const next = fn(current);

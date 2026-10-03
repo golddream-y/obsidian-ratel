@@ -7,6 +7,7 @@
 
 import { tNow } from '../../i18n';
 import type { StringKey } from '../../i18n/types';
+import { peekUpdateFilePath } from '../../tools/apply-patch-text';
 import { parseMcpToolName } from '../mcp/parse-mcp-tool-name';
 
 /**
@@ -20,7 +21,10 @@ const TOOL_NAME_KEY: Record<string, StringKey> = {
 	read_note: 'tool.name.read_note',
 	write_note: 'tool.name.write_note',
 	edit_note: 'tool.name.edit_note',
+	apply_patch: 'tool.name.apply_patch',
 	delete_note: 'tool.name.delete_note',
+	move_note: 'tool.name.move_note',
+	copy_note: 'tool.name.copy_note',
 	append_note: 'tool.name.append_note',
 	grep: 'tool.name.grep',
 	glob: 'tool.name.glob',
@@ -94,12 +98,21 @@ export function formatToolDisplayName(
 		case 'read_note':
 		case 'write_note':
 		case 'edit_note':
+		case 'apply_patch':
 		case 'delete_note':
-		case 'append_note': {
-			const p = extractPath(obj.path);
+		case 'append_note':
+		case 'move_note':
+		case 'copy_note': {
+			const p = name === 'apply_patch'
+				? peekUpdateFilePath(typeof obj.patch === 'string' ? obj.patch : '')
+				: name === 'move_note' || name === 'copy_note'
+					? extractPath(obj.from)
+					: extractPath(obj.path);
+			const to = extractPath(obj.to);
 			const key = TOOL_NAME_KEY[name];
-			// 关键路径:参数存在时才用 i18n 模板,否则 {path} 占位符会以字面量泄漏
-			// 关键路径:noUncheckedIndexedAccess 下 Record 索引可能 undefined,回退英文工具名。
+			if ((name === 'move_note' || name === 'copy_note') && p && to && key) {
+				return tNow(key, { from: p, to });
+			}
 			return p && key ? tNow(key, { path: p }) : name;
 		}
 		case 'grep':

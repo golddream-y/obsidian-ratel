@@ -50,7 +50,10 @@ import { createListFilesTool } from './tools/list-files';
 import { createWriteNoteTool } from './tools/write-note';
 import { createAppendNoteTool } from './tools/append-note';
 import { createEditNoteTool } from './tools/edit-note';
+import { createApplyPatchTool } from './tools/apply-patch';
 import { createDeleteNoteTool } from './tools/delete-note';
+import { createMoveNoteTool } from './tools/move-note';
+import { createCopyNoteTool } from './tools/copy-note';
 import { AGENTS_FILE_NAME, AgentsChainSeen, type NoteAgentsToolDeps } from './tools/note-agents';
 // 关键路径:用户记忆系统 — MemoryStore 管理 .ratel/memory/ 文件 + .memory-index/ vectra 索引,
 // 3 个工具(search_memory / remember / forget_memory)复用 memoryStore 与 embeddingPort。
@@ -70,6 +73,8 @@ import {
 	extractToolPath,
 } from './core/tool-permissions';
 import { showToolConfirmModal } from './ui/components/confirm-modal';
+import { openReleaseNotesTab, ReleaseNotesView, VIEW_TYPE_RELEASE_NOTES } from './ui/release/release-notes-view';
+import { shouldShowReleaseNotes } from './ui/release/should-show-release-notes';
 import { showReindexConfirm, showDropIndexConfirm } from './ui/confirm-modal';
 import { validateVaultPath, setConfigDir } from './utils/path-safety';
 import { isSafeVaultMentionPath } from './ui/chat/input/mention-parser';
@@ -572,7 +577,16 @@ export default class RatelVaultPlugin extends Plugin {
 			createEditNoteTool(this.vault, toolDefMap.get('edit_note')!, () => this.noteAgentsTurn),
 		);
 		this.tools.register(
+			createApplyPatchTool(this.vault, toolDefMap.get('apply_patch')!, () => this.noteAgentsTurn),
+		);
+		this.tools.register(
 			createDeleteNoteTool(this.vault, toolDefMap.get('delete_note')!, () => this.noteAgentsTurn),
+		);
+		this.tools.register(
+			createMoveNoteTool(this.vault, toolDefMap.get('move_note')!, () => this.noteAgentsTurn),
+		);
+		this.tools.register(
+			createCopyNoteTool(this.vault, toolDefMap.get('copy_note')!, () => this.noteAgentsTurn),
 		);
 		// 关键路径:记忆工具 — 3 个新工具,复用 memoryStore 与主线程 embeddingPort。
 		// search_memory 是只读工具(查询记忆);remember / forget_memory 是写工具(触发 pre/post write hook)。
@@ -956,6 +970,7 @@ export default class RatelVaultPlugin extends Plugin {
 
 		// ==================== 视图与命令 ====================
 		this.registerView(VIEW_TYPE_CHAT, (leaf) => new ChatView(leaf, this));
+		this.registerView(VIEW_TYPE_RELEASE_NOTES, (leaf) => new ReleaseNotesView(leaf, this));
 
 		// 修复:旧版独立记忆 leaf 残留 — 合并到 Modal 后拆除
 		for (const leaf of this.app.workspace.getLeavesOfType('ratel-memory-panel')) {
@@ -1000,6 +1015,14 @@ export default class RatelVaultPlugin extends Plugin {
 		name: tNow('cmd.askVault'),
 		callback: () => {
 			void this.activateChatView();
+		},
+	});
+
+	this.addCommand({
+		id: 'show-release-notes',
+		name: tNow('cmd.showReleaseNotes'),
+		callback: () => {
+			void openReleaseNotesTab(this, false);
 		},
 	});
 
@@ -1124,6 +1147,9 @@ export default class RatelVaultPlugin extends Plugin {
 	 * - ONNX 推理移入 EmbeddingWorkerProxy(Web Worker),主线程零 CPU 阻塞;proxy 注入 InlineWorker。
 	 */
 	async onLayoutReady(): Promise<void> {
+		if (shouldShowReleaseNotes(this.settings.lastSeenRelease, this.manifest.version)) {
+			void openReleaseNotesTab(this, true);
+		}
 		// 关键路径:进度回调 handle 跨 local 块与索引块共用,需在外层声明,
 		// 索引完成后(成功或失败)统一 hide/clear,避免 toast 残留(P3 重构:模型下载与索引启动分离)。
 		const indexProgressRef: {
@@ -1812,13 +1838,13 @@ export default class RatelVaultPlugin extends Plugin {
 				try {
 					if (!(await this.vault.fileExists(rel))) return null;
 					const text = await this.vault.readFile(rel);
-					// 关键路径:嵌套约束是闸门里读的,不是 read_note。记路径才能事后核对。
 					this.breadcrumbs?.mark('agents.file', sessionId, rel);
 					return text;
 				} catch {
 					return null;
 				}
 			},
+			appendChain: (text: string) => ctx.appendNoteAgentsChain(text),
 		};
 
 		// 关键路径:注入意图分类器,让 agentLoop 在 addUserMessage 后判断意图。

@@ -39,17 +39,26 @@ export function appendToolCall(msg: Message, tc: ToolCallEntry): void {
 }
 
 /**
- * 把工具调用结果回填到最近一个 status='calling' 的同名工具段。
+ * 把工具调用结果回填到最近一个尚未带结果的同名工具段。
+ * 失败事件会先把状态改成 failed；这里仍回填到那一行，避免再追加一条工具原名。
  * 若未找到匹配段(异常时序),降级为追加一个已完成的工具段。
  */
 export function attachToolResult(msg: Message, name: string, result: unknown): void {
 	for (let i = msg.segments.length - 1; i >= 0; i--) {
 		const seg = msg.segments[i]!;
-		if (seg.type === 'tool' && seg.toolCall.name === name && seg.toolCall.status === 'calling') {
-			seg.toolCall.result = result;
+		if (seg.type !== 'tool' || seg.toolCall.name !== name) continue;
+		const open = seg.toolCall.status === 'calling'
+			|| (seg.toolCall.status === 'failed' && seg.toolCall.result === undefined);
+		if (!open) continue;
+		seg.toolCall.result = result;
+		// 闸门等路径用 Error: 开头的字符串表示未执行，不能标成成功。
+		if (typeof result === 'string' && result.startsWith('Error:')) {
+			seg.toolCall.status = 'failed';
+			if (!seg.toolCall.errorMessage) seg.toolCall.errorMessage = result;
+		} else if (seg.toolCall.status === 'calling') {
 			seg.toolCall.status = 'done';
-			return;
 		}
+		return;
 	}
 	// 降级:未找到匹配段,追加已完成的工具段
 	msg.segments.push({
@@ -58,7 +67,8 @@ export function attachToolResult(msg: Message, name: string, result: unknown): v
 			name,
 			displayName: name,
 			args: {},
-			status: 'done',
+			status: typeof result === 'string' && result.startsWith('Error:') ? 'failed' : 'done',
+			errorMessage: typeof result === 'string' && result.startsWith('Error:') ? result : undefined,
 			result,
 			startAt: Date.now(),
 		},

@@ -102,6 +102,14 @@ export const TOOL_SCHEMA_SKELETONS: Record<string, SchemaSkeleton> = {
 			required: ['path', 'old_string', 'new_string'],
 		},
 	},
+	apply_patch: {
+		name: 'apply_patch',
+		parameters: {
+			type: 'object',
+			properties: { patch: { type: 'string' } },
+			required: ['patch'],
+		},
+	},
 	delete_note: {
 		name: 'delete_note',
 		parameters: {
@@ -110,6 +118,28 @@ export const TOOL_SCHEMA_SKELETONS: Record<string, SchemaSkeleton> = {
 				path: { type: 'string' },
 			},
 			required: ['path'],
+		},
+	},
+	move_note: {
+		name: 'move_note',
+		parameters: {
+			type: 'object',
+			properties: {
+				from: { type: 'string' },
+				to: { type: 'string' },
+			},
+			required: ['from', 'to'],
+		},
+	},
+	copy_note: {
+		name: 'copy_note',
+		parameters: {
+			type: 'object',
+			properties: {
+				from: { type: 'string' },
+				to: { type: 'string' },
+			},
+			required: ['from', 'to'],
 		},
 	},
 	search_memory: {
@@ -463,7 +493,7 @@ export const TOOL_SCHEMA_SKELETONS: Record<string, SchemaSkeleton> = {
 
 export const ALL_TOOL_NAMES = [
 	'read_note', 'search_vault', 'grep', 'glob', 'list_files',
-	'write_note', 'append_note', 'edit_note', 'delete_note',
+	'write_note', 'append_note', 'edit_note', 'apply_patch', 'delete_note', 'move_note', 'copy_note',
 	'search_memory', 'remember', 'forget_memory',
 	'activate_skill', 'deactivate_skill',
 	'read_skill_reference', 'run_skill_script',

@@ -9,7 +9,7 @@ import type { Tool } from '../core/tool-registry';
 import type { ToolDefinition } from '../ports/llm';
 import type { VaultPort } from '../ports/vault';
 import { requireString } from './validate-args';
-import { applyNoteAgentsGate, type NoteAgentsToolDeps } from './note-agents';
+import { injectAgentsForPaths, type NoteAgentsToolDeps } from './note-agents';
 
 /**
  * 构造 `read_note` 工具实例。
@@ -58,17 +58,7 @@ export function createReadNoteTool(
 			}
 
 			const agents = getAgents?.();
-			if (agents) {
-				const gate = await applyNoteAgentsGate({
-					op: 'read',
-					notePath: path,
-					seen: agents.seen,
-					readAgentsFile: agents.readAgentsFile,
-				});
-				if (gate.attachment) {
-					result.agentsConstraints = gate.attachment;
-				}
-			}
+			await injectAgentsForPaths(agents, [path]);
 
 			return result;
 		},

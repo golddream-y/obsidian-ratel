@@ -8,7 +8,7 @@ import type { Tool } from '../core/tool-registry';
 import type { ToolDefinition } from '../ports/llm';
 import type { VaultPort } from '../ports/vault';
 import { requireString } from './validate-args';
-import { applyNoteAgentsGate, type NoteAgentsToolDeps } from './note-agents';
+import { injectAgentsForPaths, type NoteAgentsToolDeps } from './note-agents';
 
 /**
  * 创建 delete_note 工具实例 — 删除指定笔记。
@@ -31,17 +31,7 @@ export function createDeleteNoteTool(
 		async execute(args) {
 			const path = requireString(args, 'path', 'path');
 			const agents = getAgents?.();
-			if (agents) {
-				const gate = await applyNoteAgentsGate({
-					op: 'write',
-					notePath: path,
-					seen: agents.seen,
-					readAgentsFile: agents.readAgentsFile,
-				});
-				if (!gate.proceed) {
-					return gate.attachment;
-				}
-			}
+			await injectAgentsForPaths(agents, [path]);
 			await vault.trashFile(path);
 			return { path, trashed: true };
 		},

@@ -7,9 +7,10 @@
 import type { Tool } from '../core/tool-registry';
 import type { ToolDefinition } from '../ports/llm';
 import type { VaultPort } from '../ports/vault';
-import { requireString } from './validate-args';
+import { rejectOffloadMarker, requireString } from './validate-args';
 import { tNow } from '../i18n';
-import { applyNoteAgentsGate, type NoteAgentsToolDeps } from './note-agents';
+import { injectAgentsForPaths, type NoteAgentsToolDeps } from './note-agents';
+import { measureNoteText } from './note-text-stats';
 
 /**
  * 创建 append_note 工具实例 — 追加内容到已有笔记末尾。
@@ -34,21 +35,12 @@ export function createAppendNoteTool(
 			if (typeof args.content !== 'string') {
 				throw new Error(tNow('error.tool.invalidContent'));
 			}
+			rejectOffloadMarker(args.content);
 			const agents = getAgents?.();
-			if (agents) {
-				const gate = await applyNoteAgentsGate({
-					op: 'write',
-					notePath: path,
-					seen: agents.seen,
-					readAgentsFile: agents.readAgentsFile,
-				});
-				if (!gate.proceed) {
-					return gate.attachment;
-				}
-			}
-			const existed = await vault.fileExists(path);
+			await injectAgentsForPaths(agents, [path]);
 			await vault.appendFile(path, args.content);
-			return { path, created: !existed };
+			const text = measureNoteText(await vault.readFile(path));
+			return { path, text };
 		},
 	};
 }
