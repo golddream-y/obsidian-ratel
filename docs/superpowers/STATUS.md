@@ -31,7 +31,7 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
-| P-TOOL-CONTRACT | [2026-10-03-tool-contract.md](plans/2026-10-03-tool-contract.md) | Pending | S-TOOL-CONTRACT | 八任务：契约补全、摘要去重、失败分类、执行前拒绝、历史投影、UI 与恢复验证；未启动 |
+| P-TOOL-CONTRACT | [2026-10-03-tool-contract.md](plans/2026-10-03-tool-contract.md) | In Progress | S-TOOL-CONTRACT | develop；按用户要求合并为三个 subagent 工作包执行；基线已备份 |
 | P-COMPACT-V3-P1 | [2026-10-01-compact-v3-p1.md](plans/2026-10-01-compact-v3-p1.md) | In Progress | S-COMPACT-V3 | 三路并行：feat/compact-p1-measure、feat/compact-p1-offload、feat/compact-p1-diag。完成后合回 |
 | P-MODEL-CATALOG | [2026-09-28-model-catalog.md](plans/2026-09-28-model-catalog.md) | Completed | S-MODEL-CATALOG | 已合入 develop。列表与密钥改名仍在工作区，尚未提交 |
 | P-CHAT-PROFILE-MENU | [2026-09-27-chat-profile-menu.md](plans/2026-09-27-chat-profile-menu.md) | Completed | S-CHAT-PROFILES | 顶栏菜单，提交 29069b9。设置页「设为当前」尚未改调共用函数 |

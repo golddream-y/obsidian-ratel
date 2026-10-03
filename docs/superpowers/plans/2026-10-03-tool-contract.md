@@ -10,7 +10,7 @@
 
 **ID：** P-TOOL-CONTRACT
 **所属 spec：** [S-TOOL-CONTRACT](../specs/2026-10-03-tool-contract-design.md)
-**状态：** Pending
+**状态：** In Progress
 **日期：** 2026-10-03
 **实施基线：** develop 当前工作区，包含尚未提交的 apply_patch、目录约束与移动复制实现；不能只从旧提交检出后假设这些文件存在。
 
@@ -554,3 +554,7 @@ const retryArgs = {
 - [S-APPLY-PATCH](../specs/2026-10-03-apply-patch-design.md)
 - [S-NOTE-MOVE](../specs/2026-10-01-note-move-design.md)
 - [项目状态表](../STATUS.md)
+
+## 6. 执行记录
+
+2026-10-03：用户要求合并派发 subagent。工作包 A 对应 Task 1–2，B 对应 Task 3–6，C 对应 Task 7–8；以 develop 当前工作区为基线，保留已有未提交改动。
