@@ -1,6 +1,6 @@
 # 工具调用契约与失败恢复实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **目标：** 工具说明给出合法 JSON 调用契约；非法参数不执行，返回真实纠错信息，历史不再把 raw 包装当成合法调用。
 
@@ -10,13 +10,13 @@
 
 **ID：** P-TOOL-CONTRACT
 **所属 spec：** [S-TOOL-CONTRACT](../specs/2026-10-03-tool-contract-design.md)
-**状态：** In Progress
+**状态：** Completed
 **日期：** 2026-10-03
 **实施基线：** develop 当前工作区，包含尚未提交的 apply_patch、目录约束与移动复制实现；不能只从旧提交检出后假设这些文件存在。
 
 ## 1. 全局约束
 
-- 本计划已进入实施阶段。执行结果见第 6 节；未完成提交与收口前保持 In Progress。
+- 本计划实施和文档同步已完成，执行结果见第 6 节及发布准备补充；发布提交与 tag 等用户最终确认。
 - apply_patch 保持 `patch: string`、单篇 Update File、精确匹配和原子落盘；不自动包装裸补丁或补齐正文。
 - 不改 Goal、权限、AGENTS.md 确认、检索算法及模型选择。非法参数必须在权限、钩子和执行前拒绝。
 - 不全局启用 strict 或 additionalProperties=false，不改变 MCP schema；合法 JSON 对象仍由各工具校验字段。
@@ -171,7 +171,7 @@ manage_goal 的原有完整状态约束保留，只把描述中的 `update_app_c
 configure_plugin 的 op schema 替换成 `op: { type: 'string', enum: ['inspect', 'apply'] }`；其余 required 与默认执行保持不变。复杂对象中的字段保持原名；本任务不修改执行器。
 
 - [x] **Step 4：运行 GREEN。** `npx vitest run tests/prompts/tool-contracts.test.ts tests/prompts/composer.test.ts tests/tools/apply-patch.test.ts`。把旧的“必须包含裸换行示例/不能省略”文案断言替换为解析 JSON 示例、schema 必填字段和执行结果断言，不能同时保留冲突的示例要求。
-- [ ] **Step 5：审查并提交。** 核对默认说明与各工具真实缺省值；确认没有 secret 值、额外权限或语法扩张。提交消息 `fix: 补齐工具契约并给出合法调用示例`，仅暂存上述文件本任务增量。
+- [x] **Step 5：审查并提交。** 核对默认说明与各工具真实缺省值；确认没有 secret 值、额外权限或语法扩张。提交消息 `fix: 补齐工具契约并给出合法调用示例`，仅暂存上述文件本任务增量。
 
 ### Task 2：system 只保留工具选用摘要
 
@@ -252,7 +252,7 @@ export function formatToolGuideList(
 Composer 顶部导入 getToolGuide；保留参数签名避免调用者改动。为新导出函数写中文 JSDoc。MCP 只缩短 system 展示摘要，实际 function description/schema 原样。
 
 - [x] **Step 4：运行 GREEN。** `npx vitest run tests/prompts/tool-guides.test.ts tests/prompts/composer.test.ts tests/prompts/tool-contracts.test.ts`。更新现有“description 覆盖必须复制进指引”的旧断言，新增整段 agent.rag.toolGuide override 生效断言。
-- [ ] **Step 5：提交。** 消息 `refactor: system 工具指引改为简短选用摘要`。不添加第二份参数表或 46 个新可编辑 section。
+- [x] **Step 5：提交。** 消息 `refactor: system 工具指引改为简短选用摘要`。不添加第二份参数表或 46 个新可编辑 section。
 
 ### Task 3：参数结果类型、解析器、旧记录和模型反馈
 
@@ -347,7 +347,7 @@ export function formatToolArgsModelError(name: string, issue: ToolArgsIssue): st
 成功解析只验证顶层对象，不在这里猜 required 字段、自动修复补丁或验证通用 MCP schema。为每个导出补文件头与中文 JSDoc，类型断言加说明。
 
 - [x] **Step 4：GREEN。** `npx vitest run tests/core/tool-args.test.ts`。新增合法空对象、包含额外 raw 与业务字段的对象用例；无 raw 正文进入反馈。
-- [ ] **Step 5：提交。** `fix: 区分工具参数格式形状与输出上限`。
+- [x] **Step 5：提交。** `fix: 区分工具参数格式形状与输出上限`。
 
 ### Task 4：流式与降级响应统一解析
 
@@ -389,7 +389,7 @@ for (const [, tc] of toolCallAccumulators) {
 }
 ```
 
-- [ ] **Step 4：验证并提交。** 重跑适配器测试与 Task 3 测试。检查没有新增 raw 控制台输出。提交 `fix: 统一兼容适配器的工具参数解析`。
+- [x] **Step 4：验证并提交。** 重跑适配器测试与 Task 3 测试。检查没有新增 raw 控制台输出。提交 `fix: 统一兼容适配器的工具参数解析`。
 
 ### Task 5：循环拒绝非法参数，保存真实失败证据
 
@@ -421,7 +421,7 @@ toolArgsIssue: toolCall.argsIssue,
 
 保持原 toolArgs、toolCallId、toolName、content、reasoning 与 createdAt 字段。JSON persistence 可选字段自然兼容；不另设会话版本、不回写旧记录。检查 compact/裁剪的对象 spread 是否保留元数据，增加经过裁剪后的验证。
 
-- [ ] **Step 4：GREEN 与清理。** `rg 'isTruncatedToolArgs|TRUNCATED_TOOL_ARGS_ERROR|truncated-tool-call' src tests` 确认迁移后无残留，才删除旧分类模块和旧测试。重跑上述测试、Task 3–4 测试。提交 `fix: 在工具执行前拒绝非法参数并保留原因`。
+- [x] **Step 4：GREEN 与清理。** `rg 'isTruncatedToolArgs|TRUNCATED_TOOL_ARGS_ERROR|truncated-tool-call' src tests` 确认迁移后无残留，才删除旧分类模块和旧测试。重跑上述测试、Task 3–4 测试。提交 `fix: 在工具执行前拒绝非法参数并保留原因`。
 
 ### Task 6：最终出站请求投影失败调用
 
@@ -462,7 +462,7 @@ const safeMessages = sanitizeToolMessageOrder(projectToolArgsFailures(req.messag
 不修改 sanitize 的正常配对规则；不修改落盘历史。其它适配器是否需要同样投影，以它们是否实际消费这些历史字段为准：若存在独立发送入口，复用同一投影并增加公开入口请求测试，不能只修一个已知 serializer 后留下另一出口。
 
 - [x] **Step 4：验证最终请求体。** 通过公开 `llm.chat()` 触发发送，捕获 HTTP/requestUrl mock 参数并 JSON.parse body。断言 messages 中失败 ID 不存在，既无它的 tool_calls，也无它的 role=tool；正文/reasoning 保留，正常调用 arguments 仍为正常 JSON。模拟 reload 后的同一持久化序列再次捕获。不得只测辅助函数。
-- [ ] **Step 5：验证并提交。** 重跑历史、适配器、循环、compact/context 测试。提交 `fix: 防止失败参数包装污染模型调用历史`。
+- [x] **Step 5：验证并提交。** 重跑历史、适配器、循环、compact/context 测试。提交 `fix: 防止失败参数包装污染模型调用历史`。
 
 ### Task 7：即时与重载 UI 显示一致的错误
 
@@ -512,7 +512,7 @@ export function formatToolArgsUserError(issue: ToolArgsIssue): string {
 
 hydrate 对每个 assistant call 使用 `getToolArgsIssue(toolArgs, cur.toolArgsIssue)`；构建相同 entry 字段，对配对 tool result 使用本地化失败文案，避免展开旧结果仍出现“输出被截断/改用移动复制”的旧提示。原会话内容不回写。无 issue 的消息使用原 display/status/result 构建逻辑。
 
-- [ ] **Step 5：验证并提交。** 跑 helper、appender、hydrate 测试和 `npm run typecheck`；切换 zh/en 检查全部新 key，保留现有 Error 前缀协议。提交 `fix: 对齐工具参数失败的即时与历史展示`。
+- [x] **Step 5：验证并提交。** 跑 helper、appender、hydrate 测试和 `npm run typecheck`；切换 zh/en 检查全部新 key，保留现有 Error 前缀协议。提交 `fix: 对齐工具参数失败的即时与历史展示`。
 
 ### Task 8：恢复闭环与收口验证
 
@@ -530,7 +530,7 @@ const retryArgs = {
 - [x] **Step 2：确认失败后完成最小修正。** `npx vitest run tests/tools/tool-contract-recovery.test.ts`。若新发现契约边界问题，先加失败用例再修正对应模块，不改权限或 Goal 来迁就测试。
 - [x] **Step 3：全量检查。** 依次执行 `npm test`、`npm run typecheck`、`npm run lint`、`npm run build`。保存命令、退出码及任何基线失败；不能通过只排除失败测试宣称全量通过。新改动后只重跑受影响检查，最终保留一次完整验证。
 - [x] **Step 4：隐私与范围自审。** `git diff --check`；检查任务 diff 无本机路径、密钥、真实会话、额外 raw 日志、硬编码 UI 字符串。核对 i18n、46 工具摘要覆盖、六个描述及29个参数描述补齐，示例确实通过执行测试。
-- [ ] **Step 5：收口。** 提交 `test: 验证工具参数失败后的同工具恢复`。按 finishing 工作流评估用户文档/架构文档并向用户确认需要同步的项；未获确认不修改架构文档。写明是否实际验证 Sandbox、哪些端点未测。只在所有必需任务和检查完成后将 plan 标 Completed，登记实际合并信息；未合并仍保持 In Progress。依项目规则单独询问归档，不自动归档。
+- [x] **Step 5：收口。** 提交 `test: 验证工具参数失败后的同工具恢复`。按 finishing 工作流评估用户文档/架构文档并向用户确认需要同步的项；未获确认不修改架构文档。写明是否实际验证 Sandbox、哪些端点未测。只在所有必需任务和检查完成后将 plan 标 Completed，登记实际合并信息；未合并仍保持 In Progress。依项目规则单独询问归档，不自动归档。
 
 ## 4. 自审与验收依据
 
@@ -583,3 +583,12 @@ const retryArgs = {
 - 未调用真实模型端点、未写真实 Vault、未操作 Sandbox 或手动验证 Obsidian 画面；自动测试不保证模型永不再输出非法格式。
 - 实现仍保留在 develop 工作区，未提交。提交范围需区分本次修复及相关未提交前置工具实现；不把其他功能工作带入提交。
 - 实现提交后启动 finishing 工作流，按 AGENTS.md 确认文档同步范围；未提前改架构文档。既有类型/lint 失败与提交收口完成前保持 In Progress，不标 Completed，不归档。
+
+
+### 2026-10-04 发布准备补充
+
+实现已分组提交到 develop：a8a4360、49f7e6b、5bcc8bf；前置实现分别为 63a4019、4521c02、08c4a78。用户批准同步 README、双语手册、变更记录与相关架构说明。随后 Sandbox 实际调用暴露了补丁格式反复失败的问题：增加行号诊断后仍不足以稳定调用。按用户指令保留实现与测试，注释注册并移出默认工具清单，记录稳定性 TODO；1.0.0 使用 edit_note 做局部修改。用户要求直接修改且不再跑全量，发布准备只执行受影响测试、lint 与生产构建。旧执行记录中的“未提交”描述属于当时状态，以本节为准。不自动归档。
+
+发布准备验证：10 文件、130 项受影响测试通过；lint 0 错误、17 个既有警告；生产构建通过、18 个既有警告。遵循用户要求未再跑全量测试。
+
+2026-10-04：用户用 27B 模型实测后要求恢复工具。恢复 apply_patch 注册、默认清单与选用摘要，保留行号诊断、双语错误和格式恢复指引；同步移除发布说明和手册中的临时关闭标记。本条取代此前关闭决策。

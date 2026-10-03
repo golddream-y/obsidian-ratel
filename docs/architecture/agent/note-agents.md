@@ -1,7 +1,7 @@
 # 笔记约束（AGENTS.md）
 
 > 领域:Agent | 库内笔记的目录约束，不是一种新能力
-> 产品设计:[S-NOTE-AGENTS](../../superpowers/archive/S-NOTE-AGENTS/2026-09-26-note-agents-md-design.md)
+> 产品设计:[S-NOTE-AGENTS](../../superpowers/archive/S-NOTE-AGENTS/2026-09-26-note-agents-md-design.md) · 子目录注入:[S-AGENTS-INJECT](../../superpowers/specs/2026-10-02-agents-inject-design.md)
 >
 > 对照:[Claude Code 目录分层](https://code.claude.com/docs/en/large-codebases) · [AGENTS.md](https://agents.md) · [Codex 拼接顺序](https://developers.openai.com/codex/agent-configuration/agents-md)
 
@@ -13,7 +13,7 @@
 
 能力池仍然只有三种 `kind`：内置工具、MCP、技能。见 [capability-surface](capability-surface.md)。
 
-`AGENTS.md` 不注册进 ToolRegistry，不出现在斜杠菜单，也不由模型「启用」。它是 Harness 在改笔记之前塞进上下文的文字。模型可以不调用任何新工具就读到它。
+`AGENTS.md` 不注册进 ToolRegistry，不出现在斜杠菜单，也不由模型「启用」。它是 Harness 按路径放进上下文的文字。库根那一份每轮都在，模型可以不调用任何新工具就读到它。
 
 | | 技能 | 记忆 | 笔记约束 |
 |---|---|---|---|
@@ -59,19 +59,23 @@
 
 ---
 
-## 4. 写入闸
+## 4. 碰到路径再注入
 
-模型第一次要写入某个还有更近约束的目录、而这一轮还没把那些约束给它看过时，这次写入不落盘。工具结果改成约束正文，让它按约束再调一次。只有库根、没有更近文件时，库根已经在系统上下文里，直接写。
+库根已经在本轮系统上下文里。笔记工具碰到一条路径时，把该路径到库根的子目录 `AGENTS.md` 追加到同一段后面。库根全文不重复。追加之后工具照常执行。读、写、追加、替换、补丁、删除、移动、复制都不因为「这一轮还没见过」而失败，也不把约束正文放进工具结果。`apply_patch` 的路径在补丁的 `*** Update File:` 行里。
 
-这是 Ratel 比 Claude 多的一道闸。Claude 依赖「读过该目录才加载」，第一次直接写可能还没看见子目录文件。笔记工具的参数在调用时已经定好，所以必须在执行前退回，不能等下一轮。
+工具参数在这次调用时已经定好，所以刚追加的子目录规则出现在本轮下一次模型请求里。Claude Code 也是访问该目录时加载规则，工具该执行就执行。
 
-`AgentsChainSeen` 只活在一个 agent loop 回合里。不做成插件单例，否则下一轮会误以为已经看过。
+同一条目录链本轮只追加一次。`AgentsChainSeen` 按目录链去重，不按完整文件路径。同一文件夹里先后改两篇笔记，链相同就只注入一次。它只活在一个 agent loop 回合里，不做成插件单例。下一轮用户消息重新设置库根段，上一轮追加的子目录正文不保留；再次碰到路径时重新注入。
+
+移动对原路径和目标路径各收集一次。复制只收集目标路径。
+
+移动和复制失败只报磁盘上的原因：原路径不存在、目标已存在且未覆盖、原路径和目标路径相同。父目录没有则先建再操作。这些错误不附 `AGENTS.md`。
 
 ---
 
 ## 5. 改约束文件
 
-`write_note`、`edit_note`、`append_note`、`delete_note` 的目标路径最后一段是 `AGENTS.md` 时，必须走现有确认卡。
+`write_note`、`edit_note`、`append_note`、`delete_note` 的 `path`，`apply_patch` 补丁里的 Update File 路径，以及 `move_note`、`copy_note` 的 `from`，最后一段是 `AGENTS.md` 时，必须走现有确认卡。
 
 现有 `resolveToolPermission` 在「允许」、危险档、本会话不再询问、目标授权处会直接返回，到不了确认。因此这道判断放在「拒绝」之后、其余短路之前。拒绝仍然拒绝，不弹卡。
 
@@ -92,9 +96,9 @@
 
 | 模块 | 职责 |
 |---|---|
-| `src/tools/note-agents.ts` | 目录顺序、单文件与沿途截断、拼接、本回合已见 |
+| `src/tools/note-agents.ts` | 目录顺序、单文件与沿途截断、拼接；按目录链收集尚未注入的子目录约束 |
+| `src/core/context-manager.ts` | 库根每轮一段；本轮新碰到的子目录链追加在库根之后 |
 | `src/core/tool-permissions.ts` | `mustConfirmAgentsMd`，挡在允许与危险档之前 |
-| 笔记工具 | 读的结果附上链；写之前未看过则退回 |
-| 系统提示 | 只放库根那一份 |
+| 笔记工具 | 碰到路径就注入，然后执行。结果只描述这次操作 |
 
 发现链不读 `CLAUDE.md`。读文件失败视为该层不存在。路径先过 `validateVaultPath`，不跟随库外符号链接。

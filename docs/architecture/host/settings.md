@@ -158,10 +158,10 @@ graph TB
 | 工具 | 默认权限 | 说明 |
 |---|---|---|
 | `read_note` / `search_vault` / `grep` / `glob` / `list_files` | `allow` | 只读工具默认放行 |
-| `write_note` / `append_note` / `edit_note` / `delete_note` | `ask` | 写工具默认每次询问 |
+| `write_note` / `append_note` / `edit_note` / `apply_patch` / `delete_note` / `move_note` / `copy_note` | `allow` | 内置写工具默认允许。改成询问后，关闭信任模式时每次执行前确认 |
 
 **trustMode 说明**:
-- `false`(默认):写工具每次执行前弹窗询问用户
+- `false`(默认):权限为 `ask` 的工具每次执行前确认。内置工具默认是 `allow`，不弹窗
 - `true`:跳过 `ask` 级别,所有工具按 `allow` 处理(适合信任 LLM 输出的高级用户)
 - `deny` 级别**始终生效**,不受 trustMode 影响
 

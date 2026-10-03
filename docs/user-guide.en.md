@@ -72,6 +72,8 @@ Check for missing material, unsupported assumptions, and irrelevant citations. O
 
 Tool execution appears in chat; confirmation depends on permissions. Open the destination afterward and check content, links, and scope. Plugin recovery backups are not note version history. Use your own backup or versioning for ordinary note changes.
 
+For local edits, Ratel replaces a uniquely matching passage. To move or copy a note, specify its source and destination paths. Writing tools return Chinese character and Latin word counts for checking length. AGENTS.md files in the note folder and its parent folders provide writing conventions; changing those files still requires confirmation. Patch editing can apply several changes to one note atomically; format errors identify the line and explain how to correct it. Invalid tool arguments receive corrective feedback and are not executed.
+
 ## 3. Install and maintain your plugin setup
 
 ### Set up the diary workflow

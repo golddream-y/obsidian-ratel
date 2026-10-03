@@ -135,7 +135,7 @@ flowchart TB
 | 级 | 对象 | 处理 | 取回方式 |
 |---|---|---|---|
 | 旧思考过程 | 最后一条 user 之前的 assistant 思考过程 | 不再回传 | 会话位置 |
-| 已落库的写入参数 | 写笔记类工具调用中的正文字段,除本轮最近一次写入外 | 换成 `[written] path=… chars=…` | 按路径读笔记当前版本 |
+| 已落库的写入参数 | 写笔记类工具调用中的正文字段,除本轮最近一次写入外 | 删掉正文字段,只留路径;工具结果注明用 read_note 取回,不要把占位标记写入 content | 按路径读笔记当前版本 |
 | 旧发现类结果 | `search_vault` / `grep` / `glob` / `list_files` / `search_memory`,除最近 5 条外 | 换成 `[compacted] {name} path=… chars=…` | 重新检索 |
 | 工作集外旧笔记全文 | 最后一条 user 之前、不在工作集内的 `read_note` 结果 | 换成 `[offloaded] read_note path=… chars=… title=…` | 按路径重读 |
 

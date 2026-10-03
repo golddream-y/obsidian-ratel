@@ -134,7 +134,7 @@ function measureOutbound(messages: ChatMessage[], tools: ToolDefinition[]): Outb
 | 级 | 对象 | 规则 | 占位（面向模型，不走 i18n） |
 |---|---|---|---|
 | R1 思考过程 | 最后一条 user 之前的 assistant `reasoning` | 不再回传 | 无（字段直接不带） |
-| R2 写入参数 | 成功的 `write_note` / `append_note` / `edit_note` 等参数中的正文字段，除本轮最近一次写入外 | 正文字段换占位，保留 `path` 等短字段 | `[written] path=… chars=…` |
+| R2 写入参数 | 成功的 `write_note` / `append_note` / `edit_note` 等参数中的正文字段，除本轮最近一次写入外 | 删掉正文字段，只留 path 等短字段。工具结果注明正文在笔记里。不把占位符放进 content，写工具会拒绝以 `[written]` 开头的正文 | 无（不生成可照抄的 content） |
 | R3 发现类结果 | `search_vault` / `grep` / `glob` / `list_files` / `search_memory` | 维持现有 microcompact（保留最近 5 条） | `[compacted] …`（不变） |
 | R4 工作集外旧笔记 | 最后一条 user 之前、且不在工作集内的 `read_note` 全文 | 仅在 R1–R3 后仍超软阈值时执行 | `[offloaded] read_note path=… chars=… title=… 需要时可再读` |
 

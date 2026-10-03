@@ -15,7 +15,7 @@
 - 工具 function-calling 的 `description` 与参数说明
 - 运行时注入块(工具列表、知识库检索结果、库根 `AGENTS.md`)
 
-库根笔记约束的加载规则不在 section registry 里配。它是用户库里的文件，按路径发现。子目录约束在读到该路径时再附上。见 [note-agents](note-agents.md)。
+库根笔记约束的加载规则不在 section registry 里配。它是用户库里的文件，按路径发现。子目录约束在工具碰到该路径时追加到同一段，本轮下一次模型请求能看见。见 [note-agents](note-agents.md)。
 
 **不做的事:**
 
@@ -132,7 +132,7 @@ flowchart TB
 
 ### 4.2 工具列表动态注入
 
-`agent.rag.toolGuide` 模板内含 `{{toolList}}`。Composer 从**当前已注册工具**的 `tool.<name>.description` section 自动生成列表,例如:
+`agent.rag.toolGuide` 模板内含 `{{toolList}}`。Composer 从**当前已注册工具**生成简短选用列表，内置摘要由 tool-guides 管理，外部工具取简介首行,例如:
 
 ```
 当前可用工具:
@@ -140,7 +140,7 @@ flowchart TB
 - read_note: …
 ```
 
-`composeToolDefinitions()` 读取**同一批** `tool.*` section → 保证 RAG 指引与 function schema **不漂移**。`S-VAULT-TOOLS` 新增 `grep` 等工具时,只增 section 定义 + 工具实现,不改 Composer 核心逻辑。
+`composeToolDefinitions()` 读取 `tool.*` section，把完整调用契约及参数说明放入 function schema；系统提示仅保留选用摘要，避免重复注入完整契约。apply_patch 已注册并列入默认工具清单，完整说明包含 JSON 示例、每行标记、空白行规则及重试指引。`S-VAULT-TOOLS` 新增 `grep` 等工具时,只增 section 定义 + 工具实现,不改 Composer 核心逻辑。
 
 ### 4.3 检索结果注入与安全外框 (决策 A)
 

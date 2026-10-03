@@ -97,7 +97,8 @@ graph TB
     subgraph "写入类"
         WN["write_note<br/>创建/覆盖<br/>readOnly: false"]
         AN["append_note<br/>追加内容<br/>readOnly: false"]
-        EN["edit_note<br/>精确替换<br/>readOnly: false"]
+        EN["edit_note<br/>唯一一段替换<br/>readOnly: false"]
+        AP["apply_patch<br/>补丁改几处<br/>readOnly: false"]
     end
 
     subgraph "管理类"
@@ -130,6 +131,7 @@ graph TB
     WN --> REG
     AN --> REG
     EN --> REG
+    AP --> REG
     DN --> REG
     UAC --> REG
     SM --> REG
@@ -232,10 +234,10 @@ sequenceDiagram
 | 属性 | 值 |
 |---|---|
 | name | `write_note` |
-| description | 创建新笔记或覆盖已有笔记全文 |
+| description | 创建新笔记或覆盖已有笔记全文。只改几处时用 `edit_note` |
 | readOnly | false |
 | 参数 | `path: string`, `content: string` |
-| 返回 | `{ path, created: boolean }` |
+| 返回 | `{ path, text }`，`text` 见下文「正文统计」 |
 
 ### 4.7 append_note
 
@@ -245,19 +247,60 @@ sequenceDiagram
 | description | 在笔记末尾追加内容(文件不存在则创建) |
 | readOnly | false |
 | 参数 | `path: string`, `content: string` |
-| 返回 | `{ path, created: boolean }` |
+| 返回 | `{ path, text }`，`text` 统计追加后的全文 |
 
 ### 4.8 edit_note
 
 | 属性 | 值 |
 |---|---|
 | name | `edit_note` |
-| description | 在笔记中精确替换一段文本。old_string 必须与文件内容完全一致(含缩进),且在文件中唯一 |
+| description | 只替换文件里唯一出现的一段。多处修改逐处调用，原文片段必须唯一匹配 |
 | readOnly | false |
 | 参数 | `path: string`, `old_string: string`, `new_string: string` |
-| 返回 | `{ path, replaced: boolean }` |
+| 返回 | `{ path, text }`，`text` 统计替换后的全文 |
 
 **安全设计**:`old_string` 必须唯一匹配(参考 Claude Code Edit 工具)。多次匹配返回错误,要求 LLM 提供更多上下文。使用 `vault.process()` 原子操作避免读写竞态。
+
+### 4.8a apply_patch
+
+1.0.0 已启用。缺少上下文标记时返回补丁物理行号与标记要求；匹配失败提示重新读取原文并按整行匹配。不自动猜测或修补标记。
+
+| 属性 | 值 |
+|---|---|
+| name | `apply_patch` |
+| description | 局部修改一篇已有笔记。路径写在补丁里，不另传 `path` |
+| readOnly | false |
+| 参数 | `patch: string` |
+| 返回 | `{ path, text }`，`text` 统计改完后的全文 |
+
+文件必须已存在，不会新建。一次只有一个 `*** Update File: <库内相对路径>`。`*** Add File`、`*** Delete File`、`*** Move to` 拒绝并指向 `write_note`、`delete_note`、`move_note`。
+
+`@@` 单独起一行，同一行后面的字不参与匹配。下一行起，第一个字符是标记：空格是上下文，`-` 是删除，`+` 是插入。这个字符不写入文件，后面的文字原样比较，不 trim。可以有多处，按顺序套到内存里的全文，全部成功后一次落盘。一处里没有任何 `+` 或 `-`、对不上、对上多处，或写了 `*** End of File` 却不在文件末尾，整次不写文件。
+
+面向模型的说明里带这份最短示例（`甲` 那一行行首有一个空格）：
+
+```
+*** Begin Patch
+*** Update File: notes/a.md
+@@
+ 甲
+-乙
++乙二
+*** End Patch
+```
+
+四个改正文工具的 `text` 都是落盘全文的统计，文首属性算在内。长度在 `text.length`，词数在 `text.words`。
+
+| 字段 | 含义 |
+|---|---|
+| `length.chars` | UTF-16 编码单元个数，即 JavaScript 字符串长度。标点、换行、文首属性都计入 |
+| `length.codePoints` | Unicode 码点个数。没有增补平面字符时与 `chars` 相同 |
+| `length.han` | `Script=Han` 的码点个数，即汉字。汉语拼音不在这里 |
+| `length.latinLetters` | `Script=Latin` 且为字母的码点个数 |
+| `length.other` | 其余码点 |
+| `words.latin` | 连续拉丁字母的段数。撇号会断开。汉语拼音记在这里 |
+
+`length.han + length.latinLetters + length.other = length.codePoints`。`words.latin` 不参加这个等式。向用户报告中文字数用 `length.han`。
 
 ### 4.9 delete_note
 
@@ -361,7 +404,7 @@ sequenceDiagram
 | **配置 / UI 导航** | open_note, open_settings, get_app_config;update_app_config | 读写混合 | ✅(权限;有 path 时校验) | ✅(仅 update_app_config,设置面板刷新,无笔记治理) |
 | **记忆类** | search_memory, remember, forget_memory | 读写混合 | ✅ | ❌ |
 | **Skill** | activate_skill, deactivate_skill | ✅ | ✅ | ❌ |
-| **写入类** | write_note, append_note, edit_note | ❌ | ✅(权限 + 路径 + 治理) | ✅(自动标签、索引刷新) |
+| **写入类** | write_note, append_note, edit_note, apply_patch | ❌ | ✅(权限 + 路径 + 治理) | ✅(自动标签、索引刷新) |
 | **管理类** | delete_note | ❌ | ✅(权限 + 路径 + 治理) | ✅(索引刷新) |
 
 ---

@@ -8,7 +8,7 @@
 
 **Find your notes, finish the work, and set up your Obsidian workflow.**
 
-Ratel is an AI assistant that can read notes and take action inside Obsidian. Ask it to find answers in old notes, turn scattered material into a document, or install and configure a daily-note workflow. It remembers your folders and preferences, answers with sources you can open, and follows your tool permissions.
+Ratel is an AI assistant that can read notes and take action inside Obsidian. Ask it to find information across your notes, develop ideas, and turn scattered material into a document, or install and configure a daily-note workflow. It remembers your folders and preferences, answers with sources you can open, and follows your tool permissions.
 
 Your notes remain ordinary Markdown files. Choose DeepSeek, Ollama, or an OpenAI-compatible chat endpoint. The search index is generated locally by default.
 
@@ -41,6 +41,8 @@ You can package a working setup as a **skill**: plugins, settings, templates, an
 You do not need to remember the title. Ratel searches using meaning, keywords, and link relationships, reads the relevant notes, and organizes the material into an answer or document. Citations open the original notes so you can check the conclusions.
 
 Ask it to summarize the active note, filter by tags or properties, inspect backlinks, or open a note at a specific heading. When writing back, specify the destination and scope. Tool permissions govern the changes.
+
+Existing notes can be edited by matching a unique passage, moved, or copied without regenerating their content.
 
 [Find, understand, and organize notes](docs/user-guide.en.md#2-find-understand-and-organize-notes)
 
