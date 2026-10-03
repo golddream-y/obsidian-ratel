@@ -16,7 +16,7 @@
 
 ## 1. 全局约束
 
-- 本计划只规划，尚未运行 RED/GREEN，也未修改实现。执行前将 STATUS 更新为 In Progress，记录实际分支。
+- 本计划已进入实施阶段。执行结果见第 6 节；未完成提交与收口前保持 In Progress。
 - apply_patch 保持 `patch: string`、单篇 Update File、精确匹配和原子落盘；不自动包装裸补丁或补齐正文。
 - 不改 Goal、权限、AGENTS.md 确认、检索算法及模型选择。非法参数必须在权限、钩子和执行前拒绝。
 - 不全局启用 strict 或 additionalProperties=false，不改变 MCP schema；合法 JSON 对象仍由各工具校验字段。
@@ -56,7 +56,7 @@
 
 **Interfaces：** 产出 `APPLY_PATCH_EXAMPLE: { patch: string }`、`TOOL_CALL_EXAMPLES`、`TOOL_CONTRACT_DEFAULTS`；消费现有 `composeToolDefinitions`、`ALL_TOOL_NAMES` 和真实补丁工具。
 
-- [ ] **Step 1：写失败测试。** 新测试文件使用下面的完整核心测试；文件头按项目模板添加。
+- [x] **Step 1：写失败测试。** 新测试文件使用下面的完整核心测试；文件头按项目模板添加。
 
 ```typescript
 import { expect, it } from 'vitest';
@@ -108,8 +108,8 @@ it('apply_patch 示例 - 原文甲乙 - 执行后只替换乙', async () => {
 });
 ```
 
-- [ ] **Step 2：运行 RED。** `npx vitest run tests/prompts/tool-contracts.test.ts`。预期新模块不存在，随后覆盖测试暴露六个描述和参数缺失。不要先修改断言使其接受空描述。
-- [ ] **Step 3：实现完整契约补充源。** `tool-contracts.ts` 正文如下，添加中文文件头和导出文档；在 `ZH_DEFAULTS` 对象末尾加入 `...TOOL_CONTRACT_DEFAULTS`，文件顶部导入它。现有用户 overrides 仍优先于默认源。
+- [x] **Step 2：运行 RED。** `npx vitest run tests/prompts/tool-contracts.test.ts`。预期新模块不存在，随后覆盖测试暴露六个描述和参数缺失。不要先修改断言使其接受空描述。
+- [x] **Step 3：实现完整契约补充源。** `tool-contracts.ts` 正文如下，添加中文文件头和导出文档；在 `ZH_DEFAULTS` 对象末尾加入 `...TOOL_CONTRACT_DEFAULTS`，文件顶部导入它。现有用户 overrides 仍优先于默认源。
 
 ```typescript
 export const APPLY_PATCH_EXAMPLE = {
@@ -170,7 +170,7 @@ manage_goal 的原有完整状态约束保留，只把描述中的 `update_app_c
 
 configure_plugin 的 op schema 替换成 `op: { type: 'string', enum: ['inspect', 'apply'] }`；其余 required 与默认执行保持不变。复杂对象中的字段保持原名；本任务不修改执行器。
 
-- [ ] **Step 4：运行 GREEN。** `npx vitest run tests/prompts/tool-contracts.test.ts tests/prompts/composer.test.ts tests/tools/apply-patch.test.ts`。把旧的“必须包含裸换行示例/不能省略”文案断言替换为解析 JSON 示例、schema 必填字段和执行结果断言，不能同时保留冲突的示例要求。
+- [x] **Step 4：运行 GREEN。** `npx vitest run tests/prompts/tool-contracts.test.ts tests/prompts/composer.test.ts tests/tools/apply-patch.test.ts`。把旧的“必须包含裸换行示例/不能省略”文案断言替换为解析 JSON 示例、schema 必填字段和执行结果断言，不能同时保留冲突的示例要求。
 - [ ] **Step 5：审查并提交。** 核对默认说明与各工具真实缺省值；确认没有 secret 值、额外权限或语法扩张。提交消息 `fix: 补齐工具契约并给出合法调用示例`，仅暂存上述文件本任务增量。
 
 ### Task 2：system 只保留工具选用摘要
@@ -179,7 +179,7 @@ configure_plugin 的 op schema 替换成 `op: { type: 'string', enum: ['inspect'
 
 **Interfaces：** 消费 `ALL_TOOL_NAMES`；产出 `getToolGuide(name: string, description: string): string`。默认摘要不可单独覆盖；用户可继续覆盖 `agent.rag.toolGuide` 整段，description override 只影响 function 契约。
 
-- [ ] **Step 1：写 RED。**
+- [x] **Step 1：写 RED。**
 
 ```typescript
 import { expect, it } from 'vitest';
@@ -208,8 +208,8 @@ it('工具指引 - MCP 无内置摘要 - 保留外部简介而不改 schema', ()
 });
 ```
 
-- [ ] **Step 2：运行。** `npx vitest run tests/prompts/tool-guides.test.ts`。预期模块不存在或 RAG 重复完整说明。
-- [ ] **Step 3：实现摘要模块与 Composer 完整替换函数。**
+- [x] **Step 2：运行。** `npx vitest run tests/prompts/tool-guides.test.ts`。预期模块不存在或 RAG 重复完整说明。
+- [x] **Step 3：实现摘要模块与 Composer 完整替换函数。**
 
 ```typescript
 export const BUILTIN_TOOL_GUIDES: Record<string, string> = {
@@ -251,7 +251,7 @@ export function formatToolGuideList(
 
 Composer 顶部导入 getToolGuide；保留参数签名避免调用者改动。为新导出函数写中文 JSDoc。MCP 只缩短 system 展示摘要，实际 function description/schema 原样。
 
-- [ ] **Step 4：运行 GREEN。** `npx vitest run tests/prompts/tool-guides.test.ts tests/prompts/composer.test.ts tests/prompts/tool-contracts.test.ts`。更新现有“description 覆盖必须复制进指引”的旧断言，新增整段 agent.rag.toolGuide override 生效断言。
+- [x] **Step 4：运行 GREEN。** `npx vitest run tests/prompts/tool-guides.test.ts tests/prompts/composer.test.ts tests/prompts/tool-contracts.test.ts`。更新现有“description 覆盖必须复制进指引”的旧断言，新增整段 agent.rag.toolGuide override 生效断言。
 - [ ] **Step 5：提交。** 消息 `refactor: system 工具指引改为简短选用摘要`。不添加第二份参数表或 46 个新可编辑 section。
 
 ### Task 3：参数结果类型、解析器、旧记录和模型反馈
@@ -260,7 +260,7 @@ Composer 顶部导入 getToolGuide；保留参数签名避免调用者改动。�
 
 **Interfaces：** ToolCall 增加 `argsIssue?: ToolArgsIssue | null`；ChatMessage 增加 `toolArgsIssue?: ToolArgsIssue | null`。成功新调用显式 null；旧字段缺失可兼容。以下函数是后续任务唯一分类出口。
 
-- [ ] **Step 1：RED 测试。**
+- [x] **Step 1：RED 测试。**
 
 ```typescript
 import { expect, it } from 'vitest';
@@ -290,8 +290,8 @@ it('旧 raw 识别 - 新调用显式成功 - 合法 raw 不误判', () => {
 });
 ```
 
-- [ ] **Step 2：运行。** `npx vitest run tests/core/tool-args.test.ts`，预期模块不存在。
-- [ ] **Step 3：新增完整类型与解析模块。** 在 ports/llm.ts 加以下类型，分别向 ToolCall 和 ChatMessage 加上前述可选字段，其他定义不变。
+- [x] **Step 2：运行。** `npx vitest run tests/core/tool-args.test.ts`，预期模块不存在。
+- [x] **Step 3：新增完整类型与解析模块。** 在 ports/llm.ts 加以下类型，分别向 ToolCall 和 ChatMessage 加上前述可选字段，其他定义不变。
 
 ```typescript
 export const TOOL_ARGS_ISSUE_KINDS = ['invalid-json', 'invalid-shape', 'output-limit', 'legacy-unparsed'] as const;
@@ -346,14 +346,14 @@ export function formatToolArgsModelError(name: string, issue: ToolArgsIssue): st
 
 成功解析只验证顶层对象，不在这里猜 required 字段、自动修复补丁或验证通用 MCP schema。为每个导出补文件头与中文 JSDoc，类型断言加说明。
 
-- [ ] **Step 4：GREEN。** `npx vitest run tests/core/tool-args.test.ts`。新增合法空对象、包含额外 raw 与业务字段的对象用例；无 raw 正文进入反馈。
+- [x] **Step 4：GREEN。** `npx vitest run tests/core/tool-args.test.ts`。新增合法空对象、包含额外 raw 与业务字段的对象用例；无 raw 正文进入反馈。
 - [ ] **Step 5：提交。** `fix: 区分工具参数格式形状与输出上限`。
 
 ### Task 4：流式与降级响应统一解析
 
 **Files：** 修改 `src/adapters/llm-openai-compat.ts`、`tests/adapters/llm-openai-compat.test.ts`。
 
-- [ ] **Step 1：RED。** 扩展现有 HTTP mock，使其可以返回 `PassThrough` SSE；保留原 error、pending、headers-then-hang 行为。`beforeEach` 清空新增 SSE 缓冲，防止串用例。分别从真正的流式入口和 requestUrl 降级入口送入以下样本，每组都收集 `llm.chat()` 的公开迭代输出：
+- [x] **Step 1：RED。** 扩展现有 HTTP mock，使其可以返回 `PassThrough` SSE；保留原 error、pending、headers-then-hang 行为。`beforeEach` 清空新增 SSE 缓冲，防止串用例。分别从真正的流式入口和 requestUrl 降级入口送入以下样本，每组都收集 `llm.chat()` 的公开迭代输出：
 
 ```typescript
 const cases = [
@@ -376,8 +376,8 @@ function responseText(raw: string, finish: string): string {
 
 额外测试将 arguments 分两块传入，必须拼接后再解析；无 finish_reason 的裸补丁仍为 invalid-json。两条路径各跑同一数据集，不直接调用 private 解析方法。
 
-- [ ] **Step 2：确认失败。** `npx vitest run tests/adapters/llm-openai-compat.test.ts`，看到分类/显式 null 缺失，记录失败点。
-- [ ] **Step 3：GREEN。** 导入 `parseToolArguments`。两处最终 accumulator 循环都用下面代码替换 JSON.parse/raw 降级；保持原发送顺序、ID、正文、reasoning、取消和超时行为。解析函数的 finishReason 入参改为 `string | null | undefined`，仅比较 `length`，兼容供应商其它结束字符串，不做类型断言。
+- [x] **Step 2：确认失败。** `npx vitest run tests/adapters/llm-openai-compat.test.ts`，看到分类/显式 null 缺失，记录失败点。
+- [x] **Step 3：GREEN。** 导入 `parseToolArguments`。两处最终 accumulator 循环都用下面代码替换 JSON.parse/raw 降级；保持原发送顺序、ID、正文、reasoning、取消和超时行为。解析函数的 finishReason 入参改为 `string | null | undefined`，仅比较 `length`，兼容供应商其它结束字符串，不做类型断言。
 
 ```typescript
 for (const [, tc] of toolCallAccumulators) {
@@ -395,9 +395,9 @@ for (const [, tc] of toolCallAccumulators) {
 
 **Files：** 修改 `src/core/agent-loop.ts`、`src/core/context-manager.ts`、`src/types.ts`、`tests/core/agent-loop.test.ts`、`tests/core/context-manager.test.ts`；删除被完全替代的 `src/core/truncated-tool-call.ts` 与对应测试前，先确认所有引用迁移完毕。
 
-- [ ] **Step 1：RED。** 使用现有 mock Persistence/LLM/ToolRegistry helpers。同批返回一个非法 apply_patch 和一个合法 read_note；注册权限检查、pre/post tool hooks 与 execute spies。断言非法调用的这些 spy 全部为零，正常调用各运行一次；失败反馈含同一工具的合法 JSON 示例，不含 move/copy/write 建议。补 reasoning 与 assistant 正文保留、显式 null 的合法 raw 参数、legacy raw 参数、会话保存载入用例。
-- [ ] **Step 2：确认失败。** `npx vitest run tests/core/agent-loop.test.ts tests/core/context-manager.test.ts`。不接受仅“execute 没调用”作为完整证据。
-- [ ] **Step 3：GREEN。** `AgentEvent` 的 tool.call 与 tool.result payload 都增加可选 `argsIssue?: ToolArgsIssue | null`。循环在 tool.call 事件之前分类，在权限/钩子之前使用下面分支；正常分支沿用现有顺序。
+- [x] **Step 1：RED。** 使用现有 mock Persistence/LLM/ToolRegistry helpers。同批返回一个非法 apply_patch 和一个合法 read_note；注册权限检查、pre/post tool hooks 与 execute spies。断言非法调用的这些 spy 全部为零，正常调用各运行一次；失败反馈含同一工具的合法 JSON 示例，不含 move/copy/write 建议。补 reasoning 与 assistant 正文保留、显式 null 的合法 raw 参数、legacy raw 参数、会话保存载入用例。
+- [x] **Step 2：确认失败。** `npx vitest run tests/core/agent-loop.test.ts tests/core/context-manager.test.ts`。不接受仅“execute 没调用”作为完整证据。
+- [x] **Step 3：GREEN。** `AgentEvent` 的 tool.call 与 tool.result payload 都增加可选 `argsIssue?: ToolArgsIssue | null`。循环在 tool.call 事件之前分类，在权限/钩子之前使用下面分支；正常分支沿用现有顺序。
 
 ```typescript
 const argsIssue = getToolArgsIssue(tc.args, tc.argsIssue);
@@ -427,9 +427,9 @@ toolArgsIssue: toolCall.argsIssue,
 
 **Files：** 新建 `src/core/tool-args-history.ts`、`tests/core/tool-args-history.test.ts`；修改 `src/adapters/llm-openai-compat.ts`、`tests/adapters/llm-openai-compat.test.ts`。
 
-- [ ] **Step 1：RED。** 建立原始消息序列：user、带正文/reasoning 的失败 assistant、对应 tool 错误、正常 assistant call/tool result、最终 assistant。分别覆盖新元数据、旧 raw、合法 raw/null、混合批次。断言原数组深度不变；失败原始 arguments 不进入投影；正常 call/result ID 配对、正文和 reasoning 保留；第二次投影结果一致。
-- [ ] **Step 2：确认失败。** `npx vitest run tests/core/tool-args-history.test.ts tests/adapters/llm-openai-compat.test.ts`。
-- [ ] **Step 3：实现投影。** 新文件的行为代码如下，按项目规范补中文文件头与导出 JSDoc：
+- [x] **Step 1：RED。** 建立原始消息序列：user、带正文/reasoning 的失败 assistant、对应 tool 错误、正常 assistant call/tool result、最终 assistant。分别覆盖新元数据、旧 raw、合法 raw/null、混合批次。断言原数组深度不变；失败原始 arguments 不进入投影；正常 call/result ID 配对、正文和 reasoning 保留；第二次投影结果一致。
+- [x] **Step 2：确认失败。** `npx vitest run tests/core/tool-args-history.test.ts tests/adapters/llm-openai-compat.test.ts`。
+- [x] **Step 3：实现投影。** 新文件的行为代码如下，按项目规范补中文文件头与导出 JSDoc：
 
 ```typescript
 import type { ChatMessage } from '../ports/llm';
@@ -461,16 +461,16 @@ const safeMessages = sanitizeToolMessageOrder(projectToolArgsFailures(req.messag
 
 不修改 sanitize 的正常配对规则；不修改落盘历史。其它适配器是否需要同样投影，以它们是否实际消费这些历史字段为准：若存在独立发送入口，复用同一投影并增加公开入口请求测试，不能只修一个已知 serializer 后留下另一出口。
 
-- [ ] **Step 4：验证最终请求体。** 通过公开 `llm.chat()` 触发发送，捕获 HTTP/requestUrl mock 参数并 JSON.parse body。断言 messages 中失败 ID 不存在，既无它的 tool_calls，也无它的 role=tool；正文/reasoning 保留，正常调用 arguments 仍为正常 JSON。模拟 reload 后的同一持久化序列再次捕获。不得只测辅助函数。
+- [x] **Step 4：验证最终请求体。** 通过公开 `llm.chat()` 触发发送，捕获 HTTP/requestUrl mock 参数并 JSON.parse body。断言 messages 中失败 ID 不存在，既无它的 tool_calls，也无它的 role=tool；正文/reasoning 保留，正常调用 arguments 仍为正常 JSON。模拟 reload 后的同一持久化序列再次捕获。不得只测辅助函数。
 - [ ] **Step 5：验证并提交。** 重跑历史、适配器、循环、compact/context 测试。提交 `fix: 防止失败参数包装污染模型调用历史`。
 
 ### Task 7：即时与重载 UI 显示一致的错误
 
 **Files：** 修改 `src/ui/chat/message-stream/types.ts`、`segment-appender.ts`、`hydrate-session-messages.ts`、`src/ui/chat/ChatView.svelte`、`src/i18n/types.ts`、`zh.ts`、`en.ts`；新建 `src/ui/chat/tool-args-error.ts`、`tests/ui/chat/tool-args-error.test.ts`；扩展现有 segment-appender/hydrate 测试。
 
-- [ ] **Step 1：RED。** 四种失败分类各测 live 事件与 `await hydrateSessionMessages(messages)`。断言 tool 状态 failed、错误文字一致；旧 raw 记录显示原因未知；正常工具、正常失败、MCP raw/null 与 apply_patch 友好路径名称维持现有行为。无 patch 的失败只显示 apply_patch，不从 raw 猜路径。
-- [ ] **Step 2：确认失败。** 运行消息流现有测试与新 helper 测试。
-- [ ] **Step 3：补 i18n 与公共 helper。** 在 Strings 接口加入下面 namespace；zh/en 各用带类型的对象 spread 合并。以下是完整新增字符串：
+- [x] **Step 1：RED。** 四种失败分类各测 live 事件与 `await hydrateSessionMessages(messages)`。断言 tool 状态 failed、错误文字一致；旧 raw 记录显示原因未知；正常工具、正常失败、MCP raw/null 与 apply_patch 友好路径名称维持现有行为。无 patch 的失败只显示 apply_patch，不从 raw 猜路径。
+- [x] **Step 2：确认失败。** 运行消息流现有测试与新 helper 测试。
+- [x] **Step 3：补 i18n 与公共 helper。** 在 Strings 接口加入下面 namespace；zh/en 各用带类型的对象 spread 合并。以下是完整新增字符串：
 
 ```typescript
 export interface ToolArgsStrings {
@@ -508,7 +508,7 @@ export function formatToolArgsUserError(issue: ToolArgsIssue): string {
 }
 ```
 
-- [ ] **Step 4：接入 UI。** ToolCallEntry 增加 `argsIssue?: ToolArgsIssue | null`。live tool.call 保存 payload 元数据；issue 存在时 displayName 用原工具名、status 为 failed、errorMessage 用 helper。`attachToolResult` 增加第四个可选参数 argsIssue，匹配规则不变；只有提供元数据时覆盖 entry.argsIssue，失败时 UI result/errorMessage 用本地化文案，正常路径保留旧处理。tool.result 事件转发元数据。
+- [x] **Step 4：接入 UI。** ToolCallEntry 增加 `argsIssue?: ToolArgsIssue | null`。live tool.call 保存 payload 元数据；issue 存在时 displayName 用原工具名、status 为 failed、errorMessage 用 helper。`attachToolResult` 增加第四个可选参数 argsIssue，匹配规则不变；只有提供元数据时覆盖 entry.argsIssue，失败时 UI result/errorMessage 用本地化文案，正常路径保留旧处理。tool.result 事件转发元数据。
 
 hydrate 对每个 assistant call 使用 `getToolArgsIssue(toolArgs, cur.toolArgsIssue)`；构建相同 entry 字段，对配对 tool result 使用本地化失败文案，避免展开旧结果仍出现“输出被截断/改用移动复制”的旧提示。原会话内容不回写。无 issue 的消息使用原 display/status/result 构建逻辑。
 
@@ -518,7 +518,7 @@ hydrate 对每个 assistant call 使用 `getToolArgsIssue(toolArgs, cur.toolArgs
 
 **Files：** 新建 `tests/tools/tool-contract-recovery.test.ts`；按必要性补前述测试，不扩大产品范围。更新本 plan 与 `docs/superpowers/STATUS.md` 的执行记录。
 
-- [ ] **Step 1：RED。** 使用现有 mock-vault-port 与 Persistence/ContextManager 测试替身。虚拟文件 `notes/a.md` 内容为 `甲\n乙\n丙\n丁\n`。真实 ToolRegistry 注册真实 apply_patch 工具；MockLLM 第一轮返回 `parseToolArguments` 产生的裸补丁失败，第二轮读取请求 messages 并返回下面合法参数，第三轮回复完成：
+- [x] **Step 1：RED。** 使用现有 mock-vault-port 与 Persistence/ContextManager 测试替身。虚拟文件 `notes/a.md` 内容为 `甲\n乙\n丙\n丁\n`。真实 ToolRegistry 注册真实 apply_patch 工具；MockLLM 第一轮返回 `parseToolArguments` 产生的裸补丁失败，第二轮读取请求 messages 并返回下面合法参数，第三轮回复完成：
 
 ```typescript
 const retryArgs = {
@@ -527,9 +527,9 @@ const retryArgs = {
 ```
 
 记录每一轮文件内容、write 调用次数与送进 LLM 的消息。第一轮不写；合法重试只成功落盘一次，最终为 `甲\n乙二\n丙\n丁二\n`，text 统计来自真实工具结果。不拿 MockLLM 的成功响应代替实际文件写入断言。另跑 invalid-shape、output-limit 与旧 raw 分类，无自动补全。此用例验证解析→循环→真实工具；Task 4/6 独立验证真实适配器的入站与最终出站边界，不能将 MockLLM 结果称作真实端点重放。
-- [ ] **Step 2：确认失败后完成最小修正。** `npx vitest run tests/tools/tool-contract-recovery.test.ts`。若新发现契约边界问题，先加失败用例再修正对应模块，不改权限或 Goal 来迁就测试。
-- [ ] **Step 3：全量检查。** 依次执行 `npm test`、`npm run typecheck`、`npm run lint`、`npm run build`。保存命令、退出码及任何基线失败；不能通过只排除失败测试宣称全量通过。新改动后只重跑受影响检查，最终保留一次完整验证。
-- [ ] **Step 4：隐私与范围自审。** `git diff --check`；检查任务 diff 无本机路径、密钥、真实会话、额外 raw 日志、硬编码 UI 字符串。核对 i18n、46 工具摘要覆盖、六个描述及29个参数描述补齐，示例确实通过执行测试。
+- [x] **Step 2：确认失败后完成最小修正。** `npx vitest run tests/tools/tool-contract-recovery.test.ts`。若新发现契约边界问题，先加失败用例再修正对应模块，不改权限或 Goal 来迁就测试。
+- [x] **Step 3：全量检查。** 依次执行 `npm test`、`npm run typecheck`、`npm run lint`、`npm run build`。保存命令、退出码及任何基线失败；不能通过只排除失败测试宣称全量通过。新改动后只重跑受影响检查，最终保留一次完整验证。
+- [x] **Step 4：隐私与范围自审。** `git diff --check`；检查任务 diff 无本机路径、密钥、真实会话、额外 raw 日志、硬编码 UI 字符串。核对 i18n、46 工具摘要覆盖、六个描述及29个参数描述补齐，示例确实通过执行测试。
 - [ ] **Step 5：收口。** 提交 `test: 验证工具参数失败后的同工具恢复`。按 finishing 工作流评估用户文档/架构文档并向用户确认需要同步的项；未获确认不修改架构文档。写明是否实际验证 Sandbox、哪些端点未测。只在所有必需任务和检查完成后将 plan 标 Completed，登记实际合并信息；未合并仍保持 In Progress。依项目规则单独询问归档，不自动归档。
 
 ## 4. 自审与验收依据
@@ -557,4 +557,29 @@ const retryArgs = {
 
 ## 6. 执行记录
 
-2026-10-03：用户要求合并派发 subagent。工作包 A 对应 Task 1–2，B 对应 Task 3–6，C 对应 Task 7–8；以 develop 当前工作区为基线，保留已有未提交改动。
+2026-10-03：按用户要求合并为三个工作包，由 subagent 实施并独立审查。目标为 develop 当前工作区，启动时已有 apply_patch、移动复制、目录约束、模型配置等未提交修改，已保存基线用于比对。本次仅修改修复范围及三个测试基线，不暂存其他工作。
+
+| 工作包 | 任务 | 实施与审查 | 证据 |
+|---|---|---|---|
+| A | Task 1–2 | 实现完成，规范与质量审查通过 | 全部 46 个工具契约与摘要覆盖；8 文件 57 测试通过；移除重复默认源和新增类型错误 |
+| B | Task 3–6 | 实现完成，规范与质量审查通过 | 双响应路径、权限/钩子前拒绝、保存/载入、真实请求投影；7 文件 183 测试通过；生产增量 lint 通过 |
+| C | Task 7–8 | 实现完成，规范、质量及整体审查通过 | zh/en 即时与历史一致；真实补丁原子重试；合法 JSON 内错误结束标记走业务错误，零写入 |
+
+### 最终验证
+
+- `npm test`：271 文件、2003 测试通过，退出码 0。
+- `npm run build`：成功，退出码 0；仍有既有构建警告。
+- `npm run typecheck`：退出码 2。真实基线 245 条 TS 诊断，当前 241；按文件与消息归一比较没有新增，减少 4 条旧 Composer 测试诊断。未宣称全仓类型检查通过。
+- `npm run svelte-check`：退出码 1。基线 257 个错误、21 警告；当前 253 个错误、21 警告；归一比较没有新增。
+- `npm run lint`：退出码 1。基线 9 个错误、当前 6 个既有错误，17 个警告；本次增量没有新增错误，修正既有 pathHint 类型收窄和 ChatView case 作用域问题。
+- `git diff --check` 通过；本次增量未发现本机路径、真实会话、密钥或额外原文日志。
+
+### 偏差与未完成事项
+
+- 用户要求合并派发，因此使用 A/B/C 三个工作包，而非为八个小任务各派实现者；保留独立规范和质量审查。
+- 计划示例 import 路径及 grep 缺省值按实际代码修正；固定默认源避免 spread 重复声明。
+- 三个既有失败仅修正测试：宿主 app mock、发送时间开销隔离、心跳 fake timers。没有为测试改变产品行为。
+- Task 8 是已完成运行时实现后的汇合回归；最初测试搭建失败不是生产缺陷 RED。生产行为 RED 已由 A/B 及 C 消息流测试记录，不虚构链路 RED。
+- 未调用真实模型端点、未写真实 Vault、未操作 Sandbox 或手动验证 Obsidian 画面；自动测试不保证模型永不再输出非法格式。
+- 实现仍保留在 develop 工作区，未提交。提交范围需区分本次修复及相关未提交前置工具实现；不把其他功能工作带入提交。
+- 实现提交后启动 finishing 工作流，按 AGENTS.md 确认文档同步范围；未提前改架构文档。既有类型/lint 失败与提交收口完成前保持 In Progress，不标 Completed，不归档。

@@ -5,7 +5,7 @@
 > **日期:** 2026-10-03
 > **目标分支:** develop
 > **关联:** [S-APPLY-PATCH](2026-10-03-apply-patch-design.md)、[S-NOTE-MOVE](2026-10-01-note-move-design.md)
-> **阶段:** 实施计划 [P-TOOL-CONTRACT](../plans/2026-10-03-tool-contract.md) 已登记为 Pending，未启动代码修复。
+> **阶段:** [P-TOOL-CONTRACT](../plans/2026-10-03-tool-contract.md) 已按三个工作包完成工作区实现与独立审查，2003 测试和构建通过；仍为 In Progress，待提交范围确认与收口。
 
 ## 1. 背景
 
