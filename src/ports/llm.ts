@@ -95,6 +95,8 @@ export interface ChatMessage {
 	toolCallId?: string;
 	toolName?: string;
 	toolArgs?: Record<string, unknown>;
+	/** 缺省兼容旧会话；null 保留合法 raw 业务参数的成功证据。 */
+	toolArgsIssue?: ToolArgsIssue | null;
 	/** 写入会话时的本地墙钟 epoch ms；旧数据缺省（S-CHAT-TIME） */
 	createdAt?: number;
 }
@@ -118,13 +120,23 @@ export interface ChatDelta {
 	usage?: { promptTokens: number; completionTokens: number };
 }
 
-/**
- * 工具调用:由 LLM 决策产生,交给 ToolRegistry 执行。
- */
+/** 工具参数失败种类集中声明，供运行时校验和类型推导共用。 */
+export const TOOL_ARGS_ISSUE_KINDS = ['invalid-json', 'invalid-shape', 'output-limit', 'legacy-unparsed'] as const;
+export type ToolArgsIssueKind = (typeof TOOL_ARGS_ISSUE_KINDS)[number];
+
+/** 参数解析失败证据；原文只沿现有会话边界保存，不混入业务参数。 */
+export interface ToolArgsIssue {
+	kind: ToolArgsIssueKind;
+	raw: string;
+	actualType?: string;
+}
+
+/** 工具调用携带独立解析状态；显式 null 表示已验证的 JSON 对象。 */
 export interface ToolCall {
 	id: string;
 	name: string;
 	args: Record<string, unknown>;
+	argsIssue?: ToolArgsIssue | null;
 }
 
 /**

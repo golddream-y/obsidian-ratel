@@ -880,3 +880,18 @@ describe('compact 投影', () => {
 		expect(transcript[0]?.content).not.toBe(ctx.toMessages()[0]!.content);
 	});
 });
+
+it('失败元数据 - 保存加载与预算裁剪 - 保留失败证据与显式成功',async () => {
+	const sessions=new Map<string,Session>(); const persistence=createMockPersistence(sessions);
+	const ctx=createCtx(persistence,5); await ctx.load('contract'); ctx.addUserMessage('问题'.repeat(300));
+	ctx.addAssistantToolCall({ id: 'bad',name: 'apply_patch',args: {},argsIssue: { kind: 'invalid-json',raw: '原始证据' } },'正文','思考');
+	ctx.addToolResult('bad','X'.repeat(2000));
+	ctx.addAssistantToolCall({ id: 'good',name: 'mcp',args: { raw: '合法' },argsIssue: null },''); ctx.addToolResult('good','结果');
+	await ctx.save();
+	const reloaded=createCtx(createMockPersistence(new Map([['contract',JSON.parse(JSON.stringify(sessions.get('contract')))]])),5);
+	await reloaded.load('contract');
+	expect(reloaded.getTranscript().find(m => m.toolCallId==='bad'&&m.role==='assistant')).toMatchObject({ toolArgsIssue: { kind: 'invalid-json',raw: '原始证据' },content: '正文',reasoning: '思考' });
+	const projected=reloaded.toMessages();
+	expect(projected.find(m => m.toolCallId==='bad'&&m.role==='assistant')?.toolArgsIssue?.kind).toBe('invalid-json');
+	expect(projected.find(m => m.toolCallId==='good'&&m.role==='assistant')?.toolArgsIssue).toBeNull();
+});

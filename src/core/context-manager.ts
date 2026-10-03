@@ -242,6 +242,7 @@ export class ContextManager {
 			toolCallId: toolCall.id,
 			toolName: toolCall.name,
 			toolArgs: toolCall.args,
+			toolArgsIssue: toolCall.argsIssue,
 		};
 		if (reasoning) msg.reasoning = reasoning;
 		session.messages.push(stampCreatedAt(msg));

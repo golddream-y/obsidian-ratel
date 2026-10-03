@@ -31,12 +31,14 @@ vi.mock('node:http', () => ({
 // 关键路径:模拟 node http/https request — 返回 mock req,在 end() 时触发 error 降级
 // behavior='pending' 时不触发任何事件(模拟请求挂起),由 destroy() 触发 error — 供 abort 测试用
 // behavior='headers-then-hang': 已 200 但响应体不出字节(思考阶段),abort 必须能 destroy 响应流
-let mockHttpBehavior: 'error' | 'pending' | 'headers-then-hang' = 'error';
+let mockHttpBehavior: 'error' | 'pending' | 'headers-then-hang' | 'sse' = 'error'
+let mockSseText = '';
+let capturedStreamBody = '';;
 let hangingRes: PassThrough | null = null;
 function createMockHttpRequest(_options: unknown, callback: (res: unknown) => void) {
 	const handlers: Record<string, Array<(arg?: unknown) => void>> = {};
 	const req = {
-		write: () => {},
+		write: (chunk: string) => { capturedStreamBody += chunk; },
 		end: () => {
 			// 关键路径:0ms 后触发 error,让 requestStream 的 Promise reject,降级到 requestUrl
 			if (mockHttpBehavior === 'error') {
@@ -45,6 +47,9 @@ function createMockHttpRequest(_options: unknown, callback: (res: unknown) => vo
 					if (errorHandler) errorHandler(new Error('mock: forced fallback to requestUrl'));
 				}, 0);
 			}
+			if (mockHttpBehavior === 'sse') {
+ setTimeout(() => { const res = new PassThrough(); (res as PassThrough & {statusCode:number}).statusCode = 200; callback(res); res.end(mockSseText); }, 0);
+}
 			if (mockHttpBehavior === 'headers-then-hang') {
 				setTimeout(() => {
 					const res = new PassThrough();
@@ -85,6 +90,7 @@ function buildSseText(events: string[]): string {
 describe('OpenAICompatLLM', () => {
 	beforeEach(() => {
 		mockRequestUrl.mockReset();
+ mockHttpBehavior = 'error'; mockSseText = ''; capturedStreamBody = '';
 	});
 
 	it('sends chat request and yields text deltas', async () => {
@@ -543,4 +549,50 @@ describe('OpenAICompatLLM', () => {
 				mockHttpBehavior = 'error';
 			}
 		}, 3000);
+});
+
+// 关键路径:两条公开入口使用同一数据集，保证降级不会改变分类。
+describe.each(['sse','fallback'] as const)('参数契约公开入口 %s',path => {
+	beforeEach(() => { mockRequestUrl.mockReset(); mockHttpBehavior=path==='sse'? 'sse':'error'; mockSseText=''; capturedStreamBody=''; });
+	function response(raw: string,finish?: string) {
+		return [
+			{ choices: [{ delta: { tool_calls: [{ index: 0,id: 'call-1',function: { name: 'apply_patch',arguments: raw.slice(0,3) } }] } }] },
+			{ choices: [{ delta: { tool_calls: [{ index: 0,function: { arguments: raw.slice(3) } }] } }] },
+			{ choices: [{ delta: {},...(finish? { finish_reason: finish }:{}) }] },
+		].map(x => `data: ${JSON.stringify(x)}\n\n`).join('')+'data: [DONE]\n\n';
+	}
+	it.each([
+		['*** Begin Patch\n*** End of Patch','tool_calls','invalid-json'],
+		['*** Begin Patch\n*** Update File: notes/a.md\n@@\n-乙\n+乙二\n*** End Patch','tool_calls','invalid-json'],
+		['{"patch":','length','output-limit'],['[]','tool_calls','invalid-shape'],
+		['null','tool_calls','invalid-shape'],['"abc"','tool_calls','invalid-shape'],
+		['1','tool_calls','invalid-shape'],['true','tool_calls','invalid-shape'],
+		['{"patch":"text"}','tool_calls',null],['{"raw":"MCP business input"}','tool_calls',null],
+		['*** Begin Patch',undefined,'invalid-json'],
+	])('参数解析 - %s 和 %s - 共享分类 %s',async (raw,finish,kind) => {
+		mockSseText=response(raw as string,finish as string|undefined);
+		mockRequestUrl.mockResolvedValue({ status: 200,text: mockSseText });
+		const llm=new OpenAICompatLLM({ apiBase: 'https://example.com',apiKey: 'test',model: 'test' });
+		const calls=[]; for await(const delta of llm.chat({ messages: [{ role: 'user',content: '调用' }] })) if(delta.toolCall) calls.push(delta.toolCall);
+		expect(calls).toHaveLength(1); expect(calls[0]?.argsIssue?.kind??calls[0]?.argsIssue).toBe(kind);
+		expect(calls[0]?.args).toEqual(kind? {}:JSON.parse(raw as string));
+	});
+	it.each([[true,true],[true,false],[false,true],[false,false]])('出站请求 - reload %s 新元数据 %s - 失败协议移除且合法 raw 正常',async (reload,modern) => {
+		mockSseText='data: [DONE]\n\n'; mockRequestUrl.mockResolvedValue({ status: 200,text: mockSseText });
+		const messages=[
+			{ role: 'user' as const,content: '修改' },
+			{ role: 'assistant' as const,content: '正文',reasoning: '思考',toolCallId: 'bad',toolName: 'apply_patch',toolArgs: modern? {}:{ raw: '私有失败参数' },...(modern? { toolArgsIssue: { kind: 'invalid-json' as const,raw: '私有失败参数' } }:{}) },
+			{ role: 'tool' as const,content: 'Error: 拒绝',toolCallId: 'bad' },
+			{ role: 'assistant' as const,content: '',reasoning: '有效思考',toolCallId: 'good',toolName: 'mcp',toolArgs: { raw: '合法业务' },toolArgsIssue: null },
+			{ role: 'tool' as const,content: '结果',toolCallId: 'good' },
+		];
+		const llm=new OpenAICompatLLM({ apiBase: 'https://example.com',apiKey: 'test',model: 'test' });
+		for await(const delta of llm.chat({ messages: reload? JSON.parse(JSON.stringify(messages)):messages })) void delta;
+		const body=JSON.parse(path==='sse'? capturedStreamBody:mockRequestUrl.mock.calls[0]![0].body);
+		expect(JSON.stringify(body.messages)).not.toMatch(/私有失败参数|"bad"/);
+		expect(body.messages.find((m: { content: string }) => m.content?.includes('正文'))?.reasoning_content).toBe('思考');
+		const good=body.messages.find((m: { tool_calls?: unknown[] }) => m.tool_calls);
+		expect(JSON.parse(good.tool_calls[0].function.arguments)).toEqual({ raw: '合法业务' });
+		expect(body.messages.find((m: { tool_call_id?: string }) => m.tool_call_id==='good')).toBeDefined();
+	});
 });

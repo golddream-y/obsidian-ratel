@@ -10,6 +10,8 @@ import * as https from 'node:https';
 import * as http from 'node:http';
 import type { IncomingMessage } from 'node:http';
 import type { LLMClient, ChatRequest, ChatDelta, ToolCall } from '../ports/llm';
+import { parseToolArguments } from '../core/tool-args';
+import { projectToolArgsFailures } from '../core/tool-args-history';
 import { sanitizeToolMessageOrder } from '../core/tool-message-align';
 import { tNow } from '../i18n';
 import { isLocalHost } from '../secrets/ratel-secrets';
@@ -169,14 +171,8 @@ export class OpenAICompatLLM implements LLMClient {
 
 			// 收尾:把累积的工具调用一次性 yield 出去,text 留空以便调用方区分。
 			for (const [, tc] of toolCallAccumulators) {
-				let args: Record<string, unknown> = {};
-				try {
-					args = JSON.parse(tc.arguments) as Record<string, unknown>;
-				} catch {
-					// 修复:模型截断或残缺 JSON 时,把原始字符串塞入 raw 字段,避免整轮失败。
-					args = { raw: tc.arguments };
-				}
-				const toolCall: ToolCall = { id: tc.id, name: tc.name, args };
+				const parsed = parseToolArguments(tc.arguments, finishReason);
+				const toolCall: ToolCall = { id: tc.id, name: tc.name, ...parsed };
 				yield { text: '', toolCall };
 			}
 
@@ -427,13 +423,8 @@ export class OpenAICompatLLM implements LLMClient {
 		yield* result.deltas;
 
 		for (const [, tc] of toolCallAccumulators) {
-			let args: Record<string, unknown> = {};
-			try {
-				args = JSON.parse(tc.arguments) as Record<string, unknown>;
-			} catch {
-				args = { raw: tc.arguments };
-			}
-			yield { text: '', toolCall: { id: tc.id, name: tc.name, args } };
+			const parsed = parseToolArguments(tc.arguments, finishReason);
+			yield { text: '', toolCall: { id: tc.id, name: tc.name, ...parsed } };
 		}
 
 		if (capturedUsage) {
@@ -474,7 +465,7 @@ export class OpenAICompatLLM implements LLMClient {
 	 * @returns 序列化前的请求体对象。
 	 */
 	private buildRequestBody(req: ChatRequest): Record<string, unknown> {
-		const safeMessages = sanitizeToolMessageOrder(req.messages);
+		const safeMessages = sanitizeToolMessageOrder(projectToolArgsFailures(req.messages));
 		const messages: Record<string, unknown>[] = safeMessages.map((m) => {
 			const msg: Record<string, unknown> = { role: m.role, content: m.content };
 			if (m.role === 'assistant' && m.toolCallId) {

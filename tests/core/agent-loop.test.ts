@@ -1550,3 +1550,27 @@ describe('agentLoop', () => {
 		expect(blob).not.toContain('不要再开新的工具链');
 	});
 });
+
+it.each(['invalid-json','invalid-shape','output-limit','legacy-unparsed'] as const)('执行门控 - %s 与合法 raw 混合 - 非法无副作用且正常调用完成',async kind => {
+	const ctx=new ContextManager(createMockPersistence(),undefined,8000);
+	const bad: ToolCall={ id: 'bad',name: 'apply_patch',args: kind==='legacy-unparsed'? { raw: '秘密正文' }:{},...(kind==='legacy-unparsed'? {}:{ argsIssue: { kind,raw: '秘密正文',actualType: 'array' } }) };
+	const good: ToolCall={ id: 'good',name: 'read_note',args: { raw: '业务' },argsIssue: null };
+	const executeBad=vi.fn(async () => '错误执行'); const executeGood=vi.fn(async () => '成功');
+	const tools=new ToolRegistry();
+	tools.register({ definition: { name: 'apply_patch',description: '',parameters: {} },execute: executeBad });
+	tools.register({ definition: { name: 'read_note',description: '',parameters: {} },execute: executeGood });
+	const hooks=new HookRegistry(); const pre=vi.fn(async (_call: ToolCall) => { }); const post=vi.fn(async (_call: ToolCall) => { }); const failure=vi.fn(async () => { });
+	hooks.register('pre-tool-use',pre); hooks.register('post-tool-use',post); hooks.register('post-tool-failure',failure);
+	const permission=vi.fn(async (_call: ToolCall) => { }); const events: AgentEvent[]=[];
+	for await(const e of agentLoop({ sessionId: 'contract',message: '修改' },ctx,createMockLLM([[{ text: '正文',reasoning: '思考' },{ text: '',toolCall: bad },{ text: '',toolCall: good }],[{ text: '完成' }]]),tools,hooks,undefined,undefined,permission)) events.push(e);
+	expect(executeBad).not.toHaveBeenCalled(); expect(executeGood).toHaveBeenCalledOnce();
+	expect(permission).toHaveBeenCalledOnce(); expect(permission.mock.calls[0]?.[0]).toMatchObject({ id: 'good' });
+	expect(pre).toHaveBeenCalledOnce(); expect(post).toHaveBeenCalledOnce(); expect(failure).not.toHaveBeenCalled();
+	expect(pre.mock.calls[0]?.[0]).toMatchObject({ id: 'good' }); expect(post.mock.calls[0]?.[0]).toMatchObject({ id: 'good' });
+	const result=events.find(e => e.type==='tool.result'&&e.payload.name==='apply_patch');
+	expect(result?.payload).toMatchObject({ argsIssue: { kind } });
+	expect(JSON.stringify(result)).toContain('未执行'); expect(JSON.stringify(result)).not.toMatch(/move_note|copy_note|write_note/);
+	const saved=ctx.getTranscript().find(m => m.toolCallId==='bad'&&m.role==='assistant');
+	expect(saved).toMatchObject({ content: '正文',reasoning: '思考',toolArgsIssue: { kind } });
+	expect(ctx.getTranscript().find(m => m.toolCallId==='good'&&m.role==='assistant')?.toolArgsIssue).toBeNull();
+});

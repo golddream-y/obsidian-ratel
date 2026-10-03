@@ -25,7 +25,7 @@ import {
 	withToolDeadline,
 } from './loop-stability';
 import { tNow } from '../i18n';
-import { isTruncatedToolArgs, TRUNCATED_TOOL_ARGS_ERROR } from './truncated-tool-call';
+import { getToolArgsIssue, formatToolArgsModelError } from './tool-args';
 import { measureOutbound } from './outbound-measure';
 import { recordUsageCalibration } from './usage-calibration';
 
@@ -298,7 +298,7 @@ export async function* agentLoop(
 			}
 
 			// 关键路径:检测 max_tokens 截断。finishReason === 'length' 表示模型输出被 token 上限切断,
-			// 此时 accumulatedText 可能不完整,且 toolCalls 中最后一个可能有残缺 JSON args(已在适配器层降级)。
+			// 此时 accumulatedText 可能不完整,且 toolCalls 中不可解析的参数已在适配器层标记独立失败证据。
 			// 策略:追加截断提示入库,并 yield error 让 UI 显示警告;如果有工具调用仍执行,否则 break。
 			if (finishReason === 'length') {
 				devLogger.warn('agent', `LLM 输出被 max_tokens 截断 (step=${step}),已输出 ${accumulatedText.length} 字符`);
@@ -317,7 +317,7 @@ export async function* agentLoop(
 					loopExitedViaBreak = true;
 					break;
 				}
-				// 有工具调用 → 继续执行工具(截断的 toolCall args 可能有 raw 字段),然后让下一轮 LLM 续传。
+				// 有工具调用 → 合法参数继续执行，非法参数由下方门控拒绝，然后让下一轮 LLM 续传。
 			}
 
 			// 无 toolCall → 纯文本收笔;短正文且思考更长时同一轮再请求一次(见 turn-carry)。
@@ -364,20 +364,22 @@ export async function* agentLoop(
 			for (const tc of toolCalls) {
 				const pathHint = ['path', 'file', 'note', 'filePath']
 					.map((key) => tc.args[key])
-					.find((value) => typeof value === 'string' && value.trim().length > 0);
+					.find((value): value is string => typeof value === 'string' && value.trim().length > 0);
 				onBreadcrumb?.('loop.tool', pathHint ? `${step}:${tc.name}:${pathHint}` : `${step}:${tc.name}`);
 				if (signal?.aborted) {
 					yield { type: 'error', payload: { code: 'CANCELLED', message: '用户取消' } };
 					loopExitedViaBreak = true;
 					break;
 				}
-				yield { type: 'tool.call', payload: { name: tc.name, args: tc.args } };
+				const argsIssue = getToolArgsIssue(tc.args, tc.argsIssue);
+				const checkedCall = { ...tc, argsIssue };
+				yield { type: 'tool.call', payload: { name: tc.name, args: tc.args, argsIssue } };
 
-				// 关键路径:输出被 max_tokens 截断时参数只剩 raw，执行会把缺字段报成路径错误。
-				if (isTruncatedToolArgs(tc.args)) {
-					const message = TRUNCATED_TOOL_ARGS_ERROR;
-					yield { type: 'tool.result', payload: { name: tc.name, result: `Error: ${message}` } };
-					ctx.addAssistantToolCall(tc, accumulatedText, turnReasoning);
+				// 修复:非法参数必须先拒绝，不能进入权限、钩子或任何工具副作用。
+				if (argsIssue) {
+					const message = formatToolArgsModelError(tc.name, argsIssue);
+					yield { type: 'tool.result', payload: { name: tc.name, result: `Error: ${message}`, argsIssue } };
+					ctx.addAssistantToolCall(checkedCall, accumulatedText, turnReasoning);
 					ctx.addToolResult(tc.id, `Error: ${message}`);
 					accumulatedText = '';
 					continue;
@@ -390,7 +392,7 @@ export async function* agentLoop(
 					} catch (err) {
 						const message = err instanceof Error ? err.message : String(err);
 						yield { type: 'error', payload: { code: 'TOOL_DENIED', message } };
-						ctx.addAssistantToolCall(tc, accumulatedText, turnReasoning);
+						ctx.addAssistantToolCall(checkedCall, accumulatedText, turnReasoning);
 						ctx.addToolResult(tc.id, `Error: ${message}`);
 						accumulatedText = '';
 						continue;
@@ -402,7 +404,7 @@ export async function* agentLoop(
 				if (!preDecision.allowed) {
 					const message = `工具调用被拒绝: ${preDecision.reason ?? '未知原因'}`;
 					yield { type: 'error', payload: { code: 'TOOL_DENIED', message } };
-					ctx.addAssistantToolCall(tc, accumulatedText, turnReasoning);
+					ctx.addAssistantToolCall(checkedCall, accumulatedText, turnReasoning);
 					ctx.addToolResult(tc.id, `Error: ${message}`);
 					accumulatedText = '';
 					continue;
@@ -435,7 +437,7 @@ export async function* agentLoop(
 					toolFailed = true;
 				}
 
-				yield { type: 'tool.result', payload: { name: tc.name, result } };
+				yield { type: 'tool.result', payload: { name: tc.name, result, argsIssue } };
 
 				// 关键路径:activate/deactivate 后只刷新 Discovery(ADR-012:指令已在 messages)。
 				if (
@@ -497,7 +499,7 @@ export async function* agentLoop(
 				// 第一个工具携带 accumulatedText(模型在工具调用前的文本),后续工具 text 为空,
 				// 避免在上下文中重复插入相同文本。
 				// 安全路径:turnReasoning 整轮复用,满足 thinking 模式 tool 轮回传契约。
-				ctx.addAssistantToolCall(tc, accumulatedText, turnReasoning);
+				ctx.addAssistantToolCall(checkedCall, accumulatedText, turnReasoning);
 				ctx.addToolResult(tc.id, JSON.stringify(result));
 				accumulatedText = '';
 			}

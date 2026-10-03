@@ -11,7 +11,7 @@
  */
 
 // ==================== 端口类型 re-export ====================
-import type { AttachmentRef, LlmRetryWait } from './ports/llm';
+import type { AttachmentRef, LlmRetryWait, ToolArgsIssue } from './ports/llm';
 import type { BreadcrumbPhase } from './logging/breadcrumbs';
 export type { ChatMessage, ChatDelta, ToolCall, ToolDefinition } from './ports/llm';
 export type { VectorSearchResult, SearchFilter } from './ports/vector';
@@ -42,8 +42,8 @@ export type AgentEvent =
 				stepCompletionTokens?: number;
 			};
 	  }
-	| { type: 'tool.call'; payload: { name: string; args: unknown } }
-	| { type: 'tool.result'; payload: { name: string; result: unknown } }
+	| { type: 'tool.call'; payload: { name: string; args: unknown; argsIssue?: ToolArgsIssue | null } }
+	| { type: 'tool.result'; payload: { name: string; result: unknown; argsIssue?: ToolArgsIssue | null } }
 	| {
 			type: 'search.result';
 			payload: {
