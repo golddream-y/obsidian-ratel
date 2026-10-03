@@ -1,305 +1,284 @@
 # Ratel User Guide
 
-[English](user-guide.en.md) | [简体中文](user-guide.md)
+**English** · [简体中文](user-guide.md)
 
-> For day-to-day use. After the plugin and the chat model are set up, look up a topic below.
+Start with your first search, then use Ratel to organize notes, configure plugins, run a diary workflow, and continue longer tasks. Ratel runs in desktop Obsidian and requires version 1.13.1 or later.
 
----
+Complete [installation and your first query](#1-install-and-complete-your-first-query) first. If your model is already configured, choose a task:
 
-## 1. What this is
+- [Find notes and write a summary](#2-find-understand-and-organize-notes)
+- [Install, configure, and restore plugins](#3-install-and-maintain-your-plugin-setup)
+- [Plan today, close out work, and review the month](#4-plan-today-close-out-work-and-review-the-month)
+- [Memory and long-running goals](#5-remember-conventions-and-continue-longer-tasks)
+- [Chats, images, skills, and MCP](#6-manage-chats-and-use-extensions)
+- [Permissions and privacy](#7-control-permissions-and-data-sharing)
+- [Troubleshooting, commands, and settings](#8-troubleshooting-and-reference)
 
-Ratel is a desktop **vault AI Agent** for Obsidian. It answers questions, reads notes across several steps, writes summaries, and remembers preferences. The index runs locally. Keys stay in the keychain. The only network calls are to the model API you configure.
+## 1. Install and complete your first query
 
-**For:** vault Q&A, summaries, recent notes, a long-running goal across chats, and custom skills.  
-**Not for:** mobile, or workflows that need web search or a shell. This plugin does not do those.
+Follow this sequence: install → configure a chat model → review permissions → wait for indexing → ask and verify sources. You do not need to organize tags or links beforehand.
 
----
+### Install and configure a model
 
-## 2. Install and first five minutes
+1. In Obsidian, open **Settings → Community plugins → Browse**, search for **Ratel**, install, and enable it.
+2. Open **Settings → Ratel → Chat model** and click the row marked Current under Saved setups. Choose a provider, then a model. Ollama is under On this machine; search Common providers for Volcengine or DeepSeek. For a custom endpoint, enter its API Base and model name. Use a model available from your provider or installed locally.
+3. For a remote service, enter the API key in that setup's API key field. It is automatically synced to Obsidian Keychain for encrypted storage; no separate manual entry is needed. Local Ollama usually uses `http://localhost:11434/v1` without a key; start Ollama and prepare the model first.
+4. Check the key status in Ratel settings. Your chosen provider charges for model usage.
 
-### 2.1 Install
+To keep another chat setup, return to Saved setups and click Save current setup. The model name at the top of chat switches setups. Each setup has its own key.
 
-1. Obsidian → **Settings** → **Community plugins** → turn off Restricted mode
-2. **Browse** → search **Ratel** → install and enable
-3. The 🦡 icon appears in the left ribbon
+Embeddings run locally by default. First use downloads the model and WASM runtime assets, then indexes your notes. You can keep using Obsidian during this process. The strip above the chat input shows progress and explains why sending is blocked until ready.
 
-> Requires Obsidian **1.13.1+**, **desktop only**.
+### Review permissions
 
-### 2.2 First open
+**Built-in tools default to Allow, including writing and deleting notes and configuring plugins. Safe mode does not ask for each operation when the tool is set to Allow.**
 
-1. **Set the chat model** (Settings → Ratel → **Chat model**)
-   - Pick a DeepSeek or Ollama preset, or enter a custom base and model
-   - DeepSeek: add keychain secret `ratel-chat-openai-compatible`; default model `deepseek-v4-flash`
-   - Ollama: set the base to `http://localhost:11434/v1` (usually no key)
-2. **Wait for the index.** The status strip above the input shows progress. You can keep using Obsidian.
-3. Click the 🦡 ribbon (or run `Ratel: Ask vault`) and ask.
+To review changes first, go to **Settings → Ratel → Memory & permissions → Tool permissions**. Set write, append, edit, delete, and plugin-changing tools to Ask, and keep Safe mode selected. See [permissions](#7-control-permissions-and-data-sharing) for the complete rules.
 
-The default embedding model is local ONNX. The first run downloads it (tens of MB). After that it works offline.
+### Run your first search
 
-### 2.3 Interface language
+Open chat using the 🦡 ribbon icon. Choose a topic you know exists in your vault and ask:
 
-Settings → Ratel → **Chat model** → Language: `auto` / 中文 / English. The UI switches immediately. Command names in the command palette refresh after you restart Obsidian.
+> Find my notes about project retrospectives. Briefly describe each one and list the sources. Do not change any files yet.
 
----
+Click a citation or expand the source list to open the original notes. Check relevance and accuracy. Finding relevant notes and opening their sources completes your first use. If nothing matches, try words from the notes or select a known note with `@` before asking.
 
-## 3. How to ask
+## 2. Find, understand, and organize notes
 
-| You want… | You can say… | Ratel will… |
+### Find and read
+
+Ask by topic, or specify an active note, file, tag, or property. Use vault-relative paths. Type `@` to select a note, or right-click a Markdown file and choose **Add to Ratel**. Selecting a path does not preload the whole note into the input; the assistant reads it as needed.
+
+| Task | Example | Check |
 |---|---|---|
-| A topic | “What did I write about performance tuning?” | `search_vault` → citations `[1][2]` → open the note |
-| One note | “Summarize `notes/xxx.md`” | `read_note` (frontmatter, tags, backlinks) |
-| Today’s date | “What day is it?” | Usually no tool. Local time is already in the turn |
-| An exact date | “What date is three days from now?” | `get_datetime` |
-| The open note | “Summarize this note” | `get_active_note` → `read_note` |
-| Open a note | “Open that reading note” / “Jump to chapter two” | `open_note` at a heading or block |
-| Recent edits | “Which notes changed recently?” | `list_recent_notes` |
-| Today’s daily note | “Where is today’s daily note?” | `get_daily_note` (probe only, **does not create**) |
-| An outline | “What headings does this note have?” | `get_note_outline` (heading cache, not the full file) |
-| Links | “Who links here?” / “Where does this link?” | `get_links` (includes unresolved links) |
-| A tag | “Find notes tagged `#project`” | `search_by_tag` (nested tag prefixes) |
-| A property | “Find notes with `status: draft`” | `search_by_property` (omit value to test that the key exists) |
-| A vault overview | “What tags and orphan notes are there?” | `get_vault_structure` |
-| A write-up | “Turn the product-planning notes into a background doc” | Several search steps, then read and write (writes ask by permission) |
-| A long-running goal | “`/goal` fill in properties for a folder” | Restates the done criteria and round budget, then creates after you agree. See [§6](#6-long-running-goals) |
-| Config or a fault | “Switch my model” / “Why isn’t indexing running?” | Built-in config skill → `get_app_config` → change a whitelisted setting or open Settings. Keys are guided into the keychain, never filled in |
+| Recall a topic | Which notes discuss cache invalidation? | Are the sources relevant? |
+| Understand the active note | Summarize this note and list unresolved questions. | Does the original support the conclusions? |
+| Inspect relationships | What links here? Which outgoing links are unresolved? | Open related notes to check. |
+| Filter notes | Find notes tagged project with status draft. | Do tags and properties match? |
+| Open a location | Open the second section of `Projects/Plan.md`. | Did it navigate to the right heading or block? |
+| Review recent work | Which notes changed recently? | Do files and dates match? |
 
-While the answer streams you can see tool calls. Models that support reasoning (DeepSeek-R1 / V4) show a collapsible thinking block. A dotted orb marks thinking, writing, and tool calls. Search hits sit under the answer as a collapsed “N sources” row. If the answer already has clickable `[1][2]`, that row stays hidden.
+A citation gives you a source to inspect; it does not guarantee a correct conclusion. Verify important claims in the original. If no note is open, specify a path or use `@` instead of asking about “this note.”
 
-Blue `[1]` and `[7]` in the text are indexes from the **latest search in this chat**, not section numbers. Hover for the path, click to open. They stay clickable after later turns.
+### Write a document from several notes
 
-You can drag-select the answer, the thinking block, and tool details. The header and the input are not selectable.
+Specify scope, output, and whether to write:
 
-### 3.1 Ask with an image
+> Use notes under Projects/Example to draft the project background, key decisions, and open questions. Keep sources. Show the draft in chat without modifying files.
 
-Attach an image in the input. A message still needs text.
+Check for missing material, unsupported assumptions, and irrelevant citations. Once satisfied, ask:
 
-The image goes to the current chat model. A local Ollama vision model or a remote vision model can read it. A text-only model such as DeepSeek returns an error: remove the image or switch models.
+> Write this draft to Projects/Example/Background.md. If the file already exists, read it first and explain which sections will change.
 
-After a restart, images in old bubbles remain. Image files live in the plugin folder, not inside the session JSON.
+Tool execution appears in chat; confirmation depends on permissions. Open the destination afterward and check content, links, and scope. Plugin recovery backups are not note version history. Use your own backup or versioning for ordinary note changes.
 
----
+## 3. Install and maintain your plugin setup
 
-## 4. Sessions
+### Set up the diary workflow
 
-The short title chip (clock icon) at the top right opens recent chats: open an old one, start a new one, or hover a row to delete it. Closing the sidebar or restarting returns you to the last session.
+The built-in setup is for recording work time blocks in daily notes and tracking goals in a monthly ledger. Ask:
 
-| You want… | Do this |
-|---|---|
-| Rename | **✎** next to the chip → edit and save, or **AI summary** for a short title and a normal title |
-| Switch or start new while generating | Confirm first. The current reply stops and is marked stopped |
-| “Don’t ask again this session” | Grants that **tool name** for the whole chat. `/new` or a session switch clears it |
+> Set up daily notes and monthly reviews.
 
-`/new` and “New chat” are the same path. A chat that has content stays in the list. Empty chats are not piled up.
+Or type `/install-diary-plugins`. Selecting a skill puts it in the input; press Enter again to send.
 
-A divider marks a new calendar day (“today / yesterday / a date”). The history list shows the calendar day instead of only `2d`.
+Ratel explains the proposed installation and configuration and asks for a diary root folder, suggesting `Work/Diary`. Check whether the folder fits your existing vault. With an English interface, the skill asks whether to translate the Chinese template headings and prompts.
 
-### Tool permission level
+After confirmation, it installs Templater, Dataview, and Day Planner as needed, writes daily and monthly templates, aligns the core daily-note settings and plugin configuration, and remembers the locations. Existing templates are not overwritten automatically. Existing flat daily notes in the chosen root may be moved into month folders; review the proposed changes.
 
-Under the input: **Safe** (ask before write or delete) / **Auto** (read and write proceed; delete still confirms) / **Danger** (no confirm).  
-The same control is under Settings → Memory and permissions. A tool set to Deny always stays denied.  
-The same page has “Allow access outside the vault”, off by default. When it is on, the agent can list folders outside the vault, read those files, copy a file into the vault, and run a command on this computer. Those four tools ask by default, in both Safe and Auto. Chat cannot turn the switch on for you.
+Check the result:
 
----
+1. Templates exist and the diary directory matches your convention.
+2. Create or open today's note using Obsidian's core Daily notes feature. Check the template and monthly ledger. The installation skill does not create today's note itself.
+3. Add a task with start and end times under the configured work-task heading and check that Day Planner displays it. The original Chinese heading is “🧸 今天的任务记录：”; use the translated heading if you chose translation.
 
-## 5. Daily note convention
+**After changing Day Planner's heading, fully quit and reopen Obsidian. Reloading the plugin or app alone is insufficient.** This workflow enables Dataview JS; review that setting when approving the setup.
 
-Settings → Ratel → **Memory and permissions** → daily note:
+### Manage other plugins
 
-| Item | Default | Notes |
+Describe a need or name a plugin:
+
+> Find a community plugin for project kanban boards and explain the recommendation. Do not install it yet.
+
+> Check Dataview's status and change only the settings I name. Preserve everything else.
+
+Ratel can search, install, update, uninstall, and change individual configuration fields. It uses plugins in the official community catalog, not arbitrary download URLs, and does not fill in secrets. If a plugin cannot be enabled immediately, follow the reload instructions and test the actual feature.
+
+### Inspect and restore changes
+
+Plugin changes keep records and recovery backups. To undo a change, first ask:
+
+> List recent plugin changes and explain what each changed.
+
+Select a specific entry and request restoration. Restoring writes the recorded snapshot back; newer changes to that plugin may be overwritten. Expired backups cannot be restored. These snapshots do not replace a long-term backup of your vault.
+
+Reload the app after restoration and check the plugin's version, settings, and enabled state. A diary setup includes templates, memory, and host settings as well as plugins. Restoring one plugin backup does not undo the entire setup.
+
+## 4. Plan today, close out work, and review the month
+
+Set up the diary environment first, or tell Ratel where your existing daily notes and monthly ledger are. Use `/diary-month-ledger` to invoke the built-in workflow explicitly, or ask for a task below.
+
+| When | Ask | Input and output |
 |---|---|---|
-| Folder | (empty = vault root) | Path relative to the vault |
-| Filename format | `YYYY-MM-DD` | `YYYY` / `MM` / `DD` |
+| Start work | Plan today's work. | Read monthly goals and yesterday's unfinished tasks; draft today's time blocks. |
+| Finish work | Sync today's ledger. | Extract today's work records, append them to the monthly ledger, and update goal progress. |
+| End of month | Review this month and draft next month's goals. | Summarize daily notes and the ledger; carry unfinished goals forward after confirmation. |
 
-`get_daily_note` **only checks whether the path exists**. It does not create the note. Ask Ratel to `write_note`, or create the file yourself.
+The skill reads relevant records, explains which files it will change, and waits for confirmation before writing. Time blocks belong under the configured work-task heading, for example `- [ ] 08:50 - 10:50 Organize project material`. You maintain the daily narrative. Closeout synchronization leaves the original detailed tasks intact.
 
----
+Check dates, time blocks, goal associations, and statuses afterward. The monthly ledger tracks broad progress; daily notes retain the detail. Unfinished goals move to the next month only with your agreement.
 
-## 6. Long-running goals
+If notes cannot be found or conventions are unclear, locate the folders and update memory first. Core daily notes may be organized into year and month folders, so checking only the root can miss today's note. Asking where today's note is only locates it; it does not create it.
 
-Use `/goal` for work that spans many rounds or a new chat. Ordinary questions do not need it.
+You initiate these tasks. Scheduled proactive briefings, an insight inbox, and automatic knowledge maintenance have not been delivered.
 
-**Create**
+## 5. Remember conventions and continue longer tasks
 
-- Type `/goal` plus a statement, for example `/goal fill in properties for a folder`. A bare `/goal` only shows usage. `30m` / `2h` prefixes are ignored.
-- The assistant restates the done criteria and the round budget. It creates the goal after you agree. The bubble shows the command you typed.
-- Only one incomplete goal at a time. A second one asks: drop the current goal, or keep it.
-- To change the default round budget for **future** goals, use the config skill. To add rounds to **this** goal, raise this goal’s budget in chat. That does not change the global default.
+### Record and correct memory
 
-**Continue**
+> Remember: project material belongs in Projects. Keep sources in summaries and show a draft first.
 
-- The goal stays with the vault across chats and restarts. The done criteria stay on the **bound chat** and survive compaction.
-- The status bar and a strip above the input show in progress, paused, blocked, or budget exhausted. A new chat cannot see the criteria until you **take over** and bind the goal to this chat.
-- If you granted a folder at creation, batch edits there ask less often. Pausing the goal revokes that grant. Stopping generation is not the same as pausing the goal.
+Ask what conventions it remembers, change one, or ask it to forget. Open **Settings → Ratel → Memory & permissions → View memory**, or use memory management in the chat status drawer to browse, edit, and clean up entries.
 
-**Finish**
+Memory and automatic writing are enabled by default. Disable automatic writing in settings if you do not want it. Memory provides context; it neither replaces tool permissions nor guarantees that a model follows every instruction.
 
-- When the criteria are met, confirm in chat. The goal closes. There is no extra keep-or-drop prompt.
-- The list is at the bottom of the status drawer (“Goals”), or Settings → Memory and permissions → **View goals** (pause, resume, drop, archive). Archive is only a manual action there.
-- When rounds run out, it stops and asks: add rounds, pause, or drop. Hitting the round count is not “done”. Settings only keep the default round budget, a per-round token soft cap, and days before archive.
+Memory is ordinary Markdown under `.ratel/memory/`: `global.md` stores general conventions, `topics/` stores topic memory, and `index.md` indexes topics. You can edit these files directly. Global injection has a size limit; important headings can include `[pinned]`. Adjust how many related topics are injected automatically in settings; 0 disables automatic topic injection.
 
----
+### Create and continue a goal
 
-## 7. Memory
+Use a goal for work requiring several rounds:
 
-Say “remember that I prefer Tailwind” or “forget X”.
+> /goal Check notes under Projects/Example and fill in missing status properties. Leave existing values unchanged and list modified files when finished.
 
-| Path | Contents |
+The assistant agrees completion criteria and a round limit with you before creating it. Only one unfinished goal can exist at a time. `/goal` does not support time-limit prefixes such as `30m` or `2h`.
+
+Goals stay with the vault. The status strip shows running, paused, blocked, or round budget exhausted. In a new chat, click **Take over** to bind the goal there; the new chat does not automatically have the old chat's completion criteria.
+
+Stopping generation and pausing a goal are separate actions. Pause, resume, abandon, or archive through the goal list in the status drawer or **Settings → Ratel → Memory & permissions → View goals**. Pausing revokes the goal's directory grant.
+
+When rounds run out, add rounds to that goal or stop for now. The default round limit in settings affects future goals only. Check completion criteria and files before confirming completion in chat. A goal is not a scheduled task and does not keep running with Obsidian closed.
+
+## 6. Manage chats and use extensions
+
+### Chats and images
+
+The title button at the top right opens history to restore, create, or delete chats. The adjacent edit button changes the title manually or requests an AI title. Switching during generation asks for confirmation and stops the current reply. Closing the sidebar or restarting restores the last chat.
+
+`/new` starts a chat. `/compact` compresses context sent to the model while keeping visible chat history. Automatic compression near the context limit is enabled by default and can be disabled in Chat model settings. Save important conventions in memory and use goals to retain completion criteria for longer work.
+
+Attach images in the input alongside text. They go to the current chat model, which must support vision; text-only models may reject them. Images are stored locally and remain visible in history after restart.
+
+### Use and manage skills
+
+A skill is a reusable method. Built-in skills cover diary setup, daily ledger work, and Ratel configuration. Name one in chat or select it from the `/` menu.
+
+To install your own skill, place its folder containing `SKILL.md` under the vault's `.ratel/skills/`, or under `.ratel/skills/` in your user home directory, then reload the plugin. A vault skill takes precedence over a global skill with the same name. The Skills panel in the status drawer shows sources and supports enabling, disabling, editing, and deleting. Built-in skills are updated with the plugin and cannot be edited directly.
+
+Skills can include text in `references/` and JavaScript in `scripts/`. Scripts run in a sandbox without network access or external module loading, and cannot access Obsidian's configuration directory. Enabling host access does not loosen this sandbox. First execution asks for trust: allow and remember, allow once, or reject.
+
+Scripts without progress time out after 30 seconds by default. Long tasks reporting progress can keep running, up to 10 minutes. Three consecutive failures block execution until trust is confirmed again. Adjust the unresponsive timeout in Advanced settings. See the [scene skill guide](contributing/scene-skill.md) for authoring details.
+
+### Connect MCP
+
+Open **MCP** management from the status drawer. Add an HTTP or local-command server, or import Claude / Cursor JSON configuration. Review the source, command, and data destination before enabling. Local-command servers may start processes; remote tools send parameters to their servers.
+
+Enabled tools appear in chat and follow their individual permissions. External tools ask by default. Auto mode retains the rules for high-impact tools; Danger mode skips confirmation. To use web search, configure a server providing it. If a connection fails or no tools appear, wait for enabling to finish, then refresh to reconnect.
+
+## 7. Control permissions and data sharing
+
+### Tool permissions
+
+Select a mode below the chat input or in **Settings → Ratel → Memory & permissions**. Set each tool to Allow, Ask, or Deny.
+
+| Mode | Behavior without additional grants |
 |---|---|
-| `.ratel/memory/global.md` | Global preferences, injected at start (about 20KB, then truncated). A heading with `[pinned]` (for example `## Output style [pinned]`) is never truncated |
-| `.ratel/memory/topics/` | Topic memories. Each turn injects the most relevant names and summaries. The model fetches the full text when needed |
-| `.ratel/memory/index.md` | Topic index |
+| Safe | Follow each tool's setting: Allow executes, Ask requests confirmation, Deny blocks. |
+| Auto | Ordinary tools may execute directly. High-impact tools such as deletion, plugin changes, host access, and MCP still follow their individual settings. |
+| Danger | Skip confirmation; tools set to Deny stay blocked. |
 
-These are plain Markdown. The storage cap is about 10MB. Memory is sent only to the model endpoint you configure.
+**Most built-in tools default to Allow, including writing, deletion, and plugin changes.** To review these operations each time, set them to Ask and use Safe mode. Auto mode permits ordinary writing tools even when set to Ask.
 
-Open it from the status drawer → **Memory**, or Settings → Memory and permissions → view memory.
+“Do not ask again in this chat” grants permission by tool name, not by a single path. Switching chats or `/new` clears it. A goal's directory grant can also reduce confirmations; pause the goal to revoke that grant. Deny always takes precedence. A skill's instruction to ask first is a workflow convention; enforced blocking depends on tool permissions. Changes to `AGENTS.md` have a separate mandatory confirmation that Allow, Danger mode, and existing grants do not bypass.
 
-The number of topics injected each turn is under Settings → Memory and permissions → **Related topics to inject** (0–10; 0 turns it off). “Hit N times” on a topic is how often it was injected.
+### Outside files and local commands
 
----
+Host access is off by default and must be enabled manually in settings. Chat-based configuration cannot enable it. Once enabled, Ratel can list outside directories, read outside text files, import files unchanged, and run local commands. These four tools default to Ask. Safe and Auto modes process them according to individual settings and existing grants; Danger mode skips confirmation.
 
-## 8. Skills
+Absolute paths copied from your file manager can be pasted into the input but are not treated as vault notes. Read content may enter model context. Commands can affect files or access the network; review the command and working directory when confirming. Turning host access off blocks these tools again.
 
-Put a folder that contains `SKILL.md` in:
+### Storage and connections
 
-- the vault: `.ratel/skills/`
-- global: `~/.ratel/skills/`
-- or use a skill shipped with the plugin
-
-**Installed means enabled.** The three sources merge at startup (a vault skill wins on the same name). Name the skill in chat.
-
-Manage them from the status drawer → **Skills**:
-
-- See installed skills, with a source badge (built-in / vault / global)
-- Toggle one skill. It applies immediately and survives restart
-- Read the full text
-- Edit: a vault skill opens in Obsidian; a global skill opens in the file manager
-- Delete: two confirmations. Built-in skills are read-only and update with the plugin
-
-`SKILL.md` needs frontmatter (`name`, `description`, and so on) plus instructions. Prefer a `kebab-case` folder name.
-
-### Scripts and references
-
-| Folder | Contents | How the agent uses it |
-|---|---|---|
-| `scripts/` | JavaScript (`.js` / `.mjs` / `.cjs` only) | Runs when needed and returns the result |
-| `references/` | Text such as templates and checklists | Read on demand (100KB per file) |
-
-**Sandbox:** no network, no external modules. File access is limited to the current vault and that skill folder. A stuck script is stopped. Only JavaScript runs. For Python or a shell, configure an MCP server. A non-JavaScript file is not executed; the agent says why.
-
-**First run asks.** The dialog names the skill, the script, and the folder. Three choices:
-
-- **Allow and remember** — whitelist; no further prompt
-- **Only this time**
-- **Deny** (Escape or clicking the mask is the same) — skipped; the agent tries another way
-
-**Two kinds of timeout.** A script that keeps reporting progress is not killed at the limit (default 30 seconds). The agent sees the progress and decides to wait or stop, and tells you. A script with no progress heartbeat past that limit is treated as stuck and stopped. After 10 seconds with no progress you see “still running (you can keep waiting)”. No script runs longer than 10 minutes. Change the stall timeout under Settings → Advanced → script unresponsive timeout (5–120 seconds). The agent can change it too.
-
-**Circuit breaker.** Three failures in a row (stuck, over 10 minutes, or a crash; an agent-chosen stop does not count) disable the script and show a notice. The agent uses another method. Choosing **Allow and remember** again clears the failure count.
-
----
-
-## 9. Slash commands and the command palette
-
-Type `/` in chat:
-
-| Command | Effect |
+| Activity | Storage or destination |
 |---|---|
-| `/new` | New chat |
-| `/goal` | Long-running goal. See [§6](#6-long-running-goals) |
-| `/compact` | Compress what is sent to the model. The chat transcript stays. Can run automatically (on by default) |
-| `/model` | Show the current model |
-| `/reindex` | Force a full reindex |
+| Indexes, chats, attachments, and diagnostics | Local plugin directory. No telemetry; diagnostics exclude note bodies. |
+| Memory | `.ratel/memory/` in the vault; relevant memory is included in chat context. |
+| Chat model | Questions, selected note content, memory, tool results, and attachments may go to the configured endpoint. |
+| Remote embeddings or reranking | When enabled, relevant note text or candidate passages go to those endpoints. |
+| First local embedding setup | Model download from ModelScope; WASM runtime download from jsDelivr. |
+| MCP | Connections to enabled servers and tool-call parameters; boundaries depend on the server. |
+| Plugin installation and updates | Official community catalog and the selected plugin's GitHub release. |
 
-Type `@` to complete a vault note by name or path. The message keeps the `@relative/path` text and does not pre-read the file. You can also right-click a Markdown file → **Add to Ratel**. An absolute path copied from Finder can be pasted into the input. Reading that file needs “Allow access outside the vault” turned on.
+Chat model keys entered in model settings are automatically synced to Obsidian Keychain for encrypted storage, not written to Ratel's `data.json`. The assistant does not fill them in. Local embeddings do not make remote chat offline. Local Ollama with downloaded embedding assets and no external tools can process work on this machine.
 
-Command palette (not in the `/` menu):
+A vault-wide blacklist has not been delivered. For material that must not reach a remote endpoint, do not rely only on the scope stated in a prompt. Choose a suitable local model or use a separate vault.
 
-- `Ratel: Ask vault` / show index status
-- Pause / resume automatic indexing
-- Clear the index (dangerous; asks first)
+## 8. Troubleshooting and reference
 
----
+### Troubleshoot by symptom
 
-## 10. Settings
-
-**Settings → Ratel** has five tabs:
-
-| Tab | Common items |
+| Symptom | What to check |
 |---|---|
-| **Chat model** | Language, preset (DeepSeek / Ollama / custom), model, API base, keychain status, auto-compact (on by default) |
-| **Note index** | Embedding, chunking / auto-index, rerank. Markdown only. Images are not chunked as notes |
-| **Memory and permissions** | Default goal rounds and “view goals”, memory switch and panel, daily-note convention, access outside the vault (off by default), tool permission level, every tool including MCP |
-| **Appearance** | Color mode (follow Obsidian / light / dark), accent swatches, mascot. Affects the Ratel panel only. Preview is immediate |
-| **Advanced** | Context length, model registry, prompt overrides, memory capacity, developer options, diagnostics |
+| Cannot send | Read the reason above the input; check keys, endpoint, and indexing status. |
+| First indexing never finishes | Check downloads and network; expand the strip for index and embedding status, then inspect diagnostics. |
+| Model request fails | Verify Base, model name, key, and provider quota. For Ollama, check the process and installed model. |
+| A known note is missing | Try original wording or an `@` path. Only Markdown is indexed. Rebuild if needed. |
+| Embedding or chunking changes have no effect | Restart Obsidian, check the index, and use `/reindex` if needed. |
+| Diary template or timeline does not work | Check templates, core daily-note folders, and plugin settings. Fully quit and reopen after changing Day Planner's heading. |
+| A plugin behaves incorrectly after a change | Inspect change history, restore the specific backup, reload, and test. |
+| No confirmation appeared | Check Allow settings, mode, chat grants, and goal directory grants. |
+| A new chat cannot continue the old goal | Take it over and check for pause, blockage, or exhausted rounds. |
+| A citation does not open | Hover to check its path, verify the note still exists, and search again. |
+| Adding an image breaks the request | Remove the image or switch to a vision-capable model. |
+| MCP shows no tools | Wait for enabling to complete, check configuration, and refresh. |
 
-Diagnostics shows “last run”. After a white screen you can see which send stage it stopped on, plus RSS, heap, and external. Copying diagnostics from the drawer includes the last 40 breadcrumb lines and still no note text.
+Retries appear at the bottom of chat; Stop interrupts the wait. Expand the status strip to inspect indexing, embeddings, and context usage, and open goals, memory, skills, MCP, or feedback.
 
-The status drawer opens **MCP**: add an HTTP or local-command server, or paste Claude / Cursor JSON. Turning a server on syncs its tools into chat. **Refresh** reconnects. MCP tools are marked in the timeline.
+For repeated failures, inspect **Settings → Ratel → Advanced → Diagnostics**, including the previous run. Feedback can copy local diagnostics. Review environment information before posting it in an issue, and include reproduction steps and error messages.
 
-### API keys (keychain)
+### Commands and settings
 
-| Secret ID | Use |
+| Input | Purpose |
 |---|---|
-| `ratel-mcp-<serverId>` | Environment variables for a stdio MCP server (for example an API token). `serverId` is the id on the manage page |
-| `ratel-chat-openai-compatible` | Chat (DeepSeek and other OpenAI-compatible endpoints). Ollama usually needs none |
-| `ratel-embed-openai-compatible` | Only when the embedding provider is an API |
-| `ratel-rerank-bailian` | Optional Bailian rerank |
+| `/new` | Start a new chat. |
+| `/goal objective` | Agree and create a long-running goal. |
+| `/compact` | Compress model context while keeping chat history. |
+| `/model` | View model configuration. |
+| `/reindex` | Rebuild the complete index. |
+| `/install-diary-plugins` | Built-in diary setup skill. |
+| `/diary-month-ledger` | Built-in planning, closeout, and monthly review skill; add a task description. |
 
-Add them under Obsidian **Settings → Keychain**, using the names above.
+The first five are fixed commands; the last two come from enabled skills. Selecting a skill or `/goal` puts it in the input for completion and sending. Commands without arguments execute on selection. The command palette also opens chat, shows index status, pauses or resumes automatic indexing, and clears the index.
 
----
-
-## 11. How to read the status
-
-### Position rail
-
-A column of dots on the right of the messages (it can move to the left) marks each question. Hover widens a dot and shows the first words. Click jumps to that turn. When you leave the bottom, ↓ returns to the latest message. The system scrollbar is hidden. You can turn the rail off in settings. It is not the context-usage percent on the status strip.
-
-- **Input:** the send button is **↑**. While generating it becomes a red stop square. The permission level sits underneath. During an automatic retry the typing line says it will retry, how many seconds remain, or that it is retrying. That line disappears when text starts or you stop. It is not on the status strip.
-- **Status strip:** a dot, ready or busy text, and context usage `%` on the right (green → yellow → red). While busy it can show together with the thinking orb. An incomplete goal stays visible: in progress (including a goal still bound to an older chat), paused, blocked, or out of rounds. Switching chats does not hide it. This chat does not also show a “keep going” capsule while the goal is idle. A capsule appears when you need to take over another chat, or to clear leftover goals that never started. Only one incomplete goal exists. There is no queue.
-- **Open the strip:** index size, embedding type, context used/max and a bar, compact. The bottom opens goals, memory, MCP, and feedback.
-- **Header:** title chip, ✎, and the model name. The usage percent is not repeated here.
-
-If the API key is missing or the index is not ready, send is blocked and the strip says why.
-
-Chat motion (can be turned off): the empty-state orb, word particles, a sweep on the header after the first message, the user-bubble outline, send sweep, menu entrance, and the usage-number transition. The busy thinking orb ignores this switch. The system “reduce motion” setting turns the decorations off.
-
-Mascot (can be turned off): a draggable block in the message area. Its face follows busy or idle, and its eyes follow the pointer. With motion off, or with system reduce-motion on, the face stays still. Double-click returns it to the bottom right. Near the left or right edge it snaps gently.
-
----
-
-## 12. Privacy
-
-- Local index and local embeddings by default
-- **The only network:** the model you configure, and optional embedding, rerank, and MCP endpoints
-- No telemetry
-- Crash breadcrumbs stay in the local plugin folder. On by default. Turn them off under Settings → Advanced → Developer
-- Vault text is sent only to the endpoint you set
-
----
-
-## 13. FAQ
-
-| Question | Answer |
+| Settings tab | Purpose |
 |---|---|
-| Does `/compact` delete the chat? | No. It compresses what is sent to the model. Bubbles stay. It can also run automatically near the context limit (turn that off in settings) |
-| Why 1.13.1+? | Keychain, declarative settings, and showing the current value on a settings list |
-| Where is the key? | Obsidian Keychain, not `data.json` |
-| Does every launch reindex everything? | No. Smart reindex uses a hash diff and skips unchanged files |
-| `/reindex` versus automatic indexing? | `/reindex` clears and rebuilds. Everyday edits are incremental |
-| I changed the embedding model and nothing happened | Restart Obsidian after changing embed or chunk settings |
-| Mobile? | No. It needs the desktop file system |
-| Does Ollama need the network? | Local inference does not |
-| “This note” when nothing is open? | It says so. Find a path with search |
-| Why doesn’t the daily-note tool create the file? | It only probes, so it does not create a note by accident. Ask it to write, or create the file yourself |
-| I can’t select or copy an answer | The message area allows selection. Select the body, not the header controls |
-| AI title summary failed | The summary request has thinking off. A truncated opening title is summarized again. If it really fails, edit with ✎ |
-| Citation `[n]` is gray | It should follow the latest search in this chat. Hover should show a path. If it stays gray, run a search in this chat and try again |
-| “Don’t ask again this session” still asks | A different tool name still asks. The same tool on another path should not. A new chat or `/new` clears the grant |
-| `/goal` and the round budget | Confirm in chat, then create. Settings hold the **default** budget. Adding rounds raises this goal only |
-| Does the goal survive a new chat? | Yes. The bar and the strip still show it. The new chat cannot see the criteria until you take over. Pausing removes it from this chat |
-| MCP just turned on and shows no tools | Wait until enable finishes, then look again. **Refresh** forces a reconnect |
-| Why won’t it fill in the API key? | Keys live in the Obsidian keychain. The agent can see whether one is set, not the secret. Add the secret ID under Settings → Keychain |
-| What if a tool result is very long? | Text sent to the model is cut to 32,000 characters, keeping the start and the end. The chat bubble still shows the full text. When a long task continues, include the original task sentence |
+| Chat model | Language, saved setups (provider, model, address, API key, and context length), automatic compression. |
+| Note index | Embeddings, chunking, automatic indexing, optional reranking. |
+| Memory & permissions | Memory, diary conventions, goals, tool permissions, host access. |
+| Appearance | Colors, accent, message navigation, motion, and mascot. |
+| Advanced | Context length, model registry, prompt overrides, script timeout, diagnostics. |
 
-More questions: [GitHub Issues](https://github.com/golddream-y/obsidian-ratel/issues).
+Language can be automatic, Chinese, or English. Restart to refresh command-palette names. Dots along the message area's edge navigate to questions; the down button returns to the latest message.
+
+### Secret storage names (troubleshooting reference)
+
+Enter chat keys in the corresponding Saved setups row. They are automatically synced to Keychain for encrypted storage. Each setup has its own key; the storage name shown on the page is for inspection, not an entry to create again.
+
+Embedding, reranking, and MCP keys still need to be added in Obsidian **Settings → Keychain**, using these names:
+
+| Name | Purpose |
+|---|---|
+| `ratel-embed-openai-compatible` | Remote API embeddings, when enabled. |
+| `ratel-rerank-bailian` | Optional Bailian reranking. |
+| `ratel-mcp-<serverId>` | Secret environment variables for a local-command MCP server; use its ID from management. |
+
+For further help, open a [GitHub issue](https://github.com/golddream-y/obsidian-ratel/issues). For skill development, see the [contribution guide](contributing/scene-skill.md).

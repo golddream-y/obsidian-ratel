@@ -1,91 +1,85 @@
 # Ratel
 
-[English](https://github.com/golddream-y/obsidian-ratel/blob/main/README.md) | [简体中文](https://github.com/golddream-y/obsidian-ratel/blob/main/README.zh-CN.md)
+[English](README.md) · **简体中文**
 
-[![License](https://img.shields.io/github/license/golddream-y/obsidian-ratel?style=flat-square)](https://github.com/golddream-y/obsidian-ratel/blob/main/LICENSE)
-[![Obsidian](https://img.shields.io/badge/Obsidian-1.13.1%2B-7c3aed?style=flat-square)](https://obsidian.md)
-[![仅桌面](https://img.shields.io/badge/平台-桌面端-0ea5e9?style=flat-square)](https://obsidian.md)
+**在 Obsidian 里，找回笔记、完成整理、配好工作环境。**
 
-**Ratel 是 Obsidian 里的一个 Agent。说一句你要的用法，它把对应的插件、模板和目录装进当前库。**
+Ratel 是能读取笔记并执行操作的 AI 助手。你可以让它从旧笔记中找答案、整理成文档，也可以让它安装并配置一套日记工作方式。它记住你的目录和偏好，回答附带可打开的来源，操作遵循你设置的权限。
 
-Obsidian 难的地方不在记笔记，在配置。Templater 的语法、Dataview 的查询、Day Planner 的格式，各学一遍就足够劝退。你在对话里说一句，Ratel 去装插件、写模板、把目录指好。
+你的笔记仍是原来的 Markdown 文件。对话模型可以选 DeepSeek、Ollama 或 OpenAI 兼容端点；索引默认在本机生成。
 
-[使用手册](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/user-guide.md) · [更新日志](https://github.com/golddream-y/obsidian-ratel/blob/main/CHANGELOG.md)
+[开始使用](docs/user-guide.md#1-安装并完成第一次提问) · [使用手册](docs/user-guide.md) · [更新日志](CHANGELOG.md)
 
-## 别人配好的环境，一句话搬进你的库
+需要 **Obsidian 1.13.1+**，**仅桌面端**。
 
-说「装日记插件」。Ratel 会装上 Templater、Dataview 和 Day Planner，写好日记模板和月报模板，把核心日记指到同一个目录，并记住这些目录在哪。
+## 把一套工作方式装好、配好
 
-> 改完 Day Planner 的标题格式后，需要完全退出 Obsidian 再打开，才会生效。
+> 装好日记和月度复盘环境。
 
-这套配置叫场景技能，就是一个 Markdown 文件夹。你把自己验证过的做法写成技能，发给别人；对方放进自己的库，就得到同一套插件、模板和路径。写法见 [场景技能手册](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/contributing/scene-skill.md)。
+日记工作流常常需要多个插件配合：模板负责创建笔记，时间轴展示当天安排，月度台账记录目标进展。目录和设置没对齐，装完插件也用不起来。
 
-这里放一段短录屏：从说出「装日记插件」，到模板出现在库里。
+Ratel 内置日记场景：安装 Templater、Dataview 和 Day Planner，写入日记与月度模板，配置核心日记目录，并记住这些位置。执行前，场景技能会说明要改什么、询问目录约定；已有模板不会直接覆盖。
 
-## 快速开始
+配好以后，可以继续说：
 
-1. Obsidian → **设置** → **社区插件** → **浏览**，搜索 **Ratel**，安装并启用。
-2. **设置 → Ratel → 对话模型**。选 DeepSeek 或本机 Ollama，或填写自己的接口地址。
-3. 等首次索引完成。点左侧的獾，或按 `Cmd/Ctrl+P` 运行 **Ratel: Ask vault**。
+- **“安排今天的工作。”** 从月目标和昨日遗留任务起草今天的工作时段。
+- **“同步今天的台账。”** 从日记提取工作记录，更新月度目标进展。
+- **“做本月复盘。”** 汇总日记和台账，起草复盘与下月目标。
 
-需要 **Obsidian 1.13.1 以上**，仅桌面端。
+[日记安装与使用步骤](docs/user-guide.md#3-安装和维护插件环境)
 
-## 为什么不用现成的
+这套做法可以写成一个 **Skill**：哪些插件、哪些设置、哪些模板，以及后续怎样工作。分享技能文件夹，其他人就能在自己的库里运行它。[编写场景技能](docs/contributing/scene-skill.md)
 
-社区里已经有能和笔记库对话的插件。Ratel 的区别是：
+## 从积累的笔记中找到答案，整理成可用文档
 
-> 多数插件帮你问笔记库。Ratel 还能把 Obsidian 配好。
+> 把我关于这个项目的笔记整理成一份背景文档，保留来源，先给我看草稿。
 
-问答是它的能力之一。难复制的是环境本身：装哪些插件、改哪些设置、模板和目录放在哪，并且能把这套已经验证过的环境收成一个文件夹交给别人。
+记不清标题也能找。Ratel 结合语义、关键词和链接关系检索笔记，按需阅读原文，再把分散的信息组织成回答或文档。回答中的引用可以点开原笔记，方便核对结论。
 
-如果只是想和笔记聊天，现成插件已经够用。如果卡在配置上，或想把一套工作方式完整交给别人，Ratel 是为这件事做的。
+你也可以让它总结当前笔记、按标签或属性筛选、查看反链，或打开某篇笔记的指定标题。需要写回时，明确目标文件和修改范围，操作按工具权限执行。
 
-## 需要什么
+[查找、理解与整理笔记](docs/user-guide.md#2-查找理解和整理笔记)
 
-| | |
-|---|---|
-| 对话模型 | 使用云端模型时，需要你自己的 API Key。Ratel 不代填其他插件的密钥，也不把密钥写入插件配置或随库同步。 |
-| 不另收费 | 本机 Ollama 可以离线对话。嵌入默认在本机生成。Ratel 本身不收费，也没有付费功能。 |
-| 接口费用 | 以你所选模型的官方定价为准。 |
+## 记住工作约定，让整理任务接着做
 
-## 隐私与数据边界
+> 记住：项目资料放在 Projects，综述先给草稿，确认后再写入。
 
-- 向量索引默认在本机生成，不上传。
-- 检索到的笔记文本只发往你配置的模型端点。外部工具仅在该工具已启用、并且本次真的调用时出站。安装社区插件时，只访问官方插件目录和该插件的 GitHub release。
-- 密钥保存在系统钥匙串。不写入插件配置，不随库同步。
-- 没有遥测。
-- 改笔记和装插件按你设的权限执行。三档是安全、自动、危险。每个工具还可以单独设成允许、询问或拒绝。设成拒绝之后，权限档和本会话的授权都不能绕过。
-- 读取库外文件和运行本机命令默认关闭。对话不能代开这个开关。打开之后，读到的内容仍可能发给已配置的模型，每次使用另行确认。
+偏好和目录约定可以成为跨对话的记忆。记忆保存在本机的 Markdown 文件中，可以查看、修改或删除。
 
-## 库内能力
+需要多轮处理的任务，可以用 `/goal` 明确完成标准。目标会保留在库里；换一场对话后可以接管继续，暂停或回合用尽时会显示状态。它适合持续整理，不承诺 Obsidian 关闭后后台执行。
 
-搜索同时看语义、关键词、链接、反链和属性。回答里的 `[1]`、`[2]` 可以打开原笔记里的标题或块。当前笔记、最近修改和标题大纲会作为上下文。
+[记忆与长期目标](docs/user-guide.md#5-记住工作约定继续长期任务)
 
-检索、阅读和归纳之后如果要改笔记，仍受上面的权限约束。
+## 开始使用
 
-跨会话目标、技能脚本和外部工具见 [使用手册](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/user-guide.md)。
+1. 在 Obsidian **设置 → 社区插件 → 浏览**中搜索 **Ratel**，安装并启用。
+2. 在 **设置 → Ratel → 对话模型**在“已保存的配置”中打开当前配置，选择提供商和模型。远端模型的 API Key 直接在该配置的模型设置界面填写，系统会自动同步到 Obsidian 钥匙串加密保存；本地 Ollama 通常无需密钥。
+3. 等待首次索引完成，点击侧栏 🦡 打开聊天，问：**“找出库里关于某个主题的笔记，列出来源。”**
 
-## 文档
+首次使用本地嵌入需要下载模型与运行资源。回答后点开来源，确认它找到的是你要的笔记，再尝试整理或配置任务。
 
-| 文档 | 内容 |
-|---|---|
-| [使用手册](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/user-guide.md) | 对话、斜杠命令与常见问题 |
-| [更新日志](https://github.com/golddream-y/obsidian-ratel/blob/main/CHANGELOG.md) | 已发布版本的变更 |
-| [产品总纲](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/prd/overview.md) | 产品范围与后续方向 |
-| [场景技能手册](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/contributing/scene-skill.md) | 把一套环境打包给他人 |
-| [架构](https://github.com/golddream-y/obsidian-ratel/blob/main/docs/architecture/overview.md) | 模块边界与运行结构 |
+**首次使用前请检查工具权限。内置工具默认允许，包括笔记写入、删除和插件变更；安全档也会放行设为“允许”的工具。** 如果希望逐项确认，在 **设置 → Ratel → 记忆与权限**中把相应工具改为“询问”，并使用安全档。[权限说明](docs/user-guide.md#7-控制权限与数据外发)
 
-问题和建议：[GitHub Issues](https://github.com/golddream-y/obsidian-ratel/issues)。
+## 数据与操作由你控制
 
-## 赞助
+- **本地存储**：索引、会话和记忆保存在本机；无遥测。默认本地嵌入，远端对话仍会发送任务需要的内容。
+- **模型调用**：对话及上下文发给你配置的对话端点；启用远端嵌入或重排时，相关文本也会发给对应端点。
+- **可选联网**：首次下载本地模型与运行资源；调用已启用的 MCP 工具时连接其服务器；安装或更新插件时访问官方清单和所选插件的 GitHub release。
+- **可追溯变更**：插件安装、更新、卸载与配置修改留有变更记录及恢复备份。可以让 Ratel 查看记录并恢复某次变更。
+- **库外访问**：文件读取、导入和本机命令默认关闭。必须手动打开后才能使用，仍受工具权限控制；危险档会跳过询问，单工具“拒绝”始终有效。
 
-可选。赞助不改变插件里的任何功能。
+[完整权限与隐私说明](docs/user-guide.md#7-控制权限与数据外发)
 
-- 爱发电：[afdian.com/a/golddream](https://afdian.com/a/golddream)
-- Ko-fi：[ko-fi.com/golddream_y](https://ko-fi.com/golddream_y)
+## 扩展你的工作流
 
-详见 [赞助页](https://github.com/golddream-y/obsidian-ratel/blob/main/SPONSOR.zh-CN.md)。
+对话、嵌入和重排模型可以分别配置。Skill 用 Markdown 保存可复用做法，可附参考资料与 JavaScript 沙箱脚本；MCP 可接入网页搜索等外部工具；Subagent 可分担检索、审查与整理。图片会交给当前对话模型，需要它支持视觉输入。
 
-## 许可
+[扩展使用方法](docs/user-guide.md#6-管理会话与使用扩展) · [产品方向与尚未交付的能力](docs/prd/overview.md) · [技术架构](docs/architecture/overview.md)
 
-[Apache-2.0](https://github.com/golddream-y/obsidian-ratel/blob/main/LICENSE)
+## 支持与参与
+
+遇到问题请查看[排障与速查](docs/user-guide.md#8-排障与速查)，或提交 [GitHub Issue](https://github.com/golddream-y/obsidian-ratel/issues)。分享一套你已经验证过的场景技能，也能帮助更多人用好 Obsidian。
+
+自愿赞助：[爱发电](https://afdian.com/a/golddream) · [Ko-fi](https://ko-fi.com/golddream_y)。赞助不影响任何功能。[赞助说明](SPONSOR.zh-CN.md)
+
+许可证：[Apache-2.0](LICENSE)
