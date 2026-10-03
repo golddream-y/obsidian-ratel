@@ -434,7 +434,7 @@ export const TOOL_SCHEMA_SKELETONS: Record<string, SchemaSkeleton> = {
 			type: 'object',
 			properties: {
 				pluginId: { type: 'string' },
-				op: { type: 'string' },
+				op: { type: 'string', enum: ['inspect', 'apply'] },
 				patch: { type: 'object' },
 				confirmedNewKeys: { type: 'array', items: { type: 'string' } },
 			},

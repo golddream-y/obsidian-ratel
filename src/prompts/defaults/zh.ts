@@ -4,6 +4,8 @@
  * @module prompts/defaults/zh
  */
 
+import { TOOL_CONTRACT_DEFAULTS } from './tool-contracts';
+
 import type { PromptSectionId } from '../types';
 
 export const ZH_DEFAULTS: Record<PromptSectionId, string> = {
@@ -128,23 +130,13 @@ export const ZH_DEFAULTS: Record<PromptSectionId, string> = {
 
 	'tool.list_files.description': '列出 vault 某目录下的文件与子文件夹(非递归)。',
 
-	'tool.write_note.description':
-		'创建新笔记或覆盖已有笔记全文。已有笔记只改其中几处时用 apply_patch，不要把整篇放进 content。每次调用都要同时带上 path 和 content。content 是要写入的全文，必须是字符串，不能省略，不能传对象。成功时返回 text。报告中文字数用 text.length.han，拉丁词数用 text.words.latin。不要用 text.length.codePoints 当字数，不要自己估算。',
 	'tool.write_note.param.path': 'vault 相对路径',
 	'tool.write_note.param.content': '要写入的全文。必填字符串，与 path 在同一次调用里给出。',
-	'tool.append_note.description':
-		'在笔记末尾追加内容。每次调用都要同时带上 path 和 content。content 是要追加的正文，必须是字符串，不能省略。文件不存在则创建。成功时返回 text，统计的是追加后的全文。报告中文字数用 text.length.han，拉丁词数用 text.words.latin。不要用 text.length.codePoints 当字数，不要自己估算。',
 	'tool.append_note.param.path': 'vault 相对路径',
 	'tool.append_note.param.content': '要追加的正文。必填字符串，与 path 在同一次调用里给出。',
-	'tool.edit_note.description':
-		'只替换文件里唯一出现的一段。改几处、或要带着前后文定位时，用 apply_patch。每次调用都要同时带上 path、old_string、new_string，三者都必须是字符串，不能只传 path。old_string 必须与文件内容完全一致(含缩进)，且在文件中唯一。成功时返回 text，统计的是替换后的全文。报告中文字数用 text.length.han，拉丁词数用 text.words.latin。不要用 text.length.codePoints 当字数，不要自己估算。',
 	'tool.edit_note.param.path': 'vault 相对路径',
 	'tool.edit_note.param.old_string': '要替换的原文，须与文件完全一致且只出现一次。必填字符串。',
 	'tool.edit_note.param.new_string': '替换进去的文本。必填字符串。',
-	'tool.apply_patch.description':
-		'局部修改一篇已有笔记，优先用本工具。文件必须已经存在，不会新建。参数只有 patch，路径写在补丁里，不要另传 path。一次只能有一个 *** Update File: 库内相对路径。*** Add File 改用 write_note，*** Delete File 改用 delete_note，*** Move to 改用 move_note。新建或大部分正文都要换掉时用 write_note。@@ 单独起一行，同一行后面的字不参与匹配。从下一行起，每行第一个字符是标记：空格是必须逐字匹配的上下文，- 是删除，+ 是插入。这个字符不写入文件，后面的文字原样比较，不 trim。可以有多处 @@，按顺序套用，一处里至少要有一行 + 或 -。对不上、对上多处，或写了 *** End of File 却不在文件末尾，整次不改文件。最短示例：\n*** Begin Patch\n*** Update File: notes/a.md\n@@\n 甲\n-乙\n+乙二\n*** End Patch\n成功时返回 text，统计的是改完后的全文。报告中文字数用 text.length.han，拉丁词数用 text.words.latin。不要用 text.length.codePoints 当字数，不要自己估算。',
-	'tool.apply_patch.param.patch':
-		'补丁全文，必填字符串。以 *** Begin Patch 开头、*** End Patch 结尾。里面恰好一行 *** Update File: 库内相对路径。@@ 的下一行起，行首空格是上下文，- 删除，+ 插入。不要另传 path。',
 	'tool.delete_note.description': '将笔记移到回收站(可恢复)。',
 	'tool.move_note.description': '移动或重命名已有笔记或文件夹。文件已在库里、只是换路径时用这个，不要 read_note 再 write_note。链接按用户的设置更新。',
 	'tool.move_note.param.from': '当前路径',
@@ -234,11 +226,11 @@ export const ZH_DEFAULTS: Record<PromptSectionId, string> = {
 	'tool.get_app_config.description':
 		'读取 Ratel 配置快照、密钥配置状态(boolean 存在性与所需密钥 ID,不含密钥值)与索引状态。排查配置问题、诊断「为什么不工作」的第一步。',
 	'tool.update_app_config.description':
-		'代替用户修改 Ratel 应用设置(需用户确认)。仅白名单内的 key 生效:对话模型(chatModel/chatApiBase/contextLengthPreset/chatModelMaxTokens/autoCompactEnabled)、分块与索引(chunkSize/chunkOverlap/autoIndex/indexPaused)、Embedding 与 Rerank(embedProvider/embedApiBase/embedApiModel/embedApiDimensions/rerankerApiBase/rerankerModel)、记忆(memoryEnabled/memoryAutoWrite/memoryStorageLimitMB/memoryInjectLimitKB/memoryDynamicLimitKB/memoryContextTotalLimitKB)、目标模式(goalMaxRounds,整数 1-100,默认回合上限)、日记(dailyNoteFolder/dailyNoteFormat)、语言外观(language/uiColorScheme/uiAccent/chatNavRailEnabled/chatNavRailSide/chatMotionEnabled/chatMascotEnabled)。工具权限、MCP、Prompt 覆盖等敏感项一律拒绝,必须由用户在设置面板亲手修改。格式示例:{"updates":{"chunkSize":800,"autoIndex":false}};返回逐 key 的 ok/reason,被拒的 key 不影响同批其他 key。',
+		'代替用户修改 Ratel 应用设置(需用户确认)。仅白名单内的 key 生效:对话模型(chatModel/chatApiBase/contextLengthPreset/chatModelMaxTokens/autoCompactEnabled)、分块与索引(chunkSize/chunkOverlap/autoIndex/indexPaused)、Embedding 与 Rerank(embedProvider/embedApiBase/embedApiModel/embedApiDimensions/rerankerApiBase/rerankerModel)、记忆(memoryEnabled/memoryAutoWrite/memoryStorageLimitMB/memoryInjectLimitKB/memoryDynamicLimitKB/memoryContextTotalLimitKB)、目标模式(goalMaxRounds,整数 1-100,默认回合上限)、日记(dailyNoteFolder/dailyNoteFormat)、语言外观(language/uiColorScheme/uiAccent/chatNavRailEnabled/chatNavRailSide/chatMotionEnabled/chatMascotEnabled)。工具权限、MCP、Prompt 覆盖等敏感项一律拒绝,必须由用户在设置面板亲手修改。调用参数 JSON 示例:{"updates":{"goalMaxRounds":20}};返回逐 key 的 ok/reason,被拒的 key 不影响同批其他 key。',
 	'tool.update_app_config.param.updates': '要修改的设置键值对对象;key 必须在白名单内,值类型与取值范围见工具描述',
 
 	'tool.manage_goal.description':
-		'管理 Agent 目标:创建、更新进度、列出、暂停、恢复、放弃或完成。同一时间至多一条未完成目标;已有未完成时不要 create 第二条,改为问用户放弃当前还是继续当前。无 archive 动作。create 前必须已在对话里与用户确认完成标准,并告知当前设置的回合上限(goalMaxRounds);用户未点头禁止 create。不要指望弹出创建表单。改全局默认回合上限走 ratel-config 再 update_app_config({ goalMaxRounds }),不要写进 create 参数凑数。给当前目标加轮用 update 提高本条 maxRounds(必须高于当前值)。不要每轮 complete。对照标准随时可判;已满足或用户要收工时对话点头后再 complete,不要等回合用尽。预算用尽时问加轮/先停/放弃,不要 complete。完成即关闭,不问归档。不要指望完成弹窗。predicate 型由系统自动收口,不可 complete。',
+		'管理 Agent 目标:创建、更新进度、列出、暂停、恢复、放弃或完成。同一时间至多一条未完成目标;已有未完成时不要 create 第二条,改为问用户放弃当前还是继续当前。无 archive 动作。create 前必须已在对话里与用户确认完成标准,并告知当前设置的回合上限(goalMaxRounds);用户未点头禁止 create。不要指望弹出创建表单。改全局默认回合上限走 ratel-config 再 update_app_config({"updates":{"goalMaxRounds":20}}),不要写进 create 参数凑数。给当前目标加轮用 update 提高本条 maxRounds(必须高于当前值)。不要每轮 complete。对照标准随时可判;已满足或用户要收工时对话点头后再 complete,不要等回合用尽。预算用尽时问加轮/先停/放弃,不要 complete。完成即关闭,不问归档。不要指望完成弹窗。predicate 型由系统自动收口,不可 complete。',
 	'tool.manage_goal.param.action': '动作: create / update / list / pause / resume / cancel / complete',
 	'tool.manage_goal.param.objective': '目标陈述(创建后不可变)',
 	'tool.manage_goal.param.criteriaText': '完成标准;须非空且不同于 objective',
@@ -268,4 +260,5 @@ export const ZH_DEFAULTS: Record<PromptSectionId, string> = {
 	'tool.run_host_command.description':
 		'在用户本机执行一条命令。可能改文件或产生其它副作用。超时 30 秒。总闸关闭时不要调用。',
 	'tool.run_host_command.param.command': '要执行的命令',
+	...TOOL_CONTRACT_DEFAULTS,
 };

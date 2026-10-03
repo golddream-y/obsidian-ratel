@@ -75,20 +75,13 @@ describe('composeToolDefinitions', () => {
 		expect(defs[0]!.parameters.properties.path.description).toContain('路径');
 	});
 
-	it('write_note - content 参数说明要求同一次带上全文', () => {
-		const defs = composeToolDefinitions({}, ['write_note']);
-		expect(defs[0]!.description).toContain('不能省略');
-		expect(defs[0]!.parameters.properties.content.description).toContain('全文');
-		const edit = composeToolDefinitions({}, ['edit_note'])[0]!;
-		expect(edit.description).toContain('不能只传 path');
-		expect(edit.parameters.properties.old_string.description).toContain('原文');
-		expect(edit.parameters.properties.new_string.description).toContain('文本');
-		expect(edit.description).toContain('apply_patch');
-		const patch = composeToolDefinitions({}, ['apply_patch'])[0]!;
-		expect(patch.description).toContain('*** Begin Patch');
-		expect(patch.description).toContain('*** Update File: notes/a.md');
-		expect(patch.description).toContain('\n 甲\n');
-		expect(patch.parameters.properties.patch.description).toContain('不要另传 path');
+	it('正文工具契约 - 必填参数 - 全文和替换字段不能遗漏', () => {
+		const defs = composeToolDefinitions({}, ['write_note', 'edit_note', 'apply_patch']);
+		expect(defs[0]!.parameters.required).toEqual(['path', 'content']);
+		const schema = defs[0]!.parameters as { properties: { content: { description: string } } };
+		expect(schema.properties.content.description).toContain('全文');
+		expect(defs[1]!.parameters.required).toEqual(['path', 'old_string', 'new_string']);
+		expect(defs[2]!.parameters.required).toEqual(['patch']);
 	});
 
 	it('未知工具名 - 抛错', () => {
@@ -109,11 +102,12 @@ describe('formatToolGuideList', () => {
 		expect(list).toContain('search_vault:');
 	});
 
-	it('override 后指引同步更新', () => {
+	it('工具指引 - 描述覆盖 - 摘要保持默认', () => {
 		const list = formatToolGuideList([{ name: 'read_note', description: '' }], {
 			'tool.read_note.description': '自定义读笔记',
 		});
-		expect(list).toContain('自定义读笔记');
+		expect(list).not.toContain('自定义读笔记');
+		expect(list).toContain('已知路径时读取全文与元数据');
 	});
 
 	it('formatToolGuideList - 无 section 时回退 definition.description（MCP）', () => {

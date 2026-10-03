@@ -11,6 +11,7 @@ import { splitGlobalSections } from '../core/memory-store';
 import { ZH_DEFAULTS } from './defaults/zh';
 import { interpolate } from './interpolate';
 import type { InternalTask, OverrideMap, PromptContext, PromptSectionId } from './types';
+import { getToolGuide } from './tool-guides';
 import { TOOL_SCHEMA_SKELETONS } from './tool-schemas';
 import { truncateUtf8Bytes } from './injection/injector';
 import { tNow } from '../i18n';
@@ -60,19 +61,13 @@ function resolveToolSection(toolName: string, suffix: string, overrides: Overrid
 
 /**
  * 拼接工具指引列表(`- name: description`),供 `{{toolList}}` 注入。
- * 关键路径:内置工具 description 优先走 prompt section；MCP 等无 section 时回退 definition.description。
+ * 关键路径:内置工具使用固定摘要；MCP 等扩展工具只展示简介首行，完整契约留在工具定义中。
  */
 export function formatToolGuideList(
-	tools: Array<{ name: string; description: string }>,
-	overrides: OverrideMap,
+  tools: Array<{ name: string; description: string }>,
+  _overrides: OverrideMap,
 ): string {
-	return tools
-		.map((t) => {
-			const fromSection = resolveToolSection(t.name, 'description', overrides);
-			const desc = fromSection || t.description || '';
-			return `- ${t.name}: ${desc}`;
-		})
-		.join('\n');
+  return tools.map((tool) => `- ${tool.name}: ${getToolGuide(tool.name, tool.description)}`).join('\n');
 }
 
 /**
