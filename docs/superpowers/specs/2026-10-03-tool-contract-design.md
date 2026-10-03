@@ -5,7 +5,7 @@
 > **日期:** 2026-10-03
 > **目标分支:** develop
 > **关联:** [S-APPLY-PATCH](2026-10-03-apply-patch-design.md)、[S-NOTE-MOVE](2026-10-01-note-move-design.md)
-> **阶段:** 设计已登记，实施 plan 尚未创建，未启动代码修复。
+> **阶段:** 实施计划 [P-TOOL-CONTRACT](../plans/2026-10-03-tool-contract.md) 已登记为 Pending，未启动代码修复。
 
 ## 1. 背景
 

@@ -19,7 +19,7 @@
 
 | ID | 文件 | 状态 | 创建日期 | 备注 |
 |---|---|---|---|---|
-| S-TOOL-CONTRACT | [2026-10-03-tool-contract-design.md](specs/2026-10-03-tool-contract-design.md) | Active | 2026-10-03 | 工具 JSON 契约、说明去重、失败分类与历史投影；plan 未建，未启动修复 |
+| S-TOOL-CONTRACT | [2026-10-03-tool-contract-design.md](specs/2026-10-03-tool-contract-design.md) | Active | 2026-10-03 | 工具 JSON 契约、说明去重、失败分类与历史投影；P-TOOL-CONTRACT Pending，未启动修复 |
 | S-COMPACT-V3 | [2026-10-01-compact-v3-design.md](specs/2026-10-01-compact-v3-design.md) | Active | 2026-10-01 | 压缩重设计。P1 计划已写，未开工 |
 | S-MODEL-CATALOG | [2026-09-28-model-catalog-design.md](specs/2026-09-28-model-catalog-design.md) | Active | 2026-09-28 | 供应商名单；按供应商+模型 id 查窗口和单次输出。列表与密钥改名仍在工作区 |
 | S-CHAT-PROFILES | [2026-09-24-chat-profiles-design.md](specs/2026-09-24-chat-profiles-design.md) | Active | 2026-09-24 | 多套配置与顶栏菜单已落地。设置页「设为当前」尚未改调共用函数 |
@@ -31,6 +31,7 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
+| P-TOOL-CONTRACT | [2026-10-03-tool-contract.md](plans/2026-10-03-tool-contract.md) | Pending | S-TOOL-CONTRACT | 八任务：契约补全、摘要去重、失败分类、执行前拒绝、历史投影、UI 与恢复验证；未启动 |
 | P-COMPACT-V3-P1 | [2026-10-01-compact-v3-p1.md](plans/2026-10-01-compact-v3-p1.md) | In Progress | S-COMPACT-V3 | 三路并行：feat/compact-p1-measure、feat/compact-p1-offload、feat/compact-p1-diag。完成后合回 |
 | P-MODEL-CATALOG | [2026-09-28-model-catalog.md](plans/2026-09-28-model-catalog.md) | Completed | S-MODEL-CATALOG | 已合入 develop。列表与密钥改名仍在工作区，尚未提交 |
 | P-CHAT-PROFILE-MENU | [2026-09-27-chat-profile-menu.md](plans/2026-09-27-chat-profile-menu.md) | Completed | S-CHAT-PROFILES | 顶栏菜单，提交 29069b9。设置页「设为当前」尚未改调共用函数 |
