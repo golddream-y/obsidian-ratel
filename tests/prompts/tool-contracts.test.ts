@@ -60,3 +60,13 @@ it('插件配置动作 - 默认 schema - 保留检查与应用枚举', () => {
   const schema = composeToolDefinitions({}, ['configure_plugin'])[0]!.parameters as { properties: { op: { enum: string[] } } };
   expect(schema.properties.op.enum).toEqual(['inspect', 'apply']);
 });
+
+it('发布工具清单 - apply_patch 启用 - 公布且其他编辑工具保留', () => {
+  expect(ALL_TOOL_NAMES).toContain('apply_patch');
+  const defs = composeToolDefinitions({}, ALL_TOOL_NAMES);
+  expect(defs.some((def) => def.name === 'edit_note')).toBe(true);
+  expect(defs.some((def) => def.name === 'apply_patch')).toBe(true);
+  for (const name of ['write_note', 'edit_note']) {
+    expect(defs.find((def) => def.name === name)?.description).not.toContain('apply_patch');
+  }
+});

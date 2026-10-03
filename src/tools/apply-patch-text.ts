@@ -10,6 +10,7 @@ export type PatchHunk = { ops: PatchOp[]; eof: boolean };
 
 export type PatchReason =
 	| 'parse'
+	| 'prefix'
 	| 'multi'
 	| 'add'
 	| 'delete'
@@ -61,7 +62,7 @@ export function peekUpdateFilePath(patch: string): string | undefined {
  */
 export function parseUpdatePatch(
 	patch: string,
-): { ok: true; path: string; hunks: PatchHunk[] } | { ok: false; reason: PatchReason } {
+): { ok: true; path: string; hunks: PatchHunk[] } | { ok: false; reason: PatchReason; line?: number } {
 	const lines = splitPatchLines(patch);
 	let i = 0;
 	while (i < lines.length && lines[i]!.trim() === '') i++;
@@ -127,7 +128,12 @@ export function parseUpdatePatch(
 		} else if (raw.startsWith('+')) {
 			current.ops.push({ kind: 'insert', text: raw.slice(1) });
 		} else {
-			return { ok: false, reason: 'parse' };
+			// 错写控制标记或正文结束后缺少结束标记，仍按结构错误报告。
+			if (trimmed.startsWith('***') || lines.slice(i).every((line) => line.trim() === '')) {
+				return { ok: false, reason: 'parse' };
+			}
+			// 修复:上下文漏标记时报告补丁物理行号，避免模型误判为中文或长度问题。
+			return { ok: false, reason: 'prefix', line: i + 1 };
 		}
 	}
 

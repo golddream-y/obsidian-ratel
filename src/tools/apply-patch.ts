@@ -20,6 +20,7 @@ import {
 
 const PATCH_REASON_I18N: Record<PatchReason, StringKey> = {
 	parse: 'error.tool.patchParse',
+	prefix: 'error.tool.patchLinePrefix',
 	multi: 'error.tool.patchMulti',
 	add: 'error.tool.patchAdd',
 	delete: 'error.tool.patchDelete',
@@ -52,7 +53,7 @@ export function createApplyPatchTool(
 			}
 			const parsed = parseUpdatePatch(args.patch);
 			if (!parsed.ok) {
-				throw new Error(tNow(PATCH_REASON_I18N[parsed.reason]));
+				throw new Error(tNow(PATCH_REASON_I18N[parsed.reason], { line: parsed.line ?? 0 }));
 			}
 			const path = validateVaultPath(parsed.path);
 			const agents = getAgents?.();

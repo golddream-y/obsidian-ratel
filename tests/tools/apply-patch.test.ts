@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import { langStore } from '../../src/i18n';
 import { createApplyPatchTool } from '../../src/tools/apply-patch';
 import { createMockVaultPort } from '../helpers/mock-vault-port';
 import { makeToolDef } from '../helpers/make-tool-def';
@@ -8,6 +9,22 @@ function patch(fileBody: string): string {
 }
 
 describe('apply_patch', () => {
+	it('漏掉上下文标记 - 中英文指出第 4 行且零落盘', async () => {
+		const vault = createMockVaultPort({ files: { '章/第004章.md': '甲\n乙\n' } });
+		const process = vi.spyOn(vault, 'processFile');
+		const tool = createApplyPatchTool(vault, makeToolDef('apply_patch'));
+		try {
+			langStore.set('zh');
+			await expect(tool.execute({ patch: patch('@@\n甲\n+丙') })).rejects.toThrow('第 4 行');
+			langStore.set('en');
+			await expect(tool.execute({ patch: patch('@@\n甲\n+丙') })).rejects.toThrow('line 4');
+		} finally {
+			langStore.set('zh');
+		}
+		expect(process).not.toHaveBeenCalled();
+		expect(await vault.readFile('章/第004章.md')).toBe('甲\n乙\n');
+	});
+
 	it('两处修改 - 一次落盘且只返回 path 和 text', async () => {
 		const vault = createMockVaultPort({ files: { '章/第004章.md': '甲\n乙\n丙\n丁\n' } });
 		const tool = createApplyPatchTool(vault, makeToolDef('apply_patch'));

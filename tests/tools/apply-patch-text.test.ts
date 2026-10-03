@@ -8,6 +8,23 @@ function patch(body: string): string {
 }
 
 describe('apply-patch-text', () => {
+	it('parseUpdatePatch - 上下文漏掉标记 - 返回精确行号', () => {
+		expect(parseUpdatePatch(patch('@@\n甲\n+乙'))).toEqual({ ok: false, reason: 'prefix', line: 4 });
+	});
+
+	it('parseUpdatePatch - 裸空行或 Tab 标记 - 拒绝且不自动修补', () => {
+		for (const line of ['', '\t甲']) {
+			expect(parseUpdatePatch(patch(`@@\n 甲\n${line}\n+乙`))).toEqual({ ok: false, reason: 'prefix', line: 5 });
+		}
+	});
+
+	it('applyUpdateHunks - 正确标记的中文长段落与空行 - 原样插入', () => {
+		const added = '中文标点，句号。破折号——都不影响格式。'.repeat(20);
+		const parsed = parseUpdatePatch(patch(`@@\n 甲\n+\n+${added}`));
+		if (!parsed.ok) throw new Error('解析失败');
+		expect(applyUpdateHunks('甲\n', parsed.hunks)).toEqual({ ok: true, content: `甲\n\n${added}\n` });
+	});
+
 	it('peekUpdateFilePath - 恰好一个 Update File - 返回路径', () => {
 		expect(peekUpdateFilePath(patch('@@\n 乙\n-丙\n+丙二'))).toBe('章/第004章.md');
 	});

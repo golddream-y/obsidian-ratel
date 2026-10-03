@@ -863,6 +863,7 @@ export interface ErrorStrings {
   'error.tool.oldStringNotFound': string;
   'error.tool.oldStringMultipleMatches': string;
   'error.tool.patchParse': string;
+  'error.tool.patchLinePrefix': string;
   'error.tool.patchMulti': string;
   'error.tool.patchAdd': string;
   'error.tool.patchDelete': string;

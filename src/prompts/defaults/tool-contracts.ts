@@ -17,10 +17,10 @@ export const TOOL_CALL_EXAMPLES = {
 const TEXT_RESULT = '成功返回 { path, text }；text 是改后全文的统计。中文字数读 text.length.han，拉丁词数读 text.words.latin，codePoints 不是字数。';
 /** 默认契约补充项；由默认中文源合并，用户覆盖仍具有优先权。 */
 export const TOOL_CONTRACT_DEFAULTS = {
-  'tool.write_note.description': `创建笔记或覆盖全文。参数是 JSON 对象，path 与字符串 content 同时必填。已有笔记局部修改优先 apply_patch；仅移动或复制用 move_note/copy_note。${TEXT_RESULT}`,
+  'tool.write_note.description': `创建笔记或覆盖全文。参数是 JSON 对象，path 与字符串 content 同时必填。已有笔记局部修改用 edit_note；仅移动或复制用 move_note/copy_note。${TEXT_RESULT}`,
   'tool.append_note.description': `向文件末尾追加，文件不存在则创建。参数是 JSON 对象，path 与字符串 content 同时必填。${TEXT_RESULT}`,
-  'tool.edit_note.description': `在已有笔记里替换唯一出现的一段。参数是 JSON 对象，path、old_string、new_string 同时必填且都是字符串；原文按缩进精确匹配。多处修改优先 apply_patch。${TEXT_RESULT}`,
-  'tool.apply_patch.description': `局部修改一篇已存在笔记。function arguments 必须是 JSON 对象，补丁全文放在 patch 字符串，不能把裸补丁直接填进参数通道；不另传 path。一次只接受一个 Update File，不新建文件。调用参数 JSON 示例：${JSON.stringify(APPLY_PATCH_EXAMPLE)}。patch 以 *** Begin Patch 开头、*** End Patch 结尾；@@ 开始一处修改，其同行文字不参与匹配。下一行起，空格表示精确上下文，- 删除，+ 插入；标记后的文本原样比较，不 trim。可有多处修改，每处至少一行增删。上下文缺失、多处匹配或 End of File 不在末尾，整次不写。Add File 用 write_note，Delete File 用 delete_note，Move to 用 move_note；大部分正文更换用 write_note。${TEXT_RESULT}`,
+  'tool.edit_note.description': `在已有笔记里替换唯一出现的一段。参数是 JSON 对象，path、old_string、new_string 同时必填且都是字符串；原文按缩进精确匹配。多处修改逐处调用 edit_note，每次先确认原文唯一匹配。${TEXT_RESULT}`,
+  'tool.apply_patch.description': `局部修改一篇已存在笔记。function arguments 必须是 JSON 对象，补丁全文放在 patch 字符串，不能把裸补丁直接填进参数通道；不另传 path。一次只接受一个 Update File，不新建文件。调用参数 JSON 示例：${JSON.stringify(APPLY_PATCH_EXAMPLE)}。patch 以 *** Begin Patch 开头、*** End Patch 结尾；@@ 开始一处修改，其同行文字不参与匹配。下一行起，空格表示精确上下文，- 删除，+ 插入；标记后的文本原样比较，不 trim。每一行都必须有标记，不能从正文直接开始，也不能用 Tab 代替 ASCII 空格；空白上下文行写一个空格，新增空行写 +。上下文必须是完整物理行，不能只取段落里的一句话。错误写法为 @@\n甲\n+乙；正确写法为 @@\n 甲\n+乙（甲前有一个空格）。格式报错只修正指出的标记，不猜中文标点或长句问题；同类错误连续两次时停止盲试，先核对格式；匹配错误先 read_note 重新读取目标片段，再构造补丁。单处唯一片段替换可用 edit_note，不能用覆盖全文绕过错误。可有多处修改，每处至少一行增删。上下文缺失、多处匹配或 End of File 不在末尾，整次不写。Add File 用 write_note，Delete File 用 delete_note，Move to 用 move_note；大部分正文更换用 write_note。${TEXT_RESULT}`,
   'tool.apply_patch.param.patch': '补丁全文字符串，必填。调用必须是 {"patch":"补丁全文"}；字符串里的换行使用 JSON 编码。路径只写在唯一的 *** Update File: 库内相对路径中。结束标记必须是 *** End Patch。',
   'tool.update_plugin.description': '更新已安装的社区插件，保留已有设置，按权限执行并记录变更和备份。pluginId 是官方清单中的插件 ID。检查返回结果，热启用失败时说明需要重载。',
   'tool.uninstall_plugin.description': '卸载已安装社区插件，按权限执行并记录变更和恢复备份。结果不表示整个库或所有相关模板都已清理。',
