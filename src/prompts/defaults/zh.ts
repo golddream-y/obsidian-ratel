@@ -161,9 +161,9 @@ export const ZH_DEFAULTS: Record<PromptSectionId, string> = {
 	'tool.forget_memory.param.topic': '主题名,type=topic 时必填',
 	'tool.forget_memory.param.match': '匹配要删除的条目文本',
 
-	'tool.activate_skill.description': '激活一个已加载的 Skill。激活后该 skill 的指令会注入到上下文,直到任务完成或你主动 deactivate。',
+	'tool.activate_skill.description': '激活一个已加载的 Skill，将指令加入当前会话；停用后可重新激活。任务完成不会自动停用，不必为结束回复额外调用停用工具。',
 	'tool.activate_skill.param.name': 'Skill 名称(kebab-case)',
-	'tool.deactivate_skill.description': '关闭一个已激活的 Skill,从上下文移除其指令。',
+	'tool.deactivate_skill.description': '停用当前已激活的 Skill，追加停用说明，使此前指令不再生效；历史正文仍保留。当前未激活时会返回错误。仅在需要停止遵循该 Skill 时调用，不要作为每次回复的固定收尾。需要停用时先完成工具调用，再输出一次最终正文；若工具调用前已给出完整答案，工具返回后不要重复整篇答案。',
 	'tool.deactivate_skill.param.name': 'Skill 名称',
 
 	'tool.read_skill_reference.description': '读取 Skill 的 references/ 目录内文件(如风格指南、模板、词汇表)。路径限制在该 skill 的 references/ 文件夹内。',

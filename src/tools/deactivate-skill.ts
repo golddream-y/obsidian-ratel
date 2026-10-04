@@ -34,6 +34,7 @@ export function createDeactivateSkillTool(
 			}
 			const name = args.name;
 			if (sessionHooks) {
+				// 修复:只允许停用当前有效的技能，历史注入记录不能作为激活状态。
 				if (!sessionHooks.hasInSession(name)) {
 					throw new Error(tNow('skill.notice.notActive', { name }));
 				}

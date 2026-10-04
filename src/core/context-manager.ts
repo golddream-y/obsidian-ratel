@@ -486,7 +486,7 @@ export class ContextManager {
 	}
 
 	/**
-	 * 本场 messages 是否已含该 skill 指令正文。
+	 * 当前会话是否仍启用该 skill 指令，按最近一次激活或停用记录判断。
 	 */
 	hasSkillInstructions(name: string): boolean {
 		const session = this.requireSession();
@@ -495,7 +495,7 @@ export class ContextManager {
 
 	/**
 	 * 将 skill 正文写入当前 Session(system + `[skill:name]` 前缀)。
-	 * 已存在则幂等跳过。
+	 * 当前已激活则幂等跳过；停用后重新激活会追加新的正文。
 	 */
 	appendSkillInstructions(name: string, body: string): void {
 		const session = this.requireSession();
@@ -509,7 +509,7 @@ export class ContextManager {
 
 	/**
 	 * 追加 supersede 短消息(无法从历史上物理删除已注入正文)。
-	 * 未注入过则 no-op;已 supersede 则幂等跳过。
+	 * 当前未激活则 no-op；重新激活后可再次追加停用记录。
 	 */
 	appendSkillSupersede(name: string): void {
 		const session = this.requireSession();

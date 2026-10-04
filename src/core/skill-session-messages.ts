@@ -43,17 +43,40 @@ export function formatSkillSupersedeContent(name: string): string {
 }
 
 /**
- * 本场是否已注入过该 skill 正文(不论是否已 supersede)。
+ * 当前是否仍启用该 skill 的会话指令，以最近一次激活或停用记录为准。
+ *
+ * @param messages - 按时间顺序保存的会话消息
+ * @param name - Skill 名称
+ * @returns 最近一次记录为激活时返回 true
+ * @example
+ *   sessionHasSkillInstructions(messages, 'reviewer');
  */
 export function sessionHasSkillInstructions(messages: ChatMessage[], name: string): boolean {
-	const prefix = skillInstructionsPrefix(name);
-	return messages.some((m) => m.role === 'system' && m.content.startsWith(prefix));
+	return latestSkillState(messages, name) === 'active';
 }
 
 /**
- * 本场是否已有 supersede 标记(用于 deactivate 幂等)。
+ * 当前是否已停用该 skill，重新激活后旧停用记录不再生效。
+ *
+ * @param messages - 按时间顺序保存的会话消息
+ * @param name - Skill 名称
+ * @returns 最近一次记录为停用时返回 true
+ * @example
+ *   sessionHasSkillSupersede(messages, 'reviewer');
  */
 export function sessionHasSkillSupersede(messages: ChatMessage[], name: string): boolean {
-	const prefix = skillSupersedePrefix(name);
-	return messages.some((m) => m.role === 'system' && m.content.startsWith(prefix));
+	return latestSkillState(messages, name) === 'inactive';
+}
+
+function latestSkillState(messages: ChatMessage[], name: string): 'active' | 'inactive' | undefined {
+	const activePrefix = skillInstructionsPrefix(name);
+	const inactivePrefix = skillSupersedePrefix(name);
+	// 修复:历史正文不会在停用时删除，必须逆序查最近记录，避免重复停用和无法重新激活。
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const message = messages[i]!;
+		if (message.role !== 'system') continue;
+		if (message.content.startsWith(activePrefix)) return 'active';
+		if (message.content.startsWith(inactivePrefix)) return 'inactive';
+	}
+	return undefined;
 }
