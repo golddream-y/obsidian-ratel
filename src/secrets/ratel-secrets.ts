@@ -46,7 +46,7 @@ export type EndpointAuthKind = 'builtin' | 'ollama-local' | 'openai-compatible' 
 /** Chat 密钥相关设置字段(最小接口抽取,避免 import main) */
 export interface ChatSecretSettings {
 	chatApiBase: string;
-	chatProfiles?: Array<{ id: string }>;
+	chatProfiles?: Array<{ id: string; allowLegacyKeyFallback?: boolean }>;
 	activeChatProfileId?: string;
 }
 
@@ -201,7 +201,7 @@ export function resolveChatApiKey(app: App, settings: ChatSecretSettings): strin
 	const profileKey = getSecret(app, currentChatSecretId(settings));
 	if (profileKey) return profileKey;
 	const s = settings as ChatSecretSettings & {
-		chatProfiles?: Array<{ id: string }>;
+		chatProfiles?: Array<{ id: string; allowLegacyKeyFallback?: boolean }>;
 		activeChatProfileId?: string;
 	};
 	const active = s.chatProfiles?.find((p) => p.id === s.activeChatProfileId);
@@ -211,6 +211,8 @@ export function resolveChatApiKey(app: App, settings: ChatSecretSettings): strin
 		setChatProfileSecret(app, active, legacy);
 		return legacy;
 	}
+	// 修复:新建空配置不能悄悄借用上一套遗留的全局密钥。
+	if (active?.allowLegacyKeyFallback === false) return null;
 	return getSecret(app, RATEL_SECRET_IDS.chatOpenAICompatible);
 }
 

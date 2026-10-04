@@ -6,7 +6,7 @@
  */
 
 import type { ContextLengthPresetId } from '../ui/tokens/context-length-presets';
-import { applyContextRecommendation } from '../ui/tokens/context-length-presets';
+import { applyContextRecommendation, CUSTOM_TOKEN_MIN } from '../ui/tokens/context-length-presets';
 import {
 	DEEPSEEK_CHAT_API_BASE,
 	OLLAMA_CHAT_API_BASE,
@@ -57,6 +57,8 @@ export interface ChatProfile {
 	 * 同一供应商下的密钥序号，创建后不变。钥匙串名是 ratel-chat-供应商-序号。
 	 */
 	keySerial?: number;
+	/** 新建和复制配置只使用自己的密钥；旧配置未设置时保留历史槽位回退。 */
+	allowLegacyKeyFallback?: boolean;
 }
 
 /** 生成稳定 id(创建时一次,之后不变)。 */
@@ -165,27 +167,44 @@ export function switchChatProfile(settings: RatelVaultSettings, id: string): voi
 	settings.activeChatProfileId = target.id;
 }
 
-/** 把当前四字段另存为新一套,active 指向新套。windowUserSet 随源套继承。 */
-export function saveCurrentAsProfile(settings: RatelVaultSettings, name: string): ChatProfile {
-	// 关键路径:saveCurrentAsProfile 会把 active 切到新套,先取源套(调用方读密钥同序)
-	const source = settings.chatProfiles.find((p) => p.id === settings.activeChatProfileId);
+/**
+ * 创建空配置，不继承当前模型、窗口或密钥，也不切换当前配置。
+ *
+ * @param settings - 可变插件设置
+ * @param name - 新配置名称
+ * @returns 新增的配置
+ */
+export function createChatProfile(settings: RatelVaultSettings, name: string): ChatProfile {
 	const profile: ChatProfile = {
-		id: newChatProfileId(),
-		name,
-		apiBase: settings.chatApiBase,
-		model: settings.chatModel,
-		contextLengthPreset: settings.contextLengthPreset,
-		chatModelMaxTokens: settings.chatModelMaxTokens,
+		id: newChatProfileId(), name, apiBase: '', model: '',
+		providerId: LOCAL_PROVIDER_CUSTOM,
+		// 未选模型时只给最小手动窗口，选模型后再按名单填写。
+		contextLengthPreset: 'custom', chatModelMaxTokens: CUSTOM_TOKEN_MIN,
+		keySerial: nextChatKeySerial(settings.chatProfiles, LOCAL_PROVIDER_CUSTOM),
+		allowLegacyKeyFallback: false,
 	};
-	if (source?.windowUserSet) {
-		profile.windowUserSet = true;
-	}
-	if (source?.providerId) {
-		profile.providerId = source.providerId;
-	}
-	profile.keySerial = nextChatKeySerial(settings.chatProfiles, profile.providerId || 'custom');
 	settings.chatProfiles = [...settings.chatProfiles, profile];
-	settings.activeChatProfileId = profile.id;
+	return profile;
+}
+
+/**
+ * 复制指定配置的字段，分配独立 id 和密钥槽位，不切换当前配置。
+ * 密钥由调用方从来源配置读取并写入副本，不进入设置数据。
+ *
+ * @param settings - 可变插件设置
+ * @param sourceId - 要复制的配置 id
+ * @param name - 副本名称
+ * @returns 新副本；来源已不存在时返回 undefined
+ */
+export function copyChatProfile(settings: RatelVaultSettings, sourceId: string, name: string): ChatProfile | undefined {
+	const source = settings.chatProfiles.find((profile) => profile.id === sourceId);
+	if (!source) return undefined;
+	const profile: ChatProfile = {
+		...source, id: newChatProfileId(), name,
+		keySerial: nextChatKeySerial(settings.chatProfiles, source.providerId || LOCAL_PROVIDER_CUSTOM),
+		allowLegacyKeyFallback: false,
+	};
+	settings.chatProfiles = [...settings.chatProfiles, profile];
 	return profile;
 }
 

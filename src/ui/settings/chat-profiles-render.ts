@@ -13,7 +13,8 @@ import {
 	deleteChatProfile,
 	inferChatProvider,
 	projectProfileToSettings,
-	saveCurrentAsProfile,
+	createChatProfile,
+	copyChatProfile,
 	switchChatProfile,
 	syncChatWindow,
 	writeStoredProfileModel,
@@ -45,7 +46,7 @@ import { tNow } from '../../i18n';
 import { CUSTOM_TOKEN_MAX, CUSTOM_TOKEN_MIN } from '../../ui/tokens/context-length-presets';
 
 /**
- * 简单文本输入 Modal — 用于改名 / 另存为名称。
+ * 简单文本输入 Modal — 用于新建 / 复制 / 改名。
  */
 class TextPromptModal extends Modal {
 	constructor(
@@ -121,7 +122,7 @@ async function commitProfileModel(
 }
 
 /**
- * 已保存配置列表。点一行进入这一套的二级页。加号把当前配置再存一套。
+ * 已保存配置列表。点一行进入这一套的二级页。加号新建空配置，复制入口放在具体配置页。
  */
 export function buildChatProfileList(app: App, plugin: RatelVaultPlugin): SettingDefinitionList {
 	const profiles = plugin.settings.chatProfiles ?? [];
@@ -129,24 +130,17 @@ export function buildChatProfileList(app: App, plugin: RatelVaultPlugin): Settin
 		type: 'list',
 		heading: tNow('settings.chatProfiles.heading'),
 		addItem: {
-			name: tNow('settings.chatProfiles.saveAsAction'),
+			name: tNow('settings.chatProfiles.createAction'),
 			action: () => {
 				new TextPromptModal(
 					app,
-					tNow('settings.chatProfiles.saveAsPromptTitle'),
-					tNow('settings.chatProfiles.saveAsPromptPlaceholder'),
+					tNow('settings.chatProfiles.createPromptTitle'),
+					tNow('settings.chatProfiles.createPromptPlaceholder'),
 					'',
 					async (name) => {
-						const sourceProfileId = plugin.settings.activeChatProfileId;
-						const key = resolveChatApiKey(app, {
-							chatApiBase: plugin.settings.chatApiBase,
-							chatProfiles: plugin.settings.chatProfiles,
-							activeChatProfileId: sourceProfileId,
-						});
-						const created = saveCurrentAsProfile(plugin.settings, name);
-						if (key) setChatProfileSecret(app, created, key);
+						createChatProfile(plugin.settings, name);
 						await plugin.saveSettings();
-						new Notice(tNow('settings.chatProfiles.saveAsDone'), 3000);
+						new Notice(tNow('settings.chatProfiles.createDone'), 3000);
 					},
 				).open();
 			},
@@ -168,7 +162,7 @@ export function buildChatProfileList(app: App, plugin: RatelVaultPlugin): Settin
 		items: profiles.map((profile) => ({
 			type: 'page' as const,
 			name: profile.name,
-			desc: profile.model,
+			desc: profile.model || tNow('settings.chatProfiles.unconfigured'),
 			...(profile.id === plugin.settings.activeChatProfileId
 				? { displayValue: tNow('settings.chatProfiles.activeMark') }
 				: {}),
@@ -376,6 +370,32 @@ function renderProfileDetail(
 	})();
 
 	renderProfileWindow(plugin, detail, profile);
+
+	new Setting(detail)
+		.setName(tNow('settings.chatProfiles.copyAction'))
+		.setDesc(tNow('settings.chatProfiles.copyDesc'))
+		.addButton((btn) => {
+			btn.setButtonText(tNow('settings.chatProfiles.copyAction'));
+			btn.onClick(() => {
+				new TextPromptModal(app, tNow('settings.chatProfiles.copyPromptTitle'),
+					tNow('settings.chatProfiles.createPromptPlaceholder'),
+					tNow('settings.chatProfiles.copyName', { name: profile.name }), async (name) => {
+						// 关键路径:读取正在编辑的来源配置，不能借用当前激活配置的字段或密钥。
+						const source = plugin.settings.chatProfiles.find((item) => item.id === profile.id);
+						if (!source) {
+							new Notice(tNow('settings.chatProfiles.sourceMissing'), 3000);
+							return;
+						}
+						const key = resolveChatApiKey(app, { chatApiBase: source.apiBase,
+							chatProfiles: plugin.settings.chatProfiles, activeChatProfileId: source.id });
+						const copied = copyChatProfile(plugin.settings, source.id, name);
+						if (!copied) return;
+						if (key) setChatProfileSecret(app, copied, key);
+						await plugin.saveSettings({ refreshSettingsTab: false });
+						new Notice(tNow('settings.chatProfiles.copyDone'), 3000);
+					}).open();
+			});
+		});
 }
 
 /**
@@ -392,11 +412,12 @@ function renderProviderAndModel(
 ): void {
 	const providerId = profile.providerId || inferChatProvider(profile.apiBase);
 	const rows = catalog ? listCatalogProviders(catalog) : [];
-	const currentName = providerDisplayName(rows, providerId);
+	const currentName = !profile.apiBase && !profile.model
+		? tNow('settings.chatProfiles.provider.empty') : providerDisplayName(rows, providerId);
 
 	const providerSetting = new Setting(host)
 		.setName(tNow('settings.chatProfiles.provider.name'))
-		.setDesc(catalog ? currentName : tNow('settings.chatProfiles.catalogMissing'));
+		.setDesc(!profile.apiBase && !profile.model ? currentName : catalog ? currentName : tNow('settings.chatProfiles.catalogMissing'));
 	providerSetting.addButton((btn) => {
 		btn.setButtonText(tNow('settings.chatProfiles.provider.choose'));
 		btn.onClick(onChooseProvider);

@@ -76,6 +76,18 @@ export interface SettingsStrings {
   'settings.chatProfiles.rename': string;
   'settings.chatProfiles.delete': string;
   'settings.chatProfiles.activeMark': string;
+  'settings.chatProfiles.createAction': string;
+  'settings.chatProfiles.createPromptTitle': string;
+  'settings.chatProfiles.createPromptPlaceholder': string;
+  'settings.chatProfiles.createDone': string;
+  'settings.chatProfiles.copyAction': string;
+  'settings.chatProfiles.copyDesc': string;
+  'settings.chatProfiles.copyPromptTitle': string;
+  'settings.chatProfiles.copyName': string;
+  'settings.chatProfiles.copyDone': string;
+  'settings.chatProfiles.sourceMissing': string;
+  'settings.chatProfiles.unconfigured': string;
+  'settings.chatProfiles.provider.empty': string;
   'settings.chatProfiles.saveAs': string;
   'settings.chatProfiles.saveAsAction': string;
   'settings.chatProfiles.saveAsPromptTitle': string;
@@ -657,17 +669,17 @@ export interface ModalStrings {
   'modal.mcpSpawn.cancel': string;
   'modal.release.title': string;
   'modal.release.lead': string;
-  'modal.release.changesHeading': string;
-  'modal.release.change.compact': string;
-  'modal.release.change.move': string;
-  'modal.release.change.agents': string;
-  'modal.release.change.counts': string;
-  'modal.release.change.profiles': string;
-  'modal.release.change.obsidian': string;
+  'modal.release.useHeading': string;
+  'modal.release.use.find': string;
+  'modal.release.use.write': string;
+  'modal.release.use.workflow': string;
+  'modal.release.use.goal': string;
+  'modal.release.permissions': string;
+  'modal.release.requirements': string;
   'modal.release.setupHeading': string;
   'modal.release.setup.provider': string;
   'modal.release.setup.model': string;
-  'modal.release.setup.switch': string;
+  'modal.release.setup.firstTask': string;
   'modal.release.openSettings': string;
 }
 

@@ -25,7 +25,7 @@ Follow this sequence: install → configure a chat model → review permissions 
 3. For a remote service, enter the API key in that setup's API key field. It is automatically synced to Obsidian Keychain for encrypted storage; no separate manual entry is needed. Local Ollama usually uses `http://localhost:11434/v1` without a key; start Ollama and prepare the model first.
 4. Check the key status in Ratel settings. Your chosen provider charges for model usage.
 
-To keep another chat setup, return to Saved setups and click Save current setup. The model name at the top of chat switches setups. Each setup has its own key.
+In Saved setups, choose New setup, give it a name, and open it to choose a provider and model and enter its key. Nothing is inherited from the previous setup. To reuse an existing setup, open it and choose Copy setup; its model, endpoint, window, and key are copied to an independent setup. Neither action switches the active setup automatically. After configuring it, choose Set as current or switch from the chat top bar.
 
 Embeddings run locally by default. First use downloads the model and WASM runtime assets, then indexes your notes. You can keep using Obsidian during this process. The strip above the chat input shows progress and explains why sending is blocked until ready.
 

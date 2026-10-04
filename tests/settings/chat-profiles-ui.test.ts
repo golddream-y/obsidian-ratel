@@ -1,6 +1,6 @@
 /**
  * @file tests/settings/chat-profiles-ui.test.ts
- * @description 多套配置切换/另存/删除纯逻辑
+ * @description 多套配置新建、复制、切换及独立密钥验证
  * @module tests/settings/chat-profiles-ui
  */
 import { describe, it, expect } from 'vitest';
@@ -10,7 +10,8 @@ import {
 	profileSelectNeedsSwitch,
 	resolveHeaderChatModel,
 	switchChatProfile,
-	saveCurrentAsProfile,
+	createChatProfile,
+	copyChatProfile,
 	deleteChatProfile,
 	inferChatProvider,
 	migrateChatProviderIds,
@@ -66,66 +67,61 @@ describe('switchChatProfile', () => {
 	});
 });
 
-describe('saveCurrentAsProfile', () => {
-	it('另存当前 - 新一套入列,active 指向新套', () => {
+describe('新建与复制配置', () => {
+	it('新建配置 - 当前已有模型 - 空配置且不切换当前', () => {
 		const s = base();
-		const created = saveCurrentAsProfile(s as never, '我的工作');
+		const created = createChatProfile(s as never, '新模型');
+		expect(created.apiBase).toBe('');
+		expect(created.model).toBe('');
+		expect(created.providerId).toBe('custom');
+		expect(created.windowUserSet).toBeUndefined();
+		expect(s.activeChatProfileId).toBe('p1');
+		expect(s.chatModel).toBe('m-current');
 		expect(s.chatProfiles).toHaveLength(2);
-		expect(created.name).toBe('我的工作');
-		expect(s.activeChatProfileId).toBe(created.id);
 	});
 
-	it('另存当前 - 继承源套 windowUserSet 标志', () => {
+	it('新建配置 - 旧全局密钥存在 - 不借用旧密钥', () => {
 		const s = base();
-		s.chatProfiles[0]!.windowUserSet = true;
-		const created = saveCurrentAsProfile(s as never, '锁定窗口的套');
-		expect(created.windowUserSet).toBe(true);
+		const created = createChatProfile(s as never, '新模型');
+		created.apiBase = 'https://new.example/v1';
+		const app = { secretStorage: { getSecret: () => 'legacy-key' } } as unknown as App;
+		// 只给全局槽位密钥，新配置的专用槽位为空。
+		app.secretStorage.getSecret = (id) => id === 'ratel-chat-openai-compatible' ? 'legacy-key' : null;
+		expect(resolveChatApiKey(app, { chatApiBase: created.apiBase, chatProfiles: s.chatProfiles, activeChatProfileId: created.id })).toBeNull();
 	});
 
-	it('另存为 CP-07 - 密钥仅在源套槽位 - 先读后存复制到新套', () => {
+	it('复制配置 - 来源不是当前且全局字段不同 - 复制指定来源不切换', () => {
 		const s = base();
-		const store: Record<string, string> = { 'ratel-chat-profile-p1': 'sk-source-only' };
-		const app = {
-			secretStorage: {
-				getSecret: (id: string) => store[id] ?? null,
-				setSecret: (id: string, value: string) => {
-					store[id] = value;
-				},
-			},
-		} as unknown as App;
-
-		const sourceProfileId = s.activeChatProfileId;
-		const key = resolveChatApiKey(app, {
-			chatApiBase: s.chatApiBase,
-			chatProfiles: s.chatProfiles,
-			activeChatProfileId: sourceProfileId,
-		});
-		expect(key).toBe('sk-source-only');
-
-		const created = saveCurrentAsProfile(s as never, '副本');
-		if (key) {
-			setChatProfileSecret(app, created, key);
-		}
-		expect(store[chatProfileSecretId(created)]).toBe('sk-source-only');
+		s.chatProfiles.push({ ...s.chatProfiles[0]!, id: 'p2', name: 'B', model: 'source-model', apiBase: 'https://source.example/v1', windowUserSet: true });
+		const created = copyChatProfile(s as never, 'p2', 'B 副本');
+		expect(created).toMatchObject({ name: 'B 副本', model: 'source-model', apiBase: 'https://source.example/v1', windowUserSet: true });
+		expect(created?.id).not.toBe('p2');
+		expect(s.activeChatProfileId).toBe('p1');
+		expect(s.chatModel).toBe('m-current');
 	});
 
-	it('另存为 CP-07 - 先切 active 再读密钥 - 无法复制源套槽位', () => {
+	it('复制配置 - 来源有专用密钥 - 独立槽位且保留来源密钥', () => {
 		const s = base();
-		const store: Record<string, string> = { 'ratel-chat-profile-p1': 'sk-source-only' };
-		const app = {
-			secretStorage: {
-				getSecret: (id: string) => store[id] ?? null,
-			},
-		} as unknown as App;
+		s.chatProfiles[0]!.keySerial = 1;
+		const source = s.chatProfiles[0]!;
+		const store: Record<string, string> = { [chatProfileSecretId(source)]: 'source-key' };
+		const app = { secretStorage: { getSecret: (id: string) => store[id] ?? null, setSecret: (id: string, value: string) => { store[id] = value; } } } as unknown as App;
+		const key = resolveChatApiKey(app, { chatApiBase: source.apiBase, chatProfiles: s.chatProfiles, activeChatProfileId: source.id });
+		const copied = copyChatProfile(s as never, source.id, '副本');
+		if (!copied || !key) throw new Error('复制失败');
+		setChatProfileSecret(app, copied, key);
+		expect(chatProfileSecretId(copied)).not.toBe(chatProfileSecretId(source));
+		expect(store[chatProfileSecretId(copied)]).toBe('source-key');
+		expect(store[chatProfileSecretId(source)]).toBe('source-key');
+		expect(resolveChatApiKey(app, { chatApiBase: copied.apiBase, chatProfiles: s.chatProfiles, activeChatProfileId: copied.id })).toBe('source-key');
+		expect(s.activeChatProfileId).toBe('p1');
+	});
 
-		const created = saveCurrentAsProfile(s as never, '副本');
-		const keyAfterSwitch = resolveChatApiKey(app, {
-			chatApiBase: s.chatApiBase,
-			chatProfiles: s.chatProfiles,
-			activeChatProfileId: s.activeChatProfileId,
-		});
-		expect(keyAfterSwitch).toBeNull();
-		expect(created.id).not.toBe('p1');
+	it('复制配置 - 来源不存在 - 不创建且不切换', () => {
+		const s = base();
+		expect(copyChatProfile(s as never, 'missing', '副本')).toBeUndefined();
+		expect(s.chatProfiles).toHaveLength(1);
+		expect(s.activeChatProfileId).toBe('p1');
 	});
 });
 

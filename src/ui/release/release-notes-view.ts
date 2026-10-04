@@ -12,42 +12,45 @@ import type RatelVaultPlugin from '../../main';
 /** 工作区视图类型。注册后，升级时用新标签打开，而不是对话框。 */
 export const VIEW_TYPE_RELEASE_NOTES = 'ratel-release-notes';
 
-const CHANGE_KEYS = [
-	'modal.release.change.compact',
-	'modal.release.change.move',
-	'modal.release.change.agents',
-	'modal.release.change.counts',
-	'modal.release.change.profiles',
-	'modal.release.change.obsidian',
+const USE_KEYS = [
+	'modal.release.use.find',
+	'modal.release.use.write',
+	'modal.release.use.workflow',
+	'modal.release.use.goal',
 ] as const;
 
 const SETUP_KEYS = [
 	'modal.release.setup.provider',
 	'modal.release.setup.model',
-	'modal.release.setup.switch',
+	'modal.release.setup.firstTask',
 ] as const;
 
 /**
  * 拼出更新说明的 Markdown。标题用当前插件版本。
  *
  * @param version - manifest.version
+ * @param minAppVersion - manifest.minAppVersion
  * @returns 交给 MarkdownRenderer 的正文
  */
-export function buildReleaseNotesMarkdown(version: string): string {
-	const changes = CHANGE_KEYS.map((key) => `- ${tNow(key)}`).join('\n');
+export function buildReleaseNotesMarkdown(version: string, minAppVersion: string): string {
+	const uses = USE_KEYS.map((key) => `- ${tNow(key)}`).join('\n');
 	const setup = SETUP_KEYS.map((key, index) => `${index + 1}. ${tNow(key)}`).join('\n');
 	return [
 		`# ${tNow('modal.release.title', { version })}`,
 		'',
 		tNow('modal.release.lead'),
 		'',
-		`## ${tNow('modal.release.changesHeading')}`,
+		`## ${tNow('modal.release.useHeading')}`,
 		'',
-		changes,
+		uses,
 		'',
 		`## ${tNow('modal.release.setupHeading')}`,
 		'',
 		setup,
+		'',
+		tNow('modal.release.permissions'),
+		'',
+		tNow('modal.release.requirements', { minAppVersion }),
 	].join('\n');
 }
 
@@ -80,7 +83,7 @@ export class ReleaseNotesView extends ItemView {
 		});
 		await MarkdownRenderer.render(
 			this.app,
-			buildReleaseNotesMarkdown(this.plugin.manifest.version),
+			buildReleaseNotesMarkdown(this.plugin.manifest.version, this.plugin.manifest.minAppVersion),
 			preview,
 			'',
 			this,
