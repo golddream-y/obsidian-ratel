@@ -240,7 +240,7 @@ graph TB
 | **Agent** | context-manager | 上下文管理:消息历史 / 搜索结果注入 / 上送包组装(系统提示词见 prompt-management) | [agent/context-manager.md](agent/context-manager.md) |
 | **Agent** | context-compaction | 上下文压缩:预算 / 移出 / 增量任务状态 / 压后恢复;聊天记录不改 | [agent/context-compaction.md](agent/context-compaction.md) |
 | **Agent** | prompt-management | 提示词 registry + Composer:中文模板 / 动态注入 / section 覆盖 | [agent/prompt-management.md](agent/prompt-management.md) |
-| **Agent** | note-agents | 库内 AGENTS.md:库根每轮注入,子目录碰到路径再叠加;改约束文件强制确认 | [agent/note-agents.md](agent/note-agents.md) |
+| **Agent** | note-agents | 库内 AGENTS.md:库根每轮进系统段,子目录碰到路径后挂在工具结果上并整场会话保留;改约束文件强制确认 | [agent/note-agents.md](agent/note-agents.md) |
 | **Agent** | tools | 工具系统:注册、发现、调用、返回格式(含环境感知只读工具) | [agent/tools.md](agent/tools.md) |
 | **Agent** | hooks | 知识治理钩子:pre-write / post-write 阶段化扩展点 | [agent/hooks.md](agent/hooks.md) |
 | **Agent** | goal-mode | 跨会话持久目标:意图 + 完成标准 + 预算;人在场续跑 | [agent/goal-mode.md](agent/goal-mode.md) |

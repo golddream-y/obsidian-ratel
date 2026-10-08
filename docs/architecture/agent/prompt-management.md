@@ -15,7 +15,7 @@
 - 工具 function-calling 的 `description` 与参数说明
 - 运行时注入块(工具列表、知识库检索结果、库根 `AGENTS.md`)
 
-库根笔记约束的加载规则不在 section registry 里配。它是用户库里的文件，按路径发现。子目录约束在工具碰到该路径时追加到同一段，本轮下一次模型请求能看见。见 [note-agents](note-agents.md)。
+库根笔记约束的加载规则不在 section registry 里配。它是用户库里的文件，按路径发现：库根每轮写入 injector 的 `noteAgents` 段；子目录约束挂在触发它的 tool 消息上，不进系统段。见 [note-agents](note-agents.md)。
 
 **不做的事:**
 
