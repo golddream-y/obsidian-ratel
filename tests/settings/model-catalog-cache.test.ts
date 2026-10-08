@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { MODELS_DEV_URL } from '../../src/settings/model-catalog';
-import { ModelsDevCatalogCache } from '../../src/settings/model-catalog-cache';
+import { CATALOG_TTL_MS, ModelsDevCatalogCache } from '../../src/settings/model-catalog-cache';
 
 const dirs: string[] = [];
 
@@ -46,6 +46,46 @@ describe('ModelsDevCatalogCache', () => {
 		expect(saved).toContain('deepseek');
 		await cache.ensureCatalog();
 		expect(calls).toBe(1);
+	});
+
+	it('ensureCatalog - 超过 24 小时 - 重新拉取并覆盖', async () => {
+		const dir = await tempDir();
+		await writeFile(path.join(dir, 'models-dev.json'), body, 'utf-8');
+		await writeFile(
+			path.join(dir, 'models-dev.meta.json'),
+			JSON.stringify({ fetchedAt: Date.now() - CATALOG_TTL_MS - 1000, sourceUrl: MODELS_DEV_URL }),
+			'utf-8',
+		);
+		const next = JSON.stringify({
+			openai: { id: 'openai', name: 'OpenAI', api: '', models: {} },
+		});
+		let calls = 0;
+		const cache = new ModelsDevCatalogCache(dir, async () => {
+			calls += 1;
+			return { status: 200, text: next } as never;
+		});
+		const catalog = await cache.ensureCatalog();
+		expect(calls).toBe(1);
+		expect(catalog?.openai?.id).toBe('openai');
+		expect(catalog?.deepseek).toBeUndefined();
+	});
+
+	it('ensureCatalog - 未超过 24 小时 - 不请求', async () => {
+		const dir = await tempDir();
+		await writeFile(path.join(dir, 'models-dev.json'), body, 'utf-8');
+		await writeFile(
+			path.join(dir, 'models-dev.meta.json'),
+			JSON.stringify({ fetchedAt: Date.now() - CATALOG_TTL_MS + 60_000, sourceUrl: MODELS_DEV_URL }),
+			'utf-8',
+		);
+		let calls = 0;
+		const cache = new ModelsDevCatalogCache(dir, async () => {
+			calls += 1;
+			return { status: 500, text: '' } as never;
+		});
+		const catalog = await cache.ensureCatalog();
+		expect(calls).toBe(0);
+		expect(catalog?.deepseek?.id).toBe('deepseek');
 	});
 
 	it('ensureCatalog - 拉取失败且有过期缓存 - 返回旧名单', async () => {

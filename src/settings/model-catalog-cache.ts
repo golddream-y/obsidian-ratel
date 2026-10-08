@@ -1,6 +1,6 @@
 /**
  * @file src/settings/model-catalog-cache.ts
- * @description models.dev 名单的拉取与 7 天文件缓存
+ * @description models.dev 名单的拉取与 24 小时文件缓存
  * @module settings/model-catalog-cache
  * @depends settings/model-catalog, obsidian, logging/dev-logger
  */
@@ -14,7 +14,7 @@ import { MODELS_DEV_URL, type ModelsDevCatalog } from './model-catalog';
 export const CATALOG_CACHE_FILENAME = 'models-dev.json';
 export const CATALOG_META_FILENAME = 'models-dev.meta.json';
 
-const CATALOG_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+export const CATALOG_TTL_MS = 24 * 60 * 60 * 1000;
 /** 名单约 4.7MB，沿用映射表 3MB 上限会把合法响应丢掉 */
 const CATALOG_MAX_BYTES = 8 * 1024 * 1024;
 
@@ -30,7 +30,7 @@ type RequestUrlFn = (request: RequestUrlParam) => Promise<RequestUrlResponse>;
  *
  * 设计要点:
  * - 不在插件 onload 调用
- * - 7 天内用缓存；拉取失败时用过期缓存；都没有则返回 null
+ * - 24 小时内用缓存；拉取失败时用过期缓存；都没有则返回 null
  */
 export class ModelsDevCatalogCache {
 	constructor(
