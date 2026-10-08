@@ -1,7 +1,7 @@
 {
 	"id": "ratel-vault",
 	"name": "Ratel",
-	"version": "1.0.1",
+	"version": "1.0.2",
 	"minAppVersion": "1.13.1",
 	"description": "Make your vault simpler to use. Set up a scene in chat, remember how you work, and keep cited search and goals. DeepSeek or Ollama. Local embeddings, no telemetry.",
 	"author": "golddream-y",
