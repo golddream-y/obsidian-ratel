@@ -24,7 +24,8 @@
 | S-AGENTS-INJECT | [2026-10-02-agents-inject-design.md](specs/2026-10-02-agents-inject-design.md) | Active | 2026-10-02 | 子目录 AGENTS.md 注入上下文，第一次修改就执行。取代 S-AGENTS-GATE。plan 未建 |
 | S-NOTE-MOVE | [2026-10-01-note-move-design.md](specs/2026-10-01-note-move-design.md) | Active | 2026-10-01 | 移动走 FileManager.renameFile，复制走 adapter.copy；残缺工具参数不执行。plan 未建 |
 | S-COMPACT-V3 | [2026-10-01-compact-v3-design.md](specs/2026-10-01-compact-v3-design.md) | Active | 2026-10-01 | 压缩重设计。P1 计划已写，未开工 |
-| S-MODEL-CATALOG | [2026-09-28-model-catalog-design.md](specs/2026-09-28-model-catalog-design.md) | Active | 2026-09-28 | 供应商名单；按供应商+模型 id 查窗口和单次输出。列表与密钥改名仍在工作区 |
+| S-CATALOG-FRESH | [2026-10-08-catalog-freshness-design.md](specs/2026-10-08-catalog-freshness-design.md) | Active | 2026-10-08 | 模型名单缓存超过 24 小时再拉。不按 deprecated 隐藏 |
+| S-MODEL-CATALOG | [2026-09-28-model-catalog-design.md](specs/2026-09-28-model-catalog-design.md) | Active | 2026-09-28 | 供应商名单；按供应商+模型 id 查窗口和单次输出。缓存时长改由 S-CATALOG-FRESH 规定 |
 | S-CHAT-PROFILES | [2026-09-24-chat-profiles-design.md](specs/2026-09-24-chat-profiles-design.md) | Active | 2026-09-24 | 多套配置与顶栏菜单已落地。设置页「设为当前」尚未改调共用函数 |
 
 
@@ -39,6 +40,7 @@
 | P-AGENTS-INJECT | [2026-10-02-agents-inject.md](plans/2026-10-02-agents-inject.md) | Completed | S-AGENTS-INJECT | 63a4019；第一次修改就执行，失败只报真实路径原因 |
 | P-NOTE-MOVE | [2026-10-01-note-move.md](plans/2026-10-01-note-move.md) | Completed | S-NOTE-MOVE | 08c4a78；移动走 fileManager.renameFile，复制走 adapter.copy |
 | P-COMPACT-V3-P1 | [2026-10-01-compact-v3-p1.md](plans/2026-10-01-compact-v3-p1.md) | Completed | S-COMPACT-V3 | 已合入 develop（5761c19、e588efe、546df2d） |
+| P-CATALOG-FRESH | [2026-10-08-catalog-freshness.md](plans/2026-10-08-catalog-freshness.md) | Completed | S-CATALOG-FRESH | 4cd9475、2881252。缓存超过 24 小时重拉；失败仍用旧文件 |
 | P-MODEL-CATALOG | [2026-09-28-model-catalog.md](plans/2026-09-28-model-catalog.md) | Completed | S-MODEL-CATALOG | 已合入 develop。4521c02；列表与密钥改名已提交 |
 | P-CHAT-PROFILE-MENU | [2026-09-27-chat-profile-menu.md](plans/2026-09-27-chat-profile-menu.md) | Completed | S-CHAT-PROFILES | 顶栏菜单，提交 29069b9。设置页「设为当前」尚未改调共用函数 |
 | P-CHAT-PROFILES | [2026-09-24-chat-profiles.md](plans/2026-09-24-chat-profiles.md) | Completed | S-CHAT-PROFILES | 已合 develop（merge a0c0a09）。设置页「设为当前」尚未改调共用函数 |
