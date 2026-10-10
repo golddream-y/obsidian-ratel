@@ -54,7 +54,7 @@ import { createApplyPatchTool } from './tools/apply-patch';
 import { createDeleteNoteTool } from './tools/delete-note';
 import { createMoveNoteTool } from './tools/move-note';
 import { createCopyNoteTool } from './tools/copy-note';
-import { AGENTS_FILE_NAME, AgentsChainSeen, type NoteAgentsToolDeps } from './tools/note-agents';
+import { AGENTS_FILE_NAME } from './tools/note-agents';
 // 关键路径:用户记忆系统 — MemoryStore 管理 .ratel/memory/ 文件 + .memory-index/ vectra 索引,
 // 3 个工具(search_memory / remember / forget_memory)复用 memoryStore 与 embeddingPort。
 import { MemoryStore } from './core/memory-store';
@@ -242,8 +242,6 @@ export default class RatelVaultPlugin extends Plugin {
 	private skillActivator!: SkillActivator;
 	/** ADR-012:当前 ask 的 ContextManager,供 activate/deactivate 工具写 transcript */
 	private currentAskCtx: ContextManager | null = null;
-	/** S-NOTE-AGENTS:当前 agent-loop 回合的约束链已见记录(每轮 ask 新建) */
-	private noteAgentsTurn?: NoteAgentsToolDeps;
 	modelManager!: ModelManager;
 	modelContextRegistry!: ModelContextRegistry;
 	/** S-MODEL-CATALOG: models.dev 名单缓存。打开对话模型页时才拉取 */
@@ -524,7 +522,7 @@ export default class RatelVaultPlugin extends Plugin {
 		const toolDefs = composeToolDefinitions(this.settings.promptOverrides, ALL_TOOL_NAMES);
 		const toolDefMap = new Map(toolDefs.map((d) => [d.name, d]));
 		this.tools.register(
-			createReadNoteTool(this.vault, toolDefMap.get('read_note')!, () => this.noteAgentsTurn),
+			createReadNoteTool(this.vault, toolDefMap.get('read_note')!),
 		);
 
 		// 关键路径:W4 — 构造 MultiQuerySearcher,编排改写 + 多查询 + RRF + 可选 Rerank。
@@ -568,25 +566,25 @@ export default class RatelVaultPlugin extends Plugin {
 		this.tools.register(createGlobTool(this.vault, toolDefMap.get('glob')!));
 		this.tools.register(createListFilesTool(this.vault, toolDefMap.get('list_files')!));
 		this.tools.register(
-			createWriteNoteTool(this.vault, toolDefMap.get('write_note')!, () => this.noteAgentsTurn),
+			createWriteNoteTool(this.vault, toolDefMap.get('write_note')!),
 		);
 		this.tools.register(
-			createAppendNoteTool(this.vault, toolDefMap.get('append_note')!, () => this.noteAgentsTurn),
+			createAppendNoteTool(this.vault, toolDefMap.get('append_note')!),
 		);
 		this.tools.register(
-			createEditNoteTool(this.vault, toolDefMap.get('edit_note')!, () => this.noteAgentsTurn),
+			createEditNoteTool(this.vault, toolDefMap.get('edit_note')!),
 		);
 		this.tools.register(
-			createApplyPatchTool(this.vault, toolDefMap.get('apply_patch')!, () => this.noteAgentsTurn),
+			createApplyPatchTool(this.vault, toolDefMap.get('apply_patch')!),
 		);
 		this.tools.register(
-			createDeleteNoteTool(this.vault, toolDefMap.get('delete_note')!, () => this.noteAgentsTurn),
+			createDeleteNoteTool(this.vault, toolDefMap.get('delete_note')!),
 		);
 		this.tools.register(
-			createMoveNoteTool(this.vault, toolDefMap.get('move_note')!, () => this.noteAgentsTurn),
+			createMoveNoteTool(this.vault, toolDefMap.get('move_note')!),
 		);
 		this.tools.register(
-			createCopyNoteTool(this.vault, toolDefMap.get('copy_note')!, () => this.noteAgentsTurn),
+			createCopyNoteTool(this.vault, toolDefMap.get('copy_note')!),
 		);
 		// 关键路径:记忆工具 — 3 个新工具,复用 memoryStore 与主线程 embeddingPort。
 		// search_memory 是只读工具(查询记忆);remember / forget_memory 是写工具(触发 pre/post write hook)。
@@ -1831,21 +1829,18 @@ export default class RatelVaultPlugin extends Plugin {
 			ctx.setNoteAgentsRoot('');
 		}
 
-		this.noteAgentsTurn = {
-			seen: new AgentsChainSeen(),
-			readAgentsFile: async (dir: string) => {
-				const rel = dir ? `${dir}/${AGENTS_FILE_NAME}` : AGENTS_FILE_NAME;
-				try {
-					if (!(await this.vault.fileExists(rel))) return null;
-					const text = await this.vault.readFile(rel);
-					this.breadcrumbs?.mark('agents.file', sessionId, rel);
-					return text;
-				} catch {
-					return null;
-				}
-			},
-			appendChain: (text: string) => ctx.appendNoteAgentsChain(text),
-		};
+		ctx.setNoteAgentsReader(async (dir: string) => {
+			if (dir === '') return null;
+			const rel = `${dir}/${AGENTS_FILE_NAME}`;
+			try {
+				if (!(await this.vault.fileExists(rel))) return null;
+				const text = await this.vault.readFile(rel);
+				this.breadcrumbs?.mark('agents.file', sessionId, rel);
+				return text;
+			} catch {
+				return null;
+			}
+		});
 
 		// 关键路径:注入意图分类器,让 agentLoop 在 addUserMessage 后判断意图。
 		// 闭包捕获 this.llm,与 agentLoop 解耦。
@@ -1966,7 +1961,7 @@ export default class RatelVaultPlugin extends Plugin {
 			if (failed) this.breadcrumbs?.mark('ask.error', sessionId);
 			this.breadcrumbs?.mark('ask.end', sessionId);
 			this.currentAskCtx = null;
-			this.noteAgentsTurn = undefined;
+			ctx.setNoteAgentsReader(undefined);
 			// 关键路径:消费方提前结束 for-await 或 agentLoop 抛错也要记账(C1)
 			await this.finalizeAskRound(sessionId, signal, opts, collectedEvents);
 		}

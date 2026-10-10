@@ -6,6 +6,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { ContextManager } from '../../src/core/context-manager';
+import { microcompactMessages } from '../../src/core/compact-project';
 import type { Persistence, Session } from '../../src/ports/persistence';
 
 function emptyPersistence(): Persistence {
@@ -122,5 +123,18 @@ describe('note-agents session', () => {
 		});
 		const again = await ctx.loadNoteAgents(['Work/a.md']);
 		expect(again!.dirs).toEqual(['Work']);
+	});
+
+	it('microcompactMessages - 折叠正文 - 保留 noteAgents', () => {
+		const folded = microcompactMessages([
+			{ role: 'tool', content: '旧', toolCallId: 'a', noteAgents: { dirs: ['Work'], text: '工作规则' } },
+			{ role: 'tool', content: '1', toolCallId: 'b' },
+			{ role: 'tool', content: '2', toolCallId: 'c' },
+			{ role: 'tool', content: '3', toolCallId: 'd' },
+			{ role: 'tool', content: '4', toolCallId: 'e' },
+			{ role: 'tool', content: '5', toolCallId: 'f' },
+			{ role: 'tool', content: '6', toolCallId: 'g' },
+		], 5);
+		expect(folded[0]!.noteAgents?.dirs).toEqual(['Work']);
 	});
 });

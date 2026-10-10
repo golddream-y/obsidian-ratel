@@ -9,8 +9,6 @@ import type { ToolDefinition } from '../ports/llm';
 import type { VaultPort } from '../ports/vault';
 import { requireString } from './validate-args';
 import { tNow } from '../i18n';
-import { injectAgentsForPaths, type NoteAgentsToolDeps } from './note-agents';
-
 /**
  * 创建 copy_note 工具实例。
  *
@@ -19,7 +17,6 @@ import { injectAgentsForPaths, type NoteAgentsToolDeps } from './note-agents';
 export function createCopyNoteTool(
 	vault: VaultPort,
 	definition: ToolDefinition,
-	getAgents?: () => NoteAgentsToolDeps | undefined,
 ): Tool {
 	return {
 		definition,
@@ -28,8 +25,6 @@ export function createCopyNoteTool(
 			const from = requireString(args, 'from', 'from');
 			const to = requireString(args, 'to', 'to');
 			if (from === to) throw new Error(tNow('error.tool.samePath'));
-			const agents = getAgents?.();
-			await injectAgentsForPaths(agents, [to]);
 			await vault.copyFile(from, to);
 			return { from, to };
 		},

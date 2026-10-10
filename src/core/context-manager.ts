@@ -448,17 +448,6 @@ export class ContextManager {
 		return joinAgentsBlock(layers);
 	}
 
-	/**
-	 * 追加本轮新碰到的子目录约束。空串不改。库根段保持在前。
-	 * @deprecated Task 4 删除；旧 gate 测试仍用
-	 */
-	appendNoteAgentsChain(text: string): void {
-		if (!text.trim()) return;
-		this.noteAgentsSystemPrompt = this.noteAgentsSystemPrompt
-			? `${this.noteAgentsSystemPrompt}\n\n${text}`
-			: text;
-	}
-
 	setMemoryContext(
 		globalContent: string,
 		indexEntries: TopicIndexEntry[],

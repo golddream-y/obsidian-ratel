@@ -9,7 +9,6 @@ import type { ToolDefinition } from '../ports/llm';
 import type { VaultPort } from '../ports/vault';
 import { rejectOffloadMarker, requireString } from './validate-args';
 import { tNow } from '../i18n';
-import { injectAgentsForPaths, type NoteAgentsToolDeps } from './note-agents';
 import { measureNoteText } from './note-text-stats';
 
 /**
@@ -25,7 +24,6 @@ import { measureNoteText } from './note-text-stats';
 export function createAppendNoteTool(
 	vault: VaultPort,
 	definition: ToolDefinition,
-	getAgents?: () => NoteAgentsToolDeps | undefined,
 ): Tool {
 	return {
 		definition,
@@ -36,8 +34,6 @@ export function createAppendNoteTool(
 				throw new Error(tNow('error.tool.invalidContent'));
 			}
 			rejectOffloadMarker(args.content);
-			const agents = getAgents?.();
-			await injectAgentsForPaths(agents, [path]);
 			await vault.appendFile(path, args.content);
 			const text = measureNoteText(await vault.readFile(path));
 			return { path, text };

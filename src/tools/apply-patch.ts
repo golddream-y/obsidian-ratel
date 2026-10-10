@@ -10,7 +10,6 @@ import type { VaultPort } from '../ports/vault';
 import { tNow } from '../i18n';
 import type { StringKey } from '../i18n/types';
 import { validateVaultPath } from '../utils/path-safety';
-import { injectAgentsForPaths, type NoteAgentsToolDeps } from './note-agents';
 import { measureNoteText, type NoteTextStats } from './note-text-stats';
 import {
 	applyUpdateHunks,
@@ -36,13 +35,11 @@ const PATCH_REASON_I18N: Record<PatchReason, StringKey> = {
  *
  * @param vault - VaultPort 外观
  * @param definition - 工具定义
- * @param getAgents - 可选的 AGENTS.md 注入依赖
  * @returns ToolRegistry 注册项
  */
 export function createApplyPatchTool(
 	vault: VaultPort,
 	definition: ToolDefinition,
-	getAgents?: () => NoteAgentsToolDeps | undefined,
 ): Tool {
 	return {
 		definition,
@@ -56,8 +53,6 @@ export function createApplyPatchTool(
 				throw new Error(tNow(PATCH_REASON_I18N[parsed.reason], { line: parsed.line ?? 0 }));
 			}
 			const path = validateVaultPath(parsed.path);
-			const agents = getAgents?.();
-			await injectAgentsForPaths(agents, [path]);
 
 			if (!(await vault.fileExists(path))) {
 				throw new Error(tNow('error.tool.fileNotFound', { path }));

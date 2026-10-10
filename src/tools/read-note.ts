@@ -9,7 +9,6 @@ import type { Tool } from '../core/tool-registry';
 import type { ToolDefinition } from '../ports/llm';
 import type { VaultPort } from '../ports/vault';
 import { requireString } from './validate-args';
-import { injectAgentsForPaths, type NoteAgentsToolDeps } from './note-agents';
 
 /**
  * 构造 `read_note` 工具实例。
@@ -31,7 +30,6 @@ import { injectAgentsForPaths, type NoteAgentsToolDeps } from './note-agents';
 export function createReadNoteTool(
 	vault: VaultPort,
 	definition: ToolDefinition,
-	getAgents?: () => NoteAgentsToolDeps | undefined,
 ): Tool {
 	return {
 		definition,
@@ -56,9 +54,6 @@ export function createReadNoteTool(
 			if (backlinks.size > 0) {
 				result.backlinks = Array.from(backlinks.keys());
 			}
-
-			const agents = getAgents?.();
-			await injectAgentsForPaths(agents, [path]);
 
 			return result;
 		},

@@ -1,10 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
 	agentsChainDirs,
-	joinAgentsChain,
 	joinAgentsBlock,
 	nestedDirs,
-	AgentsChainSeen,
 	staleAgentsDirs,
 	touchedNotePaths,
 	truncateUtf8,
@@ -19,29 +17,6 @@ describe('agentsChainDirs', () => {
 	});
 	it('agentsChainDirs - 库根笔记 - 只有根', () => {
 		expect(agentsChainDirs('note.md')).toEqual(['']);
-	});
-});
-
-describe('joinAgentsChain', () => {
-	it('joinAgentsChain - 两层 - 根在前且含优先句', () => {
-		const joined = joinAgentsChain([
-			{ dir: '', text: '根规则' },
-			{ dir: 'Work', text: '工作规则' },
-		]);
-		expect(joined.truncated).toBe(false);
-		expect(joined.text.indexOf('根规则')).toBeLessThan(joined.text.indexOf('工作规则'));
-		expect(joined.text).toContain('离笔记更近的优先');
-	});
-	it('joinAgentsChain - 合计超限 - 从最远截断', () => {
-		const far = '远'.repeat(6000);
-		const near = '近'.repeat(100);
-		const joined = joinAgentsChain([
-			{ dir: '', text: far },
-			{ dir: 'Work', text: near },
-		]);
-		expect(joined.truncated).toBe(true);
-		expect(joined.text).toContain('近');
-		expect(joined.text).toContain('已截断');
 	});
 });
 
@@ -117,22 +92,5 @@ describe('joinAgentsBlock', () => {
 	});
 	it('joinAgentsBlock - 单层远超 16KB - 不返回块', () => {
 		expect(joinAgentsBlock([{ dir: 'Work', text: '甲'.repeat(20000) }])).toBeUndefined();
-	});
-});
-
-describe('AgentsChainSeen', () => {
-	it('AgentsChainSeen - 只有库根 - 视为已见', () => {
-		const seen = new AgentsChainSeen();
-		expect(seen.has('note.md')).toBe(true);
-	});
-	it('AgentsChainSeen - 有更近目录且未 mark - 未见', () => {
-		const seen = new AgentsChainSeen();
-		expect(seen.has('Work/note.md')).toBe(false);
-		expect(nestedDirs('Work/note.md')).toEqual(['Work']);
-	});
-	it('AgentsChainSeen - mark 之后 - 已见', () => {
-		const seen = new AgentsChainSeen();
-		seen.mark('Work/note.md');
-		expect(seen.has('Work/note.md')).toBe(true);
 	});
 });
