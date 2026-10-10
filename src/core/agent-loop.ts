@@ -28,6 +28,7 @@ import { tNow } from '../i18n';
 import { getToolArgsIssue, formatToolArgsModelError } from './tool-args';
 import { measureOutbound } from './outbound-measure';
 import { recordUsageCalibration } from './usage-calibration';
+import { staleAgentsDirs, touchedNotePaths } from '../tools/note-agents';
 
 /**
  * Agent Loop 的默认最大步数上限,防止工具调用陷入死循环。
@@ -410,6 +411,17 @@ export async function* agentLoop(
 					continue;
 				}
 
+				const touched = touchedNotePaths(tc);
+				let block: { dirs: string[]; text: string } | undefined;
+				if (!signal?.aborted) {
+					block = await ctx.loadNoteAgents(touched);
+				}
+				if (signal?.aborted) {
+					yield { type: 'error', payload: { code: 'CANCELLED', message: '用户取消' } };
+					loopExitedViaBreak = true;
+					break;
+				}
+
 				let result: unknown;
 				let toolFailed = false;
 				try {
@@ -500,7 +512,11 @@ export async function* agentLoop(
 				// 避免在上下文中重复插入相同文本。
 				// 安全路径:turnReasoning 整轮复用,满足 thinking 模式 tool 轮回传契约。
 				ctx.addAssistantToolCall(checkedCall, accumulatedText, turnReasoning);
-				ctx.addToolResult(tc.id, JSON.stringify(result));
+				const stale = toolFailed ? undefined : staleAgentsDirs(touched);
+				ctx.addToolResult(tc.id, JSON.stringify(result), {
+					...(block ? { noteAgents: block } : {}),
+					...(stale && stale.length > 0 ? { noteAgentsStale: stale } : {}),
+				});
 				accumulatedText = '';
 			}
 

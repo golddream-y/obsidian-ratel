@@ -1551,6 +1551,103 @@ describe('agentLoop', () => {
 	});
 });
 
+describe('agentLoop note-agents', () => {
+	it('agentLoop - read_note 碰到新目录 - 块在下一次请求里且 tool.result 不含块', async () => {
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence, undefined, 8000);
+		ctx.setNoteAgentsReader(async (dir) => (dir === 'Work' ? '工作规则' : null));
+		const toolCall = { id: 'call_1', name: 'read_note', args: { path: 'Work/a.md' } };
+		let saw: string[] = [];
+		const llm = {
+			async *chat(req: ChatRequest): AsyncIterable<ChatDelta> {
+				saw = req.messages.filter((m) => m.role === 'tool').map((m) => m.content);
+				if (saw.length === 0) {
+					yield { text: '', toolCall };
+					return;
+				}
+				yield { text: 'done' };
+			},
+			embed: async () => [],
+			countTokens: () => 10,
+		};
+		const tools = new ToolRegistry();
+		tools.register({
+			definition: { name: 'read_note', description: 'read', parameters: {} },
+			execute: async () => '正文',
+		});
+		const events: AgentEvent[] = [];
+		for await (const event of agentLoop(
+			{ sessionId: 's1', message: '读' }, ctx, llm, tools, new HookRegistry(),
+		)) {
+			events.push(event);
+		}
+		const result = events.find((e) => e.type === 'tool.result');
+		expect(JSON.stringify(result)).not.toContain('工作规则');
+		expect(saw.some((c) => c.startsWith('"正文"') && c.includes('工作规则'))).toBe(true);
+		const stored = ctx.getTranscript().find((m) => m.role === 'tool');
+		expect(stored?.noteAgents?.dirs).toEqual(['Work']);
+		expect(stored?.content).not.toContain('工作规则');
+	});
+
+	it('agentLoop - 权限拒绝时不加载 noteAgents', async () => {
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence, undefined, 8000);
+		ctx.setNoteAgentsReader(async () => '工作规则');
+		const toolCall = { id: 'call_1', name: 'read_note', args: { path: 'Work/a.md' } };
+		const llm = createMockLLM([[{ text: '', toolCall }], [{ text: 'done' }]]);
+		const tools = new ToolRegistry();
+		tools.register({
+			definition: { name: 'read_note', description: 'read', parameters: {} },
+			execute: async () => '正文',
+		});
+		const toolPermissionCheck = vi.fn(async () => {
+			throw new Error('denied');
+		});
+		for await (const _ of agentLoop(
+			{ sessionId: 's1', message: '读' },
+			ctx,
+			llm,
+			tools,
+			new HookRegistry(),
+			undefined,
+			undefined,
+			toolPermissionCheck,
+		)) {
+			// consume
+		}
+		const stored = ctx.getTranscript().find((m) => m.role === 'tool');
+		expect(stored?.content.startsWith('Error:')).toBe(true);
+		expect(stored?.noteAgents).toBeUndefined();
+	});
+
+	it('agentLoop - execute 抛错时仍有 noteAgents 且无 stale', async () => {
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence, undefined, 8000);
+		ctx.setNoteAgentsReader(async (dir) => (dir === 'Work' ? '工作规则' : null));
+		const toolCall = { id: 'call_1', name: 'read_note', args: { path: 'Work/a.md' } };
+		const llm = createMockLLM([[{ text: '', toolCall }], [{ text: 'done' }]]);
+		const tools = new ToolRegistry();
+		tools.register({
+			definition: { name: 'read_note', description: 'read', parameters: {} },
+			execute: async () => {
+				throw new Error('missing');
+			},
+		});
+		const events: AgentEvent[] = [];
+		for await (const event of agentLoop(
+			{ sessionId: 's1', message: '读' }, ctx, llm, tools, new HookRegistry(),
+		)) {
+			events.push(event);
+		}
+		const stored = ctx.getTranscript().find((m) => m.role === 'tool');
+		expect(stored?.noteAgents?.dirs).toEqual(['Work']);
+		expect(stored?.noteAgentsStale).toBeUndefined();
+		expect(stored?.content).toContain('missing');
+		const result = events.find((e) => e.type === 'tool.result');
+		expect(JSON.stringify(result)).not.toContain('工作规则');
+	});
+});
+
 it.each(['invalid-json','invalid-shape','output-limit','legacy-unparsed'] as const)('执行门控 - %s 与合法 raw 混合 - 非法无副作用且正常调用完成',async kind => {
 	const ctx=new ContextManager(createMockPersistence(),undefined,8000);
 	const bad: ToolCall={ id: 'bad',name: 'apply_patch',args: kind==='legacy-unparsed'? { raw: '秘密正文' }:{},...(kind==='legacy-unparsed'? {}:{ argsIssue: { kind,raw: '秘密正文',actualType: 'array' } }) };
