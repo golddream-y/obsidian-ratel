@@ -36,6 +36,7 @@ import {
 	sessionHasSkillSupersede,
 } from './skill-session-messages';
 import { projectView } from './compact-project';
+import { joinAgentsBlock, nestedDirs } from '../tools/note-agents';
 // 关键路径:丢前缀可能切散 tool 配对, sanitize 剔除孤立 tool result(Claude 路径无适配器层兜底)
 import { sanitizeToolMessageOrder } from './tool-message-align';
 import { pruneOverlongText } from './tool-result-prune';
@@ -122,6 +123,8 @@ export class ContextManager {
 	private memorySystemPrompt: string = '';
 	/** 库根 AGENTS.md 注入段 — 位于 memory 之后(S-NOTE-AGENTS) */
 	private noteAgentsSystemPrompt: string = '';
+	/** 按目录读子目录 AGENTS.md；未登记时 loadNoteAgents 返回 undefined */
+	private noteAgentsReader?: (dir: string) => Promise<string | null>;
 	/**
 	 * Skill Discovery 段 — 启动时由 setSkillsContext() 设置,
 	 * 注入位置在 memorySystemPrompt 之后、searchResults 之前。
@@ -255,13 +258,27 @@ export class ContextManager {
 	 * @param toolCallId - 对应的 assistant 工具调用 id。
 	 * @param result - 工具结果(序列化为字符串)。
 	 */
-	addToolResult(toolCallId: string, result: string): void {
+	addToolResult(
+		toolCallId: string,
+		result: string,
+		extra?: {
+			noteAgents?: { dirs: string[]; text: string };
+			noteAgentsStale?: string[];
+		},
+	): void {
 		const session = this.requireSession();
-		session.messages.push(stampCreatedAt({
+		const msg: ChatMessage = {
 			role: 'tool',
 			content: result,
 			toolCallId,
-		}));
+		};
+		if (extra?.noteAgents) {
+			msg.noteAgents = extra.noteAgents;
+		}
+		if (extra?.noteAgentsStale && extra.noteAgentsStale.length > 0) {
+			msg.noteAgentsStale = extra.noteAgentsStale;
+		}
+		session.messages.push(stampCreatedAt(msg));
 		session.updatedAt = Date.now();
 	}
 
@@ -389,7 +406,51 @@ export class ContextManager {
 	}
 
 	/**
+	 * 登记本轮读子目录 AGENTS.md 的函数；传 undefined 则清空。
+	 */
+	setNoteAgentsReader(read: ((dir: string) => Promise<string | null>) | undefined): void {
+		this.noteAgentsReader = read;
+	}
+
+	/**
+	 * 从历史视图推导已加载的子目录集合（§5.4）。
+	 */
+	loadedNoteAgentsDirs(): Set<string> {
+		const loaded = new Set<string>();
+		for (const m of this.buildHistoryView()) {
+			if (m.role !== 'tool') continue;
+			for (const d of m.noteAgents?.dirs ?? []) loaded.add(d);
+			for (const d of m.noteAgentsStale ?? []) loaded.delete(d);
+		}
+		return loaded;
+	}
+
+	/**
+	 * 为路径列表加载尚未出现在历史视图中的子目录约束块。
+	 */
+	async loadNoteAgents(paths: string[]): Promise<{ dirs: string[]; text: string } | undefined> {
+		if (!this.noteAgentsReader || paths.length === 0) return undefined;
+		const loaded = this.loadedNoteAgentsDirs();
+		const wanted: string[] = [];
+		for (const p of paths) {
+			for (const d of nestedDirs(p)) {
+				if (!loaded.has(d) && !wanted.includes(d)) wanted.push(d);
+			}
+		}
+		const layers: { dir: string; text: string }[] = [];
+		for (const d of wanted) {
+			const text = await this.noteAgentsReader(d);
+			if (text !== null && text.trim().length > 0) {
+				layers.push({ dir: d, text });
+			}
+		}
+		if (layers.length === 0) return undefined;
+		return joinAgentsBlock(layers);
+	}
+
+	/**
 	 * 追加本轮新碰到的子目录约束。空串不改。库根段保持在前。
+	 * @deprecated Task 4 删除；旧 gate 测试仍用
 	 */
 	appendNoteAgentsChain(text: string): void {
 		if (!text.trim()) return;
@@ -539,13 +600,8 @@ export class ContextManager {
 		const overrides = this.deps.getOverrides();
 		const tools = this.deps.getTools();
 		const systemPrompt = composeAgentSystem(intent, { intent, tools }, overrides);
-		const history = this.session?.messages ?? [];
-		const markers = this.session?.compactMarkers;
-		const { head, tail } = projectView(history, markers);
-		// 关键路径(S-CTX-TRIM):单条工具上限打在投影之后 —
-		// microcompact 已把旧工具换短占位,这里只裁仍超长的 keep-recent 全文。
-		const prunedTail = this.pruneToolContents(tail);
-		const trimmedTail = this.trimHistory(prunedTail);
+		const historyView = this.buildHistoryView();
+		const { head, tail } = this.splitHistoryView(historyView);
 
 		// 关键路径:记忆注入位置在 system prompt 之后、检索结果之前,
 		// 让 Agent 在看到检索结果和历史之前先"认识"用户。
@@ -558,9 +614,40 @@ export class ContextManager {
 		messages.push(
 			...this.pruneSearchBlocks(this.searchResultsMessages),
 			...head.map(withUserSendTime),
-			...trimmedTail.map(withUserSendTime),
+			...tail.map(withUserSendTime),
 		);
-		return messages;
+		return messages.map((m) => this.materializeNoteAgents(m));
+	}
+
+	/**
+	 * 投影 / 移出 / 裁剪后的历史视图（仍带 noteAgents 字段）。
+	 */
+	private buildHistoryView(): ChatMessage[] {
+		const history = this.session?.messages ?? [];
+		const markers = this.session?.compactMarkers;
+		const { head, tail } = projectView(history, markers);
+		const prunedTail = this.pruneToolContents(tail);
+		const trimmedTail = this.trimHistory(prunedTail);
+		return [...head, ...trimmedTail];
+	}
+
+	/** 与 projectView 的 head/tail 分界一致,供 toMessages 插入 system 段 */
+	private splitHistoryView(view: ChatMessage[]): { head: ChatMessage[]; tail: ChatMessage[] } {
+		const history = this.session?.messages ?? [];
+		const markers = this.session?.compactMarkers;
+		const projected = projectView(history, markers);
+		const headLen = projected.head.length;
+		return { head: view.slice(0, headLen), tail: view.slice(headLen) };
+	}
+
+	/** 出站前把 noteAgents 拼进 content 并删字段 */
+	private materializeNoteAgents(msg: ChatMessage): ChatMessage {
+		if (msg.role !== 'tool' || !msg.noteAgents?.text) return msg;
+		const { noteAgents, noteAgentsStale: _stale, ...rest } = msg;
+		return {
+			...rest,
+			content: `${msg.content}\n\n${noteAgents.text}`,
+		};
 	}
 
 	/**
@@ -671,7 +758,9 @@ export class ContextManager {
 	private trimHistory(messages: ChatMessage[]): ChatMessage[] {
 		if (messages.length <= 1) return messages;
 
-		const tokensPerMsg = messages.map((m) => estimateTokens(m.content));
+		const tokensPerMsg = messages.map((m) =>
+			estimateTokens(m.content + (m.noteAgents?.text ?? '')),
+		);
 		let total = tokensPerMsg.reduce((sum, n) => sum + n, 0);
 		if (total <= this.maxHistoryTokens) return messages;
 

@@ -99,6 +99,10 @@ export interface ChatMessage {
 	toolArgsIssue?: ToolArgsIssue | null;
 	/** 写入会话时的本地墙钟 epoch ms；旧数据缺省（S-CHAT-TIME） */
 	createdAt?: number;
+	/** 本次工具调用新加载的子目录 AGENTS.md；仅 role: 'tool' */
+	noteAgents?: { dirs: string[]; text: string };
+	/** 成功改写的子目录 AGENTS.md 所在目录；仅 role: 'tool' */
+	noteAgentsStale?: string[];
 }
 
 /**
