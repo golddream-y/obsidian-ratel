@@ -90,7 +90,11 @@ describe('joinAgentsBlock', () => {
 		expect(block!.dirs).not.toContain('A');
 		expect(block!.text).toContain('已截断');
 	});
-	it('joinAgentsBlock - 单层远超 16KB - 不返回块', () => {
-		expect(joinAgentsBlock([{ dir: 'Work', text: '甲'.repeat(20000) }])).toBeUndefined();
+	it('joinAgentsBlock - 单层远超 16KB - 先截 8KB 仍进 dirs', () => {
+		const raw = '甲'.repeat(20000);
+		const block = joinAgentsBlock([{ dir: 'Work', text: raw }]);
+		expect(block!.dirs).toEqual(['Work']);
+		expect(block!.text).toContain('已截断');
+		expect(block!.text).not.toContain(raw);
 	});
 });

@@ -130,10 +130,6 @@ export function joinAgentsBlock(
 	layers: { dir: string; text: string }[],
 ): { dirs: string[]; text: string } | undefined {
 	if (layers.length === 0) return undefined;
-	// 关键路径:单层原文超过整块上限时无法形成有效块,不挂块(§6.2 丢光)
-	if (layers.length === 1 && utf8ByteLength(layers[0]!.text) > AGENTS_CHAIN_MAX_BYTES) {
-		return undefined;
-	}
 	let truncated = false;
 	let remaining = layers.map((layer) => {
 		const cut = truncateUtf8(layer.text, AGENTS_FILE_MAX_BYTES);
