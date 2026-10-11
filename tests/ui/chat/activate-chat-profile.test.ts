@@ -121,6 +121,17 @@ describe('activateChatProfile', () => {
 		// 关键路径:顶栏路径必须是无参调用,不能误传 { refreshSettingsTab: false }。
 		expect(raw.saveSettings.mock.calls[0]?.[0]).toBeUndefined();
 		expect(raw.rebuildLLM).toHaveBeenCalledTimes(1);
+
+		// Notice 时长锁:本用例 ensureCatalog 返回 null,syncChatWindow 走 clearOnMiss
+		// 清空分支(applied/skipped 皆 false),unknown 必现 — 文案与超时逐条精确锁定:
+		// unknown 5000ms(长提示,让用户看清旧上限被清空),switched 3000ms。
+		expect(order.notices).toEqual([
+			{
+				message: tNow('settings.notice.contextLengthUnknown', { model: second.model }),
+				timeout: 5000,
+			},
+			{ message: tNow('settings.chatProfiles.switched', { name: second.name }), timeout: 3000 },
+		]);
 	});
 
 	it('设置页选项 - 传 refreshSettingsTab:false 与 onActivated - 参数透传且回调在 switched Notice 之后', async () => {
@@ -148,12 +159,18 @@ describe('activateChatProfile', () => {
 
 	it('目标套即当前套 - 四字段一致 - 短路且零副作用调用', async () => {
 		const { plugin, raw, first } = makeStubPlugin();
+		const onActivated = vi.fn(() => {
+			order.calls.push('onActivated');
+		});
 
-		await activateChatProfile(plugin, first.id);
+		await activateChatProfile(plugin, first.id, { onActivated });
 
 		expect(raw.modelsDevCatalog.ensureCatalog).not.toHaveBeenCalled();
 		expect(raw.saveSettings).not.toHaveBeenCalled();
 		expect(raw.rebuildLLM).not.toHaveBeenCalled();
+		// 短路发生在 profileSelectNeedsSwitch 判定后的早返回,onActivated 钩子同样不得触发
+		// (否则设置页会在未切换时白白 renderPage 一次)。
+		expect(onActivated).not.toHaveBeenCalled();
 		expect(order.notices).toHaveLength(0);
 		expect(raw.settings.activeChatProfileId).toBe(first.id);
 	});
