@@ -15,11 +15,11 @@ import {
 	projectProfileToSettings,
 	createChatProfile,
 	copyChatProfile,
-	switchChatProfile,
 	syncChatWindow,
 	writeStoredProfileModel,
 	writeStoredProfileWindow,
 } from '../../settings/chat-profiles';
+import { activateChatProfile } from '../chat/activate-chat-profile';
 import {
 	CATALOG_MODEL_HAND,
 	LOCAL_PROVIDER_CUSTOM,
@@ -229,22 +229,12 @@ export class ChatProfileSettingPage extends SettingPage {
 				.addButton((btn) => {
 					btn.setButtonText(tNow('settings.chatProfiles.setActive'));
 					btn.setCta();
-					btn.onClick(async () => {
-						switchChatProfile(this.plugin.settings, profile.id);
-						const catalog = this.plugin.modelsDevCatalog
-							? await this.plugin.modelsDevCatalog.ensureCatalog()
-							: null;
-						const result = await syncChatWindow(this.plugin.settings, {
-							catalog,
-							clearOnMiss: true,
+					btn.onClick(() => {
+						// 与顶栏菜单共用同一条切换路径;Modal 内抑制设置 Tab 重绘,落库后只重绘当前页。
+						void activateChatProfile(this.plugin, profile.id, {
+							refreshSettingsTab: false,
+							onActivated: () => this.renderPage(),
 						});
-						if (!result.applied && !result.skipped) {
-							new Notice(tNow('settings.notice.contextLengthUnknown', { model: profile.model }), 5000);
-						}
-						await this.plugin.saveSettings({ refreshSettingsTab: false });
-						this.plugin.rebuildLLM();
-						new Notice(tNow('settings.chatProfiles.switched', { name: profile.name }), 3000);
-						this.renderPage();
 					});
 				});
 		}

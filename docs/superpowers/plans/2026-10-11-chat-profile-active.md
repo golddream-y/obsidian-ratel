@@ -89,3 +89,33 @@ btn.onClick(() => {
 ## 执行记录 / 偏差说明
 
 (执行时填写:commit、测试结果、偏差、Sandbox 验证情况)
+
+### 2026-10-11 — P-CHAT-PROFILE-ACTIVE 实施记录
+
+**Commit:** 本次提交,SHA 见 `git log -1`(refactor: 设置页设为当前改调共用 activateChatProfile)。
+
+**改动文件:**
+- 改:`src/ui/chat/activate-chat-profile.ts` — 新增 `ActivateChatProfileOptions`(`refreshSettingsTab?` / `onActivated?`),签名加第三可选参数;`saveSettings` 仅在 `refreshSettingsTab === false` 时透传 `{ refreshSettingsTab: false }`,否则无参;`onActivated` 在 switched Notice 之后执行;文件头/JSDoc 改为「顶栏菜单与设置页共用」。
+- 改:`src/ui/settings/chat-profiles-render.ts` — 「设为当前」内联 6 步整段替换为 `activateChatProfile(plugin, profile.id, { refreshSettingsTab: false, onActivated: () => this.renderPage() })`;移除仅此处使用的 `switchChatProfile` import(grep 确认全文件无其他引用),新增 `../chat/activate-chat-profile` import;`syncChatWindow`/`Notice`/按钮 CTA 与文案不动。
+- 新建:`tests/ui/chat/activate-chat-profile.test.ts`(3 用例)。
+- 顶栏调用点 `ChatView.svelte:368/384` 未动;无新增 i18n key。
+
+**TDD 红绿证据:**
+- RED(旧实现跑新测试):1 failed | 2 passed。
+  - ✓ 用例 1(顶栏默认调用:四字段换目标套、调用序、saveSettings 参数 undefined、switched Notice)旧实现即通过,作为默认路径回归锁。
+  - × 用例 2(设置页选项):`expected undefined to deeply equal { refreshSettingsTab: false }` 失败;其后 onActivated「调用一次且在 switched Notice 之后」断言同为红色。
+  - ✓ 用例 3(目标套即当前套短路、零副作用)旧实现即通过,作为短路语义回归锁。
+- GREEN(改完实现后):3 passed(3 tests)。
+- 偏差说明:plan Step 1 文字称「先确认 2、3 失败」,实测用例 3 锁定的短路是旧实现既有行为(`profileSelectNeedsSwitch` 早返回),旧码下本就通过;真正 RED 的是用例 2 中**两条选项相关断言**(选项透传、回调顺序),与任务委派「选项相关两条失败」一致。未刻意造红。
+
+**全量验证(真实输出):**
+- `npx vitest run tests/ui/chat/activate-chat-profile.test.ts`:Test Files 1 passed,Tests 3 passed。
+- `npx tsc -noEmit -skipLibCheck`:全仓 241 errors,与 develop 基线 241 一致;筛 `activate-chat-profile|chat-profiles-render` 仅 3 条 `chat-profiles-render.ts` 的 `Property 'settingTab' is private`(现 246/255/270 行,HEAD 同内容在 256/265/280 行,纯行号位移,属未触碰代码);新测试文件 0 错误(tsconfig 含 `tests/**/*.ts`)。
+- `svelte-check`:改前/改后均为 253 errors、21 warnings、71 files(stash 基线对比),零新增;本次两个源文件仅剩前述 3 条既有 settingTab 报错。
+- `npm run lint`:改前/改后均 `✖ 17 problems (0 errors, 17 warnings)`,零新增;`tests/` 目录被 eslint ignore(与既有 tests/ui/* 一致)。
+- `npm test`:**Test Files 272 passed (272),Tests 2038 passed (2038)**(基线 271 文件/2035 用例 + 本任务新增 1 文件/3 用例);skill-script-sandbox 19 用例本轮全部通过,未触发心跳 flake,无需重跑。
+- `npm run build`:exit 0,18 warnings(均为既有 Svelte a11y 警告,日志中无本次两个文件);`dist/main.js`、`dist/worker.js` 产物正常生成。
+- `git diff --check`:clean。
+
+**Sandbox 未覆盖项:**
+- 单测锁定了共用函数的步骤顺序、选项透传与短路,但设置页 `onActivated: () => this.renderPage()` 引发的真实 DOM 重绘(Obsidian Setting/Modal 环境)无法在 node 单测覆盖。需 Sandbox 手验:设置 → 对话模型 → 进入一套**非当前**配置详情 → 点「设为当前」→ 出现 switched Notice、「设为当前」按钮随重绘消失、列表行出现当前标记,且设置页不被弹回列表/无整页抖动(refreshSettingsTab:false 生效);顶栏菜单切换行为不变。
