@@ -89,10 +89,11 @@
 - 不引入 LangChain / Deep Agents / Claude Agent SDK 等运行时。
 - 不接 OpenAI Responses 加密 compaction（以后若新增 Responses 适配器再评估）。
 - 不另建一份事件日志：`session.messages` 已是完整、只追加的事实源。
-- 不对旧历史做向量检索（第 5 阶段的 `read_history` 按位置取回即可）。
+- 不对旧历史做向量检索。
 - 不改斜杠命令名、不改自动压缩开关语义。
 - 不在流式生成中途插入全量摘要（保持 S-COMPACT-V2 约定）。
 - 不把移出的工具结果或参数写成库内文件。
+- **不做 `read_history` 取回工具（2026-10-11 复核移出，原 P5）**：每多一个工具，其 schema 每轮都占上下文，与压缩目标相悖；而「核对原话」是低频场景。`CompactState.evidence` 的 `msg:<index>` 引用保留，未来若真有需要再单独开 spec 评估。
 
 ---
 
@@ -134,14 +135,14 @@ function measureOutbound(messages: ChatMessage[], tools: ToolDefinition[]): Outb
 | 级 | 对象 | 规则 | 占位（面向模型，不走 i18n） |
 |---|---|---|---|
 | R1 思考过程 | 最后一条 user 之前的 assistant `reasoning` | 不再回传 | 无（字段直接不带） |
-| R2 写入参数 | 成功的 `write_note` / `append_note` / `edit_note` 等参数中的正文字段，除本轮最近一次写入外 | 删掉正文字段，只留 path 等短字段。工具结果注明正文在笔记里。不把占位符放进 content，写工具会拒绝以 `[written]` 开头的正文 | 无（不生成可照抄的 content） |
+| R2 写入参数 | 成功的 `write_note` / `append_note` / `edit_note` / `apply_patch` 等写工具参数中的正文字段，除本轮最近一次写入外 | 删掉正文字段，只留 path 等短字段。工具结果注明正文在笔记里。不把占位符放进 content，写工具会拒绝以 `[written]` 开头的正文 | 无（不生成可照抄的 content） |
 | R3 发现类结果 | `search_vault` / `grep` / `glob` / `list_files` / `search_memory` | 维持现有 microcompact（保留最近 5 条） | `[compacted] …`（不变） |
 | R4 工作集外旧笔记 | 最后一条 user 之前、且不在工作集内的 `read_note` 全文 | 仅在 R1–R3 后仍超软阈值时执行 | `[offloaded] read_note path=… chars=… title=… 需要时可再读` |
 
 要点：
 
 - **R1 的供应商约束**：DeepSeek thinking 模式要求同一用户轮内、含 tool_calls 的 assistant 回传 `reasoning_content`；R1 只去掉更早轮次的。实施前对 DeepSeek 与火山方舟各做一次真实请求验证；若某供应商要求全部回传，按供应商关闭 R1。
-- **R2 的依据**：写入结果已在库里，需要时 `read_note` 取最新版本；占位不含正文，避免旧版本误导。参数里哪些字段是「正文」由工具定义登记（集中声明，见 AGENTS.md「枚举与 ID 集中管理」），不在调用点硬编码。
+- **R2 的依据**：写入结果已在库里，需要时 `read_note` 取最新版本；占位不含正文，避免旧版本误导。参数里哪些字段是「正文」由工具定义登记（集中声明，见 AGENTS.md「枚举与 ID 集中管理」），不在调用点硬编码。**登记形态（2026-10-11 定）**：在 core 层维护一张 `工具名 → 正文字段名[]` 的登记表（compactor 专用元数据），不挂进 LLM 可见的 `ToolDefinition`（那是发往模型的 schema，混入客户端元数据会污染工具契约）；`apply_patch` 的正文字段是 `patch`。
 - **R4 与 S-READ-PRESERVE 的关系**：S-READ-PRESERVE 不折 `read_note` 是为了防循环再读。R4 只在超预算时折工作集之外的旧全文，并配合 4.6 的可见性账本：模型再读时，工具知道它确实不在上下文里，不再判为重复。
 - 工具调用组不拆：占位只换正文，`tool_call` 与 `tool` 配对保持。
 - **前缀缓存**：移出边界只前进；R4 的移出水位记在 `Session.offloadedThrough`，占用回落也不恢复；R4 单次可移出量低于 `0.05 × B` 时不执行；同一内容占位文本固定。
@@ -149,6 +150,8 @@ function measureOutbound(messages: ChatMessage[], tools: ToolDefinition[]): Outb
 ### 4.4 触发与目标线
 
 设 `W` = 窗口，预算 `B = W − outputReserve(W)`，`u` = 校准后的上送占用。下表比例均相对 `B`。不另设工作上限：写长文的占用由移出层降下来，用户看到的窗口保持为模型窗口。
+
+> **2026-10-11 修订：** `outputReserve` 不再只按窗口百分比写死。S-MODEL-CATALOG 已提供按供应商 + 模型 id 查到的单次输出真值（`CatalogLimits.output`，缺省为 0）；P2 时优先用该真值，查不到才回退现有比例公式（10% / 封顶 32k）。
 
 | 线 | 默认 | 作用 |
 |---|---|---|
@@ -175,6 +178,11 @@ function measureOutbound(messages: ChatMessage[], tools: ToolDefinition[]): Outb
 **分段。** 区间投影超过 `0.5 × B` 时按用户轮次切块，逐块调用「状态更新」，每块输入 = 当前状态 + 该块原文，输出新状态。避免压缩请求自身超窗。
 
 **状态格式**（`internal.compact` 改为要求输出 JSON，解析失败则视为失败、不写 marker）：
+
+> **2026-10-11 修订：**
+> 1. `goal` 不自造持久化 — 引用 Goal 模式（S-GOAL 已发版）已有的目标事实（意图 + 完成标准 + 进度游标），`CompactState.goal` 只放一句当前目标的渲染文本 + 目标 id（若有）。
+> 2. 分段摘要的输入投影过 R1–R4 时，**子目录约束（S-AGENTS-SESSION，整场挂在工具结果上）不得当普通工具结果折掉**：8KB 截断兜底已在，摘要器须始终看得到当前目录的约束文本。
+> 3. DeepSeek 等端点的 JSON 遵循度要按真实端点验证：解析失败不写 marker 的策略保留；分段会放大失败面，若实测 JSON 不稳，退化为「单块 + 更激进的区间切分」，不引入第三方解析库。
 
 ```ts
 interface CompactState {
@@ -228,9 +236,11 @@ interface VisibleNote {
 
 这让 R4 可以安全折旧全文：模型再读时得到正文，而不是被「已读过」挡住。
 
-### 4.7 取回原文 `read_history`（第 5 阶段）
+### 4.7 取回原文 `read_history`（已移出范围，2026-10-11）
 
-只读工具，参数 `{ from: number; to: number }`（消息位置，来自 `evidence` 中的 `msg:<index>`），返回该区间原文（过 R1–R2，单次上限 32k 码点）。用于状态里只有结论、需要核对原话的场景。权限等级同 `read_note`。
+原设计：只读工具，参数 `{ from: number; to: number }`（消息位置，来自 `evidence` 中的 `msg:<index>`），返回该区间原文（过 R1–R2，单次上限 32k 码点），权限等级同 `read_note`。
+
+**复核结论：移出。** 工具 schema 每轮都占上送预算，与压缩目标直接相悖；「核对原话」是低频场景，且状态条目已带 `msg:<index>` 引用，真有需要时未来单独开 spec 再加，不阻塞 P3/P4。
 
 ### 4.8 数据模型
 
@@ -271,13 +281,16 @@ interface Session {
 
 | 阶段 | 内容 | 解决 | 状态 |
 |---|---|---|---|
-| P1 量准 + 可诊断 | 4.2、4.9；R1、R2 | 「几次就压」的主要来源（参数与思考过程） | 未开始 |
-| P2 触发 | 4.4 预算、软/硬/目标线、滞回、硬阈值失败兜底 | 每轮一压 | 未开始 |
-| P3 连续性 | 4.5 近期原文、增量状态、分段摘要；4.8 | 压完只剩摘要、摘要的摘要 | 未开始 |
-| P4 工作集 | 4.6 恢复与可见性账本；R4 与移出水位 | 压后重读与循环查看 | 未开始 |
-| P5 取回 | 4.7 `read_history` | 证据核对 | 未开始 |
+| P1 量准 + 可诊断 | 4.2、4.9；R1、R2 | 「几次就压」的主要来源（参数与思考过程） | ✅ 已完成（`5761c19` / `e588efe` / `546df2d`） |
+| P1F R2 收尾 | `apply_patch`（1.0.0 新增）漏入 R2；正文字段改为 core 层登记表；补测试 | 补丁正文每轮全量回传、不计数；硬编码漂移 | 🔄 2026-10-11 执行（plan P-COMPACT-V3-P1F） |
+| P2 触发 | **前置：合成会话复测**（1.2 节同规模，验证 P1 效果后再定比例）；4.4 预算、软/硬/目标线、滞回、硬阈值失败兜底；`outputReserve` 优先用 catalog 单次输出真值 | 每轮一压 | ⏳ 未开始（比例为暂定，待复测） |
+| P3 连续性 | 4.5 近期原文、增量状态、分段摘要；4.8。`goal` 引用 Goal 模式；摘要投影保留子目录约束；JSON 稳定性按真实端点验证 | 压完只剩摘要、摘要的摘要 | ⏳ 未开始 |
+| P4 工作集 | 4.6 恢复与可见性账本；R4 与移出水位 | 压后重读与循环查看 | ⏳ 未开始（依赖 P3 的 `CompactState.workingSet`） |
+| ~~P5 取回~~ | ~~4.7 `read_history`~~ | — | ❌ 2026-10-11 移出（见 §3 非目标、§4.7） |
 
-每阶段单独成 plan，按 TDD 实施；P1 完成后用 1.2 节同规模的合成会话复测，再决定 P2 的默认比例。
+每阶段单独成 plan，按 TDD 实施；**P1F 完成后必须先做 P2 前置的合成会话复测**（1.2 节同规模：1100 条消息 / 150 万字符量级），用复测数据决定 P2 的默认比例与范围——R1+R2 已移走实测会话中约 65% 的占用，「几次就压」的严重度需重新量化，70/90/40 是未经验证的暂定数字。
+
+> **2026-10-11 复核记录：** P1 已落地；1.0.0 后产品演进产生三处对齐——① `apply_patch` 成为新写工具（R2 漂移，P1F 修）；② S-MODEL-CATALOG 提供单次输出真值（P2 消费）；③ S-AGENTS-SESSION 让子目录约束整场挂工具结果（P3 投影需保留）、Goal 模式已发版（P3 `goal` 引用而非自造）。P5 经 ROI 复核移出。
 
 ---
 
@@ -293,7 +306,7 @@ interface Session {
 | `src/ui/chat/compact-session.ts` | 区间、分段、JSON 状态、`compact.result` |
 | `src/ui/chat/compact-auto.ts`、`ChatView.svelte` | 新触发判断、滞回、`compact.decide` |
 | `src/tools/` read_note | 查账本；`force` 参数 |
-| 写笔记类工具定义 | 登记「正文字段」 |
+| 写笔记类工具 | core 层「工具名 → 正文字段名」登记表（含 `apply_patch.patch`），不挂 LLM schema |
 | `src/ports/persistence.ts` | `CompactMarker` 扩展字段 |
 | `src/prompts/defaults/zh.ts` | `internal.compact` 改为状态更新、JSON 输出 |
 | 测试 | 计量口径、移出层、滞回、区间不拆组、状态合并不丢条目、旧 marker 兼容 |
