@@ -145,12 +145,6 @@
 	font-size: var(--font-ui-small);
 	font-weight: 600;
 }
-/* 供应商选择页的说明段落:补一层与 .setting-item-heading 相同的横向内边距,
-   使其左缘与分组标题/列表项对齐(裸 <p> 默认只吃 .setting-items 容器内边距)。 */
-.ratel-provider-note {
-	margin: 0 0 var(--size-4-4);
-	padding: 0 var(--size-4-4);
-}
 .ratel-provider-pick {
 	cursor: pointer;
 }

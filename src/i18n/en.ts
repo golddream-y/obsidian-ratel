@@ -124,7 +124,7 @@ export const en: Strings = {
   'settings.chatProfiles.provider.offline': 'Offline',
   'settings.chatProfiles.provider.offlineHint': 'Reopen this page after going online to switch providers. The other settings can still be edited as usual.',
   'settings.chatProfiles.provider.offlinePicker': "You're offline, so only local options (Ollama / Custom) are shown. Reopen this page online to see the full list.",
-  'settings.chatProfiles.provider.intro': 'Type to filter. Each row shows the API address from the list. There is no written description.',
+  'settings.chatProfiles.provider.intro': 'Type to filter. Each row shows the API address from the list.',
   'settings.chatProfiles.provider.noApi': 'The list has no API address. You fill it in after choosing.',
   'settings.chatProfiles.provider.doc': 'Docs',
   'settings.chatProfiles.provider.use': 'Use this',

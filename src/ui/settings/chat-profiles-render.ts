@@ -639,7 +639,6 @@ function providerDisplayName(rows: readonly CatalogProviderRow[], providerId: st
 
 /**
  * 选择供应商的一页：检索过滤，每行带接口地址和文档链接。
- * 名单没有文字简介。
  */
 function renderProviderPicker(
 	root: HTMLElement,
@@ -648,11 +647,9 @@ function renderProviderPicker(
 	actions: { onChoose: (providerId: string) => void },
 ): void {
 	const currentId = profile.providerId || inferChatProvider(plugin.settings.chatApiBase);
-	// 裸 <p> 只吃到 .setting-items 的容器内边距,需要 ratel-provider-note 再补一层,与列表项左缘对齐。
-	root.createEl('p', {
-		text: tNow('settings.chatProfiles.provider.intro'),
-		cls: 'setting-item-description ratel-provider-note',
-	});
+	// 修复: 1.14 起 .setting-items 卡片自身不再有内边距,内边距下沉到每个 .setting-item;
+	// 裸 <p> 会贴住卡片顶/左缘。用 Setting 行承载说明,两种内边距模型下都与其他行自动对齐。
+	new Setting(root).setDesc(tNow('settings.chatProfiles.provider.intro'));
 	const listHost = root.createDiv();
 	const search = new Setting(root).setName(tNow('settings.chatProfiles.provider.searchPlaceholder'));
 	search.addText((text) => {
@@ -670,10 +667,8 @@ function renderProviderPicker(
 		const rows = catalog ? listCatalogProviders(catalog) : [];
 		listHost.empty();
 		if (!catalog) {
-			listHost.createEl('p', {
-				text: tNow('settings.chatProfiles.provider.offlinePicker'),
-				cls: 'setting-item-description ratel-provider-note',
-			});
+			// 同 intro:用 Setting 行承载离线提示,保证与其他行内边距一致。
+			new Setting(listHost).setDesc(tNow('settings.chatProfiles.provider.offlinePicker'));
 		}
 		const grouped = providerChoiceGroups(rows, query);
 		renderProviderSection(

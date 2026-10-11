@@ -120,7 +120,7 @@ const settingsZh: SettingsStrings = {
   'settings.chatProfiles.provider.offline': '离线中',
   'settings.chatProfiles.provider.offlineHint': '联网后重新打开此页即可更换厂商，其余设置可照常修改。',
   'settings.chatProfiles.provider.offlinePicker': '当前没联网，只显示本机项（Ollama / 自定义）；联网后重开此页会显示完整名单。',
-  'settings.chatProfiles.provider.intro': '输入名称过滤。下面是名单里的接口地址，没有文字简介。',
+  'settings.chatProfiles.provider.intro': '输入名称可过滤。每行显示名单里的接口地址。',
   'settings.chatProfiles.provider.noApi': '名单没有接口地址，选中后自己填。',
   'settings.chatProfiles.provider.doc': '文档',
   'settings.chatProfiles.provider.use': '用这个',
