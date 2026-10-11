@@ -119,3 +119,5 @@ btn.onClick(() => {
 
 **Sandbox 未覆盖项:**
 - 单测锁定了共用函数的步骤顺序、选项透传与短路,但设置页 `onActivated: () => this.renderPage()` 引发的真实 DOM 重绘(Obsidian Setting/Modal 环境)无法在 node 单测覆盖。需 Sandbox 手验:设置 → 对话模型 → 进入一套**非当前**配置详情 → 点「设为当前」→ 出现 switched Notice、「设为当前」按钮随重绘消失、列表行出现当前标记,且设置页不被弹回列表/无整页抖动(refreshSettingsTab:false 生效);顶栏菜单切换行为不变。
+
+- **审查 PASS 后 test-only Minor 增强(新提交,未 amend):** `3811946` — `test: 锁定切换 Notice 时长与短路时不触发回调`(2026-10-11)。M1 用例 1(顶栏默认调用)补 `order.notices` 精确断言:本用例 `ensureCatalog` 返回 null、`syncChatWindow` 走 clearOnMiss 清空分支(applied/skipped 皆 false),unknown 与 switched 两条 Notice 均出现,逐条锁定文案与 timeout — unknown 5000ms、switched 3000ms;M2 用例 3(目标套即当前套短路)传入 `onActivated` vi.fn 并断言 `not.toHaveBeenCalled()`(短路发生在 `profileSelectNeedsSwitch` 早返回,钩子不得触发),saveSettings/rebuildLLM 零调用既有断言保持不变。验证:`npx vitest run tests/ui/chat/activate-chat-profile.test.ts` 3/3 通过(用例内部断言增加,用例数仍为 3);src 零改动。
