@@ -16,6 +16,7 @@ import {
 	offloadStalePayload,
 	projectView,
 	shouldAutoCompact,
+	WRITE_BODY_FIELDS_BY_TOOL,
 } from '../../src/core/compact-project';
 
 function asstTool(id: string, name: string, args: Record<string, unknown>): ChatMessage {
@@ -188,6 +189,68 @@ describe('offloadStalePayload', () => {
 			{ role: 'user', content: '下一轮' },
 		]);
 		expect(out[1]!.toolArgs).toEqual({ path: 'a.md' });
+	});
+
+	it('offloadStalePayload - 旧轮 apply_patch 成功 - 删除 patch 字段并在配对结果附正文提示', () => {
+		const patch = `*** Begin Patch\n*** Update File: x.md\n@@\n-${'旧行'.repeat(50)}\n+${'新行'.repeat(50)}\n*** End Patch`;
+		const out = offloadStalePayload([
+			asstTool('c1', 'apply_patch', { path: 'x.md', patch }),
+			tool('c1', JSON.stringify({ success: true, path: 'x.md' })),
+			{ role: 'user', content: '下一轮' },
+		]);
+		expect(out[0]!.toolArgs).not.toHaveProperty('patch');
+		expect(out[0]!.toolArgs!.path).toBe('x.md');
+		expect(out[1]!.content).toContain('正文已在笔记中');
+		expect(out[1]!.content).toContain('read_note');
+		expect(out[1]!.content.endsWith('不要把占位标记写入 content。')).toBe(true);
+	});
+
+	it('offloadStalePayload - 最后一条 user 之后的 apply_patch - 保留 patch', () => {
+		const patch = '*** Begin Patch\n*** End Patch';
+		const out = offloadStalePayload([
+			{ role: 'user', content: '先打补丁' },
+			asstTool('c1', 'apply_patch', { path: 'x.md', patch }),
+			tool('c1', 'ok'),
+		]);
+		expect(out[1]!.toolArgs!.patch).toBe(patch);
+		expect(out[1]!.toolArgs!.path).toBe('x.md');
+		expect(out[2]!.content).toBe('ok');
+	});
+
+	it('offloadStalePayload - apply_patch 结果为 Error - 不移除 patch', () => {
+		const patch = '*** Begin Patch\n*** End Patch';
+		const out = offloadStalePayload([
+			asstTool('c1', 'apply_patch', { path: 'x.md', patch }),
+			tool('c1', 'Error: 补丁无法应用'),
+			{ role: 'user', content: '下一轮' },
+		]);
+		expect(out[0]!.toolArgs!.patch).toBe(patch);
+		expect(out[1]!.content).not.toContain('正文已在笔记中');
+	});
+
+	it('offloadStalePayload - 旧轮 write_note/edit_note - 只删各自登记字段不动其他字段', () => {
+		const out = offloadStalePayload([
+			{ role: 'user', content: '写改' },
+			// 按工具取字段的诱饵:write_note 只登记 content,old_string 必须保留
+			asstTool('w1', 'write_note', { path: 'a.md', content: '正文', old_string: '诱饵' }),
+			tool('w1', 'ok'),
+			// edit_note 只登记 old_string/new_string,content 必须保留
+			asstTool('e1', 'edit_note', { path: 'b.md', old_string: '旧', new_string: '新', content: '诱饵' }),
+			tool('e1', 'ok'),
+			{ role: 'user', content: '下一轮' },
+		]);
+		expect(out[1]!.toolArgs).toEqual({ path: 'a.md', old_string: '诱饵' });
+		expect(out[3]!.toolArgs).toEqual({ path: 'b.md', content: '诱饵' });
+	});
+
+	it('WRITE_BODY_FIELDS_BY_TOOL - 登记表 - 含四个写工具且 apply_patch 登记 patch', () => {
+		expect(Object.keys(WRITE_BODY_FIELDS_BY_TOOL).sort()).toEqual(
+			['append_note', 'apply_patch', 'edit_note', 'write_note'].sort(),
+		);
+		expect(WRITE_BODY_FIELDS_BY_TOOL.apply_patch).toEqual(['patch']);
+		expect(WRITE_BODY_FIELDS_BY_TOOL.write_note).toEqual(['content']);
+		expect(WRITE_BODY_FIELDS_BY_TOOL.append_note).toEqual(['content']);
+		expect(WRITE_BODY_FIELDS_BY_TOOL.edit_note).toEqual(['old_string', 'new_string']);
 	});
 });
 

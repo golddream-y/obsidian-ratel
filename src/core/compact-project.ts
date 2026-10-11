@@ -22,12 +22,24 @@ export const MIN_TRANSCRIPT_TO_COMPACT = 3;
 /** 全量摘要 system 消息前缀 */
 export const COMPACT_SUMMARY_PREFIX = '[compact 摘要]\n';
 
-/** 写笔记类工具 — 成功落库后上送时可移出正文字段 */
-export const WRITE_TOOL_NAMES = ['write_note', 'append_note', 'edit_note'] as const;
-/** 写入工具参数里视为正文的字段 */
-export const WRITE_BODY_FIELDS = ['content', 'old_string', 'new_string'] as const;
+/**
+ * 写工具正文字段登记表 — 工具名 → 成功落库后上送时可移出的参数字段。
+ *
+ * 关键路径:S-COMPACT-V3 R2。新增写工具必须在此登记正文字段,
+ * 否则旧轮正文会每轮全量回传且计入 measureOutbound。
+ * 不挂进 ToolDefinition:那是发往模型的 schema,不混入客户端元数据。
+ */
+export const WRITE_BODY_FIELDS_BY_TOOL = {
+	write_note: ['content'],
+	append_note: ['content'],
+	edit_note: ['old_string', 'new_string'],
+	apply_patch: ['patch'],
+} as const satisfies Record<string, readonly string[]>;
 
-const WRITE_TOOLS = new Set<string>(WRITE_TOOL_NAMES);
+const WRITE_TOOLS = new Set<string>(Object.keys(WRITE_BODY_FIELDS_BY_TOOL));
+/** 登记表的宽类型视图:供运行时按任意 toolName 字符串查表,未登记时为 undefined */
+const WRITE_BODY_FIELDS_VIEW: Record<string, readonly string[] | undefined> =
+	WRITE_BODY_FIELDS_BY_TOOL;
 
 /** 可 microcompact 的工具名 */
 export const FOLDABLE_TOOL_NAMES = new Set([
@@ -159,11 +171,17 @@ function isSuccessfulWrite(messages: ChatMessage[], assistantIndex: number): boo
 const OFFLOAD_WRITE_NOTE = '正文已在笔记中，需要时用 read_note 读取。不要把占位标记写入 content。';
 
 /**
- * 复制 assistant，删掉正文字段，只留 path 等短字段。
+ * 复制 assistant，只删该工具在登记表里声明的正文字段，保留 path 等短字段。
+ *
+ * @param msg - 已确认成功落库的写工具 assistant 消息
+ * @returns 删除登记字段后的消息副本;工具未登记时原样返回(防御,isSuccessfulWrite 已挡)
  */
 function stripWriteBody(msg: ChatMessage): ChatMessage {
+	if (!msg.toolName) return msg;
+	const bodyFields = WRITE_BODY_FIELDS_VIEW[msg.toolName];
+	if (!bodyFields) return msg;
 	const args = { ...(msg.toolArgs ?? {}) };
-	for (const field of WRITE_BODY_FIELDS) {
+	for (const field of bodyFields) {
 		delete args[field];
 	}
 	return { ...msg, toolArgs: args };
