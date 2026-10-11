@@ -9,21 +9,21 @@
 
 ## 统计
 
-**按月归档记录数**(共 95 条,82 个目录)
+**按月归档记录数**(共 97 条,84 个目录)
 
 ```mermaid
 xychart-beta
     title "按月归档记录数"
     x-axis ["2026-06", "2026-07", "2026-08", "2026-09", "2026-10"]
     y-axis "记录数" 0 --> 26
-    bar [17, 23, 26, 21, 8]
+    bar [17, 23, 26, 21, 10]
 ```
 
 **归档形态分布**
 
 ```mermaid
 pie showData title 归档形态分布
-    "完成归档" : 85
+    "完成归档" : 87
     "Abandoned(未实施/中途废弃)" : 4
     "Superseded(被取代)" : 6
 ```
@@ -34,6 +34,8 @@ pie showData title 归档形态分布
 
 | ID | 归档目录 | 日期 | 备注 |
 |---|---|---|---|
+| S-CHAT-PROFILES | [archive/S-CHAT-PROFILES/](archive/S-CHAT-PROFILES/) | 10-11 | 多套对话模型配置、复制与顶栏切换菜单；收尾「设为当前」共用函数。三 plan 全交付，随 1.1.0；merge `a0c0a09`、`29069b9`、`2de1bc2` |
+| P-PROVIDER-OFFLINE | [archive/P-PROVIDER-OFFLINE/](archive/P-PROVIDER-OFFLINE/) | 10-11 | 断网可新建/编辑配置、供应商离线锁定、窗口两态文案；同分支计划外小档追加连接测试。随 1.1.0；`f405473`、`2def3d8`、`399dcd4` |
 | S-AGENTS-SESSION | [archive/S-AGENTS-SESSION/](archive/S-AGENTS-SESSION/) | 10-11 | 子目录约束整场会话挂在工具结果上，压缩后重读。随 1.0.3；`cb6dae3` 等 5 commit |
 | S-CATALOG-FRESH | [archive/S-CATALOG-FRESH/](archive/S-CATALOG-FRESH/) | 10-11 | 模型名单缓存超 24 小时重拉，失败用旧文件。随 1.0.2；`4cd9475` |
 | S-TOOL-CONTRACT | [archive/S-TOOL-CONTRACT/](archive/S-TOOL-CONTRACT/) | 10-11 | 工具 JSON 契约、失败分类与历史投影。随 1.0.0；`a8a4360` 等 3 commit；补丁经实测恢复启用 |
