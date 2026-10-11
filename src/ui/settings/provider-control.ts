@@ -2,9 +2,15 @@
  * @file src/ui/settings/provider-control.ts
  * @description 供应商「选择」按钮的三态纯函数:名单加载中 / 离线 / 就绪
  * @module ui/settings/provider-control
- * @depends ../../i18n(仅类型)
+ * @depends ../../i18n(仅类型), ../../settings/model-catalog
  */
 import type { StringKey } from '../../i18n';
+import {
+	LOCAL_PROVIDER_CUSTOM,
+	LOCAL_PROVIDER_OLLAMA,
+	listCatalogProviders,
+	type ModelsDevCatalog,
+} from '../../settings/model-catalog';
 
 /**
  * 供应商名单的三种可得性:
@@ -51,10 +57,34 @@ export function resolveProviderControl(state: ProviderListState): ProviderContro
 				buttonTextKey: 'settings.chatProfiles.provider.offline',
 			};
 		case 'ready':
-			return {
-				disabled: false,
-				spinning: false,
-				buttonTextKey: 'settings.chatProfiles.provider.choose',
-			};
+		return {
+			disabled: false,
+			spinning: false,
+			buttonTextKey: 'settings.chatProfiles.provider.choose',
+		};
 	}
+}
+
+/**
+ * 名单 resolve 后,地址/密钥/模型区相对 loading 态是否发生形态翻转。
+ *
+ * loading 态恒为「可编辑地址 + 手填模型」。resolve 后分三种情况:
+ * - catalog 为 null(断网):字段形态与 loading 完全相同,不翻转;
+ * - 本机项(custom/ollama)或名单里查不到的供应商:仍是可编辑地址 + 手填模型,不翻转;
+ * - 名单中存在该供应商(listed):地址可能变只读、模型变下拉,形态真的翻转,
+ *   调用方必须重建字段宿主。
+ *
+ * @param catalog - ensureCatalog 的结果,null=断网,对象=就绪(过期缓存也算)
+ * @param providerId - 当前配置的供应商 id
+ * @returns 字段形态是否翻转
+ */
+export function fieldsShapeFlips(
+	catalog: ModelsDevCatalog | null,
+	providerId: string,
+): boolean {
+	if (!catalog) return false;
+	if (providerId === LOCAL_PROVIDER_OLLAMA || providerId === LOCAL_PROVIDER_CUSTOM) {
+		return false;
+	}
+	return listCatalogProviders(catalog).some((row) => row.id === providerId);
 }

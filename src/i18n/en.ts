@@ -142,7 +142,7 @@ export const en: Strings = {
   'settings.chatProfiles.window.found': 'The context window of this model is {tokens}',
   'settings.chatProfiles.window.foundHint': 'Figures come from models.dev, matched by provider and model.',
   'settings.chatProfiles.window.unknown': "{model} is not in the model list; enter its context length per the provider's docs.",
-  'settings.chatProfiles.window.offline': "The model list isn't available right now. You can enter a context length first (e.g. 128000). Reopen this page online and it is corrected from the list automatically; values you shrink manually are never overwritten.",
+  'settings.chatProfiles.window.offline': "The model list isn't available right now. You can enter a context length first (e.g. 128000); your value is kept, and it will be filled in from the list once you change provider or model while online.",
   'settings.chatProfiles.window.userSet': 'This profile uses its own limit of {tokens}',
   'settings.chatProfiles.window.userSetHint': 'This cap stays while the provider and model stay the same. Changing either looks it up again.',
   'settings.chatProfiles.window.shrink': 'Make it smaller',

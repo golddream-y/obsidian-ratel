@@ -941,3 +941,10 @@ svg.ratel-spin {
 		transform: rotate(360deg);
 	}
 }
+
+/* 尊重系统「减弱动态效果」设置：转圈图标改为静止 */
+@media (prefers-reduced-motion: reduce) {
+	svg.ratel-spin {
+		animation: none;
+	}
+}

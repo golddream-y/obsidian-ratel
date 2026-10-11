@@ -138,7 +138,7 @@ const settingsZh: SettingsStrings = {
   'settings.chatProfiles.window.found': '这个模型的窗口是 {tokens}',
   'settings.chatProfiles.window.foundHint': '数字来自 models.dev，按供应商和模型一起查。',
   'settings.chatProfiles.window.unknown': '名单中没有 {model}，请按供应商文档填写上下文长度。',
-  'settings.chatProfiles.window.offline': '暂时没获取到模型名单。可先填上下文长度（如 128000）；联网后打开本页会自动按名单校正，手动改小的值不会被覆盖。',
+  'settings.chatProfiles.window.offline': '暂时没获取到模型名单。可先填上下文长度（如 128000）；手填的值会保留，联网后改一次供应商或模型即按名单校正。',
   'settings.chatProfiles.window.userSet': '此配置的上限是 {tokens}',
   'settings.chatProfiles.window.userSetHint': '供应商和模型不变时不会被查表盖掉。改了其中一项会重新查。',
   'settings.chatProfiles.window.shrink': '改得更小',

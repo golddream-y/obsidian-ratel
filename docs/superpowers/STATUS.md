@@ -30,7 +30,7 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
-| P-PROVIDER-OFFLINE | [2026-10-11-provider-offline.md](plans/2026-10-11-provider-offline.md) | Completed | 无 spec 杂项 | 分支 feat-compact-fixes；断网态:新增默认自定义,已配项供应商选择锁定不阻塞其他字段,窗口文案分断网/查无两态；提交见 git log -1 |
+| P-PROVIDER-OFFLINE | [2026-10-11-provider-offline.md](plans/2026-10-11-provider-offline.md) | In Progress | 无 spec 杂项 | 分支 feat-compact-fixes；断网态:新增默认自定义,已配项供应商选择锁定不阻塞其他字段,窗口文案分断网/查无两态；两阶段审查阶段二修复中，finishing 阶段统一标 Completed |
 | P-CHAT-PROFILE-ACTIVE | [2026-10-11-chat-profile-active.md](plans/2026-10-11-chat-profile-active.md) | In Progress | S-CHAT-PROFILES | 分支 feat-compact-fixes；设置页「设为当前」改调共用函数，完成后归档 S-CHAT-PROFILES |
 | P-COMPACT-V3-P1F | [2026-10-11-compact-v3-p1f.md](plans/2026-10-11-compact-v3-p1f.md) | In Progress | S-COMPACT-V3 | 分支 feat-compact-fixes；apply_patch 入 R2 登记表 + 字段按工具登记 |
 | P-MARKETING-VIDEO | [2026-10-11-marketing-video.md](plans/2026-10-11-marketing-video.md) | Pending | S-MARKETING-VIDEO | 规划完成；先安装官方 Skill 和独立工程，再准备素材与首片 |

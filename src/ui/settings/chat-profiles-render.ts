@@ -45,6 +45,7 @@ import {
 import { tNow } from '../../i18n';
 import { CUSTOM_TOKEN_MAX, CUSTOM_TOKEN_MIN } from '../../ui/tokens/context-length-presets';
 import {
+	fieldsShapeFlips,
 	resolveProviderControl,
 	type ProviderListState,
 } from './provider-control';
@@ -355,14 +356,53 @@ function renderProfileDetail(
 			});
 		});
 
-	// 提供商与模型依赖名单:立即画 loading 态(按钮锁定转圈),避免整块空白;名单回来后原位重绘
+	// 供应商区拆成两个宿主：rowHost 只放供应商一行，fieldsHost 放地址／密钥／模型。
+	// loading 立即把两部分都画成可交互形态；resolve 后按字段形态是否翻转决定重绘范围，
+	// 避免黑洞网络下名单数十秒不返回时，清空用户正在填写的输入框与焦点。
 	const providerHost = detail.createDiv();
-	renderProviderAndModel(app, plugin, providerHost, profile, undefined, onChooseProvider);
+	const rowHost = providerHost.createDiv();
+	const fieldsHost = providerHost.createDiv();
+	const providerId = profile.providerId || inferChatProvider(profile.apiBase);
+	renderProviderRow(rowHost, profile, providerId, undefined, onChooseProvider);
+	renderProviderFields(app, plugin, fieldsHost, profile, providerId, undefined);
 	void (async () => {
 		const catalog = plugin.modelsDevCatalog ? await plugin.modelsDevCatalog.ensureCatalog() : null;
 		if (!providerHost.isConnected) return;
-		providerHost.empty();
-		renderProviderAndModel(app, plugin, providerHost, profile, catalog, onChooseProvider);
+
+		// resolve 后三段判定（决定 fieldsHost 动不动）：
+		// 一、catalog 为 null（断网，头号场景）：离线字段就是 loading 画出的可编辑地址、
+		//    密钥行、手填模型，用户可能正填到一半——只重画供应商行，字段区一个节点都不动；
+		// 二、本机项（custom／ollama）或名单里查不到此项：字段仍是同一形态——同样不重画；
+		// 三、名单厂商（listed 存在）：就绪后地址可能转只读、模型转下拉，形态真的翻转，
+		//    才允许重建字段区。
+		rowHost.empty();
+		renderProviderRow(rowHost, profile, providerId, catalog, onChooseProvider);
+		if (!fieldsShapeFlips(catalog, providerId)) return;
+
+		// 形态翻转但焦点还在字段内：等焦点真正离开字段区再重建。
+		// focusout 回调里再套一层 setTimeout(0)，让同一失焦任务中的 change 监听器先执行，
+		// 把地址、密钥或模型写入配置／钥匙串，随后清空才不丢刚提交的值。
+		let fieldsRebuilt = false;
+		const rebuildFields = (): void => {
+			if (fieldsRebuilt || !fieldsHost.isConnected) return;
+			fieldsRebuilt = true;
+			fieldsHost.empty();
+			renderProviderFields(app, plugin, fieldsHost, profile, providerId, catalog);
+		};
+		if (!fieldsHost.contains(document.activeElement)) {
+			rebuildFields();
+			return;
+		}
+		const onFocusOut = (): void => {
+			window.setTimeout(() => {
+				// 焦点可能只是从一个字段移到区内另一个字段：仍在区内就继续等，监听不能用 once。
+				if (fieldsRebuilt || !fieldsHost.isConnected) return;
+				if (fieldsHost.contains(document.activeElement)) return;
+				fieldsHost.removeEventListener('focusout', onFocusOut);
+				rebuildFields();
+			}, 0);
+		};
+		fieldsHost.addEventListener('focusout', onFocusOut);
 	})();
 
 	renderProfileWindow(plugin, detail, profile);
@@ -395,19 +435,17 @@ function renderProfileDetail(
 }
 
 /**
- * 画出提供商、地址、密钥和模型。
- * catalog 三态:undefined=名单加载中、null=断网无名单、对象=就绪(过期缓存也算)。
- * 有 api 的供应商只展示地址；空 api、本地和自定义才可编辑。
+ * 供应商一行：名称、状态描述与「选择」按钮，画进 rowHost。
+ * catalog 三态：undefined＝名单加载中、null＝断网无名单、对象＝就绪（过期缓存也算）。
+ * 只画这一行，resolve 后可随时原位重画，不触碰 fieldsHost 里用户正在填的字段。
  */
-function renderProviderAndModel(
-	app: App,
-	plugin: RatelVaultPlugin,
+function renderProviderRow(
 	host: HTMLElement,
 	profile: ChatProfile,
+	providerId: string,
 	catalog: ModelsDevCatalog | null | undefined,
 	onChooseProvider: () => void,
 ): void {
-	const providerId = profile.providerId || inferChatProvider(profile.apiBase);
 	const rows = catalog ? listCatalogProviders(catalog) : [];
 	const unconfigured = !profile.apiBase && !profile.model;
 	const state: ProviderListState =
@@ -430,16 +468,38 @@ function renderProviderAndModel(
 		.setName(tNow('settings.chatProfiles.provider.name'))
 		.setDesc(providerDesc);
 	providerSetting.addButton((btn) => {
-		// 先文后图:setIcon 会把 svg 插到文字前;断网两态禁用点击,只有 ready 可进 picker
-		btn.setButtonText(tNow(control.buttonTextKey));
 		btn.setDisabled(control.disabled);
 		if (control.spinning) {
+			// setIcon('loader') 会清空按钮内已有的文本节点（Obsidian 运行时实证），
+			// 转圈态必须先放 loader 图标、再补文字 span，子节点顺序为 [svg, span]，文字才留得住；
+			// 另补 aria-label，保证按钮在图标之外仍有无障碍名。
 			btn.setIcon('loader');
 			btn.buttonEl.querySelector('svg')?.classList.add('ratel-spin');
+			btn.buttonEl.createSpan({ text: tNow(control.buttonTextKey) });
+			btn.buttonEl.setAttribute('aria-label', tNow(control.buttonTextKey));
+		} else {
+			// offline／ready 为纯文本按钮；rowHost 每次先 empty 再画，按钮是全新元素，不会残留图标。
+			btn.setButtonText(tNow(control.buttonTextKey));
 		}
+		// 断网两态禁用点击，只有 ready 可进 picker。
 		if (!control.disabled) btn.onClick(onChooseProvider);
 	});
+}
 
+/**
+ * 地址、密钥与模型字段，画进 fieldsHost。
+ * catalog 三态语义同 renderProviderRow。有官方 api 的名单厂商地址只读、模型走下拉；
+ * 空 api、本机项（custom／ollama）、名单查无此项与无名单态均可编辑地址并手填模型。
+ */
+function renderProviderFields(
+	app: App,
+	plugin: RatelVaultPlugin,
+	host: HTMLElement,
+	profile: ChatProfile,
+	providerId: string,
+	catalog: ModelsDevCatalog | null | undefined,
+): void {
+	const rows = catalog ? listCatalogProviders(catalog) : [];
 	const listed = rows.find((row) => row.id === providerId);
 	const editableBase =
 		providerId === LOCAL_PROVIDER_OLLAMA ||
@@ -701,7 +761,8 @@ function refreshProfileWindow(
 	host: HTMLElement,
 	profile: ChatProfile,
 ): void {
-	const detail = host.parentElement;
+	// 字段现在嵌在 fieldsHost＞providerHost 内，不能再用 parentElement，沿详情根类名找回。
+	const detail = host.closest<HTMLElement>('.ratel-chat-profile-detail');
 	if (!detail) return;
 	detail.querySelector(':scope > [data-profile-window]')?.remove();
 	renderProfileWindow(plugin, detail, profile);
