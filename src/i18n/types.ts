@@ -138,6 +138,15 @@ export interface SettingsStrings {
   'settings.chatProfiles.window.shrink': string;
   'settings.chatProfiles.window.output': string;
   'settings.chatProfiles.model.hand': string;
+  'settings.chatProfiles.connection.name': string;
+  'settings.chatProfiles.connection.hint': string;
+  'settings.chatProfiles.connection.button': string;
+  'settings.chatProfiles.connection.testing': string;
+  'settings.chatProfiles.connection.ok': string;
+  'settings.chatProfiles.connection.missingBase': string;
+  'settings.chatProfiles.connection.missingModel': string;
+  'settings.chatProfiles.connection.missingKey': string;
+  'settings.chatProfiles.connection.timeout': string;
   'settings.advanced.heading': string;
   'settings.advanced.registryUrl.name': string;
   'settings.advanced.registryUrl.desc': string;

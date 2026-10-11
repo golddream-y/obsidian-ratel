@@ -948,3 +948,28 @@ svg.ratel-spin {
 		animation: none;
 	}
 }
+
+/* 连接测试结果:成功/失败行内反馈,图标与文字同色 */
+.ratel-conn-ok {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	color: var(--text-success);
+}
+
+.ratel-conn-fail {
+	color: var(--text-error);
+}
+
+.ratel-conn-fail > div:first-child {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.ratel-conn-sub {
+	margin-top: 2px;
+	padding-left: 22px;
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}

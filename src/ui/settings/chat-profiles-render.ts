@@ -5,9 +5,18 @@
  * @depends obsidian, ../../settings/chat-profiles, ../../settings/settings-apply, ../../secrets/ratel-secrets, ../../i18n
  */
 
-import { App, Modal, Notice, Setting, SettingPage, type SettingDefinitionList } from 'obsidian';
-import type RatelVaultPlugin from '../../main';
-import type { ChatProfile } from '../../settings/chat-profiles';
+import {
+	App,
+	ButtonComponent,
+	Modal,
+	Notice,
+	Setting,
+	SettingPage,
+	setIcon,
+	type SettingDefinitionList,
+} from "obsidian";
+import type RatelVaultPlugin from "../../main";
+import type { ChatProfile } from "../../settings/chat-profiles";
 import {
 	assignStoredProfileProvider,
 	deleteChatProfile,
@@ -18,8 +27,8 @@ import {
 	syncChatWindow,
 	writeStoredProfileModel,
 	writeStoredProfileWindow,
-} from '../../settings/chat-profiles';
-import { activateChatProfile } from '../chat/activate-chat-profile';
+} from "../../settings/chat-profiles";
+import { activateChatProfile } from "../chat/activate-chat-profile";
 import {
 	CATALOG_MODEL_HAND,
 	LOCAL_PROVIDER_CUSTOM,
@@ -32,8 +41,8 @@ import {
 	modelPickValue,
 	type CatalogProviderRow,
 	type ModelsDevCatalog,
-} from '../../settings/model-catalog';
-import { applySettingValue } from '../../settings/settings-apply';
+} from "../../settings/model-catalog";
+import { applySettingValue } from "../../settings/settings-apply";
 import {
 	deleteChatProfileSecret,
 	readChatProfileSecret,
@@ -41,14 +50,19 @@ import {
 	resolveChatApiKey,
 	setChatProfileSecret,
 	chatProfileSecretId,
-} from '../../secrets/ratel-secrets';
-import { tNow } from '../../i18n';
-import { CUSTOM_TOKEN_MAX, CUSTOM_TOKEN_MIN } from '../../ui/tokens/context-length-presets';
+} from "../../secrets/ratel-secrets";
+import { tNow } from "../../i18n";
+import type { StringKey } from "../../i18n/types";
+import {
+	CUSTOM_TOKEN_MAX,
+	CUSTOM_TOKEN_MIN,
+} from "../../ui/tokens/context-length-presets";
 import {
 	fieldsShapeFlips,
 	resolveProviderControl,
 	type ProviderListState,
-} from './provider-control';
+} from "./provider-control";
+import { runConnectionTest } from "./connection-test";
 
 /**
  * 简单文本输入 Modal — 用于新建 / 复制 / 改名。
@@ -82,18 +96,18 @@ class TextPromptModal extends Modal {
 			.addText((text) => {
 				text.setPlaceholder(this.placeholder);
 				text.setValue(this.initial);
-				text.inputEl.addEventListener('input', () => {
+				text.inputEl.addEventListener("input", () => {
 					value = text.getValue();
 				});
-				text.inputEl.addEventListener('keydown', (event) => {
-					if (event.key !== 'Enter' || event.isComposing) return;
+				text.inputEl.addEventListener("keydown", (event) => {
+					if (event.key !== "Enter" || event.isComposing) return;
 					event.preventDefault();
 					submit();
 				});
-				setTimeout(() => text.inputEl.focus(), 0);
+				window.setTimeout(() => text.inputEl.focus(), 0);
 			})
 			.addButton((btn) => {
-				btn.setButtonText(tNow('settings.chatProfiles.promptConfirm'));
+				btn.setButtonText(tNow("settings.chatProfiles.promptConfirm"));
 				btn.setCta();
 				btn.onClick(submit);
 			});
@@ -108,8 +122,34 @@ async function persistProfileEdit(plugin: RatelVaultPlugin): Promise<void> {
 }
 
 /** 这一套是不是当前正在对话的那套。 */
-function profileIsActive(plugin: RatelVaultPlugin, profile: ChatProfile): boolean {
+function profileIsActive(
+	plugin: RatelVaultPlugin,
+	profile: ChatProfile,
+): boolean {
 	return profile.id === plugin.settings.activeChatProfileId;
+}
+
+/**
+ * 命令式打开某套配置的编辑页。
+ *
+ * openPage 是声明式设置框架(1.13+)的页面导航方法,框架列表行点击内部就走它,
+ * 但未写进公开 d.ts。带运行时形状校验:拿不到就返回 false,调用方降级为刷新列表 + Notice。
+ *
+ * @returns 是否成功进入编辑页
+ */
+function openProfilePage(
+	app: App,
+	plugin: RatelVaultPlugin,
+	profileId: string,
+): boolean {
+	const modal = (
+		app as unknown as {
+			setting?: { openPage?: (page: unknown) => void };
+		}
+	).setting;
+	if (typeof modal?.openPage !== "function") return false;
+	modal.openPage(new ChatProfileSettingPage(app, plugin, profileId));
+	return true;
 }
 
 /**
@@ -129,7 +169,9 @@ async function commitProfileModel(
 	if (profileIsActive(plugin, profile)) {
 		plugin.settings.chatModel = profile.model;
 		plugin.rebuildLLM();
-		const catalog = plugin.modelsDevCatalog ? await plugin.modelsDevCatalog.ensureCatalog() : null;
+		const catalog = plugin.modelsDevCatalog
+			? await plugin.modelsDevCatalog.ensureCatalog()
+			: null;
 		await syncChatWindow(plugin.settings, { catalog, clearOnMiss: true });
 	}
 	await persistProfileEdit(plugin);
@@ -138,23 +180,39 @@ async function commitProfileModel(
 /**
  * 已保存配置列表。点一行进入这一套的二级页。加号新建空配置，复制入口放在具体配置页。
  */
-export function buildChatProfileList(app: App, plugin: RatelVaultPlugin): SettingDefinitionList {
+export function buildChatProfileList(
+	app: App,
+	plugin: RatelVaultPlugin,
+): SettingDefinitionList {
 	const profiles = plugin.settings.chatProfiles ?? [];
 	return {
-		type: 'list',
-		heading: tNow('settings.chatProfiles.heading'),
+		type: "list",
+		heading: tNow("settings.chatProfiles.heading"),
 		addItem: {
-			name: tNow('settings.chatProfiles.createAction'),
+			name: tNow("settings.chatProfiles.createAction"),
 			action: () => {
 				new TextPromptModal(
 					app,
-					tNow('settings.chatProfiles.createPromptTitle'),
-					tNow('settings.chatProfiles.createPromptPlaceholder'),
-					'',
+					tNow("settings.chatProfiles.createPromptTitle"),
+					tNow("settings.chatProfiles.createPromptPlaceholder"),
+					"",
 					async (name) => {
-						createChatProfile(plugin.settings, name);
-						await plugin.saveSettings();
-						new Notice(tNow('settings.chatProfiles.createDone'), 3000);
+						const profile = createChatProfile(
+							plugin.settings,
+							name,
+						);
+						// 先静默落库再直接进编辑页:新配置是空套,停在列表还要再点一次。
+						await plugin.saveSettings({
+							refreshSettingsTab: false,
+						});
+						if (!openProfilePage(app, plugin, profile.id)) {
+							// 防御:框架导航不可用时退回旧行为(刷新列表 + 提示)。
+							await plugin.saveSettings();
+							new Notice(
+								tNow("settings.chatProfiles.createDone"),
+								3000,
+							);
+						}
 					},
 				).open();
 			},
@@ -165,20 +223,26 @@ export function buildChatProfileList(app: App, plugin: RatelVaultPlugin): Settin
 			try {
 				deleteChatProfile(plugin.settings, profile.id);
 			} catch {
-				new Notice(tNow('settings.chatProfiles.deleteActiveBlocked'), 5000);
+				new Notice(
+					tNow("settings.chatProfiles.deleteActiveBlocked"),
+					5000,
+				);
 				void plugin.saveSettings();
 				return;
 			}
 			deleteChatProfileSecret(app, profile.id, profile);
 			void plugin.saveSettings();
-			new Notice(tNow('settings.chatProfiles.deleted', { name: profile.name }), 3000);
+			new Notice(
+				tNow("settings.chatProfiles.deleted", { name: profile.name }),
+				3000,
+			);
 		},
 		items: profiles.map((profile) => ({
-			type: 'page' as const,
+			type: "page" as const,
 			name: profile.name,
-			desc: profile.model || tNow('settings.chatProfiles.unconfigured'),
+			desc: profile.model || tNow("settings.chatProfiles.unconfigured"),
 			...(profile.id === plugin.settings.activeChatProfileId
-				? { displayValue: tNow('settings.chatProfiles.activeMark') }
+				? { displayValue: tNow("settings.chatProfiles.activeMark") }
 				: {}),
 			page: () => new ChatProfileSettingPage(app, plugin, profile.id),
 		})),
@@ -213,20 +277,28 @@ export class ChatProfileSettingPage extends SettingPage {
 	private renderPage(): void {
 		const { containerEl } = this;
 		containerEl.empty();
-		const profile = this.plugin.settings.chatProfiles.find((item) => item.id === this.profileId);
+		const profile = this.plugin.settings.chatProfiles.find(
+			(item) => item.id === this.profileId,
+		);
 		if (!profile) return;
 		if (!this.listSnapshot) {
 			this.listSnapshot = { name: profile.name, model: profile.model };
 		}
 		this.ensureListWatch();
 		// 与高级里声明式二级页相同：setting-group > setting-items，内边距交给框架。
-		const body = containerEl.createDiv({ cls: 'setting-group' }).createDiv({ cls: 'setting-items' });
+		const body = containerEl
+			.createDiv({ cls: "setting-group" })
+			.createDiv({ cls: "setting-items" });
 
 		if (this.pickingProvider) {
 			renderProviderPicker(body, this.plugin, profile, {
 				onChoose: (providerId) => {
 					void (async () => {
-						await commitProviderChoice(this.plugin, profile, providerId);
+						await commitProviderChoice(
+							this.plugin,
+							profile,
+							providerId,
+						);
 						this.pickingProvider = false;
 						if (!containerEl.isConnected) return;
 						this.renderPage();
@@ -238,10 +310,10 @@ export class ChatProfileSettingPage extends SettingPage {
 
 		if (profile.id !== this.plugin.settings.activeChatProfileId) {
 			new Setting(body)
-				.setName(tNow('settings.chatProfiles.setActive'))
+				.setName(tNow("settings.chatProfiles.setActive"))
 				.setDesc(profile.model)
 				.addButton((btn) => {
-					btn.setButtonText(tNow('settings.chatProfiles.setActive'));
+					btn.setButtonText(tNow("settings.chatProfiles.setActive"));
 					btn.setCta();
 					btn.onClick(() => {
 						// 与顶栏菜单共用同一条切换路径;Modal 内抑制设置 Tab 重绘,落库后只重绘当前页。
@@ -253,13 +325,20 @@ export class ChatProfileSettingPage extends SettingPage {
 				});
 		}
 
-		renderProfileDetail(this.app, this.plugin, body, profile, () => {
-			this.pickingProvider = true;
-			this.renderPage();
-		}, () => {
-			const root = this.plugin.settingTab?.containerEl;
-			if (root) this.writeListRow(root);
-		});
+		renderProfileDetail(
+			this.app,
+			this.plugin,
+			body,
+			profile,
+			() => {
+				this.pickingProvider = true;
+				this.renderPage();
+			},
+			() => {
+				const root = this.plugin.settingTab?.containerEl;
+				if (root) this.writeListRow(root);
+			},
+		);
 	}
 
 	override hide(): void {
@@ -268,7 +347,10 @@ export class ChatProfileSettingPage extends SettingPage {
 		super.hide();
 		const tab = this.plugin.settingTab;
 		if (!tab?.containerEl) return;
-		const scope = tab.containerEl.closest('.modal') ?? tab.containerEl.parentElement ?? tab.containerEl;
+		const scope =
+			tab.containerEl.closest(".modal") ??
+			tab.containerEl.parentElement ??
+			tab.containerEl;
 		// 返回动画结束后列表才插回。晚一拍重画，并用当时的文字把那一行改掉。
 		window.setTimeout(() => {
 			if (!tab.containerEl.isConnected) return;
@@ -282,7 +364,7 @@ export class ChatProfileSettingPage extends SettingPage {
 	private ensureListWatch(): void {
 		if (this.listObserver) return;
 		const tab = this.plugin.settingTab;
-		const scope = tab?.containerEl?.closest('.modal') ?? tab?.containerEl;
+		const scope = tab?.containerEl?.closest(".modal") ?? tab?.containerEl;
 		if (!scope) return;
 		this.listObserver = new MutationObserver(() => {
 			if (!this.writeListRow(scope)) return;
@@ -303,27 +385,38 @@ export class ChatProfileSettingPage extends SettingPage {
 	 */
 	private writeListRow(root: ParentNode): boolean {
 		const snapshot = this.listSnapshot;
-		const profile = this.plugin.settings.chatProfiles.find((item) => item.id === this.profileId);
+		const profile = this.plugin.settings.chatProfiles.find(
+			(item) => item.id === this.profileId,
+		);
 		if (!snapshot || !profile) return false;
-		if (snapshot.name === profile.name && snapshot.model === profile.model) return true;
+		if (snapshot.name === profile.name && snapshot.model === profile.model)
+			return true;
 		let wrote = false;
 		const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
 		const nameNodes: Text[] = [];
 		let current = walker.nextNode();
 		while (current) {
-			if (current.textContent?.trim() === snapshot.name) nameNodes.push(current as Text);
+			if (current.textContent?.trim() === snapshot.name)
+				nameNodes.push(current as Text);
 			current = walker.nextNode();
 		}
 		for (const node of nameNodes) {
-			const item = node.parentElement?.closest('.setting-item');
+			const item = node.parentElement?.closest(".setting-item");
 			// 一个格子里有多行名字时，说明拿到的是整张列表，不能改里面的模型小字。
-			if (!item || item.querySelectorAll('.setting-item-name').length !== 1) continue;
+			if (
+				!item ||
+				item.querySelectorAll(".setting-item-name").length !== 1
+			)
+				continue;
 			node.textContent = profile.name;
 			wrote = true;
-			const desc = item.querySelector('.setting-item-description');
+			const desc = item.querySelector(".setting-item-description");
 			if (!desc) continue;
 			for (const child of Array.from(desc.childNodes)) {
-				if (child.nodeType === Node.TEXT_NODE && child.textContent?.trim() === snapshot.model) {
+				if (
+					child.nodeType === Node.TEXT_NODE &&
+					child.textContent?.trim() === snapshot.model
+				) {
 					child.textContent = profile.model;
 				}
 			}
@@ -346,15 +439,15 @@ function renderProfileDetail(
 	onChooseProvider: () => void,
 	onLabelsChanged?: () => void,
 ): void {
-	const detail = root.createDiv({ cls: 'ratel-chat-profile-detail' });
+	const detail = root.createDiv({ cls: "ratel-chat-profile-detail" });
 
 	// 名字和提供商分开，避免「自定义」既是名字又是提供商。
 	new Setting(detail)
-		.setName(tNow('settings.chatProfiles.name.name'))
-		.setDesc(tNow('settings.chatProfiles.name.desc'))
+		.setName(tNow("settings.chatProfiles.name.name"))
+		.setDesc(tNow("settings.chatProfiles.name.desc"))
 		.addText((text) => {
 			text.setValue(profile.name);
-			text.inputEl.addEventListener('change', () => {
+			text.inputEl.addEventListener("change", () => {
 				void (async () => {
 					const trimmed = text.getValue().trim();
 					if (!trimmed || trimmed === profile.name) return;
@@ -372,10 +465,25 @@ function renderProfileDetail(
 	const rowHost = providerHost.createDiv();
 	const fieldsHost = providerHost.createDiv();
 	const providerId = profile.providerId || inferChatProvider(profile.apiBase);
-	renderProviderRow(rowHost, profile, providerId, undefined, onChooseProvider);
-	renderProviderFields(app, plugin, fieldsHost, profile, providerId, undefined);
+	renderProviderRow(
+		rowHost,
+		profile,
+		providerId,
+		undefined,
+		onChooseProvider,
+	);
+	renderProviderFields(
+		app,
+		plugin,
+		fieldsHost,
+		profile,
+		providerId,
+		undefined,
+	);
 	void (async () => {
-		const catalog = plugin.modelsDevCatalog ? await plugin.modelsDevCatalog.ensureCatalog() : null;
+		const catalog = plugin.modelsDevCatalog
+			? await plugin.modelsDevCatalog.ensureCatalog()
+			: null;
 		if (!providerHost.isConnected) return;
 
 		// resolve 后三段判定（决定 fieldsHost 动不动）：
@@ -385,7 +493,13 @@ function renderProfileDetail(
 		// 三、名单厂商（listed 存在）：就绪后地址可能转只读、模型转下拉，形态真的翻转，
 		//    才允许重建字段区。
 		rowHost.empty();
-		renderProviderRow(rowHost, profile, providerId, catalog, onChooseProvider);
+		renderProviderRow(
+			rowHost,
+			profile,
+			providerId,
+			catalog,
+			onChooseProvider,
+		);
 		if (!fieldsShapeFlips(catalog, providerId)) return;
 
 		// 形态翻转但焦点还在字段内：等焦点真正离开字段区再重建。
@@ -396,7 +510,14 @@ function renderProfileDetail(
 			if (fieldsRebuilt || !fieldsHost.isConnected) return;
 			fieldsRebuilt = true;
 			fieldsHost.empty();
-			renderProviderFields(app, plugin, fieldsHost, profile, providerId, catalog);
+			renderProviderFields(
+				app,
+				plugin,
+				fieldsHost,
+				profile,
+				providerId,
+				catalog,
+			);
 		};
 		if (!fieldsHost.contains(document.activeElement)) {
 			rebuildFields();
@@ -407,38 +528,63 @@ function renderProfileDetail(
 				// 焦点可能只是从一个字段移到区内另一个字段：仍在区内就继续等，监听不能用 once。
 				if (fieldsRebuilt || !fieldsHost.isConnected) return;
 				if (fieldsHost.contains(document.activeElement)) return;
-				fieldsHost.removeEventListener('focusout', onFocusOut);
+				fieldsHost.removeEventListener("focusout", onFocusOut);
 				rebuildFields();
 			}, 0);
 		};
-		fieldsHost.addEventListener('focusout', onFocusOut);
+		fieldsHost.addEventListener("focusout", onFocusOut);
 	})();
 
+	// 连接测试固定在窗口行之前;字段宿主异步重建不会碰到这一行。
+	renderConnectionTestRow(app, detail, profile);
 	renderProfileWindow(plugin, detail, profile);
 
 	new Setting(detail)
-		.setName(tNow('settings.chatProfiles.copyAction'))
-		.setDesc(tNow('settings.chatProfiles.copyDesc'))
+		.setName(tNow("settings.chatProfiles.copyAction"))
+		.setDesc(tNow("settings.chatProfiles.copyDesc"))
 		.addButton((btn) => {
-			btn.setButtonText(tNow('settings.chatProfiles.copyAction'));
+			btn.setButtonText(tNow("settings.chatProfiles.copyAction"));
 			btn.onClick(() => {
-				new TextPromptModal(app, tNow('settings.chatProfiles.copyPromptTitle'),
-					tNow('settings.chatProfiles.createPromptPlaceholder'),
-					tNow('settings.chatProfiles.copyName', { name: profile.name }), async (name) => {
+				new TextPromptModal(
+					app,
+					tNow("settings.chatProfiles.copyPromptTitle"),
+					tNow("settings.chatProfiles.createPromptPlaceholder"),
+					tNow("settings.chatProfiles.copyName", {
+						name: profile.name,
+					}),
+					async (name) => {
 						// 关键路径:读取正在编辑的来源配置，不能借用当前激活配置的字段或密钥。
-						const source = plugin.settings.chatProfiles.find((item) => item.id === profile.id);
+						const source = plugin.settings.chatProfiles.find(
+							(item) => item.id === profile.id,
+						);
 						if (!source) {
-							new Notice(tNow('settings.chatProfiles.sourceMissing'), 3000);
+							new Notice(
+								tNow("settings.chatProfiles.sourceMissing"),
+								3000,
+							);
 							return;
 						}
-						const key = resolveChatApiKey(app, { chatApiBase: source.apiBase,
-							chatProfiles: plugin.settings.chatProfiles, activeChatProfileId: source.id });
-						const copied = copyChatProfile(plugin.settings, source.id, name);
+						const key = resolveChatApiKey(app, {
+							chatApiBase: source.apiBase,
+							chatProfiles: plugin.settings.chatProfiles,
+							activeChatProfileId: source.id,
+						});
+						const copied = copyChatProfile(
+							plugin.settings,
+							source.id,
+							name,
+						);
 						if (!copied) return;
 						if (key) setChatProfileSecret(app, copied, key);
-						await plugin.saveSettings({ refreshSettingsTab: false });
-						new Notice(tNow('settings.chatProfiles.copyDone'), 3000);
-					}).open();
+						await plugin.saveSettings({
+							refreshSettingsTab: false,
+						});
+						new Notice(
+							tNow("settings.chatProfiles.copyDone"),
+							3000,
+						);
+					},
+				).open();
 			});
 		});
 }
@@ -458,23 +604,28 @@ function renderProviderRow(
 	const rows = catalog ? listCatalogProviders(catalog) : [];
 	const unconfigured = !profile.apiBase && !profile.model;
 	const state: ProviderListState =
-		catalog === undefined ? 'loading' : catalog === null ? 'offline' : 'ready';
+		catalog === undefined
+			? "loading"
+			: catalog === null
+				? "offline"
+				: "ready";
 	const control = resolveProviderControl(state);
 
 	// 供应商行描述:未配置→引导选择;离线且已配置→推断名加离线说明;loading 不加错误句;ready→名单名
 	let providerDesc: string;
 	if (unconfigured) {
-		providerDesc = tNow('settings.chatProfiles.provider.empty');
-	} else if (state === 'offline') {
+		providerDesc = tNow("settings.chatProfiles.provider.empty");
+	} else if (state === "offline") {
 		providerDesc =
 			providerDisplayName(rows, providerId) +
-			'\n' + tNow('settings.chatProfiles.provider.offlineHint');
+			"\n" +
+			tNow("settings.chatProfiles.provider.offlineHint");
 	} else {
 		providerDesc = providerDisplayName(rows, providerId);
 	}
 
 	const providerSetting = new Setting(host)
-		.setName(tNow('settings.chatProfiles.provider.name'))
+		.setName(tNow("settings.chatProfiles.provider.name"))
 		.setDesc(providerDesc);
 	providerSetting.addButton((btn) => {
 		btn.setDisabled(control.disabled);
@@ -482,10 +633,13 @@ function renderProviderRow(
 			// setIcon('loader') 会清空按钮内已有的文本节点（Obsidian 运行时实证），
 			// 转圈态必须先放 loader 图标、再补文字 span，子节点顺序为 [svg, span]，文字才留得住；
 			// 另补 aria-label，保证按钮在图标之外仍有无障碍名。
-			btn.setIcon('loader');
-			btn.buttonEl.querySelector('svg')?.classList.add('ratel-spin');
+			btn.setIcon("loader");
+			btn.buttonEl.querySelector("svg")?.classList.add("ratel-spin");
 			btn.buttonEl.createSpan({ text: tNow(control.buttonTextKey) });
-			btn.buttonEl.setAttribute('aria-label', tNow(control.buttonTextKey));
+			btn.buttonEl.setAttribute(
+				"aria-label",
+				tNow(control.buttonTextKey),
+			);
 		} else {
 			// offline／ready 为纯文本按钮；rowHost 每次先 empty 再画，按钮是全新元素，不会残留图标。
 			btn.setButtonText(tNow(control.buttonTextKey));
@@ -517,89 +671,108 @@ function renderProviderFields(
 		listed.api === null;
 	if (!editableBase && listed?.api) {
 		new Setting(host)
-			.setName(tNow('settings.chatProfiles.apiBase.name'))
+			.setName(tNow("settings.chatProfiles.apiBase.name"))
 			.setDesc(listed.api);
 	} else if (editableBase) {
-		const address = new Setting(host)
-			.setName(tNow('settings.chatProfiles.apiBase.name'));
+		const address = new Setting(host).setName(
+			tNow("settings.chatProfiles.apiBase.name"),
+		);
 		// 名单里的供应商但没给 api：不要编造，也不要用 /v1 占位假装必须这样填。
 		if (listed && listed.api === null) {
-			address.setDesc(tNow('settings.chatProfiles.provider.noApi'));
+			address.setDesc(tNow("settings.chatProfiles.provider.noApi"));
 		}
 		address.addText((text) => {
-				text.setPlaceholder(tNow('settings.chatProfiles.apiBase.placeholder'));
-				text.setValue(profile.apiBase);
-				text.inputEl.addEventListener('change', () => {
-					void (async () => {
-						const trimmed = text.getValue().trim();
-						if (!trimmed) return;
-						profile.apiBase = trimmed;
-						if (profileIsActive(plugin, profile)) {
-							projectProfileToSettings(plugin.settings, profile);
-							plugin.settings.chatPreset = inferChatProvider(profile.apiBase);
-							plugin.rebuildLLM();
-						}
-						await persistProfileEdit(plugin);
-					})();
-				});
+			text.setPlaceholder(
+				tNow("settings.chatProfiles.apiBase.placeholder"),
+			);
+			text.setValue(profile.apiBase);
+			text.inputEl.addEventListener("change", () => {
+				void (async () => {
+					const trimmed = text.getValue().trim();
+					if (!trimmed) return;
+					profile.apiBase = trimmed;
+					if (profileIsActive(plugin, profile)) {
+						projectProfileToSettings(plugin.settings, profile);
+						plugin.settings.chatPreset = inferChatProvider(
+							profile.apiBase,
+						);
+						plugin.rebuildLLM();
+					}
+					await persistProfileEdit(plugin);
+				})();
 			});
+		});
 	}
 
 	if (requiresChatApiKey({ chatApiBase: profile.apiBase })) {
-		const savedKey = readChatProfileSecret(app, profile) ?? '';
+		const savedKey = readChatProfileSecret(app, profile) ?? "";
 		const label = chatProfileSecretId(profile);
 		let revealed = false;
 		const keySetting = new Setting(host)
-			.setName(tNow('settings.chatProfiles.apiKey.name'))
-			.setDesc(tNow('settings.chatProfiles.apiKey.desc', { label }));
+			.setName(tNow("settings.chatProfiles.apiKey.name"))
+			.setDesc(tNow("settings.chatProfiles.apiKey.desc", { label }));
 		let keyInput: HTMLInputElement | undefined;
 		keySetting.addText((text) => {
 			keyInput = text.inputEl;
-			text.inputEl.type = 'password';
-			text.setPlaceholder(tNow('settings.chatProfiles.apiKey.placeholder'));
+			text.inputEl.type = "password";
+			text.setPlaceholder(
+				tNow("settings.chatProfiles.apiKey.placeholder"),
+			);
 			if (savedKey) text.setValue(savedKey);
-			text.inputEl.addEventListener('change', () => {
+			text.inputEl.addEventListener("change", () => {
 				const trimmed = text.getValue().trim();
 				if (!trimmed) return;
 				setChatProfileSecret(app, profile, trimmed);
-				new Notice(tNow('settings.chatProfiles.apiKey.saved'), 3000);
+				new Notice(tNow("settings.chatProfiles.apiKey.saved"), 3000);
 			});
 		});
 		keySetting.addExtraButton((btn) => {
-			btn.setIcon('eye');
-			btn.setTooltip(tNow('settings.chatProfiles.apiKey.show'));
+			btn.setIcon("eye");
+			btn.setTooltip(tNow("settings.chatProfiles.apiKey.show"));
 			btn.onClick(() => {
 				if (!keyInput) return;
 				revealed = !revealed;
-				keyInput.type = revealed ? 'text' : 'password';
-				btn.setIcon(revealed ? 'eye-off' : 'eye');
-				btn.setTooltip(tNow(revealed
-					? 'settings.chatProfiles.apiKey.hide'
-					: 'settings.chatProfiles.apiKey.show'));
+				keyInput.type = revealed ? "text" : "password";
+				btn.setIcon(revealed ? "eye-off" : "eye");
+				btn.setTooltip(
+					tNow(
+						revealed
+							? "settings.chatProfiles.apiKey.hide"
+							: "settings.chatProfiles.apiKey.show",
+					),
+				);
 			});
 		});
 	}
 
-	const handOnly = providerId === LOCAL_PROVIDER_OLLAMA || providerId === LOCAL_PROVIDER_CUSTOM || !catalog;
+	const handOnly =
+		providerId === LOCAL_PROVIDER_OLLAMA ||
+		providerId === LOCAL_PROVIDER_CUSTOM ||
+		!catalog;
 	if (handOnly) {
-		addModelText(plugin, host, profile, () => refreshProfileWindow(plugin, host, profile));
+		addModelText(plugin, host, profile, () =>
+			refreshProfileWindow(plugin, host, profile),
+		);
 		return;
 	}
 	const modelIds = listCatalogModels(catalog, providerId);
 	const picked = modelPickValue(modelIds, profile.model);
 	new Setting(host)
-		.setName(tNow('settings.chatProfiles.model.name'))
+		.setName(tNow("settings.chatProfiles.model.name"))
 		.addDropdown((drop) => {
 			const modelOptions: Record<string, string> = {};
 			for (const id of modelIds) modelOptions[id] = id;
-			modelOptions[CATALOG_MODEL_HAND] = tNow('settings.chatProfiles.model.hand');
+			modelOptions[CATALOG_MODEL_HAND] = tNow(
+				"settings.chatProfiles.model.hand",
+			);
 			drop.addOptions(modelOptions);
 			let armed = false;
 			drop.setValue(picked);
 			armed = true;
 			drop.onChange(async (value) => {
 				// 下拉初始化会回调一次。控件已经不在页面上时，也不能再写到别的套上。
-				if (!armed || !host.isConnected || value === profile.model) return;
+				if (!armed || !host.isConnected || value === profile.model)
+					return;
 				if (value === CATALOG_MODEL_HAND) {
 					// 手填只留一个框。已有则不再追加。
 					showHandModel(host, plugin, profile);
@@ -620,7 +793,9 @@ async function commitProviderChoice(
 	profile: ChatProfile,
 	providerId: string,
 ): Promise<void> {
-	const catalog = plugin.modelsDevCatalog ? await plugin.modelsDevCatalog.ensureCatalog() : null;
+	const catalog = plugin.modelsDevCatalog
+		? await plugin.modelsDevCatalog.ensureCatalog()
+		: null;
 	assignStoredProfileProvider(plugin.settings, profile, providerId, catalog);
 	if (profileIsActive(plugin, profile)) {
 		projectProfileToSettings(plugin.settings, profile);
@@ -631,9 +806,14 @@ async function commitProviderChoice(
 	await persistProfileEdit(plugin);
 }
 
-function providerDisplayName(rows: readonly CatalogProviderRow[], providerId: string): string {
-	if (providerId === LOCAL_PROVIDER_OLLAMA) return tNow('settings.chatPreset.ollama');
-	if (providerId === LOCAL_PROVIDER_CUSTOM) return tNow('settings.chatPreset.custom');
+function providerDisplayName(
+	rows: readonly CatalogProviderRow[],
+	providerId: string,
+): string {
+	if (providerId === LOCAL_PROVIDER_OLLAMA)
+		return tNow("settings.chatPreset.ollama");
+	if (providerId === LOCAL_PROVIDER_CUSTOM)
+		return tNow("settings.chatPreset.custom");
 	return rows.find((row) => row.id === providerId)?.name || providerId;
 }
 
@@ -646,15 +826,20 @@ function renderProviderPicker(
 	profile: ChatProfile,
 	actions: { onChoose: (providerId: string) => void },
 ): void {
-	const currentId = profile.providerId || inferChatProvider(plugin.settings.chatApiBase);
+	const currentId =
+		profile.providerId || inferChatProvider(plugin.settings.chatApiBase);
 	// 修复: 1.14 起 .setting-items 卡片自身不再有内边距,内边距下沉到每个 .setting-item;
 	// 裸 <p> 会贴住卡片顶/左缘。用 Setting 行承载说明,两种内边距模型下都与其他行自动对齐。
-	new Setting(root).setDesc(tNow('settings.chatProfiles.provider.intro'));
+	new Setting(root).setDesc(tNow("settings.chatProfiles.provider.intro"));
 	const listHost = root.createDiv();
-	const search = new Setting(root).setName(tNow('settings.chatProfiles.provider.searchPlaceholder'));
+	const search = new Setting(root).setName(
+		tNow("settings.chatProfiles.provider.searchPlaceholder"),
+	);
 	search.addText((text) => {
-		text.setPlaceholder(tNow('settings.chatProfiles.provider.searchPlaceholder'));
-		text.inputEl.addEventListener('input', () => {
+		text.setPlaceholder(
+			tNow("settings.chatProfiles.provider.searchPlaceholder"),
+		);
+		text.inputEl.addEventListener("input", () => {
 			void paint(text.getValue());
 		});
 	});
@@ -662,27 +847,33 @@ function renderProviderPicker(
 	root.insertBefore(search.settingEl, listHost);
 
 	async function paint(query: string): Promise<void> {
-		const catalog = plugin.modelsDevCatalog ? await plugin.modelsDevCatalog.ensureCatalog() : null;
+		const catalog = plugin.modelsDevCatalog
+			? await plugin.modelsDevCatalog.ensureCatalog()
+			: null;
 		if (!listHost.isConnected) return;
 		const rows = catalog ? listCatalogProviders(catalog) : [];
 		listHost.empty();
 		if (!catalog) {
 			// 同 intro:用 Setting 行承载离线提示,保证与其他行内边距一致。
-			new Setting(listHost).setDesc(tNow('settings.chatProfiles.provider.offlinePicker'));
+			new Setting(listHost).setDesc(
+				tNow("settings.chatProfiles.provider.offlinePicker"),
+			);
 		}
 		const grouped = providerChoiceGroups(rows, query);
 		renderProviderSection(
 			listHost,
-			tNow('settings.chatProfiles.provider.sectionLocal'),
+			tNow("settings.chatProfiles.provider.sectionLocal"),
 			grouped.local,
 			currentId,
 			actions,
 		);
 		renderProviderSection(
 			listHost,
-			tNow(query.trim()
-				? 'settings.chatProfiles.provider.sectionMatch'
-				: 'settings.chatProfiles.provider.sectionCommon'),
+			tNow(
+				query.trim()
+					? "settings.chatProfiles.provider.sectionMatch"
+					: "settings.chatProfiles.provider.sectionCommon",
+			),
 			grouped.catalog,
 			currentId,
 			actions,
@@ -697,28 +888,36 @@ function renderProviderPicker(
 		sectionActions: { onChoose: (providerId: string) => void },
 	): void {
 		if (sectionRows.length === 0) return;
-		parent.createEl('h4', { text: title, cls: 'ratel-provider-section' });
+		parent.createEl("h4", { text: title, cls: "ratel-provider-section" });
 		for (const row of sectionRows) {
 			const alias = providerSearchAlias(row.id);
-			const setting = new Setting(parent).setName(alias ? `${row.name}（${alias}）` : row.name);
-			setting.settingEl.addClass('ratel-provider-pick');
-			const desc = document.createDocumentFragment();
-			desc.appendText(row.api ?? tNow('settings.chatProfiles.provider.noApi'));
+			const setting = new Setting(parent).setName(
+				alias ? `${row.name}（${alias}）` : row.name,
+			);
+			setting.settingEl.addClass("ratel-provider-pick");
+			const desc = createFragment();
+			desc.appendText(
+				row.api ?? tNow("settings.chatProfiles.provider.noApi"),
+			);
 			if (row.doc) {
-				desc.appendText(' · ');
-				const link = desc.createEl('a', {
-					text: tNow('settings.chatProfiles.provider.doc'),
+				desc.appendText(" · ");
+				const link = desc.createEl("a", {
+					text: tNow("settings.chatProfiles.provider.doc"),
 					href: row.doc,
-					attr: { target: '_blank', rel: 'noopener noreferrer' },
+					attr: { target: "_blank", rel: "noopener noreferrer" },
 				});
-				link.addEventListener('click', (evt) => evt.stopPropagation());
+				link.addEventListener("click", (evt) => evt.stopPropagation());
 			}
 			setting.setDesc(desc);
 			const current = row.id === selectedId;
 			setting.addButton((btn) => {
-				btn.setButtonText(tNow(current
-					? 'settings.chatProfiles.provider.current'
-					: 'settings.chatProfiles.provider.use'));
+				btn.setButtonText(
+					tNow(
+						current
+							? "settings.chatProfiles.provider.current"
+							: "settings.chatProfiles.provider.use",
+					),
+				);
 				if (current) btn.setDisabled(true);
 				btn.onClick(() => {
 					if (!current) sectionActions.onChoose(row.id);
@@ -727,7 +926,7 @@ function renderProviderPicker(
 		}
 	}
 
-	void paint('');
+	void paint("");
 }
 
 /**
@@ -739,23 +938,41 @@ function providerChoiceGroups(
 ): { local: CatalogProviderRow[]; catalog: CatalogProviderRow[] } {
 	const q = query.trim().toLowerCase();
 	const local: CatalogProviderRow[] = [
-		{ id: LOCAL_PROVIDER_OLLAMA, name: tNow('settings.chatPreset.ollama'), api: null, doc: null },
-		{ id: LOCAL_PROVIDER_CUSTOM, name: tNow('settings.chatPreset.custom'), api: null, doc: null },
-	].filter((row) => !q || row.name.toLowerCase().includes(q) || row.id.includes(q));
+		{
+			id: LOCAL_PROVIDER_OLLAMA,
+			name: tNow("settings.chatPreset.ollama"),
+			api: null,
+			doc: null,
+		},
+		{
+			id: LOCAL_PROVIDER_CUSTOM,
+			name: tNow("settings.chatPreset.custom"),
+			api: null,
+			doc: null,
+		},
+	].filter(
+		(row) => !q || row.name.toLowerCase().includes(q) || row.id.includes(q),
+	);
 	return { local, catalog: filterCatalogProviders(rows, query) };
 }
 
 /** 手填框的包裹层。用标记避免「打开时加一个、再选手填又加一个」。 */
 function handModelWrap(host: HTMLElement): HTMLElement | null {
-	return host.querySelector(':scope > [data-hand-model]');
+	return host.querySelector(":scope > [data-hand-model]");
 }
 
 /** 保证最多一个手填框。 */
-function showHandModel(host: HTMLElement, plugin: RatelVaultPlugin, profile: ChatProfile): void {
+function showHandModel(
+	host: HTMLElement,
+	plugin: RatelVaultPlugin,
+	profile: ChatProfile,
+): void {
 	if (handModelWrap(host)) return;
 	const wrap = host.createDiv();
-	wrap.dataset.handModel = '1';
-	addModelText(plugin, wrap, profile, () => refreshProfileWindow(plugin, host, profile));
+	wrap.dataset.handModel = "1";
+	addModelText(plugin, wrap, profile, () =>
+		refreshProfileWindow(plugin, host, profile),
+	);
 }
 
 /** 选了名单中的模型后，去掉手填框。 */
@@ -770,9 +987,9 @@ function refreshProfileWindow(
 	profile: ChatProfile,
 ): void {
 	// 字段现在嵌在 fieldsHost＞providerHost 内，不能再用 parentElement，沿详情根类名找回。
-	const detail = host.closest<HTMLElement>('.ratel-chat-profile-detail');
+	const detail = host.closest<HTMLElement>(".ratel-chat-profile-detail");
 	if (!detail) return;
-	detail.querySelector(':scope > [data-profile-window]')?.remove();
+	detail.querySelector(":scope > [data-profile-window]")?.remove();
 	renderProfileWindow(plugin, detail, profile);
 }
 
@@ -788,11 +1005,11 @@ function addModelText(
 	onCommitted?: () => void,
 ): void {
 	new Setting(host)
-		.setName(tNow('settings.chatProfiles.model.name'))
-		.setDesc(tNow('settings.chatProfiles.model.handDesc'))
+		.setName(tNow("settings.chatProfiles.model.name"))
+		.setDesc(tNow("settings.chatProfiles.model.handDesc"))
 		.addText((text) => {
 			text.setValue(profile.model);
-			text.inputEl.addEventListener('change', () => {
+			text.inputEl.addEventListener("change", () => {
 				void (async () => {
 					const trimmed = text.getValue().trim();
 					if (!trimmed) return;
@@ -801,6 +1018,76 @@ function addModelText(
 				})();
 			});
 		});
+}
+
+/**
+ * 连接测试一行:按钮发起最小请求,结果(成功耗时 / 分类错误原因 + 排查建议)行内反馈。
+ *
+ * 关键路径:测试读取的 profile 字段都是 change 即落盘的值;等待返回期间页面若整体重绘,
+ * 旧行脱离 DOM 后不再写回,避免结果写到已销毁节点。
+ */
+function renderConnectionTestRow(
+	app: App,
+	detail: HTMLElement,
+	profile: ChatProfile,
+): void {
+	const setting = new Setting(detail)
+		.setName(tNow("settings.chatProfiles.connection.name"))
+		.setDesc(tNow("settings.chatProfiles.connection.hint"));
+	setting.addButton((btn) => {
+		btn.setButtonText(tNow("settings.chatProfiles.connection.button"));
+		btn.onClick(() => void runTest(btn));
+	});
+
+	async function runTest(btn: ButtonComponent): Promise<void> {
+		// 测试中:复用 loading 按钮形态(先 icon 后补文字,避免 setIcon 吞掉文本节点)。
+		btn.setDisabled(true);
+		btn.setIcon("loader");
+		btn.buttonEl.querySelector("svg")?.classList.add("ratel-spin");
+		btn.buttonEl.createSpan({
+			text: tNow("settings.chatProfiles.connection.testing"),
+		});
+		btn.buttonEl.setAttribute(
+			"aria-label",
+			tNow("settings.chatProfiles.connection.testing"),
+		);
+		setting.setDesc(tNow("settings.chatProfiles.connection.testing"));
+
+		const result = await runConnectionTest(app, profile);
+		if (!setting.settingEl.isConnected) return;
+
+		btn.setDisabled(false);
+		// 恢复为纯文本按钮:显式清掉 loader 节点,再放回文字。
+		btn.buttonEl.empty();
+		btn.setButtonText(tNow("settings.chatProfiles.connection.button"));
+
+		setting.descEl.empty();
+		if (result.ok) {
+			const okRow = setting.descEl.createDiv({ cls: "ratel-conn-ok" });
+			setIcon(okRow.createSpan(), "check");
+			okRow.createSpan({
+				text: tNow("settings.chatProfiles.connection.ok", {
+					ms: result.elapsedMs,
+				}),
+			});
+			return;
+		}
+		const fail = setting.descEl.createDiv({ cls: "ratel-conn-fail" });
+		const head = fail.createDiv();
+		setIcon(head.createSpan(), "alert-triangle");
+		// 错误类型标签复用诊断页 i18n,动态 key 限定为已知五分类。
+		const typeKey = `diag.errorType.${result.error.type}` as StringKey;
+		head.createSpan({ text: `${tNow(typeKey)}: ${result.error.message}` });
+		if (result.error.cause) {
+			fail.createDiv({ cls: "ratel-conn-sub", text: result.error.cause });
+		}
+		if (result.error.suggestion) {
+			fail.createDiv({
+				cls: "ratel-conn-sub",
+				text: result.error.suggestion,
+			});
+		}
+	}
 }
 
 /**
@@ -817,32 +1104,51 @@ function renderProfileWindow(
 	detail: HTMLElement,
 	profile: ChatProfile,
 ): void {
-	const setting = new Setting(detail).setName(tNow('settings.chatProfiles.window.heading'));
-	setting.settingEl.dataset.profileWindow = '1';
+	const setting = new Setting(detail).setName(
+		tNow("settings.chatProfiles.window.heading"),
+	);
+	setting.settingEl.dataset.profileWindow = "1";
 	const active = profileIsActive(plugin, profile);
-	const windowTokens = active ? plugin.settings.chatModelMaxTokens : profile.chatModelMaxTokens;
+	const windowTokens = active
+		? plugin.settings.chatModelMaxTokens
+		: profile.chatModelMaxTokens;
 
 	if (profile.windowUserSet) {
 		const baseDesc =
-			tNow('settings.chatProfiles.window.userSet', {
+			tNow("settings.chatProfiles.window.userSet", {
 				tokens: windowTokens.toLocaleString(),
-			}) + '\n' + tNow('settings.chatProfiles.window.userSetHint');
+			}) +
+			"\n" +
+			tNow("settings.chatProfiles.window.userSetHint");
 		setting.setDesc(baseDesc);
 		addWindowNumberInput(setting, plugin, profile);
 		if (!active) return;
 		void (async () => {
-			const catalog = plugin.modelsDevCatalog ? await plugin.modelsDevCatalog.ensureCatalog() : null;
-			const result = await syncChatWindow(plugin.settings, { catalog, clearOnMiss: false });
+			const catalog = plugin.modelsDevCatalog
+				? await plugin.modelsDevCatalog.ensureCatalog()
+				: null;
+			const result = await syncChatWindow(plugin.settings, {
+				catalog,
+				clearOnMiss: false,
+			});
 			if (!setting.settingEl.isConnected || !result.output) return;
-			setting.setDesc(baseDesc + '\n' + tNow('settings.chatProfiles.window.output', { tokens: result.output.toLocaleString() }));
+			setting.setDesc(
+				baseDesc +
+					"\n" +
+					tNow("settings.chatProfiles.window.output", {
+						tokens: result.output.toLocaleString(),
+					}),
+			);
 		})();
 		return;
 	}
 
 	// 查表是异步的:先渲染 loading,结果回来后原位补 desc 与控件
-	setting.setDesc(tNow('settings.chatProfiles.window.loading'));
+	setting.setDesc(tNow("settings.chatProfiles.window.loading"));
 	void (async () => {
-		const catalog = plugin.modelsDevCatalog ? await plugin.modelsDevCatalog.ensureCatalog() : null;
+		const catalog = plugin.modelsDevCatalog
+			? await plugin.modelsDevCatalog.ensureCatalog()
+			: null;
 		if (!active) {
 			paintStoredWindow(setting, plugin, profile, catalog);
 			return;
@@ -860,25 +1166,39 @@ function renderProfileWindow(
 		if (result.tokens != null) {
 			const found = result.tokens;
 			let desc =
-				tNow('settings.chatProfiles.window.found', { tokens: found.toLocaleString() }) +
-				'\n' +
-				tNow('settings.chatProfiles.window.foundHint');
+				tNow("settings.chatProfiles.window.found", {
+					tokens: found.toLocaleString(),
+				}) +
+				"\n" +
+				tNow("settings.chatProfiles.window.foundHint");
 			if (result.output) {
-				desc += '\n' + tNow('settings.chatProfiles.window.output', { tokens: result.output.toLocaleString() });
+				desc +=
+					"\n" +
+					tNow("settings.chatProfiles.window.output", {
+						tokens: result.output.toLocaleString(),
+					});
 			}
 			setting.setDesc(desc);
 			setting.addButton((btn) => {
-				btn.setButtonText(tNow('settings.chatProfiles.window.shrink'));
+				btn.setButtonText(tNow("settings.chatProfiles.window.shrink"));
 				btn.onClick(async () => {
-					await applySettingValue(plugin, 'chatModelMaxTokens', Math.floor(found / 2));
+					await applySettingValue(
+						plugin,
+						"chatModelMaxTokens",
+						Math.floor(found / 2),
+					);
 					await persistProfileEdit(plugin);
 				});
 			});
 		} else {
 			// 断网(catalog=null)与名单无此模型是两回事:各自给说明,数字框都保留
-			setting.setDesc(catalog
-				? tNow('settings.chatProfiles.window.unknown', { model: plugin.settings.chatModel })
-				: tNow('settings.chatProfiles.window.offline'));
+			setting.setDesc(
+				catalog
+					? tNow("settings.chatProfiles.window.unknown", {
+							model: plugin.settings.chatModel,
+						})
+					: tNow("settings.chatProfiles.window.offline"),
+			);
 			addWindowNumberInput(setting, plugin, profile);
 		}
 	})();
@@ -900,51 +1220,75 @@ function paintStoredWindow(
 ): void {
 	if (!setting.settingEl.isConnected) return;
 	const found = catalog
-		? lookupCatalogLimits(catalog, profile.providerId || 'custom', profile.model)
+		? lookupCatalogLimits(
+				catalog,
+				profile.providerId || "custom",
+				profile.model,
+			)
 		: undefined;
 	if (found) {
 		let desc =
-			tNow('settings.chatProfiles.window.found', { tokens: found.context.toLocaleString() }) +
-			'\n' +
-			tNow('settings.chatProfiles.window.foundHint');
+			tNow("settings.chatProfiles.window.found", {
+				tokens: found.context.toLocaleString(),
+			}) +
+			"\n" +
+			tNow("settings.chatProfiles.window.foundHint");
 		if (found.output > 0) {
-			desc += '\n' + tNow('settings.chatProfiles.window.output', { tokens: found.output.toLocaleString() });
+			desc +=
+				"\n" +
+				tNow("settings.chatProfiles.window.output", {
+					tokens: found.output.toLocaleString(),
+				});
 		}
 		setting.setDesc(desc);
 		setting.addButton((btn) => {
-			btn.setButtonText(tNow('settings.chatProfiles.window.shrink'));
+			btn.setButtonText(tNow("settings.chatProfiles.window.shrink"));
 			btn.onClick(async () => {
-				writeStoredProfileWindow(profile, Math.floor(found.context / 2), true);
+				writeStoredProfileWindow(
+					profile,
+					Math.floor(found.context / 2),
+					true,
+				);
 				await persistProfileEdit(plugin);
 			});
 		});
 		return;
 	}
 	// 断网与名单无此模型分开提示,数字框都保留
-	setting.setDesc(catalog
-		? tNow('settings.chatProfiles.window.unknown', { model: profile.model })
-		: tNow('settings.chatProfiles.window.offline'));
+	setting.setDesc(
+		catalog
+			? tNow("settings.chatProfiles.window.unknown", {
+					model: profile.model,
+				})
+			: tNow("settings.chatProfiles.window.offline"),
+	);
 	addWindowNumberInput(setting, plugin, profile);
 }
 
 /** 窗口数字框 — min/max 与旧高级页一致,写入走 chatModelMaxTokens 分支(含大于查到值的钳制) */
-function addWindowNumberInput(setting: Setting, plugin: RatelVaultPlugin, profile: ChatProfile): void {
+function addWindowNumberInput(
+	setting: Setting,
+	plugin: RatelVaultPlugin,
+	profile: ChatProfile,
+): void {
 	setting.addText((text) => {
-		text.inputEl.type = 'number';
+		text.inputEl.type = "number";
 		text.inputEl.min = String(CUSTOM_TOKEN_MIN);
 		text.inputEl.max = String(CUSTOM_TOKEN_MAX);
 		// 关键路径:查不到时可能已被清成 0,预填空而非 0,引导用户填写
 		const active = profileIsActive(plugin, profile);
-		const current = active ? plugin.settings.chatModelMaxTokens : profile.chatModelMaxTokens;
+		const current = active
+			? plugin.settings.chatModelMaxTokens
+			: profile.chatModelMaxTokens;
 		if (current > 0) {
 			text.setValue(String(current));
 		}
-		text.inputEl.addEventListener('change', () => {
+		text.inputEl.addEventListener("change", () => {
 			void (async () => {
 				const n = Number.parseInt(text.getValue(), 10);
 				if (!Number.isFinite(n) || n <= 0) return;
 				if (profileIsActive(plugin, profile)) {
-					await applySettingValue(plugin, 'chatModelMaxTokens', n);
+					await applySettingValue(plugin, "chatModelMaxTokens", n);
 				} else {
 					writeStoredProfileWindow(profile, n, true);
 				}
