@@ -930,3 +930,14 @@ button.ratel-cites-toggle:focus-visible {
 	margin: 0 1px;
 	box-shadow: none;
 }
+
+/* 断网态供应商名单加载中:loader 图标匀速旋转 */
+svg.ratel-spin {
+	animation: ratel-spin 1s linear infinite;
+}
+
+@keyframes ratel-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}

@@ -82,4 +82,36 @@
 
 ## 执行记录 / 偏差说明
 
-(执行时填写)
+### 2026-10-11 执行
+
+| Task | 文件 | 状态 | 备注 |
+|---|---|---|---|
+| Task 1 | 新建 `src/ui/settings/provider-control.ts`、`tests/ui/settings/provider-control.test.ts` | ✅ | TDD:先写 5 条用例(三态 × 断言 + 全覆盖 + createChatProfile 默认 custom 守护) |
+| Task 2 | `src/ui/settings/chat-profiles-render.ts`、`styles.css` | ✅ | catalog 改三态类型;providerHost 立即渲染 loading 后 empty() 重绘;按钮 disabled/loader+ratel-spin;picker 换 offlinePicker;窗口行 null/miss 分文案;paintStoredWindow 同样区分 |
+| Task 3 | `src/i18n/zh.ts`、`en.ts`、`types.ts` | ✅ | 新增 5 key、改 1 key、删 2 key(见下) |
+| Task 4 | 提交与记录 | ✅ | 见 git log -1 |
+
+**i18n key 增删:**
+- 新增:`provider.listLoading`、`provider.offline`、`provider.offlineHint`、`provider.offlinePicker`、`window.offline`(zh/en/types 三处)
+- 改文案:`window.unknown`(中文「名单中没有 {model},请按供应商文档填写上下文长度。」)
+- 删除:`catalogMissing`、`window.unknownHint`(zh/en/types;删除前 grep 确认 src/tests 仅 plan 与归档文档提及)
+
+**TDD 红绿证据:**
+- RED:首次 `npx vitest run tests/ui/settings/provider-control.test.ts` → Failed Suites 1,`Cannot find module '../../../src/ui/settings/provider-control'`,Tests no tests。
+- GREEN:实现纯函数后同命令 → 1 file / 5 tests passed。
+
+**验证(真实输出):**
+- `npx vitest run tests/ui/settings/provider-control.test.ts` → exit 0,5 passed。
+- `npx tsc -noEmit -skipLibCheck` → exit 2(既有基线),`error TS` 计数 241 = develop 基线 241;grep `provider-control|chat-profiles-render|src/i18n/` 仅剩 3 条 chat-profiles-render 既有 `settingTab` private 报错(250/259/274,均在未改动的 hide/list watch 代码)。
+- `npx svelte-check --tsconfig tsconfig.json` → 253 errors / 21 warnings in 71 files = 基线 253/21;新文件零命中。
+- `npm run lint` → exit 0,0 errors / 17 warnings(全部既有)。
+- `npm test` → exit 0,Test Files 273 passed / Tests 2043 passed(较基线 272 文件/2038 测试,+1 文件 +5 用例);skill-script-sandbox 19 tests 一次通过无 flake。
+- `npm run build` → exit 0(18 既有 svelte warning)。
+- `git diff --check` → exit 0。
+- 隐私 grep(`/Users/`、本机用户名、`file://`)diff 与新文件均零命中。
+
+**偏差:**
+1. `ProviderControl.buttonTextKey` 未按 plan 字面写 `string`,收紧为 `Extract<StringKey, 三个 key 的字面量联合>`(type-only import `StringKey`),否则 `tNow(control.buttonTextKey)` 在 strict 下新增 1 条 tsc 报错(实测 242);收紧后回到基线 241。运行时值与 plan 规定完全一致,测试不变。
+2. `paintStoredWindow` 读代码确认存在与活跃套相同的 null/miss 共用文案问题,已按 plan 第 4 点同样区分(catalog===null→`window.offline`,有名单 miss→`window.unknown`),数字框均保留。
+
+**Commit:** 见 git log -1(禁止 amend,记录与代码同一提交)。

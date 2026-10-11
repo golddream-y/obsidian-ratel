@@ -110,6 +110,10 @@ export interface SettingsStrings {
   'settings.chatProfiles.name.desc': string;
   'settings.chatProfiles.provider.name': string;
   'settings.chatProfiles.provider.choose': string;
+  'settings.chatProfiles.provider.listLoading': string;
+  'settings.chatProfiles.provider.offline': string;
+  'settings.chatProfiles.provider.offlineHint': string;
+  'settings.chatProfiles.provider.offlinePicker': string;
   'settings.chatProfiles.provider.intro': string;
   'settings.chatProfiles.provider.noApi': string;
   'settings.chatProfiles.provider.doc': string;
@@ -128,12 +132,11 @@ export interface SettingsStrings {
   'settings.chatProfiles.window.found': string;
   'settings.chatProfiles.window.foundHint': string;
   'settings.chatProfiles.window.unknown': string;
-  'settings.chatProfiles.window.unknownHint': string;
+  'settings.chatProfiles.window.offline': string;
   'settings.chatProfiles.window.userSet': string;
   'settings.chatProfiles.window.userSetHint': string;
   'settings.chatProfiles.window.shrink': string;
   'settings.chatProfiles.window.output': string;
-  'settings.chatProfiles.catalogMissing': string;
   'settings.chatProfiles.model.hand': string;
   'settings.advanced.heading': string;
   'settings.advanced.registryUrl.name': string;

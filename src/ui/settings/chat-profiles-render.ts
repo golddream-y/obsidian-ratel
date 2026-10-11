@@ -44,6 +44,10 @@ import {
 } from '../../secrets/ratel-secrets';
 import { tNow } from '../../i18n';
 import { CUSTOM_TOKEN_MAX, CUSTOM_TOKEN_MIN } from '../../ui/tokens/context-length-presets';
+import {
+	resolveProviderControl,
+	type ProviderListState,
+} from './provider-control';
 
 /**
  * 简单文本输入 Modal — 用于新建 / 复制 / 改名。
@@ -351,11 +355,13 @@ function renderProfileDetail(
 			});
 		});
 
-	// 提供商与模型依赖名单，先占位，拉到缓存后再填
+	// 提供商与模型依赖名单:立即画 loading 态(按钮锁定转圈),避免整块空白;名单回来后原位重绘
 	const providerHost = detail.createDiv();
+	renderProviderAndModel(app, plugin, providerHost, profile, undefined, onChooseProvider);
 	void (async () => {
 		const catalog = plugin.modelsDevCatalog ? await plugin.modelsDevCatalog.ensureCatalog() : null;
 		if (!providerHost.isConnected) return;
+		providerHost.empty();
 		renderProviderAndModel(app, plugin, providerHost, profile, catalog, onChooseProvider);
 	})();
 
@@ -389,7 +395,8 @@ function renderProfileDetail(
 }
 
 /**
- * 名单到达后画出提供商、地址、密钥和模型。
+ * 画出提供商、地址、密钥和模型。
+ * catalog 三态:undefined=名单加载中、null=断网无名单、对象=就绪(过期缓存也算)。
  * 有 api 的供应商只展示地址；空 api、本地和自定义才可编辑。
  */
 function renderProviderAndModel(
@@ -397,20 +404,40 @@ function renderProviderAndModel(
 	plugin: RatelVaultPlugin,
 	host: HTMLElement,
 	profile: ChatProfile,
-	catalog: ModelsDevCatalog | null,
+	catalog: ModelsDevCatalog | null | undefined,
 	onChooseProvider: () => void,
 ): void {
 	const providerId = profile.providerId || inferChatProvider(profile.apiBase);
 	const rows = catalog ? listCatalogProviders(catalog) : [];
-	const currentName = !profile.apiBase && !profile.model
-		? tNow('settings.chatProfiles.provider.empty') : providerDisplayName(rows, providerId);
+	const unconfigured = !profile.apiBase && !profile.model;
+	const state: ProviderListState =
+		catalog === undefined ? 'loading' : catalog === null ? 'offline' : 'ready';
+	const control = resolveProviderControl(state);
+
+	// 供应商行描述:未配置→引导选择;离线且已配置→推断名加离线说明;loading 不加错误句;ready→名单名
+	let providerDesc: string;
+	if (unconfigured) {
+		providerDesc = tNow('settings.chatProfiles.provider.empty');
+	} else if (state === 'offline') {
+		providerDesc =
+			providerDisplayName(rows, providerId) +
+			'\n' + tNow('settings.chatProfiles.provider.offlineHint');
+	} else {
+		providerDesc = providerDisplayName(rows, providerId);
+	}
 
 	const providerSetting = new Setting(host)
 		.setName(tNow('settings.chatProfiles.provider.name'))
-		.setDesc(!profile.apiBase && !profile.model ? currentName : catalog ? currentName : tNow('settings.chatProfiles.catalogMissing'));
+		.setDesc(providerDesc);
 	providerSetting.addButton((btn) => {
-		btn.setButtonText(tNow('settings.chatProfiles.provider.choose'));
-		btn.onClick(onChooseProvider);
+		// 先文后图:setIcon 会把 svg 插到文字前;断网两态禁用点击,只有 ready 可进 picker
+		btn.setButtonText(tNow(control.buttonTextKey));
+		btn.setDisabled(control.disabled);
+		if (control.spinning) {
+			btn.setIcon('loader');
+			btn.buttonEl.querySelector('svg')?.classList.add('ratel-spin');
+		}
+		if (!control.disabled) btn.onClick(onChooseProvider);
 	});
 
 	const listed = rows.find((row) => row.id === providerId);
@@ -573,7 +600,7 @@ function renderProviderPicker(
 		const rows = catalog ? listCatalogProviders(catalog) : [];
 		listHost.empty();
 		if (!catalog) {
-			listHost.createEl('p', { text: tNow('settings.chatProfiles.catalogMissing') });
+			listHost.createEl('p', { text: tNow('settings.chatProfiles.provider.offlinePicker') });
 		}
 		const grouped = providerChoiceGroups(rows, query);
 		renderProviderSection(
@@ -710,10 +737,11 @@ function addModelText(
 /**
  * 渲染上下文窗口一行(当前套展开区末行)。
  *
- * 三态:
+ * 四种情形:
  * - windowUserSet:用户改小过 — 「此配置的上限是 N」+ 数字框;
  * - 查表命中 — 「这个模型的窗口是 N」+「改得更小」按钮(不出现档位下拉);
- * - 查不到 — 「未查到 X 的窗口」+ 数字框,不静默沿用上一个模型的上限。
+ * - 断网无名单 — 离线说明 + 数字框,可先手填,联网后自动校正;
+ * - 名单无此模型 — 按供应商文档填写的说明 + 数字框。
  */
 function renderProfileWindow(
 	plugin: RatelVaultPlugin,
@@ -778,11 +806,10 @@ function renderProfileWindow(
 				});
 			});
 		} else {
-			setting.setDesc(
-				tNow('settings.chatProfiles.window.unknown', { model: plugin.settings.chatModel }) +
-					'\n' +
-					tNow('settings.chatProfiles.window.unknownHint'),
-			);
+			// 断网(catalog=null)与名单无此模型是两回事:各自给说明,数字框都保留
+			setting.setDesc(catalog
+				? tNow('settings.chatProfiles.window.unknown', { model: plugin.settings.chatModel })
+				: tNow('settings.chatProfiles.window.offline'));
 			addWindowNumberInput(setting, plugin, profile);
 		}
 	})();
@@ -794,7 +821,7 @@ function renderProfileWindow(
  * @param setting - 窗口那一行
  * @param plugin - 插件
  * @param profile - 正在编辑的那一套
- * @param catalog - 已加载名单
+ * @param catalog - 已加载名单;null 表示断网无名单
  */
 function paintStoredWindow(
 	setting: Setting,
@@ -824,11 +851,10 @@ function paintStoredWindow(
 		});
 		return;
 	}
-	setting.setDesc(
-		tNow('settings.chatProfiles.window.unknown', { model: profile.model }) +
-			'\n' +
-			tNow('settings.chatProfiles.window.unknownHint'),
-	);
+	// 断网与名单无此模型分开提示,数字框都保留
+	setting.setDesc(catalog
+		? tNow('settings.chatProfiles.window.unknown', { model: profile.model })
+		: tNow('settings.chatProfiles.window.offline'));
 	addWindowNumberInput(setting, plugin, profile);
 }
 
