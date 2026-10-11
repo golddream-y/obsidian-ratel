@@ -73,6 +73,20 @@ npx asar extract ~/Library/Application\ Support/obsidian/obsidian-<version>.asar
 - 设置页异步拉名单/配置后，若整体 `host.empty()` 重绘，用户在黑洞网络下正在输入的字段会被清空、丢焦点。
 - 做法：宿主拆成「状态行宿主 + 字段宿主」，resolve 后只重画状态行；仅当字段形态真的翻转（如手填变下拉）才重建字段宿主，且焦点还在字段内时等 `focusout` + `setTimeout(0)`（保证 change 先同步落值）再重建，并带 `isConnected` / 防重复守卫。
 
+### 4.4 命令式打开声明式二级页：`app.setting.openPage(page)` 未文档化
+
+- 场景：`addItem.action` 里新建配置后想直接进入它的编辑页，公开 d.ts 没有导航 API（`SettingPage` 只有 display/hide）。
+- 框架内部（1.13+）：`app.setting` 是设置 Modal，列表行点击走 `setting.openPage(new XxxSettingPage(...))`；`openPage` 未写进 d.ts。
+- 用法：`(app as unknown as { setting?: { openPage?: (p: unknown) => void } }).setting` 做**运行时形状校验**，不可用就降级（刷新列表 + Notice），禁止裸调。
+- 进入前的落库用 `saveSettings({ refreshSettingsTab: false })`，避免整页重绘与页面切换打架。
+
+### 4.5 连接/可用性测试要给「错误原因」，不能只弹失败
+
+- 设置页测端点：临时 `new OpenAICompatLLM(...)` 发 `maxTokens: 1` 最小请求，收到首个 chunk 即成功并 break；**不要**包 `wrapLlmChatRetry`（测试要立刻看到 401/404，退避只拖慢反馈）。
+- 前置校验缺失项（地址/模型/密钥）直接返回 config 类错误，不触网。
+- 错误分类复用 `src/ui/diagnostics/diag-utils.ts` 的 `formatError`（401/404/网络/429/超时），行内多行展示「类型: 消息 + 可能原因 + 排查建议」；超时（AbortController）要翻译成可操作文案，不抛裸 AbortError。
+- 临时客户端只读 profile 已落盘值与钥匙串，绝不碰 `plugin.llm` 和全局当前套。
+
 ## 5. 验证链（改完必须走）
 
 1. `npm run lint`（0 error，warnings 只接受既有）+ 定向 `vitest run` + `npm run build`。
