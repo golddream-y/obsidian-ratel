@@ -9,26 +9,39 @@
 
 ## 统计
 
-**按月归档记录数**(共 87 条,74 个目录)
+**按月归档记录数**(共 95 条,82 个目录)
 
 ```mermaid
 xychart-beta
     title "按月归档记录数"
-    x-axis ["2026-06", "2026-07", "2026-08", "2026-09"]
+    x-axis ["2026-06", "2026-07", "2026-08", "2026-09", "2026-10"]
     y-axis "记录数" 0 --> 26
-    bar [17, 23, 26, 21]
+    bar [17, 23, 26, 21, 8]
 ```
 
 **归档形态分布**
 
 ```mermaid
 pie showData title 归档形态分布
-    "完成归档" : 78
+    "完成归档" : 85
     "Abandoned(未实施/中途废弃)" : 4
-    "Superseded(被取代)" : 5
+    "Superseded(被取代)" : 6
 ```
 
 ---
+
+## 2026-10
+
+| ID | 归档目录 | 日期 | 备注 |
+|---|---|---|---|
+| S-AGENTS-SESSION | [archive/S-AGENTS-SESSION/](archive/S-AGENTS-SESSION/) | 10-11 | 子目录约束整场会话挂在工具结果上，压缩后重读。随 1.0.3；`cb6dae3` 等 5 commit |
+| S-CATALOG-FRESH | [archive/S-CATALOG-FRESH/](archive/S-CATALOG-FRESH/) | 10-11 | 模型名单缓存超 24 小时重拉，失败用旧文件。随 1.0.2；`4cd9475` |
+| S-TOOL-CONTRACT | [archive/S-TOOL-CONTRACT/](archive/S-TOOL-CONTRACT/) | 10-11 | 工具 JSON 契约、失败分类与历史投影。随 1.0.0；`a8a4360` 等 3 commit；补丁经实测恢复启用 |
+| S-APPLY-PATCH | [archive/S-APPLY-PATCH/](archive/S-APPLY-PATCH/) | 10-11 | apply_patch 原子补丁，非法格式给行号诊断。随 1.0.0；`08c4a78` |
+| S-AGENTS-INJECT | [archive/S-AGENTS-INJECT/](archive/S-AGENTS-INJECT/) | 10-11 | 第一次修改就执行，失败只报真实路径。随 1.0.0；`63a4019`。留存与注入位置后由 S-AGENTS-SESSION 重定 |
+| S-NOTE-MOVE | [archive/S-NOTE-MOVE/](archive/S-NOTE-MOVE/) | 10-11 | 移动走 renameFile、复制走 adapter.copy，残缺参数不执行。随 1.0.0；`08c4a78` |
+| S-MODEL-CATALOG | [archive/S-MODEL-CATALOG/](archive/S-MODEL-CATALOG/) | 10-11 | 供应商名单；按供应商+模型 id 查窗口与单次输出。随 1.0.0；`4521c02`。缓存 TTL 后归 S-CATALOG-FRESH |
+| S-AGENTS-GATE | [archive/S-AGENTS-GATE/](archive/S-AGENTS-GATE/) | 10-11 | **Superseded**：未实施即被 S-AGENTS-INJECT 取代（「先拦住返回 Error」改「第一次就执行」）；补录归档 |
 
 ## 2026-09
 

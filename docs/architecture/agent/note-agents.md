@@ -1,7 +1,7 @@
 # 笔记约束（AGENTS.md）
 
 > 领域:Agent | 库内笔记的目录约束，不是一种新能力
-> 产品设计:[S-NOTE-AGENTS](../../superpowers/archive/S-NOTE-AGENTS/2026-09-26-note-agents-md-design.md) · 子目录注入:[S-AGENTS-INJECT](../../superpowers/specs/2026-10-02-agents-inject-design.md)
+> 产品设计:[S-NOTE-AGENTS](../../superpowers/archive/S-NOTE-AGENTS/2026-09-26-note-agents-md-design.md) · 子目录注入:[S-AGENTS-SESSION](../../superpowers/archive/S-AGENTS-SESSION/2026-10-10-agents-session-design.md)
 >
 > 子目录约束的加载位置、留存与去重按 Claude Code 的机制重定，以本文为准。S-AGENTS-INJECT 里「工具内各自注入、追加到系统段、只活一个回合、按目录链去重」四点已被取代。
 >

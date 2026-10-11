@@ -19,14 +19,7 @@
 
 | ID | 文件 | 状态 | 创建日期 | 备注 |
 |---|---|---|---|---|
-| S-TOOL-CONTRACT | [2026-10-03-tool-contract-design.md](specs/2026-10-03-tool-contract-design.md) | Active | 2026-10-03 | 工具 JSON 契约、说明去重、失败分类与历史投影；P-TOOL-CONTRACT 已完成；1.0.0 启用补丁工具，提供具体行号诊断 |
-| S-APPLY-PATCH | [2026-10-03-apply-patch-design.md](specs/2026-10-03-apply-patch-design.md) | Active | 2026-10-03 | 已有笔记用 Update File 补丁局部修改。write/append/edit/apply_patch 成功都返回 `{ path, text }` |
-| S-AGENTS-SESSION | [2026-10-10-agents-session-design.md](specs/2026-10-10-agents-session-design.md) | Active | 2026-10-10 | 子目录约束整场会话保留。P-AGENTS-SESSION 已完成。取代 S-AGENTS-INJECT 的留存与注入位置 |
-| S-AGENTS-INJECT | [2026-10-02-agents-inject-design.md](specs/2026-10-02-agents-inject-design.md) | Active | 2026-10-02 | 第一次修改就执行。子目录留存与注入位置改由 S-AGENTS-SESSION 规定 |
-| S-NOTE-MOVE | [2026-10-01-note-move-design.md](specs/2026-10-01-note-move-design.md) | Active | 2026-10-01 | 移动走 FileManager.renameFile，复制走 adapter.copy；残缺工具参数不执行。plan 未建 |
-| S-COMPACT-V3 | [2026-10-01-compact-v3-design.md](specs/2026-10-01-compact-v3-design.md) | Active | 2026-10-01 | 压缩重设计。P1 计划已写，未开工 |
-| S-CATALOG-FRESH | [2026-10-08-catalog-freshness-design.md](specs/2026-10-08-catalog-freshness-design.md) | Active | 2026-10-08 | 模型名单缓存超过 24 小时再拉。不按 deprecated 隐藏 |
-| S-MODEL-CATALOG | [2026-09-28-model-catalog-design.md](specs/2026-09-28-model-catalog-design.md) | Active | 2026-09-28 | 供应商名单；按供应商+模型 id 查窗口和单次输出。缓存时长改由 S-CATALOG-FRESH 规定 |
+| S-COMPACT-V3 | [2026-10-01-compact-v3-design.md](specs/2026-10-01-compact-v3-design.md) | Active | 2026-10-01 | 压缩重设计。P1 已合入 develop（5761c19、e588efe、546df2d）；P2 未写 |
 | S-CHAT-PROFILES | [2026-09-24-chat-profiles-design.md](specs/2026-09-24-chat-profiles-design.md) | Active | 2026-09-24 | 多套配置与顶栏菜单已落地。设置页「设为当前」尚未改调共用函数 |
 
 
@@ -36,14 +29,7 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
-| P-AGENTS-SESSION | [2026-10-10-agents-session.md](plans/2026-10-10-agents-session.md) | Completed | S-AGENTS-SESSION | develop。cb6dae3、21a20b3、3c63740、1238897、efe0c4d。审查通过。Minor：§10 若干验收场景还没有单测 |
-| P-TOOL-CONTRACT | [2026-10-03-tool-contract.md](plans/2026-10-03-tool-contract.md) | Completed | S-TOOL-CONTRACT | develop；a8a4360、49f7e6b、5bcc8bf；实现、审查和文档同步完成，补丁工具经用户实测后恢复启用 |
-| P-APPLY-PATCH | [2026-10-03-apply-patch.md](plans/2026-10-03-apply-patch.md) | Completed | S-APPLY-PATCH | 08c4a78；1.0.0 启用补丁注册，非法格式有行号诊断 |
-| P-AGENTS-INJECT | [2026-10-02-agents-inject.md](plans/2026-10-02-agents-inject.md) | Completed | S-AGENTS-INJECT | 63a4019；第一次修改就执行，失败只报真实路径原因 |
-| P-NOTE-MOVE | [2026-10-01-note-move.md](plans/2026-10-01-note-move.md) | Completed | S-NOTE-MOVE | 08c4a78；移动走 fileManager.renameFile，复制走 adapter.copy |
-| P-COMPACT-V3-P1 | [2026-10-01-compact-v3-p1.md](plans/2026-10-01-compact-v3-p1.md) | Completed | S-COMPACT-V3 | 已合入 develop（5761c19、e588efe、546df2d） |
-| P-CATALOG-FRESH | [2026-10-08-catalog-freshness.md](plans/2026-10-08-catalog-freshness.md) | Completed | S-CATALOG-FRESH | 4cd9475、2881252。缓存超过 24 小时重拉；失败仍用旧文件 |
-| P-MODEL-CATALOG | [2026-09-28-model-catalog.md](plans/2026-09-28-model-catalog.md) | Completed | S-MODEL-CATALOG | 已合入 develop。4521c02；列表与密钥改名已提交 |
+| P-COMPACT-V3-P1 | [2026-10-01-compact-v3-p1.md](plans/2026-10-01-compact-v3-p1.md) | Completed | S-COMPACT-V3 | 已合入 develop（5761c19、e588efe、546df2d）。母 spec 仍活跃，P2 未写 |
 | P-CHAT-PROFILE-MENU | [2026-09-27-chat-profile-menu.md](plans/2026-09-27-chat-profile-menu.md) | Completed | S-CHAT-PROFILES | 顶栏菜单，提交 29069b9。设置页「设为当前」尚未改调共用函数 |
 | P-CHAT-PROFILES | [2026-09-24-chat-profiles.md](plans/2026-09-24-chat-profiles.md) | Completed | S-CHAT-PROFILES | 已合 develop（merge a0c0a09）。设置页「设为当前」尚未改调共用函数 |
 
