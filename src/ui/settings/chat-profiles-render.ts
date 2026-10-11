@@ -69,6 +69,15 @@ class TextPromptModal extends Modal {
 		contentEl.empty();
 		this.setTitle(this.title);
 		let value = this.initial;
+
+		// 修复: 输入框回车应等同点「确定」;中文输入法组词时的回车(isComposing)不能误提交。
+		const submit = (): void => {
+			const trimmed = value.trim();
+			if (!trimmed) return;
+			void this.onSubmit(trimmed);
+			this.close();
+		};
+
 		new Setting(contentEl)
 			.addText((text) => {
 				text.setPlaceholder(this.placeholder);
@@ -76,17 +85,17 @@ class TextPromptModal extends Modal {
 				text.inputEl.addEventListener('input', () => {
 					value = text.getValue();
 				});
+				text.inputEl.addEventListener('keydown', (event) => {
+					if (event.key !== 'Enter' || event.isComposing) return;
+					event.preventDefault();
+					submit();
+				});
 				setTimeout(() => text.inputEl.focus(), 0);
 			})
 			.addButton((btn) => {
 				btn.setButtonText(tNow('settings.chatProfiles.promptConfirm'));
 				btn.setCta();
-				btn.onClick(() => {
-					const trimmed = value.trim();
-					if (!trimmed) return;
-					void this.onSubmit(trimmed);
-					this.close();
-				});
+				btn.onClick(submit);
 			});
 	}
 }
@@ -639,9 +648,10 @@ function renderProviderPicker(
 	actions: { onChoose: (providerId: string) => void },
 ): void {
 	const currentId = profile.providerId || inferChatProvider(plugin.settings.chatApiBase);
+	// 裸 <p> 只吃到 .setting-items 的容器内边距,需要 ratel-provider-note 再补一层,与列表项左缘对齐。
 	root.createEl('p', {
 		text: tNow('settings.chatProfiles.provider.intro'),
-		cls: 'setting-item-description',
+		cls: 'setting-item-description ratel-provider-note',
 	});
 	const listHost = root.createDiv();
 	const search = new Setting(root).setName(tNow('settings.chatProfiles.provider.searchPlaceholder'));
@@ -660,7 +670,10 @@ function renderProviderPicker(
 		const rows = catalog ? listCatalogProviders(catalog) : [];
 		listHost.empty();
 		if (!catalog) {
-			listHost.createEl('p', { text: tNow('settings.chatProfiles.provider.offlinePicker') });
+			listHost.createEl('p', {
+				text: tNow('settings.chatProfiles.provider.offlinePicker'),
+				cls: 'setting-item-description ratel-provider-note',
+			});
 		}
 		const grouped = providerChoiceGroups(rows, query);
 		renderProviderSection(
