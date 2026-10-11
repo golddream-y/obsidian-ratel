@@ -31,6 +31,18 @@ async function boot(ctx: ContextManager) {
 }
 
 describe('note-agents session', () => {
+	it('toMessages - 只有过期标记 - 适配器看不到 noteAgentsStale', async () => {
+		const ctx = new ContextManager(emptyPersistence(), undefined, 8000);
+		await boot(ctx);
+		ctx.addAssistantToolCall({ id: 'c1', name: 'edit_note', args: { path: 'Work/AGENTS.md' } }, '');
+		ctx.addToolResult('c1', 'ok', { noteAgentsStale: ['Work'] });
+		const outbound = ctx.toMessages().find((m) => m.role === 'tool')!;
+		expect(outbound.noteAgents).toBeUndefined();
+		expect(outbound.noteAgentsStale).toBeUndefined();
+		expect(outbound.content).toBe('ok');
+		expect(ctx.getTranscript().find((m) => m.role === 'tool')?.noteAgentsStale).toEqual(['Work']);
+	});
+
 	it('loadNoteAgents - 未登记 reader - 返回 undefined', async () => {
 		const ctx = new ContextManager(emptyPersistence(), undefined, 8000);
 		await boot(ctx);

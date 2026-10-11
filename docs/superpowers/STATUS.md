@@ -21,7 +21,8 @@
 |---|---|---|---|---|
 | S-TOOL-CONTRACT | [2026-10-03-tool-contract-design.md](specs/2026-10-03-tool-contract-design.md) | Active | 2026-10-03 | 工具 JSON 契约、说明去重、失败分类与历史投影；P-TOOL-CONTRACT 已完成；1.0.0 启用补丁工具，提供具体行号诊断 |
 | S-APPLY-PATCH | [2026-10-03-apply-patch-design.md](specs/2026-10-03-apply-patch-design.md) | Active | 2026-10-03 | 已有笔记用 Update File 补丁局部修改。write/append/edit/apply_patch 成功都返回 `{ path, text }` |
-| S-AGENTS-INJECT | [2026-10-02-agents-inject-design.md](specs/2026-10-02-agents-inject-design.md) | Active | 2026-10-02 | 子目录 AGENTS.md 注入上下文，第一次修改就执行。取代 S-AGENTS-GATE。plan 未建 |
+| S-AGENTS-SESSION | [2026-10-10-agents-session-design.md](specs/2026-10-10-agents-session-design.md) | Active | 2026-10-10 | 子目录约束整场会话保留。P-AGENTS-SESSION 已完成。取代 S-AGENTS-INJECT 的留存与注入位置 |
+| S-AGENTS-INJECT | [2026-10-02-agents-inject-design.md](specs/2026-10-02-agents-inject-design.md) | Active | 2026-10-02 | 第一次修改就执行。子目录留存与注入位置改由 S-AGENTS-SESSION 规定 |
 | S-NOTE-MOVE | [2026-10-01-note-move-design.md](specs/2026-10-01-note-move-design.md) | Active | 2026-10-01 | 移动走 FileManager.renameFile，复制走 adapter.copy；残缺工具参数不执行。plan 未建 |
 | S-COMPACT-V3 | [2026-10-01-compact-v3-design.md](specs/2026-10-01-compact-v3-design.md) | Active | 2026-10-01 | 压缩重设计。P1 计划已写，未开工 |
 | S-CATALOG-FRESH | [2026-10-08-catalog-freshness-design.md](specs/2026-10-08-catalog-freshness-design.md) | Active | 2026-10-08 | 模型名单缓存超过 24 小时再拉。不按 deprecated 隐藏 |
@@ -35,6 +36,7 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
+| P-AGENTS-SESSION | [2026-10-10-agents-session.md](plans/2026-10-10-agents-session.md) | Completed | S-AGENTS-SESSION | develop。cb6dae3、21a20b3、3c63740、1238897、efe0c4d。审查通过。Minor：§10 若干验收场景还没有单测 |
 | P-TOOL-CONTRACT | [2026-10-03-tool-contract.md](plans/2026-10-03-tool-contract.md) | Completed | S-TOOL-CONTRACT | develop；a8a4360、49f7e6b、5bcc8bf；实现、审查和文档同步完成，补丁工具经用户实测后恢复启用 |
 | P-APPLY-PATCH | [2026-10-03-apply-patch.md](plans/2026-10-03-apply-patch.md) | Completed | S-APPLY-PATCH | 08c4a78；1.0.0 启用补丁注册，非法格式有行号诊断 |
 | P-AGENTS-INJECT | [2026-10-02-agents-inject.md](plans/2026-10-02-agents-inject.md) | Completed | S-AGENTS-INJECT | 63a4019；第一次修改就执行，失败只报真实路径原因 |

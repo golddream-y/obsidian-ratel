@@ -629,10 +629,11 @@ export class ContextManager {
 		return { head: view.slice(0, headLen), tail: view.slice(headLen) };
 	}
 
-	/** 出站前把 noteAgents 拼进 content 并删字段 */
+	/** 出站前把 noteAgents 拼进 content 并删字段。只有过期标记时也要删掉。 */
 	private materializeNoteAgents(msg: ChatMessage): ChatMessage {
-		if (msg.role !== 'tool' || !msg.noteAgents?.text) return msg;
+		if (msg.role !== 'tool' || (!msg.noteAgents && !msg.noteAgentsStale)) return msg;
 		const { noteAgents, noteAgentsStale: _stale, ...rest } = msg;
+		if (!noteAgents?.text) return rest;
 		return {
 			...rest,
 			content: `${msg.content}\n\n${noteAgents.text}`,
