@@ -205,6 +205,25 @@ describe('offloadStalePayload', () => {
 		expect(out[1]!.content.endsWith('不要把占位标记写入 content。')).toBe(true);
 	});
 
+	it('offloadStalePayload - 旧轮 apply_patch 真实入参只有 patch - 剥离后严格为空对象且结果附提示', () => {
+		// 生产契约(tool-contracts.ts):调用必须是 {"patch":"补丁全文"},路径只写在补丁文本的
+		// *** Update File 里,toolArgs 里没有 path 兄弟字段
+		const patch = `*** Begin Patch\n*** Update File: notes/长卷.md\n@@\n-${'旧正文'.repeat(100)}\n+${'新正文'.repeat(100)}\n*** End Patch`;
+		const out = offloadStalePayload([
+			asstTool('c1', 'apply_patch', { patch }),
+			tool('c1', JSON.stringify({ success: true, path: 'notes/长卷.md' })),
+			{ role: 'user', content: '下一轮' },
+		]);
+		// 唯一的参数字段被删后 toolArgs 是干净的空对象,下游适配器 JSON.stringify 得到 "{}"
+		expect(out[0]!.toolArgs).toEqual({});
+		expect(JSON.stringify(out[0]!.toolArgs)).toBe('{}');
+		expect(out[0]!.toolArgs).not.toHaveProperty('patch');
+		// 配对 tool 结果仍要告知模型正文已落库
+		expect(out[1]!.content).toContain('正文已在笔记中');
+		expect(out[1]!.content).toContain('read_note');
+		expect(out[1]!.content.endsWith('不要把占位标记写入 content。')).toBe(true);
+	});
+
 	it('offloadStalePayload - 最后一条 user 之后的 apply_patch - 保留 patch', () => {
 		const patch = '*** Begin Patch\n*** End Patch';
 		const out = offloadStalePayload([
@@ -241,6 +260,41 @@ describe('offloadStalePayload', () => {
 		]);
 		expect(out[1]!.toolArgs).toEqual({ path: 'a.md', old_string: '诱饵' });
 		expect(out[3]!.toolArgs).toEqual({ path: 'b.md', content: '诱饵' });
+	});
+
+	it('offloadStalePayload - 同轮混用三种写工具均成功 - 三具正文全剥身份字段保留,下轮最后一次写入保留正文', () => {
+		// 同一条 user 之后、下一条 user 之前:三个写工具各成功一次
+		const patch = '*** Begin Patch\n*** Update File: 混-c.md\n@@\n-旧C\n+新C\n*** End Patch';
+		const out = offloadStalePayload([
+			{ role: 'user', content: '同一轮三种写法' },
+			asstTool('w1', 'write_note', { path: '混-a.md', content: '正文A' }),
+			tool('w1', 'ok'),
+			asstTool('e1', 'edit_note', { path: '混-b.md', old_string: '旧B', new_string: '新B' }),
+			tool('e1', 'ok'),
+			// apply_patch 真实入参只有 patch(路径嵌在补丁文本里),剥离后即空对象
+			asstTool('c1', 'apply_patch', { patch }),
+			tool('c1', 'ok'),
+			{ role: 'user', content: '下一轮' },
+			asstTool('w2', 'write_note', { path: '混-d.md', content: '最后正文D' }),
+			tool('w2', 'ok'),
+		]);
+		// 三个旧轮 assistant:各自登记的正文字段全部剥离,path 等身份字段保留
+		expect(out[1]!.toolArgs).toEqual({ path: '混-a.md' });
+		expect(out[1]!.toolArgs).not.toHaveProperty('content');
+		expect(out[3]!.toolArgs).toEqual({ path: '混-b.md' });
+		expect(out[3]!.toolArgs).not.toHaveProperty('old_string');
+		expect(out[3]!.toolArgs).not.toHaveProperty('new_string');
+		expect(out[5]!.toolArgs).toEqual({});
+		expect(out[5]!.toolArgs).not.toHaveProperty('patch');
+		// 三个旧轮配对结果都附正文提示
+		for (const idx of [2, 4, 6]) {
+			expect(out[idx]!.content).toContain('正文已在笔记中');
+			expect(out[idx]!.content).toContain('read_note');
+		}
+		// 最后一条 user 之后的写入:正文与 path 完整保留,结果不附提示
+		expect(out[8]!.toolArgs).toEqual({ path: '混-d.md', content: '最后正文D' });
+		expect(out[9]!.content).toBe('ok');
+		expect(out[9]!.content).not.toContain('正文已在笔记中');
 	});
 
 	it('WRITE_BODY_FIELDS_BY_TOOL - 登记表 - 含四个写工具且 apply_patch 登记 patch', () => {
