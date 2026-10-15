@@ -179,6 +179,8 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 		return () => leaf.classList.remove('is-ratel-empty');
 	});
 	let isRunning = $state(false);
+	/** 主 LLM 请求是否已出站（收到 message.request）— 供忙态行区分「本地准备」与「在途」 */
+	let llmRequestInFlight = $state(false);
 	/** 本轮 assistant 的 message.start 次数，从 1 计 */
 	let runStep = $state(1);
 	let retryWait = $state<LlmRetryWait | null>(null);
@@ -1489,6 +1491,7 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 		const ac = new AbortController();
 		abortController = ac;
 		isRunning = true;
+		llmRequestInFlight = false;
 		runStep = 0;
 		goalRoundSteps = 0;
 		// 关键路径:不在此 patch model=checking — 否则 StatusStrip「思考中」
@@ -1561,7 +1564,11 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 						scrollToBottom();
 						break;
 					}
+					case 'message.request':
+						llmRequestInFlight = true;
+						break;
 					case 'message.delta':
+						llmRequestInFlight = false;
 						if (event.payload.reasoning) {
 							appendThink(am, event.payload.reasoning);
 							streamingUsed += estimateTokens(event.payload.reasoning);
@@ -1578,6 +1585,7 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 						scrollToBottom();
 						break;
 					case 'tool.call':
+						llmRequestInFlight = false;
 						lastToolName = event.payload.name;
 						if (sessionGoal?.status === 'active') {
 							goalRoundSteps++;
@@ -1613,6 +1621,7 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 						scrollToBottom();
 						break;
 					case 'message.end': {
+						llmRequestInFlight = false;
 						// 窗口占用看最后一步的输入+输出。各步合计是本轮消耗，会把同一段历史加很多次。
 						const apiUsed = resolveApiUsedTokens(event.payload);
 						if (apiUsed != null) {
@@ -1633,6 +1642,7 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 						break;
 					}
 					case 'error':
+						llmRequestInFlight = false;
 						handleAgentError(am, event.payload.code, event.payload.message, lastToolName);
 						break;
 				}
@@ -1649,6 +1659,7 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 			retryWait = null;
 			retryRemainingMs = 0;
 			isRunning = false;
+			llmRequestInFlight = false;
 			abortController = null;
 			scrollToBottom();
 
@@ -2029,6 +2040,7 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 				{retryWait}
 				{retryRemainingMs}
 				runStep={runStep}
+				llmRequestInFlight={llmRequestInFlight}
 				bind:containerRef={messagesEl}
 				onScroll={handleScroll}
 				onOpenPath={handleOpenPath}

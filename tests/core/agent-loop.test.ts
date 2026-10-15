@@ -74,6 +74,70 @@ describe('agentLoop', () => {
 		expect(events.some((e) => e.type === 'message.end')).toBe(true);
 	});
 
+	it('yields message.request after message.start and before the first delta', async () => {
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence, undefined, 8000);
+		const llm = createMockLLM([[{ text: 'Hello' }]]);
+		const tools = new ToolRegistry();
+		const hooks = new HookRegistry();
+
+		const events: AgentEvent[] = [];
+		for await (const event of agentLoop(
+			{ sessionId: 's1', message: 'Hi' },
+			ctx,
+			llm,
+			tools,
+			hooks,
+		)) {
+			events.push(event);
+		}
+
+		const startAt = events.findIndex((e) => e.type === 'message.start');
+		const requestAt = events.findIndex((e) => e.type === 'message.request');
+		const firstDeltaAt = events.findIndex((e) => e.type === 'message.delta');
+		expect(events.some((e) => e.type === 'message.request')).toBe(true);
+		expect(startAt).toBeLessThan(requestAt);
+		expect(requestAt).toBeLessThan(firstDeltaAt);
+	});
+
+	it('yields one message.request per step (matches message.start count)', async () => {
+		const persistence = createMockPersistence();
+		const ctx = new ContextManager(persistence, undefined, 8000);
+		const toolCall: ToolCall = { id: 'call_1', name: 'read_note', args: { path: 'test.md' } };
+		const llm = createMockLLM([
+			[{ text: '', toolCall }],
+			[{ text: 'The note says hello' }],
+		]);
+		const tools = new ToolRegistry();
+		tools.register({
+			definition: { name: 'read_note', description: 'Read a note', parameters: {} },
+			execute: async () => 'Content of test.md',
+		});
+		const hooks = new HookRegistry();
+
+		const events: AgentEvent[] = [];
+		for await (const event of agentLoop(
+			{ sessionId: 's1', message: 'Read test.md' },
+			ctx,
+			llm,
+			tools,
+			hooks,
+		)) {
+			events.push(event);
+		}
+
+		const requests = events.filter((e) => e.type === 'message.request');
+		const starts = events.filter((e) => e.type === 'message.start');
+		expect(requests.length).toBeGreaterThanOrEqual(2);
+		expect(requests.length).toBe(starts.length);
+		// 每个 step 的请求都排在该 step 的 message.start 之后
+		for (const request of requests) {
+			const idx = events.indexOf(request);
+			const prevStart = events.slice(0, idx).reverse().find((e) => e.type === 'message.start');
+			expect(prevStart).toBeDefined();
+		}
+	});
+
 	it('handles tool call and continues loop', async () => {
 		const persistence = createMockPersistence();
 		const ctx = new ContextManager(persistence, undefined, 8000);

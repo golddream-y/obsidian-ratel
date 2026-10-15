@@ -36,6 +36,14 @@ describe('mapOrbState', () => {
 	it('mapOrbState - idle - 映射为 breathing', () => {
 		expect(mapOrbState('idle')).toBe('breathing');
 	});
+
+	it('mapOrbState - preparing - 映射为 shaping', () => {
+		expect(mapOrbState('preparing')).toBe('shaping');
+	});
+
+	it('mapOrbState - awaiting - 映射为 listening', () => {
+		expect(mapOrbState('awaiting')).toBe('listening');
+	});
 });
 
 describe('coerceOrbSize / resolvePreset', () => {

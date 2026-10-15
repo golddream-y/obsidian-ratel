@@ -29,6 +29,8 @@ export type { Session, NoteMeta, HookLogEntry } from './ports/persistence';
  */
 export type AgentEvent =
 	| { type: 'message.start'; payload: { role: 'user' | 'assistant' } }
+	// 关键路径(S-RUN-STATUS-PHASES):主 LLM 请求出站标记 — UI 据此把「在途等待」与「本地准备」分成两段
+	| { type: 'message.request'; payload: { step: number } }
 	| { type: 'message.delta'; payload: { text: string; reasoning?: string } }
 	| {
 			type: 'message.end';

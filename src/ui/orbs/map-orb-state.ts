@@ -9,6 +9,8 @@ import type { OrbState } from './types';
 
 export type RatelOrbBusyKind =
 	| 'thinking'
+	| 'preparing'
+	| 'awaiting'
 	| 'tool'
 	| 'search'
 	| 'index'
@@ -27,6 +29,12 @@ export function mapOrbState(kind: RatelOrbBusyKind): OrbState {
 			return 'searching';
 		case 'tool':
 			return 'working';
+		case 'preparing':
+			// 塑形：问题正在成形（请求尚未出站）
+			return 'shaping';
+		case 'awaiting':
+			// 聆听：听远方回音（请求已出站、等首字）
+			return 'listening';
 		case 'index':
 		case 'retry':
 			return 'connecting';

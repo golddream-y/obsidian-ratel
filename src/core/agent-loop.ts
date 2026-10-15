@@ -213,6 +213,9 @@ export async function* agentLoop(
 				if (shouldAppendWrapUp(step, effectiveMaxSteps)) {
 					chatMessages = [...chatMessages, { role: 'system', content: tNow('loop.wrapUp') }];
 				}
+				// 关键路径(S-RUN-STATUS-PHASES):消息数组已组装完、请求即将出站。
+				// 意图分类那次小 LLM 调用不发此事件 — 它语义上属于「本地准备」。
+				yield { type: 'message.request', payload: { step } };
 				const stream = llm.chat({
 					messages: chatMessages,
 					tools: tools.definitions(),

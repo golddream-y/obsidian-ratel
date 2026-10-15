@@ -27,10 +27,13 @@
 	import { computeFadePlay, reseedEnteredIds } from '../../motion/enter/fade-play-policy';
 	import { formatDayDividerLabel, shouldShowDayDivider } from '../../../utils/chat-time';
 	import {
+		AWAIT_PHRASE_KEYS,
 		COMPOSING_FLAVOR_KEYS,
 		composeRunStatusLine,
+		PREPARE_PHRASE_KEYS,
+		PREPARE_ROTATE_MS,
 		RUN_STATUS_ROTATE_MS,
-		WAIT_LINE_KEYS,
+		type RunStatusPhase,
 	} from '../run-status-line';
 
 	/**
@@ -58,6 +61,7 @@
 		retryWait = null,
 		retryRemainingMs = 0,
 		runStep = 1,
+		llmRequestInFlight = false,
 		skillNames = [],
 		installedSkillNames = [],
 	}: {
@@ -72,6 +76,8 @@
 		jumpRequest?: VirtualJumpRequest | null;
 		retryWait?: LlmRetryWait | null;
 		retryRemainingMs?: number;
+		/** 主 LLM 请求是否已出站（收到 message.request）— 区分「本地准备」与「在途」 */
+		llmRequestInFlight?: boolean;
 		/** 本轮模型步数，从 1 计；第 2 步起显示在状态行末尾 */
 		runStep?: number;
 		skillNames?: readonly string[];
@@ -79,21 +85,30 @@
 	} = $props();
 
 	/**
-	 * 整段 Agent 回合都显示底部 orb(不再只在空窗期)。
+	 * 整段 Agent 回合都显示底部 orb。
+	 * 放宽为「运行中且有消息」：点发送即出现（含出站前的意图分类期），不再等到 assistant 占位。
 	 * 有 calling 工具时切到 working 动画,与工具行小 orb 语义一致。
 	 */
-	const showBusyOrb = $derived.by(() => {
-		if (!isRunning || messages.length === 0) return false;
-		return messages[messages.length - 1]!.role === 'assistant';
+	const showBusyOrb = $derived(isRunning && messages.length > 0);
+
+	/** 忙态行阶段：已出字→撰写；请求已出站未出字→在途；否则（含意图分类期）→本地准备。 */
+	const runPhase = $derived.by((): RunStatusPhase => {
+		const last = messages[messages.length - 1];
+		const segments = last?.role === 'assistant' ? last.segments : [];
+		const streamed = segments.some(
+			(seg) => (seg.type === 'text' || seg.type === 'think') && seg.text.trim().length > 0,
+		);
+		if (streamed) return 'composing';
+		return llmRequestInFlight ? 'awaiting' : 'preparing';
 	});
 
 	const busyKind = $derived.by((): RatelOrbBusyKind => {
-		if (!showBusyOrb) return 'thinking';
+		if (!showBusyOrb) return 'idle';
 		if (retryWait != null) return 'retry';
 		const last = messages[messages.length - 1]!;
-		const calling = last.segments.some(
-			(s) => s.type === 'tool' && s.toolCall.status === 'calling',
-		);
+		const calling =
+			last.role === 'assistant' &&
+			last.segments.some((s) => s.type === 'tool' && s.toolCall.status === 'calling');
 		if (calling) {
 			const name = last.segments
 				.filter((s) => s.type === 'tool' && s.toolCall.status === 'calling')
@@ -103,17 +118,24 @@
 			if (/search|检索|embed|index/i.test(name)) return 'search';
 			return 'tool';
 		}
-		return 'thinking';
+		if (runPhase === 'composing') return 'thinking';
+		return runPhase === 'awaiting' ? 'awaiting' : 'preparing';
 	});
 
 	const busyOrbState = $derived(mapOrbState(busyKind));
 
 	let rotateTick = $state(0);
+	let rotateSeed = $state(0);
 	$effect(() => {
 		if (!showBusyOrb || retryWait != null) return;
+		// 关键路径:进入(或切换)阶段时重置拍数并随机一次起点,避免每次开门句固定为同一下标
+		rotateTick = 0;
+		rotateSeed = Math.floor(Math.random() * 100000);
+		// 本地准备阶段更短间隔,让慢检索时也能看到切换
+		const interval = runPhase === 'preparing' ? PREPARE_ROTATE_MS : RUN_STATUS_ROTATE_MS;
 		const timer = setInterval(() => {
 			rotateTick += 1;
-		}, RUN_STATUS_ROTATE_MS);
+		}, interval);
 		return () => clearInterval(timer);
 	});
 
@@ -128,21 +150,20 @@
 				break;
 			}
 		}
-		const streaming = segments.some(
-			(seg) => (seg.type === 'text' || seg.type === 'think') && seg.text.trim().length > 0,
-		);
 		const retry = showBusyOrb && retryWait != null
 			? retryWaitLabel(retryWait, retryRemainingMs)
 			: null;
 		return composeRunStatusLine({
 			retryText: retry ? $t(retry.key, retry.params) : null,
 			toolText,
-			streaming,
+			phase: runPhase,
 			step: runStep,
 			tick: rotateTick,
+			seed: rotateSeed,
 		}, {
 			composing: $t('orb.run.composing'),
-			wait: WAIT_LINE_KEYS.map((key) => $t(key)),
+			prepare: PREPARE_PHRASE_KEYS.map((key) => $t(key)),
+			awaiting: AWAIT_PHRASE_KEYS.map((key) => $t(key)),
 			flavor: COMPOSING_FLAVOR_KEYS.map((key) => $t(key)),
 			step: (step) => $t('orb.run.step', { step }),
 		});
