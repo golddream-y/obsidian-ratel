@@ -915,6 +915,7 @@ export interface ErrorStrings {
   'error.tool.rejectedDisabled': string;
   'loop.wrapUp': string;
   'loop.emptyStep': string;
+  'loop.emptyReply': string;
   'loop.stepLimit': string;
   'loop.toolTimeout': string;
   'error.tool.hostAccessOff': string;

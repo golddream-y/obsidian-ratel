@@ -49,6 +49,8 @@
 
 		return () => {
 			if (rafId !== null) cancelAnimationFrame(rafId);
+			// 修复:动画被打断时停在起始值,状态条会一直显示 0
+			display = to;
 		};
 	});
 </script>

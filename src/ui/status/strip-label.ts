@@ -26,6 +26,19 @@ export function clampContextPct(percentage: number): number {
 }
 
 /**
+ * 状态条百分比文案。已用大于 0 但相对窗口四舍五入成 0 时显示 <1%，避免被看成没有上下文。
+ *
+ * @param percentage - 已钳制或未钳制的占用百分比
+ * @param usedTokens - 已用 token，含附件
+ * @returns 不含单独再拼 % 时的完整文案，调用方直接显示
+ */
+export function contextPctLabel(percentage: number, usedTokens: number): string {
+	const pct = clampContextPct(percentage);
+	if (pct === 0 && usedTokens > 0) return '<1%';
+	return `${pct}%`;
+}
+
+/**
  * 合成 StatusStrip 主文案。
  *
  * 优先级:busyOverride > toneLabel。

@@ -1498,8 +1498,9 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 		// 与 MessageList 打字指示双重叠;model 状态只由 FeedbackController 维护。
 		let lastToolName: string | undefined;
 
-		// 第 1 层:send 前精确估算(基于历史消息 segments)
-		const baselineUsed = estimateMessagesTokens(messages);
+		// 第 1 层:send 前估算。估算不计工具正文,不能把上一轮接口真值盖成 0%。
+		const previousUsed = get(plugin.userStatus.contextUsage$).usedTokens;
+		const baselineUsed = Math.max(estimateMessagesTokens(messages), previousUsed);
 		plugin.userStatus.patchContextUsage({
 			usedTokens: baselineUsed,
 			maxTokens,

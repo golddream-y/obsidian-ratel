@@ -908,6 +908,7 @@ export const en: Strings = {
   'error.tool.rejectedDisabled': 'Tool call rejected: {toolName} is disabled',
   'loop.wrapUp': 'Use the remaining steps to finish the answer. Do not start a new tool chain.',
   'loop.emptyStep': 'The previous step produced nothing. Finish the answer from the results you already have, or say what you cannot do.',
+  'loop.emptyReply': 'The model returned nothing this step. You can send again.',
   'loop.stepLimit': 'This turn ran out of steps. You can ask me to continue.',
   'loop.toolTimeout': 'This tool timed out and returned nothing.',
   'error.tool.hostAccessOff': 'Access outside the vault is off. Turn on “Allow access outside the vault” in settings first.',

@@ -912,6 +912,7 @@ const errorZh: ErrorStrings = {
   'error.tool.rejectedDisabled': '工具调用被拒绝: {toolName} 已被禁用',
   'loop.wrapUp': '用剩下的步数收束回答，不要再开新的工具链。',
   'loop.emptyStep': '上一步没有产出。请根据已有结果把话说完，或说明做不到。',
+  'loop.emptyReply': '模型这一步没有返回内容。可以再发一次。',
   'loop.stepLimit': '这一轮步数用完了，可以让我接着做。',
   'loop.toolTimeout': '这个工具超时了，没有返回结果。',
   'error.tool.hostAccessOff': '库外访问未打开。请先在设置里打开「允许访问库外」。',

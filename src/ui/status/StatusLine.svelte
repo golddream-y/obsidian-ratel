@@ -12,7 +12,7 @@
 	import ThinkingOrb from '../orbs/ThinkingOrb.svelte';
 	import { mapOrbState, type RatelOrbBusyKind } from '../orbs/map-orb-state';
 	import { deriveTone, type Tone } from './tone';
-	import { clampContextPct, composeStripLabel, contextPctTextColor } from './strip-label';
+	import { clampContextPct, composeStripLabel, contextPctLabel, contextPctTextColor } from './strip-label';
 	import CountUp from '../motion/chrome/CountUp.svelte';
 	import { isChatMotionEnabled } from '../motion/prefs';
 	import { settings$ } from '../settings-store';
@@ -48,6 +48,7 @@
 	const usage = $derived($contextUsage$);
 	// 关键路径:显示与色阶共用同一 clamp,避免 >100 时数字截断但色阶仍按原值跳 error
 	const pct = $derived(clampContextPct(usage.percentage));
+	const pctText = $derived(contextPctLabel(usage.percentage, usage.usedTokens + usage.attachmentTokens));
 	const pctColor = $derived(contextPctTextColor(pct));
 	const motionOn = $derived(isChatMotionEnabled($settings$));
 
@@ -122,7 +123,11 @@
 		class:ratel-sl-text-muted={state.tone === 'unconfigured' && !busyHard}
 	>{label}</span>
 	<span class="ratel-sl-pct" style:color={pctColor}>
-		<CountUp value={pct} enabled={motionOn} />%
+		{#if pctText.startsWith('<')}
+			{pctText}
+		{:else}
+			<CountUp value={pct} enabled={motionOn} />%
+		{/if}
 	</span>
 	<span class="ratel-sl-arrow">▲</span>
 </div>

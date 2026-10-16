@@ -6,6 +6,7 @@ import { HookRegistry } from '../../src/core/hooks';
 import type { LLMClient, ChatRequest, ChatDelta, ToolCall } from '../../src/ports/llm';
 import type { Persistence, Session } from '../../src/ports/persistence';
 import type { AgentEvent } from '../../src/types';
+import { tNow } from '../../src/i18n';
 
 function createMockPersistence(sessions: Map<string, Session> = new Map()): Persistence {
 	return {
@@ -1553,27 +1554,43 @@ describe('agentLoop', () => {
 		expect(events.some((e) => e.type === 'message.delta' && e.payload.text.startsWith('说完了'))).toBe(true);
 	});
 
-	it('空步 - 第一步就空 - 不再请求', async () => {
-		const persistence = createMockPersistence();
+	it('空步 - 第一步就空 - 不再请求并留下说明', async () => {
+		const sessions = new Map<string, Session>();
+		const persistence = createMockPersistence(sessions);
+		let savedBeforeChat = false;
+		const originalUpsert = persistence.sessions.upsert.bind(persistence.sessions);
+		persistence.sessions.upsert = async (session) => {
+			await originalUpsert(session);
+			if (!savedBeforeChat) {
+				savedBeforeChat = session.messages.some((m) => m.role === 'user' && m.content === '空');
+			}
+		};
 		const ctx = new ContextManager(persistence, undefined, 8000);
 		let calls = 0;
 		const llm: LLMClient = {
 			async *chat(): AsyncIterable<ChatDelta> {
+				expect(savedBeforeChat).toBe(true);
 				calls += 1;
 			},
 			embed: async () => [],
 			countTokens: () => 10,
 		};
-		for await (const _ of agentLoop(
+		const events: AgentEvent[] = [];
+		for await (const event of agentLoop(
 			{ sessionId: 's1', message: '空' },
 			ctx,
 			llm,
 			new ToolRegistry(),
 			new HookRegistry(),
 		)) {
-			/* drain */
+			events.push(event);
 		}
 		expect(calls).toBe(1);
+		const notice = tNow('loop.emptyReply');
+		expect(events.some((e) => e.type === 'message.delta' && e.payload.text === notice)).toBe(true);
+		const saved = sessions.get('s1');
+		expect(saved?.messages.some((m) => m.role === 'user' && m.content === '空')).toBe(true);
+		expect(saved?.messages.some((m) => m.role === 'assistant' && m.content === notice)).toBe(true);
 	});
 
 	it('收束 - 剩余 5 步 - 出站有说明且会话里没有', async () => {

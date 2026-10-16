@@ -4,7 +4,7 @@
  * @module tests/ui/status/strip-label
  */
 import { describe, it, expect } from 'vitest';
-import { clampContextPct, composeStripLabel, contextPctTextColor } from '../../../src/ui/status/strip-label';
+import { clampContextPct, composeStripLabel, contextPctLabel, contextPctTextColor } from '../../../src/ui/status/strip-label';
 
 describe('composeStripLabel', () => {
 	it('busyOverride 优先 - 有 override - 返回 override', () => {
@@ -50,6 +50,20 @@ describe('clampContextPct', () => {
 	it('钳制 - 越界 - 限制在 0..100', () => {
 		expect(clampContextPct(-5)).toBe(0);
 		expect(clampContextPct(140)).toBe(100);
+	});
+});
+
+describe('contextPctLabel', () => {
+	it('contextPctLabel - 已用大于 0 且百分比四舍五入为 0 - 显示小于 1%', () => {
+		expect(contextPctLabel(0, 48)).toBe('<1%');
+	});
+
+	it('contextPctLabel - 已用为 0 - 显示 0%', () => {
+		expect(contextPctLabel(0, 0)).toBe('0%');
+	});
+
+	it('contextPctLabel - 正常百分比 - 带百分号', () => {
+		expect(contextPctLabel(6, 61877)).toBe('6%');
 	});
 });
 

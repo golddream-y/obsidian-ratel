@@ -20,6 +20,7 @@ import { isLikelyVisionApiError } from './vision-api-error';
 import { shouldCarryShortOutline, CARRY_SYSTEM } from './turn-carry';
 import {
 	TOOL_DEADLINE_MS,
+	isEmptyModelStep,
 	shouldAppendWrapUp,
 	shouldContinueEmptyStep,
 	withToolDeadline,
@@ -139,6 +140,8 @@ export async function* agentLoop(
 	}
 	if (!skipAddUserMessage) {
 		ctx.addUserMessage(req.message, req.attachments);
+		// 关键路径:渲染进程可能在本轮工具执行中被杀掉。用户句先落盘,新会话才不会整场消失。
+		await ctx.save();
 	}
 
 	// 关键路径:意图分类,判断是否需要 RAG 工作流。无 classifier 时降级 direct(向后兼容)。
@@ -337,6 +340,15 @@ export async function* agentLoop(
 					emptyContinued = true;
 					appendEmptyStepOnNextChat = true;
 					continue;
+				}
+				// 修复:第一步就空不再续请求,但必须让用户看见,不能存一条空助手消息后显示就绪。
+				// 后面的空步仍走原收束,避免短回答的续写被这句话盖掉。
+				if (step === 0 && !sawTool && isEmptyModelStep(accumulatedText, accumulatedReasoning, 0)) {
+					const notice = tNow('loop.emptyReply');
+					yield { type: 'message.delta', payload: { text: notice } };
+					ctx.addAssistantMessage(notice);
+					loopExitedViaBreak = true;
+					break;
 				}
 				ctx.addAssistantMessage(accumulatedText, accumulatedReasoning || undefined);
 				// 关键路径:仅正常停笔(null/stop)才续写;tool_calls 等其它 finishReason 不推。
