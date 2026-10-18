@@ -8,7 +8,7 @@ description: >-
 
 两阶段：**准备 → 硬停等人审 changelog → 口头「发」之后才 git。** 不要和 finishing-a-development-branch 混用；那条管合分支选项。
 
-用户说发版时，文档确认由本 skill 接管，不要再走一遍 AGENTS.md 绑在 finishing 上的勾选。
+用户说发版时，文档确认由本 skill 接管，不要再走一遍开发工作流 Skill 的文档勾选。
 
 ## 硬闸
 
@@ -27,6 +27,8 @@ description: >-
 - tag 名 = `manifest.json` 的 `version`，**不带 `v`**。
 
 ### A1. STATUS / 归档
+
+涉及 spec/plan 登记或归档时加载 [项目管理](../ratel-project-management/SKILL.md) 及其登记参考；阶段 B 完成实际发布后同步已交付状态，不把代码合并或归档当成发布。
 
 - 本版已落地的 plan 标 Completed，不要带着 In Progress 发。
 - **不自动归档**；问一句要不要归档。
