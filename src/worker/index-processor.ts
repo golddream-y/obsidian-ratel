@@ -10,7 +10,7 @@
  * - 一个文件一个事务(beginFileUpdate/endFileUpdate),避免每 chunk 一次事务。
  */
 
-import { chunkMarkdown } from './chunker';
+import { chunkMarkdown, type Chunk, type ChunkOptions } from './chunker';
 import { VectraStore } from '../adapters/vector-vectra';
 import { devLogger } from '../logging/dev-logger';
 import type { EmbeddingPort } from '../ports/embedding';
@@ -30,12 +30,35 @@ export interface ProgressEvent {
  *
  * 关键路径:`store` 字段是 public,handler.ts 中的 `vector.upsert` / `vector.delete`
  * 需要直接复用同一份 VectraStore 引用,避免重复构造。
+ *
+ * 关键路径:分块参数(`chunkOptions`)由构造时注入,三个索引入口统一走 `this.chunk()`,
+ * 不再硬编码 500/100 —— 设置项才真正生效。
  */
 export class IndexProcessor {
     constructor(
         public store: VectraStore,
         private embeddings: EmbeddingPort,
+        private chunkOptions: ChunkOptions,
     ) {}
+
+    /**
+     * 更新分块参数 — 每条 `index.*` 消息可携带最新设置(用户改设置后无需重载)。
+     *
+     * @param options - 新的分块参数(token 预算 + 重叠 + 计数函数)
+     */
+    setChunkOptions(options: ChunkOptions): void {
+        this.chunkOptions = options;
+    }
+
+    /**
+     * 按当前分块参数切块 — indexFull / indexIncremental / indexBatch 三处统一入口。
+     *
+     * @param content - 原始 Markdown 文本
+     * @returns 块数组(空文档返回空数组)
+     */
+    private chunk(content: string): Chunk[] {
+        return chunkMarkdown(content, this.chunkOptions);
+    }
 
     /**
      * 全量索引入口 — 逐文件处理,每文件完成推一次进度。
@@ -49,15 +72,15 @@ export class IndexProcessor {
 
         for (const [i, file] of files.entries()) {
             try {
-                const chunks = chunkMarkdown(file.content, 500, 100);
+                const chunks = this.chunk(file.content);
                 if (chunks.length === 0) {
                     indexed++;
                     onProgress?.({ done: i + 1, total: files.length });
                     continue;
                 }
 
-                // 关键路径:一次性批量 embed 所有 chunk 文本。
-                const chunkTexts = chunks.map((c) => c.text);
+                // 关键路径:一次性批量 embed 所有 chunk 的嵌入文本(含结构前缀)。
+                const chunkTexts = chunks.map((c) => c.embedText);
                 const vectors = await this.embeddings.embed(chunkTexts);
 
                 await this.store.beginFileUpdate();
@@ -65,7 +88,14 @@ export class IndexProcessor {
                     await this.store.upsertItem(
                         `${file.path}#chunk-${idx}`,
                         vectors[idx]!,
-                        { path: file.path, chunkIndex: idx, startOffset: chunk.startOffset },
+                        {
+                            path: file.path,
+                            chunkIndex: idx,
+                            startOffset: chunk.startOffset,
+                            // 关键路径:结构信息随块落库,供上层扩展页号与表头。
+                            prefix: chunk.prefix,
+                            headingPath: chunk.headingPath,
+                        },
                     );
                 }
                 await this.store.endFileUpdate();
@@ -98,15 +128,15 @@ export class IndexProcessor {
         // 关键路径:chunkCount 在 try 外声明,catch 路径也能返回(此时为 0)。
         let chunkCount = 0;
         try {
-            const chunks = chunkMarkdown(file.content, 500, 100);
+            const chunks = this.chunk(file.content);
             chunkCount = chunks.length;
             if (chunks.length === 0) {
                 onProgress?.({ done: 1, total: 1 });
                 return { indexed: 0, errors: 0, chunkCount: 0 };
             }
 
-            // 关键路径:一次性批量 embed 所有 chunk 文本,ONNX 调用从 N 降到 N/16。
-            const chunkTexts = chunks.map((c) => c.text);
+            // 关键路径:一次性批量 embed 所有 chunk 的嵌入文本,ONNX 调用从 N 降到 N/16。
+            const chunkTexts = chunks.map((c) => c.embedText);
             const vectors = await this.embeddings.embed(chunkTexts);
 
             // 关键路径:一个文件一个事务,避免每 chunk 一次事务。
@@ -115,7 +145,13 @@ export class IndexProcessor {
                 await this.store.upsertItem(
                     `${file.path}#chunk-${idx}`,
                     vectors[idx]!,
-                    { path: file.path, chunkIndex: idx, startOffset: chunk.startOffset },
+                    {
+                        path: file.path,
+                        chunkIndex: idx,
+                        startOffset: chunk.startOffset,
+                        prefix: chunk.prefix,
+                        headingPath: chunk.headingPath,
+                    },
                 );
             }
             await this.store.endFileUpdate();
@@ -177,10 +213,10 @@ export class IndexProcessor {
         // 关键路径:先删旧 chunk,防止文件变短时残留。
         await this.store.deleteByPath(filePath);
 
-        const chunks = chunkMarkdown(content, 500, 100);
+        const chunks = this.chunk(content);
         if (chunks.length === 0) return 0;
 
-        const chunkTexts = chunks.map((c) => c.text);
+        const chunkTexts = chunks.map((c) => c.embedText);
         const vectors = await this.embeddings.embed(chunkTexts);
 
         await this.store.beginFileUpdate();
@@ -189,7 +225,13 @@ export class IndexProcessor {
                 await this.store.upsertItem(
                     `${filePath}#chunk-${idx}`,
                     vectors[idx]!,
-                    { path: filePath, chunkIndex: idx, startOffset: chunk.startOffset },
+                    {
+                        path: filePath,
+                        chunkIndex: idx,
+                        startOffset: chunk.startOffset,
+                        prefix: chunk.prefix,
+                        headingPath: chunk.headingPath,
+                    },
                 );
             }
             await this.store.endFileUpdate();
@@ -218,20 +260,6 @@ export class IndexProcessor {
      */
     async vectorSearch(queryVector: number[], topK: number) {
         return this.store.search(queryVector, topK);
-    }
-
-    /**
-     * 混合搜索 — 向量 + BM25 关键词。
-     *
-     * 关键路径:委托给 VectraStore.hybridSearch,后者调 vectra queryItems 传 isBm25=true,
-     * 同文档多 chunk 取最高分聚合到文档级,与 vectorSearch 的 chunk 级返回不同。
-     *
-     * @param query - 用户查询文本(用于 BM25)
-     * @param queryVector - 查询向量(主线程 embedding,Worker 不发 HTTP)
-     * @param topK - 返回文档上限
-     */
-    async hybridSearch(query: string, queryVector: number[], topK: number) {
-        return this.store.hybridSearch(query, queryVector, topK);
     }
 
     /**

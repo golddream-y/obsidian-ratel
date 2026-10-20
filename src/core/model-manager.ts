@@ -10,6 +10,7 @@ import { InsufficientDiskError, type ProgressInfo, ModelDownloader } from './mod
 import { EmbeddingOnnx, type EmbeddingOnnxDeps } from '../adapters/embedding-onnx';
 import type { EmbeddingPort } from '../ports/embedding';
 import { OrtRuntimeAssets } from './ort-runtime-assets';
+import { devLogger } from '../logging/dev-logger';
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 
@@ -60,6 +61,8 @@ export class ModelManager {
     private ortAssets: OrtRuntimeAssets;
     // 关键路径:modelDir 在 download() 成功后记录,getDeps() 据此重新读取模型文件。
     private modelDir: string | null = null;
+    // 关键路径:vocab.txt 文本缓存 — 分块按 token 计数时需要它做精确分词。
+    private vocabContent: string | null = null;
     private createEmbedding: (modelDir: string) => Promise<EmbeddingPort>;
 
     constructor(
@@ -126,6 +129,15 @@ export class ModelManager {
             // 关键路径:记录 modelDir 供 getDeps() 重新读盘,Web Worker 需要全新 ArrayBuffer 副本。
             this.modelDir = modelDir;
 
+            // 关键路径:缓存词表文本 — 分块按 token 预算切分时需要它做精确计数。
+            // 读失败不阻断模型加载:没有词表时按字符上界估算(方向是高估,宁可块小也不许截断)。
+            try {
+                this.vocabContent = await readFile(path.join(modelDir, 'vocab.txt'), 'utf-8');
+            } catch (err) {
+                this.vocabContent = null;
+                devLogger.warn('model', '读取 vocab.txt 失败,分块 token 计数改用字符估算', err);
+            }
+
             // 关键路径:文件下载完后,ORT 还要编译 WASM + 加载模型权重,这在主线程可能需要几秒到十几秒,
             // 必须给用户状态反馈,否则会以为卡住了。
             this.status$.set({ state: 'Initializing' });
@@ -151,6 +163,18 @@ export class ModelManager {
      */
     getEmbedding(): EmbeddingPort | null {
         return this.embedding;
+    }
+
+    /**
+     * 获取本地模型的词表文本 — 供分块按 token 精确计数。
+     *
+     * 关键路径:词表约 109KB,只在这里取一次(主线程转交 Worker 一次),
+     * 不随每条索引消息重复传。
+     *
+     * @returns 词表文本;模型未就绪 / 非本地模型 / 读取失败时为 null(调用方按估算处理)。
+     */
+    getVocabContent(): string | null {
+        return this.vocabContent;
     }
 
     /**
@@ -187,6 +211,7 @@ export class ModelManager {
         await this.downloader.remove();
         this.embedding = null;
         this.modelDir = null;
+        this.vocabContent = null;
         this.status$.set({ state: 'NotStarted' });
     }
 }

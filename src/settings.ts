@@ -16,6 +16,9 @@ import type RatelVaultPlugin from './main';
 // 关键路径:声明式 settings 每次渲染重新调用 tNow,无需 store 订阅
 import { tNow, type LangPreference, type StringKey } from './i18n';
 import type { ToolPermission, ToolPermissionLevel } from './core/tool-permissions';
+// 关键路径(S-RETRIEVAL-QUALITY §4.4):开关 + 来源 → 实际生效来源,设置页与 /model 弹窗共用同一口径。
+import { resolveRerankMode, type EffectiveRerank } from './core/rerank-mode';
+import { hasChatApiKey, hasRerankApiKey } from './secrets/ratel-secrets';
 import type { ContextLengthPresetId } from './ui/tokens/context-length-presets';
 import { inferPresetFromTokens, presetToTokens } from './ui/tokens/context-length-presets';
 import type { OverrideMap } from './prompts/types';
@@ -93,6 +96,11 @@ export interface RatelVaultSettings {
 	// Reranker (百炼,可选 — 钥匙串有 ratel-rerank-bailian 即启用)
 	rerankerApiBase: string;
 	rerankerModel: string;
+	// 关键路径(S-RETRIEVAL-QUALITY §4.4):精排开关与来源 — 两者互斥、不叠加、不回落。
+	/** 是否启用检索精排,默认开;关闭后检索结果保持 RRF 融合顺序 */
+	rerankEnabled: boolean;
+	/** 精排来源:专用模型(默认)或对话模型 */
+	rerankSource: 'native' | 'llm';
 
 	// Indexing
 	chunkSize: number;
@@ -230,6 +238,9 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 	// 关键路径:Rerank v1 仅支持百炼 DashScope compatible-api,密钥走钥匙串。
 	rerankerApiBase: 'https://dashscope.aliyuncs.com/compatible-api/v1',
 	rerankerModel: 'qwen3-rerank',
+	// 关键路径(S-RETRIEVAL-QUALITY §4.4):默认开精排,来源默认专用模型(更便宜更快)。
+	rerankEnabled: true,
+	rerankSource: 'native',
 
 	chunkSize: 500,
 	chunkOverlap: 100,
@@ -351,6 +362,64 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 
 /** 内置工具默认「允许」的代数。旧库没有该字段时做一次升级。 */
 export const BUILTIN_TOOL_PERMISSION_DEFAULTS_VERSION = 1;
+
+/**
+ * 精排状态判定所需的最小设置切片 — 完整设置与弹窗的窄切片都能传。
+ */
+export interface RerankStateSettings {
+	/** 精排开关 */
+	rerankEnabled: boolean;
+	/** 精排来源 */
+	rerankSource: 'native' | 'llm';
+	/** 对话端点地址(判断对话模型是否需要密钥) */
+	chatApiBase: string;
+	/** 对话配置列表(可选) */
+	chatProfiles?: Array<{ id: string; allowLegacyKeyFallback?: boolean }>;
+	/** 当前活跃对话配置 id(可选) */
+	activeChatProfileId?: string;
+}
+
+/**
+ * 解析当前实际生效的精排来源 — 设置页与 /model 弹窗共用。
+ *
+ * 关键路径:`hasLlm` 必须用 `hasChatApiKey(app, settings)` 判断 ——
+ * 对话 LLM 在启动时**总是**被构造,用 `!!this.llm` 会恒为真,
+ * 结果是「没配密钥也显示对话模型可用」。
+ *
+ * @param app - Obsidian App(读钥匙串)
+ * @param settings - 精排相关设置切片
+ * @returns 实际生效来源:off / native / llm
+ */
+export function resolveEffectiveRerank(
+	app: App,
+	settings: RerankStateSettings,
+): EffectiveRerank {
+	return resolveRerankMode(settings.rerankEnabled, settings.rerankSource, {
+		hasNativeKey: hasRerankApiKey(app),
+		hasLlm: hasChatApiKey(app, settings),
+	});
+}
+
+/**
+ * 当前生效精排来源的用户可见描述 — 缺能力时如实说明原因。
+ *
+ * @param app - Obsidian App(读钥匙串)
+ * @param settings - 精排相关设置切片
+ * @returns 描述文本(未启用 / 专用模型 / 对话模型 / 缺能力原因)
+ */
+export function describeEffectiveRerank(
+	app: App,
+	settings: RerankStateSettings,
+): string {
+	const effective = resolveEffectiveRerank(app, settings);
+	if (effective === 'native') return tNow('settings.reranker.effective.native');
+	if (effective === 'llm') return tNow('settings.reranker.effective.llm');
+	if (!settings.rerankEnabled) return tNow('settings.reranker.effective.off');
+	// 关键路径:开关开着但来源不可用 — 如实说明原因,不悄悄换一条更贵的路径。
+	return settings.rerankSource === 'native'
+		? tNow('settings.reranker.effective.noNativeKey')
+		: tNow('settings.reranker.effective.noLlm');
+}
 
 /**
  * 旧库里内置工具若仍是出厂的 ask，升成 allow。拒绝不动。MCP 不在默认表里，不改。
@@ -751,16 +820,44 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 				visible: indexVisible,
 				items: [
 					{
+						name: tNow('settings.reranker.enabled.name'),
+						desc: tNow('settings.reranker.enabled.desc'),
+						control: { type: 'toggle', key: 'rerankEnabled' },
+					},
+					{
+						name: tNow('settings.reranker.source.name'),
+						// 关键路径:旁注写清两种来源的外发边界 ——
+						// 专用模型是新的外发目的地,对话模型沿用当前供应商。
+						desc: tNow('settings.reranker.source.desc'),
+						control: {
+							type: 'dropdown',
+							key: 'rerankSource',
+							options: {
+								native: tNow('settings.reranker.source.option.native'),
+								llm: tNow('settings.reranker.source.option.llm'),
+							},
+						},
+						visible: () => settings.rerankEnabled,
+					},
+					{
+						name: tNow('settings.reranker.effective.name'),
+						// 关键路径:如实显示当前实际生效的来源与原因(缺密钥 / 模型不可用)。
+						desc: describeEffectiveRerank(this.app, this.plugin.settings),
+					},
+					{
 						name: tNow('settings.reranker.apiBase.name'),
 						control: { type: 'text', key: 'rerankerApiBase' },
+						visible: () => settings.rerankEnabled && settings.rerankSource === 'native',
 					},
 					{
 						name: tNow('settings.reranker.model.name'),
 						control: { type: 'text', key: 'rerankerModel' },
+						visible: () => settings.rerankEnabled && settings.rerankSource === 'native',
 					},
 					{
 						name: tNow('settings.advanced.secretHint.title'),
 						render: renderRerankSecretHint(this.app, this.plugin),
+						visible: () => settings.rerankEnabled && settings.rerankSource === 'native',
 					},
 				],
 			},

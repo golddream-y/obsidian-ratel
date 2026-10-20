@@ -22,7 +22,7 @@ import { normalizeMcpServerConfig } from './core/mcp-config';
 import { AttachmentStore } from './core/attachment-store';
 import type { AttachmentRef, LlmRetryWait } from './ports/llm';
 
-import type { AgentEvent } from './types';
+import type { AgentEvent, ChunkOptionsPayload } from './types';
 import { agentLoop } from './core/agent-loop';
 import { classifyIntent } from './core/intent-classifier';
 import { ContextManager } from './core/context-manager';
@@ -80,6 +80,7 @@ import { validateVaultPath, setConfigDir } from './utils/path-safety';
 import { isSafeVaultMentionPath } from './ui/chat/input/mention-parser';
 import { extractToolTargetPath, isDeleteTool } from './hooks/immediate-reindex';
 import type { ToolCall } from './ports/llm';
+import type { RerankerPort } from './ports/reranker';
 import { ModelManager } from './core/model-manager';
 import { OrtRuntimeAssets } from './core/ort-runtime-assets';
 import { IndexController } from './core/index-controller';
@@ -109,6 +110,14 @@ import { McpStdioTransport } from './adapters/mcp-stdio';
 import type { McpServerConfig } from './ports/mcp';
 import { rewriteQuery } from './core/query-rewriter';
 import { BailianReranker } from './adapters/reranker-bailian';
+// 关键路径(S-RETRIEVAL-QUALITY §4.4):对话模型精排适配器 + 开关/来源解析。
+import { LlmReranker } from './adapters/reranker-llm';
+import { resolveRerankMode } from './core/rerank-mode';
+// 关键路径(S-RETRIEVAL-QUALITY §4.1/§4.2):token 计数入口 —
+// 主线程只取模型输入上限,精确分词在 Worker 侧用词表做。
+import { createTokenCounter, TOKEN_BUDGET_RESERVE } from './core/token-counter';
+// 关键路径:词表(约 109KB)只传一次 — 模型就绪后由主线程交给 Worker,不进每条索引消息。
+import { setVocabContent } from './worker/handler';
 import { Indexer } from './subagents/indexer';
 import { ChatView, VIEW_TYPE_CHAT } from './ui/chat/ChatView';
 import { MemoryModal, shouldCreateMemoryModal } from './ui/memory-panel/MemoryModal';
@@ -119,7 +128,7 @@ import { applyBadgerEmojiToElement, patchAllChatLeafIcons } from './utils/badger
 import { get } from 'svelte/store';
 import { ensurePluginGitignore } from './utils/gitignore-writer';
 import { sha256 } from './utils/hash';
-import { IndexManifest, migrateLegacyIndexManifest, resolveIndexManifestPath } from './core/index-manifest';
+import { IndexManifest, migrateLegacyIndexManifest, resolveIndexManifestPath, CURRENT_CHUNKER_VERSION } from './core/index-manifest';
 import { ModelContextRegistry } from './ui/tokens/model-context-registry';
 import { ModelsDevCatalogCache } from './settings/model-catalog-cache';
 import os from 'os';
@@ -425,7 +434,7 @@ export default class RatelVaultPlugin extends Plugin {
 				}
 				const response = await this.workerManager.request({
 					type: 'index.full',
-					payload: { files: filtered },
+					payload: { files: filtered, chunkOptions: this.buildChunkOptions() },
 				});
 				if (response.type === 'index.done') {
 					return { indexed: response.payload.indexed, errors: response.payload.errors };
@@ -435,7 +444,7 @@ export default class RatelVaultPlugin extends Plugin {
 			incrementalIndex: async (file) => {
 				const response = await this.workerManager.request({
 					type: 'index.incremental',
-					payload: { file },
+					payload: { file, chunkOptions: this.buildChunkOptions() },
 				});
 				if (response.type === 'index.done') {
 					// 关键路径:incremental 后更新 manifest.chunkCount,修复 0 占位问题。
@@ -526,14 +535,13 @@ export default class RatelVaultPlugin extends Plugin {
 		);
 
 		// 关键路径:W4 — 构造 MultiQuerySearcher,编排改写 + 多查询 + RRF + 可选 Rerank。
-		// Reranker 仅在钥匙串有 ratel-rerank-bailian 密钥时注入;无密钥自动降级为仅 RRF。
-		const reranker = hasRerankApiKey(this.app)
-			? new BailianReranker({
-					apiBase: this.settings.rerankerApiBase,
-					apiKey: resolveRerankApiKey(this.app) ?? '',
-					model: this.settings.rerankerModel,
-				})
-			: undefined;
+		// 关键路径(S-RETRIEVAL-QUALITY §4.4):Reranker 用工厂注入,每次检索时按当前设置解析 ——
+		// 用户在设置里切换「启用精排 / 精排来源」后立即生效,无需重载插件;
+		// 关闭或来源不可用时工厂返回 undefined,检索链路连全文都不读。
+		//
+		// 关键路径:hasLlm 必须用 hasChatApiKey(app, settings) ——
+		// this.llm 启动时总是被构造,用 `!!this.llm` 恒为真。
+		const reranker = (): RerankerPort | undefined => this.resolveReranker();
 
 		// 关键路径:QueryRewriter 闭包捕获 this.llm,把 rewriteQuery 的 RewrittenQuery[] 适配为 string[]。
 		// 关键路径:rewriteQuery 已返回 [{text: query, variant: 'original'}, ...rewrites],
@@ -1173,6 +1181,11 @@ export default class RatelVaultPlugin extends Plugin {
 			try {
 				await this.modelManager.download();
 
+				// 关键路径(S-RETRIEVAL-QUALITY §4.1/§4.2):词表交给 Worker 一次(约 109KB)——
+				// Worker 侧据此做精确 token 计数;没拿到词表时按字符上界估算(高估方向,宁可块小也不许截断)。
+				// 关键路径:必须在索引启动之前设置,否则会出现「前几个文件用估算、后面用精确」的混用块。
+				setVocabContent(this.modelManager.getVocabContent());
+
 				const embedding = this.modelManager.getEmbedding();
 				if (embedding) {
 					// 关键路径:把 ONNX 适配器注入占位器,search-vault 等工具透明可用。
@@ -1306,6 +1319,7 @@ export default class RatelVaultPlugin extends Plugin {
 				currentEmbedModelId,
 				this.settings.chunkSize,
 				this.settings.chunkOverlap,
+				CURRENT_CHUNKER_VERSION,
 			)
 		) {
 			await this.vectraStore.dropIndex();
@@ -1361,7 +1375,10 @@ export default class RatelVaultPlugin extends Plugin {
 		if (toEmbed.length > 0) {
 			const response = await this.workerManager.request({
 				type: 'index.batch',
-				payload: { files: toEmbed.map((f) => ({ path: f.path, content: f.content })) },
+				payload: {
+					files: toEmbed.map((f) => ({ path: f.path, content: f.content })),
+					chunkOptions: this.buildChunkOptions(),
+				},
 			});
 			if (response.type === 'index.batch.done') {
 				indexed = response.payload.indexed;
@@ -1430,6 +1447,8 @@ export default class RatelVaultPlugin extends Plugin {
 			embedModelId: this.resolveCurrentEmbedModelId(),
 			chunkSize: this.settings.chunkSize,
 			chunkOverlap: this.settings.chunkOverlap,
+			// 关键路径:记分块规则代数 — 规则变化时下一次启动自动重建一次。
+			chunkerVersion: CURRENT_CHUNKER_VERSION,
 			lastIndexTime: Date.now(),
 			entries,
 		};
@@ -1447,6 +1466,63 @@ export default class RatelVaultPlugin extends Plugin {
 			return this.settings.embedLocalModel || 'local-default';
 		}
 		return `${this.settings.embedApiBase}::${this.settings.embedApiModel}`;
+	}
+
+	/**
+	 * 解析当前实际生效的精排实现 — 装配处唯一入口。
+	 *
+	 * 关键路径(S-RETRIEVAL-QUALITY §4.4):
+	 * - 开关关闭 → 不精排(返回 undefined,检索链路保持 RRF 顺序)。
+	 * - 来源 native → 需要钥匙串有 `ratel-rerank-bailian`;缺密钥则不精排,
+	 *   **不回落**到对话模型(避免用户以为在用便宜路径,实际悄悄换了更贵的)。
+	 * - 来源 llm → 用当前对话模型精排,走已配置的供应商,不新增外发目的地。
+	 *
+	 * @returns 精排实现;未启用或来源不可用时为 undefined
+	 */
+	private resolveReranker(): RerankerPort | undefined {
+		const effective = resolveRerankMode(
+			this.settings.rerankEnabled,
+			this.settings.rerankSource,
+			{
+				hasNativeKey: hasRerankApiKey(this.app),
+				// 关键路径:必须用 hasChatApiKey(app, settings) ——
+				// this.llm 启动时总是被构造,用 `!!this.llm` 恒为真。
+				hasLlm: hasChatApiKey(this.app, this.settings),
+			},
+		);
+		if (effective === 'native') {
+			return new BailianReranker({
+				apiBase: this.settings.rerankerApiBase,
+				apiKey: resolveRerankApiKey(this.app) ?? '',
+				model: this.settings.rerankerModel,
+			});
+		}
+		if (effective === 'llm') {
+			return new LlmReranker({
+				llm: this.llm,
+				maxCandidates: 12,
+				maxCharsPerDoc: 400,
+			});
+		}
+		return undefined;
+	}
+
+	/**
+	 * 组装分块参数 — 设置项换算成 token 预算后随索引消息下发。
+	 *
+	 * 关键路径:单块预算不能超过模型输入上限,留 64 token 给 [CLS]/[SEP] 与余量,
+	 * 否则块会被模型静默截断(spec §4.1)。
+	 *
+	 * @returns 分块参数(maxTokens / overlapTokens)
+	 */
+	private buildChunkOptions(): ChunkOptionsPayload {
+		// 关键路径:主线程只取模型输入上限,不建分词器 ——
+		// 词表约 109KB,精确计数在 Worker 侧做,主线程再建一份纯属浪费内存。
+		const counter = createTokenCounter(null);
+		return {
+			maxTokens: Math.min(this.settings.chunkSize, counter.maxInputTokens - TOKEN_BUDGET_RESERVE),
+			overlapTokens: this.settings.chunkOverlap,
+		};
 	}
 
 	/**
@@ -1785,7 +1861,7 @@ export default class RatelVaultPlugin extends Plugin {
 						this.breadcrumbs?.mark('ask.embed.end', sessionId, 1);
 						const queryVector = vectors[0];
 						if (queryVector) {
-							const hits = await this.memoryStore.searchIndex(message, queryVector, K);
+							const hits = await this.memoryStore.searchIndex(queryVector, K);
 							const summaryByName = new Map(indexEntries.map((e) => [e.name, e.summary]));
 							// 性能:先凑齐本轮命中,批量计数只落盘一次(逐条 bump 会同步写盘 K 次)。
 							const hitNames: string[] = [];

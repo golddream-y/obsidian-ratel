@@ -14,19 +14,35 @@ import { reciprocalRankFusion, type RankedItem } from './rrf';
 import { devLogger } from '../logging/dev-logger';
 
 /**
+ * 精排来源工厂 — 每次检索时解析一次。
+ *
+ * 关键路径:用工厂而不是固定实例,是为了让用户在设置里切换「启用精排 / 精排来源」
+ * 后立即生效(无需重载插件);返回 undefined 表示当前不精排(开关关闭或来源不可用)。
+ */
+export type RerankerFactory = () => RerankerPort | undefined;
+
+/**
+ * 候选少于该数量就不精排 — 结果本来就少,全部能进上下文,排序收益接近零。
+ *
+ * 关键路径:判定必须排在读全文之前,候选不足时既不调精排也不读文件,
+ * 省掉 N 次文件读取与一次模型调用。
+ */
+export const MIN_RERANK_CANDIDATES = 4;
+
+/**
  * 多查询搜索器依赖。
  *
  * @param embedding - Embedding 端口,用于把每个查询变体编码为向量。
- * @param workerManager - Worker 管理器,用于发起 hybrid.search(W3 已实现)。
+ * @param workerManager - Worker 管理器,用于发起 vector.search(W3 已实现)。
  * @param vault - Obsidian Vault 外观,供 Rerank 读取文档全文。
- * @param reranker - 可选 Reranker 端口;未注入时跳过精排。
+ * @param reranker - 可选 Reranker 端口或工厂;未注入 / 工厂返回 undefined 时跳过精排。
  * @param queryRewriter - 可选查询改写器;未注入时只用原始查询。
  */
 export interface MultiQuerySearcherDeps {
 	embedding: EmbeddingPort;
 	workerManager: WorkerManager;
 	vault: ObsidianVault;
-	reranker?: RerankerPort;
+	reranker?: RerankerPort | RerankerFactory;
 	queryRewriter?: { rewrite: (q: string) => Promise<string[]> };
 }
 
@@ -36,17 +52,17 @@ export interface MultiQuerySearcherDeps {
  * 设计要点:
  * - 对 search_vault 工具与 LLM 透明:外部只调 search(query, topK),内部自动编排。
  * - 不调 search_vault 工具(避免循环 — search_vault 反过来调用本类)。
- * - 直接调 Worker 的 hybrid.search,绕过 search_vault 工具层。
+ * - 直接调 Worker 的 vector.search,绕过 search_vault 工具层。
  * - Reranker 异常时降级返回 RRF 结果,不阻断主流程。
  * - QueryRewriter 异常时降级为单查询,不阻断主流程。
  *
  * 关键路径(数据流):
  * 1. 若 queryRewriter 可用:改写查询 → [original, rewrite-1, rewrite-2]
  *    否则:只用 [original]
- * 2. 对每个查询:embedding.embed → workerManager.request(hybrid.search, topK*2)
+ * 2. 对每个查询:embedding.embed → workerManager.request(vector.search, topK*2)
  * 3. RRF 融合多份结果,取 topK
- * 4. 若 reranker 可用:vault.readFile 读全文 → reranker.rerank → 更新分数 + reranked=true
- *    否则:reranked=false
+ * 4. 若 reranker 可用且候选 ≥ MIN_RERANK_CANDIDATES:vault.readFile 读全文 → reranker.rerank
+ *    → 更新分数 + reranked=true;否则(无 reranker / 候选不足):reranked=false
  *
  * @example
  *   const searcher = new MultiQuerySearcher({
@@ -84,8 +100,10 @@ export class MultiQuerySearcher {
 			}
 		}
 
-		// --- Step 2: 多查询 hybrid.search ---
+		// --- Step 2: 多查询向量召回 ---
 		// 关键路径:传 topK*2 过度抓取,补偿 RRF 融合时丢弃部分结果。
+		// 关键词不由向量库提供:vectra 的 BM25 需按条目回读全文且中文分词不可用,已移除;
+		// 精确词命中由 grep 工具承担。
 		const overFetchTopK = topK * 2;
 		const allResults: VectorSearchResult[][] = [];
 		const docIdToResult = new Map<string, VectorSearchResult>();
@@ -93,16 +111,16 @@ export class MultiQuerySearcher {
 		for (const queryText of queryTexts) {
 			const [queryVector] = await this.deps.embedding.embed([queryText]);
 			const response = await this.deps.workerManager.request({
-				type: 'hybrid.search',
-				payload: { query: queryText, queryVector: queryVector!, topK: overFetchTopK },
+				type: 'vector.search',
+				payload: { queryVector: queryVector!, topK: overFetchTopK },
 			});
 
-			if (response.type !== 'hybrid.search.result') {
+			if (response.type !== 'vector.search.result') {
 				// 修复:Worker 返回 error 时打印 payload 详情,便于排查(如 HANDLER_ERROR / NULL_PROCESSOR)。
 				const errMsg = response.type === 'error'
 					? (response.payload as { message?: string })?.message ?? 'unknown error'
 					: `unexpected type: ${response.type}`;
-				devLogger.warn('search', `hybrid.search failed for "${queryText}": ${errMsg}`);
+				devLogger.warn('search', `vector.search failed for "${queryText}": ${errMsg}`);
 				continue;
 			}
 
@@ -133,10 +151,13 @@ export class MultiQuerySearcher {
 		});
 
 		// --- Step 4: 可选 Rerank 精排 ---
-		if (this.deps.reranker && finalResults.length > 0) {
+		// 关键路径:工厂在每次检索时解析一次 — 设置改了立即生效,关闭时返回 undefined。
+		const reranker = typeof this.deps.reranker === 'function' ? this.deps.reranker() : this.deps.reranker;
+		// 关键路径:短路判定排在读全文之前 — 候选不足时既不调精排也不读文件。
+		if (reranker && finalResults.length >= MIN_RERANK_CANDIDATES) {
 			try {
 				// 关键路径:读取 topK 文档全文,传给 Reranker。
-				// metadata.path 是 vault 相对路径(W3 VectraStore.hybridSearch 保证)。
+				// metadata.path 是 vault 相对路径(W3 VectraStore.search 保证)。
 				const documents: Array<{ id: string; text: string }> = [];
 				for (const r of finalResults) {
 					const path = r.metadata?.path;
@@ -147,7 +168,7 @@ export class MultiQuerySearcher {
 				}
 
 				if (documents.length > 0) {
-					const reranked = await this.deps.reranker.rerank(query, documents, topK);
+					const reranked = await reranker.rerank(query, documents, topK);
 					// 关键路径:用 reranker 分数重新排序,丢弃 text(VectorSearchResult 不含 text)。
 					const rerankedMap = new Map(reranked.map((r) => [r.id, r.score]));
 					// 关键路径:reranked 标记与 score 同源 — 仅 Reranker 实际返回分数的文档标 true;

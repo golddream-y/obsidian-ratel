@@ -117,7 +117,7 @@ export const ZH_DEFAULTS: Record<PromptSectionId, string> = {
 	'tool.read_note.param.path': '笔记路径,例如 notes/LangChain.md',
 
 	'tool.search_vault.description':
-		'在知识库中搜索与查询相关的笔记。使用多查询混合检索(向量+BM25)与可选重排,返回带 index 编号的结果;用 read_note 读取全文。回答时用返回的 index 写成 [n] 引用。',
+		'在知识库中搜索与查询相关的笔记。使用多查询语义检索与可选重排,返回带 index 编号的结果;精确字面或正则用 grep;用 read_note 读取全文。回答时用返回的 index 写成 [n] 引用。',
 	'tool.search_vault.param.query': '检索语句,例如「项目技术栈」',
 	'tool.search_vault.param.topK': '返回条数上限,默认 5',
 

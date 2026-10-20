@@ -68,6 +68,19 @@ export type AgentEvent =
 // ==================== Worker 请求(主线程 → Worker) ====================
 
 /**
+ * 分块参数(主线程 → Worker)— 单位是 token。
+ *
+ * 关键路径:只传数值,`count` 计数函数不能过 postMessage ——
+ * Worker 内部用词表自行构造计数器(见 worker/handler.ts)。
+ */
+export interface ChunkOptionsPayload {
+	/** 单块 token 预算(含结构前缀) */
+	maxTokens: number;
+	/** 块间重叠 token 数 */
+	overlapTokens: number;
+}
+
+/**
  * 主线程发给 Worker 的请求集合 — 含索引 / 向量 CRUD / 状态查询。
  *
  * 关键路径:类型用判别联合,Worker 端 switch 时 TypeScript 能自动收窄。
@@ -76,14 +89,17 @@ export type AgentEvent =
  * - `index.full` 协议改为传 `{ files: Array<{ path, content }> }`,主线程已读取 + 分块,Worker 只做 IO
  * - `index.incremental` payload 嵌套成 `{ file: { path, content } }`,对齐 index.full
  * - 保留 `vector.search` 的 `filter` 可选项(用于按 metadata 过滤)
+ *
+ * 改造点(S-RETRIEVAL-QUALITY §4.2):
+ * - `index.full / index.incremental / index.batch` 载荷新增 `chunkOptions`,
+ *   让设置项里的分块大小与重叠真正传到 Worker(此前 Worker 硬编码 500/100)。
  */
 export type WorkerRequest =
-	| { type: 'index.full'; payload: { files: Array<{ path: string; content: string }> } }
-	| { type: 'index.incremental'; payload: { file: { path: string; content: string } } }
-	| { type: 'index.batch'; payload: { files: Array<{ path: string; content: string }> } }
+	| { type: 'index.full'; payload: { files: Array<{ path: string; content: string }>; chunkOptions?: ChunkOptionsPayload } }
+	| { type: 'index.incremental'; payload: { file: { path: string; content: string }; chunkOptions?: ChunkOptionsPayload } }
+	| { type: 'index.batch'; payload: { files: Array<{ path: string; content: string }>; chunkOptions?: ChunkOptionsPayload } }
 	| { type: 'index.delete'; payload: { filePath: string } }
 	| { type: 'vector.search'; payload: { queryVector: number[]; topK: number; filter?: import('./ports/vector').SearchFilter } }
-	| { type: 'hybrid.search'; payload: { query: string; queryVector: number[]; topK: number } }
 	| { type: 'vector.upsert'; payload: { docId: string; text: string; metadata: Record<string, unknown> } }
 	| { type: 'vector.delete'; payload: { docIds: string[] } }
 	| { type: 'index.status'; payload: Record<string, never> };
@@ -100,7 +116,6 @@ export type WorkerResponse =
 	| { type: 'index.done'; payload: { indexed: number; errors: number } }
 	| { type: 'index.batch.done'; payload: { indexed: number; errors: number; chunkCounts: Record<string, number> } }
 	| { type: 'vector.search.result'; payload: Array<import('./ports/vector').VectorSearchResult> }
-	| { type: 'hybrid.search.result'; payload: Array<import('./ports/vector').VectorSearchResult> }
 	| { type: 'vector.upsert.done'; payload: { docId: string } }
 	| { type: 'vector.delete.done'; payload: { count: number } }
 	| { type: 'index.status.result'; payload: { totalDocs: number; lastIndexTime: number } }

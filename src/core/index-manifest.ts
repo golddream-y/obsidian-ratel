@@ -17,6 +17,14 @@ import path from 'path';
 /** 当前清单文件名(位于 `.index/` 内) */
 export const INDEX_MANIFEST_FILENAME = 'ratel-manifest.json';
 
+/**
+ * 当前分块规则代数 — 分块单位/预算/前缀规则任一变化就 +1。
+ *
+ * 关键路径:写入清单后,`shouldFullRebuild` 比对该值;不一致即触发一次全量重建,
+ * 避免旧规则切出的块与新规则混存(块边界不同,旧块无法被新检索正确利用)。
+ */
+export const CURRENT_CHUNKER_VERSION = 1;
+
 /** 旧版清单文件名(插件根目录,易被同步删除) */
 export const LEGACY_INDEX_MANIFEST_FILENAME = 'index-manifest.json';
 
@@ -82,6 +90,8 @@ export interface IndexManifestData {
     chunkSize: number;
     /** chunkMarkdown 的 chunkOverlap 参数 */
     chunkOverlap: number;
+    /** 分块规则代数 — 与 CURRENT_CHUNKER_VERSION 不一致即触发全量重建 */
+    chunkerVersion?: number;
     /** 最近一次索引完成时间(ms) */
     lastIndexTime: number;
     /** 每文件条目,key = 文件相对路径 */
@@ -198,19 +208,26 @@ export class IndexManifest {
     /**
      * 判断是否需要全量重建。
      *
-     * 触发条件:embedModelId / chunkSize / chunkOverlap 任一变化。
-     * 原因:不同 embedding 模型的向量空间不兼容,混入会导致搜索错乱。
+     * 触发条件:embedModelId / chunkSize / chunkOverlap / chunkerVersion 任一变化。
+     * 原因:
+     * - 不同 embedding 模型的向量空间不兼容,混入会导致搜索错乱。
+     * - 分块规则代数变化(单位/预算/结构前缀)后,旧块的边界与新规则不一致,必须重切。
+     *
+     * 关键路径:旧清单没有 chunkerVersion 字段,读出来是 undefined,
+     * `undefined !== CURRENT_CHUNKER_VERSION` 即成立 → 升级后自动重建一次。
      */
     shouldFullRebuild(
         data: IndexManifestData,
         newEmbedModelId: string,
         newChunkSize: number,
         newChunkOverlap: number,
+        newChunkerVersion: number = CURRENT_CHUNKER_VERSION,
     ): boolean {
         return (
             data.embedModelId !== newEmbedModelId ||
             data.chunkSize !== newChunkSize ||
-            data.chunkOverlap !== newChunkOverlap
+            data.chunkOverlap !== newChunkOverlap ||
+            data.chunkerVersion !== newChunkerVersion
         );
     }
 }

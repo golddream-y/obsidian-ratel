@@ -1,6 +1,6 @@
 /**
  * @file src/tools/search-memory.ts
- * @description `search_memory` 工具 — 在用户已建立的主题记忆上做向量 + BM25 混合搜索
+ * @description `search_memory` 工具 — 在用户已建立的主题记忆上做向量检索
  * @module tools/search-memory
  * @depends core/tool-registry, core/memory-store, ports/embedding, ports/llm, i18n
  */
@@ -60,7 +60,7 @@ export function createSearchMemoryTool(
 				throw new Error(tNow('error.embedding.emptyVector'));
 			}
 
-			const results = await memoryStore.searchIndex(query, queryVector, topK);
+			const results = await memoryStore.searchIndex(queryVector, topK);
 
 			// 关键路径:maxReturnBytes 预算 — 按顺序累加,超出阈值则停止,保留 index 编号连续。
 			return truncateResults(results, maxReturnBytes());

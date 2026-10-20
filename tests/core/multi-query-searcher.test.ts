@@ -27,7 +27,7 @@ function createMockWorkerManager(resultsPerQuery: VectorSearchResult[][]): Worke
 	return {
 		request: vi.fn(async () => {
 			const results = resultsPerQuery[callIndex++] ?? [];
-			return { type: 'hybrid.search.result', payload: results };
+			return { type: 'vector.search.result', payload: results };
 		}),
 		destroy: vi.fn(),
 	} as unknown as WorkerManager;
@@ -123,10 +123,13 @@ describe('MultiQuerySearcher', () => {
 
 	it('search - 有 reranker - RRF 后精排(带 reranked=true)', async () => {
 		const embedding = createMockEmbedding();
+		// 关键路径:候选 ≥ MIN_RERANK_CANDIDATES(4)才精排,少于则短路
 		const worker = createMockWorkerManager([
 			[
 				{ docId: 'a.md#chunk-0', score: 0.9, metadata: { path: 'a.md', chunkIndex: 0 } },
 				{ docId: 'b.md#chunk-0', score: 0.8, metadata: { path: 'b.md', chunkIndex: 0 } },
+				{ docId: 'c.md#chunk-0', score: 0.7, metadata: { path: 'c.md', chunkIndex: 0 } },
+				{ docId: 'd.md#chunk-0', score: 0.6, metadata: { path: 'd.md', chunkIndex: 0 } },
 			],
 		]);
 		const vault = createMockVault(async (p) => `content-of-${p}`);
@@ -147,11 +150,78 @@ describe('MultiQuerySearcher', () => {
 		expect(results.every((r) => r.reranked === true)).toBe(true);
 	});
 
+	it('search - 候选 ≤3 条 - 不调用精排且不读全文', async () => {
+		const embedding = createMockEmbedding();
+		const worker = createMockWorkerManager([
+			[
+				{ docId: 'a.md#chunk-0', score: 0.9, metadata: { path: 'a.md', chunkIndex: 0 } },
+				{ docId: 'b.md#chunk-0', score: 0.8, metadata: { path: 'b.md', chunkIndex: 0 } },
+				{ docId: 'c.md#chunk-0', score: 0.7, metadata: { path: 'c.md', chunkIndex: 0 } },
+			],
+		]);
+		// 关键路径:必须是 vi.fn,否则无法断言「没读过全文」
+		const readFile = vi.fn(async () => 'content');
+		const vault = createMockVault(readFile);
+		const reranker = { rerank: vi.fn(async () => []) };
+
+		const searcher = new MultiQuerySearcher({
+			embedding,
+			workerManager: worker,
+			vault,
+			reranker,
+		});
+
+		const results = await searcher.search('查询', 5);
+
+		// 关键路径:候选不足时既不调精排也不读全文(省掉无谓的 IO 与一次模型调用)
+		expect(reranker.rerank).not.toHaveBeenCalled();
+		expect(readFile).not.toHaveBeenCalled();
+		expect(results.every((r) => r.reranked === false)).toBe(true);
+		// 关键路径:顺序保持 RRF 顺序
+		expect(results.map((r) => r.docId)).toEqual([
+			'a.md#chunk-0',
+			'b.md#chunk-0',
+			'c.md#chunk-0',
+		]);
+	});
+
+	it('search - reranker 工厂返回 undefined(精排关闭) - 不调用精排且不读全文', async () => {
+		const embedding = createMockEmbedding();
+		const worker = createMockWorkerManager([
+			[
+				{ docId: 'a.md#chunk-0', score: 0.9, metadata: { path: 'a.md', chunkIndex: 0 } },
+				{ docId: 'b.md#chunk-0', score: 0.8, metadata: { path: 'b.md', chunkIndex: 0 } },
+				{ docId: 'c.md#chunk-0', score: 0.7, metadata: { path: 'c.md', chunkIndex: 0 } },
+				{ docId: 'd.md#chunk-0', score: 0.6, metadata: { path: 'd.md', chunkIndex: 0 } },
+			],
+		]);
+		const readFile = vi.fn(async () => 'content');
+		const vault = createMockVault(readFile);
+		const factory = vi.fn(() => undefined);
+
+		const searcher = new MultiQuerySearcher({
+			embedding,
+			workerManager: worker,
+			vault,
+			reranker: factory,
+		});
+
+		const results = await searcher.search('查询', 5);
+
+		// 关键路径:工厂解析出 undefined → 视为未启用精排,连全文都不读
+		expect(factory).toHaveBeenCalledTimes(1);
+		expect(readFile).not.toHaveBeenCalled();
+		expect(results.every((r) => r.reranked === false)).toBe(true);
+	});
+
 	it('search - reranker 抛错 - 降级返回 RRF 结果(reranked=false)', async () => {
 		const embedding = createMockEmbedding();
 		const worker = createMockWorkerManager([
 			[
 				{ docId: 'a.md#chunk-0', score: 0.9, metadata: { path: 'a.md', chunkIndex: 0 } },
+				{ docId: 'b.md#chunk-0', score: 0.8, metadata: { path: 'b.md', chunkIndex: 0 } },
+				{ docId: 'c.md#chunk-0', score: 0.7, metadata: { path: 'c.md', chunkIndex: 0 } },
+				{ docId: 'd.md#chunk-0', score: 0.6, metadata: { path: 'd.md', chunkIndex: 0 } },
 			],
 		]);
 		const vault = createMockVault(async () => 'content');
@@ -169,8 +239,8 @@ describe('MultiQuerySearcher', () => {
 		const results = await searcher.search('查询', 5);
 
 		// 关键路径:reranker 失败,降级返回 RRF 结果,不抛错
-		expect(results).toHaveLength(1);
-		expect(results[0]!.reranked).toBe(false);
+		expect(results).toHaveLength(4);
+		expect(results.every((r) => r.reranked === false)).toBe(true);
 	});
 
 	it('search - queryRewriter 抛错 - 降级为单查询', async () => {
@@ -197,7 +267,7 @@ describe('MultiQuerySearcher', () => {
 		expect(embedding.embed).toHaveBeenCalledTimes(1);
 	});
 
-	it('search - 传 topK*2 给 hybrid.search(过度抓取)', async () => {
+	it('search - 传 topK*2 给 vector.search(过度抓取)', async () => {
 		const embedding = createMockEmbedding();
 		const worker = createMockWorkerManager([
 			[{ docId: 'a.md#chunk-0', score: 0.9, metadata: { path: 'a.md', chunkIndex: 0 } }],
@@ -214,17 +284,20 @@ describe('MultiQuerySearcher', () => {
 
 		// 关键路径:传给 Worker 的 topK = 5*2 = 10(过度抓取,补偿 RRF 丢弃)
 		const requestCall = (worker.request as ReturnType<typeof vi.fn>).mock.calls[0]![0];
-		expect(requestCall.type).toBe('hybrid.search');
+		expect(requestCall.type).toBe('vector.search');
 		expect(requestCall.payload.topK).toBe(10);
 	});
 
 	it('search - reranker 存在但所有文档缺 metadata.path - 全部 reranked=false', async () => {
 		const embedding = createMockEmbedding();
 		// 关键路径:结果无 metadata.path,无法读取全文送入 Reranker
+		// 关键路径:候选数必须 ≥ MIN_RERANK_CANDIDATES,否则会先被短路,测不到本用例原意
 		const worker = createMockWorkerManager([
 			[
 				{ docId: 'a.md#chunk-0', score: 0.9, metadata: {} },
 				{ docId: 'b.md#chunk-0', score: 0.8, metadata: {} },
+				{ docId: 'c.md#chunk-0', score: 0.7, metadata: {} },
+				{ docId: 'd.md#chunk-0', score: 0.6, metadata: {} },
 			],
 		]);
 		const vault = createMockVault(async () => 'content');
@@ -242,16 +315,19 @@ describe('MultiQuerySearcher', () => {
 		// 关键路径:所有文档缺 path → documents.length === 0 → 走 else 分支 → reranked=false,
 		// 且 reranker.rerank 不被调用(无文档可精排)。
 		expect(reranker.rerank).not.toHaveBeenCalled();
+		expect(results).toHaveLength(4);
 		expect(results.every((r) => r.reranked === false)).toBe(true);
 	});
 
 	it('search - reranker 存在且部分文档缺 metadata.path - 仅送入的文档 reranked=true', async () => {
 		const embedding = createMockEmbedding();
-		// 关键路径:a.md 有 path,b.md 无 path — 仅 a.md 送入 Reranker
+		// 关键路径:a/c.md 有 path,b/d.md 无 path — 仅 a/c.md 送入 Reranker
 		const worker = createMockWorkerManager([
 			[
 				{ docId: 'a.md#chunk-0', score: 0.9, metadata: { path: 'a.md', chunkIndex: 0 } },
 				{ docId: 'b.md#chunk-0', score: 0.8, metadata: {} },
+				{ docId: 'c.md#chunk-0', score: 0.7, metadata: { path: 'c.md', chunkIndex: 0 } },
+				{ docId: 'd.md#chunk-0', score: 0.6, metadata: {} },
 			],
 		]);
 		const vault = createMockVault(async (p) => `content-of-${p}`);
@@ -266,13 +342,17 @@ describe('MultiQuerySearcher', () => {
 
 		const results = await searcher.search('查询', 5);
 
-		// 关键路径:仅 a.md 有 path 被送入 Reranker → reranked=true;b.md 无 path → reranked=false。
+		// 关键路径:仅有 path 的文档被送入 Reranker → reranked=true;无 path 的 → reranked=false。
 		const docA = results.find((r) => r.docId === 'a.md#chunk-0');
 		const docB = results.find((r) => r.docId === 'b.md#chunk-0');
+		const docC = results.find((r) => r.docId === 'c.md#chunk-0');
+		const docD = results.find((r) => r.docId === 'd.md#chunk-0');
 		expect(docA).toBeDefined();
 		expect(docA!.reranked).toBe(true);
+		expect(docC!.reranked).toBe(true);
 		expect(docB).toBeDefined();
 		expect(docB!.reranked).toBe(false);
+		expect(docD!.reranked).toBe(false);
 	});
 
 	it('search - Reranker 丢弃部分文档 - 被丢弃文档保持 reranked=false 与 RRF 分数', async () => {
@@ -281,10 +361,12 @@ describe('MultiQuerySearcher', () => {
 			[
 				{ docId: 'a.md#chunk-0', score: 0.9, metadata: { path: 'a.md', chunkIndex: 0 } },
 				{ docId: 'b.md#chunk-0', score: 0.8, metadata: { path: 'b.md', chunkIndex: 0 } },
+				{ docId: 'c.md#chunk-0', score: 0.7, metadata: { path: 'c.md', chunkIndex: 0 } },
+				{ docId: 'd.md#chunk-0', score: 0.6, metadata: { path: 'd.md', chunkIndex: 0 } },
 			],
 		]);
 		const vault = createMockVault(async (p) => `content-of-${p}`);
-		// 关键路径:Reranker 只返回 a.md(丢弃 b.md),模拟服务端 top_n 截断
+		// 关键路径:Reranker 只返回 a.md(丢弃 b/c/d.md),模拟服务端 top_n 截断
 		const reranker: RerankerPort = {
 			rerank: vi.fn(async (_q, documents) => {
 				const kept = documents[0]!;

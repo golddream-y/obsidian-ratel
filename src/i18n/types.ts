@@ -179,6 +179,18 @@ export interface SettingsStrings {
   'settings.reranker.model.name': string;
   'settings.reranker.secretHint.note': string;
   'settings.reranker.secretHint.localOllama': string;
+  'settings.reranker.enabled.name': string;
+  'settings.reranker.enabled.desc': string;
+  'settings.reranker.source.name': string;
+  'settings.reranker.source.desc': string;
+  'settings.reranker.source.option.native': string;
+  'settings.reranker.source.option.llm': string;
+  'settings.reranker.effective.name': string;
+  'settings.reranker.effective.off': string;
+  'settings.reranker.effective.native': string;
+  'settings.reranker.effective.llm': string;
+  'settings.reranker.effective.noNativeKey': string;
+  'settings.reranker.effective.noLlm': string;
   'settings.indexing.heading': string;
   'settings.indexing.chunkSize.name': string;
   'settings.indexing.chunkOverlap.name': string;
@@ -517,8 +529,6 @@ export interface ChatStrings {
   'chat.modelInfo.embedModel': string;
   'chat.modelInfo.contextLength': string;
   'chat.modelInfo.rerank': string;
-  'chat.modelInfo.rerankConfigured': string;
-  'chat.modelInfo.rerankNotConfigured': string;
 }
 
 // ==================== Tool display names(UI 友好名) ====================

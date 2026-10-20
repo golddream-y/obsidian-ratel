@@ -45,6 +45,7 @@ describe('IndexManifest', () => {
             embedModelId: 'bge-small-zh',
             chunkSize: 500,
             chunkOverlap: 100,
+            chunkerVersion: 1,
             lastIndexTime: 1000,
             entries: {},
         };
@@ -60,10 +61,11 @@ describe('IndexManifest', () => {
             embedModelId: 'bge-small-zh',
             chunkSize: 500,
             chunkOverlap: 100,
+            chunkerVersion: 1,
             lastIndexTime: 0,
             entries: {},
         };
-        expect(manifest2.shouldFullRebuild(data, 'different-model', 500, 100)).toBe(true);
+        expect(manifest2.shouldFullRebuild(data, 'different-model', 500, 100, 1)).toBe(true);
     });
 
     it('shouldFullRebuild - chunkSize 变 - 返回 true', () => {
@@ -73,10 +75,11 @@ describe('IndexManifest', () => {
             embedModelId: 'm',
             chunkSize: 500,
             chunkOverlap: 100,
+            chunkerVersion: 1,
             lastIndexTime: 0,
             entries: {},
         };
-        expect(manifest2.shouldFullRebuild(data, 'm', 800, 100)).toBe(true);
+        expect(manifest2.shouldFullRebuild(data, 'm', 800, 100, 1)).toBe(true);
     });
 
     it('shouldFullRebuild - chunkOverlap 变 - 返回 true', () => {
@@ -86,10 +89,11 @@ describe('IndexManifest', () => {
             embedModelId: 'm',
             chunkSize: 500,
             chunkOverlap: 100,
+            chunkerVersion: 1,
             lastIndexTime: 0,
             entries: {},
         };
-        expect(manifest2.shouldFullRebuild(data, 'm', 500, 200)).toBe(true);
+        expect(manifest2.shouldFullRebuild(data, 'm', 500, 200, 1)).toBe(true);
     });
 
     it('shouldFullRebuild - 全部不变 - 返回 false', () => {
@@ -99,10 +103,41 @@ describe('IndexManifest', () => {
             embedModelId: 'm',
             chunkSize: 500,
             chunkOverlap: 100,
+            chunkerVersion: 1,
             lastIndexTime: 0,
             entries: {},
         };
-        expect(manifest2.shouldFullRebuild(data, 'm', 500, 100)).toBe(false);
+        expect(manifest2.shouldFullRebuild(data, 'm', 500, 100, 1)).toBe(false);
+    });
+
+    it('shouldFullRebuild - chunkerVersion 变 - 返回 true', () => {
+        const manifest2 = new IndexManifest(MANIFEST_PATH);
+        const data: import('../../src/core/index-manifest').IndexManifestData = {
+            version: 1,
+            embedModelId: 'a',
+            chunkSize: 500,
+            chunkOverlap: 100,
+            chunkerVersion: 2,
+            lastIndexTime: 0,
+            entries: {},
+        };
+        // 关键路径:分块规则代数相同则不重建;不同则必须重建(旧块是按旧规则切的)
+        expect(manifest2.shouldFullRebuild(data, 'a', 500, 100, 2)).toBe(false);
+        expect(manifest2.shouldFullRebuild(data, 'a', 500, 100, 3)).toBe(true);
+    });
+
+    it('shouldFullRebuild - 旧清单无 chunkerVersion - 返回 true(升级触发一次重建)', () => {
+        const manifest2 = new IndexManifest(MANIFEST_PATH);
+        // 关键路径:旧清单缺该字段(undefined !== 1)→ 触发一次全量重建
+        const data = {
+            version: 1,
+            embedModelId: 'a',
+            chunkSize: 500,
+            chunkOverlap: 100,
+            lastIndexTime: 0,
+            entries: {},
+        } as unknown as import('../../src/core/index-manifest').IndexManifestData;
+        expect(manifest2.shouldFullRebuild(data, 'a', 500, 100, 1)).toBe(true);
     });
 
     it('diff - 全新文件 - 进 toAdd', () => {
@@ -112,6 +147,7 @@ describe('IndexManifest', () => {
             embedModelId: 'm',
             chunkSize: 500,
             chunkOverlap: 100,
+            chunkerVersion: 1,
             lastIndexTime: 0,
             entries: {},
         };
@@ -132,6 +168,7 @@ describe('IndexManifest', () => {
             embedModelId: 'm',
             chunkSize: 500,
             chunkOverlap: 100,
+            chunkerVersion: 1,
             lastIndexTime: 0,
             entries: {
                 'a.md': { path: 'a.md', hash: 'h1', mtime: 100, chunkCount: 3 },
@@ -151,6 +188,7 @@ describe('IndexManifest', () => {
             embedModelId: 'm',
             chunkSize: 500,
             chunkOverlap: 100,
+            chunkerVersion: 1,
             lastIndexTime: 0,
             entries: {
                 'a.md': { path: 'a.md', hash: 'old', mtime: 100, chunkCount: 3 },
@@ -171,6 +209,7 @@ describe('IndexManifest', () => {
             embedModelId: 'm',
             chunkSize: 500,
             chunkOverlap: 100,
+            chunkerVersion: 1,
             lastIndexTime: 0,
             entries: {
                 'gone.md': { path: 'gone.md', hash: 'h', mtime: 100, chunkCount: 2 },
@@ -187,6 +226,7 @@ describe('IndexManifest', () => {
             embedModelId: 'm',
             chunkSize: 500,
             chunkOverlap: 100,
+            chunkerVersion: 1,
             lastIndexTime: 0,
             entries: {},
         };
@@ -201,6 +241,7 @@ describe('IndexManifest', () => {
             embedModelId: 'm',
             chunkSize: 500,
             chunkOverlap: 100,
+            chunkerVersion: 1,
             lastIndexTime: 0,
             entries: {
                 'a.md': { path: 'a.md', hash: 'h1', mtime: 100, chunkCount: 3 },
@@ -217,6 +258,7 @@ describe('IndexManifest', () => {
             embedModelId: 'm',
             chunkSize: 500,
             chunkOverlap: 100,
+            chunkerVersion: 1,
             lastIndexTime: 1000,
             entries: {
                 'a.md': { path: 'a.md', hash: 'h', mtime: 1, chunkCount: 1 },

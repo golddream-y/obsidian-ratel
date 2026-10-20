@@ -192,78 +192,6 @@ export class VectraStore implements VectorStore {
 	}
 
 	/**
-	 * 混合搜索 — 向量 + BM25 关键词,vectra 内置融合。
-	 *
-	 * 关键路径:
-	 * - 调用 `queryItems(queryVector, query, topK * 10, undefined, true)`
-	 * - 第 2 参数传 query 文本(原 search 传空串,BM25 未启用)
-	 * - 第 5 参数 isBm25=true 启用 BM25 追加结果
-	 * - 复用 search() 的 chunk→doc 聚合逻辑(同文档取最高分,按分数降序)
-	 *
-	 * @param query - 用户查询文本(用于 BM25)
-	 * @param queryVector - 查询向量(用于语义搜索,主线程 embedding)
-	 * @param topK - 返回文档上限
-	 * @returns 文档级结果(不含 index 字段,index 由 search_vault 工具层填)
-	 */
-	async hybridSearch(query: string, queryVector: number[], topK: number): Promise<VectorSearchResult[]> {
-		const index = await this.ensureIndex();
-
-		let results;
-		try {
-			// 关键路径:过度抓取,与 search() 一致,聚合后确保 topK 文档都能拿到。
-			results = await index.queryItems(queryVector, query, topK * 10, undefined, true);
-		} catch (err) {
-			// 修复:小库时 winkBM25S consolidation 必然失败 — 属预期,静默降级纯向量,勿把 Error 刷屏。
-			if (isBm25CorpusTooSmall(err)) {
-				devLogger.debug('search', '库文档过少,BM25 不可用,改用纯向量检索');
-			} else {
-				devLogger.warn(
-					'search',
-					'BM25 混合检索失败,降级为纯向量',
-					err instanceof Error ? err.message : err,
-				);
-			}
-			return this.search(queryVector, topK);
-		}
-
-		// --- chunk → document 聚合(与 search() 同逻辑) ---
-		const internalIds = new Set<string>();
-		for (const r of results) {
-			const chunkMeta = r.item.metadata;
-			if (chunkMeta.documentId) {
-				internalIds.add(chunkMeta.documentId);
-			}
-		}
-
-		const uriMap = new Map<string, string>();
-		for (const internalId of internalIds) {
-			const uri = await index.getDocumentUri(internalId);
-			if (uri) uriMap.set(internalId, uri);
-		}
-
-		const docMap = new Map<string, { docId: string; score: number; metadata: Record<string, unknown> }>();
-		for (const r of results) {
-			const chunkMeta = r.item.metadata;
-			const internalDocId = chunkMeta.documentId;
-			if (!internalDocId) continue;
-
-			const docId = uriMap.get(internalDocId) ?? internalDocId;
-			const existing = docMap.get(docId);
-			if (!existing || r.score > existing.score) {
-				docMap.set(docId, {
-					docId,
-					score: r.score,
-					metadata: chunkMeta,
-				});
-			}
-		}
-
-		return Array.from(docMap.values())
-			.sort((a, b) => b.score - a.score)
-			.slice(0, topK);
-	}
-
-	/**
 	 * 删除文档。
 	 *
 	 * 修复:vectra 在文档不存在时抛错,这里静默忽略以保证批量删除的幂等性。
@@ -438,22 +366,4 @@ export class VectraStore implements VectorStore {
 		const index = await this.ensureIndex();
 		index.cancelUpdate();
 	}
-}
-
-/**
- * 是否为 winkBM25S「语料过小无法 consolidate」— 小库预期失败,不是真正故障。
- *
- * @param err - queryItems / BM25 抛出的错误
- * @returns true 时应静默降级纯向量
- */
-export function isBm25CorpusTooSmall(err: unknown): boolean {
-	// 安全路径:只抽取可预测字符串,避免 String(object) → "[object Object]"
-	const msg =
-		err instanceof Error
-			? err.message
-			: typeof err === 'string'
-				? err
-				: '';
-	return /document collection is too small for consolidation/i.test(msg)
-		|| /too small for consolidation/i.test(msg);
 }

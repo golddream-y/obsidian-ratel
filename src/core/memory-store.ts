@@ -28,7 +28,7 @@ const MEMORY_STORAGE_MAX_BYTES = 10 * 1024 * 1024;
 /**
  * 记忆索引搜索结果 — 在 VectorSearchResult 基础上补齐 index + text。
  *
- * 关键路径:searchIndex 把 vectra 的 hybridSearch 结果 + getDocumentText 回查合并,
+ * 关键路径:searchIndex 把 vectra 的向量检索结果 + getDocumentText 回查合并,
  * 给 LLM 返回可直接阅读的"片段 + 编号"格式,避免 LLM 再调 read_note 二次往返。
  */
 export interface MemorySearchResult {
@@ -36,7 +36,7 @@ export interface MemorySearchResult {
 	index: number;
 	/** 文档 ID(即记忆文件路径,如 `topics/GraphQL.md`)。 */
 	docId: string;
-	/** 相关性分数(由 vectra hybridSearch 给出)。 */
+	/** 相关性分数(由 vectra 向量检索给出)。 */
 	score: number;
 	/** 文档原文(由 getDocumentText 回查)。 */
 	text: string;
@@ -293,24 +293,24 @@ export class MemoryStore {
 	}
 
 	/**
-	 * 在记忆 vectra 索引上做混合搜索(向量 + BM25),并回查原文。
+	 * 在记忆 vectra 索引上做向量检索,并回查原文。
 	 *
 	 * 关键路径:
-	 * - 调用 `hybridSearch` 拿 TopK 文档级结果(docId + score + metadata)。
+	 * - 调用 `search` 拿 TopK 文档级结果(docId + score + metadata)。
+	 * - 关键词不由向量库提供(vectra 的 BM25 需按条目回读全文且中文分词不可用),精确词命中由 grep 承担。
 	 * - 对每条结果调 `getDocumentText` 回查原文,组装成 LLM 可直接引用的格式。
 	 * - 加 index 编号(从 1 开始),与 search_vault 工具的 index 语义一致。
 	 *
-	 * @param query - 用户查询文本(用于 BM25)。
-	 * @param queryVector - 查询向量(用于语义搜索,长度须等于 embedding dimensions)。
+	 * @param queryVector - 查询向量(长度须等于 embedding dimensions)。
 	 * @param topK - 返回结果上限。
 	 * @returns 记忆搜索结果数组,含 index + docId + score + text。
 	 * @throws memoryIndex 为 null 时抛 `tNow('error.memory.storeNotInit')`。
 	 */
-	async searchIndex(query: string, queryVector: number[], topK: number): Promise<MemorySearchResult[]> {
+	async searchIndex(queryVector: number[], topK: number): Promise<MemorySearchResult[]> {
 		if (!this.memoryIndex) {
 			throw new Error(tNow('error.memory.storeNotInit'));
 		}
-		const results: VectorSearchResult[] = await this.memoryIndex.hybridSearch(query, queryVector, topK);
+		const results: VectorSearchResult[] = await this.memoryIndex.search(queryVector, topK);
 
 		// 关键路径:逐条回查原文 — getDocumentText 返回 null 时降级为空串,避免 LLM 看到 null。
 		const enriched: MemorySearchResult[] = [];

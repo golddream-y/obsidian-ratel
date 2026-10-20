@@ -18,25 +18,22 @@ function makeTempBaseDir(): string {
 	return mkdtempSync(path.join(tmpdir(), 'ratel-memory-test-'));
 }
 
-/** 创建 VectraStore 的最小化 mock,记录 upsertItem / delete / hybridSearch 调用。 */
+/** 创建 VectraStore 的最小化 mock,记录 upsertItem / delete / search 调用。 */
 function createMockVectraStore(): VectraStore & {
 	upsertItemCalls: Array<{ docId: string; vector: number[]; metadata?: Record<string, unknown> }>;
 	deleteCalls: string[][];
-	hybridSearchCalls: Array<{ query: string; queryVector: number[]; topK: number }>;
+	searchCalls: Array<{ queryVector: number[]; topK: number }>;
 } {
 	const upsertItemCalls: Array<{ docId: string; vector: number[]; metadata?: Record<string, unknown> }> = [];
 	const deleteCalls: string[][] = [];
-	const hybridSearchCalls: Array<{ query: string; queryVector: number[]; topK: number }> = [];
+	const searchCalls: Array<{ queryVector: number[]; topK: number }> = [];
 	const mock = {
 		upsertItemCalls,
 		deleteCalls,
-		hybridSearchCalls,
+		searchCalls,
 		async upsert() {
 			// 关键路径:C2 修复后不再使用 vectraStore.upsert(它依赖内部 embeddings),
 			// 改用 upsertItem(预计算向量)。这里保留空实现以兼容可能的旧调用。
-		},
-		async search() {
-			return [];
 		},
 		async delete(docIds: string[]) {
 			deleteCalls.push(docIds);
@@ -55,8 +52,8 @@ function createMockVectraStore(): VectraStore & {
 		async beginFileUpdate() {},
 		async endFileUpdate() {},
 		async cancelFileUpdate() {},
-		async hybridSearch(query: string, queryVector: number[], topK: number) {
-			hybridSearchCalls.push({ query, queryVector, topK });
+		async search(queryVector: number[], topK: number) {
+			searchCalls.push({ queryVector, topK });
 			// 返回两条假结果,供 searchIndex 回查原文。
 			return [
 				{ docId: 'topics/GraphQL.md', score: 0.95, metadata: { path: 'topics/GraphQL.md' } },
@@ -66,7 +63,7 @@ function createMockVectraStore(): VectraStore & {
 		// 修复:VectraStore 还有 isIndexCreated / dropIndex / deleteByPath 等方法,
 		// 此处测试不调用,提供空实现以满足类型断言。
 	} as unknown as VectraStore;
-	return Object.assign(mock, { upsertItemCalls, deleteCalls, hybridSearchCalls });
+	return Object.assign(mock, { upsertItemCalls, deleteCalls, searchCalls });
 }
 
 /**
@@ -422,16 +419,16 @@ describe('MemoryStore', () => {
 	});
 
 	describe('searchIndex', () => {
-		it('searchIndex - 调 hybridSearch 并回查 getDocumentText - 返回 index + docId + score + text', async () => {
+		it('searchIndex - 调 search 并回查 getDocumentText - 返回 index + docId + score + text', async () => {
 			const mock = createMockVectraStore();
 			const store = new MemoryStore(baseDir, mock);
 
 			const queryVector = [0.1, 0.2, 0.3];
-			const results = await store.searchIndex('查询', queryVector, 5);
+			const results = await store.searchIndex(queryVector, 5);
 
-			// 关键路径:hybridSearch 被调用,参数透传。
-			expect(mock.hybridSearchCalls).toHaveLength(1);
-			expect(mock.hybridSearchCalls[0]).toEqual({ query: '查询', queryVector, topK: 5 });
+			// 关键路径:search 被调用,参数透传。
+			expect(mock.searchCalls).toHaveLength(1);
+			expect(mock.searchCalls[0]).toEqual({ queryVector, topK: 5 });
 
 			// 关键路径:每条结果含 index(从 1)+ docId + score + text(由 getDocumentText 回查)。
 			expect(results).toHaveLength(2);
@@ -451,7 +448,7 @@ describe('MemoryStore', () => {
 
 		it('searchIndex - memoryIndex 为 null - 抛 storeNotInit 错', async () => {
 			const store = new MemoryStore(baseDir);
-			await expect(store.searchIndex('q', [0.1], 5)).rejects.toThrow();
+			await expect(store.searchIndex([0.1], 5)).rejects.toThrow();
 		});
 	});
 

@@ -9,7 +9,7 @@
  */
 
 import { App, Modal, Setting } from 'obsidian';
-import { hasRerankApiKey } from '../../secrets/ratel-secrets';
+import { describeEffectiveRerank } from '../../settings';
 import { tNow } from '../../i18n';
 
 /**
@@ -24,6 +24,10 @@ interface PluginLike {
 		embedProvider: 'local' | 'api';
 		embedApiModel: string;
 		chatModelMaxTokens: number;
+		/** 精排开关 */
+		rerankEnabled: boolean;
+		/** 精排来源:专用模型或对话模型 */
+		rerankSource: 'native' | 'llm';
 	};
 }
 
@@ -68,7 +72,9 @@ export class ModelInfoModal extends Modal {
 
 		new Setting(this.contentEl)
 			.setName(tNow('chat.modelInfo.rerank'))
-			.setDesc(hasRerankApiKey(this.plugin.app) ? tNow('chat.modelInfo.rerankConfigured') : tNow('chat.modelInfo.rerankNotConfigured'));
+			// 关键路径:显示实际生效的精排来源(未启用 / 专用模型 / 对话模型),
+			// 缺能力时如实说明原因 — 不再只显示「已配置 / 未配置」。
+			.setDesc(describeEffectiveRerank(this.plugin.app, s));
 
 		new Setting(this.contentEl)
 			.addButton((btn) => {

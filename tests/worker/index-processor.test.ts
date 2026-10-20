@@ -26,6 +26,17 @@ const stubEmbedder: EmbeddingsModel = {
     },
 };
 
+/**
+ * 默认分块参数 — 1 字符 = 1 token,便于断言块数。
+ *
+ * 关键路径:分块参数由构造时注入(IndexProcessor 不再硬编码 500/100)。
+ */
+const DEFAULT_CHUNK_OPTIONS = {
+    maxTokens: 500,
+    overlapTokens: 100,
+    count: (t: string) => t.length,
+};
+
 describe('IndexProcessor', () => {
     let store: VectraStore;
     let processor: IndexProcessor;
@@ -46,7 +57,7 @@ describe('IndexProcessor', () => {
         embedCallCount = 0;
         store = new VectraStore(TMP_DIR, { embeddings: stubEmbedder, autoInit: true });
         await store.init();
-        processor = new IndexProcessor(store, mockEmbedding);
+        processor = new IndexProcessor(store, mockEmbedding, DEFAULT_CHUNK_OPTIONS);
     });
 
     afterEach(() => {
@@ -118,7 +129,7 @@ describe('IndexProcessor', () => {
                 throw new Error('ONNX 推理失败');
             },
         };
-        const failProcessor = new IndexProcessor(store, failEmbedding);
+        const failProcessor = new IndexProcessor(store, failEmbedding, DEFAULT_CHUNK_OPTIONS);
         const result = await failProcessor.indexIncremental({ path: 'fail.md', content: 'test content' });
         expect(result.errors).toBe(1);
         expect(result.indexed).toBe(0);
@@ -140,7 +151,7 @@ describe('IndexProcessor', () => {
             dimensions: 512,
             modelId: 'test:batch',
         };
-        const processor = new IndexProcessor(store, mockEmbed);
+        const processor = new IndexProcessor(store, mockEmbed, DEFAULT_CHUNK_OPTIONS);
 
         const files = [
             { path: 'a.md', content: '# A\nfirst paragraph.' },
@@ -169,7 +180,7 @@ describe('IndexProcessor', () => {
             dimensions: 512,
             modelId: 'test:batch',
         };
-        const processor = new IndexProcessor(store, mockEmbed);
+        const processor = new IndexProcessor(store, mockEmbed, DEFAULT_CHUNK_OPTIONS);
 
         // 第一次:长内容 → 假设 5 chunks
         await processor.indexBatch([{ path: 'foo.md', content: '# Title\n\n' + 'long content. '.repeat(200) }]);
@@ -184,6 +195,82 @@ describe('IndexProcessor', () => {
         const fooChunks = results.filter((r) => (r.metadata as { path?: string }).path === 'foo.md');
         // chunk 数应等于第二次写入的 chunkCount,不是两次累加。
         expect(fooChunks.length).toBe(result.chunkCounts['foo.md']!);
+
+        if (fs.existsSync(testDir)) fs.rmSync(testDir, { recursive: true });
+    });
+
+    it('setChunkOptions - 更新分块参数后按新预算切块(每条 index.* 消息可带新参数)', async () => {
+        // 关键路径:handler 每条索引消息都会调 setChunkOptions ——
+        // 用户在设置里改了分块大小后,下一次索引即生效,不需要重启 Worker。
+        processor.setChunkOptions({ maxTokens: 20, overlapTokens: 0, count: (t: string) => t.length });
+        await processor.indexIncremental({ path: 'x.md', content: '一'.repeat(100) });
+
+        const queryVector = Array(512).fill(0).map(() => Math.random());
+        const results = await store.search(queryVector, 100);
+        const chunks = results.filter((r) => (r.metadata as { path?: string }).path === 'x.md');
+        expect(chunks.length).toBeGreaterThan(1);
+    });
+
+    it('indexIncremental - 使用构造时传入的 token 预算 - 不再硬编码 500', async () => {
+        const testDir = path.join(__dirname, '../tmp/test-index-chunk-budget');
+        if (fs.existsSync(testDir)) fs.rmSync(testDir, { recursive: true });
+        fs.mkdirSync(testDir, { recursive: true });
+
+        const store = new VectraStore(testDir, { embeddings: stubEmbedder, autoInit: true });
+        await store.init();
+        const mockEmbed: EmbeddingPort = {
+            embed: vi.fn().mockImplementation(async (texts: string[]) =>
+                texts.map(() => Array(512).fill(0).map(() => Math.random())),
+            ),
+            dimensions: 512,
+            modelId: 'test:budget',
+        };
+        // 关键路径:20 token 预算 + 1 字符 1 token → 100 字符应切成多块
+        const processor = new IndexProcessor(store, mockEmbed, {
+            maxTokens: 20,
+            overlapTokens: 0,
+            count: (t: string) => t.length,
+        });
+
+        await processor.indexIncremental({ path: 'a.md', content: '一'.repeat(100) });
+
+        const queryVector = Array(512).fill(0).map(() => Math.random());
+        const results = await store.search(queryVector, 100);
+        const chunks = results.filter((r) => (r.metadata as { path?: string }).path === 'a.md');
+        expect(chunks.length).toBeGreaterThan(1);
+
+        if (fs.existsSync(testDir)) fs.rmSync(testDir, { recursive: true });
+    });
+
+    it('indexIncremental - 嵌入用带结构前缀的文本 - metadata 记 headingPath', async () => {
+        const testDir = path.join(__dirname, '../tmp/test-index-prefix');
+        if (fs.existsSync(testDir)) fs.rmSync(testDir, { recursive: true });
+        fs.mkdirSync(testDir, { recursive: true });
+
+        const store = new VectraStore(testDir, { embeddings: stubEmbedder, autoInit: true });
+        await store.init();
+        const embed = vi.fn().mockImplementation(async (texts: string[]) =>
+            texts.map(() => Array(512).fill(0).map(() => Math.random())),
+        );
+        const processor = new IndexProcessor(store, {
+            embed,
+            dimensions: 512,
+            modelId: 'test:prefix',
+        }, DEFAULT_CHUNK_OPTIONS);
+
+        await processor.indexIncremental({ path: 'h.md', content: '# 标题\n\n正文内容' });
+
+        // 关键路径:嵌入输入是带前缀的文本(前缀只进嵌入,正文保持原样)
+        const inputs = embed.mock.calls[0]![0] as string[];
+        expect(inputs.length).toBeGreaterThan(0);
+        expect(inputs[0]).toContain('正文内容');
+
+        // 关键路径:metadata 记 headingPath,供上层扩展页号与表头
+        const queryVector = Array(512).fill(0).map(() => Math.random());
+        const results = await store.search(queryVector, 10);
+        const meta = results.find((r) => (r.metadata as { path?: string }).path === 'h.md')!
+            .metadata as { headingPath?: unknown };
+        expect(Array.isArray(meta.headingPath)).toBe(true);
 
         if (fs.existsSync(testDir)) fs.rmSync(testDir, { recursive: true });
     });

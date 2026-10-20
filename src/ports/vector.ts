@@ -14,7 +14,7 @@ export interface VectorStore {
 	/**
 	 * 插入或更新单个文档(用 docId 作主键)。
 	 * @param docId - 文档唯一标识(本项目用 `<path>#chunk-<index>`)。
-	 * @param text - 文档原文(用于 BM25 索引与可能的回查)。
+	 * @param text - 文档原文(仅用于可能的回查；关键词检索不由向量库提供)。
 	 * @param metadata - 任意附加元数据(路径、chunk index、tag 等)。
 	 */
 	upsert(docId: string, text: string, metadata?: Record<string, unknown>): Promise<void>;
@@ -79,13 +79,13 @@ export interface VectorSearchResult {
 	/**
 	 * 引用编号,从 1 开始(W3 新增)。
 	 * search_vault 工具返回时填充,供 LLM 用 [1][2] 引用;
-	 * VectraStore.hybridSearch / Worker 协议层不填(默认 undefined)。
+	 * VectraStore.search / Worker 协议层不填(默认 undefined)。
 	 */
 	index?: number;
 	/**
 	 * 是否经过 Rerank 精排(W4 新增)。
 	 * MultiQuerySearcher 填充:true = 经 Reranker 精排;false = 仅 RRF 融合。
-	 * VectraStore.hybridSearch / Worker 协议层不填(默认 undefined)。
+	 * VectraStore.search / Worker 协议层不填(默认 undefined)。
 	 */
 	reranked?: boolean;
 }

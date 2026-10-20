@@ -69,7 +69,12 @@ describe('RAG Pipeline Integration', () => {
 
 		// 2. 准备 markdown 内容并分块。
 		const markdown = '# Section 1\nContent about cats\n\n# Section 2\nContent about dogs';
-		const chunks = chunkMarkdown(markdown, 100, 10);
+		// 关键路径:新签名按 token 预算切分,count 用字符上界估算(宁可块小也不截断)。
+		const chunks = chunkMarkdown(markdown, {
+			maxTokens: 100,
+			overlapTokens: 10,
+			count: (t: string) => t.length,
+		});
 		expect(chunks.length).toBeGreaterThanOrEqual(1);
 
 		// 3. 用 EmbeddingApi 走一遍管道(后续 VectraStore 内部用同样的 mock 向量)。
