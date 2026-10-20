@@ -1,7 +1,7 @@
 # 检索器
 
 > 领域:RAG | 问答链路(同步前台)
-> 查询向量化 → 向量检索 → BM25 → RRF → 重排 → 图谱 1 跳扩邻
+> 查询向量化 → 向量检索 → 多查询 RRF → 重排 → 图谱 1 跳扩邻
 
 ---
 
@@ -37,14 +37,15 @@
 - 避免 chunk 原文过长污染上下文窗口
 - 模型自主判断哪些相关,减少无关信息
 
-### 2.3 渐进增强:向量 → 混合 → 重排
+### 2.3 渐进增强:向量 → 多查询融合 → 重排 → 图谱
 
-**决策**:检索能力分三阶段递进,每阶段独立可用。
+**决策**:检索能力分阶段递进,每阶段独立可用。
 
 **原因**:
-- 向量检索即可满足基本需求,不依赖 BM25/RRF/Reranker
-- 混合检索(BM25 + 向量)提升召回率约 17%
+- 向量检索即可满足基本需求,不依赖 RRF/Reranker
+- 多查询 + RRF 提升召回,成本是一次额外的改写调用
 - Reranker 进一步提升精度,但需要额外 API
+- 关键词不在召回链路里:精确字面由 `grep` 工具承担(见 §3.2)
 
 ### 2.4 双通道确认:链接提议,向量裁决
 
@@ -59,7 +60,7 @@
 
 ## 3. 检索流程
 
-### 3.1 向量检索(单路降级)
+### 3.1 向量检索(现状基线)
 
 ```mermaid
 sequenceDiagram
@@ -70,7 +71,7 @@ sequenceDiagram
     participant WP as Worker
     participant VS as VectraStore
 
-    Note over AL,VS: 向量检索 — 单路(降级路径,见 §3.2 混合检索)
+    Note over AL,VS: 向量检索 — 当前唯一的召回路径
 
     AL->>SV: execute({ query, topK })
     SV->>EL: embed(query)
@@ -95,41 +96,19 @@ interface SearchVaultResult {
 }
 ```
 
-### 3.2 混合检索(向量 + BM25,现状基线)
+### 3.2 关键词检索:不在召回链路里
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant AL as Agent Loop
-    participant SV as search_vault
-    participant EL as EmbeddingLocal
-    participant WP as Worker
-    participant VS as VectraStore
+当前召回只有向量一路。精确字面、编号、金额这类需求由 `grep` 工具单独承担,不参与 `search_vault` 的融合与排序。
 
-    Note over AL,VS: 混合检索 — 向量 + BM25(vectra 内置融合)
+**为什么移除 vectra 的 BM25**(2026-10-20):
 
-    AL->>SV: execute({ query, topK })
-    SV->>EL: embed(query)
-    EL-->>SV: queryVector
-    SV->>WP: hybrid.search({ query, queryVector, topK })
-    WP->>VS: queryItems(queryVector, query, topK×10, undefined, isBm25=true)
-    Note over VS: vectra 内部:向量搜索 + BM25<br/>自动融合(无需手动 RRF)
-    VS-->>WP: chunkResults[]
-    WP->>WP: chunk→doc 聚合
-    WP-->>SV: SearchVaultResult[]
-    SV-->>AL: [{ docId, score, metadata, index }]
-```
+| 问题 | 事实 |
+|---|---|
+| 恒为空转 | BM25 分支要求条目带 `metadata.documentId / startPos / endPos` 才能回读全文;索引写入走 `upsertItem`,只写 `{path, chunkIndex, startOffset}`,该分支被静默跳过,贡献恒为 0 |
+| 每次查询重建 | `queryItems(..., isBm25=true)` 内部重建 BM25 引擎并遍历全部条目回读文档,复杂度 O(条目数)/ 查询 |
+| 中文不可用 | 分词依赖 `wink-eng-lite-web-model`,是英文停用词与词干模型 |
 
-**vectra 内置混合搜索**:
-
-```
-LocalIndex.queryItems(vector, query, topK, filter?, isBm25?)
-```
-
-- 第 2 参数传 query 文本(原 search 传空串,BM25 未启用)
-- 第 5 参数 `isBm25=true` 启用 BM25 追加结果
-- vectra 内部基于 `wink-bm25-text-search` 库,自动融合向量 + 关键词结果
-- 主线程无需手动两路搜索 + RRF,降低复杂度
+移除范围:`hybrid.search` 请求/响应协议、`VectraStore.hybridSearch`、`IndexProcessor.hybridSearch`;调用点统一走 `VectraStore.search`。若将来需要"可排序的关键词召回",应自建倒排索引(如 MiniSearch / Orama),不复用 vectra 的 BM25。
 
 **返回格式**(含引用编号,供 LLM 用 [1][2] 引用):
 
@@ -163,7 +142,7 @@ sequenceDiagram
 
     MQS->>MQS: Query Rewrite 生成 2-3 个变体
     loop 每个变体查询
-        MQS->>MQS: embedding + hybrid.search
+        MQS->>MQS: embedding + vector.search
     end
     MQS->>RRF: rrf(多份结果, k=60)
     RRF-->>MQS: fusedResults[topK×2]
@@ -179,7 +158,13 @@ sequenceDiagram
     SV-->>AL: [{ docId, score, metadata, index, reranked? }]
 ```
 
-**Reranker 触发条件**:`hasRerankApiKey(app) === true`(钥匙串 `ratel-rerank-bailian` 非空)。无 key 时跳过 Rerank,降级为仅 RRF 融合。
+**Reranker 触发条件**(S-RETRIEVAL-QUALITY §4.4):
+
+- 开关 `rerankEnabled`(默认开)与来源 `rerankSource`(`native` / `llm`)决定实际来源,两种来源**互斥、不叠加、不回落**。
+- `native` 需要钥匙串 `ratel-rerank-bailian`;`llm` 用当前对话模型(沿用已配置供应商,不新增外发目的地)。
+- 缺能力时如实降级为仅 RRF 融合,并在设置页显示原因。
+- 候选 ≤ 3 条时直接返回 RRF 顺序,**不调精排也不读全文**(`MIN_RERANK_CANDIDATES`)。
+- 精排以工厂注入,每次检索解析一次:用户在设置里切换后立即生效,无需重载插件。
 
 ### 3.4 图谱 1 跳扩邻(P-GRAPH-EXPAND)
 
@@ -226,45 +211,38 @@ graph LR
         V["向量检索<br/>cosine similarity<br/>topK=5"]
     end
 
-    subgraph "阶段 2 — 混合检索"
-        V2["向量检索 topK×3"]
-        B["BM25 检索 topK×3"]
-        R["vectra 内置融合 → topK"]
-        V2 --> R
-        B --> R
+    subgraph "阶段 2 — 多查询融合"
+        R2["多查询 RRF 融合 topK×2"]
     end
 
     subgraph "阶段 3 — 重排"
-        R2["多查询 RRF 融合 topK×2"]
         RR["Reranker → topK"]
-        R2 --> RR
     end
 
     subgraph "阶段 4 — 查询优化"
         Q["Query Rewrite"]
         H["HyDE"]
         P["Parent Document<br/>Retrieval"]
-        Q --> V2
-        H --> V2
-        P --> R2
     end
 
     subgraph "阶段 5 — 图谱扩邻"
         GE["1 跳邻居<br/>候选池双通道 + hub 双向挡<br/>≤5 条 via=graph"]
     end
 
-    V --> V2
-    R --> R2
-    RR --> Q
+    V --> R2
+    Q --> R2
+    H --> R2
+    P --> R2
+    R2 --> RR
     RR --> GE
 ```
 
 | 阶段 | 能力 | 召回率提升 | 精度提升 | 依赖 |
 |---|---|---|---|---|
 | 1 向量检索 | 基线 | — | — | Embedding |
-| 2 混合检索 | +BM25(vectra 内置) | ~17% | — | BM25 索引 |
-| 3 重排 | +Reranker + 多查询 RRF | — | ~10-20% | Reranker API |
-| 4 查询优化 | +Query Rewrite +HyDE | ~5-10% | ~5-10% | LLM 额外调用 |
+| 2 多查询融合 | +Query Rewrite + RRF | ~5-10% | — | LLM 额外调用 |
+| 3 重排 | +Reranker | — | ~10-20% | Reranker API |
+| 4 查询优化 | +HyDE + Parent Document Retrieval | ~5-10% | ~5-10% | LLM 额外调用 |
 | 5 图谱扩邻 | +1 跳邻居(via=graph) | 补「语义沾边但未被向量召回」的关联笔记 | 双通道门槛保精度 | metadataCache(零成本) |
 
 ---
@@ -276,7 +254,7 @@ graph LR
 ```typescript
 {
   name: 'search_vault',
-  description: '在知识库中搜索与查询相关的笔记。使用多查询混合检索(向量+BM25)与可选重排,并沿正文链接补充 1 跳邻居(metadata.via 为 graph);返回带 index 编号的结果;用 read_note 读取全文。回答时用返回的 index 写成 [n] 引用。',
+  description: '在知识库中搜索与查询相关的笔记。使用多查询语义检索与可选重排,并沿正文链接补充 1 跳邻居(metadata.via 为 graph);返回带 index 编号的结果;精确字面或正则用 grep;用 read_note 读取全文。回答时用返回的 index 写成 [n] 引用。',
   parameters: {
     query: {
       type: 'string',
@@ -312,7 +290,7 @@ graph LR
 
 | 与...的接口 | 方向 | 协议 |
 |---|---|---|
-| [vector-index](vector-index.md) | 依赖 | VectraStore.hybridSearch() 提供混合检索 |
+| [vector-index](vector-index.md) | 依赖 | VectraStore.search() 提供向量检索 |
 | [model-management](../llm/model-management.md) | 依赖 | EmbeddingPort.embed() 查询向量化 + RerankerPort.rerank() 重排 |
 | [agent/tools](../agent/tools.md) | 被调用 | search_vault 作为工具注册 |
 | [agent/context-manager](../agent/context-manager.md) | 下游 | 检索结果经 read_note 后注入上下文 |

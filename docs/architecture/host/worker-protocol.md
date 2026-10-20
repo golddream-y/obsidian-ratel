@@ -75,12 +75,11 @@ graph LR
 
 ```typescript
 type WorkerRequest =
-  | { type: 'index.full'; payload: { files: Array<{ path: string; content: string }> } }
-  | { type: 'index.incremental'; payload: { file: { path: string; content: string } } }
-  | { type: 'index.batch'; payload: { files: Array<{ path: string; content: string }> } }
+  | { type: 'index.full'; payload: { files: Array<{ path: string; content: string }>; chunkOptions?: ChunkOptionsPayload } }
+  | { type: 'index.incremental'; payload: { file: { path: string; content: string }; chunkOptions?: ChunkOptionsPayload } }
+  | { type: 'index.batch'; payload: { files: Array<{ path: string; content: string }>; chunkOptions?: ChunkOptionsPayload } }
   | { type: 'index.delete'; payload: { filePath: string } }
   | { type: 'vector.search'; payload: { queryVector: number[]; topK: number; filter?: SearchFilter } }
-  | { type: 'hybrid.search'; payload: { query: string; queryVector: number[]; topK: number } }
   | { type: 'vector.upsert'; payload: { docId: string; text: string; metadata: Record<string, unknown> } }
   | { type: 'vector.delete'; payload: { docIds: string[] } }
   | { type: 'index.status'; payload: Record<string, never> };
@@ -94,7 +93,6 @@ type WorkerResponse =
   | { type: 'index.done'; payload: { indexed: number; errors: number } }
   | { type: 'index.batch.done'; payload: { indexed: number; errors: number; chunkCounts: Record<string, number> } }
   | { type: 'vector.search.result'; payload: VectorSearchResult[] }
-  | { type: 'hybrid.search.result'; payload: VectorSearchResult[] }
   | { type: 'vector.upsert.done'; payload: { docId: string } }
   | { type: 'vector.delete.done'; payload: { count: number } }
   | { type: 'index.status.result'; payload: { totalDocs: number; lastIndexTime: number } }
@@ -107,12 +105,11 @@ type WorkerResponse =
 
 | 请求类型 | 用途 | 响应类型 | 说明 |
 |---|---|---|---|
-| `index.full` | 全量索引 | `index.done` | 主线程已读取+分块,Worker 只做向量化+存储 |
+| `index.full` | 全量索引 | `index.done` | 随消息带 `chunkOptions`(token 预算与重叠);缺失时 Worker 用兜底值 |
 | `index.incremental` | 增量索引单文件 | `index.done` | 同上,单文件粒度 |
 | `index.batch` | 批量增量索引(smart reindex) | `index.batch.done` | 变更文件批处理,reembed 前 deleteByPath 清旧 chunk,返回每文件 chunkCount |
 | `index.delete` | 删除文件索引 | `vector.delete.done` | 按 filePath 删除 |
 | `vector.search` | 向量搜索(降级用) | `vector.search.result` | 主线程已向量化 query,Worker 只做余弦相似度 |
-| `hybrid.search` | 混合搜索(向量 + BM25) | `hybrid.search.result` | 传 query + queryVector,启用 vectra `isBm25` |
 | `vector.upsert` | 直接 upsert | `vector.upsert.done` | 跳过分块,直接写向量(内部用) |
 | `vector.delete` | 按 docId 批量删 | `vector.delete.done` | |
 | `index.status` | 查询索引状态 | `index.status.result` | totalDocs + lastIndexTime |

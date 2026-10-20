@@ -104,7 +104,7 @@ sequenceDiagram
     CV->>AL: user_message
     AL->>AL: 决定需要检索
     AL->>SV: execute({ query, topK })
-    SV->>SV: 改写 → 多查询混合检索 → RRF → Rerank(可选)<br/>→ 图谱 1 跳扩邻(via=graph,候选池双通道)
+    SV->>SV: 改写 → 多查询向量检索 → RRF → Rerank(可选)<br/>→ 图谱 1 跳扩邻(via=graph,候选池双通道)
     SV-->>AL: [{ docId, score, metadata, index }]
     AL->>RN: execute({ path })
     RN-->>AL: 文档内容
@@ -233,7 +233,7 @@ graph TB
 | 领域 | 子系统 | 职责 | 详细文档 |
 |---|---|---|---|
 | **RAG** | vector-index | 数据预处理:文档发现 → 分块 → 向量化 → 存储 → 增量同步 | [rag/vector-index.md](rag/vector-index.md) |
-| **RAG** | retriever | 检索器:查询向量化 → 向量检索 → BM25 → RRF → 重排 → 图谱 1 跳扩邻 | [rag/retriever.md](rag/retriever.md) |
+| **RAG** | retriever | 检索器:查询向量化 → 向量检索 → 多查询 RRF → 重排 → 图谱 1 跳扩邻 | [rag/retriever.md](rag/retriever.md) |
 | **Agent** | chat | 对话体验(端到端):用户输入 → Agent Loop → 流式渲染 | [agent/chat.md](agent/chat.md) |
 | **Agent** | capability-surface | 能力池:统一意图选择 + 按 kind 路由执行 + 工具生命周期(注册→发现→执行→销毁) | [agent/capability-surface.md](agent/capability-surface.md) |
 | **Agent** | agent-loop | 主循环:思考 → 调工具 → 拿结果 → 生成回答 | [agent/agent-loop.md](agent/agent-loop.md) |
@@ -430,7 +430,7 @@ src/
     context-manager.ts             #   Context Manager (组装上下文)
     hooks.ts                       #   Hooks 注册表 + 执行
     memory-store.ts                #   MemoryStore (用户记忆读写 + 向量索引 upsert)
-    multi-query-searcher.ts        #   多查询混合检索编排 (searchWithPool 暴露候选池)
+    multi-query-searcher.ts        #   多查询向量检索编排 (searchWithPool 暴露候选池)
     graph-expander.ts              #   图谱 1 跳扩邻 (双通道确认 + hub 双向挡, ADR-013)
 
   i18n/                            # 国际化 (自建 svelte/store 方案)
@@ -469,7 +469,7 @@ src/
 
   tools/                           # Vault 工具集 (23 个)
     read-note.ts                   #   读取笔记全文 + metadata + backlinks
-    search-vault.ts                #   向量+BM25 混合检索 + 图谱 1 跳扩邻 (via=graph)
+    search-vault.ts                #   向量检索 + 图谱 1 跳扩邻 (via=graph)
     grep.ts                        #   正则搜索
     glob.ts                        #   文件名匹配
     list-files.ts                  #   列出文件
@@ -504,7 +504,7 @@ src/
     index.ts                       #   InlineWorker 入口 (索引调度)
     handler.ts                     #   Worker 消息分发
     index-processor.ts             #   索引批处理 (分块 → 批量 embed → upsert)
-    chunker.ts                     #   Markdown 分块 (500 token + 100 overlap)
+    chunker.ts                     #   Markdown 分块 (token 预算 + 结构前缀)
     inline-worker.ts               #   InlineWorker 实现 (主线程 Worker 模拟)
     embedding-worker.ts            #   Embedding Web Worker 入口 (ONNX 推理)
     manager.ts                     #   WorkerManager (协议 / 超时)
@@ -540,8 +540,8 @@ src/
 graph LR
     U["用户问题"] --> intent["7 意图分类"]
     intent --> prompt["8 动态提示词"]
-    prompt --> hybrid["9 混合检索"]
-    hybrid --> fuse["10 多查询融合"]
+    prompt --> vec["9 向量检索"]
+    vec --> fuse["10 多查询融合"]
     fuse --> rerank["11 重排(可选)"]
     rerank --> expandA
 
@@ -563,7 +563,7 @@ graph LR
         embed --> worker["4 Worker 通信"] --> store["6 向量存储"]
     end
 
-    store ==>|"向量索引 + 候选池"| hybrid
+    store ==>|"向量索引 + 候选池"| vec
     store -.->|"候选池"| expandB
 
     %% 隐形锚点:把「索引准备」压到主链下方(从检索段下方开始),避免被误读为流程起点
@@ -587,10 +587,10 @@ graph LR
 | 3 | Embedding 注入 | [llm/model-management](llm/model-management.md) | EmbeddingLocal.setExtractor(),主线程 + Worker 共用 |
 | 4 | Worker 通信 | [host/worker-protocol](host/worker-protocol.md) | WorkerManager + handler,优先 Node Worker Threads,降级 InlineWorker |
 | 5 | 文档分块 | [rag/vector-index](rag/vector-index.md) | chunker.ts 三级回退(标题→段落→句子) |
-| 6 | 向量存储 | [rag/vector-index](rag/vector-index.md) | VectraStore upsert / hybridSearch / delete |
+| 6 | 向量存储 | [rag/vector-index](rag/vector-index.md) | VectraStore upsert / search / delete |
 | 7 | 意图分类 | [agent/agent-loop](agent/agent-loop.md) | 一次快速 LLM 调用,判断 'rag' \| 'direct' |
 | 8 | 动态提示词 | [agent/prompt-management](agent/prompt-management.md) | Composer 按意图组装中文 system;工具列表与 schema 同源 |
-| 9 | 混合检索 | [rag/retriever](rag/retriever.md) | search_vault 调 vectra isBm25 混合搜索,返回带 index 编号 |
+| 9 | 向量检索 | [rag/retriever](rag/retriever.md) | search_vault 调 vectra 向量搜索,返回带 index 编号 |
 | 10 | 多查询融合 | [rag/retriever](rag/retriever.md) | Query Rewrite 生成变体 + RRF 融合多份结果 |
 | 11 | 重排 | [rag/retriever](rag/retriever.md) | Reranker 百炼 API 精排(可选,钥匙串有 key 时启用) |
 | 12 | 图谱扩邻 | [rag/retriever](rag/retriever.md) | GraphExpander 1 跳邻居(候选池双通道 + hub 双向挡,via=graph;ADR-013) |
@@ -625,7 +625,7 @@ graph LR
 | 形态 | 纯 Obsidian 插件 | 深度结合 Obsidian API，零额外部署 |
 | 重活儿 | Worker Threads | 主线程零阻塞，Obsidian 不卡 |
 | UI 框架 | Svelte 5 | 轻量、Obsidian 生态主流、官方推荐 |
-| 向量库 | vectra | 零 native / Electron 支持 / 内置文档索引+分块+混合检索+FolderWatcher / 33k 周下载 |
+| 向量库 | vectra | 零 native / Electron 支持 / 内置文档索引+分块+FolderWatcher / 33k 周下载 |
 | 元数据 | JSON (Obsidian loadData/saveData) | 零依赖 / 不用解决 Worker 里 WASM 加载问题 |
 | 嵌入模型 | BGE-M3 | 中文好、免费、MTEB 强 |
 | 聊天模型（默认） | DeepSeek-V3 | 便宜、中文好、可切 Claude |
@@ -634,7 +634,7 @@ graph LR
 | Obsidian API | ObsidianVault facade (TS) | 可测试 / 可追踪 / 变了只改一处 |
 | 文件监听 | Obsidian `app.vault.on()` | 比 chokidar 更准（Obsidian 内部事件） |
 | 索引策略 | 增量 + SHA-256 hash | 1k 笔记首扫 5-10 分钟，增量毫秒级 |
-| 块大小 | 500 token + 100 overlap | 召回粒度平衡 |
+| 块大小 | token 预算(上限 448,给前缀与特殊 token 留 64)+ 100 token 重叠 | 不被模型静默截断,块带结构前缀 |
 | 插件分发 | 社区商店 + GitHub Release | 用户以商店搜索为主;开发者可读 release 资产 |
 | Worker 路径 | `path.join(__dirname, 'worker.js')` | CJS 环境下 __dirname 可用 |
 | 环境感知 | WorkspacePort + system 时间注入 | 活动文件不塞 VaultPort;「今天」零工具成本 |

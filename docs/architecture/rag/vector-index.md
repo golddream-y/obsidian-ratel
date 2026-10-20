@@ -163,7 +163,7 @@ sequenceDiagram
             alt manifest 损坏/不存在
                 IM->>WP: index.full(全量)
                 IM->>MF: save
-            else 全局参数变(embedModelId/chunkSize/chunkOverlap)
+            else 全局参数变(embedModelId/chunkSize/chunkOverlap/chunkerVersion)
                 IM->>VS: dropIndex()
                 IM->>MF: invalidate
                 IM->>WP: index.full(全量)
@@ -401,6 +401,6 @@ graph TB
 | 与...的接口 | 方向 | 协议 |
 |---|---|---|
 | [model-management](../llm/model-management.md) | 依赖 | EmbeddingsModel 实例注入 Worker |
-| [retriever](retriever.md) | 提供 | VectraStore.hybridSearch() 供混合检索 |
+| [retriever](retriever.md) | 提供 | VectraStore.search() 供向量检索 |
 | [obsidian-integration](../host/obsidian-integration.md) | 依赖 | Vault 事件 + 文件读取 |
 | [persistence](../host/persistence.md) | 依赖 | 索引目录 + .gitignore |

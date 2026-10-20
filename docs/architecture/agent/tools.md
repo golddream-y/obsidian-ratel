@@ -159,7 +159,7 @@ interface ToolDefinition {
 | 属性 | 值 |
 |---|---|
 | name | `search_vault` |
-| description | 在知识库中搜索与查询相关的笔记。使用多查询混合检索(向量+BM25)与可选重排,并沿正文链接补充 1 跳邻居(metadata.via 为 graph);返回带 index 编号的结果;用 read_note 读取全文。回答时用返回的 index 写成 [n] 引用。 |
+| description | 在知识库中搜索与查询相关的笔记。使用多查询语义检索与可选重排,并沿正文链接补充 1 跳邻居(metadata.via 为 graph);返回带 index 编号的结果;精确字面或正则用 grep;用 read_note 读取全文。回答时用返回的 index 写成 [n] 引用。 |
 | readOnly | true |
 | 参数 | `query: string`, `topK: number`(默认 5) |
 | 返回 | `[{ docId, score, metadata, index, reranked? }]`,尾部可追加 `via=graph` 图谱邻居(共享 [n] 编号) |
@@ -178,7 +178,7 @@ sequenceDiagram
 
     AL->>SV: execute({ query, topK })
     SV->>MQS: searchWithPool(query, topK)
-    Note over MQS: 改写 → 多查询 hybrid.search → RRF → Rerank(可选)
+    Note over MQS: 改写 → 多查询 vector.search → RRF → Rerank(可选)
     MQS-->>SV: { results[topK], candidatePaths }
     SV->>SV: enrich(tags / backlinkCount) + 加 index 编号
     SV->>GE: expand(hits, { allowedPaths: candidatePaths })

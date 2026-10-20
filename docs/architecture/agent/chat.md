@@ -398,7 +398,7 @@ sequenceDiagram
 | [agent-loop](agent-loop.md) | 包含 | Chat 是门面,agent-loop 是引擎。agent-loop 保留循环核心,`search-result-mapper.ts` 移出为独立模块做 search_vault 结果扁平化 |
 | [context-manager](context-manager.md) | 包含 | 上下文管理是 Chat 的内部机制。`getUsage()` 调 `tokens/token-estimator` 做中英混合估算 |
 | [tools](tools.md) | 包含 | 工具是 Chat 的能力扩展 |
-| [rag/retriever](../rag/retriever.md) | 依赖 | search_vault 工具调用检索器(混合搜索) |
+| [rag/retriever](../rag/retriever.md) | 依赖 | search_vault 工具调用检索器(向量召回 + 可选精排) |
 | [llm/streaming](../llm/streaming.md) | 依赖 | LLM 流式协议。适配器解析 DeepSeek `reasoning_content` / Claude thinking block 为 `ChatDelta.reasoning`,解析 `usage` 为 `ChatDelta.usage` |
 | [llm/model-management](../llm/model-management.md) | 依赖 | `tokens/probe-model.ts` 测试连接推断 context length,填充 `settings.chatModelMaxTokens` |
 | [host/obsidian-integration](../host/obsidian-integration.md) | 依赖 | ItemView + Svelte mount |
