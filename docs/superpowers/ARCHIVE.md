@@ -9,23 +9,27 @@
 
 ## 统计
 
-**按月归档记录数**(共 97 条,84 个目录)
+> **统计口径**:「条」= 下方按月索引表的**数据行数**(同一 spec 多次归档按多行计);「目录」= `archive/` 下的目录个数。两者分别统计,不相加。
+
+**按月归档记录数**(共 95 条,85 个目录)
 
 ```mermaid
 xychart-beta
     title "按月归档记录数"
     x-axis ["2026-06", "2026-07", "2026-08", "2026-09", "2026-10"]
-    y-axis "记录数" 0 --> 26
-    bar [17, 23, 26, 21, 10]
+    y-axis "记录数" 0 --> 25
+    bar [17, 23, 25, 19, 11]
 ```
 
 **归档形态分布**
 
+> 形态按索引表「备注」列的标注判定:含 `Superseded` 记为被取代,含 `Abandoned` 记为未实施/中途废弃,其余记为完成归档。三者之和等于总条数。
+
 ```mermaid
 pie showData title 归档形态分布
-    "完成归档" : 87
-    "Abandoned(未实施/中途废弃)" : 4
-    "Superseded(被取代)" : 6
+    "完成归档" : 83
+    "Abandoned(未实施/中途废弃)" : 3
+    "Superseded(被取代)" : 9
 ```
 
 ---
@@ -44,6 +48,7 @@ pie showData title 归档形态分布
 | S-NOTE-MOVE | [archive/S-NOTE-MOVE/](archive/S-NOTE-MOVE/) | 10-11 | 移动走 renameFile、复制走 adapter.copy，残缺参数不执行。随 1.0.0；`08c4a78` |
 | S-MODEL-CATALOG | [archive/S-MODEL-CATALOG/](archive/S-MODEL-CATALOG/) | 10-11 | 供应商名单；按供应商+模型 id 查窗口与单次输出。随 1.0.0；`4521c02`。缓存 TTL 后归 S-CATALOG-FRESH |
 | S-AGENTS-GATE | [archive/S-AGENTS-GATE/](archive/S-AGENTS-GATE/) | 10-11 | **Superseded**：未实施即被 S-AGENTS-INJECT 取代（「先拦住返回 Error」改「第一次就执行」）；补录归档 |
+| S-RUN-STATUS-PHASES | [archive/S-RUN-STATUS-PHASES/](archive/S-RUN-STATUS-PHASES/) | 10-15 | 忙态行拆为本地准备/在途/撰写三阶段诗意文案；新增 `message.request` 事件标记请求出站。随 1.1.1；`d3b0d87` |
 
 ## 2026-09
 
