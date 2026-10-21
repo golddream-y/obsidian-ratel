@@ -1,4 +1,4 @@
-# Ratel
+![Ratel — 让知识积累，让创造发生。知识工作区创意示意图。](assets/readme/hero-zh-CN-rounded.webp)
 
 [English](README.md) · **简体中文**
 

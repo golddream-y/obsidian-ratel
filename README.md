@@ -1,4 +1,4 @@
-# Ratel
+![Ratel — Let knowledge grow. Let creation happen. A connected note workspace, illustrated.](assets/readme/hero-en-rounded.webp)
 
 **English** · [简体中文](README.zh-CN.md)
 
