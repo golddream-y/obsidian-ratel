@@ -19,7 +19,7 @@
 
 | ID | 文件 | 状态 | 创建日期 | 备注 |
 |---|---|---|---|---|
-| S-RETRIEVAL-QUALITY | [2026-10-20-retrieval-quality.md](specs/2026-10-20-retrieval-quality.md) | Active | 2026-10-20 | 已实现（代码 8e82abc）：分块改 token 预算并真正生效、结构前缀、精排支持专用模型与对话模型双来源及候选不足跳过；升级触发一次全量重建。待发版 |
+| S-RETRIEVAL-QUALITY | [2026-10-20-retrieval-quality.md](specs/2026-10-20-retrieval-quality.md) | Active | 2026-10-20 | 已实现（代码 8e82abc、fd63107）：分块改 token 预算并真正生效、结构前缀、精排支持专用模型与对话模型双来源及候选不足跳过；分块大小改为档位选择并显示实际生效值；升级触发一次全量重建。待发版 |
 | S-MULTIFORMAT-FILES | [2026-10-13-multiformat-files-design.md](specs/2026-10-13-multiformat-files-design.md) | Draft | 2026-10-13 | 技术候选；退回目标与需求讨论，未确认范围，不作为实施依据 |
 | S-MARKETING-VIDEO | [2026-10-11-marketing-video-design.md](specs/2026-10-11-marketing-video-design.md) | Active | 2026-10-11 | 长期宣传工程；Remotion 独立依赖、双语首片和首页素材；尚未实施 |
 | S-COMPACT-V3 | [2026-10-01-compact-v3-design.md](specs/2026-10-01-compact-v3-design.md) | Active | 2026-10-01 | 压缩重设计。P1 已合入（5761c19、e588efe、546df2d）；2026-10-11 复核：P5 砍除、P2 前置复测+output 真值、P3 对齐 Goal/约束会话化；P1F 已完成（64db02a、e33f1a3，随 1.1.0 发版）；P2~P4 未启动 |
