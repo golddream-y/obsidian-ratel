@@ -502,6 +502,29 @@ button.ratel-perm-btn:focus-visible {
 	border-color: var(--interactive-accent);
 	background: color-mix(in srgb, var(--interactive-accent) 12%, transparent);
 }
+/* 分块档位按钮 — 与外观页的方案按钮同一视觉 */
+.ratel-chip-row {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin: 8px 0;
+}
+.ratel-chip {
+	padding: 4px 10px;
+	border-radius: 6px;
+	border: 1px solid var(--background-modifier-border);
+	background: var(--background-secondary);
+	color: var(--text-normal);
+	cursor: pointer;
+}
+.ratel-chip.is-selected {
+	border-color: var(--interactive-accent);
+	background: color-mix(in srgb, var(--interactive-accent) 12%, transparent);
+}
+.ratel-chip-number {
+	width: 90px;
+	margin-top: 4px;
+}
 .ratel-appearance-swatches {
 	display: flex;
 	flex-wrap: wrap;

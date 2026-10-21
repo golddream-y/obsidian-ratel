@@ -140,9 +140,10 @@ describe('validateConfigValue', () => {
 		expect(validateConfigValue('chunkSize', 50).ok).toBe(false);
 	});
 
-	it('数值 - chunkSize 边界 100 与 1000 - 通过', () => {
-		expect(validateConfigValue('chunkSize', 100).ok).toBe(true);
-		expect(validateConfigValue('chunkSize', 1000).ok).toBe(true);
+	it('数值 - chunkSize 边界 64 与 448 - 通过,超出拒绝', () => {
+		expect(validateConfigValue('chunkSize', 64).ok).toBe(true);
+		expect(validateConfigValue('chunkSize', 448).ok).toBe(true);
+		expect(validateConfigValue('chunkSize', 1000).ok).toBe(false);
 	});
 
 	it('数值 - chunkOverlap 边界 0 与越界 201 - 边界通过越界拒绝', () => {

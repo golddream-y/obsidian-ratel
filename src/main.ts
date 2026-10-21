@@ -11,6 +11,7 @@ import { FileSystemAdapter, Notice, Plugin, TFile, apiVersion, requestUrl } from
 import fs, { readdirSync } from 'node:fs';
 import path from 'node:path';
 import { type RatelVaultSettings, DEFAULT_SETTINGS, RatelVaultSettingTab, normalizeContextLengthSettings, applyBuiltinToolPermissionDefaults } from './settings';
+import { normalizeChunkSizeSettings, CHUNK_SIZE_MAX_TOKENS } from './ui/tokens/chunk-size-presets';
 import { normalizeChatPreset } from './settings/chat-preset';
 import { normalizeChatProfiles } from './settings/chat-profiles';
 import { normalizeAppearanceSettings } from './ui/appearance/normalize-appearance-settings';
@@ -1520,7 +1521,7 @@ export default class RatelVaultPlugin extends Plugin {
 		// 词表约 109KB,精确计数在 Worker 侧做,主线程再建一份纯属浪费内存。
 		const counter = createTokenCounter(null);
 		return {
-			maxTokens: Math.min(this.settings.chunkSize, counter.maxInputTokens - TOKEN_BUDGET_RESERVE),
+			maxTokens: Math.min(this.settings.chunkSize, counter.maxInputTokens - TOKEN_BUDGET_RESERVE, CHUNK_SIZE_MAX_TOKENS),
 			overlapTokens: this.settings.chunkOverlap,
 		};
 	}
@@ -1665,6 +1666,8 @@ export default class RatelVaultPlugin extends Plugin {
 		// S-SKILL-UX:enableSkills 总开关已废弃,主动清掉 data.json 残值。
 		delete legacy.enableSkills;
 		normalizeContextLengthSettings(this.settings, loaded);
+		// 关键路径:分块大小改按 token 计后,旧值可能超出可用上限,钳制并反推档位。
+		normalizeChunkSizeSettings(this.settings, loaded);
 		// 关键路径:旧版无 chatPreset 字段时按 Base/模型推断,避免误显示 DeepSeek 预设
 		normalizeChatPreset(this.settings, loaded);
 		normalizeChatProfiles(this.settings, loaded);

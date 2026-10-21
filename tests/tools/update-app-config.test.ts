@@ -47,9 +47,9 @@ describe('update_app_config', () => {
 	it('白名单内写入 - 持久化一次并更新 settings - chunkSize 生效', async () => {
 		const host = makeHost();
 		const tool = createUpdateAppConfigTool(host, makeToolDef('update_app_config'));
-		const result = (await tool.execute({ updates: { chunkSize: 800 } })) as Record<string, any>;
+		const result = (await tool.execute({ updates: { chunkSize: 256 } })) as Record<string, any>;
 
-		expect(host.settings.chunkSize).toBe(800);
+		expect(host.settings.chunkSize).toBe(256);
 		expect(host.saveSettings).toHaveBeenCalledTimes(1);
 		expect(result.applied).toEqual(['chunkSize']);
 		expect(result.results).toEqual([{ key: 'chunkSize', ok: true }]);

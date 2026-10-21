@@ -193,6 +193,12 @@ export interface SettingsStrings {
   'settings.reranker.effective.noLlm': string;
   'settings.indexing.heading': string;
   'settings.indexing.chunkSize.name': string;
+  'settings.indexing.chunkSize.preset.fine': string;
+  'settings.indexing.chunkSize.preset.balanced': string;
+  'settings.indexing.chunkSize.preset.coarse': string;
+  'settings.indexing.chunkSize.preset.custom': string;
+  'settings.indexing.chunkSize.hint': string;
+  'settings.indexing.chunkSize.effective': string;
   'settings.indexing.chunkOverlap.name': string;
   'settings.indexing.autoIndex.name': string;
   'settings.indexing.autoIndex.desc': string;

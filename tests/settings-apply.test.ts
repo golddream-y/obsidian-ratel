@@ -115,8 +115,22 @@ describe('applySettingValue', () => {
 
 	it('顶层普通 key - 直接写入', () => {
 		const p = mockApplier();
+		applySettingValue(p, 'chunkOverlap', 80);
+		expect(p.settings.chunkOverlap).toBe(80);
+	});
+
+	it('chunkSize - 超上限被钳回并反推档位', () => {
+		const p = mockApplier();
 		applySettingValue(p, 'chunkSize', 800);
-		expect(p.settings.chunkSize).toBe(800);
+		expect(p.settings.chunkSize).toBe(448);
+		expect(p.settings.chunkSizePreset).toBe('coarse');
+	});
+
+	it('chunkSizePreset - 选档位时数字随档位走', () => {
+		const p = mockApplier();
+		applySettingValue(p, 'chunkSizePreset', 'fine');
+		expect(p.settings.chunkSizePreset).toBe('fine');
+		expect(p.settings.chunkSize).toBe(192);
 	});
 });
 

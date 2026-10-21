@@ -8,6 +8,7 @@
 import {
 	App,
 	PluginSettingTab,
+	type Setting,
 	type SettingDefinitionItem,
 } from 'obsidian';
 // 关键路径:RatelVaultPlugin 仅作类型标注使用,用 import type 避免运行时拉起 main.ts
@@ -20,6 +21,14 @@ import type { ToolPermission, ToolPermissionLevel } from './core/tool-permission
 import { resolveRerankMode, type EffectiveRerank } from './core/rerank-mode';
 import { hasChatApiKey, hasRerankApiKey } from './secrets/ratel-secrets';
 import type { ContextLengthPresetId } from './ui/tokens/context-length-presets';
+import {
+	CHUNK_SIZE_MAX_TOKENS,
+	CHUNK_SIZE_MIN_TOKENS,
+	CHUNK_SIZE_PRESET_ORDER,
+	CHUNK_SIZE_PRESETS,
+	DEFAULT_CHUNK_SIZE_PRESET,
+	type ChunkSizePresetId,
+} from './ui/tokens/chunk-size-presets';
 import { inferPresetFromTokens, presetToTokens } from './ui/tokens/context-length-presets';
 import type { OverrideMap } from './prompts/types';
 // 关键路径:声明式 settings 子页面与 render wrapper
@@ -104,6 +113,8 @@ export interface RatelVaultSettings {
 
 	// Indexing
 	chunkSize: number;
+	/** 分块档位 — 用户选的是档位,数字只是附属。 */
+	chunkSizePreset: ChunkSizePresetId;
 	chunkOverlap: number;
 	autoIndex: boolean;
 	// 关键路径:indexPaused 由用户在设置面板切换;true 时 IndexManager 不消费队列但仍入队,供用户按需恢复。
@@ -242,7 +253,8 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 	rerankEnabled: true,
 	rerankSource: 'native',
 
-	chunkSize: 500,
+	chunkSize: CHUNK_SIZE_PRESETS[DEFAULT_CHUNK_SIZE_PRESET],
+	chunkSizePreset: DEFAULT_CHUNK_SIZE_PRESET,
 	chunkOverlap: 100,
 	autoIndex: true,
 	// 关键路径:索引暂停默认关闭,起飞期 IndexManager 状态 = Init → Ready,正常消费队列。
@@ -465,6 +477,14 @@ export function normalizeContextLengthSettings(
 	// 运行时由 getEffectiveChatModelMaxTokens 回落默认档,设置页用数字框引导填写。
 	return settings;
 }
+
+/** 分块档位 → i18n key — 档位按钮的文案。 */
+const CHUNK_SIZE_PRESET_LABEL_KEYS: Record<ChunkSizePresetId, StringKey> = {
+	fine: 'settings.indexing.chunkSize.preset.fine',
+	balanced: 'settings.indexing.chunkSize.preset.balanced',
+	coarse: 'settings.indexing.chunkSize.preset.coarse',
+	custom: 'settings.indexing.chunkSize.preset.custom',
+};
 
 /**
  * Obsidian 设置面板 — 把 `RatelVaultSettings` 渲染为分组表单。
@@ -788,13 +808,7 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 				items: [
 					{
 						name: tNow('settings.indexing.chunkSize.name'),
-						control: {
-							type: 'slider',
-							key: 'chunkSize',
-							min: 100,
-							max: 1000,
-							step: 50,
-						},
+						render: (setting) => this.renderChunkSizeSetting(setting),
 					},
 					{
 						name: tNow('settings.indexing.chunkOverlap.name'),
@@ -1052,6 +1066,55 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 			return (this.plugin.settings.promptOverrides as Record<string, string | undefined>)[sectionId];
 		}
 		return (this.plugin.settings as unknown as Record<string, unknown>)[key];
+	}
+
+	/**
+	 * 渲染「分块大小」一行 — 档位按钮 + 数字框 + 实际生效说明。
+	 *
+	 * 关键路径:用户记不住「448 token 是多大」,所以主控件是有含义的档位
+	 * (精细/均衡/粗粒度/自定义),数字框只用于自定义;下面始终显示实际生效值。
+	 *
+	 * @param setting - 声明式框架给的这一行
+	 */
+	private renderChunkSizeSetting(setting: Setting): void {
+		const settings = this.plugin.settings;
+		const preset = settings.chunkSizePreset;
+		const effective = Math.min(settings.chunkSize, CHUNK_SIZE_MAX_TOKENS);
+
+		setting.setDesc(
+			tNow('settings.indexing.chunkSize.hint') +
+				'\n' +
+				tNow('settings.indexing.chunkSize.effective', { tokens: String(effective) }),
+		);
+
+		const ctrl = setting.controlEl;
+		ctrl.empty();
+
+		const chipRow = ctrl.createDiv({ cls: 'ratel-chip-row' });
+		for (const id of CHUNK_SIZE_PRESET_ORDER) {
+			const label = tNow(CHUNK_SIZE_PRESET_LABEL_KEYS[id]);
+			const btn = chipRow.createEl('button', {
+				cls: 'ratel-chip',
+				text: label,
+				attr: { type: 'button', role: 'radio', 'aria-checked': String(preset === id) },
+			});
+			if (preset === id) btn.addClass('is-selected');
+			btn.onclick = () => {
+				void this.setControlValue('chunkSizePreset', id);
+			};
+		}
+
+		// 关键路径:数字框始终可见,便于直接改;改完按值反推档位(命中预设就归到该档)。
+		const input = ctrl.createEl('input', {
+			cls: 'ratel-chip-number',
+			attr: { type: 'number', min: String(CHUNK_SIZE_MIN_TOKENS), max: String(CHUNK_SIZE_MAX_TOKENS) },
+		});
+		input.value = String(effective);
+		input.addEventListener('change', () => {
+			const n = Number.parseInt(input.value, 10);
+			if (!Number.isFinite(n)) return;
+			void this.setControlValue('chunkSize', n);
+		});
 	}
 
 	/**

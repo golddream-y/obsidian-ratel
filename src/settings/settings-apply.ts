@@ -9,6 +9,12 @@ import type { RatelVaultSettings } from '../settings';
 import type { ToolPermission } from '../core/tool-permissions';
 import { applyChatPreset, type ChatPresetId } from './chat-preset';
 import {
+	applyChunkSizePreset,
+	tokensToPreset,
+	clampChunkSize,
+	type ChunkSizePresetId,
+} from '../ui/tokens/chunk-size-presets';
+import {
 	applyContextLengthPreset,
 	applyContextRecommendation,
 	type ContextLengthPresetId,
@@ -217,6 +223,14 @@ export async function applySettingValue(plugin: SettingApplier, key: string, val
 		if (value === 'left' || value === 'right') {
 			plugin.settings.chatNavRailSide = value;
 		}
+	} else if (key === 'chunkSizePreset') {
+		// 关键路径:选档位 → 数字随档位走,两者始终一致;custom 只改标记不动数字。
+		applyChunkSizePreset(plugin.settings, value as ChunkSizePresetId);
+	} else if (key === 'chunkSize') {
+		// 关键路径:直接改数字 → 钳进可用区间,并按值反推档位(命中预设就归到该档)。
+		const clamped = clampChunkSize(Number(value));
+		plugin.settings.chunkSize = clamped;
+		plugin.settings.chunkSizePreset = tokensToPreset(clamped);
 	} else {
 		(plugin.settings as unknown as Record<string, unknown>)[key] = value;
 	}

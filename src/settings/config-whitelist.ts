@@ -99,7 +99,7 @@ const ENUM_CONSTRAINTS: Readonly<Record<string, readonly string[]>> = {
  */
 const NUMBER_CONSTRAINTS: Readonly<Record<string, { min: number; max: number }>> = {
 	chatModelMaxTokens: { min: CUSTOM_TOKEN_MIN, max: CUSTOM_TOKEN_MAX },
-	chunkSize: { min: 100, max: 1000 },
+	chunkSize: { min: 64, max: 448 },
 	chunkOverlap: { min: 0, max: 200 },
 	embedApiDimensions: { min: 1, max: 8192 },
 	memoryStorageLimitMB: { min: 1, max: 1000 },
