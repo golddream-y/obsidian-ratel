@@ -677,14 +677,14 @@ graph LR
 | ADR-006 发版资产 | `docs/adr/2026-06-28-release-asset-distribution.md` | Worker 内联 + WASM 懒下载(商店三文件约束) |
 | ADR-007 Context Window | `docs/adr/2026-06-28-model-context-window-registry.md` | LiteLLM 映射表 + 预设下拉(128k/200k/256k/1M/自定义) |
 | ADR-009 Skill | `docs/adr/2026-07-06-skill-mechanism.md` | Skill 三源加载与端口 |
-| ADR-010 Skill 边界 | `docs/adr/2026-07-21-skill-vs-builtin-capability.md` | Skill vs 内置工具/workflow 的产品边界 |
-| ADR-011 混合检索 | `docs/adr/2026-07-23-hybrid-retrieval-graph-routing.md` | 语义+结构混合;按问题用图,不硬上图 |
+| ADR-010 Skill 边界 | `docs/adr/2026-07-21-skill-vs-builtin-capability.md`(文件缺失,待补) | Skill vs 内置工具/workflow 的产品边界 |
 | ADR-012 Skill 激活 | `docs/adr/2026-07-23-skill-activation-claude-aligned.md` | 激活写入会话消息;废除 Active 段/全局 Set 注入 |
 | ADR-013 图谱检索 | `docs/adr/2026-08-03-graph-retrieval-minimize-human-curation.md` | 少靠人管理:向量保底 + 机会性用边 + 双通道确认 |
 | ADR-014 MCP 平台 | `docs/adr/2026-08-03-mcp-host-platform.md` | 平台级 MCP Host,不自建 websearch;双 transport |
 | ADR-015 能力池 | `docs/adr/2026-08-03-capability-pool.md` | 统一意图选择(能力池),按 kind 路由执行链路 |
 | ADR-018 生态出站 | `docs/adr/2026-09-18-ecosystem-outbound.md` | 官方清单 + GitHub release;第三条网;商店保守开关 |
 | ADR-020 收笔护栏 | `docs/adr/2026-09-27-turn-completion-guard.md` | 正文过短而思考更长时再请求一次;85% 压缩不动 |
+| ADR-021 检索链路决策 | `docs/adr/2026-10-26-retrieval-pipeline.md` | 关键词退出召回链路;分块按 token;精排双来源 |
 | 产品总纲 | `docs/prd/overview.md` | 产品定位与分册入口 |
 | S-PLUGIN-PROFILE | `docs/superpowers/archive/S-PLUGIN-PROFILE/2026-09-10-plugin-profile-design.md` | 插件配置档案需求;正文 [host/plugin-profile.md](host/plugin-profile.md) |
 | S-ECOSYSTEM | `docs/superpowers/archive/S-ECOSYSTEM/2026-08-20-ecosystem-management-design.md` | 对话装卸执行层;正文 [host/ecosystem.md](host/ecosystem.md) |
