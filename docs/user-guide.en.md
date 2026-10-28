@@ -266,7 +266,7 @@ The first five are fixed commands; the last two come from enabled skills. Select
 | Settings tab | Purpose |
 |---|---|
 | Chat model | Language, saved setups (provider, model, address, API key, and context length), automatic compression. |
-| Note index | Embeddings, chunking, automatic indexing, optional reranking. |
+| Note index | Embeddings, token-based chunk size presets, automatic indexing, and reranking source and toggle. |
 | Memory & permissions | Memory, diary conventions, goals, tool permissions, host access. |
 | Appearance | Colors, accent, message navigation, motion, and mascot. |
 | Advanced | Context length, model registry, prompt overrides, script timeout, diagnostics. |
@@ -282,7 +282,7 @@ Embedding, reranking, and MCP keys still need to be added in Obsidian **Settings
 | Name | Purpose |
 |---|---|
 | `ratel-embed-openai-compatible` | Remote API embeddings, when enabled. |
-| `ratel-rerank-bailian` | Optional Bailian reranking. |
+| `ratel-rerank-bailian` | Required only for the dedicated reranking source; not needed when using the chat model. |
 | `ratel-mcp-<serverId>` | Secret environment variables for a local-command MCP server; use its ID from management. |
 
 For further help, open a [GitHub issue](https://github.com/golddream-y/obsidian-ratel/issues). For skill development, see the [contribution guide](contributing/scene-skill.md).

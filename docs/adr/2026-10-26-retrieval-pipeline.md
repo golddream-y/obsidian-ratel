@@ -66,6 +66,15 @@
 
 清单新增 `chunkerVersion`(当前 `1`),纳入 `shouldFullRebuild`;旧清单没有该字段,`undefined !== 1` 即触发一次全量重建。字段声明为可选,诚实反映"旧文件没有它"。
 
+**配套:构建戳(`.index/build-stamp.json`)。** 代数只记在清单里,而清单可能被同步工具删掉;历史上"清单丢 → 只补清单、不 re-embed"的修复正是为此。但在代数生效后,这条修复会掩盖规则变化:索引还是旧规则切的,清单却按当前文件重写,此后 hash diff 全部命中,旧索引**永远无法自愈**。
+
+因此每次全量重建后额外落一个构建戳,记录 `chunkerVersion / chunkSize / chunkOverlap / embedModelId`;清单缺失时先比对戳:
+
+| 戳与当前规则 | 行为 |
+|---|---|
+| 一致 | 只重建清单(保留原修复的意图,不重复 embed) |
+| 缺失 / 不一致 / 损坏 | 清索引后全量重建(无法证明索引有效就不沿用) |
+
 ### 决策 F:Worker 协议收敛
 
 `index.full / index.incremental / index.batch` 增加可选 `chunkOptions: { maxTokens, overlapTokens }`(`count` 是函数,不能过 postMessage);缺失时 Worker 按模型上限兜底。词表通过 `setVocabContent()` 在初始化时传一次(约 109KB),不随每条消息传。

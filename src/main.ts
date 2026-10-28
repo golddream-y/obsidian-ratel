@@ -12,6 +12,12 @@ import fs, { readdirSync } from 'node:fs';
 import path from 'node:path';
 import { type RatelVaultSettings, DEFAULT_SETTINGS, RatelVaultSettingTab, normalizeContextLengthSettings, applyBuiltinToolPermissionDefaults } from './settings';
 import { normalizeChunkSizeSettings, CHUNK_SIZE_MAX_TOKENS } from './ui/tokens/chunk-size-presets';
+import {
+	isBuildStampCurrent,
+	readBuildStamp,
+	writeBuildStamp,
+	type IndexBuildStamp,
+} from './core/index-build-stamp';
 import { normalizeChatPreset } from './settings/chat-preset';
 import { normalizeChatProfiles } from './settings/chat-profiles';
 import { normalizeAppearanceSettings } from './ui/appearance/normalize-appearance-settings';
@@ -1295,10 +1301,20 @@ export default class RatelVaultPlugin extends Plugin {
 			return { indexed: result.indexed, errors: result.errors, skipped: 0 };
 		}
 
-		// 修复:向量在、清单丢 → 只写清单,绝不再次全量 embed(用户确认的反复重建根因)
+		// 修复:向量在、清单丢 → 一般只写清单,绝不再次全量 embed(用户确认的反复重建根因)。
+		// 关键路径(1.2.0):光看"清单丢了"不够 —— 索引可能是旧分块规则切的。
+		// 因此比对构建戳:戳与当前规则一致才只补清单;缺失或不一致说明无法证明索引有效,必须重建。
 		let manifestData = await this.indexManifest.load();
 		if (!manifestData) {
-			devLogger.warn('index', '索引存在但清单缺失,仅重建 ratel-manifest(不 re-embed)');
+			const stamp = await readBuildStamp(this.indexDir);
+			if (!isBuildStampCurrent(stamp, this.currentBuildStamp())) {
+				devLogger.warn('index', '索引存在但清单缺失且构建戳不匹配,改走全量重建');
+				await this.vectraStore.dropIndex();
+				const result = await this.indexBackend.fullReindex();
+				await this.writeManifestAfterFullReindex();
+				return { indexed: result.indexed, errors: result.errors, skipped: 0 };
+			}
+			devLogger.warn('index', '索引存在但清单缺失,构建戳一致,仅重建 ratel-manifest(不 re-embed)');
 			await this.writeManifestAfterFullReindex();
 			manifestData = await this.indexManifest.load();
 			if (!manifestData) {
@@ -1459,6 +1475,27 @@ export default class RatelVaultPlugin extends Plugin {
 			// 关键路径:manifest 写盘失败不阻塞索引(spec §9),下次启动重写。
 			devLogger.error('index', 'manifest 写盘失败(全量后)', err);
 		}
+		// 关键路径:同步落构建戳 —— 清单丢了也能据此判断索引是不是当前规则切的。
+		try {
+			await writeBuildStamp(this.indexDir, this.currentBuildStamp());
+		} catch (err) {
+			// 戳写失败不阻塞索引;下次全量会重写,期间按"无法证明有效"处理(会重建)。
+			devLogger.error('index', '构建戳写盘失败(全量后)', err);
+		}
+	}
+
+	/**
+	 * 当前设置推导出的构建戳 — 与清单里的全局参数同源。
+	 *
+	 * @returns 本次构建应记录的规则
+	 */
+	private currentBuildStamp(): IndexBuildStamp {
+		return {
+			chunkerVersion: CURRENT_CHUNKER_VERSION,
+			chunkSize: this.settings.chunkSize,
+			chunkOverlap: this.settings.chunkOverlap,
+			embedModelId: this.resolveCurrentEmbedModelId(),
+		};
 	}
 
 	/** 解析当前 embedding 模型 ID(local 用 ModelManager id,api 用 apiBase::model)。 */

@@ -15,12 +15,15 @@ describe('shouldShowReleaseNotes', () => {
 		expect(shouldShowReleaseNotes('1.0.0', '1.0.0')).toBe(false);
 	});
 
-	it('buildReleaseNotesMarkdown - 当前版本 - 含任务与配置两节', () => {
-		const md = buildReleaseNotesMarkdown('1.0.1', '1.14.0');
-		expect(md.startsWith('# Ratel 1.0.1')).toBe(true);
+	it('buildReleaseNotesMarkdown - 当前版本 - 含更新与升级提醒两节', () => {
+		const md = buildReleaseNotesMarkdown('1.2.0', '1.14.0');
+		expect(md.startsWith('# Ratel 1.2.0')).toBe(true);
 		expect(md).toContain('Obsidian 1.14.0');
 		expect(md).not.toContain('1.13.1');
-		expect(md).toContain('## 从一个具体任务开始');
-		expect(md).toContain('## 配好模型，完成第一次提问');
+		expect(md).toContain('## 本次更新');
+		expect(md).toContain('## 升级后');
+		expect(md).toContain('精排可用当前对话模型');
+		expect(md).toContain('BM25');
+		expect(md).toContain('首次启动会重建索引，期间搜索暂不可用');
 	});
 });
