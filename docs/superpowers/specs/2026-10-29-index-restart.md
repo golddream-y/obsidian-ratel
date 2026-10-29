@@ -1,5 +1,7 @@
 # 索引任务与完成状态修复
 
+关联需求：`BUG-1-INDEX-001`，在 [Project](https://github.com/users/golddream-y/projects/1) 以草稿跟踪；未创建公开 Issue。
+
 ## 背景与目标
 
 1.2.0 的全量索引超过请求的 10 分钟上限后，调用方失败，但 InlineWorker 仍继续写入。smartReindex 对任意异常清库并重试，使两个任务同时修改索引；进度未关联请求，旧、新任务交错。失败又被默认零值转换成完成通知，清单与构建戳未落盘，重启再次全量。
@@ -38,4 +40,4 @@ IndexManager 统一协调启动扫描、手动重建和文件事件队列。扫�
 
 ## 参考
 
-源码：src/worker/manager.ts、src/worker/inline-worker.ts、src/worker/handler.ts、src/core/index-manager.ts、src/main.ts。诊断记录：docs/bug-report/2026-10-29-index-restarts-after-relaunch.md（本地诊断，尚未提交）。
+源码：src/worker/manager.ts、src/worker/inline-worker.ts、src/worker/handler.ts、src/core/index-manager.ts、src/main.ts。诊断记录：[隔离诊断记录](../../bug-report/2026-10-29-index-restarts-after-relaunch.md)。

@@ -233,7 +233,8 @@ A vault-wide blacklist has not been delivered. For material that must not reach 
 | Symptom | What to check |
 |---|---|
 | Cannot send | Read the reason above the input; check keys, endpoint, and indexing status. |
-| First indexing never finishes | Check downloads and network; expand the strip for index and embedding status, then inspect diagnostics. |
+| First indexing never finishes | Check downloads and network, then expand the strip for progress. A progressing index may run for more than 10 minutes; 10 minutes without progress produces an error. Inspect diagnostics before clearing the index again. |
+| Restarting triggers a full index again | A successfully saved index reuses unchanged notes. Model or chunking changes and missing completion records require rebuilding. Failed or interrupted work is incomplete; an index already missing its completion records may need one full rebuild. |
 | Model request fails | Verify Base, model name, key, and provider quota. For Ollama, check the process and installed model. |
 | A known note is missing | Try original wording or an `@` path. Only Markdown is indexed. Rebuild if needed. |
 | Embedding or chunking changes have no effect | Restart Obsidian, check the index, and use `/reindex` if needed. |

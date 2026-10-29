@@ -11,7 +11,7 @@
 **不做的事**:
 - 不负责状态机与队列逻辑(属于 `IndexManager`)
 - 不负责去抖计时(属于 [folder-watcher](folder-watcher.md))
-- 不负责索引后端调用(属于 Worker,见 [worker-protocol](worker-protocol.md))
+- 不负责索引快照与元数据提交(属于 `PersistentIndexBackend`，通过 [Worker 协议](worker-protocol.md)调用处理器)
 - 不负责 `.ratelignore` 语法解析(属于 `utils/ratelignore-parser`)
 
 ---
@@ -20,14 +20,14 @@
 
 ### 2.1 单一入口
 
-**决策**:`main.ts` 只持有 `IndexController` 一个引用,不直接接触 `IndexManager` / `FolderWatcher`。
+**决策**：`main.ts` 装配 `IndexController` 和 `PersistentIndexBackend`。Controller 负责事件和状态协调，Backend 负责文件快照、差异更新及清单／构建戳提交；共享索引访问由 WorkerManager 保护。
 
 **原因**:
 - 隐藏内部协作细节,`main.ts` 代码精简
 - 状态机(`indexManager.status$`)通过 `controller.indexManager.status$` 暴露,UI 直接订阅
 - 卸载时只需 `controller.destroy()`,内部自动清理 watcher + 退订事件
 
-### 2.2 事件 → 去抖 → 过滤 → 入队
+### 2.2 事件 → 过滤 → 去抖 → 入队
 
 **决策**:Vault 事件先过 `.ratelignore`,再进 FolderWatcher 去抖,去抖触发后读文件内容,最后入队。
 
@@ -63,19 +63,21 @@ graph TB
         V["VaultEventListener<br/>onFileCreate/Modify/Delete/Rename<br/>readFile"]
     end
 
-    subgraph "Worker"
-        WP["IndexBackend<br/>fullReindex / incrementalIndex / deleteFile"]
+    subgraph "持久化后端"
+        WP["PersistentIndexBackend<br/>快照 / Worker 请求 / 元数据提交"]
     end
 
     V -->|"create/modify"| IC
     V -->|"delete"| IC
     V -->|"rename(newPath, oldPath)"| IC
-    IC --> RI
+    IC -->|"upsert：含 rename 新路径"| RI
+    IC -->|"delete：含 rename 旧路径，不过滤"| FW
     RI -->|"不忽略"| FW
     RI -->|"忽略"| DROP["丢弃"]
+    FW -->|"去抖触发 onDelete"| IM
     FW -->|"去抖触发 onUpsert"| V
     V -->|"readFile(path)"| IC
-    IC --> IM
+    IC -->|"读取完成后 enqueue upsert"| IM
     IM --> WP
 ```
 
@@ -93,7 +95,7 @@ sequenceDiagram
     participant FW as FolderWatcher
     participant V as Vault
     participant IM as IndexManager
-    participant WP as Worker
+    participant WP as PersistentIndexBackend
 
     M->>IC: onLayoutReady()
     IC->>FW: start({ onUpsert, onDelete })
@@ -101,13 +103,21 @@ sequenceDiagram
     IC->>V: onFileModify(cb) → unsubscribe
     IC->>V: onFileDelete(cb) → unsubscribe
     IC->>V: onFileRename(cb) → unsubscribe
-    IC->>IM: onLayoutReady()
-    IM->>WP: fullReindex()
-    WP-->>IM: { indexed, errors }
-    IM->>IM: status$ → Ready
+    opt autoIndex=true
+        IC->>IM: onLayoutReady()
+        IM->>WP: smartReindex()
+        WP->>WP: hash diff 或显式全量重建
+        WP->>WP: 写向量、构建戳和清单
+        WP-->>IM: { indexed, errors, skipped }
+        alt 成功且无错误
+            IM->>IM: status$ → Ready
+        else 索引或元数据失败
+            IM->>IM: status$ → Failed，返回 null
+        end
+    end
 ```
 
-**关键路径**:4 个 vault 事件订阅的 unsubscribe 函数存入 `unsubscribers` 数组,`destroy()` 时统一退订。
+**关键路径**：4 个 vault 事件订阅的 unsubscribe 函数存入 `unsubscribers`，`destroy()` 时统一退订。`autoIndex=false` 时启动监听，并只读校验已提交的索引、清单和构建戳：兼容有效时恢复 Ready，否则保持 Idle；不扫描、不嵌入，也不通知全量索引完成。重复的进行中扫描复用同一 Promise；扫描、重建和增量消费串行执行。
 
 ### 4.2 运行期(增量事件)
 
@@ -133,7 +143,7 @@ sequenceDiagram
     IM->>IM: scheduleFlush() 自动消费
 ```
 
-**关键路径**:`onUpsert` 回调内 `void this.vault.readFile(p).then(...)`,非阻塞,失败时静默跳过(文件可能在去抖期间被删)。
+**关键路径**：`onUpsert` 异步读取内容，读取失败时跳过可能已删除的文件。扫描期间的变更保留在 Map 队列中，等扫描成功后消费；同路径后来的事件替换早先事件。失败停止消费并保留事件，明确恢复后才重试。缺少完整清单时，单文件更新不能把全库标记为 Ready。
 
 ### 4.3 卸载期(`destroy`)
 
@@ -142,9 +152,10 @@ flowchart TB
     D["destroy() 被调"] --> FW_STOP["watcher.stop()<br/>清空所有 pending timer"]
     D --> UNSUB["for u of unsubscribers: u()<br/>退订 4 个 vault 事件"]
     D --> CLEAR["unsubscribers = []"]
+    D --> IM_STOP["indexManager.destroy()<br/>停止新任务并清队列"]
 ```
 
-**关键路径**:`destroy` 不调 `indexManager` 的任何方法,Worker 的清理由 `main.ts` 单独处理。
+**关键路径**：Controller 还调用 `indexManager.destroy()`，后续排队任务不再开始。Worker 的清理由 `main.ts` 单独处理；已运行的异步工作不能视为已经取消。
 
 ---
 
@@ -171,9 +182,9 @@ interface VaultEventListener {
 | 方法 | 透传到 | 说明 |
 |---|---|---|
 | `pause()` | `indexManager.pause()` | 队列继续累积,不消费 |
-| `resume()` | `indexManager.resume()` | 追平累积的队列 |
-| `reindex()` | `indexManager.reindex()` | 清队列 + 全量重索引 |
-| `destroy()` | `watcher.stop()` + 退订 | 卸载清理 |
+| `resume()` | `indexManager.resume()` | 明确恢复暂停或失败后的队列消费 |
+| `reindex()` | `indexManager.reindex()` | 等待现有操作，清库后全量；保留文件事件；失败向调用方抛出 |
+| `destroy()` | watcher / manager 停止 + 退订 | 卸载清理 |
 | `indexManager.status$` | 直接暴露 | UI 订阅状态机 |
 
 ---
@@ -204,12 +215,18 @@ interface VaultEventListener {
 |---|---|---|
 | [obsidian-integration](obsidian-integration.md) | 依赖 | `VaultEventListener` 由 `ObsidianVault` 实现 |
 | [folder-watcher](folder-watcher.md) | 组合 | 内部持有 `FolderWatcher` 实例 |
-| [worker-protocol](worker-protocol.md) | 间接 | `IndexBackend` 由 `WorkerManager` 适配 |
-| [persistence](persistence.md) | 无 | 索引数据由 vectra 直接写文件系统 |
+| [worker-protocol](worker-protocol.md) | 间接 | `PersistentIndexBackend` 通过 `WorkerManager` 请求及独占访问共享索引 |
+| [persistence](persistence.md) | 间接 | Backend 协调向量、清单和构建戳的成功提交 |
 
 ---
 
-## 9. 演进路径
+## 9. 成功与重启复用
+
+Backend 使用实际送入索引的内容快照生成清单，避免把索引期间的新修改误标为已处理。所有写入前撤销成功元数据；向量成功后先保存构建戳，再原子保存清单。失败会向上层传播，并撤销本次成功凭据。
+
+成功清单与当前参数兼容时，启动只对内容变化的文件嵌入，未修改文件跳过。当前仍读取并 hash 文件；零重复嵌入不代表零磁盘读取。缺少有效清单、参数不兼容或上次写入失败时采用保守全量重建；任意运行异常不会触发同一会话内的清库重试。
+
+## 10. 演进路径
 
 | 阶段 | 能力 | 状态 |
 |---|---|---|

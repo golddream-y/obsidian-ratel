@@ -1,202 +1,63 @@
 # Worker 通信协议
 
-> 领域:Host | 主线程 ↔ Worker 线程的 postMessage 协议、请求/响应关联、超时控制
+维护索引通信或排查超时、重复索引时，可据此判断请求何时完成、共享索引的占用何时释放。
 
----
+主线程通过 `WorkerManager` 关联请求、进度与最终响应，并协调共享索引的访问。当前 Obsidian 使用 `InlineWorker` 在主线程调度分块与 Vectra IO；本地 ONNX 推理由独立的 Embedding Web Worker 执行。InlineWorker 不代表这些索引工作全部移出了主线程。
 
-## 1. 职责
+## 职责与执行边界
 
-定义主线程与 Worker 线程之间的通信契约:消息类型、请求/响应关联、超时与错误处理。Worker 承担 CPU 密集型任务(分块、索引、向量搜索),主线程负责 HTTP 调用与 Obsidian API。
+索引协议由 `src/types.ts` 的 `WorkerRequest` / `WorkerResponse` 定义，`handler.ts` 委托 `IndexProcessor` 操作索引。索引处理代码不导入 `obsidian`，也不直接发 HTTP；宿主读取笔记、准备资源并注入嵌入端口。具体环境限制以 `src/worker/AGENTS.md` 为准。
 
-**不做的事**:
-- 不负责索引逻辑(属于 [rag/vector-index](../rag/vector-index.md))
-- 不负责模型加载(属于 [llm/model-management](../llm/model-management.md))
-- 不负责 Obsidian API 封装(属于 [obsidian-integration](obsidian-integration.md))
+`InlineWorker` 与 `worker/index.ts` 入口均串行调用 handler，避免多个异步请求重叠访问同一处理器。当前产品使用 InlineWorker；Worker Threads 的 bootstrap 尚未实现嵌入注入，不能作为可用后台模式。
 
----
+## 消息与请求关联
 
-## 2. 设计原则
+所有请求由 WorkerManager 注入 `_requestId`，最终响应和该请求产生的 `index.progress` 均回传同一 ID。该字段位于消息顶层，由传输封装附加；业务消息仍通过 `type` 判别联合收窄。
 
-### 2.1 Worker 严禁导入 obsidian / 严禁 HTTP
-
-**决策**:Worker 线程不 `import 'obsidian'`,不发 HTTP 请求。
-
-**原因**:
-- Worker 是 Node.js 环境,没有 Obsidian 运行时
-- Embedding / LLM 的 HTTP 调用都在主线程(主线程有 `requestUrl`)
-- Worker 只做 CPU 密集型计算 + 文件系统 IO(vectra 索引)
-
-### 2.2 判别联合 + _requestId 关联
-
-**决策**:请求和响应用 TypeScript 判别联合(`type` 字段区分),用 `_requestId` 字符串做请求/响应配对。
-
-**原因**:
-- 判别联合让 Worker 端 `switch (msg.type)` 时 TypeScript 自动收窄
-- `_requestId` 由 WorkerManager 注入(主线程侧),Worker 原样回传
-- 异步 postMessage 天然无序,必须用 ID 关联
-
-### 2.3 超时即 terminate
-
-**决策**:请求超时(默认 30s)后直接 `worker.terminate()`,不尝试恢复。
-
-**原因**:
-- Worker 假死通常是 ONNX / vectra 内部死锁,不可恢复
-- terminate 后 WorkerManager 不再可用,需重建
-- 30s 足够全量索引(千级文件);单文件增量通常 <1s
-
----
-
-## 3. 协议结构
-
-```mermaid
-graph LR
-    subgraph "主线程"
-        WM["WorkerManager"]
-        MT["IndexManager / search_vault"]
-    end
-
-    subgraph "Worker 线程"
-        WE["worker/index.ts<br/>(onmessage)"]
-        HD["handler.ts<br/>(handleMessage)"]
-        PR["IndexProcessor<br/>(VectraStore)"]
-    end
-
-    MT -->|"request(req)"| WM
-    WM -->|"postMessage(req + _requestId)"| WE
-    WE -->|"handleMessage(msg)"| HD
-    HD -->|"processor.*"| PR
-    PR -->|"result"| HD
-    HD -->|"postMessage(resp + _requestId)"| WE
-    WE -->|"'message' event"| WM
-    WM -->|"resolve(resp)"| MT
-```
-
-### 3.1 WorkerRequest(主线程 → Worker)
-
-```typescript
-type WorkerRequest =
-  | { type: 'index.full'; payload: { files: Array<{ path: string; content: string }>; chunkOptions?: ChunkOptionsPayload } }
-  | { type: 'index.incremental'; payload: { file: { path: string; content: string }; chunkOptions?: ChunkOptionsPayload } }
-  | { type: 'index.batch'; payload: { files: Array<{ path: string; content: string }>; chunkOptions?: ChunkOptionsPayload } }
-  | { type: 'index.delete'; payload: { filePath: string } }
-  | { type: 'vector.search'; payload: { queryVector: number[]; topK: number; filter?: SearchFilter } }
-  | { type: 'vector.upsert'; payload: { docId: string; text: string; metadata: Record<string, unknown> } }
-  | { type: 'vector.delete'; payload: { docIds: string[] } }
-  | { type: 'index.status'; payload: Record<string, never> };
-```
-
-### 3.2 WorkerResponse(Worker → 主线程)
-
-```typescript
-type WorkerResponse =
-  | { type: 'index.progress'; payload: { done: number; total: number } }
-  | { type: 'index.done'; payload: { indexed: number; errors: number } }
-  | { type: 'index.batch.done'; payload: { indexed: number; errors: number; chunkCounts: Record<string, number> } }
-  | { type: 'vector.search.result'; payload: VectorSearchResult[] }
-  | { type: 'vector.upsert.done'; payload: { docId: string } }
-  | { type: 'vector.delete.done'; payload: { count: number } }
-  | { type: 'index.status.result'; payload: { totalDocs: number; lastIndexTime: number } }
-  | { type: 'error'; payload: { code: string; message: string } };
-```
-
----
-
-## 4. 消息类型一览
-
-| 请求类型 | 用途 | 响应类型 | 说明 |
-|---|---|---|---|
-| `index.full` | 全量索引 | `index.done` | 随消息带 `chunkOptions`(token 预算与重叠);缺失时 Worker 用兜底值 |
-| `index.incremental` | 增量索引单文件 | `index.done` | 同上,单文件粒度 |
-| `index.batch` | 批量增量索引(smart reindex) | `index.batch.done` | 变更文件批处理,reembed 前 deleteByPath 清旧 chunk,返回每文件 chunkCount |
-| `index.delete` | 删除文件索引 | `vector.delete.done` | 按 filePath 删除 |
-| `vector.search` | 向量搜索(降级用) | `vector.search.result` | 主线程已向量化 query,Worker 只做余弦相似度 |
-| `vector.upsert` | 直接 upsert | `vector.upsert.done` | 跳过分块,直接写向量(内部用) |
-| `vector.delete` | 按 docId 批量删 | `vector.delete.done` | |
-| `index.status` | 查询索引状态 | `index.status.result` | totalDocs + lastIndexTime |
-
-**错误码**:
-
-| code | 含义 | 触发方 |
+| 请求 | 最终响应 | 内容 |
 |---|---|---|
-| `NULL_PROCESSOR` | Worker 未初始化 | handler.ts |
-| `UNKNOWN_REQUEST` | 未知请求类型 | handler.ts |
-| `WORKER_INIT_FAILED` | bootstrap 失败(模型加载/索引打开) | worker/index.ts |
-| `WORKER_ERROR` | handleMessage 未捕获异常 | worker/index.ts |
+| `index.full` | `index.done` | 全量文件列表、可选 `chunkOptions`；返回 indexed / errors |
+| `index.incremental` | `index.done` | 单文件与可选 `chunkOptions`；返回 indexed / errors 及可选 chunkCount |
+| `index.batch` | `index.batch.done` | 差异文件批处理；返回 indexed / errors / chunkCounts |
+| `index.delete` | `vector.delete.done` | 按文件路径删除；返回 count |
+| `vector.search` | `vector.search.result` | 向量检索 |
+| `vector.upsert` | `vector.upsert.done` | 直接写入向量 |
+| `vector.delete` | `vector.delete.done` | 按 docId 删除 |
+| `index.status` | `index.status.result` | totalDocs / lastIndexTime |
 
----
+处理中的进度消息形如：
 
-## 5. 请求/响应关联
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant MT as 主线程
-    participant WM as WorkerManager
-    participant WK as Worker
-
-    MT->>WM: request({ type: 'index.status', payload: {} })
-    WM->>WM: requestId = `req_${counter}_${Date.now()}`
-    WM->>WM: pending.set(requestId, { resolve, reject, timer })
-    WM->>WK: postMessage({ ...req, _requestId: requestId })
-    WK->>WK: handleMessage(msg) → response
-    WK->>WM: postMessage({ ...response, _requestId: requestId })
-    WM->>WM: pending.get(requestId) → resolve(response)
-    WM->>MT: Promise resolve
+```typescript
+{ type: 'index.progress', payload: { done: 4, total: 10 }, _requestId: 'req_1_…' }
 ```
 
-**关键**:
-- `_requestId` 格式:`req_{自增计数器}_{时间戳}`,保证唯一
-- Worker 不解析 `_requestId`,只原样回传
-- `WorkerManager` 收到响应后从 `pending` Map 移除并 `clearTimeout`
+WorkerManager 先识别进度，再处理最终响应。仅活动索引请求的整数进度、正总量、未越界且递增的 done 会刷新等待时限并交给展示回调。无 ID、未知请求、已超时请求及倒退的进度被忽略。进度不会解析请求 Promise；只有最终响应才结束等待。
 
----
+## 串行访问与超时
 
-## 6. Worker 生命周期
+WorkerManager 的请求和 `runExclusive()` 共用串行通道。排队时间不计超时，任务实际开始后才启动计时。直接访问共享索引的清库操作必须通过 `runExclusive()`；该回调不能递归调用 `request()`，否则会等待自身释放通道。
 
-```mermaid
-flowchart TB
-    START["new Worker(worker.js, { workerData: { indexDir, modelId } })"] --> BOOT["bootstrapWorker()"]
-    BOOT -->|"加载 ONNX pipeline"| INIT["initProcessor(indexDir, embeddings)"]
-    INIT --> READY["self.onmessage = handler"]
-    BOOT -->|"失败"| ERR["postMessage(error: WORKER_INIT_FAILED)"]
-    ERR --> ERRHANDLER["self.onmessage = createErrorHandler"]
-
-    READY --> RECV["收到请求"]
-    RECV --> EXEC["handleMessage(msg)"]
-    EXEC --> RESP["postMessage(response + _requestId)"]
-    RESP --> RECV
-
-    DESTROY["manager.destroy()"] --> TERM["worker.terminate()"]
-    TERM --> REJECT["所有 pending 请求 reject"]
-```
-
-**bootstrap 关键路径**:
-- `workerData` 传入 `indexDir` + `modelId`,Worker 自行加载 ONNX pipeline
-- embeddings 对象不可跨线程序列化,必须在 Worker 内部构造
-- bootstrap 失败时注册 `createErrorHandler`,对所有后续请求返回 `WORKER_INIT_FAILED`
-
----
-
-## 7. 错误处理
+默认超时为 600000 毫秒。`index.full`、`index.batch`、`index.incremental` 使用活动超时：每次有效进度续期；其他请求使用固定超时。搜索请求也会等待正在进行的索引操作。
 
 | 场景 | 行为 |
 |---|---|
-| 请求超时(30s) | `clearTimeout` + `pending.delete` + `worker.terminate()` + `reject` |
-| Worker 崩溃(`'error'` 事件) | 所有 pending 请求 `reject('Worker error: ...')` |
-| Worker 退出(`'exit'` 事件) | 所有 pending 请求 `reject('Worker exited with code N')` |
-| `handleMessage` 抛异常 | 捕获 → `postMessage(error: WORKER_ERROR)` → 主线程 reject |
-| bootstrap 失败 | `postMessage(error: WORKER_INIT_FAILED)` + 注册 error handler |
-| `manager.destroy()` | `terminate()` + 所有 pending `reject('Worker destroyed')` |
+| 正常最终响应 | 清计时器、移除 pending、返回响应并释放通道 |
+| 请求无进展超时 | 拒绝调用方与排队调用，保留底层占用；新调用立即失败 |
+| 超时后的迟到进度 | 忽略，不恢复进度或成功状态 |
+| 超时后的迟到终态 | 移除 pending 并解锁；原调用保持失败 |
+| Worker error / exit | 管理器关闭并拒绝所有等待；后续调用失败 |
+| `destroy()` | 拒绝全部等待并调用 worker.terminate() |
 
-**关键**:无论成功还是失败,`_requestId` 始终回传,确保 `WorkerManager` 能正确关联并清理 pending Map。
+超时不会主动 terminate，因为 InlineWorker 的异步嵌入和写入无法通过拒绝 Promise 中断。旧任务没有终态时，通道保持占用，防止重建或清库与它并行。上层不应在此状态自动清库重试。
 
----
+## 错误与清理
 
-## 8. 边界
+handler 或入口通过 `{ type: 'error', payload: { code, message }, _requestId }` 返回结构化错误；调用方须检查业务响应类型，不能把收到任意响应视为成功。错误码包含 `NULL_PROCESSOR`、`UNKNOWN_REQUEST`、`WORKER_INIT_FAILED` 和 `WORKER_ERROR`。
 
-| 与...的接口 | 方向 | 说明 |
-|---|---|---|
-| [rag/vector-index](../rag/vector-index.md) | 被依赖 | IndexManager 通过 WorkerManager 发索引请求 |
-| [rag/retriever](../rag/retriever.md) | 被依赖 | search_vault 通过 WorkerManager 发搜索请求 |
-| [llm/model-management](../llm/model-management.md) | 依赖 | Worker bootstrap 加载 ONNX pipeline |
-| [host/persistence](persistence.md) | 依赖 | 索引目录路径由 persistence 提供 |
+卸载由 main 协调 IndexController、WorkerManager 和嵌入 Worker 的清理。InlineWorker terminate 会阻止后续消息和排队处理，并清空监听器；它不会中断已经进入异步调用的代码，不提供异常退出的断点恢复保证。
+
+## 相关模块
+
+- [索引控制器](index-controller.md)：启动、增量、手动重建与状态协调。
+- [向量索引](../rag/vector-index.md)：索引与检索操作。
+- [持久化](persistence.md)：本地数据职责。

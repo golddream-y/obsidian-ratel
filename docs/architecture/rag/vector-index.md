@@ -133,7 +133,9 @@ sequenceDiagram
     WP-->>IM: 删除数量
 ```
 
-### 3.4 Smart Reindex(启动期增量)
+### 3.4 Smart Reindex（启动期增量）
+
+`IndexManager` 协调扫描与事件队列，`PersistentIndexBackend` 负责以下决策和元数据提交。
 
 ```mermaid
 sequenceDiagram
@@ -141,65 +143,44 @@ sequenceDiagram
     participant Main as 主线程
     participant IC as IndexController
     participant IM as IndexManager
-    participant VS as VectraStore
+    participant PB as PersistentIndexBackend
+    participant WM as WorkerManager
     participant MF as IndexManifest
-    participant WP as Worker
-
-    Note over Main,WP: 启动期 — smartReindex hash diff
 
     Main->>IC: onLayoutReady(autoIndex)
-    IC->>IC: 启动 FolderWatcher(无论 autoIndex)
-    alt autoIndex = false
-        IC-->>Main: null(仅启动 watcher,不跑 smartReindex)
-    else autoIndex = true
+    IC->>IC: 启动事件监听
+    opt autoIndex=true
         IC->>IM: onLayoutReady()
-        IM->>IM: 状态 Init → Diffing
-        IM->>VS: isIndexCreated()?
-        alt 索引不存在
-            IM->>WP: index.full(全量)
-            IM->>MF: save(写新 manifest)
-        else 索引存在
-            IM->>MF: load()
-            alt manifest 损坏/不存在
-                IM->>WP: index.full(全量)
-                IM->>MF: save
-            else 全局参数变(embedModelId/chunkSize/chunkOverlap/chunkerVersion)
-                IM->>VS: dropIndex()
-                IM->>MF: invalidate
-                IM->>WP: index.full(全量)
-                IM->>MF: save
-            else hash diff
-                loop 每个 markdown 文件
-                    IM->>VS: stat(path)
-                    alt mtime 未变
-                        Note over IM: 复用旧 hash,跳过 sha256
-                    else mtime 变
-                        IM->>Main: readFile(path) + sha256(content)
-                    end
-                end
-                IM->>MF: diff(toAdd/toUpdate/toDelete/unchanged)
-                alt 有 toAdd/toUpdate
-                    IM->>WP: index.batch(files)
-                    WP->>WP: 每文件先 deleteByPath 再 chunk+embed+upsert
-                    WP-->>IM: index.batch.done(chunkCounts)
-                    IM->>MF: recordEntry(每个文件)
-                end
-                loop toDelete
-                    IM->>WP: index.delete(path)
-                    IM->>MF: removeEntry
-                end
-                IM->>MF: save
-            end
+        IM->>PB: smartReindex()
+        PB->>MF: load()
+        alt 无有效清单或参数不兼容
+            PB->>WM: 独占清库（已有索引时）
+            PB->>PB: 读取内容与 hash 快照
+            PB->>WM: index.full
+        else 清单兼容
+            PB->>PB: 读取文件并计算 hash
+            PB->>MF: diff()
+            PB->>WM: index.batch / index.delete（有变更时）
         end
-        IM->>IM: 状态 Diffing → Ready
+        alt 操作成功
+            PB->>PB: 有写入时提交构建戳与清单
+            PB-->>IM: indexed / errors=0 / skipped
+            IM->>IM: Ready
+        else 向量或元数据失败
+            PB-->>IM: 抛出错误
+            IM->>IM: Failed，停止队列消费
+        end
     end
 ```
 
-**关键决策**:
-- `autoIndex=false` 仍启动 FolderWatcher(用户手动改文件仍增量),仅跳过启动期 smartReindex
-- mtime 未变则不读 content 不算 sha256,直接复用 manifest 旧 hash(大库热启动零 IO)
-- smartReindex 任意步骤异常 → 降级 dropIndex + 全量重建(spec §9 鲁棒性)
-- `/reindex` 命令先 dropIndex + manifest.invalidate 再 onLayoutReady,强制绕过 hash diff 全量重建
+**关键决策**：
+
+- `autoIndex=false` 仍监听文件事件，跳过启动扫描；只读校验已提交索引及兼容清单／构建戳，有效时恢复 Ready，无效时保持 Idle，不产生全量完成通知。
+- 成功清单兼容时，未修改文件零重复嵌入；当前仍读取并 hash 文件，不能称为零 IO。
+- 缺少清单时，构建戳只能证明规则，无法证明文件内容，保守全量重建。
+- 任意运行错误向上传递，不自动清库重试。超时仍运行的任务占有共享索引保护，迟到终态才释放。
+- `/reindex` 等待既有操作，清库成功后才开始全量，保留期间文件事件。失败不能通知为完成。
+
 
 ---
 
@@ -317,7 +298,8 @@ graph TD
 ├── data.json                  ← settings(不含 API Keys,走 SecretStorage)
 ├── .gitignore                 ← 自动生成,排除 .index/ 与旧版根目录清单
 └── .index/                    ← vectra 索引目录(+ 清单同生命周期)
-    ├── ratel-manifest.json    ← smart reindex 清单(每文件 hash + 全局参数)
+    ├── ratel-manifest.json    ← 成功清单（每文件 hash + 全局参数）
+    ├── build-stamp.json       ← 构建规则（不能单独证明内容完整）
     ├── index.json             ← 文档元数据
     └── items/                 ← 向量 + 文本
         ├── …
@@ -326,7 +308,7 @@ graph TD
 
 **清单路径演进:** 旧版写在插件根目录 `index-manifest.json`,易被 Remotely Save 等同步工具删掉 → 每次启动误判「无清单」走全量 embed。现迁至 **`.index/ratel-manifest.json`**,启动期 `migrateLegacyIndexManifest` 兼容旧路径。
 
-**缺清单但索引仍在:** 只重建 hash 清单,**禁止**全量 re-embed;参数变更全量后必须 `writeManifestAfterFullReindex`(真实 mtime + 非空 entries)。
+**缺清单但索引仍在**：保守全量重建；不能将当前笔记的 hash 补成清单，再假定旧向量已包含这些内容。全量完成后用实际输入快照提交构建戳和清单，写入错误必须报告失败。
 
 **ratel-manifest.json 与 data.json 分离:** 记录每文件 sha256 + mtime + chunkCount + 全局 embedModelId/chunkSize/chunkOverlap,启动期 hash diff 跳过未变更文件。独立于 data.json,不走 Obsidian loadData/saveData。原子写(.tmp + rename)避免半写损坏。
 
@@ -343,12 +325,12 @@ graph TD
 ### 6.3 索引新鲜度
 
 - `.index/ratel-manifest.json` 记录每文件 sha256 + mtime,启动期 hash diff 跳过未变更文件
-- `mtime` 快速跳过:mtime 未变则不读 content 不算 sha256,直接复用旧 hash
+- 当前逐文件读取并计算 hash；mtime 作为快照信息记录，不再作为跳过内容核查的唯一依据
 - 文件变更时增量更新(FolderWatcher → enqueue → index.incremental / index.batch),无需全量重建
 - 模型切换 / chunkSize / chunkOverlap 变化时 `shouldFullRebuild` 返回 true,触发 dropIndex + 全量重建(维度不兼容)
-- 索引损坏时 smartReindex 降级:dropIndex + manifest.invalidate + 全量重建(spec §9)
-- `/reindex` 命令强制绕过 hash diff:先 dropIndex + manifest.invalidate 再全量
-- 有 `.index/` 无清单:只重建清单 hash,不全量 embed
+- 超时、嵌入或磁盘错误不自动清库重试；失败后成功元数据撤销，后续启动保守重建
+- `/reindex` 强制绕过 hash diff，经串行通道清库成功后执行全量；清理失败停止
+- 有 `.index/` 无有效清单：构建规则无法证明内容完整，采用全量重建
 
 ---
 
@@ -362,9 +344,11 @@ graph TB
         FW["FolderWatcher<br/>5s 去抖"]
         RI["Ratelignore<br/>排除过滤"]
         MF["IndexManifest<br/>hash diff 清单"]
+        PB["PersistentIndexBackend<br/>快照 / 差异 / 元数据提交"]
+        WM["WorkerManager<br/>串行通道 / 请求关联 / 活动超时"]
     end
 
-    subgraph "Worker 线程"
+    subgraph "索引处理（InlineWorker，主线程）"
         IP["IndexProcessor<br/>批处理"]
         CK["Chunker<br/>分块"]
         VS["VectraStore<br/>向量存储"]
@@ -374,9 +358,10 @@ graph TB
     IC --> FW
     IC --> RI
     FW --> IM
-    IM -->|"smartReindex 调用"| MF
-    MF -->|"diff/recordEntry/removeEntry"| MF
-    IM -->|"postMessage"| IP
+    IM --> PB
+    PB -->|"diff/recordEntry/removeEntry"| MF
+    PB --> WM
+    WM -->|"postMessage"| IP
     IP --> CK
     IP --> VS
 ```
@@ -389,10 +374,12 @@ graph TB
 | IndexManager | 状态机 + 队列 + 暂停/恢复/重索引;onLayoutReady 优先 smartReindex | 主线程 |
 | FolderWatcher | 5s 单文件去抖,delete 不去抖 | 主线程 |
 | Ratelignore | 解析 .ratelignore,过滤排除文件 | 主线程 |
+| PersistentIndexBackend | 文件快照、差异决策、向量与元数据提交；失败向上传递 | 主线程 |
+| WorkerManager | 共享索引串行访问、进度关联、活动超时 | 主线程 |
 | IndexManifest | 每文件 sha256/mtime/chunkCount 清单;load/save/diff/shouldFullRebuild;原子写 | 主线程 |
-| IndexProcessor | 批量索引处理(分块 + upsert);reembedFile 先 deleteByPath 防残留 | Worker |
-| Chunker | Markdown 三级分块 | Worker |
-| VectraStore | 向量存储(upsert/search/deleteByPath/dropIndex/isIndexCreated) | Worker |
+| IndexProcessor | 批量索引处理(分块 + upsert);reembedFile 先 deleteByPath 防残留 | InlineWorker（主线程） |
+| Chunker | Markdown 三级分块 | InlineWorker（主线程） |
+| VectraStore | 向量存储(upsert/search/deleteByPath/dropIndex/isIndexCreated) | InlineWorker（主线程） |
 
 ---
 
