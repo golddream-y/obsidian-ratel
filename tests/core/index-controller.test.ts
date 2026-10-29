@@ -141,4 +141,13 @@ describe('IndexController', () => {
         expect(readFile).not.toHaveBeenCalled();
         ctl.destroy();
     });
+    it('重建调用者 - 全量失败 - 收到拒绝而不能报告成功', async () => {
+        const ctl = new IndexController(mockVault, {
+            fullReindex: async () => ({ indexed: 0, errors: 1 }),
+            incrementalIndex: vi.fn(), deleteFile: vi.fn(),
+        }, '/tmp');
+        try { await expect(ctl.reindex()).rejects.toThrow(); }
+        finally { ctl.destroy(); }
+    });
+
 });

@@ -84,6 +84,10 @@ export class FeedbackController {
 	 * @param errors - 失败文档数
 	 */
 	notifyFullIndexComplete(indexed: number, errors: number): void {
+		if (errors > 0) {
+			this.deps.userStatus.patch({ index: 'failed', indexDetail: tNow('notice.indexPartialFailure', { count: errors }) });
+			return;
+		}
 		if (this.deps.onFullIndexComplete) {
 			this.deps.onFullIndexComplete(indexed, errors);
 			return;

@@ -35,7 +35,7 @@ export class InlineWorker implements WorkerLike {
 	private errorListeners: ErrorListener[] = [];
 	private exitListeners: ExitListener[] = [];
 	private terminated = false;
-	private initialized = false;
+	private tail: Promise<void> = Promise.resolve();
 
 	/**
 	 * 用已构造好的 VectraStore 初始化 processor。
@@ -46,7 +46,6 @@ export class InlineWorker implements WorkerLike {
 	 */
 	initWithStore(store: VectraStore, embeddingPort: EmbeddingPort): void {
 		initProcessorWithStore(store, embeddingPort);
-		this.initialized = true;
 	}
 
 	/**
@@ -62,7 +61,10 @@ export class InlineWorker implements WorkerLike {
 		window.setTimeout(() => {
 			if (this.terminated) return;
 
-			void this.handle(message);
+			// 关键路径:同一索引只允许一条消息执行，失败也必须释放队列。
+			this.tail = this.tail.then(async () => {
+				if (!this.terminated) await this.handle(message);
+			}).catch(() => { /* handle 已将异常转为响应 */ });
 		}, 0);
 	}
 
@@ -104,7 +106,7 @@ export class InlineWorker implements WorkerLike {
 	private async handle(msg: WorkerRequest & { _requestId?: string }): Promise<void> {
 		// 关键路径:postEvent 通过 emitMessage 异步派发,让进度事件在请求响应前到达主线程。
 		const postEvent = (eventMsg: WorkerResponse) => {
-			this.emitMessage(eventMsg);
+			this.emitMessage({ ...eventMsg, _requestId: msg._requestId });
 		};
 
 		try {
@@ -115,9 +117,7 @@ export class InlineWorker implements WorkerLike {
 			this.emitMessage(response);
 		} catch (err) {
 			const error = err instanceof Error ? err : new Error(String(err));
-			for (const listener of this.errorListeners) {
-				listener(error);
-			}
+			this.emitMessage({ type: 'error', payload: { code: 'WORKER_ERROR', message: error.message }, _requestId: msg._requestId });
 		}
 	}
 }

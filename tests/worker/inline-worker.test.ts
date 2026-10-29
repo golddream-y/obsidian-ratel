@@ -78,8 +78,8 @@ describe('InlineWorker', () => {
 		await new Promise<void>((resolve) => {
 			worker.on('message', (data) => {
 				allMessages.push(data);
-				// 关键路径:无 _requestId 的是进度事件,带 _requestId 的才是请求响应。
-				if (data._requestId) {
+				// 关键路径:进度和终态都带请求 ID，必须先按消息类型区分。
+				if (data._requestId && data.type !== 'index.progress') {
 					responses.push(data);
 					resolve();
 				}
@@ -95,6 +95,7 @@ describe('InlineWorker', () => {
 		const progressMsgs = allMessages.filter((m: Record<string, unknown>) => m.type === 'index.progress');
 		expect(progressMsgs).toHaveLength(1);
 		expect((progressMsgs[0] as Record<string, unknown>).payload).toEqual({ done: 1, total: 1 });
+		expect((progressMsgs[0] as Record<string, unknown>)._requestId).toBe('r2');
 
 		expect(responses).toHaveLength(1);
 		const res = responses[0] as { type: string; payload: { indexed: number } };

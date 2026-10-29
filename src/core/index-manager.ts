@@ -13,6 +13,7 @@
 
 import { writable, get } from 'svelte/store';
 import { devLogger } from '../logging/dev-logger';
+import { tNow } from '../i18n';
 
 /** 索引状态机(10 态)。Diffing = smartReindex hash diff 阶段。 */
 export type IndexStatus =
@@ -35,9 +36,11 @@ export interface IndexBackend {
     // 关键路径:smartReindex 是可选方法,未实现时 onLayoutReady 回退到 fullReindex。
     smartReindex?(): Promise<{ indexed: number; errors: number; skipped: number }>;
     isIndexCreated?(): Promise<boolean>;
+    /** 全库持久化凭据是否完整；缺少凭据的增量写入不能宣告全库Ready。 */
+    isIndexComplete?(): Promise<boolean>;
     listMarkdownFiles?(): Promise<Array<{ path: string; content: string }>>;
     // 关键路径:reindex 命令需清 .index/ + manifest 后全量(spec §4.4)。
-    // 可选 — backend 未实现时 reindex 退化为 onLayoutReady(走 smartReindex hash diff)。
+    // 可选 — backend 未实现时仍直接全量扫描。
     dropIndex?(): Promise<void>;
 }
 
@@ -46,13 +49,21 @@ interface QueueEntry {
     content?: string;
 }
 
+/**
+ * 串行协调启动扫描、手动重建和增量队列；失败锁存到显式恢复，卸载后不开始新任务。
+ */
 export class IndexManager {
     readonly status$ = writable<IndexStatus>({ state: 'Idle' });
     private queue = new Map<string, QueueEntry>();
     private paused = false;
-    private processing = false;
+    private flushing: Promise<void> | null = null;
+    private tail: Promise<unknown> = Promise.resolve();
+    private startup: Promise<{ indexed: number; errors: number } | null> | null = null;
+    private rebuilding: Promise<void> | null = null;
+    private unloaded = false;
+    private failed = false;
     private previousState: IndexStatus = { state: 'Idle' };
-    // 关键路径:reindex 时清 manifest 的回调,由 main.ts 注入(避免 core 层依赖 IndexManifest)。
+    // 兼容额外清单清理器；实际持久化 backend 的 dropIndex 已清理同目录元数据。
     private onManifestReset: (() => Promise<void>) | null = null;
 
     constructor(private backend: IndexBackend) {}
@@ -61,7 +72,7 @@ export class IndexManager {
      * 注入 manifest 清理回调(reindex 时调用)。
      *
      * 关键路径:IndexManager 不直接依赖 IndexManifest(core 层 purity),
-     * 由 main.ts 注入清理逻辑:dropIndex + manifest.invalidate。
+     * 供需要额外清理清单的 backend 装配层注入；抛错会停止重建。
      */
     setManifestResetCallback(cb: () => Promise<void>): void {
         this.onManifestReset = cb;
@@ -78,31 +89,36 @@ export class IndexManager {
      *
      * @returns 成功返回 {indexed, errors};失败返回 null 且状态置 Failed
      */
-    async onLayoutReady(): Promise<{ indexed: number; errors: number } | null> {
+    onLayoutReady(): Promise<{ indexed: number; errors: number } | null> {
+        if (this.startup) return this.startup;
+        const task = this.serialize(() => this.scan());
+        this.startup = task;
+        void task.finally(() => {
+            if (this.startup === task) this.startup = null;
+            if (!this.paused && !this.unloaded && !this.failed) void this.scheduleFlush();
+        });
+        return task;
+    }
+
+    private async scan(forceFull = false): Promise<{ indexed: number; errors: number } | null> {
+        if (this.unloaded) return null;
+        this.failed = false;
         this.status$.set({ state: 'Init' });
         try {
-            // 关键路径:优先 smart,backend 渐进迁移。
-            // smartReindex 内部处理所有情况:索引不存在 → 全量 + 写 manifest;存在 → hash diff。
-            if (this.backend.smartReindex && this.backend.isIndexCreated) {
-                this.status$.set({ state: 'Diffing' });
-                const result = await this.backend.smartReindex();
-                this.status$.set({
-                    state: 'Ready',
-                    totalDocs: result.indexed + result.skipped,
-                    lastIndexTime: Date.now(),
-                });
-                return { indexed: result.indexed, errors: result.errors };
-            }
-            // 回退:全量路径(backend 未实现 smartReindex)。
-            const result = await this.backend.fullReindex();
-            this.status$.set({
+            const smart = !forceFull && !!this.backend.smartReindex;
+            if (smart) this.status$.set({ state: 'Diffing' });
+            const result: { indexed: number; errors: number; skipped?: number } = smart
+                ? await this.backend.smartReindex!() : await this.backend.fullReindex();
+            if (result.errors > 0) throw new Error(tNow('notice.indexPartialFailure', { count: result.errors }));
+            if (!this.unloaded) this.status$.set({
                 state: 'Ready',
-                totalDocs: result.indexed,
+                totalDocs: result.indexed + (result.skipped ?? 0),
                 lastIndexTime: Date.now(),
             });
-            return result;
+            return { indexed: result.indexed, errors: result.errors };
         } catch (err) {
-            this.status$.set({ state: 'Failed', reason: String(err) });
+            this.failed = true;
+            if (!this.unloaded) this.status$.set({ state: 'Failed', reason: String(err) });
             devLogger.error('index', '启动索引失败', err);
             return null;
         }
@@ -115,7 +131,9 @@ export class IndexManager {
      * 入队后自动触发非阻塞消费(若未暂停且无正在处理的批次)。
      */
     enqueue(path: string, op: 'upsert' | 'delete', content?: string): void {
+        if (this.unloaded) return;
         this.queue.set(path, { op, content });
+        if (this.failed) return;
         if (this.paused) {
             this.status$.set({ state: 'Paused', pending: this.queue.size });
         } else {
@@ -135,8 +153,9 @@ export class IndexManager {
 
     /** 恢复 — 追平累积的队列。 */
     resume(): void {
-        if (!this.paused) return;
+        if (!this.paused && !this.failed) return;
         this.paused = false;
+        this.failed = false;
         if (this.queue.size > 0) {
             this.status$.set({ state: 'Queueing', pending: this.queue.size });
             void this.scheduleFlush();
@@ -146,34 +165,37 @@ export class IndexManager {
     }
 
     /**
-     * 重新索引 — 清队列 + 清 .index/ + 清 manifest + 走全量(spec §4.4)。
+     * 重新索引 — 等待当前操作、清库并全量扫描，保留期间的文件事件。
      *
      * 关键路径:用户手动 /reindex 想强制全量,必须绕过 smartReindex 的 hash diff。
      * 若不清 manifest,smartReindex 会跳过未变更文件,违反用户预期。
-     * dropIndex 可选:backend 未实现时退化为 onLayoutReady(走 smartReindex)。
+     * 清理失败立即停止；backend 未提供清理时仍执行全量。
      */
-    async reindex(): Promise<void> {
-        this.queue.clear();
-        // 关键路径:先清 .index/ 目录 + manifest,确保 onLayoutReady 走全量路径。
-        if (this.backend.dropIndex) {
+    reindex(): Promise<void> {
+        if (this.rebuilding) return this.rebuilding;
+        const task = this.serialize(async () => {
+            if (this.unloaded) return;
             try {
-                await this.backend.dropIndex();
+                // 修复:不清事件队列；扫描期间的最新变动必须在重建后追平。
+                await this.backend.dropIndex?.();
+                await this.onManifestReset?.();
+                await this.scan(true);
             } catch (err) {
-                devLogger.error('index', 'reindex: dropIndex 失败,仍继续走 onLayoutReady', err);
+                this.failed = true;
+                if (!this.unloaded) this.status$.set({ state: 'Failed', reason: String(err) });
+                devLogger.error('index', '重新索引失败', err);
             }
-        }
-        if (this.onManifestReset) {
-            try {
-                await this.onManifestReset();
-            } catch (err) {
-                devLogger.error('index', 'reindex: manifest 清理失败,仍继续', err);
-            }
-        }
-        await this.onLayoutReady();
+        });
+        this.rebuilding = task;
+        void task.finally(() => {
+            if (this.rebuilding === task) this.rebuilding = null;
+            if (!this.paused && !this.unloaded && !this.failed) void this.scheduleFlush();
+        });
+        return task;
     }
 
     /** 取出队首并处理。 */
-    async processNext(): Promise<void> {
+    private async processNext(): Promise<void> {
         const iter = this.queue.entries().next();
         if (iter.done) return;
         const [path, entry] = iter.value;
@@ -181,35 +203,55 @@ export class IndexManager {
         this.status$.set({ state: 'Processing', currentBatch: [path] });
         try {
             if (entry.op === 'upsert') {
-                await this.backend.incrementalIndex({ path, content: entry.content ?? '' });
+                const result = await this.backend.incrementalIndex({ path, content: entry.content ?? '' });
+                if (result.errors > 0) throw new Error(tNow('notice.indexPartialFailure', { count: result.errors }));
             } else {
                 await this.backend.deleteFile(path);
             }
-            this.status$.set({ state: 'Ready', totalDocs: 0, lastIndexTime: Date.now() });
+            const complete = await this.backend.isIndexComplete?.() ?? true;
+            if (!this.unloaded) this.status$.set(complete
+                ? { state: 'Ready', totalDocs: 0, lastIndexTime: Date.now() }
+                : { state: 'Idle' });
         } catch (err) {
-            this.status$.set({ state: 'Failed', reason: String(err) });
+            this.failed = true;
+            if (!this.queue.has(path)) this.queue.set(path, entry);
+            if (!this.unloaded) this.status$.set({ state: 'Failed', reason: String(err) });
         }
     }
 
     /** 把队列中所有项消费完。 */
-    async flush(): Promise<void> {
-        if (this.paused || this.processing) return;
-        this.processing = true;
-        try {
-            while (this.queue.size > 0 && !this.paused) {
+    flush(): Promise<void> {
+        if (this.flushing) return this.flushing;
+        if (this.paused || this.unloaded || this.failed) return Promise.resolve();
+        const task = this.serialize(async () => {
+            while (this.queue.size > 0 && !this.paused && !this.unloaded && !this.failed) {
                 await this.processNext();
             }
-        } finally {
-            this.processing = false;
-        }
+        });
+        this.flushing = task;
+        void task.finally(() => { if (this.flushing === task) this.flushing = null; });
+        return task;
+    }
+
+    /** 卸载后不再开始新写入；正在运行的底层任务由 WorkerManager 负责清理等待。 */
+    destroy(): void {
+        this.unloaded = true;
+        this.queue.clear();
+        this.status$.set({ state: 'Unloaded' });
+    }
+
+    private serialize<T>(operation: () => Promise<T>): Promise<T> {
+        const task = this.tail.then(operation);
+        this.tail = task.catch(() => undefined);
+        return task;
     }
 
     /**
      * 内部调度 — 防止并发消费。
-     * 多次 enqueue 只会触发一次实际 flush(processing 标志去重)。
+     * 多次 enqueue 复用正在等待或执行的 flush。
      */
     private async scheduleFlush(): Promise<void> {
-        if (this.processing || this.paused) return;
+        if (this.paused || this.unloaded || this.failed) return;
         await this.flush();
     }
 

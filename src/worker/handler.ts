@@ -146,7 +146,7 @@ export function initProcessorWithStore(
  * Worker 事件推送回调。
  *
  * 关键路径:处理长任务(如全量索引)时,processor 通过此回调主动向主线程推送进度事件,
- * 不走 request-response 链路(无 _requestId)。
+ * 由入口附上所属请求的 _requestId，进度不作为最终响应。
  *
  * - 真实 Worker Threads: 实现为 `(msg) => parentPort.postMessage(msg)`
  * - InlineWorker: 实现为直接通知 messageListeners(异步)
@@ -175,7 +175,7 @@ export async function handleMessage(
                 const req = msg as Extract<WorkerRequest, { type: 'index.full' }>;
                 applyChunkOptions(req.payload.chunkOptions);
                 const result = await processor.indexFull(req.payload.files, (progress) => {
-                    // 关键路径:每处理完一批文件推送一次进度事件,不带 _requestId(广播式)。
+                    // 关键路径:每处理完一批文件推送进度，由入口附上所属请求 ID。
                     postEvent?.({ type: 'index.progress', payload: progress });
                 });
                 return { type: 'index.done', payload: result };

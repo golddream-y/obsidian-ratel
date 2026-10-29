@@ -603,6 +603,9 @@ export interface NoticeStrings {
   'notice.indexPaused': string;
   'notice.indexResumed': string;
   'notice.indexProgress': string;
+  'notice.indexStillRunning': string;
+  'notice.indexResponseFailed': string;
+  'notice.indexPartialFailure': string;
   'notice.indexError': string;
   'notice.modelDownloading': string;
   'notice.modelInit': string;

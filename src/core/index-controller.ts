@@ -15,6 +15,8 @@ import { FolderWatcher } from './folder-watcher';
 import { Ratelignore } from '../utils/ratelignore-parser';
 import { isIndexableMarkdownPath } from '../utils/path-safety';
 import { devLogger } from '../logging/dev-logger';
+import { get } from 'svelte/store';
+import { tNow } from '../i18n';
 
 /**
  * Vault 事件订阅接口(从 VaultPort 抽离,避免在 IndexController 强依赖全 VaultPort)。
@@ -94,7 +96,13 @@ export class IndexController {
 
     pause(): void { this.indexManager.pause(); }
     resume(): void { this.indexManager.resume(); }
-    async reindex(): Promise<void> { await this.indexManager.reindex(); }
+    /** 重建失败向调用者抛错，防止子代理将失败转换为成功统计。 */
+    async reindex(): Promise<void> {
+        await this.indexManager.reindex();
+        const status = get(this.indexManager.status$);
+        if (status.state === 'Failed') throw new Error(status.reason);
+        if (status.state === 'Unloaded') throw new Error(tNow('notice.indexResponseFailed'));
+    }
 
     /**
      * 立即触发单文件索引刷新,绕过 FolderWatcher 5s 去抖。
@@ -122,6 +130,7 @@ export class IndexController {
 
     /** 卸载 — 清 watcher + 退订 vault 事件。 */
     destroy(): void {
+        this.indexManager.destroy();
         this.watcher.stop();
         for (const u of this.unsubscribers) u();
         this.unsubscribers = [];

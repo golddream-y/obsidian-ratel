@@ -61,34 +61,36 @@ function createErrorHandler(errorMessage: string): (e: MessageEvent) => void {
 // bootstrap 失败时也要注册一个返回错误的 onmessage,防止主线程请求悬挂。
 void bootstrapWorker().then(
 	() => {
-		self.onmessage = async (e: MessageEvent) => {
-			const msg = e.data as WorkerRequest & { _requestId?: string };
-			const requestId = msg._requestId;
+		let tail = Promise.resolve();
+		self.onmessage = (e: MessageEvent) => {
+			tail = tail.then(async () => {
+				const msg = e.data as WorkerRequest & { _requestId?: string };
+				const requestId = msg._requestId;
 
-			// 关键路径:postEvent 直接转发到 self.postMessage,进度事件不带 _requestId,
-			// 主线程 WorkerManager 会自动区分请求响应(requestId)和事件(无 requestId)。
-			const postEvent = (eventMsg: WorkerResponse) => self.postMessage(eventMsg);
+				// 关键路径:进度与终态都绑定所属请求 ID，主线程先按消息类型区分。
+				const postEvent = (eventMsg: WorkerResponse) => self.postMessage({ ...eventMsg, _requestId: requestId });
 
-			try {
-				const response = await handleMessage(msg, postEvent);
-				if (requestId) {
-					(response as Record<string, unknown>)._requestId = requestId;
+				try {
+					const response = await handleMessage(msg, postEvent);
+					if (requestId) {
+						(response as Record<string, unknown>)._requestId = requestId;
+					}
+					self.postMessage(response);
+				} catch (err) {
+					// 修复:任何未捕获异常都返回结构化错误响应,主线程据此 reject Promise
+					const errorResponse: WorkerResponse = {
+						type: 'error',
+						payload: {
+							code: 'WORKER_ERROR',
+							message: err instanceof Error ? err.message : String(err),
+						},
+					};
+					if (requestId) {
+						(errorResponse as Record<string, unknown>)._requestId = requestId;
+					}
+					self.postMessage(errorResponse);
 				}
-				self.postMessage(response);
-			} catch (err) {
-				// 修复:任何未捕获异常都返回结构化错误响应,主线程据此 reject Promise
-				const errorResponse: WorkerResponse = {
-					type: 'error',
-					payload: {
-						code: 'WORKER_ERROR',
-						message: err instanceof Error ? err.message : String(err),
-					},
-				};
-				if (requestId) {
-					(errorResponse as Record<string, unknown>)._requestId = requestId;
-				}
-				self.postMessage(errorResponse);
-			}
+			}).catch(() => { /* 单条消息失败不能阻断后续消息 */ });
 		};
 	},
 	(err) => {

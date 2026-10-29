@@ -138,4 +138,13 @@ describe('FeedbackController', () => {
 		expect((userNotice.toast as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
 		ctl.destroy();
 	});
+ it('完成通知 - 部分错误 - 不触发成功回调且状态为失败', () => {
+  const complete = vi.fn();
+  const ctl = createController({ onFullIndexComplete: complete });
+  ctl.notifyFullIndexComplete(1, 1);
+  expect(complete).not.toHaveBeenCalled();
+  expect(get(userStatus.statusBar$).index).toBe('failed');
+  ctl.destroy();
+ });
+
 });

@@ -113,7 +113,7 @@ export type WorkerRequest =
  */
 export type WorkerResponse =
 	| { type: 'index.progress'; payload: { done: number; total: number } }
-	| { type: 'index.done'; payload: { indexed: number; errors: number } }
+	| { type: 'index.done'; payload: { indexed: number; errors: number; chunkCount?: number } }
 	| { type: 'index.batch.done'; payload: { indexed: number; errors: number; chunkCounts: Record<string, number> } }
 	| { type: 'vector.search.result'; payload: Array<import('./ports/vector').VectorSearchResult> }
 	| { type: 'vector.upsert.done'; payload: { docId: string } }

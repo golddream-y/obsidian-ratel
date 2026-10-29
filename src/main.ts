@@ -12,12 +12,8 @@ import fs, { readdirSync } from 'node:fs';
 import path from 'node:path';
 import { type RatelVaultSettings, DEFAULT_SETTINGS, RatelVaultSettingTab, normalizeContextLengthSettings, applyBuiltinToolPermissionDefaults } from './settings';
 import { normalizeChunkSizeSettings, CHUNK_SIZE_MAX_TOKENS } from './ui/tokens/chunk-size-presets';
-import {
-	isBuildStampCurrent,
-	readBuildStamp,
-	writeBuildStamp,
-	type IndexBuildStamp,
-} from './core/index-build-stamp';
+import { PersistentIndexBackend } from './core/persistent-index-backend';
+import type { IndexBuildStamp } from './core/index-build-stamp';
 import { normalizeChatPreset } from './settings/chat-preset';
 import { normalizeChatProfiles } from './settings/chat-profiles';
 import { normalizeAppearanceSettings } from './ui/appearance/normalize-appearance-settings';
@@ -134,7 +130,6 @@ import { requestMcpSpawnConfirmation } from './ui/mcp/mcp-spawn-confirm-modal';
 import { applyBadgerEmojiToElement, patchAllChatLeafIcons } from './utils/badger-icon';
 import { get } from 'svelte/store';
 import { ensurePluginGitignore } from './utils/gitignore-writer';
-import { sha256 } from './utils/hash';
 import { IndexManifest, migrateLegacyIndexManifest, resolveIndexManifestPath, CURRENT_CHUNKER_VERSION } from './core/index-manifest';
 import { ModelContextRegistry } from './ui/tokens/model-context-registry';
 import { ModelsDevCatalogCache } from './settings/model-catalog-cache';
@@ -431,85 +426,6 @@ export default class RatelVaultPlugin extends Plugin {
 		const ortAssets = new OrtRuntimeAssets(pluginDir);
 		this.modelManager = new ModelManager(path.join(pluginDir, 'models'), ortAssets);
 
-		this.indexBackend = {
-			fullReindex: async () => {
-				const files = this.vault.listMarkdownFiles();
-				const filtered: Array<{ path: string; content: string }> = [];
-				for (const f of files) {
-					const content = await this.vault.readFile(f);
-					filtered.push({ path: f, content });
-				}
-				const response = await this.workerManager.request({
-					type: 'index.full',
-					payload: { files: filtered, chunkOptions: this.buildChunkOptions() },
-				});
-				if (response.type === 'index.done') {
-					return { indexed: response.payload.indexed, errors: response.payload.errors };
-				}
-				return { indexed: 0, errors: 1 };
-			},
-			incrementalIndex: async (file) => {
-				const response = await this.workerManager.request({
-					type: 'index.incremental',
-					payload: { file, chunkOptions: this.buildChunkOptions() },
-				});
-				if (response.type === 'index.done') {
-					// 关键路径:incremental 后更新 manifest.chunkCount,修复 0 占位问题。
-					// Worker index.done 协议未在 types.ts 扩展 chunkCount(避免影响 index.full),
-					// 此处用类型断言安全访问可选字段。
-					const chunkCount = (response.payload as { chunkCount?: number }).chunkCount;
-					// 关键路径:errors>0 时索引失败,不写 manifest,避免污染 chunkCount(与 index.batch 路径 line 672 跳过 undefined 一致)
-					if (chunkCount !== undefined && response.payload.errors === 0) {
-						const manifestData = await this.indexManifest.load();
-						if (manifestData) {
-							const hash = await sha256(file.content);
-							this.indexManifest.recordEntry(
-								manifestData,
-								file.path,
-								hash,
-								Date.now(),
-								chunkCount,
-							);
-							await this.indexManifest.save(manifestData);
-						}
-					}
-					return { indexed: response.payload.indexed, errors: response.payload.errors };
-				}
-				return { indexed: 0, errors: 1 };
-			},
-			deleteFile: async (filePath) => {
-				const response = await this.workerManager.request({
-					type: 'index.delete',
-					payload: { filePath },
-				});
-				if (response.type === 'index.done') {
-					return response.payload.indexed;
-				}
-				return 0;
-			},
-			// 关键路径:smart reindex — hash diff 后仅对变更文件 batch embed。
-			isIndexCreated: async () => {
-				return this.vectraStore.isIndexCreated();
-			},
-			listMarkdownFiles: async () => {
-				const paths = this.vault.listMarkdownFiles();
-				const files: Array<{ path: string; content: string }> = [];
-				for (const p of paths) {
-					const content = await this.vault.readFile(p);
-					files.push({ path: p, content });
-				}
-				return files;
-			},
-			// 关键路径:箭头函数保留 this 绑定,委托给类方法 smartReindex。
-		smartReindex: async () => {
-			return this.smartReindex();
-		},
-			// 关键路径:reindex 命令需清 .index/(spec §4.4),委托给 vectraStore.dropIndex。
-			dropIndex: async () => {
-				await this.vectraStore.dropIndex();
-			},
-		};
-
 		// 关键路径:清单落在 .index/ratel-manifest.json;启动时迁入旧版插件根 index-manifest.json
 		try {
 			await migrateLegacyIndexManifest(pluginDir, this.indexDir);
@@ -517,17 +433,18 @@ export default class RatelVaultPlugin extends Plugin {
 			devLogger.warn('index', '旧版 index-manifest 迁移失败(可忽略)', err);
 		}
 		this.indexManifest = new IndexManifest(resolveIndexManifestPath(this.indexDir));
+		this.indexBackend = new PersistentIndexBackend({
+			indexDir: this.indexDir,
+			manifest: this.indexManifest,
+			worker: this.workerManager,
+			getStore: () => this.vectraStore,
+			vault: this.vault,
+			getBuildStamp: () => this.currentBuildStamp(),
+			getChunkOptions: () => this.buildChunkOptions(),
+		});
 
 		// 关键路径:ObsidianVault 已实现 VaultEventListener 接口,直接传入可保证所有 Obsidian API 访问都走外观层。
 		this.indexController = new IndexController(this.vault, this.indexBackend, vaultBase);
-		// 关键路径:注入 manifest 清理回调,供 IndexManager.reindex 调用(spec §4.4)。
-		// 清理逻辑:加载现有 manifest(若存在),invalidate 清空 entries 但保留全局参数待重新填充。
-		this.indexController.indexManager.setManifestResetCallback(async () => {
-			const data = await this.indexManifest.load();
-			if (data) {
-				this.indexManifest.invalidate(data);
-			}
-		});
 
 		// 关键路径:W4 — Indexer subagent,供其他子代理通过统一接口触发索引。
 		this.indexer = new Indexer({ vault: this.vault, indexController: this.indexController });
@@ -1095,7 +1012,7 @@ export default class RatelVaultPlugin extends Plugin {
 	this.addCommand({
 		id: 'drop-index',
 		name: tNow('cmd.dropIndex'),
-		callback: () => showDropIndexConfirm(this.app, () => this.vectraStore.dropIndex()),
+		callback: () => showDropIndexConfirm(this.app, () => this.indexBackend.dropIndex!()),
 	});
 
 	// 命令:重新加载 Skills(手动刷新三源)
@@ -1229,10 +1146,9 @@ export default class RatelVaultPlugin extends Plugin {
 			indexProgressRef.handle?.hide();
 			indexProgressRef.handle = null;
 			this.workerManager.clearProgressCallback();
-			this.feedbackController?.notifyFullIndexComplete(
-				indexResult?.indexed ?? 0,
-				indexResult?.errors ?? 0,
-			);
+			if (indexResult && indexResult.errors === 0) {
+				this.feedbackController?.notifyFullIndexComplete(indexResult.indexed, indexResult.errors);
+			}
 		} catch (err) {
 			// 关键路径:索引失败也要清理进度 toast 与 callback。
 			indexProgressRef.handle?.hide();
@@ -1257,231 +1173,7 @@ export default class RatelVaultPlugin extends Plugin {
 	 * @returns indexed 为本次实际写入的 chunk 所属文件数,errors 为失败计数,skipped 为未变更文件数。
 	 */
 	async smartReindex(): Promise<{ indexed: number; errors: number; skipped: number }> {
-		try {
-			return await this.doSmartReindex();
-		} catch (err) {
-			// 关键路径:.index/ 目录损坏(vectra 加载失败)或 smartReindex 任意步骤抛错时,
-			// 降级为清 .index/ + manifest 后全量重建(spec §9)。
-			// 失败时不清 manifest,保留旧 hash 表让下次启动重试(仅在索引损坏场景才清)。
-			devLogger.error('index', 'smartReindex 失败,降级全量重建', err);
-			try {
-				await this.vectraStore.dropIndex();
-				// 关键路径:索引损坏时 manifest 可能也指向损坏状态,一并清理。
-				// manifest 可能加载失败(null),只在存在时 invalidate。
-				const existingManifest = await this.indexManifest.load();
-				if (existingManifest) {
-					this.indexManifest.invalidate(existingManifest);
-				}
-			} catch (dropErr) {
-				devLogger.error('index', '降级清理失败,仍继续全量', dropErr);
-			}
-			const result = await this.indexBackend.fullReindex();
-			await this.writeManifestAfterFullReindex();
-			return { indexed: result.indexed, errors: result.errors, skipped: 0 };
-		}
-	}
-
-	/**
-	 * smartReindex 实际实现 — 由 smartReindex 包裹降级 try-catch。
-	 *
-	 * 关键路径:决策分支:
-	 * 1. 索引不存在 → 全量 + 写 manifest
-	 * 2. 索引在、manifest 缺失 → **只重建清单**(禁止全量 re-embed;修复同步删清单导致的反复全量)
-	 * 3. 全局参数变 → 清 .index/ → 全量 + writeManifestAfterFullReindex(禁止存空 entries)
-	 * 4. 否则 → hash diff
-	 *
-	 * @returns indexed 为本次实际写入的 chunk 所属文件数,errors 为失败计数,skipped 为未变更文件数。
-	 */
-	private async doSmartReindex(): Promise<{ indexed: number; errors: number; skipped: number }> {
-		// 关键路径:先检查索引是否存在,不存在走全量。
-		const indexExists = await this.vectraStore.isIndexCreated();
-		if (!indexExists) {
-			const result = await this.indexBackend.fullReindex();
-			await this.writeManifestAfterFullReindex();
-			return { indexed: result.indexed, errors: result.errors, skipped: 0 };
-		}
-
-		// 修复:向量在、清单丢 → 一般只写清单,绝不再次全量 embed(用户确认的反复重建根因)。
-		// 关键路径(1.2.0):光看"清单丢了"不够 —— 索引可能是旧分块规则切的。
-		// 因此比对构建戳:戳与当前规则一致才只补清单;缺失或不一致说明无法证明索引有效,必须重建。
-		let manifestData = await this.indexManifest.load();
-		if (!manifestData) {
-			const stamp = await readBuildStamp(this.indexDir);
-			if (!isBuildStampCurrent(stamp, this.currentBuildStamp())) {
-				devLogger.warn('index', '索引存在但清单缺失且构建戳不匹配,改走全量重建');
-				await this.vectraStore.dropIndex();
-				const result = await this.indexBackend.fullReindex();
-				await this.writeManifestAfterFullReindex();
-				return { indexed: result.indexed, errors: result.errors, skipped: 0 };
-			}
-			devLogger.warn('index', '索引存在但清单缺失,构建戳一致,仅重建 ratel-manifest(不 re-embed)');
-			await this.writeManifestAfterFullReindex();
-			manifestData = await this.indexManifest.load();
-			if (!manifestData) {
-				// 清单仍写失败才降级全量
-				devLogger.error('index', '清单重建失败,降级全量 embed');
-				const result = await this.indexBackend.fullReindex();
-				await this.writeManifestAfterFullReindex();
-				return { indexed: result.indexed, errors: result.errors, skipped: 0 };
-			}
-			const skipped = Object.keys(manifestData.entries).length;
-			return { indexed: 0, errors: 0, skipped };
-		}
-
-		// 关键路径:全局参数变化 → 清索引 → 全量 → 用完整清单覆盖(禁止 save 空 entries)
-		const currentEmbedModelId = this.resolveCurrentEmbedModelId();
-		if (
-			this.indexManifest.shouldFullRebuild(
-				manifestData,
-				currentEmbedModelId,
-				this.settings.chunkSize,
-				this.settings.chunkOverlap,
-				CURRENT_CHUNKER_VERSION,
-			)
-		) {
-			await this.vectraStore.dropIndex();
-			this.indexManifest.invalidate(manifestData);
-			const result = await this.indexBackend.fullReindex();
-			// 修复:原先 save(空 entries)导致下次全库 toAdd;改为写完整清单
-			await this.writeManifestAfterFullReindex();
-			return { indexed: result.indexed, errors: result.errors, skipped: 0 };
-		}
-
-		// 关键路径:读所有 markdown 文件 + mtime(vault 事件源是 ObsidianVault)。
-		const paths = this.vault.listMarkdownFiles();
-		const files: Array<{ path: string; content: string; mtime: number }> = [];
-		for (const p of paths) {
-			// 关键路径:mtime 快速跳过 — mtime 未变则不必读 content 与算 sha256(spec §4.2)。
-			// 大库热启动时省 N 次文件读 + N 次 hash,只做 stat 比较。
-			const stat = this.vault.stat(p);
-			const mtime = stat?.mtime ?? Date.now();
-			const existing = manifestData.entries[p];
-			if (existing && existing.mtime === mtime) {
-				// mtime 未变,直接复用旧 hash,不读 content。
-				files.push({ path: p, content: '', mtime });
-			} else {
-				const content = await this.vault.readFile(p);
-				files.push({ path: p, content, mtime });
-			}
-		}
-
-		const fileHashes = await Promise.all(
-			files.map(async (f) => {
-				// 关键路径:mtime 未变的文件复用 manifest 旧 hash,跳过 sha256 计算。
-				// 提取局部变量,避免 TS 索引访问 possibly undefined 误报。
-				const existingEntry = manifestData.entries[f.path];
-				const hash = f.content === '' && existingEntry
-					? existingEntry.hash
-					: await sha256(f.content);
-				return {
-					path: f.path,
-					content: f.content,
-					hash,
-					mtime: f.mtime,
-				};
-			}),
-		);
-
-		const diff = this.indexManifest.diff(manifestData, fileHashes);
-		const toEmbed = [...diff.toAdd, ...diff.toUpdate];
-
-		let indexed = 0;
-		let errors = 0;
-
-		// 关键路径:批量 embed toAdd + toUpdate。
-		if (toEmbed.length > 0) {
-			const response = await this.workerManager.request({
-				type: 'index.batch',
-				payload: {
-					files: toEmbed.map((f) => ({ path: f.path, content: f.content })),
-					chunkOptions: this.buildChunkOptions(),
-				},
-			});
-			if (response.type === 'index.batch.done') {
-				indexed = response.payload.indexed;
-				errors = response.payload.errors;
-				// 关键路径:批量记录 manifest(用返回的 chunkCount)。
-				for (const f of toEmbed) {
-					const chunkCount = response.payload.chunkCounts[f.path];
-					// 关键路径:失败文件 chunkCounts 无此 key(undefined),不 recordEntry,
-					// 保留旧 hash 供下次启动重试(spec §9)。空文件 chunkCount 为 0(已定义),照常记录。
-					if (chunkCount === undefined) continue;
-					const hash = fileHashes.find((h) => h.path === f.path)!.hash;
-					this.indexManifest.recordEntry(manifestData, f.path, hash, f.mtime, chunkCount);
-				}
-			} else {
-				errors += toEmbed.length;
-			}
-		}
-
-		// 关键路径:逐个 delete。
-		for (const delPath of diff.toDelete) {
-			try {
-				await this.workerManager.request({
-					type: 'index.delete',
-					payload: { filePath: delPath },
-				});
-				this.indexManifest.removeEntry(manifestData, delPath);
-			} catch {
-				// 删除失败不挂整批,下次启动重试。
-				errors++;
-			}
-		}
-
-		try {
-			manifestData.lastIndexTime = Date.now();
-			await this.indexManifest.save(manifestData);
-		} catch (err) {
-			// 关键路径:manifest 写盘失败不阻塞索引(spec §9),下次启动重试。
-			devLogger.error('index', 'manifest 写盘失败(增量后)', err);
-		}
-
-		return { indexed, errors, skipped: diff.unchanged.length };
-	}
-
-	/**
-	 * 按当前 vault 文件重建清单(只 hash,不 embed)。
-	 *
-	 * 用于:全量 embed 之后、或「索引在清单丢」恢复路径。
-	 * 单文件读失败跳过并记 warn,不阻断整份清单落盘。
-	 */
-	private async writeManifestAfterFullReindex(): Promise<void> {
-		const files = this.vault.listMarkdownFiles();
-		const entries: Record<string, import('./core/index-manifest').IndexManifestEntry> = {};
-		for (const p of files) {
-			try {
-				const content = await this.vault.readFile(p);
-				const hash = await sha256(content);
-				// 修复:用真实 mtime,避免下次启动因 Date.now() 占位导致全库重读
-				const mtime = this.vault.stat(p)?.mtime ?? Date.now();
-				entries[p] = { path: p, hash, mtime, chunkCount: 0 };
-			} catch (err) {
-				devLogger.warn('index', `manifest 跳过无法读取的文件: ${p}`, err);
-			}
-		}
-		const data: import('./core/index-manifest').IndexManifestData = {
-			version: 1,
-			embedModelId: this.resolveCurrentEmbedModelId(),
-			chunkSize: this.settings.chunkSize,
-			chunkOverlap: this.settings.chunkOverlap,
-			// 关键路径:记分块规则代数 — 规则变化时下一次启动自动重建一次。
-			chunkerVersion: CURRENT_CHUNKER_VERSION,
-			lastIndexTime: Date.now(),
-			entries,
-		};
-		try {
-			await this.indexManifest.save(data);
-		} catch (err) {
-			// 关键路径:manifest 写盘失败不阻塞索引(spec §9),下次启动重写。
-			devLogger.error('index', 'manifest 写盘失败(全量后)', err);
-		}
-		// 关键路径:同步落构建戳 —— 清单丢了也能据此判断索引是不是当前规则切的。
-		try {
-			await writeBuildStamp(this.indexDir, this.currentBuildStamp());
-		} catch (err) {
-			// 戳写失败不阻塞索引;下次全量会重写,期间按"无法证明有效"处理(会重建)。
-			devLogger.error('index', '构建戳写盘失败(全量后)', err);
-		}
+		return this.indexBackend.smartReindex!();
 	}
 
 	/**

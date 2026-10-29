@@ -201,3 +201,83 @@ describe('IndexManager', () => {
         expect(get(mgr.status$)).toMatchObject({ state: 'Failed' });
     });
 });
+
+
+describe('索引协调', () => {
+ it('启动扫描 - 重复启动和增量并发 - 复用扫描且串行追平', async () => {
+  let finish!: () => void;
+  const order: string[] = [];
+  const manager = new IndexManager({
+   fullReindex: async () => { order.push('scan'); await new Promise<void>(r => { finish = r; }); order.push('scanned'); return { indexed: 1, errors: 0 }; },
+   incrementalIndex: async file => { order.push(file.content); return { indexed: 1, errors: 0 }; },
+   deleteFile: async () => 0,
+  });
+  const first = manager.onLayoutReady();
+  const second = manager.onLayoutReady();
+  manager.enqueue('a.md', 'upsert', 'updated');
+  await Promise.resolve();
+  expect(order).toEqual(['scan']);
+  finish();
+  await Promise.all([first, second]);
+  await manager.flush();
+  expect(order).toEqual(['scan', 'scanned', 'updated']);
+ });
+ it('重建 - 清库失败 - 停止扫描并保留失败状态', async () => {
+  const scan = vi.fn(async () => ({ indexed: 1, errors: 0 }));
+  const manager = new IndexManager({ fullReindex: scan, incrementalIndex: vi.fn(), deleteFile: vi.fn(), dropIndex: async () => { throw new Error('drop failed'); } });
+  await manager.reindex();
+  expect(scan).not.toHaveBeenCalled();
+  expect(get(manager.status$).state).toBe('Failed');
+ });
+ it('启动扫描 - 部分错误 - 返回失败且不进入 Ready', async () => {
+  const manager = new IndexManager({ fullReindex: async () => ({ indexed: 1, errors: 1 }), incrementalIndex: vi.fn(), deleteFile: vi.fn() });
+  expect(await manager.onLayoutReady()).toBeNull();
+  expect(get(manager.status$).state).toBe('Failed');
+ });
+});
+
+
+describe('失败状态保持', () => {
+ it('扫描失败 - 扫描期间已有增量排队 - 保留队列直到显式恢复', async () => {
+  let reject!: (err: Error) => void;
+  const incremental = vi.fn(async () => ({ indexed: 1, errors: 0 }));
+  const manager = new IndexManager({
+   fullReindex: () => new Promise((_resolve, fail) => { reject = fail; }),
+   incrementalIndex: incremental, deleteFile: vi.fn(),
+  });
+  const scan = manager.onLayoutReady();
+  await Promise.resolve();
+  manager.enqueue('a.md', 'upsert', 'latest');
+  reject(new Error('scan failed'));
+  await scan;
+  await manager.flush();
+  expect(incremental).not.toHaveBeenCalled();
+  expect(get(manager.status$).state).toBe('Failed');
+  manager.enqueue('b.md', 'upsert', 'new');
+  expect(get(manager.status$).state).toBe('Failed');
+  manager.resume();
+  await vi.waitFor(() => expect(incremental).toHaveBeenCalledTimes(2));
+ });
+ it('增量失败 - 后面仍有排队 - 停止消费且不覆盖Failed', async () => {
+  const order: string[] = [];
+  const manager = new IndexManager({ fullReindex: vi.fn(), deleteFile: vi.fn(), incrementalIndex: async file => {
+   order.push(file.path); return { indexed: 0, errors: file.path === 'a.md' ? 1 : 0 };
+  } });
+  manager.pause(); manager.enqueue('a.md', 'upsert', 'a'); manager.enqueue('b.md', 'upsert', 'b'); manager.resume();
+  await vi.waitFor(() => expect(get(manager.status$).state).toBe('Failed'));
+  expect(order).toEqual(['a.md']);
+ });
+ it('手动重建 - 扫描与增量同时请求 - 按扫描重建增量顺序且保留事件', async () => {
+  const order: string[] = [];
+  let release!: () => void;
+  const manager = new IndexManager({
+   fullReindex: async () => { order.push('full'); if (order.length === 1) await new Promise<void>(r => { release = r; }); return { indexed: 1, errors: 0 }; },
+   dropIndex: async () => { order.push('drop'); },
+   incrementalIndex: async () => { order.push('incremental'); return { indexed: 1, errors: 0 }; }, deleteFile: vi.fn(),
+  });
+  const startup = manager.onLayoutReady(); await Promise.resolve();
+  const rebuild = manager.reindex(); manager.enqueue('a.md', 'upsert', 'latest');
+  release(); await Promise.all([startup, rebuild]);
+  await vi.waitFor(() => expect(order).toEqual(['full', 'drop', 'full', 'incremental']));
+ });
+});
