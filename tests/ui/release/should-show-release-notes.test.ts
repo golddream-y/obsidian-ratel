@@ -16,14 +16,15 @@ describe('shouldShowReleaseNotes', () => {
 	});
 
 	it('buildReleaseNotesMarkdown - 当前版本 - 含更新与升级提醒两节', () => {
-		const md = buildReleaseNotesMarkdown('1.2.0', '1.14.0');
-		expect(md.startsWith('# Ratel 1.2.0')).toBe(true);
+		const md = buildReleaseNotesMarkdown('1.2.1', '1.14.0');
+		expect(md.startsWith('# Ratel 1.2.1')).toBe(true);
 		expect(md).toContain('Obsidian 1.14.0');
 		expect(md).not.toContain('1.13.1');
 		expect(md).toContain('## 本次更新');
 		expect(md).toContain('## 升级后');
-		expect(md).toContain('精排可用当前对话模型');
-		expect(md).toContain('BM25');
-		expect(md).toContain('首次启动会重建索引，期间搜索暂不可用');
+		expect(md).toContain('重启复用已保存索引');
+		expect(md).toContain('失败不再显示完成');
+		expect(md).toContain('旧索引若缺少完成记录');
+		expect(md).not.toContain('首次启动会重建索引，期间搜索暂不可用');
 	});
 });
