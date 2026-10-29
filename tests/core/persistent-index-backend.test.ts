@@ -8,7 +8,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { get } from 'svelte/store';
+import { get, writable } from 'svelte/store';
+import { IndexController } from '../../src/core/index-controller';
+import { FeedbackController } from '../../src/core/feedback-controller';
+import { UserStatus } from '../../src/user-feedback/user-status';
+import type { ModelStatus } from '../../src/core/model-manager';
+import { isSearchReady } from '../../src/ui/chat/chat-send-gate';
+import { createSearchVaultTool } from '../../src/tools/search-vault';
+import { makeToolDef } from '../helpers/make-tool-def';
 import type { WorkerResponse } from '../../src/types';
 import { PersistentIndexBackend } from '../../src/core/persistent-index-backend';
 import { IndexManager } from '../../src/core/index-manager';
@@ -38,7 +45,8 @@ describe('真实索引持久化', () => {
 	}
 	async function create(embed = vi.fn(async (texts: string[]) => texts.map(() => [1, 0, 0])), timeoutMs = 1000) {
 		const store = new VectraStore(dir);
-		await store.init();
+		// 关键路径:构造器已启动初始化；通过公共读取等待同一个就绪 Promise，避免重入 init 提前返回。
+		await store.isIndexCreated();
 		const inline = new InlineWorker();
 		inline.initWithStore(store, { modelId: 'test', dimensions: 3, embed });
 		const worker = new WorkerManager(inline, { timeoutMs });
@@ -248,6 +256,86 @@ describe('真实索引持久化', () => {
                 expect((await next.manifest.load())!.entries['b.md']!.hash).toBe(await sha256('offline changed B'));
             }
         } finally { unsubscribe(); next.manager.destroy(); }
+    });
+
+    function controllerFor(context: Awaited<ReturnType<typeof create>>) {
+        return new IndexController({
+            ...context.vault,
+            onFileCreate: () => () => {}, onFileModify: () => () => {},
+            onFileDelete: () => () => {}, onFileRename: () => () => {},
+        }, context.backend, dir);
+    }
+
+    it('关闭自动扫描 - 重启后已有成功提交索引 - 只读恢复Ready且实际检索可用', async () => {
+        const initial = await create();
+        await initial.manager.onLayoutReady();
+        initial.worker.destroy();
+        const next = await create();
+        const controller = controllerFor(next);
+        const userStatus = new UserStatus();
+        const complete = vi.fn();
+        const feedback = new FeedbackController({
+            modelStatus$: writable<ModelStatus>({ state: 'NotStarted' }),
+            indexStatus$: controller.indexManager.status$, userStatus,
+            userNotice: { toastError: vi.fn() } as never,
+            getEmbeddingReady: () => true,
+            getSettings: () => ({ embedProvider: 'api', embedApiBase: '', chatApiBase: '' }),
+            onFullIndexComplete: complete,
+        });
+        const snapshots = new Map(['index.json', path.basename(resolveIndexManifestPath(dir)), path.basename(resolveBuildStampPath(dir))].map(name => {
+            const filePath = path.join(dir, name);
+            return [filePath, { content: fs.readFileSync(filePath, 'utf8'), mtime: fs.statSync(filePath).mtimeMs }];
+        }));
+        const readVault = vi.spyOn(next.vault, 'readFile');
+        const posted = vi.spyOn(next.inline, 'postMessage');
+        feedback.start();
+        try {
+            expect(await controller.onLayoutReady(false)).toBeNull();
+            expect(get(controller.indexManager.status$)).toMatchObject({ state: 'Ready', totalDocs: 2 });
+            expect(get(userStatus.statusBar$)).toMatchObject({ index: 'ready', indexDocCount: 2 });
+            expect(isSearchReady(get(userStatus.statusBar$))).toBe(true);
+            const tool = createSearchVaultTool({
+                search: async (_query: string, topK: number) => next.store.search([1, 0, 0], topK),
+            } as never, () => isSearchReady(get(userStatus.statusBar$)), makeToolDef('search_vault'), {
+                getMetadata: () => null, getBacklinks: () => new Map(),
+            } as never);
+            const results = await tool.execute({ query: 'original' });
+            expect(results).toEqual(expect.arrayContaining([expect.objectContaining({ metadata: expect.objectContaining({ path: 'a.md' }) })]));
+            expect(next.embed).not.toHaveBeenCalled();
+            expect(readVault).not.toHaveBeenCalled();
+            expect(posted).not.toHaveBeenCalled();
+            expect(complete).not.toHaveBeenCalled();
+            for (const [filePath, before] of snapshots) {
+                expect(fs.readFileSync(filePath, 'utf8')).toBe(before.content);
+                expect(fs.statSync(filePath).mtimeMs).toBe(before.mtime);
+            }
+        } finally { feedback.destroy(); controller.destroy(); }
+    });
+
+    it.each(['missing-manifest', 'missing-stamp', 'missing-index', 'invalid-manifest', 'incompatible-manifest', 'incompatible-stamp'])('关闭自动扫描 - %s - 不恢复Ready且不修写文件', async invalid => {
+        const initial = await create();
+        await initial.manager.onLayoutReady();
+        initial.worker.destroy();
+        const next = await create();
+        if (invalid === 'missing-manifest') fs.unlinkSync(resolveIndexManifestPath(dir));
+        if (invalid === 'missing-stamp') fs.unlinkSync(resolveBuildStampPath(dir));
+        if (invalid === 'missing-index') fs.unlinkSync(path.join(dir, 'index.json'));
+        if (invalid === 'invalid-manifest') fs.writeFileSync(resolveIndexManifestPath(dir), '{broken');
+        if (invalid === 'incompatible-manifest') {
+            const data = (await next.manifest.load())!;
+            data.embedModelId = 'other-model';
+            await next.manifest.save(data);
+        }
+        if (invalid === 'incompatible-stamp') fs.writeFileSync(resolveBuildStampPath(dir), JSON.stringify({ ...stamp, chunkSize: 1 }));
+        const snapshot = () => Object.fromEntries(fs.readdirSync(dir).map(name => [name, fs.readFileSync(path.join(dir, name), 'utf8')]));
+        const before = snapshot();
+        const controller = controllerFor(next);
+        try {
+            expect(await controller.onLayoutReady(false)).toBeNull();
+            expect(get(controller.indexManager.status$).state).not.toBe('Ready');
+            expect(next.embed).not.toHaveBeenCalled();
+            expect(snapshot()).toEqual(before);
+        } finally { controller.destroy(); }
     });
 
 });

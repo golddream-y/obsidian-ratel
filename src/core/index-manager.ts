@@ -28,6 +28,12 @@ export type IndexStatus =
     | { state: 'Failed'; reason: string }
     | { state: 'Unloaded' };
 
+/** 已提交索引的只读摘要，不包含本次扫描或嵌入统计。 */
+export interface CommittedIndexState {
+    totalDocs: number;
+    lastIndexTime: number;
+}
+
 /** Worker 调用抽象,便于单测注入 mock。 */
 export interface IndexBackend {
     fullReindex(): Promise<{ indexed: number; errors: number }>;
@@ -36,6 +42,7 @@ export interface IndexBackend {
     // 关键路径:smartReindex 是可选方法,未实现时 onLayoutReady 回退到 fullReindex。
     smartReindex?(): Promise<{ indexed: number; errors: number; skipped: number }>;
     isIndexCreated?(): Promise<boolean>;
+    readCommittedState?(): Promise<CommittedIndexState | null>;
     /** 全库持久化凭据是否完整；缺少凭据的增量写入不能宣告全库Ready。 */
     isIndexComplete?(): Promise<boolean>;
     listMarkdownFiles?(): Promise<Array<{ path: string; content: string }>>;
@@ -101,6 +108,23 @@ export class IndexManager {
         return task;
     }
 
+    /** 关闭自动扫描时只读恢复已有成功状态；缺少成功凭据时保持Idle。 */
+    restoreCommittedState(): Promise<void> {
+        return this.serialize(async () => {
+            if (this.unloaded || this.failed) return;
+            try {
+                const committed = await this.backend.readCommittedState?.();
+                if (this.unloaded) return;
+                this.status$.set(committed ? { state: 'Ready', ...committed } : { state: 'Idle' });
+            } catch (err) {
+                this.failed = true;
+                this.scanFailed = true;
+                if (!this.unloaded) this.status$.set({ state: 'Failed', reason: String(err) });
+                devLogger.error('index', '读取已提交索引状态失败', err);
+            }
+        });
+    }
+
     private async scan(forceFull = false): Promise<{ indexed: number; errors: number } | null> {
         if (this.unloaded) return null;
         this.failed = false;
@@ -163,6 +187,7 @@ export class IndexManager {
             // 等待上一轮启动完成，避免复用刚刚失败的 startup Promise 而漏掉重扫。
             void Promise.resolve(this.startup).then(() => {
                 if (!this.unloaded) return this.onLayoutReady();
+                return null;
             });
             return;
         }

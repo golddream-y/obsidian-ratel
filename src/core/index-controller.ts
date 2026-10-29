@@ -89,6 +89,8 @@ export class IndexController {
         // 关键路径:autoIndex=false 时仅启动 FolderWatcher,不跑 smartReindex(spec §5.7)。
         // 用户手动改文件仍增量,索引不会过期;手动 /reindex 仍可触发全量。
         if (!autoIndex) {
+            // 修复:禁用扫描不等于禁用已有索引；只读恢复真实就绪状态，仍不报告本次全量完成。
+            await this.indexManager.restoreCommittedState();
             return null;
         }
         return this.indexManager.onLayoutReady();

@@ -8,7 +8,7 @@
  * - 独立于 data.json(不走 Obsidian loadData/saveData)
  * - 落在 `.index/ratel-manifest.json`,与向量目录同生命周期(同步工具通常整目录忽略 `.index/`)
  * - 原子写:先写 .tmp 再 rename,避免半写损坏
- * - load 失败返回 null,调用方优先「只重建清单」再考虑全量 embed
+ * - load 失败返回 null；不能用当前文件内容补造清单来证明旧向量已成功索引
  * - 全局参数(embedModelId/chunkSize/chunkOverlap)变化 → shouldFullRebuild 返回 true
  */
 import fs from 'fs';

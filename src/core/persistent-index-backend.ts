@@ -5,10 +5,11 @@
  * @depends worker/manager, core/index-manifest, core/index-build-stamp
  */
 import fs from 'node:fs';
+import path from 'node:path';
 import type { VectraStore } from '../adapters/vector-vectra';
 import type { WorkerManager } from '../worker/manager';
 import type { ChunkOptionsPayload, WorkerResponse } from '../types';
-import type { IndexBackend } from './index-manager';
+import type { CommittedIndexState, IndexBackend } from './index-manager';
 import { IndexManifest, resolveIndexManifestPath, type IndexManifestData } from './index-manifest';
 import { resolveBuildStampPath, readBuildStamp, isBuildStampCurrent, writeBuildStamp, type IndexBuildStamp } from './index-build-stamp';
 import { sha256 } from '../utils/hash';
@@ -157,6 +158,30 @@ export class PersistentIndexBackend implements IndexBackend {
 		const stamp = this.deps.getBuildStamp();
 		return !!data && !this.deps.manifest.shouldFullRebuild(data, stamp.embedModelId, stamp.chunkSize, stamp.chunkOverlap, stamp.chunkerVersion) && isBuildStampCurrent(await readBuildStamp(this.deps.indexDir), stamp);
 	}
+
+    /** 只读验证已提交元数据与索引存在性，不初始化存储、不读取vault、不修写凭据。 */
+    readCommittedState(): Promise<CommittedIndexState | null> {
+        return this.serialize(() => this.deps.worker.runExclusive(async () => {
+            const data = await this.deps.manifest.load();
+            const stamp = this.deps.getBuildStamp();
+            if (!data || data.version !== 1 || !data.entries || typeof data.entries !== 'object' || Array.isArray(data.entries)
+                || !Number.isFinite(data.lastIndexTime) || data.lastIndexTime < 0
+                || this.deps.manifest.shouldFullRebuild(data, stamp.embedModelId, stamp.chunkSize, stamp.chunkOverlap, stamp.chunkerVersion)
+                || !isBuildStampCurrent(await readBuildStamp(this.deps.indexDir), stamp)) return null;
+            for (const [filePath, entry] of Object.entries(data.entries)) {
+                if (!entry || entry.path !== filePath || typeof entry.hash !== 'string'
+                    || !Number.isFinite(entry.mtime) || !Number.isInteger(entry.chunkCount) || entry.chunkCount < 0) return null;
+            }
+            try {
+                // 关键路径:VectraStore.isIndexCreated会触发懒初始化；此处必须直接只读检查磁盘。
+                if (!(await fs.promises.stat(path.join(this.deps.indexDir, 'index.json'))).isFile()) return null;
+            } catch (err) {
+                if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+                throw err;
+            }
+            return { totalDocs: Object.keys(data.entries).length, lastIndexTime: data.lastIndexTime };
+        }));
+    }
 
 	/** 读取用于索引的文件内容快照。 */
 	async listMarkdownFiles(): Promise<Array<{
