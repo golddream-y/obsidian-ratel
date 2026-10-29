@@ -238,11 +238,12 @@ describe('索引协调', () => {
 
 
 describe('失败状态保持', () => {
- it('扫描失败 - 扫描期间已有增量排队 - 保留队列直到显式恢复', async () => {
+ it('扫描失败 - 扫描期间已有增量排队 - 显式恢复重扫成功后追平', async () => {
   let reject!: (err: Error) => void;
   const incremental = vi.fn(async () => ({ indexed: 1, errors: 0 }));
+  let scans = 0;
   const manager = new IndexManager({
-   fullReindex: () => new Promise((_resolve, fail) => { reject = fail; }),
+   fullReindex: () => ++scans === 1 ? new Promise((_resolve, fail) => { reject = fail; }) : Promise.resolve({ indexed: 2, errors: 0 }),
    incrementalIndex: incremental, deleteFile: vi.fn(),
   });
   const scan = manager.onLayoutReady();

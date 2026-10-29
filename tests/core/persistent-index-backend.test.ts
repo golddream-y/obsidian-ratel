@@ -44,12 +44,13 @@ describe('真实索引持久化', () => {
 		const worker = new WorkerManager(inline, { timeoutMs });
 		workers.push(worker);
 		const manifest = new IndexManifest(resolveIndexManifestPath(dir));
+		const vault = { listMarkdownFiles: () => [...files.keys()], readFile: async (p: string) => files.get(p)!, stat: () => ({ mtime: 1 }) };
 		const backend = new PersistentIndexBackend({
 			indexDir: dir, manifest, worker, getStore: () => store,
-			vault: { listMarkdownFiles: () => [...files.keys()], readFile: async (p) => files.get(p)!, stat: () => ({ mtime: 1 }) },
+			vault,
 			getBuildStamp: () => stamp, getChunkOptions: () => ({ maxTokens: 100, overlapTokens: 0 }),
 		});
-		return { store, inline, worker, manifest, backend, embed, manager: new IndexManager(backend) };
+		return { store, inline, worker, manifest, backend, embed, vault, manager: new IndexManager(backend) };
 	}
 	it('真实重启 - 重新构造全部启动对象 - 未改文件零嵌入且修改文件更新', async () => {
 		const first = await create();
@@ -180,4 +181,73 @@ describe('真实索引持久化', () => {
 		expect(await first.manifest.load()).toBeNull();
 		expect(await readBuildStamp(dir)).toBeNull();
 	});
+    it.each([false, true])('扫描恢复 - B快照读取失败且A排队，恢复再次失败=%s - 先修复扫描再消费增量', async retryFails => {
+        const initial = await create();
+        expect(await initial.manager.onLayoutReady()).toEqual({ indexed: 2, errors: 0 });
+        const oldManifest = await initial.manifest.load();
+        initial.worker.destroy();
+        files.set('b.md', 'offline changed B');
+        const next = await create();
+        const originalRead = next.vault.readFile;
+        let failRead!: () => void;
+        let enteredRead!: () => void;
+        const readingB = new Promise<void>(resolve => { enteredRead = resolve; });
+        let attempts = 0;
+        vi.spyOn(next.vault, 'readFile').mockImplementation(async filePath => {
+            if (filePath === 'b.md') {
+                attempts++;
+                if (attempts === 1) {
+                    enteredRead();
+                    await new Promise<void>((_resolve, reject) => { failRead = () => reject(new Error('temporary read failure')); });
+                }
+                if (retryFails) throw new Error('read retry failure');
+            }
+            return originalRead(filePath);
+        });
+        const scan = next.manager.onLayoutReady();
+        await readingB;
+        files.set('a.md', 'event changed A');
+        next.manager.enqueue('a.md', 'upsert', 'event changed A');
+        failRead();
+        expect(await scan).toBeNull();
+        await next.manager.flush();
+        expect(get(next.manager.status$).state).toBe('Failed');
+        expect(await next.manifest.load()).toEqual(oldManifest);
+        expect(await readBuildStamp(dir)).toEqual(stamp);
+        const incremental = vi.spyOn(next.backend, 'incrementalIndex');
+        const scanBatches: string[][] = [];
+        const originalPost = next.inline.postMessage.bind(next.inline);
+        vi.spyOn(next.inline, 'postMessage').mockImplementation(message => {
+            if (message.type === 'index.batch') scanBatches.push(message.payload.files.map(file => file.path));
+            originalPost(message);
+        });
+        const readyBHashes: string[] = [];
+        const unsubscribe = next.manager.status$.subscribe(status => {
+            if (status.state === 'Ready') {
+                const data = JSON.parse(fs.readFileSync(resolveIndexManifestPath(dir), 'utf8')) as { entries: Record<string, { hash: string }> };
+                readyBHashes.push(data.entries['b.md']!.hash);
+            }
+        });
+        try {
+            next.manager.resume();
+            await vi.waitFor(() => {
+                expect(attempts).toBe(2);
+                expect(get(next.manager.status$).state).toBe(retryFails ? 'Failed' : 'Ready');
+            });
+            await next.manager.flush();
+            if (retryFails) {
+                expect(incremental).not.toHaveBeenCalled();
+                expect(readyBHashes).toEqual([]);
+                expect(await next.manifest.load()).toEqual(oldManifest);
+            } else {
+                expect(scanBatches).toEqual([['a.md', 'b.md']]);
+                expect(incremental).toHaveBeenCalledOnce();
+                expect(readyBHashes.length).toBeGreaterThan(0);
+                expect(readyBHashes.every(hash => hash === readyBHashes[0])).toBe(true);
+                expect(readyBHashes[0]).toBe(await sha256('offline changed B'));
+                expect((await next.manifest.load())!.entries['b.md']!.hash).toBe(await sha256('offline changed B'));
+            }
+        } finally { unsubscribe(); next.manager.destroy(); }
+    });
+
 });

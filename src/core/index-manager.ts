@@ -62,6 +62,7 @@ export class IndexManager {
     private rebuilding: Promise<void> | null = null;
     private unloaded = false;
     private failed = false;
+    private scanFailed = false;
     private previousState: IndexStatus = { state: 'Idle' };
     // 兼容额外清单清理器；实际持久化 backend 的 dropIndex 已清理同目录元数据。
     private onManifestReset: (() => Promise<void>) | null = null;
@@ -110,6 +111,7 @@ export class IndexManager {
             const result: { indexed: number; errors: number; skipped?: number } = smart
                 ? await this.backend.smartReindex!() : await this.backend.fullReindex();
             if (result.errors > 0) throw new Error(tNow('notice.indexPartialFailure', { count: result.errors }));
+            this.scanFailed = false;
             if (!this.unloaded) this.status$.set({
                 state: 'Ready',
                 totalDocs: result.indexed + (result.skipped ?? 0),
@@ -118,6 +120,7 @@ export class IndexManager {
             return { indexed: result.indexed, errors: result.errors };
         } catch (err) {
             this.failed = true;
+            this.scanFailed = true;
             if (!this.unloaded) this.status$.set({ state: 'Failed', reason: String(err) });
             devLogger.error('index', '启动索引失败', err);
             return null;
@@ -153,8 +156,16 @@ export class IndexManager {
 
     /** 恢复 — 追平累积的队列。 */
     resume(): void {
-        if (!this.paused && !this.failed) return;
+        if (this.unloaded || (!this.paused && !this.failed)) return;
         this.paused = false;
+        if (this.scanFailed) {
+            // 修复:扫描失败意味着全库尚未核实；无关文件的增量成功不能解除该失败。
+            // 等待上一轮启动完成，避免复用刚刚失败的 startup Promise 而漏掉重扫。
+            void Promise.resolve(this.startup).then(() => {
+                if (!this.unloaded) return this.onLayoutReady();
+            });
+            return;
+        }
         if (this.queue.size > 0) {
             // 关键路径:显式恢复有待处理条目时才解除失败锁存，重试成功后才能Ready。
             this.failed = false;
@@ -184,6 +195,7 @@ export class IndexManager {
                 await this.scan(true);
             } catch (err) {
                 this.failed = true;
+                this.scanFailed = true;
                 if (!this.unloaded) this.status$.set({ state: 'Failed', reason: String(err) });
                 devLogger.error('index', '重新索引失败', err);
             }

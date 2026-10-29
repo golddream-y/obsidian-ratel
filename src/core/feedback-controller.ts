@@ -5,7 +5,7 @@
  * @depends core/model-manager, core/index-manager, user-feedback/user-notice, user-feedback/user-status, logging/dev-logger
  */
 
-import type { Readable } from 'svelte/store';
+import { get, type Readable } from 'svelte/store';
 import type { Unsubscriber } from 'svelte/store';
 import type { ModelStatus } from './model-manager';
 import type { IndexStatus } from './index-manager';
@@ -93,9 +93,12 @@ export class FeedbackController {
 			return;
 		}
 		this.safeRun(() => {
+			const status = get(this.deps.indexStatus$);
+			if (status.state !== 'Ready') return;
+			// 修复:indexed 是本次处理数，完整总量以已经提交成功的Ready状态为准。
 			this.deps.userStatus.patch({
 				index: 'ready',
-				indexDocCount: indexed,
+				indexDocCount: status.totalDocs,
 				indexDetail: undefined,
 			});
 		});

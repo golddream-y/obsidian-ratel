@@ -147,4 +147,13 @@ describe('FeedbackController', () => {
   ctl.destroy();
  });
 
+    it('完成通知 - 外部回调存在 - 保留本次indexed和errors语义', () => {
+        const complete = vi.fn();
+        const ctl = createController({ onFullIndexComplete: complete });
+        indexStatus$.set({ state: 'Ready', totalDocs: 10, lastIndexTime: 1 });
+        ctl.notifyFullIndexComplete(2, 0);
+        expect(complete).toHaveBeenCalledWith(2, 0);
+        ctl.destroy();
+    });
+
 });
