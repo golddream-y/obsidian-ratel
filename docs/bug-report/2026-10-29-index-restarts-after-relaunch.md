@@ -54,4 +54,4 @@
 - 超时或失败不能被通知成完成；已成功的索引元数据必须可靠落盘，只有确需重建的条件才清空有效索引。
 - 测试应覆盖超过原十分钟仍持续推进、真实停滞、失败后的晚到完成、交错进度，以及成功完成后重启零重复嵌入。
 
-本记录保留修复前的诊断事实。后续修复范围与验收见 [S-INDEX-RESTART](../superpowers/specs/2026-10-29-index-restart.md)；是否完成与发布以实施计划和 Release 为准。
+本记录保留修复前的诊断事实。后续修复范围与验收见 [S-INDEX-RESTART](../superpowers/archive/S-INDEX-RESTART/specs/2026-10-29-index-restart.md)；是否完成与发布以实施计划和 Release 为准。

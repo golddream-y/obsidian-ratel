@@ -40,4 +40,4 @@ IndexManager 统一协调启动扫描、手动重建和文件事件队列。扫�
 
 ## 参考
 
-源码：src/worker/manager.ts、src/worker/inline-worker.ts、src/worker/handler.ts、src/core/index-manager.ts、src/main.ts。诊断记录：[隔离诊断记录](../../bug-report/2026-10-29-index-restarts-after-relaunch.md)。
+源码：src/worker/manager.ts、src/worker/inline-worker.ts、src/worker/handler.ts、src/core/index-manager.ts、src/main.ts。诊断记录：[隔离诊断记录](../../../../bug-report/2026-10-29-index-restarts-after-relaunch.md)。
