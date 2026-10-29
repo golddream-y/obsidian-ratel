@@ -155,11 +155,13 @@ export class IndexManager {
     resume(): void {
         if (!this.paused && !this.failed) return;
         this.paused = false;
-        this.failed = false;
         if (this.queue.size > 0) {
+            // 关键路径:显式恢复有待处理条目时才解除失败锁存，重试成功后才能Ready。
+            this.failed = false;
             this.status$.set({ state: 'Queueing', pending: this.queue.size });
             void this.scheduleFlush();
-        } else {
+        } else if (get(this.status$).state === 'Paused') {
+            // 修复:暂停期间扫描可能已成功或失败；不能用旧快照覆盖真实终态。
             this.status$.set(this.previousState);
         }
     }
@@ -256,13 +258,7 @@ export class IndexManager {
     }
 
     private snapshotForResume(): void {
-        // 修复:读真实状态而非 hardcode Ready,避免 paused 前非 Ready 时恢复错误。
-        const current = get(this.status$);
-        if (current.state === 'Ready' || current.state === 'Idle' || current.state === 'Failed') {
-            this.previousState = current;
-        } else {
-            // 处理中暂停,恢复后回 Ready。
-            this.previousState = { state: 'Ready', totalDocs: 0, lastIndexTime: Date.now() };
-        }
+        // 修复:运行状态也原样保存；暂停和恢复都不能凭空制造成功状态。
+        this.previousState = get(this.status$);
     }
 }
