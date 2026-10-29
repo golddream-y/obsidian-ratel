@@ -38,7 +38,7 @@ pie showData title 归档形态分布
 
 | ID | 归档目录 | 日期 | 备注 |
 |---|---|---|---|
-| S-INDEX-RESTART | [archive/S-INDEX-RESTART/](archive/S-INDEX-RESTART/) | 10-29 | 索引任务串行、活动超时、持久化与失败恢复；ccd63bc，2152 测试通过，用户确认先归档，1.2.1 待发布 |
+| S-INDEX-RESTART | [archive/S-INDEX-RESTART/](archive/S-INDEX-RESTART/) | 10-29 | 索引任务串行、活动超时、持久化与失败恢复；ccd63bc，2152 测试通过；先归档 ec6e587，再随 [1.2.1](https://github.com/golddream-y/obsidian-ratel/releases/tag/1.2.1) 发布（16708e7） |
 | S-CHAT-PROFILES | [archive/S-CHAT-PROFILES/](archive/S-CHAT-PROFILES/) | 10-11 | 多套对话模型配置、复制与顶栏切换菜单；收尾「设为当前」共用函数。三 plan 全交付，随 1.1.0；merge `a0c0a09`、`29069b9`、`2de1bc2` |
 | P-PROVIDER-OFFLINE | [archive/P-PROVIDER-OFFLINE/](archive/P-PROVIDER-OFFLINE/) | 10-11 | 断网可新建/编辑配置、供应商离线锁定、窗口两态文案；同分支计划外小档追加连接测试。随 1.1.0；`f405473`、`2def3d8`、`399dcd4` |
 | S-AGENTS-SESSION | [archive/S-AGENTS-SESSION/](archive/S-AGENTS-SESSION/) | 10-11 | 子目录约束整场会话挂在工具结果上，压缩后重读。随 1.0.3；`cb6dae3` 等 5 commit |

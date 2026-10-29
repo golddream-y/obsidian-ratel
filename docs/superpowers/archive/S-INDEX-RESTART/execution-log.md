@@ -1,5 +1,20 @@
 # S-INDEX-RESTART — 执行日志（按时间倒序）
 
+## 2026-10-29 — P-INDEX-RESTART（1.2.1 发布验收）
+
+用户确认先归档再发。归档提交 ec6e587 在前，发布提交 16708e7 在后；main、develop 和修复分支原子推送，tag 为 `1.2.1`，没有 `v` 前缀。
+
+[发布 CI 40811177040](https://github.com/golddream-y/obsidian-ratel/actions/runs/40811177040) 成功；[Release 1.2.1](https://github.com/golddream-y/obsidian-ratel/releases/tag/1.2.1) 于北京时间 2026-10-29 11:16:49 正式发布，非 draft、非 prerelease。附件恰好三份，服务端摘要与本地验证产物全部一致：
+
+| 附件 | 字节 | SHA-256 |
+|---|---|---|
+| main.js | 11668701 | f93f9b319b10e759ddee6a127fae52e245fea0748d8a1062ddef2870edbd1bb0 |
+| manifest.json | 458 | bab1758e5a280ddf70cc75a5115e38fd41b8da156a9ea1d2b9597249f797b032 |
+| styles.css | 30542 | 692f52426ccaed0adc2c4519da2c5fd116fe74c3718f52d12dc1741d8284cef7 |
+
+阶段 A 全量 2152 测试通过、lint 无错误，生产构建及两个发布门禁通过；类型检查仍保留 241 条存量诊断、无新增。CI 构建上传附件，未手传本地文件。用户原有暂存及未暂存改动完整保留，未进入发版提交；未操作日常库插件。工作树受应用保护，保留且已清理重复准备内容。
+
+
 ## 2026-10-29 — P-INDEX-RESTART（索引生命周期修复与归档）
 
 | 环节 | 提交／证据 | 状态 |
@@ -10,7 +25,7 @@
 | 类型基线 | 241 条存量诊断，与基线按文件／错误码比较无新增 | 未宣称全量类型检查通过 |
 | Sandbox 验收 | 用户关闭重开反馈正常；代理只读检查 97 篇笔记、652 个向量块及清单／构建戳一致性 | 通过 |
 | 文档归档 | 用户明确要求先归档再发布；spec 和 plan 同名，分别保留在 specs/、plans/ 子目录 | 已归档 |
-| 发布 1.2.1 | 用户已确认发布；版本、changelog 与中英文升级说明准备完成 | 等待推 tag 后 CI 结果 |
+| 发布 1.2.1 | 用户已确认发布；版本、changelog 与中英文升级说明准备完成 | 已发布，见上方发布验收 |
 
 **测试总数**：2152。**分支**：develop；原实施分支 codex/fix-index-restart。
 
