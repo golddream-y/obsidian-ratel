@@ -185,6 +185,29 @@ const WRITE_RECORDS_PER_PATH_LIMIT = 8;
 /** 全局写入记录上限 — 防止长期运行时代际内路径数量增长导致无界内存。 */
 const WRITE_RECORDS_GLOBAL_LIMIT = 1024;
 
+// ==================== 临时文件命名约定(跨模块共享) ====================
+
+/**
+ * 原子写临时文件名标记 — `createTempPath` 生成的同目录临时文件都带这个中缀。
+ *
+ * 关键路径:消费者(如 T3 日志)必须用它判定「原子写残留」,不能各自复刻命名;
+ * 改名时改这一处即可,避免残留文件被当成真实数据解析。
+ */
+export const ATOMIC_TEMP_FILE_MARKER = '.tmp-';
+
+/**
+ * 判断文件名是否为原子写残留的临时文件。
+ *
+ * 关键路径:`upsertFile` 崩溃可能留下 `<目标名>.tmp-<pid>-<序号>-<uuid>`,
+ * 这类文件不属于任何数据契约,只能按命名约定识别。
+ *
+ * @param name - 单段文件名(不含目录)。
+ * @returns 命中临时文件命名时为 true。
+ */
+export function isAtomicTempLeftoverName(name: string): boolean {
+	return name.includes(ATOMIC_TEMP_FILE_MARKER);
+}
+
 // ==================== 适配器 ====================
 
 /** `AtomicIndexStorage` 构造选项。 */

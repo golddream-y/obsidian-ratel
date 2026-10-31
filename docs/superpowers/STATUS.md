@@ -32,7 +32,7 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
-| P-INDEX-RELIABILITY | [2026-10-31-index-reliability.md](plans/2026-10-31-index-reliability.md) | In Progress | S-INDEX-RELIABILITY | 2026-10-31 在 feat/index-reliability 执行：T0～T2 完成（T0 证据、[T1/T2 证据](plans/2026-10-31-index-reliability-t1-t2-evidence.md)）；T0 的 6 个缺陷断言已翻转为通过，全量 287 文件 / 2336 passed / 5 skipped、tsc 新增 0；T2 两阶段审查曾判代码质量不通过，3 个阻断已关闭；下一步 T3 |
+| P-INDEX-RELIABILITY | [2026-10-31-index-reliability.md](plans/2026-10-31-index-reliability.md) | In Progress | S-INDEX-RELIABILITY | 2026-10-31 在 feat/index-reliability 执行：T0～T3 完成（[T0](plans/2026-10-31-index-reliability-t0-evidence.md)、[T1/T2](plans/2026-10-31-index-reliability-t1-t2-evidence.md)、[T3](plans/2026-10-31-index-reliability-t3-evidence.md) 证据）；全量 288 文件 / 2400 passed / 5 skipped、tsc 新增 0；T2 与 T3 的两阶段审查均曾判不通过，T2 三个、T3 两个阻断已全部关闭；下一步 T4 |
 | P-RETRIEVAL-QUALITY | [2026-10-20-retrieval-quality.md](plans/2026-10-20-retrieval-quality.md) | Completed | S-RETRIEVAL-QUALITY | 7 个任务已实施：token 计数器、chunker 预算与前缀、参数贯通、chunkerVersion 重建、对话模型精排、开关与来源、验收。2026-10-28 随 1.2.0 发布（caaeff2）；发版前全量 2112 测试通过，[发布 CI](https://github.com/golddream-y/obsidian-ratel/actions/runs/40681329495) 成功，三个附件摘要与本地验证产物一致；待归档 |
 | P-COMPACT-V3-P1F | [2026-10-11-compact-v3-p1f.md](plans/2026-10-11-compact-v3-p1f.md) | Completed | S-COMPACT-V3 | feat-compact-fixes（64db02a、e33f1a3），随 1.1.0 发版；apply_patch 入 R2 登记表 + 字段按工具登记；母 spec 仍 Active，暂留 plans/ |
 | P-MARKETING-VIDEO | [2026-10-11-marketing-video.md](plans/2026-10-11-marketing-video.md) | Pending | S-MARKETING-VIDEO | 规划完成；先安装官方 Skill 和独立工程，再准备素材与首片 |

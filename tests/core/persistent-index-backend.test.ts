@@ -18,6 +18,15 @@ import { createSearchVaultTool } from '../../src/tools/search-vault';
 import { makeToolDef } from '../helpers/make-tool-def';
 import type { WorkerResponse } from '../../src/types';
 import { PersistentIndexBackend } from '../../src/core/persistent-index-backend';
+import type {
+	CommittedFileRecord,
+	FileRecordReader,
+	PersistentIndexBackendOptions,
+	SearchableFileRecords,
+} from '../../src/core/persistent-index-backend';
+import { IndexFileJournal } from '../../src/core/index-file-journal';
+import type { JournalWriteOwner } from '../../src/core/index-file-journal';
+import { AtomicIndexStorage } from '../../src/adapters/atomic-index-storage';
 import { IndexManager } from '../../src/core/index-manager';
 import { IndexManifest, resolveIndexManifestPath, CURRENT_CHUNKER_VERSION } from '../../src/core/index-manifest';
 import { resolveBuildStampPath, readBuildStamp } from '../../src/core/index-build-stamp';
@@ -28,22 +37,37 @@ import { tNow } from '../../src/i18n';
 import { sha256 } from '../../src/utils/hash';
 describe('真实索引持久化', () => {
 	let dir: string;
+	let journalDir: string;
 	let workers: WorkerManager[];
 	let files: Map<string, string>;
 	const stamp = { chunkerVersion: CURRENT_CHUNKER_VERSION, chunkSize: 500, chunkOverlap: 100, embedModelId: 'test' };
-	beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ratel-index-')); workers = []; files = new Map([['a.md', 'original'], ['b.md', 'unchanged']]); });
+	/** 等待真实磁盘/Worker 的墙钟预算 —— 与迭代次数无关,负载下仍按真实进度判定。 */
+	const DRAIN_TIMEOUT_MS = 15_000;
+	/** 两个定时器用例的显式超时:必须大于墙钟预算,否则夹具还没来得及报「未完成」就被用例超时打断。 */
+	const TIMER_TEST_TIMEOUT_MS = 30_000;
+	beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ratel-index-')); journalDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ratel-journal-')); workers = []; files = new Map([['a.md', 'original'], ['b.md', 'unchanged']]); });
 	afterEach(() => { for (const worker of workers)
-		worker.destroy(); vi.useRealTimers(); fs.rmSync(dir, { recursive: true, force: true }); });
-	async function drainUntil(ready: () => boolean) {
-		for (let i = 0; i < 1000; i++) {
+		worker.destroy(); vi.useRealTimers(); fs.rmSync(dir, { recursive: true, force: true }); fs.rmSync(journalDir, { recursive: true, force: true }); });
+	/**
+	 * 轮询到条件满足为止,超时按**墙钟**预算而不是固定迭代次数。
+	 *
+	 * 关键路径(夹具缺陷,不是产品缺陷):此前用固定 1000 次 `setImmediate` 迭代当超时上界,
+	 * 迭代本身廉价,真实磁盘与 Worker 在多测试文件并发时远未完成就会抛「真实磁盘操作未完成」。
+	 * 这里保留轮询语义(不依赖被 fake 的定时器,`Date.now` 未被 fake),
+	 * 只把预算换成墙钟,超时后仍如实失败,不放宽被测语义。
+	 */
+	async function drainUntil(ready: () => boolean, timeoutMs = DRAIN_TIMEOUT_MS) {
+		const deadline = Date.now() + timeoutMs;
+		for (;;) {
 			await new Promise<void>(resolve => setImmediate(resolve));
 			await vi.advanceTimersByTimeAsync(0);
 			if (ready())
 				return;
+			if (Date.now() >= deadline)
+				throw new Error(`真实磁盘操作在 ${timeoutMs}ms 墙钟预算内未完成`);
 		}
-		throw new Error('真实磁盘操作未完成');
 	}
-	async function create(embed = vi.fn(async (texts: string[]) => texts.map(() => [1, 0, 0])), timeoutMs = 1000) {
+	async function create(embed = vi.fn(async (texts: string[]) => texts.map(() => [1, 0, 0])), timeoutMs = 1000, extra: Partial<PersistentIndexBackendOptions> = {}) {
 		const store = new VectraStore(dir);
 		// 关键路径:构造器已启动初始化；通过公共读取等待同一个就绪 Promise，避免重入 init 提前返回。
 		await store.isIndexCreated();
@@ -57,8 +81,64 @@ describe('真实索引持久化', () => {
 			indexDir: dir, manifest, worker, getStore: () => store,
 			vault,
 			getBuildStamp: () => stamp, getChunkOptions: () => ({ maxTokens: 100, overlapTokens: 0 }),
+			...extra,
 		});
 		return { store, inline, worker, manifest, backend, embed, vault, manager: new IndexManager(backend) };
+	}
+	/**
+	 * 在独立代际根上装配真实的 `IndexFileJournal`。
+	 *
+	 * 关键路径:端口语义必须用真实日志验证 —— 结构替身只能证明类型可赋值,
+	 * 发现不了「注释说含删除凭据、实现只给 present」这类分歧。
+	 *
+	 * `root` 必须独立于后端 `indexDir`:后端全量扫描会调用 `VectraStore.dropIndex()`,
+	 * 它递归删除整个 indexDir,落在其中的日志会连同凭据一起被抹掉。
+	 */
+	async function createJournal(root: string): Promise<IndexFileJournal> {
+		const storage = new AtomicIndexStorage({ generationRoot: root });
+		const store = new VectraStore(root, { storage });
+		await store.init();
+		const owner: JournalWriteOwner = {
+			epoch: 1,
+			assertWritable: () => {},
+			beginCommit: () => ({ settle: () => {} }),
+		};
+		return new IndexFileJournal({
+			generationRoot: root,
+			generationId: 'gen-1',
+			configFingerprint: 'a'.repeat(64),
+			owner,
+			store,
+			storage,
+		});
+	}
+	/** 走真实日志完整提交一个 present 版本。 */
+	async function commitJournalReceipt(journal: IndexFileJournal, filePath: string, content: string): Promise<void> {
+		const previous = await journal.readReceipt(filePath);
+		const prepared = await journal.prepare({
+			path: filePath,
+			operation: 'replace',
+			inputHash: await sha256(content),
+			revision: (previous?.revision ?? 0) + 1,
+			previousCommitId: previous?.commitId ?? null,
+			previousRevision: previous?.revision ?? 0,
+			blocks: [{ id: `${filePath}#chunk-0`, vector: [1, 0, 0], metadata: { index: 0 } }],
+		});
+		await journal.commit(prepared.transactionId);
+	}
+	/** 走真实日志提交一次删除(零块事务),只留下删除凭据。 */
+	async function commitJournalTombstone(journal: IndexFileJournal, filePath: string): Promise<void> {
+		const previous = await journal.readReceipt(filePath);
+		const prepared = await journal.prepare({
+			path: filePath,
+			operation: 'delete',
+			inputHash: null,
+			revision: (previous?.revision ?? 0) + 1,
+			previousCommitId: previous?.commitId ?? null,
+			previousRevision: previous?.revision ?? 0,
+			blocks: [],
+		});
+		await journal.commit(prepared.transactionId);
 	}
 	it('真实重启 - 重新构造全部启动对象 - 未改文件零嵌入且修改文件更新', async () => {
 		const first = await create();
@@ -152,7 +232,7 @@ describe('真实索引持久化', () => {
 		await first.backend.dropIndex();
 		expect(drop).toHaveBeenCalledTimes(dropsBefore + 1);
 		expect(get(first.manager.status$).state).toBe('Failed');
-	});
+	}, TIMER_TEST_TIMEOUT_MS);
 	it('活动超时 - 连续文件完成跨过原总时限 - 只运行一次全量并持久化', async () => {
 		files.set('c.md', 'third');
 		files.set('d.md', 'fourth');
@@ -179,7 +259,7 @@ describe('真实索引持久化', () => {
 		expect(embed).toHaveBeenCalledTimes(4);
 		expect(await first.manifest.load()).not.toBeNull();
 		expect(get(first.manager.status$).state).toBe('Ready');
-	});
+	}, TIMER_TEST_TIMEOUT_MS);
 	it('关闭自动扫描 - 缺少成功清单时收到文件事件 - 可更新向量但不宣告全库Ready', async () => {
 		const first = await create();
 		first.manager.enqueue('a.md', 'upsert', 'original');
@@ -337,5 +417,274 @@ describe('真实索引持久化', () => {
             expect(snapshot()).toEqual(before);
         } finally { controller.destroy(); }
     });
+
+    it('整批失败 - 已有有效清单与戳 - 保留既有凭据且不整库失效', async () => {
+        const first = await create();
+        expect(await first.manager.onLayoutReady()).toEqual({ indexed: 2, errors: 0 });
+        const committedManifest = await first.manifest.load();
+        const committedStamp = await readBuildStamp(dir);
+        expect(committedManifest).not.toBeNull();
+        first.worker.destroy();
+
+        files.set('a.md', 'changed');
+        const failing = vi.fn(async (_texts: string[]) => { throw new Error('embed failed'); });
+        const second = await create(failing);
+        expect(await second.manager.onLayoutReady()).toBeNull();
+        expect(get(second.manager.status$).state).toBe('Failed');
+        // 关键路径:整批失败不得抹掉其他文件已提交的清单与构建戳(整库失效操作已移除)。
+        expect(await second.manifest.load()).toEqual(committedManifest);
+        expect(await readBuildStamp(dir)).toEqual(committedStamp);
+        // 只读状态仍可恢复:已提交文件不因本批失败失效。
+        expect(await second.backend.readCommittedState()).toEqual({
+            totalDocs: 2,
+            lastIndexTime: committedManifest!.lastIndexTime,
+        });
+        // 但本轮扫描失败未清除 → 不能宣告全库完成。
+        expect(await second.backend.isIndexComplete()).toBe(false);
+        expect(second.backend.roundState()).toMatchObject({ scanComplete: false, failures: 1 });
+    });
+
+    it('完整性判定 - 本轮扫描成功 - 无失败时完成;单文件任务失败后不再完成', async () => {
+        const first = await create();
+        expect(await first.manager.onLayoutReady()).toEqual({ indexed: 2, errors: 0 });
+        expect(first.backend.roundState()).toMatchObject({ scanComplete: true, failures: 0 });
+        expect(await first.backend.isIndexComplete()).toBe(true);
+
+        // 单文件任务失败 → 本轮存在失败,不允许宣告全库完成;既有凭据仍保留。
+        first.inline.initWithStore(first.store, {
+            modelId: 'test',
+            dimensions: 3,
+            embed: vi.fn(async () => { throw new Error('embed failed'); }),
+        });
+        await expect(first.backend.incrementalIndex({ path: 'a.md', content: 'changed' })).rejects.toThrow();
+        expect(first.backend.roundState()).toMatchObject({ scanComplete: true, failures: 1 });
+        expect(await first.backend.isIndexComplete()).toBe(false);
+        expect(await first.manifest.load()).not.toBeNull();
+        expect(await readBuildStamp(dir)).toEqual(stamp);
+    });
+
+    it('完整性判定 - 单文件失败后另一文件成功提交 - 仍不宣告全库完成', async () => {
+        const first = await create();
+        expect(await first.manager.onLayoutReady()).toEqual({ indexed: 2, errors: 0 });
+        expect(await first.backend.isIndexComplete()).toBe(true);
+
+        // 探针:让 a.md 的增量提交失败 → 本轮失败 +1,本轮未再成功扫描过。
+        first.inline.initWithStore(first.store, {
+            modelId: 'test',
+            dimensions: 3,
+            embed: vi.fn(async () => { throw new Error('embed failed'); }),
+        });
+        await expect(first.backend.incrementalIndex({ path: 'a.md', content: 'changed' })).rejects.toThrow();
+        expect(first.backend.roundState()).toMatchObject({ scanComplete: true, failures: 1 });
+        expect(await first.backend.isIndexComplete()).toBe(false);
+
+        // 回归点:另一个文件走增量队列成功提交(经 `commit` 出口),
+        // 单文件提交成功绝不允许清零本轮失败计数。
+        first.inline.initWithStore(first.store, {
+            modelId: 'test',
+            dimensions: 3,
+            embed: vi.fn(async (texts: string[]) => texts.map(() => [1, 0, 0])),
+        });
+        first.manager.enqueue('b.md', 'upsert', 'also changed');
+        await first.manager.flush();
+        expect(first.backend.roundState()).toMatchObject({ scanComplete: true, failures: 1 });
+        expect(await first.backend.isIndexComplete()).toBe(false);
+        // 提交确实成功了(清单已更新),只是不能据此宣告全库完成。
+        expect((await first.manifest.load())!.entries['b.md']!.hash).toBe(await sha256('also changed'));
+        expect(await readBuildStamp(dir)).toEqual(stamp);
+        // index-manager 的可见性门据此保持非 Ready。
+        expect(get(first.manager.status$).state).not.toBe('Ready');
+    });
+
+    it('提交回滚 - 构建戳已写但清单保存失败 - 保留既有凭据且不整库失效', async () => {
+        const first = await create();
+        expect(await first.manager.onLayoutReady()).toEqual({ indexed: 2, errors: 0 });
+        const committedManifest = await first.manifest.load();
+        expect(await readBuildStamp(dir)).toEqual(stamp);
+
+        // 注入清单保存失败:构建戳已写成功、清单未写 —— 必须回滚本次写的戳。
+        const save = vi.spyOn(first.manifest, 'save').mockRejectedValue(new Error('disk full'));
+        try {
+            await expect(first.backend.incrementalIndex({ path: 'a.md', content: 'changed' })).rejects.toThrow('disk full');
+        } finally {
+            save.mockRestore();
+        }
+
+        // 既有「清单 + 戳」是有效凭据:回滚不能把它删掉(一律删除会让下次启动判定凭据缺失)。
+        expect(await first.manifest.load()).toEqual(committedManifest);
+        expect(await readBuildStamp(dir)).toEqual(stamp);
+        expect(await first.backend.readCommittedState()).toEqual({
+            totalDocs: 2,
+            lastIndexTime: committedManifest!.lastIndexTime,
+        });
+    });
+
+    it('完整性判定 - 本轮队列或在途未收敛 - 不宣告全库完成', async () => {
+        let counters = { queued: 0, active: 0, pendingTransactions: 0 };
+        const first = await create(undefined, 1000, { getRoundCounters: () => counters });
+        await first.manager.onLayoutReady();
+        expect(await first.backend.isIndexComplete()).toBe(true);
+        counters = { queued: 2, active: 0, pendingTransactions: 0 };
+        expect(await first.backend.isIndexComplete()).toBe(false);
+        counters = { queued: 0, active: 1, pendingTransactions: 0 };
+        expect(await first.backend.isIndexComplete()).toBe(false);
+        counters = { queued: 0, active: 0, pendingTransactions: 1 };
+        expect(await first.backend.isIndexComplete()).toBe(false);
+        expect(first.backend.roundState()).toMatchObject({
+            scanComplete: true, queued: 0, active: 0, pendingTransactions: 1,
+        });
+    });
+
+    it('部分可用性 - 注入文件记录端口 - 只返回可检索记录且完整性要求记录覆盖清单', async () => {
+        // 端口语义二分:present 集只放完成记录,删除凭据单独走 listTombstones。
+        const records: CommittedFileRecord[] = [
+            { path: 'a.md', state: 'present', revision: 2, inputHash: await sha256('original'), chunkCount: 1 },
+            { path: 'b.md', state: 'present', revision: 1, inputHash: await sha256('unchanged'), chunkCount: 1 },
+        ];
+        const tombstones: CommittedFileRecord[] = [
+            { path: 'gone.md', state: 'deleted', revision: 3, inputHash: null, chunkCount: 0 },
+        ];
+        let receipts: ReadonlyArray<CommittedFileRecord> = records;
+        const reader: FileRecordReader = {
+            listReceipts: async () => receipts,
+            listTombstones: async () => tombstones,
+            // 关键路径:检索视图由日志负责排除 tombstone 与不可用路径。
+            listSearchableReceipts: async () => receipts.filter(record => record.state === 'present'),
+        };
+        const first = await create(undefined, 1000, { fileRecords: reader });
+        expect(await first.manager.onLayoutReady()).toEqual({ indexed: 2, errors: 0 });
+
+        // 两个集合互不混入:present 集没有已删除路径,删除凭据也不冒充完成记录。
+        expect((await reader.listReceipts()).map(record => record.path)).toEqual(['a.md', 'b.md']);
+        expect((await reader.listTombstones()).map(record => record.path)).toEqual(['gone.md']);
+        expect((await reader.listReceipts()).some(record => record.path === 'gone.md')).toBe(false);
+
+        const view: SearchableFileRecords | null = await first.backend.searchableFileRecords();
+        expect(view?.total).toBe(2);
+        expect(view?.records.map(record => record.path)).toEqual(['a.md', 'b.md']);
+        expect(view?.records.every(record => record.state === 'present')).toBe(true);
+        expect(await first.backend.isIndexComplete()).toBe(true);
+
+        // 清单条目缺少文件记录或 hash 不符 → 不能宣告完整。
+        receipts = records.filter(record => record.path !== 'b.md');
+        expect(await first.backend.isIndexComplete()).toBe(false);
+        expect(await first.backend.searchableFileRecords()).toMatchObject({ total: 1 });
+        const otherHash = await sha256('other content');
+        receipts = records.map(record => record.path === 'a.md' ? { ...record, inputHash: otherHash } : record);
+        expect(await first.backend.isIndexComplete()).toBe(false);
+    });
+
+    it('部分可用性 - 未注入文件记录端口 - 返回 null 表示不可判定', async () => {
+        const first = await create();
+        await first.manager.onLayoutReady();
+        expect(await first.backend.searchableFileRecords()).toBeNull();
+        // 未注入端口时完整性仍按持久凭据与本轮状态判定,不伪装成已核验文件记录。
+        expect(await first.backend.isIndexComplete()).toBe(true);
+    });
+
+    it('契约 - 真实日志注入 - present 集与 tombstone 集语义正确且不互相混入', async () => {
+        // 关键路径:直接注入真实 `IndexFileJournal`,断言端口注释描述的实际语义,
+        // 而不是只做一次结构赋值(结构赋值发现不了「注释含删除凭据、实现只给 present」)。
+        const journal = await createJournal(journalDir);
+        await commitJournalReceipt(journal, 'a.md', 'original');
+        await commitJournalReceipt(journal, 'b.md', 'unchanged');
+        await commitJournalTombstone(journal, 'gone.md');
+
+        // 第一手证据:present 集只有完成记录,删除凭据只在 tombstone 集。
+        expect((await journal.listReceipts()).map(entry => entry.path)).toEqual(['a.md', 'b.md']);
+        expect((await journal.listReceipts()).every(entry => entry.state === 'present')).toBe(true);
+        expect((await journal.listTombstones()).map(entry => entry.path)).toEqual(['gone.md']);
+        expect((await journal.listTombstones()).every(entry => entry.state === 'deleted')).toBe(true);
+
+        // 端口契约:真实日志可直接作 reader 注入,且记录与清单 hash 一致时才算覆盖。
+        // 关键路径:日志代际根必须放在 indexDir **之外** —— 后端全量扫描会走
+        // `VectraStore.dropIndex()`(递归删除整个 indexDir),把 indexDir 内的日志一起抹掉。
+        const reader: FileRecordReader = journal;
+        const first = await create(undefined, 1000, { fileRecords: reader });
+        expect(await first.manager.onLayoutReady()).toEqual({ indexed: 2, errors: 0 });
+        expect(await first.backend.isIndexComplete()).toBe(true);
+        const view = await first.backend.searchableFileRecords();
+        expect(view?.records.map(record => record.path)).toEqual(['a.md', 'b.md']);
+        expect(view?.records.some(record => record.path === 'gone.md')).toBe(false);
+
+        // 删除凭据不冒充「已提交」:b.md 变 tombstone 后清单仍有它,但 present 集已不含它,
+        // 完整性判定与检索视图都必须随之收缩(可见性门不能放过已删除路径)。
+        await commitJournalTombstone(journal, 'b.md');
+        expect((await journal.listTombstones()).map(entry => entry.path)).toEqual(['b.md', 'gone.md']);
+        expect((await journal.listReceipts()).map(entry => entry.path)).toEqual(['a.md']);
+        expect(await first.backend.isIndexComplete()).toBe(false);
+        expect((await first.backend.searchableFileRecords())?.records.map(record => record.path)).toEqual(['a.md']);
+    });
+
+    it('生产装配点 - new PersistentIndexBackend - 装配点已显式登记', () => {
+        const repoRoot = path.resolve(__dirname, '../..');
+        const sites: Array<{ file: string; args: string }> = [];
+        for (const file of collectSourceFiles(path.join(repoRoot, 'src'))) {
+            const source = fs.readFileSync(file, 'utf8');
+            for (const args of constructArguments(source))
+                sites.push({ file: path.relative(repoRoot, file), args });
+        }
+
+        // 关键路径(T7 待办):文件记录端口与协调器计数器的注入点必须显式登记,
+        // 新增装配点而没有登记时本用例失败,不允许静默多出一个漏注入可选端口的构造点。
+        expect([...new Set(sites.map(site => site.file))]).toEqual(['src/main.ts']);
+        expect(sites.length).toBeGreaterThanOrEqual(1);
+        // 关键路径:尚未注入 `fileRecords` 的装配点必须在「待注入登记」里,
+        // T7 注入后待注入集合收缩,本断言仍然成立(只拦未登记的新漏点)。
+        const registeredPendingInjection = ['src/main.ts'];
+        const missing = sites.filter(site => !site.args.includes('fileRecords:')).map(site => site.file);
+        expect(missing.filter(file => !registeredPendingInjection.includes(file))).toEqual([]);
+    });
+
+    /**
+     * 递归收集目录下的 TypeScript 源文件。
+     *
+     * @param root - 起始目录。
+     * @returns 绝对路径列表(已排序,保证断言稳定)。
+     */
+    function collectSourceFiles(root: string): string[] {
+        const collected: string[] = [];
+        const pending: string[] = [root];
+        while (pending.length > 0) {
+            const current = pending.pop();
+            if (!current) continue;
+            for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+                const fullPath = path.join(current, entry.name);
+                if (entry.isDirectory()) pending.push(fullPath);
+                else if (entry.isFile() && entry.name.endsWith('.ts')) collected.push(fullPath);
+            }
+        }
+        return collected.sort();
+    }
+
+    /**
+     * 取出每个 `new PersistentIndexBackend(` 的完整实参文本。
+     *
+     * 关键路径:用括号配平切出整段实参 —— 构造参数跨多行,按行匹配会漏掉未注入端口的写法。
+     *
+     * @param source - 源文件内容。
+     * @returns 每处构造的实参文本(含外层括号)。
+     */
+    function constructArguments(source: string): string[] {
+        const calls: string[] = [];
+        const marker = 'new PersistentIndexBackend(';
+        let index = source.indexOf(marker);
+        while (index >= 0) {
+            const start = index + marker.length - 1;
+            let depth = 0;
+            let end = start;
+            for (; end < source.length; end += 1) {
+                const char = source[end];
+                if (char === '(') depth += 1;
+                else if (char === ')') {
+                    depth -= 1;
+                    if (depth === 0) break;
+                }
+            }
+            calls.push(source.slice(start, end + 1));
+            index = source.indexOf(marker, end + 1);
+        }
+        return calls;
+    }
 
 });

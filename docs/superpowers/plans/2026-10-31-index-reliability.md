@@ -8,7 +8,7 @@
 
 **技术栈：** TypeScript、现有 Vectra `FileStorage` 扩展点、Node 文件 API、Embedding Web Worker、Svelte store、Vitest；不新增数据库或原生模块。
 
-关联：`P-INDEX-RELIABILITY` → [S-INDEX-RELIABILITY](../specs/2026-10-31-index-reliability.md) → `BUG-1-INDEX-001`。状态：**In Progress，T0～T2 已完成（证据见 [T0 证据记录](2026-10-31-index-reliability-t0-evidence.md)、[T1/T2 证据记录](2026-10-31-index-reliability-t1-t2-evidence.md)），进入 T3**。T0 的 6 个缺陷断言已由 T2 翻转为通过；全量 287 文件 / 2336 passed / 5 skipped。合并与发布仍另行授权。
+关联：`P-INDEX-RELIABILITY` → [S-INDEX-RELIABILITY](../specs/2026-10-31-index-reliability.md) → `BUG-1-INDEX-001`。状态：**In Progress，T0～T3 已完成（证据见 [T0](2026-10-31-index-reliability-t0-evidence.md)、[T1/T2](2026-10-31-index-reliability-t1-t2-evidence.md)、[T3](2026-10-31-index-reliability-t3-evidence.md)），进入 T4**。全量 288 文件 / 2400 passed / 5 skipped；tsc 241 条存量、新增 0。合并与发布仍另行授权。
 
 ## 执行边界与依赖
 
@@ -136,13 +136,13 @@ export interface FileReplaceStore {
 
 **文件：** 新建 `src/core/index-file-journal.ts`、`tests/core/index-file-journal.test.ts`；修改 `src/core/persistent-index-backend.ts`、`tests/core/persistent-index-backend.test.ts`。
 
-- [ ] 先为 prepared 前、向量提交前后、receipt 前后、日志清理时分别写失败测试，重建全部对象后读取真实磁盘。
-- [ ] 实现日志 API：`prepare` 按批落分片，所有分片完整后原子写 `prepared.json`；`commit` 替换目标向量后保存 `files/<pathHash>.json`；`recover` 先校验事务及磁盘，再重放或清理。每个 API 在入口检查持有的 owner/epoch。
-- [ ] `PreparedFile.next.commitId` 同时写入块和完成记录。对零块/删除事务用目标路径已无块、prepared 和 receipt 共同证明，不以查到块作为唯一恢复依据。
-- [ ] 删除以 `state=deleted/inputHash=null` receipt 持久化，空文件以 present 和实际内容 hash 持久化；同路径重建递增 revision。清单视图排除 tombstone，但不能在事务完成前删除其证明。
-- [ ] 同路径只允许一个未决 prepared；后继提交必须核对并结算前驱，重放比较 previousRevision/commitId。receipt 已是更新 revision 时旧日志只能清理，不能重放。测试前驱清理持续失败、后继成功、重启后旧日志仍在以及「删除后同路径重建」。
-- [ ] 过期输入且已替换向量时，先持久化该路径不可用状态并保留恢复依据，再处理当前版本；不丢日志后使用旧 receipt。普通日志清理失败只重试清理，不重复嵌入。
-- [ ] 移除 `invalidateMetadata()` 对整个库的失效操作；整批返回只汇总统计，不承担唯一提交。`isIndexComplete` 检查本轮扫描/队列/失败，部分检索可用性读取文件记录。
+- [x] 先为 prepared 前、向量提交前后、receipt 前后、日志清理时分别写失败测试，重建全部对象后读取真实磁盘。
+- [x] 实现日志 API：`prepare` 按批落分片，所有分片完整后原子写 `prepared.json`；`commit` 替换目标向量后保存 `files/<pathHash>.json`；`recover` 先校验事务及磁盘，再重放或清理。每个 API 在入口检查持有的 owner/epoch。
+- [x] `PreparedFile.next.commitId` 同时写入块和完成记录。对零块/删除事务用目标路径已无块、prepared 和 receipt 共同证明，不以查到块作为唯一恢复依据。
+- [x] 删除以 `state=deleted/inputHash=null` receipt 持久化，空文件以 present 和实际内容 hash 持久化；同路径重建递增 revision。清单视图排除 tombstone，但不能在事务完成前删除其证明。
+- [x] 同路径只允许一个未决 prepared；后继提交必须核对并结算前驱，重放比较 previousRevision/commitId。receipt 已是更新 revision 时旧日志只能清理，不能重放。测试前驱清理持续失败、后继成功、重启后旧日志仍在以及「删除后同路径重建」。
+- [x] 过期输入且已替换向量时，先持久化该路径不可用状态并保留恢复依据，再处理当前版本；不丢日志后使用旧 receipt。普通日志清理失败只重试清理，不重复嵌入。
+- [x] 移除 `invalidateMetadata()` 对整个库的失效操作；整批返回只汇总统计，不承担唯一提交。`isIndexComplete` 检查本轮扫描/队列/失败，部分检索可用性读取文件记录。
 
 恢复决策必须完整覆盖：
 
