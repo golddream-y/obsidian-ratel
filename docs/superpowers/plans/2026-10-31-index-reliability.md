@@ -8,7 +8,7 @@
 
 **技术栈：** TypeScript、现有 Vectra `FileStorage` 扩展点、Node 文件 API、Embedding Web Worker、Svelte store、Vitest；不新增数据库或原生模块。
 
-关联：`P-INDEX-RELIABILITY` → [S-INDEX-RELIABILITY](../specs/2026-10-31-index-reliability.md) → `BUG-1-INDEX-001`。状态：**In Progress，T0～T4 已完成（证据见 [T0](2026-10-31-index-reliability-t0-evidence.md)、[T1/T2](2026-10-31-index-reliability-t1-t2-evidence.md)、[T3](2026-10-31-index-reliability-t3-evidence.md)、[T4](2026-10-31-index-reliability-t4-evidence.md)），进入 T5**。全量 290 文件 / 2502 passed / 5 skipped；tsc 241 条存量、新增 0。合并与发布仍另行授权。
+关联：`P-INDEX-RELIABILITY` → [S-INDEX-RELIABILITY](../specs/2026-10-31-index-reliability.md) → `BUG-1-INDEX-001`。状态：**In Progress，T0～T5 已完成（证据见 [T0](2026-10-31-index-reliability-t0-evidence.md)、[T1/T2](2026-10-31-index-reliability-t1-t2-evidence.md)、[T3](2026-10-31-index-reliability-t3-evidence.md)、[T4](2026-10-31-index-reliability-t4-evidence.md)、[T5](2026-10-31-index-reliability-t5-evidence.md)），进入 T6**。全量 291 文件 / 2558 passed / 5 skipped；tsc 241 条存量、新增 0。T5 的生产接线缺口按证据第 5 节分配。合并与发布仍另行授权。
 
 ## 执行边界与依赖
 
@@ -185,8 +185,8 @@ export function canMarkReady(s: {
 
 **文件：** 修改文件结构表中的 Worker/Embedding 协议两端、`src/ports/embedding.ts`；修改 `tests/worker/worker-bridge.test.ts`、`tests/worker/inline-worker-lifecycle.test.ts`、`tests/worker/embedding-worker.test.ts`、`tests/adapters/embedding-worker-proxy.test.ts`、`tests/adapters/embedding-api.test.ts`。
 
-- [ ] 先用可控时钟复现「停滞 → 有效活动 → 迟到成功仍提交」，并确认旧代码会永久丢掉提交路径；独立验证普通查询超时仍 reject。
-- [ ] 在集中类型文件定义活动包，并扩展准备/提交消息；两端同时修改。单调活动序号由真正完成的批次/IO 步骤产生，UI 计时器和 Worker 存活消息不算活动。
+- [x] 先用可控时钟复现「停滞 → 有效活动 → 迟到成功仍提交」，并确认旧代码会永久丢掉提交路径；独立验证普通查询超时仍 reject。
+- [x] 在集中类型文件定义活动包，并扩展准备/提交消息；两端同时修改。单调活动序号由真正完成的批次/IO 步骤产生，UI 计时器和 Worker 存活消息不算活动。
 
 ```typescript
 export interface IndexActivity {
@@ -203,10 +203,10 @@ export interface EmbedOptions {
 }
 ```
 
-- [ ] `EmbeddingPort.embed(texts, options?)` 保持旧调用可用；ONNX 每个真实完成批次回报，API 适配器正确传递 AbortSignal，代理按 request ID 转发。跨 Worker 不直接传函数或 AbortSignal，通过消息表达取消与活动。
-- [ ] 索引 watchdog 更新 stalled 状态，任务由协调器继续持有；真实终态只有一条。拆开长推理与短存储互斥，禁止为了支持查询让两个提交重叠。
-- [ ] 暂停/取消先撤销 epoch、停止新文件，再取消可取消调用并等待活动提交。共享 Worker 不能在取消单项任务时直接终止其他查询；运行时重置必须 reject 所有受影响 pending，不留下永不结束 Promise。
-- [ ] 构造卸载期间推理迟到、磁盘仍在提交、新实例立即启动的测试；存储保护经 T2 共享协调器交接，旧 UI 回调全部失效。
+- [x] `EmbeddingPort.embed(texts, options?)` 保持旧调用可用；ONNX 每个真实完成批次回报，API 适配器正确传递 AbortSignal，代理按 request ID 转发。跨 Worker 不直接传函数或 AbortSignal，通过消息表达取消与活动。
+- [x] 索引 watchdog 更新 stalled 状态，任务由协调器继续持有；真实终态只有一条。拆开长推理与短存储互斥，禁止为了支持查询让两个提交重叠。
+- [x] 暂停/取消先撤销 epoch、停止新文件，再取消可取消调用并等待活动提交。共享 Worker 不能在取消单项任务时直接终止其他查询；运行时重置必须 reject 所有受影响 pending，不留下永不结束 Promise。
+- [x] 构造卸载期间推理迟到、磁盘仍在提交、新实例立即启动的测试；存储保护经 T2 共享协调器交接，旧 UI 回调全部失效。
 
 **验证：** `npx vitest run tests/worker tests/adapters/embedding-worker-proxy.test.ts tests/adapters/embedding-api.test.ts tests/core/index-write-owner.test.ts`。同时保留 index/full/batch 兼容测试，直到没有旧调用方再删旧消息。
 

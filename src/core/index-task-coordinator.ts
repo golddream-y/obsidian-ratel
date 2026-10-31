@@ -30,9 +30,10 @@
  * 归属边界:活动/停滞/取消(T5)与状态文案/i18n(T7)不在本模块;本模块只提供阶段、计数与终态判据。
  */
 
-import type { FileCommit, IndexPhase } from './index-persistence-types';
+import type { FileCommit, IndexPhase, IndexActivity, EmbedOptions } from './index-persistence-types';
 import type { BlockedPathState, FileFreshness } from './index-search-visibility';
 import { assertSafeRecordPath } from './index-persistence-types';
+import { isEmbedAbortError } from '../ports/embedding';
 import { devLogger } from '../logging/dev-logger';
 import { sha256 } from '../utils/hash';
 
@@ -141,8 +142,16 @@ export interface CoordinatorVaultPort {
  * 「只有变更的那一篇进入嵌入调用」。
  */
 export interface CoordinatorProcessorPort {
-	/** 把一份内容切块并嵌入;返回完整新块集合(空内容返回空数组)。 */
-	prepareBlocks(input: { path: string; content: string }): Promise<readonly CoordinatorBlock[]>;
+	/**
+	 * 把一份内容切块并嵌入;返回完整新块集合(空内容返回空数组)。
+	 *
+	 * @param input - 路径与内容。
+	 * @param options - 可选取消信号与批次活动回调;实现方应在每个真实完成的批次回报一次。
+	 */
+	prepareBlocks(
+		input: { path: string; content: string },
+		options?: EmbedOptions,
+	): Promise<readonly CoordinatorBlock[]>;
 }
 
 /** 任务进度计数 — 状态展示与终态判据的同一份口径。 */
@@ -214,6 +223,181 @@ export function canMarkReady(s: {
 }): boolean {
 	return s.scanComplete && s.queued === 0 && s.active === 0
 		&& s.pendingTransactions === 0 && s.failures === 0;
+}
+
+// ==================== 停滞与活动(T5 §4)====================
+
+/**
+ * 停滞看护的时钟接缝 — 判定完全不依赖协调器内部的墙上时间。
+ *
+ * 关键路径:时间相关用例必须由可控时钟驱动,不能用真实定时器赛跑。
+ */
+export interface IndexStallWatchdogClock {
+	/** 设定一次性定时器。 */
+	setTimeout(handler: () => void, timeoutMs: number): unknown;
+	/** 取消定时器。 */
+	clearTimeout(handle: unknown): void;
+}
+
+/**
+ * 停滞判定的进展来源 — 协调器结构上满足本接口。
+ *
+ * 关键路径:进展只由**真实完成**的步骤产生(接受的批次活动、真实提交与核实),
+ * 路径事件到达本身不算进展 —— 这正是「有事件但无进展」仍能被判定的原因。
+ */
+export interface IndexStallSource {
+	/** 有效进展代数。 */
+	progressMark(): number;
+	/** 最后一次被接受的活动。 */
+	lastActivity(): IndexActivity | null;
+	/** 进入停滞(保留任务与未决事务,不清库)。 */
+	markStalled(): void;
+	/** 迟到有效活动后回到处理中。 */
+	markResumed(): void;
+	/** 本轮过期重排次数 — 「有事件但无进展」的诊断补充。 */
+	expiredRequeues(): number;
+}
+
+/** 停滞 / 恢复诊断 — 阶段、持续时间、批次与数量;不含正文、向量、路径或密钥。 */
+export interface IndexStallInfo {
+	/** 采样到的有效进展代数。 */
+	progressMark: number;
+	/** 无有效进展的累计时长(按阈值整数倍累计)。 */
+	idleMs: number;
+	/** 判定阈值。 */
+	stallAfterMs: number;
+	/** 最后一次被接受的活动;从无活动时为 null。 */
+	lastActivity: IndexActivity | null;
+	/** 本轮过期重排次数。 */
+	expiredRequeues: number;
+}
+
+/** 停滞看护选项。 */
+export interface IndexStallWatchdogOptions {
+	/** 进展来源 — 一般是协调器。 */
+	source: IndexStallSource;
+	/** 无有效进展达到该时长即判定停滞,默认 60 秒。 */
+	stallAfterMs?: number;
+	/** 时钟接缝;默认 `globalThis` 定时器。 */
+	clock?: IndexStallWatchdogClock;
+	/** 首次判定停滞时回调一次。 */
+	onStall?: (info: IndexStallInfo) => void;
+	/** 停滞后出现有效进展时回调一次。 */
+	onResume?: (info: IndexStallInfo) => void;
+}
+
+/** 默认时钟 — 不依赖 `window`,便于测试与子进程复用同一实现。 */
+const defaultStallClock: IndexStallWatchdogClock = {
+	setTimeout: (handler, timeoutMs) => globalThis.setTimeout(handler, timeoutMs),
+	clearTimeout: (handle) => globalThis.clearTimeout(handle as ReturnType<typeof setTimeout>),
+};
+
+/**
+ * 停滞看护 — 外部计时器,周期性采样有效进展代数。
+ *
+ * 关键路径:
+ * - 只采样「真实完成」的进展,事件到达、重排与计时器本身都不算活动;
+ * - 停滞只更新状态,任务仍由协调器继续持有,不清库、不启动替代写任务;
+ * - 停滞期间继续轮询:迟到的有效活动一到就回到处理中,真实完成仍能提交。
+ */
+export class IndexStallWatchdog {
+	private readonly source: IndexStallSource;
+	private readonly stallAfterMs: number;
+	private readonly clock: IndexStallWatchdogClock;
+	private readonly onStall?: (info: IndexStallInfo) => void;
+	private readonly onResume?: (info: IndexStallInfo) => void;
+	private timer: unknown = null;
+	private running = false;
+	private stalled = false;
+	private idleMs = 0;
+	private lastProgress = 0;
+
+	/**
+	 * @param options - 进展来源、阈值、时钟与回调。
+	 */
+	constructor(options: IndexStallWatchdogOptions) {
+		this.source = options.source;
+		this.stallAfterMs = Math.max(1, Math.floor(options.stallAfterMs ?? 60_000));
+		this.clock = options.clock ?? defaultStallClock;
+		this.onStall = options.onStall;
+		this.onResume = options.onResume;
+	}
+
+	/** 开始看护 — 以当前进展为基线。 */
+	start(): void {
+		if (this.running) return;
+		this.running = true;
+		this.stalled = false;
+		this.idleMs = 0;
+		this.lastProgress = this.source.progressMark();
+		this.arm();
+	}
+
+	/** 停止看护并清理计时器。 */
+	stop(): void {
+		this.running = false;
+		this.clearTimer();
+	}
+
+	/** 当前是否判定为停滞。 */
+	isStalled(): boolean {
+		return this.stalled;
+	}
+
+	/** 诊断快照。 */
+	info(): IndexStallInfo {
+		return {
+			progressMark: this.lastProgress,
+			idleMs: this.idleMs,
+			stallAfterMs: this.stallAfterMs,
+			lastActivity: this.source.lastActivity(),
+			expiredRequeues: this.source.expiredRequeues(),
+		};
+	}
+
+	/** 手动采样一次 — 与定时器触发等价,供显式驱动与测试使用。 */
+	sample(): void {
+		this.tick();
+	}
+
+	/** 武装下一次采样。 */
+	private arm(): void {
+		this.clearTimer();
+		this.timer = this.clock.setTimeout(() => this.tick(), this.stallAfterMs);
+	}
+
+	/** 一次采样:有进展则清零并(必要时)恢复;否则累计无进展时长。 */
+	private tick(): void {
+		this.timer = null;
+		if (!this.running) return;
+		const current = this.source.progressMark();
+		if (current > this.lastProgress) {
+			this.lastProgress = current;
+			this.idleMs = 0;
+			if (this.stalled) {
+				this.stalled = false;
+				this.source.markResumed();
+				this.onResume?.(this.info());
+			}
+			this.arm();
+			return;
+		}
+		this.idleMs += this.stallAfterMs;
+		if (!this.stalled) {
+			this.stalled = true;
+			this.source.markStalled();
+			this.onStall?.(this.info());
+		}
+		// 继续轮询:迟到有效活动一到就恢复处理中。
+		this.arm();
+	}
+
+	/** 清理计时器。 */
+	private clearTimer(): void {
+		if (this.timer === null || this.timer === undefined) return;
+		this.clock.clearTimeout(this.timer);
+		this.timer = null;
+	}
 }
 
 // ==================== 内部类型 ====================
@@ -330,6 +514,22 @@ export class IndexTaskCoordinator {
 	private paused = false;
 	private unloaded = false;
 	private failed = false;
+	/** 有效进展代数 — 只由真实完成的步骤递增(见 `IndexStallSource`)。 */
+	private progress = 0;
+	/** 本轮过期重排次数。 */
+	private expiredRequeueCount = 0;
+	/** 最近一次被接受的外部活动(带单调序号)。 */
+	private lastSeenActivity: IndexActivity | null = null;
+	/** 外部活动序号基线 — 只接受单调递增的序号。 */
+	private lastActivitySequence = 0;
+	/** 当前批次的已完成单位数 — 每个文件重新计数。 */
+	private lastBatchDone = 0;
+	/** 停滞状态 — 由外部看护驱动,不改变终态判据。 */
+	private stalled = false;
+	/** 取消中 — 停止调度新文件并中止可取消的调用。 */
+	private aborting = false;
+	/** 当前处理项的取消句柄。 */
+	private activeAbort: AbortController | null = null;
 	/** 未启动时按「未在工作」报告 — `IndexPhase` 没有空闲态。 */
 	private phase: IndexPhase = 'paused';
 	private draining: Promise<void> | null = null;
@@ -368,6 +568,8 @@ export class IndexTaskCoordinator {
 		this.failingPaths.clear();
 		this.unattributedFailures = 0;
 		this.failed = false;
+		this.stalled = false;
+		this.aborting = false;
 		this.phase = 'scanning';
 		this.resetRetryBudget();
 		if (this.unsubscribe === null && this.options.subscribe !== undefined) {
@@ -508,6 +710,100 @@ export class IndexTaskCoordinator {
 		return this.overflow;
 	}
 
+	// ==================== 活动与停滞(T5)====================
+
+	/**
+	 * 有效进展代数 — 每次真实完成的步骤递增。
+	 *
+	 * 关键路径:事件到达、重排与计时器空转都**不**递增它,因此外部看护能区分
+	 * 「有事件但无进展」与真实推进。
+	 */
+	progressMark(): number {
+		return this.progress;
+	}
+
+	/** 最近一次被接受的外部活动;从无活动时为 null。 */
+	lastActivity(): IndexActivity | null {
+		return this.lastSeenActivity;
+	}
+
+	/** 本轮过期重排次数 — 「有事件但无进展」情形需要另设计数时的诊断补充。 */
+	expiredRequeues(): number {
+		return this.expiredRequeueCount;
+	}
+
+	/**
+	 * 接收一次外部活动(来自 Worker 侧真实完成的批次 / IO 步骤)。
+	 *
+	 * 关键路径:只接受单调递增的序号;接受的算真实进展,并清除停滞状态
+	 * (迟到的有效活动可恢复处理中)。
+	 *
+	 * @param activity - 活动包。
+	 * @returns 是否被接受为有效进展。
+	 */
+	observeActivity(activity: IndexActivity): boolean {
+		if (this.unloaded) return false;
+		if (activity.sequence <= this.lastActivitySequence) return false;
+		this.lastActivitySequence = activity.sequence;
+		this.lastSeenActivity = { ...activity };
+		this.progress += 1;
+		if (this.stalled) this.markResumed();
+		return true;
+	}
+
+	/**
+	 * 进入停滞 — 保留任务、队列与未决事务,不清库、不并发启动替代写任务。
+	 *
+	 * 关键路径:停滞不是终态;`canMarkReady` 仍是唯一终态判据,这里只改阶段显示。
+	 */
+	markStalled(): void {
+		if (this.unloaded || this.stalled) return;
+		this.stalled = true;
+		this.phase = this.computePhase();
+	}
+
+	/** 离开停滞 — 回到处理中。 */
+	markResumed(): void {
+		if (!this.stalled) return;
+		this.stalled = false;
+		this.phase = this.computePhase();
+	}
+
+	/** 当前是否处于停滞。 */
+	isStalled(): boolean {
+		return this.stalled;
+	}
+
+	/**
+	 * 当前是否已停止调度新文件(暂停或卸载)。
+	 *
+	 * 关键路径(I6):取消路径的顺序断言需要能观察到「撤销在途调用」发生在
+	 * 「停止调度新文件」之前,而停止调度的事实状态就是本方法。
+	 */
+	isPaused(): boolean {
+		return this.paused || this.unloaded;
+	}
+
+	/**
+	 * 取消在途处理 — 先撤销在途可取消的调用,再停止调度新文件。
+	 *
+	 * 关键路径:调用方必须先撤销 epoch 再调本方法(epoch 属于写所有权,见 T2 协调器);
+	 * 已进入的磁盘提交由访问门收尾,不会被重叠写入。
+	 *
+	 * 关键路径(I6):顺序必须是「先撤销在途调用、再置停止调度」—— 反序会在
+	 * 「已停止调度」与「撤销在途调用」之间留出一个仍持有证书的窗口;`isPaused()` 是可观察判决点。
+	 *
+	 * @param reason - 诊断文案;不含路径、正文或密钥。
+	 */
+	abortActive(reason = '索引任务已取消'): void {
+		if (this.unloaded && this.aborting) return;
+		this.activeAbort?.abort();
+		this.aborting = true;
+		this.paused = true;
+		devLogger.debug('index', `索引任务取消:${reason}`);
+		this.phase = this.computePhase();
+	}
+
 	/** 暂停 — 队列继续累积,不消费。 */
 	pause(): void {
 		if (this.paused) return;
@@ -524,6 +820,8 @@ export class IndexTaskCoordinator {
 	resume(): void {
 		if (this.unloaded) return;
 		this.paused = false;
+		this.aborting = false;
+		this.stalled = false;
 		for (const [path, entry] of this.queue) {
 			if (entry.exhausted) {
 				entry.exhausted = false;
@@ -544,6 +842,8 @@ export class IndexTaskCoordinator {
 		if (this.unloaded) return;
 		this.unloaded = true;
 		this.phase = 'stopping';
+		// 关键路径:卸载时停止调度并中止可取消的调用;耗时写入不依赖卸载回调收尾。
+		this.activeAbort?.abort();
 		if (this.unsubscribe !== null) {
 			try {
 				this.unsubscribe();
@@ -830,17 +1130,30 @@ export class IndexTaskCoordinator {
 	private async processEntry(path: string, entry: QueueEntry): Promise<void> {
 		this.activeCount = 1;
 		this.processedEntries += 1;
+		// 关键路径:每个处理项持有自己的取消句柄;取消只中止这一次可取消调用。
+		const controller = new AbortController();
+		this.activeAbort = controller;
 		let outcome: ProcessOutcome = 'done';
 		try {
 			outcome = entry.op === 'delete' ? await this.processDelete(path) : await this.processUpsert(path, entry);
 		}
 		catch (error) {
-			outcome = 'retry';
-			this.recordFailure(path);
-			devLogger.warn('index', `文件处理失败:${path}`, error);
-			this.retainAfterFailure(path, entry);
+			if (isEmbedAbortError(error)) {
+				// 关键路径:取消/撤销不是文件故障 —— 不计失败、不消耗重试预算,
+				// 保留待处理项由后续恢复继续,已提交记录与未决事务都不动。
+				outcome = 'retry';
+				this.retain(path);
+				devLogger.debug('index', `路径处理已取消,保留待处理项:${path}`);
+			}
+			else {
+				outcome = 'retry';
+				this.recordFailure(path);
+				devLogger.warn('index', `文件处理失败:${path}`, error);
+				this.retainAfterFailure(path, entry);
+			}
 		}
 		finally {
+			if (this.activeAbort === controller) this.activeAbort = null;
 			this.activeCount = 0;
 			entry.active = false;
 			if (outcome === 'done') {
@@ -911,7 +1224,12 @@ export class IndexTaskCoordinator {
 		}
 		// 普通修改:先标记 known-stale,旧版本在检索中立即失效。
 		this.markDenied(path, 'known-stale');
-		const blocks = await this.options.processor.prepareBlocks({ path, content: snapshot.content });
+		// 关键路径:提示批次活动 — 每个真实完成的批次推进有效进展(单位数按文件重新计数)。
+		this.lastBatchDone = 0;
+		const blocks = await this.options.processor.prepareBlocks({ path, content: snapshot.content }, {
+			signal: this.activeAbort?.signal,
+			onBatchComplete: (done, total) => this.recordBatch(done, total),
+		});
 		const afterEmbed = await this.verifySnapshot(path, snapshot);
 		if (!afterEmbed.ok) {
 			// 输入在推理期间过期:丢弃这次未提交结果,按当前内容重新排队。
@@ -944,6 +1262,8 @@ export class IndexTaskCoordinator {
 		}
 		this.unresolved.delete(path);
 		if (!committed.superseded) this.committedThisRound += 1;
+		// 关键路径:真实写盘完成的步骤才算有效进展。
+		this.progress += 1;
 		if (committed.superseded || this.latestSequence(path) > entry.startedSequence) {
 			// 提交后仍有新事件(或已有后继版本):保留队列项重新核对,不把旧快照当成最新版。
 			this.markDenied(path, 'known-stale');
@@ -978,6 +1298,7 @@ export class IndexTaskCoordinator {
 		try {
 			await this.options.journal.commit(preparation.transactionId);
 			this.committedThisRound += 1;
+			this.progress += 1;
 		}
 		finally {
 			this.pendingTransactions.delete(preparation.transactionId);
@@ -989,6 +1310,9 @@ export class IndexTaskCoordinator {
 
 	/** 输入已过期时的重新排队 — 保留后续事件并标记过期。 */
 	private requeueAfterExpiry(path: string, reason: CoordinatorExpiryReason): void {
+		// 关键路径:过期重排不推进有效进展,也不消耗重试预算(由真实事件与磁盘状态驱动);
+		// 单独计数,供外部看护区分「有事件但无进展」与真实推进。
+		this.expiredRequeueCount += 1;
 		devLogger.debug('index', `路径输入已过期(${reason}),按当前内容重新排队:${path}`);
 		this.markDenied(path, 'known-stale');
 		this.retain(path);
@@ -1103,6 +1427,8 @@ export class IndexTaskCoordinator {
 		this.freshness.set(path, 'verified');
 		this.verified.add(path);
 		this.unresolved.delete(path);
+		// 关键路径:一个路径真正变为可检索(新提交或核对后复用)就是真实完成的一步。
+		this.progress += 1;
 	}
 
 	/** 标记为不可检索并给出确定原因。 */
@@ -1121,6 +1447,19 @@ export class IndexTaskCoordinator {
 	/** 清除一个路径的失败状态 — 只在该路径真的处理成功时调用。 */
 	private clearFailure(path: string): void {
 		this.failingPaths.delete(path);
+	}
+
+	/**
+	 * 记录一个真实完成的嵌入批次 — 只接受单调递增、合法的完成数。
+	 *
+	 * 关键路径:非法或重复的回报不算进展,避免畸形消息把停滞状态续期。
+	 */
+	private recordBatch(done: number, total: number): void {
+		if (!Number.isInteger(done) || !Number.isInteger(total)) return;
+		if (total <= 0 || done <= 0 || done > total) return;
+		if (done <= this.lastBatchDone) return;
+		this.lastBatchDone = done;
+		this.progress += 1;
 	}
 
 	/** 本轮未清除的失败数。 */
@@ -1232,10 +1571,12 @@ export class IndexTaskCoordinator {
 
 	/** 阶段判据 — ready 只在扫描结束且无待处理失败/事务/事件/溢出/隔离时成立。 */
 	private computePhase(): IndexPhase {
-		if (this.unloaded) return 'stopping';
+		if (this.unloaded || this.aborting) return 'stopping';
 		if (this.failed || this.generationQuarantined) return 'failed';
 		if (this.paused) return 'paused';
 		if (this.isReady()) return 'ready';
+		// 关键路径:停滞不是终态 —— 就绪仍由 canMarkReady 唯一裁定,这里只更新阶段显示。
+		if (this.stalled) return 'stalled';
 		if (!this.scanComplete) return 'scanning';
 		if (this.failures() > 0 || this.overflowedPaths.size > 0 || this.hasBlockedKnownPath()) return 'partial-failure';
 		return 'processing';

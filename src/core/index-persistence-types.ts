@@ -41,6 +41,83 @@ export const INDEX_PHASES = [
 export type IndexPhase = (typeof INDEX_PHASES)[number];
 
 /**
+ * 索引活动阶段清单。
+ *
+ * 关键路径:活动序号只由这些阶段的**真实完成步骤**产生 —— 分块产出、嵌入批次完成、
+ * 真实持久化 IO;UI 计时器空转与 Worker 存活心跳都不能冒充活动。
+ */
+export const INDEX_ACTIVITY_STAGES = ['chunk', 'embed', 'persist'] as const;
+
+/**
+ * 一次索引活动 — 跨 Worker 的进度事实,不携带正文、向量、路径或密钥。
+ *
+ * 字段与 plan 锁定片段逐字一致;`sequence` 在同一任务内单调递增,是「是否仍有真实进展」
+ * 的唯一依据。
+ */
+export interface IndexActivity {
+	/** 任务标识 — 同一次索引任务跨请求复用的稳定标识。 */
+	taskId: string;
+	/** 请求标识 — 产生该活动的 Worker 请求。 */
+	requestId: string;
+	/** 写所有权 epoch — 旧 epoch 的活动不得影响新实例状态。 */
+	epoch: number;
+	/** 单调递增的活动序号 — 每个真实完成的批次 / IO 步骤 +1。 */
+	sequence: number;
+	/** 当前阶段。 */
+	stage: 'chunk' | 'embed' | 'persist';
+	/** 该阶段已完成单位数(块 / 文本 / 文件)。 */
+	completedUnits: number;
+}
+
+/** 活动阶段(与 `IndexActivity.stage` 同义,供运行时遍历与校验)。 */
+export type IndexActivityStage = IndexActivity['stage'];
+
+/**
+ * 嵌入调用选项 — 取消与批次活动。
+ *
+ * 关键路径:该类型只在主线程侧传递;跨 Worker 不传函数或 `AbortSignal`,
+ * 取消与活动一律经消息表达(见 `EmbeddingWorkerProxy`)。
+ */
+export interface EmbedOptions {
+	/** 取消信号;中止后按 `AbortError` 结束,不得静默返回部分结果。 */
+	signal?: AbortSignal;
+	/** 每完成一个真实批次回报一次(累计完成数,总数)。 */
+	onBatchComplete?: (done: number, total: number) => void;
+}
+
+/**
+ * 判断是否为结构合法的活动事件 — 跨 `postMessage` 边界的数据必须先校验再使用。
+ *
+ * 关键路径:非法活动一律按「没有进展」处理,不能因为一条畸形消息就续期或恢复停滞。
+ *
+ * @param value - 来自消息的未知值。
+ * @returns 是否为合法活动。
+ */
+export function isIndexActivity(value: unknown): value is IndexActivity {
+	if (!isRecord(value)) return false;
+	if (!isNonEmptyString(value['taskId']) || !isNonEmptyString(value['requestId'])) return false;
+	if (!isNonNegativeInteger(value['epoch'])) return false;
+	if (!isPositiveInteger(value['sequence'])) return false;
+	if (!INDEX_ACTIVITY_STAGES.includes(value['stage'] as IndexActivityStage)) return false;
+	return isNonNegativeInteger(value['completedUnits']);
+}
+
+/** 非空字符串判断(不抛错版本,供跨边界校验使用)。 */
+function isNonEmptyString(value: unknown): value is string {
+	return typeof value === 'string' && value.length > 0;
+}
+
+/** 非负整数判断(不抛错版本)。 */
+function isNonNegativeInteger(value: unknown): value is number {
+	return typeof value === 'number' && Number.isInteger(value) && value >= 0;
+}
+
+/** 正整数判断(不抛错版本)。 */
+function isPositiveInteger(value: unknown): value is number {
+	return typeof value === 'number' && Number.isInteger(value) && value > 0;
+}
+
+/**
  * 校验错误码清单 — 判别式稳定,调用方与测试都按码判断,不依赖消息措辞。
  *
  * 用户可见性标注(留给 T7 映射 i18n key,本文件不自建 key):

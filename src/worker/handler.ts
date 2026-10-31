@@ -10,12 +10,15 @@
  * - index.full 协议:payload 为 `{ files: Array<{ path: string; content: string }> }`,主线程传已分块 + 已向量化的 chunk 列表
  */
 
-import type { WorkerRequest, WorkerResponse } from '../types';
+import type { WorkerRequest, WorkerResponse, IndexRequestIdentityPayload, SearchFilter } from '../types';
+import { isWorkerIndexRequest } from '../types';
 import { IndexProcessor } from './index-processor';
-import { VectraStore } from '../adapters/vector-vectra';
+import { VectraStore, type FileReplacement } from '../adapters/vector-vectra';
 import { AtomicIndexStorage } from '../adapters/atomic-index-storage';
 import type { EmbeddingsModel } from 'vectra';
 import type { EmbeddingPort } from '../ports/embedding';
+import { throwIfEmbeddingAborted } from '../ports/embedding';
+import type { EmbedOptions, IndexActivity, IndexActivityStage } from '../core/index-persistence-types';
 import { createTokenCounter, TOKEN_BUDGET_RESERVE, type TokenCounter } from '../core/token-counter';
 import { devLogger } from '../logging/dev-logger';
 
@@ -92,6 +95,363 @@ function buildChunkOptions(maxTokens: number, overlapTokens: number) {
     };
 }
 
+// ==================== 索引运行、活动与访问门(T5)====================
+
+/**
+ * 一次索引运行的上下文 — 任务身份、活动序号与取消句柄。
+ *
+ * 关键路径:活动序号只由真实完成的步骤递增;取消只中止这一次运行,
+ * 绝不终止共享 Worker 的其他使用者。
+ */
+interface IndexRun {
+	requestId: string;
+	taskId: string;
+	epoch: number;
+	sequence: number;
+	/** 各阶段已完成单位数:块 / 文本 / 文件。 */
+	units: { chunk: number; embed: number; persist: number };
+	controller: AbortController;
+	postEvent?: PostEvent;
+}
+
+/**
+ * 当前正在处理的索引运行。
+ *
+ * 关键路径:同一 Worker 内索引请求串行(入口按索引队列调度),因此模块级「当前运行」
+ * 足以把存储/嵌入步骤归属到正确的任务;若将来并发索引请求,这里必须改为按实例分派。
+ */
+let currentIndexRun: IndexRun | null = null;
+
+/** 在途索引运行 — 请求标识 → 上下文。 */
+const activeIndexRuns = new Map<string, IndexRun>();
+
+/**
+ * 提交与查询的共享访问门。
+ *
+ * 关键路径(T5 §4):提交阶段持有写保护的时间不得覆盖模型推理,因此门只在真实持久化
+ * 步骤上互斥 —— 查询可在长推理期间并行,但不得读到 Vectra 文件事务的中间状态;
+ * 提交之间串行(禁止为了支持查询让两个提交重叠);提交开始前等待在途查询读完。
+ */
+class StoreAccessGate {
+	private commitChain: Promise<void> = Promise.resolve();
+	private activeReads = 0;
+	private commitActive = false;
+	private readonly readDrainWaiters: Array<() => void> = [];
+	private readonly readAllowWaiters: Array<() => void> = [];
+
+	/** 当前是否处于提交窗口 — 供诊断与入口分道使用。 */
+	isCommitActive(): boolean {
+		return this.commitActive;
+	}
+
+	/** 执行一次查询 — 提交窗口内先等待,窗口关闭后进入。 */
+	async runRead<T>(operation: () => Promise<T>): Promise<T> {
+		while (this.commitActive) {
+			await new Promise<void>((resolve) => { this.readAllowWaiters.push(resolve); });
+		}
+		this.activeReads += 1;
+		try {
+			return await operation();
+		}
+		finally {
+			this.activeReads -= 1;
+			if (this.activeReads === 0) {
+				for (const resolve of this.readDrainWaiters.splice(0)) resolve();
+			}
+		}
+	}
+
+	/** 执行一次提交 — 与其它提交串行,并等待在途查询读完。 */
+	async runCommit<T>(operation: () => Promise<T>): Promise<T> {
+		const previous = this.commitChain;
+		let releaseTurn: () => void = () => undefined;
+		this.commitChain = new Promise<void>((resolve) => { releaseTurn = resolve; });
+		await previous;
+		this.commitActive = true;
+		try {
+			await this.waitForReadDrain();
+			return await operation();
+		}
+		finally {
+			this.commitActive = false;
+			for (const resolve of this.readAllowWaiters.splice(0)) resolve();
+			releaseTurn();
+		}
+	}
+
+	/** 等待在途查询结束。 */
+	private waitForReadDrain(): Promise<void> {
+		if (this.activeReads === 0) return Promise.resolve();
+		return new Promise<void>((resolve) => { this.readDrainWaiters.push(resolve); });
+	}
+}
+
+/** 当前处理器的共享访问门 — 与 `processor` 同生命周期。 */
+let storeGate = new StoreAccessGate();
+
+/**
+ * Worker 侧消息分道策略 — 索引请求串行、只读请求并行、提交窗口内不派发只读。
+ *
+ * 关键路径:分道规则只依赖协议层信号(真实 `persist` 活动与请求类型),
+ * 主线程与 Worker 两端共用同一份清单(`WORKER_*_REQUEST_TYPES`)。
+ */
+export class WorkerMessageLane {
+	private indexTail: Promise<void> = Promise.resolve();
+	private readTail: Promise<void> = Promise.resolve();
+	private commitWindowOpen = false;
+	private deferredReads: Array<() => void> = [];
+	/** 当前提交窗口归属的请求。 */
+	private persistRequestId: string | null = null;
+	/** 该请求已上报的完成提交数。 */
+	private persistUnits = 0;
+
+	/** 提交窗口是否打开。 */
+	isCommitWindowOpen(): boolean {
+		return this.commitWindowOpen;
+	}
+
+	/** 显式打开提交窗口 — 供整个请求就是一次存储事务的写请求使用(见 `isWorkerStoreWriteRequest`)。 */
+	openCommitWindow(): void {
+		this.commitWindowOpen = true;
+	}
+
+	/**
+	 * 观察一条将要转发的事件 — 只用真实 `persist` 活动维护提交窗口。
+	 *
+	 * 关键路径(建议 2):完成数**未增长**的 persist 活动表示「本次提交开始」(开窗),
+	 * 完成数**增长**的 persist 活动表示「本次提交已落盘」(关窗)。窗口因此由提交完成本身关闭,
+	 * 不再等到下一条非 persist 活动或请求终态。
+	 */
+	observeEvent(message: WorkerResponse): void {
+		if (message.type !== 'index.activity') return;
+		const activity = message.payload;
+		if (activity.stage !== 'persist') {
+			this.persistRequestId = null;
+			this.persistUnits = 0;
+			this.closeCommitWindow();
+			return;
+		}
+		if (activity.requestId !== this.persistRequestId) {
+			// 新请求的完成数从 0 起算,首条 persist 活动必然是「提交开始」。
+			this.persistRequestId = activity.requestId;
+			this.persistUnits = 0;
+		}
+		if (activity.completedUnits > this.persistUnits) {
+			this.persistUnits = activity.completedUnits;
+			this.closeCommitWindow();
+			return;
+		}
+		this.commitWindowOpen = true;
+	}
+
+	/** 关闭提交窗口并放行等待中的只读请求。 */
+	closeCommitWindow(): void {
+		if (!this.commitWindowOpen) return;
+		this.commitWindowOpen = false;
+		for (const dispatch of this.deferredReads.splice(0)) dispatch();
+	}
+
+	/** 索引请求(写)串行入队。 */
+	scheduleIndex(task: () => Promise<void>): void {
+		this.indexTail = this.indexTail.then(task).catch(() => undefined);
+	}
+
+	/** 只读请求:提交窗口内延后,窗口关闭后立即派发;只读之间串行,不与索引队列串行。 */
+	scheduleRead(task: () => Promise<void>): void {
+		const dispatch = (): void => {
+			this.readTail = this.readTail.then(task).catch(() => undefined);
+		};
+		if (this.commitWindowOpen) this.deferredReads.push(dispatch);
+		else dispatch();
+	}
+
+	/** 终止时清空等待。 */
+	clear(): void {
+		this.deferredReads.length = 0;
+		this.commitWindowOpen = false;
+		this.persistRequestId = null;
+		this.persistUnits = 0;
+	}
+}
+
+/**
+ * 上报一条活动 — 只允许真实完成的步骤调用。
+ *
+ * 关键路径:运行已结束(或已换到下一次运行)时不再上报,避免旧运行的活动影响新状态;
+ * 活动包只带阶段与数量,不含正文、向量、路径或密钥。
+ *
+ * @param run - 产生活动的运行。
+ * @param stage - 阶段。
+ * @param completedUnits - 该阶段已完成单位数。
+ */
+function emitActivity(run: IndexRun, stage: IndexActivityStage, completedUnits: number): void {
+	if (run !== currentIndexRun) return;
+	run.sequence += 1;
+	const activity: IndexActivity = {
+		taskId: run.taskId,
+		requestId: run.requestId,
+		epoch: run.epoch,
+		sequence: run.sequence,
+		stage,
+		completedUnits,
+	};
+	run.postEvent?.({ type: 'index.activity', payload: activity });
+}
+
+/**
+ * 为处理器持有的存储加上「提交窗口 + 查询互斥」。
+ *
+ * 关键路径:活动与门的观察点必须在**真实 IO 步骤**上(替换向量、删除、写入、重载、查询),
+ * 这样不必改动 `IndexProcessor`(T2 文件)就能同时满足:
+ * 长推理不阻塞查询、查询不读事务中间状态、两个提交不重叠。
+ *
+ * 关键路径(B1):`replaceFile` 之外的写路径(`deleteByPath` / `upsert` / `delete` / `reload`)
+ * 同样是多步存储事务,必须一并落在门内 —— 只包 `replaceFile` 会让只读车道穿过它们。
+ *
+ * @param store - 真实存储实例。
+ * @param gate - 访问门。
+ * @returns 带门与活动上报的存储视图。
+ */
+function decorateStore(store: VectraStore, gate: StoreAccessGate): VectraStore {
+	/**
+	 * 统一包装一次真实提交:提交开始上报活动(窗口打开),完成后上报完成数(窗口关闭)。
+	 *
+	 * 关键路径:窗口开启由真实 IO 步骤产生(提交真的开始了);完成数增长的 persist 活动
+	 * 就是「本次提交已落盘」,主线程据此由提交完成本身关闭窗口(建议 2)。
+	 */
+	const runCommit = async <T>(operation: () => Promise<T>): Promise<T> => {
+		const run = currentIndexRun;
+		if (run !== null) emitActivity(run, 'persist', run.units.persist);
+		const result = await gate.runCommit(async () => {
+			// 关键路径:步骤边界检查取消 —— 已撤销的运行不再开始新的磁盘提交。
+			if (run !== null) throwIfEmbeddingAborted(run.controller.signal);
+			return operation();
+		});
+		if (run !== null) {
+			run.units.persist += 1;
+			emitActivity(run, 'persist', run.units.persist);
+		}
+		return result;
+	};
+	const replaceFile = (input: FileReplacement) => runCommit(() => store.replaceFile(input));
+	// 关键路径(B1):`deleteByPath` 是 beginTransaction → deleteItems → endUpdate 的多步事务,
+	// 不经 `replaceFile`;查询穿过它就会读到事务中间状态。
+	const deleteByPath = (filePath: string) => runCommit(() => store.deleteByPath(filePath));
+	const upsert = (docId: string, text: string, metadata?: Record<string, unknown>) =>
+		runCommit(() => store.upsert(docId, text, metadata));
+	const remove = (docIds: string[]) => runCommit(() => store.delete(docIds));
+	// 关键路径(B1):`recoverStore` 用的 `reload` 会重建整个内存视图,查询不得与其重叠。
+	const reload = () => runCommit(() => store.reload());
+	const search = (queryVector: number[], topK: number, filter?: SearchFilter) =>
+		gate.runRead(() => store.search(queryVector, topK, filter));
+	const status = () => gate.runRead(() => store.status());
+	return new Proxy(store, {
+		get(target, prop) {
+			if (prop === 'replaceFile') return replaceFile;
+			if (prop === 'deleteByPath') return deleteByPath;
+			if (prop === 'upsert') return upsert;
+			if (prop === 'delete') return remove;
+			if (prop === 'reload') return reload;
+			if (prop === 'search') return search;
+			if (prop === 'status') return status;
+			const value: unknown = Reflect.get(target, prop, target);
+			if (typeof value !== 'function') return value;
+			// 关键路径:其余方法绑定真实存储,避免经代理调用时把 `this` 的写入留在代理对象上。
+			const method = value as (...args: unknown[]) => unknown;
+			return method.bind(target) as unknown;
+		},
+	});
+}
+
+/**
+ * 为嵌入端口加上批次活动与取消信号。
+ *
+ * 关键路径:分块产出、每个真实完成的嵌入批次都上报活动;取消信号来自当前运行,
+ * 只跨主线程侧端口传递,不跨 Worker。
+ *
+ * @param port - 真实嵌入端口。
+ * @returns 带活动上报的端口。
+ */
+function decorateEmbeddingPort(port: EmbeddingPort): EmbeddingPort {
+	return {
+		dimensions: port.dimensions,
+		modelId: port.modelId,
+		embed: async (texts: string[], options?: EmbedOptions): Promise<number[][]> => {
+			const run = currentIndexRun;
+			if (run === null) return port.embed(texts, options);
+			if (texts.length > 0) {
+				// 关键路径:chunk 阶段在分块完成、进入嵌入前上报,单位数就是本次产出的块数。
+				run.units.chunk += texts.length;
+				emitActivity(run, 'chunk', run.units.chunk);
+			}
+			throwIfEmbeddingAborted(run.controller.signal);
+			let lastDone = 0;
+			const vectors = await port.embed(texts, {
+				...options,
+				signal: run.controller.signal,
+				onBatchComplete: (done, total) => {
+					options?.onBatchComplete?.(done, total);
+					if (done <= lastDone) return;
+					// 关键路径:只有真实完成的批次才推进 embed 单位数。
+					run.units.embed += done - lastDone;
+					lastDone = done;
+					emitActivity(run, 'embed', run.units.embed);
+				},
+			});
+			return vectors;
+		},
+	};
+}
+
+/** 开始一次索引运行 — 非索引请求返回 null。 */
+function beginIndexRun(msg: WorkerRequest & { _requestId?: string }, postEvent?: PostEvent): IndexRun | null {
+	if (!isWorkerIndexRequest(msg.type)) return null;
+	const payload = msg.payload as IndexRequestIdentityPayload;
+	const payloadTaskId = typeof payload.taskId === 'string' && payload.taskId.length > 0 ? payload.taskId : undefined;
+	const taskId = payloadTaskId ?? msg._requestId;
+	const requestId = msg._requestId ?? taskId;
+	if (taskId === undefined || requestId === undefined) return null;
+	const epoch = typeof payload.epoch === 'number' && Number.isInteger(payload.epoch) && payload.epoch >= 0 ? payload.epoch : 0;
+	const run: IndexRun = {
+		requestId,
+		taskId,
+		epoch,
+		sequence: 0,
+		units: { chunk: 0, embed: 0, persist: 0 },
+		controller: new AbortController(),
+		postEvent,
+	};
+	currentIndexRun = run;
+	activeIndexRuns.set(run.requestId, run);
+	return run;
+}
+
+/** 结束一次索引运行 — 活动序号与取消句柄随之失效。 */
+function endIndexRun(run: IndexRun | null): void {
+	if (run === null) return;
+	if (currentIndexRun === run) currentIndexRun = null;
+	activeIndexRuns.delete(run.requestId);
+}
+
+/**
+ * 取消在途索引运行 — 在批次边界中止,不终止共享 Worker。
+ *
+ * @param target - 按请求 ID / 任务 ID / epoch 定位;全为 undefined 时不做任何事。
+ * @returns 是否命中至少一个在途运行。
+ */
+export function cancelIndexRun(target: { requestId?: string; taskId?: string; epoch?: number }): boolean {
+	if (target.requestId === undefined && target.taskId === undefined && target.epoch === undefined) return false;
+	let cancelled = false;
+	for (const run of [...activeIndexRuns.values()]) {
+		if (target.requestId !== undefined && run.requestId !== target.requestId) continue;
+		if (target.taskId !== undefined && run.taskId !== target.taskId) continue;
+		if (target.epoch !== undefined && run.epoch !== target.epoch) continue;
+		run.controller.abort();
+		cancelled = true;
+	}
+	return cancelled;
+}
+
 /**
  * 初始化 Worker 内的 IndexProcessor。
  *
@@ -119,9 +479,10 @@ export function initProcessor(
         storage: new AtomicIndexStorage({ generationRoot: indexDir }),
     });
     if (vocab !== undefined) setVocabContent(vocab);
+    storeGate = new StoreAccessGate();
     processor = new IndexProcessor(
-        store,
-        embeddingPort,
+        decorateStore(store, storeGate),
+        decorateEmbeddingPort(embeddingPort),
         buildChunkOptions(counter.maxInputTokens - TOKEN_BUDGET_RESERVE, DEFAULT_CHUNK_OVERLAP),
     );
 }
@@ -143,9 +504,10 @@ export function initProcessorWithStore(
     vocab?: string | null,
 ): void {
     if (vocab !== undefined) setVocabContent(vocab);
+    storeGate = new StoreAccessGate();
     processor = new IndexProcessor(
-        store,
-        embeddingPort,
+        decorateStore(store, storeGate),
+        decorateEmbeddingPort(embeddingPort),
         buildChunkOptions(counter.maxInputTokens - TOKEN_BUDGET_RESERVE, DEFAULT_CHUNK_OVERLAP),
     );
 }
@@ -172,6 +534,9 @@ export async function handleMessage(
         };
     }
 
+    // 关键路径:索引请求建立运行上下文(任务身份 + 活动序号 + 取消句柄),
+    // 存储与嵌入步骤据此把活动盖章到正确的任务;运行结束必须注销,旧活动不得影响新状态。
+    const run = beginIndexRun(msg, postEvent);
     try {
         switch (msg.type) {
             case 'index.status': {
@@ -213,6 +578,13 @@ export async function handleMessage(
                 return { type: 'vector.delete.done', payload: { count } };
             }
 
+            case 'index.cancel': {
+                // 关键路径:取消是单项任务语义 —— 只中止对应运行,不终止 Worker,
+                // 其他查询与索引请求继续可用;回执仅作诊断。
+                const req = msg as Extract<WorkerRequest, { type: 'index.cancel' }>;
+                return { type: 'index.cancel.done', payload: { cancelled: cancelIndexRun(req.payload) } };
+            }
+
             case 'vector.search': {
                 const req = msg as WorkerRequest & { payload: { queryVector: number[]; topK: number } };
                 const results = await processor.vectorSearch(req.payload.queryVector, req.payload.topK);
@@ -249,6 +621,9 @@ export async function handleMessage(
             type: 'error',
             payload: { code: 'HANDLER_ERROR', message },
         };
+    }
+    finally {
+        endIndexRun(run);
     }
 }
 

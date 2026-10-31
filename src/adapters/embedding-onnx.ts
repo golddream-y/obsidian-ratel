@@ -12,7 +12,8 @@
  */
 
 import * as ort from 'onnxruntime-web';
-import type { EmbeddingPort } from '../ports/embedding';
+import { throwIfEmbeddingAborted, type EmbeddingPort } from '../ports/embedding';
+import type { EmbedOptions } from '../core/index-persistence-types';
 import { createTokenizer, parseVocab, type BertTokenizer } from './bert-tokenizer';
 import { tNow } from '../i18n';
 
@@ -116,11 +117,17 @@ export class EmbeddingOnnx implements EmbeddingPort {
 	/**
 	 * 批量生成文本向量。
 	 *
+	 * 关键路径(T5):
+	 * - 每个**真实完成**的批次结束后回报一次 `onBatchComplete`,序号单调;
+	 *   计时器空转与存活心跳不会产生这里的回调。
+	 * - 取消在批次边界生效:已中止则按 `AbortError` 结束,不返回半批结果。
+	 *
 	 * @param texts - 待编码文本数组。
+	 * @param options - 可选取消信号与批次活动回调。
 	 * @returns 与 texts 等长的向量数组,每个向量长度等于 dimensions。
-	 * @throws Error 模型未初始化或 ONNX 推理失败。
+	 * @throws Error 模型未初始化、ONNX 推理失败或调用已取消。
 	 */
-	async embed(texts: string[]): Promise<number[][]> {
+	async embed(texts: string[], options?: EmbedOptions): Promise<number[][]> {
 		if (!this.ready || !this.session) {
 			throw new Error(tNow('error.embedding.notInit'));
 		}
@@ -128,12 +135,17 @@ export class EmbeddingOnnx implements EmbeddingPort {
 			return [];
 		}
 
+		const total = texts.length;
 		const embeddings: number[][] = [];
 		// 关键路径:超过 maxBatchSize 时分批推理,避免单次 WASM 调用阻塞主线程过久。
-		for (let i = 0; i < texts.length; i += this.maxBatchSize) {
+		for (let i = 0; i < total; i += this.maxBatchSize) {
+			// 关键路径:批次边界检查取消;批次内部不承诺中断。
+			throwIfEmbeddingAborted(options?.signal);
 			const batch = texts.slice(i, i + this.maxBatchSize);
 			const batchEmbeddings = await this.embedBatch(batch);
 			embeddings.push(...batchEmbeddings);
+			// 关键路径:只有推理真的返回了向量才算完成一个批次。
+			options?.onBatchComplete?.(embeddings.length, total);
 		}
 		return embeddings;
 	}

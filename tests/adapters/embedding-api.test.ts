@@ -166,3 +166,69 @@ describe('EmbeddingApi', () => {
 		expect(result[0]).toHaveLength(4);
 	});
 });
+
+describe('EmbeddingApi — T5 取消与批次活动', () => {
+	beforeEach(() => {
+		mockRequestUrl.mockReset();
+	});
+
+	function makeAdapter(dimensions = 4): EmbeddingApi {
+		return new EmbeddingApi({ apiBase: 'http://test', apiKey: '', model: 'm', dimensions });
+	}
+
+	it('已中止的信号 - 发请求前已中止 - 不发起请求并按 AbortError 结束', async () => {
+		const controller = new AbortController();
+		controller.abort();
+		await expect(makeAdapter().embed(['test'], { signal: controller.signal })).rejects.toMatchObject({ name: 'AbortError' });
+		// 关键路径:不得静默忽略信号后照常发请求。
+		expect(mockRequestUrl).not.toHaveBeenCalled();
+	});
+
+	it('请求返回后已中止 - 按 AbortError 结束、不返回向量、不回报批次完成', async () => {
+		// 关键路径:requestUrl 无 signal 参数,无法中断在途 HTTP —— 本适配器只承诺
+		// 「发出前 / 响应后」两个边界;这里如实覆盖「请求已经发出,响应到手时才发现被取消」,
+		// 不假装支持单次 HTTP 内部中断。
+		const controller = new AbortController();
+		mockRequestUrl.mockImplementationOnce(async () => {
+			controller.abort();
+			return { status: 200, json: { data: [{ embedding: [0.1, 0.2, 0.3, 0.4], index: 0 }] } };
+		});
+		const batches: Array<[number, number]> = [];
+		await expect(
+			makeAdapter().embed(['test'], { signal: controller.signal, onBatchComplete: (done, total) => batches.push([done, total]) }),
+		).rejects.toMatchObject({ name: 'AbortError' });
+		// 关键路径:请求确实发出过(不是在发出前就中止),结果被丢弃且不计作完成批次。
+		expect(mockRequestUrl).toHaveBeenCalledOnce();
+		expect(batches).toEqual([]);
+	});
+
+	it('批次活动 - 成功返回且维度校验通过 - 回报一次 (n, n)', async () => {
+		mockRequestUrl.mockResolvedValueOnce({
+			status: 200,
+			json: {
+				data: [
+					{ embedding: [0.1, 0.2, 0.3, 0.4], index: 0 },
+					{ embedding: [0.5, 0.6, 0.7, 0.8], index: 1 },
+				],
+			},
+		});
+		const batches: Array<[number, number]> = [];
+		const result = await makeAdapter().embed(['a', 'b'], { onBatchComplete: (done, total) => batches.push([done, total]) });
+		expect(result).toHaveLength(2);
+		expect(batches).toEqual([[2, 2]]);
+	});
+
+	it('批次活动 - 维度校验失败或空输入 - 不回报完成', async () => {
+		mockRequestUrl.mockResolvedValueOnce({
+			status: 200,
+			json: { data: [{ embedding: [0.1, 0.2, 0.3], index: 0 }] },
+		});
+		const batches: Array<[number, number]> = [];
+		await expect(makeAdapter().embed(['a'], { onBatchComplete: (done, total) => batches.push([done, total]) })).rejects.toThrow(/维度/i);
+		expect(batches).toEqual([]);
+
+		mockRequestUrl.mockResolvedValueOnce({ status: 200, json: { data: [] } });
+		await makeAdapter().embed([], { onBatchComplete: (done, total) => batches.push([done, total]) });
+		expect(batches).toEqual([]);
+	});
+});

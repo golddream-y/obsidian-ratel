@@ -182,3 +182,129 @@ describe('embedding-worker', () => {
 		expect((errorCall![0] as { requestId?: string }).requestId).toBeUndefined();
 	});
 });
+
+describe('embedding-worker — T5 批次活动与取消', () => {
+	let postMessageSpy: ReturnType<typeof vi.fn>;
+	let messages: Array<(e: MessageEvent) => void>;
+	let originalPostMessage: unknown;
+	let originalOnmessage: unknown;
+
+	const initEvent = {
+		data: {
+			type: 'init',
+			deps: {
+				vocabContent: '',
+				modelBuffer: new ArrayBuffer(0),
+				wasmBinary: new ArrayBuffer(0),
+			},
+			dimensions: 512,
+			maxBatchSize: 16,
+		},
+	} as MessageEvent;
+
+	beforeEach(() => {
+		vi.resetModules();
+		postMessageSpy = vi.fn();
+		messages = [];
+		originalPostMessage = (self as any).postMessage;
+		originalOnmessage = (self as any).onmessage;
+		(self as any).postMessage = postMessageSpy;
+		Object.defineProperty(self, 'onmessage', {
+			set: (fn: (e: MessageEvent) => void) => messages.push(fn),
+			get: () => messages[messages.length - 1],
+			configurable: true,
+		});
+	});
+
+	afterEach(() => {
+		(self as any).postMessage = originalPostMessage;
+		(self as any).onmessage = originalOnmessage;
+	});
+
+	it('embed - 每个真实完成批次 - 按 requestId 上报 embed:progress', async () => {
+		const capturedOptions: Array<{ signal?: AbortSignal; onBatchComplete?: (done: number, total: number) => void }> = [];
+		vi.doMock('../../src/adapters/embedding-onnx', () => ({
+			EmbeddingOnnx: class MockEmbeddingOnnx {
+				init = vi.fn().mockResolvedValue(undefined);
+				embed = vi.fn(async (texts: string[], options?: { signal?: AbortSignal; onBatchComplete?: (done: number, total: number) => void }) => {
+					capturedOptions.push(options ?? {});
+					// 模拟两批真实完成的推理。
+					options?.onBatchComplete?.(1, 2);
+					options?.onBatchComplete?.(2, 2);
+					return texts.map(() => [0.1, 0.2]);
+				});
+			},
+		}));
+		vi.resetModules();
+		await import('../../src/worker/embedding-worker');
+		await (self as any).onmessage(initEvent);
+
+		await (self as any).onmessage({ data: { type: 'embed', texts: ['a', 'b'], requestId: 'req_progress' } } as MessageEvent);
+
+		expect(postMessageSpy).toHaveBeenCalledWith({ type: 'embed:progress', requestId: 'req_progress', done: 1, total: 2 });
+		expect(postMessageSpy).toHaveBeenCalledWith({ type: 'embed:progress', requestId: 'req_progress', done: 2, total: 2 });
+		// 关键路径:活动回调与取消信号由 Worker 侧构造,不跨线程传函数。
+		expect(capturedOptions).toHaveLength(1);
+		expect(capturedOptions[0]?.signal).toBeInstanceOf(AbortSignal);
+		expect(typeof capturedOptions[0]?.onBatchComplete).toBe('function');
+	});
+
+	it('cancel - 收到 cancel 消息 - 中止对应请求信号并在批次边界按失败结束', async () => {
+		let capturedSignal: AbortSignal | undefined;
+		vi.doMock('../../src/adapters/embedding-onnx', () => ({
+			EmbeddingOnnx: class MockEmbeddingOnnx {
+				init = vi.fn().mockResolvedValue(undefined);
+				embed = vi.fn(async (_texts: string[], options?: { signal?: AbortSignal }) => {
+					capturedSignal = options?.signal;
+					await new Promise<void>((_resolve, reject) => {
+						options?.signal?.addEventListener('abort', () => reject(new Error('已取消:批次边界')));
+					});
+					return [];
+				});
+			},
+		}));
+		vi.resetModules();
+		await import('../../src/worker/embedding-worker');
+		await (self as any).onmessage(initEvent);
+
+		// 不 await:让推理停在 in-flight,再发取消。
+		const embedPromise = (self as any).onmessage({ data: { type: 'embed', texts: ['x'], requestId: 'req_cancel' } } as MessageEvent);
+		await vi.waitFor(() => expect(capturedSignal).toBeDefined());
+		await (self as any).onmessage({ data: { type: 'cancel', requestId: 'req_cancel' } } as MessageEvent);
+
+		expect(capturedSignal?.aborted).toBe(true);
+		await embedPromise;
+		expect(postMessageSpy).toHaveBeenCalledWith(expect.objectContaining({
+			type: 'error',
+			requestId: 'req_cancel',
+			error: expect.stringContaining('推理失败'),
+		}));
+	});
+
+	it('cancel - 未知 requestId - 不影响其他在途请求', async () => {
+		const capturedSignals: AbortSignal[] = [];
+		let release: (() => void) | undefined;
+		vi.doMock('../../src/adapters/embedding-onnx', () => ({
+			EmbeddingOnnx: class MockEmbeddingOnnx {
+				init = vi.fn().mockResolvedValue(undefined);
+				embed = vi.fn(async (texts: string[], options?: { signal?: AbortSignal }) => {
+					if (options?.signal) capturedSignals.push(options.signal);
+					await new Promise<void>((resolve) => { release = resolve; });
+					return texts.map(() => [0.1]);
+				});
+			},
+		}));
+		vi.resetModules();
+		await import('../../src/worker/embedding-worker');
+		await (self as any).onmessage(initEvent);
+
+		const embedPromise = (self as any).onmessage({ data: { type: 'embed', texts: ['y'], requestId: 'req_keep' } } as MessageEvent);
+		await vi.waitFor(() => expect(capturedSignals).toHaveLength(1));
+		await (self as any).onmessage({ data: { type: 'cancel', requestId: 'req_missing' } } as MessageEvent);
+		expect(capturedSignals[0]?.aborted).toBe(false);
+
+		release?.();
+		await embedPromise;
+		expect(postMessageSpy).toHaveBeenCalledWith(expect.objectContaining({ type: 'embed:result', requestId: 'req_keep' }));
+	});
+});

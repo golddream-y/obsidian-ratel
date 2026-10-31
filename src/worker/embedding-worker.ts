@@ -14,6 +14,8 @@
  * - 主线程在构造时传入 modelBuffer + vocabContent + wasmBinary,Worker 内部初始化 EmbeddingOnnx。
  * - init 完成后回复 ready,之前所有 embed 请求回复 error。
  * - embed 请求用 requestId 关联响应。
+ * - T5:每个真实完成的批次回 `embed:progress`;`cancel` 消息按 requestId 中止对应请求的
+ *   `AbortController`,推理在批次边界停止 —— 不为取消单项任务终止整个运行时。
  */
 
 import { EmbeddingOnnx } from '../adapters/embedding-onnx';
@@ -22,6 +24,14 @@ import type { EmbeddingOnnxDeps } from '../adapters/embedding-onnx';
 // 关键路径:模块级状态,Worker 整个生命周期内只持有一个 EmbeddingOnnx 实例;
 // init 完成前为 null,所有 embed 请求会被拒绝。
 let embeddingOnnx: EmbeddingOnnx | null = null;
+
+/**
+ * 在途推理请求的取消句柄 — 键是主线程的 requestId。
+ *
+ * 关键路径:`AbortSignal` 不能跨线程传递,取消由主线程发消息、Worker 侧在本地中止;
+ * 请求结算后必须移除,避免句柄随任务无限累积。
+ */
+const abortControllers = new Map<string, AbortController>();
 
 self.onmessage = async (e: MessageEvent): Promise<void> => {
 	// 关键路径:e.data 是 unknown,断言为消息形状后访问字段,避免 no-unsafe-member-access。
@@ -50,6 +60,12 @@ self.onmessage = async (e: MessageEvent): Promise<void> => {
 			}
 			break;
 		}
+		case 'cancel': {
+			// 关键路径:取消单项请求;命中则在批次边界中止,未命中是无害的空操作。
+			const controller = msg.requestId === undefined ? undefined : abortControllers.get(msg.requestId);
+			controller?.abort();
+			break;
+		}
 		case 'embed': {
 			// 关键路径:未 init 直接发 embed — 用 requestId 关联,回复 error 让主线程降级。
 			if (!embeddingOnnx) {
@@ -60,21 +76,33 @@ self.onmessage = async (e: MessageEvent): Promise<void> => {
 				});
 				return;
 			}
+			const requestId = msg.requestId;
+			const controller = new AbortController();
+			if (requestId !== undefined) abortControllers.set(requestId, controller);
 			try {
-				const vectors = await embeddingOnnx.embed(msg.texts as string[]);
+				const vectors = await embeddingOnnx.embed(msg.texts as string[], {
+					signal: controller.signal,
+					// 关键路径:批次活动由 Worker 主动上报,函数不跨线程传递。
+					onBatchComplete: (done, total) => {
+						self.postMessage({ type: 'embed:progress', requestId, done, total });
+					},
+				});
 				self.postMessage({
 					type: 'embed:result',
-					requestId: msg.requestId,
+					requestId,
 					vectors,
 				});
 			} catch (err) {
-				// 关键路径:推理失败仍带 requestId,主线程按 requestId reject 对应 Promise。
+				// 关键路径:推理失败(含取消)仍带 requestId,主线程按 requestId reject 对应 Promise。
 				const error = err instanceof Error ? err.message : String(err);
 				self.postMessage({
 					type: 'error',
-					requestId: msg.requestId,
+					requestId,
 					error: `推理失败: ${error}`,
 				});
+			}
+			finally {
+				if (requestId !== undefined) abortControllers.delete(requestId);
 			}
 			break;
 		}

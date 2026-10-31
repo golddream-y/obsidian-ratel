@@ -12,7 +12,8 @@
  */
 
 import type { WorkerRequest, WorkerResponse } from '../types';
-import { handleMessage } from './handler';
+import { isWorkerReadRequest, isWorkerStoreWriteRequest } from '../types';
+import { handleMessage, cancelIndexRun, WorkerMessageLane } from './handler';
 import { workerData } from 'worker_threads';
 
 // 关键路径:Worker 启动时若有 workerData,立即初始化 embeddings 与索引。
@@ -61,36 +62,59 @@ function createErrorHandler(errorMessage: string): (e: MessageEvent) => void {
 // bootstrap 失败时也要注册一个返回错误的 onmessage,防止主线程请求悬挂。
 void bootstrapWorker().then(
 	() => {
-		let tail = Promise.resolve();
-		self.onmessage = (e: MessageEvent) => {
-			tail = tail.then(async () => {
-				const msg = e.data as WorkerRequest & { _requestId?: string };
-				const requestId = msg._requestId;
+		// 关键路径(T5):与 InlineWorker 共用分道规则 —— 索引串行、只读并行(提交窗口内延后)、
+		// 取消越过队列立即生效。
+		const lane = new WorkerMessageLane();
+		const handle = async (msg: WorkerRequest & { _requestId?: string }): Promise<void> => {
+			const requestId = msg._requestId;
+			const isRead = isWorkerReadRequest(msg.type);
+			// 关键路径(B1):整个请求就是一次存储事务的写请求没有 `persist` 活动通道,
+			// 提交窗口由请求本身开启,并在请求结束时关闭。
+			if (isWorkerStoreWriteRequest(msg.type)) lane.openCommitWindow();
 
-				// 关键路径:进度与终态都绑定所属请求 ID，主线程先按消息类型区分。
-				const postEvent = (eventMsg: WorkerResponse) => self.postMessage({ ...eventMsg, _requestId: requestId });
+			// 关键路径:进度、活动与终态都绑定所属请求 ID，主线程先按消息类型区分。
+			const postEvent = (eventMsg: WorkerResponse) => {
+				if (!isRead) lane.observeEvent(eventMsg);
+				const forwarded = eventMsg.type === 'index.activity' ? eventMsg : { ...eventMsg, _requestId: requestId };
+				self.postMessage(forwarded);
+			};
 
-				try {
-					const response = await handleMessage(msg, postEvent);
-					if (requestId) {
-						(response as Record<string, unknown>)._requestId = requestId;
-					}
-					self.postMessage(response);
-				} catch (err) {
-					// 修复:任何未捕获异常都返回结构化错误响应,主线程据此 reject Promise
-					const errorResponse: WorkerResponse = {
-						type: 'error',
-						payload: {
-							code: 'WORKER_ERROR',
-							message: err instanceof Error ? err.message : String(err),
-						},
-					};
-					if (requestId) {
-						(errorResponse as Record<string, unknown>)._requestId = requestId;
-					}
-					self.postMessage(errorResponse);
+			try {
+				const response = await handleMessage(msg, postEvent);
+				if (requestId) {
+					(response as Record<string, unknown>)._requestId = requestId;
 				}
-			}).catch(() => { /* 单条消息失败不能阻断后续消息 */ });
+				self.postMessage(response);
+			} catch (err) {
+				// 修复:任何未捕获异常都返回结构化错误响应,主线程据此 reject Promise
+				const errorResponse: WorkerResponse = {
+					type: 'error',
+					payload: {
+						code: 'WORKER_ERROR',
+						message: err instanceof Error ? err.message : String(err),
+					},
+				};
+				if (requestId) {
+					(errorResponse as Record<string, unknown>)._requestId = requestId;
+				}
+				self.postMessage(errorResponse);
+			}
+			finally {
+				if (!isRead) lane.closeCommitWindow();
+			}
+		};
+
+		self.onmessage = (e: MessageEvent) => {
+			const msg = e.data as WorkerRequest & { _requestId?: string };
+			if (msg.type === 'index.cancel') {
+				// 关键路径:取消不能在索引串行队列尾部排队。
+				const cancelled = cancelIndexRun(msg.payload);
+				self.postMessage({ type: 'index.cancel.done', payload: { cancelled } });
+				return;
+			}
+			const task = (): Promise<void> => handle(msg).catch(() => { /* 单条消息失败不能阻断后续消息 */ });
+			if (isWorkerReadRequest(msg.type)) lane.scheduleRead(task);
+			else lane.scheduleIndex(task);
 		};
 	},
 	(err) => {

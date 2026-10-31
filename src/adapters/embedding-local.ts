@@ -10,6 +10,7 @@
  */
 
 import type { EmbeddingPort } from '../ports/embedding';
+import type { EmbedOptions } from '../core/index-persistence-types';
 
 /** 索引未就绪错误(可被工具层识别为 `INDEX_NOT_READY`)。 */
 export class IndexNotReadyError extends Error {
@@ -47,14 +48,20 @@ export class EmbeddingLocal implements EmbeddingPort {
     /**
      * 批量生成文本向量。
      *
+     * 关键路径(T5):`options` 必须原样转发给内层实现(ONNX / API)。本类只是
+     * 「未就绪 → 就绪」的切换点,若在此吞掉 `options`,取消信号与批次活动回调会
+     * 在这条通道上静默消失(不报错、`isEmbedAbortError` 分支永不命中),
+     * 属于「失败伪装成功」。除未就绪抛错外不得解释或丢弃任何选项。
+     *
      * @param texts - 待编码文本数组。
+     * @param options - 可选取消信号与批次活动回调;原样转发给已注入的内层实现。
      * @returns 与 texts 等长的向量数组。
      * @throws IndexNotReadyError 模型未就绪。
      */
-    async embed(texts: string[]): Promise<number[][]> {
+    async embed(texts: string[], options?: EmbedOptions): Promise<number[][]> {
         if (!this.inner) {
             throw new IndexNotReadyError();
         }
-        return this.inner.embed(texts);
+        return this.inner.embed(texts, options);
     }
 }

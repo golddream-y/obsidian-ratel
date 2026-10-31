@@ -13,6 +13,8 @@
  */
 
 import type { EmbeddingPort } from '../ports/embedding';
+import { createEmbedAbortError, throwIfEmbeddingAborted } from '../ports/embedding';
+import type { EmbedOptions } from '../core/index-persistence-types';
 import type { EmbeddingOnnxDeps } from './embedding-onnx';
 import { devLogger } from '../logging/dev-logger';
 
@@ -41,6 +43,17 @@ interface WorkerEmbedMessage {
 }
 
 /**
+ * 主线程 → Worker 的取消消息。
+ *
+ * 关键路径(T5):`AbortSignal` 不能跨 Worker 传递,取消必须经消息表达;
+ * Worker 收到后在批次边界中止对应请求,绝不为取消单项任务终止整个运行时。
+ */
+interface WorkerCancelMessage {
+	type: 'cancel';
+	requestId: string;
+}
+
+/**
  * Web Worker 消息类型 — Worker → 主线程。
  */
 interface WorkerReadyMessage {
@@ -53,13 +66,35 @@ interface WorkerEmbedResultMessage {
 	vectors: number[][];
 }
 
+/** 批次活动 — 每个真实完成的批次上报一次,由代理按 request ID 转发给调用方。 */
+interface WorkerEmbedProgressMessage {
+	type: 'embed:progress';
+	requestId: string;
+	done: number;
+	total: number;
+}
+
 interface WorkerErrorMessage {
 	type: 'error';
 	requestId?: string;
 	error: string;
 }
 
-type WorkerResponse = WorkerReadyMessage | WorkerEmbedResultMessage | WorkerErrorMessage;
+type WorkerResponse =
+	| WorkerReadyMessage
+	| WorkerEmbedResultMessage
+	| WorkerEmbedProgressMessage
+	| WorkerErrorMessage;
+
+/** 一次挂起嵌入请求的结算与清理凭据。 */
+interface PendingEmbed {
+	resolve: (vectors: number[][]) => void;
+	reject: (err: Error) => void;
+	/** 批次活动回调 — 由代理按 request ID 转发,不跨 Worker 传函数。 */
+	onBatchComplete?: (done: number, total: number) => void;
+	/** 摘除 `signal` 上的 abort 监听;请求结算后必须调用,避免监听器泄漏。 */
+	detachAbort?: () => void;
+}
 
 /**
  * EmbeddingWorkerProxy — Web Worker 代理实现 EmbeddingPort。
@@ -79,8 +114,7 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 	readonly modelId: string;
 	private worker: Worker | null = null;
 	private readyPromise: Promise<void> = Promise.resolve();
-	private pending = new Map<string, (vectors: number[][]) => void>();
-	private pendingError = new Map<string, (err: Error) => void>();
+	private pending = new Map<string, PendingEmbed>();
 	private requestCounter = 0;
 	private idleTimer: ReturnType<typeof setTimeout> | null = null;
 	private consecutiveInitFailures = 0;
@@ -143,12 +177,21 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 	/**
 	 * 批量生成文本向量。空数组不创建 Worker。
 	 *
+	 * 关键路径(T5):
+	 * - `options.onBatchComplete` 按 request ID 接收 Worker 的 `embed:progress`,不跨线程传函数;
+	 * - `options.signal` 在主线程侧生效:已中止则立即 reject(不留永不结束的 Promise),
+	 *   同时向 Worker 发 `cancel` 消息让它在批次边界停止;信号不跨 Worker 传递;
+	 * - 请求结算后必须摘除 abort 监听与回调,避免监听器随任务泄漏。
+	 *
 	 * @param texts - 待编码文本数组。
+	 * @param options - 可选取消信号与批次活动回调。
 	 * @returns 与 texts 等长的向量数组。
-	 * @throws Worker 不可用、推理失败或 Worker 崩溃时抛错。
+	 * @throws Worker 不可用、推理失败、Worker 崩溃或调用已取消时抛错。
 	 */
-	async embed(texts: string[]): Promise<number[][]> {
+	async embed(texts: string[], options?: EmbedOptions): Promise<number[][]> {
 		if (texts.length === 0) return [];
+		// 关键路径:已中止的调用不创建 Worker(取消先于任何真实工作)。
+		throwIfEmbeddingAborted(options?.signal);
 		if (this.dead) {
 			if (!this.loggedDead) {
 				devLogger.error('worker', 'Embedding Worker 连续 init 失败，已停止重建');
@@ -164,10 +207,22 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 			if (!worker) {
 				throw new Error('Embedding Worker 不可用');
 			}
+			// 关键路径:await 之后必须重新检查 — 取消可能发生在等待 Worker 创建期间。
+			throwIfEmbeddingAborted(options?.signal);
 			const requestId = `embed_${++this.requestCounter}`;
 			const result = await new Promise<number[][]>((resolve, reject) => {
-				this.pending.set(requestId, resolve);
-				this.pendingError.set(requestId, reject);
+				const entry: PendingEmbed = { resolve, reject, onBatchComplete: options?.onBatchComplete };
+				const signal = options?.signal;
+				if (signal !== undefined) {
+					const onAbort = (): void => {
+						// 关键路径:本地立即结算,Worker 侧异步收敛;两侧都不留永不结束的 Promise。
+						this.requestCancel(requestId);
+						this.settlePending(requestId, createEmbedAbortError());
+					};
+					signal.addEventListener('abort', onAbort, { once: true });
+					entry.detachAbort = () => signal.removeEventListener('abort', onAbort);
+				}
+				this.pending.set(requestId, entry);
 				const msg: WorkerEmbedMessage = { type: 'embed', texts, requestId };
 				worker.postMessage(msg);
 			});
@@ -183,6 +238,20 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 	 */
 	terminate(): void {
 		this.terminateWorker();
+	}
+
+	/**
+	 * 整个嵌入运行时重置 — 永久挂起时的唯一出口。
+	 *
+	 * 关键路径(T5):永久挂起不能靠等待收尾来"结束";此入口终止 Worker 并让
+	 * 所有受影响调用按**真实失败**结束(不留永不结束的 Promise),下次 embed 重新创建 Worker。
+	 * 这不是取消单项任务的手段(那走 `signal` → `cancel` 消息)。
+	 *
+	 * @param reason - 诊断文案;不含路径、正文或密钥。
+	 */
+	resetRuntime(reason = '嵌入运行时已重置,受影响的调用按真实失败结束'): void {
+		devLogger.warn('worker', `重置嵌入运行时:${reason}`);
+		this.terminateWorker(undefined, reason);
 	}
 
 	/**
@@ -230,19 +299,14 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 		worker.addEventListener('message', (e: MessageEvent) => {
 			const data = e.data as WorkerResponse;
 			if (data.type === 'embed:result') {
-				const resolve = this.pending.get(data.requestId);
-				if (resolve) {
-					resolve(data.vectors);
-					this.pending.delete(data.requestId);
-					this.pendingError.delete(data.requestId);
-				}
+				// 关键路径:按 request ID 结算;已完成(取消)的请求忽略迟到结果。
+				this.settlePending(data.requestId, undefined, data.vectors);
+			} else if (data.type === 'embed:progress') {
+				// 关键路径:按 request ID 转发批次活动,不把函数传进 Worker。
+				const entry = this.pending.get(data.requestId);
+				if (entry !== undefined) entry.onBatchComplete?.(data.done, data.total);
 			} else if (data.type === 'error' && data.requestId) {
-				const reject = this.pendingError.get(data.requestId);
-				if (reject) {
-					reject(new Error(data.error));
-					this.pending.delete(data.requestId);
-					this.pendingError.delete(data.requestId);
-				}
+				this.settlePending(data.requestId, new Error(data.error));
 			}
 		});
 
@@ -296,6 +360,43 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 	}
 
 	/**
+	 * 结算一次挂起请求 — 幂等,并摘除 abort 监听。
+	 *
+	 * @param requestId - 请求标识。
+	 * @param error - 传入表示按失败结算。
+	 * @param vectors - 成功结果。
+	 */
+	private settlePending(requestId: string, error?: Error, vectors?: number[][]): void {
+		const entry = this.pending.get(requestId);
+		if (entry === undefined) return;
+		this.pending.delete(requestId);
+		entry.detachAbort?.();
+		if (error !== undefined) {
+			entry.reject(error);
+			return;
+		}
+		entry.resolve(vectors ?? []);
+	}
+
+	/**
+	 * 发送取消消息 — 单项任务取消,不终止共享 Worker。
+	 *
+	 * @param requestId - 待取消的请求标识。
+	 */
+	private requestCancel(requestId: string): void {
+		const worker = this.worker;
+		if (!worker) return;
+		const msg: WorkerCancelMessage = { type: 'cancel', requestId };
+		try {
+			worker.postMessage(msg);
+		}
+		catch (err) {
+			// 关键路径:取消消息发不出去不能反过来吞掉调用方的真实失败结算。
+			devLogger.warn('worker', '发送嵌入取消消息失败', err);
+		}
+	}
+
+	/**
 	 * 回收或卸载当前 Worker。
 	 *
 	 * @param kind - 传入则回调 onLifecycle;公开 terminate 省略以免卸载误打 idle
@@ -307,11 +408,9 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 			this.worker.terminate();
 			this.worker = null;
 		}
-		for (const [, reject] of this.pendingError) {
-			reject(new Error(rejectMessage));
+		for (const requestId of [...this.pending.keys()]) {
+			this.settlePending(requestId, new Error(rejectMessage));
 		}
-		this.pending.clear();
-		this.pendingError.clear();
 		if (kind) this.onLifecycle?.(kind);
 	}
 

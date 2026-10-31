@@ -13,9 +13,13 @@
 // ==================== 端口类型 re-export ====================
 import type { AttachmentRef, LlmRetryWait, ToolArgsIssue } from './ports/llm';
 import type { BreadcrumbPhase } from './logging/breadcrumbs';
+// 关键路径:活动包的唯一类型声明在 core/index-persistence-types(T1 建立的集中类型文件),
+// 本文件只做协议侧引用,不另建一份活动类型。
+import type { IndexActivity } from './core/index-persistence-types';
 export type { ChatMessage, ChatDelta, ToolCall, ToolDefinition } from './ports/llm';
 export type { VectorSearchResult, SearchFilter } from './ports/vector';
 export type { Session, NoteMeta, HookLogEntry } from './ports/persistence';
+export type { IndexActivity } from './core/index-persistence-types';
 
 // ==================== Agent 事件(主线程 → UI) ====================
 
@@ -81,6 +85,19 @@ export interface ChunkOptionsPayload {
 }
 
 /**
+ * 索引请求的任务身份 — 主线程把任务标识与写所有权 epoch 随索引请求下发。
+ *
+ * 关键路径:Worker 侧用它们给活动包盖章,主线程据此把活动归属到正确的任务与 epoch;
+ * 跨 Worker 不传函数或 `AbortSignal`,取消经 `index.cancel` 消息表达。
+ */
+export interface IndexRequestIdentityPayload {
+	/** 任务标识;省略时由发送端生成。 */
+	taskId?: string;
+	/** 写所有权 epoch;省略时按 0 处理。 */
+	epoch?: number;
+}
+
+/**
  * 主线程发给 Worker 的请求集合 — 含索引 / 向量 CRUD / 状态查询。
  *
  * 关键路径:类型用判别联合,Worker 端 switch 时 TypeScript 能自动收窄。
@@ -93,28 +110,99 @@ export interface ChunkOptionsPayload {
  * 改造点(S-RETRIEVAL-QUALITY §4.2):
  * - `index.full / index.incremental / index.batch` 载荷新增 `chunkOptions`,
  *   让设置项里的分块大小与重叠真正传到 Worker(此前 Worker 硬编码 500/100)。
+ *
+ * 改造点(T5 §4):
+ * - 三个索引入口新增 `taskId` / `epoch`,Worker 侧用 `index.activity` 回报真实完成步骤;
+ * - 新增 `index.cancel`:取消单项任务,不得终止共享 Worker 的其他使用者。
  */
 export type WorkerRequest =
-	| { type: 'index.full'; payload: { files: Array<{ path: string; content: string }>; chunkOptions?: ChunkOptionsPayload } }
-	| { type: 'index.incremental'; payload: { file: { path: string; content: string }; chunkOptions?: ChunkOptionsPayload } }
-	| { type: 'index.batch'; payload: { files: Array<{ path: string; content: string }>; chunkOptions?: ChunkOptionsPayload } }
+	| { type: 'index.full'; payload: { files: Array<{ path: string; content: string }>; chunkOptions?: ChunkOptionsPayload } & IndexRequestIdentityPayload }
+	| { type: 'index.incremental'; payload: { file: { path: string; content: string }; chunkOptions?: ChunkOptionsPayload } & IndexRequestIdentityPayload }
+	| { type: 'index.batch'; payload: { files: Array<{ path: string; content: string }>; chunkOptions?: ChunkOptionsPayload } & IndexRequestIdentityPayload }
+	| { type: 'index.cancel'; payload: { requestId?: string; taskId?: string; epoch?: number } }
 	| { type: 'index.delete'; payload: { filePath: string } }
 	| { type: 'vector.search'; payload: { queryVector: number[]; topK: number; filter?: import('./ports/vector').SearchFilter } }
 	| { type: 'vector.upsert'; payload: { docId: string; text: string; metadata: Record<string, unknown> } }
 	| { type: 'vector.delete'; payload: { docIds: string[] } }
 	| { type: 'index.status'; payload: Record<string, never> };
 
-// ==================== Worker 响应(Worker → 主线程) ====================
+/**
+ * 索引请求清单 — 这些请求携带任务身份,并按活动续期。
+ *
+ * 关键路径:集中声明,主线程管理器与 Worker 侧运行登记共用同一份清单。
+ */
+export const WORKER_INDEX_REQUEST_TYPES = ['index.full', 'index.batch', 'index.incremental'] as const;
+
+/** 索引请求类型。 */
+export type WorkerIndexRequestType = (typeof WORKER_INDEX_REQUEST_TYPES)[number];
+
+/**
+ * 判断是否为索引请求。
+ *
+ * @param type - 请求类型。
+ * @returns 是否为索引请求。
+ */
+export function isWorkerIndexRequest(type: WorkerRequest['type']): type is WorkerIndexRequestType {
+	return (WORKER_INDEX_REQUEST_TYPES as readonly string[]).includes(type);
+}
+
+/**
+ * 只读请求清单 — 这些请求与索引写通道**分离**:不排在长推理后面,但不得穿过提交窗口。
+ *
+ * 关键路径:集中声明,主线程车道分流与 Worker 侧消息分道共用同一份清单。
+ */
+export const WORKER_READ_REQUEST_TYPES = ['vector.search', 'index.status'] as const;
+
+/** 只读请求类型。 */
+export type WorkerReadRequestType = (typeof WORKER_READ_REQUEST_TYPES)[number];
+
+/**
+ * 判断是否为只读请求 — 只读请求可在长推理期间派发,写请求必须串行。
+ *
+ * @param type - 请求类型。
+ * @returns 是否为只读请求。
+ */
+export function isWorkerReadRequest(type: WorkerRequest['type']): type is WorkerReadRequestType {
+	return (WORKER_READ_REQUEST_TYPES as readonly string[]).includes(type);
+}
+
+/**
+ * 直接存储写事务请求清单 — 这些请求的**整个生命周期**就是一次真实存储事务
+ * (`deleteByPath` / `upsert` / `delete`),没有与查询并行的长推理阶段。
+ *
+ * 关键路径(T5 §4 / B1):它们不经过 `index.*` 的 `persist` 活动通道,因此提交窗口
+ * 必须由请求本身开启与关闭,否则只读车道会穿过这些写事务。
+ */
+export const WORKER_STORE_WRITE_REQUEST_TYPES = ['index.delete', 'vector.upsert', 'vector.delete'] as const;
+
+/** 直接存储写事务请求类型。 */
+export type WorkerStoreWriteRequestType = (typeof WORKER_STORE_WRITE_REQUEST_TYPES)[number];
+
+/**
+ * 判断请求是否为「整个请求即一次存储事务」的写请求。
+ *
+ * @param type - 请求类型。
+ * @returns 是否为直接存储写请求。
+ */
+export function isWorkerStoreWriteRequest(type: WorkerRequest['type']): type is WorkerStoreWriteRequestType {
+	return (WORKER_STORE_WRITE_REQUEST_TYPES as readonly string[]).includes(type);
+}
 
 /**
  * Worker 回给主线程的响应集合 — 索引进度、查询结果、错误。
  *
  * 关键路径:`error` 是通用兜底,各业务响应类型在协议层独立,方便扩展。
+ *
+ * T5 扩展:
+ * - `index.activity`:真实完成步骤触发的活动包(自带 taskId/requestId,不叠加信封 `_requestId`);
+ * - `index.cancel.done`:取消消息的回执(发送端不等待它,仅作诊断)。
  */
 export type WorkerResponse =
 	| { type: 'index.progress'; payload: { done: number; total: number } }
+	| { type: 'index.activity'; payload: IndexActivity }
 	| { type: 'index.done'; payload: { indexed: number; errors: number; chunkCount?: number } }
 	| { type: 'index.batch.done'; payload: { indexed: number; errors: number; chunkCounts: Record<string, number> } }
+	| { type: 'index.cancel.done'; payload: { cancelled: boolean } }
 	| { type: 'vector.search.result'; payload: Array<import('./ports/vector').VectorSearchResult> }
 	| { type: 'vector.upsert.done'; payload: { docId: string } }
 	| { type: 'vector.delete.done'; payload: { count: number } }

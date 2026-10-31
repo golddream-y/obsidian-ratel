@@ -491,3 +491,87 @@ describe('EmbeddingWorkerProxy', () => {
 		vi.useRealTimers();
 	});
 });
+
+describe('EmbeddingWorkerProxy — T5 批次活动、取消与运行时重置', () => {
+	let mockWorker: MockWorker;
+
+	beforeEach(() => {
+		mockWorker = new MockWorker();
+		(global as any).Worker = vi.fn(function (this: unknown) {
+			mockWorker = new MockWorker();
+			return mockWorker;
+		});
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+		(global as any).Worker = originalWorker;
+	});
+
+	it('embed - 批次活动 - 按 request ID 转发且其他请求不串扰', async () => {
+		const proxy = new EmbeddingWorkerProxy('mock-url', emptyDeps(), 512);
+		const batches: Array<[number, number]> = [];
+		const pending = proxy.embed(['a', 'b', 'c'], { onBatchComplete: (done, total) => batches.push([done, total]) });
+		await new Promise((r) => setTimeout(r, 10));
+		const { requestId } = findLastEmbedCall(mockWorker);
+		mockWorker.onmessage?.({ data: { type: 'embed:progress', requestId, done: 1, total: 3 } } as MessageEvent);
+		// 关键路径:其他请求 ID 的进度不得串扰本次回调。
+		mockWorker.onmessage?.({ data: { type: 'embed:progress', requestId: 'other', done: 3, total: 3 } } as MessageEvent);
+		mockWorker.onmessage?.({ data: { type: 'embed:progress', requestId, done: 3, total: 3 } } as MessageEvent);
+		mockWorker.onmessage?.({ data: { type: 'embed:result', requestId, vectors: [[0.1], [0.2], [0.3]] } } as MessageEvent);
+		await expect(pending).resolves.toEqual([[0.1], [0.2], [0.3]]);
+		expect(batches).toEqual([[1, 3], [3, 3]]);
+		proxy.terminate();
+	});
+
+	it('embed - 信号中止 - 发送 cancel 消息、按 AbortError 结束且迟到结果被忽略', async () => {
+		const proxy = new EmbeddingWorkerProxy('mock-url', emptyDeps(), 512);
+		const controller = new AbortController();
+		const pending = proxy.embed(['a'], { signal: controller.signal });
+		const rejected = expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+		await new Promise((r) => setTimeout(r, 10));
+		const { requestId } = findLastEmbedCall(mockWorker);
+		controller.abort();
+		await rejected;
+		// 关键路径:AbortSignal 不跨 Worker,取消经消息表达。
+		expect(mockWorker.postMessage).toHaveBeenCalledWith({ type: 'cancel', requestId });
+		// 关键路径:不为取消单项任务终止共享 Worker。
+		expect(mockWorker.terminate).not.toHaveBeenCalled();
+		// 迟到结果被忽略,且请求已从 pending 中摘除。
+		mockWorker.onmessage?.({ data: { type: 'embed:result', requestId, vectors: [[9]] } } as MessageEvent);
+		const next = proxy.embed(['b']);
+		await new Promise((r) => setTimeout(r, 10));
+		const nextRequestId = findLastEmbedCall(mockWorker).requestId;
+		mockWorker.onmessage?.({ data: { type: 'embed:result', requestId: nextRequestId, vectors: [[0.5]] } } as MessageEvent);
+		await expect(next).resolves.toEqual([[0.5]]);
+		proxy.terminate();
+	});
+
+	it('embed - 已中止的信号 - 不创建 Worker 直接按 AbortError 结束', async () => {
+		const proxy = new EmbeddingWorkerProxy('mock-url', emptyDeps(), 512);
+		const controller = new AbortController();
+		controller.abort();
+		await expect(proxy.embed(['a'], { signal: controller.signal })).rejects.toMatchObject({ name: 'AbortError' });
+		expect(global.Worker).not.toHaveBeenCalled();
+		proxy.terminate();
+	});
+
+	it('resetRuntime - 永久挂起 - 全部 pending 按真实失败结束且随后可重建 Worker', async () => {
+		const proxy = new EmbeddingWorkerProxy('mock-url', emptyDeps(), 512);
+		const first = expect(proxy.embed(['a'])).rejects.toThrow('运行时暂不可用');
+		const second = expect(proxy.embed(['b'])).rejects.toThrow('运行时暂不可用');
+		await new Promise((r) => setTimeout(r, 10));
+		proxy.resetRuntime('运行时暂不可用');
+		await Promise.all([first, second]);
+		expect(mockWorker.terminate).toHaveBeenCalled();
+		// 关键路径:重置不是 dead —— 下一次 embed 重新创建 Worker。
+		const workersBefore = workerCallCount();
+		const third = proxy.embed(['c']);
+		await new Promise((r) => setTimeout(r, 10));
+		expect(workerCallCount()).toBeGreaterThan(workersBefore);
+		const requestId = findLastEmbedCall(mockWorker).requestId;
+		mockWorker.onmessage?.({ data: { type: 'embed:result', requestId, vectors: [[0.7]] } } as MessageEvent);
+		await expect(third).resolves.toEqual([[0.7]]);
+		proxy.terminate();
+	});
+});

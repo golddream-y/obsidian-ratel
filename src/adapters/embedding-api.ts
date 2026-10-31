@@ -6,7 +6,8 @@
  */
 
 import { requestUrl } from 'obsidian';
-import type { EmbeddingPort } from '../ports/embedding';
+import { throwIfEmbeddingAborted, type EmbeddingPort } from '../ports/embedding';
+import type { EmbedOptions } from '../core/index-persistence-types';
 import { tNow } from '../i18n';
 
 /**
@@ -47,11 +48,19 @@ export class EmbeddingApi implements EmbeddingPort {
 	 * 关键路径:协议允许返回顺序乱序,必须按 `index` 重排,
 	 * 否则调用方对位的 `texts[i]` 与返回的 `vectors[i]` 可能错位。
 	 *
+	 * T5 取消语义:`RequestUrlParam` 没有 `signal` 字段,无法中断在途 HTTP,
+	 * 因此只在**发出前**与**拿到响应后**各检查一次,已中止就按 `AbortError` 结束 ——
+	 * 本实现不声称支持单次 HTTP 请求内部的中断,但绝不静默忽略信号,也绝不返回半批结果
+	 * (响应到手后已中止的批次不计入完成)。一次 API 调用就是一个批次,
+	 * 成功返回且维度校验通过后回报一次 `onBatchComplete`。
+	 *
 	 * @param texts - 待编码文本数组。
+	 * @param options - 可选取消信号与批次活动回调。
 	 * @returns 与 `texts` 等长的向量数组。
-	 * @throws 当 HTTP 状态非 2xx 时抛出,包含状态码与状态文本。
+	 * @throws 当 HTTP 状态非 2xx 或调用已取消时抛出。
 	 */
-	async embed(texts: string[]): Promise<number[][]> {
+	async embed(texts: string[], options?: EmbedOptions): Promise<number[][]> {
+		throwIfEmbeddingAborted(options?.signal);
 		const headers: Record<string, string> = {
 			'Content-Type': 'application/json',
 		};
@@ -75,6 +84,8 @@ export class EmbeddingApi implements EmbeddingPort {
 		if (response.status < 200 || response.status >= 300) {
 			throw new Error(tNow('error.api.embeddingFailed', { status: response.status }));
 		}
+		// 关键路径:响应已到手;若期间被取消,不得把结果交给调用方当作完整批次。
+		throwIfEmbeddingAborted(options?.signal);
 
 		// 关键路径:requestUrl.json 已是解析后的对象,不需要 await .json()。
 		const data = response.json as {
@@ -94,6 +105,11 @@ export class EmbeddingApi implements EmbeddingPort {
 			if (vec.length !== this.dimensions) {
 				throw new Error(tNow('error.embedding.dimMismatch', { expected: this.dimensions, actual: vec.length }));
 			}
+		}
+
+		// 关键路径:维度校验通过才算「真实完成一个批次」;空输入没有完成任何单位。
+		if (vectors.length > 0) {
+			options?.onBatchComplete?.(vectors.length, vectors.length);
 		}
 
 		return vectors;
