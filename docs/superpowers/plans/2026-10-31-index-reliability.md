@@ -1,6 +1,6 @@
 # 索引可靠性实施计划
 
-> **面向执行 Agent：** 执行时按 `subagent-driven-development` 逐任务推进，每个实现任务使用新的 subagent，并进行规范、代码质量两阶段独立审查。本轮用户授权 Agent 自审裁定设计，不再设置用户设计确认节点；当前未开始编码。
+> **面向执行 Agent：** 执行时按 `subagent-driven-development` 逐任务推进，每个实现任务使用新的 subagent，并进行规范、代码质量两阶段独立审查。本轮用户授权 Agent 自审裁定设计，不再设置用户设计确认节点；T0 已实施并完成两阶段审查。
 
 **目标：** 已持久提交的文件在重启后零重复嵌入，变更和失败仅影响对应文件，检索不读取未完成或已知过期结果。
 
@@ -8,7 +8,7 @@
 
 **技术栈：** TypeScript、现有 Vectra `FileStorage` 扩展点、Node 文件 API、Embedding Web Worker、Svelte store、Vitest；不新增数据库或原生模块。
 
-关联：`P-INDEX-RELIABILITY` → [S-INDEX-RELIABILITY](../specs/2026-10-31-index-reliability.md) → `BUG-1-INDEX-001`。状态：**Pending，Agent 自审裁定后从 T0 开始实施验证**。本轮完成设计审查，不启动源码实现、合并或发布；不再等待用户确认技术细节。
+关联：`P-INDEX-RELIABILITY` → [S-INDEX-RELIABILITY](../specs/2026-10-31-index-reliability.md) → `BUG-1-INDEX-001`。状态：**In Progress，T0 已完成（证据见 [T0 证据记录](2026-10-31-index-reliability-t0-evidence.md)），进入 T1**。设计审查已由 Agent 裁定；实现按 T1～T8 依赖顺序推进，合并与发布仍另行授权。
 
 ## 执行边界与依赖
 
@@ -47,11 +47,11 @@
 
 **文件：** 新建 `tests/adapters/vector-vectra-atomicity.test.ts`、`tests/helpers/index-reliability-fixture.ts`；本任务先不改变线上索引路径。
 
-- [ ] 记录现有 `deleteByPath` 的固定 512 维/top 100 查询和 `reembedFile` 提前删除行为，新增大于 100 块、不同维度、文件变短及空文件用例，先运行看到真实失败。
-- [ ] 通过公开 `listItems()` 或完整 metadata 枚举取出目标文件全部 ID，不用相似度查询做删除枚举；构造「旧块 → 一个事务删除并写新块 → 抛错回滚」实验。
-- [ ] 在测试夹具中提供 `LocalFileStorage` 的薄封装，仅覆盖 `upsertFile` 的临时文件/rename 实验，通过 `LocalDocumentIndex` 的 `storage` 配置注入；确认 `endUpdate` 的落盘时机、外置 metadata 和失败后的内存视图。测试原文件保持、rename 后抛错与新实例重载；T1 再将验证过的机制实现为生产适配器。
-- [ ] 证明可以不改 node_modules、不访问私有 `_data/_update` 实现契约。若公开 API 不足，停止计划并修改 spec，不能以先删旧块绕过。
-- [ ] 固定确定性假嵌入、分块配置和合成数据，在同机临时目录采集现有成功路径基线：100/1000/3000 篇分别运行三次，记录中位耗时、峰值 heap/RSS、向量文件写入字节数与次数。全量完成后再测零变化启动和单文件更新；旧缺陷路径失败则单独记失败，不用超时耗时伪造成功基线。
+- [x] 记录现有 `deleteByPath` 的固定 512 维/top 100 查询和 `reembedFile` 提前删除行为，新增大于 100 块、不同维度、文件变短及空文件用例，先运行看到真实失败。
+- [x] 通过公开 `listItems()` 或完整 metadata 枚举取出目标文件全部 ID，不用相似度查询做删除枚举；构造「旧块 → 一个事务删除并写新块 → 抛错回滚」实验。
+- [x] 在测试夹具中提供 `LocalFileStorage` 的薄封装，仅覆盖 `upsertFile` 的临时文件/rename 实验，通过 `LocalDocumentIndex` 的 `storage` 配置注入；确认 `endUpdate` 的落盘时机、外置 metadata 和失败后的内存视图。测试原文件保持、rename 后抛错与新实例重载；T1 再将验证过的机制实现为生产适配器。
+- [x] 证明可以不改 node_modules、不访问私有 `_data/_update` 实现契约。若公开 API 不足，停止计划并修改 spec，不能以先删旧块绕过。
+- [x] 固定确定性假嵌入、分块配置和合成数据，在同机临时目录采集现有成功路径基线：100/1000/3000 篇分别运行三次，记录中位耗时、峰值 heap/RSS、向量文件写入字节数与次数。全量完成后再测零变化启动和单文件更新；旧缺陷路径失败则单独记失败，不用超时耗时伪造成功基线。
 
 核心实验顺序必须为：
 
