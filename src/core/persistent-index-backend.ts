@@ -94,7 +94,14 @@ export interface IndexRoundState {
 	failures: number;
 }
 
-/** 协调器提供的队列/在途/未决事务计数。 */
+/**
+ * 协调器提供的队列/在途/未决事务计数。
+ *
+ * 关键路径:协调器模式下本轮扫描不由 `runScan` 驱动,若这里只给队列计数,
+ * `round.scanComplete` 会恒为 false(`isIndexComplete()` 恒假);因此把协调器的
+ * 扫描完成与失败计数一并作为可选信号接入。`IndexTaskCounters` 结构上直接满足本端口,
+ * 装配层可以直接 `getRoundCounters: () => coordinator.counters()`。
+ */
 export interface IndexRoundCounters {
 	/** 待处理队列长度。 */
 	queued: number;
@@ -102,6 +109,10 @@ export interface IndexRoundCounters {
 	active: number;
 	/** 未决事务数。 */
 	pendingTransactions: number;
+	/** 协调器视角的本轮扫描是否已结束;缺失时沿用后端自身的扫描状态。 */
+	scanComplete?: boolean;
+	/** 协调器视角的本轮未清除失败数;缺失时沿用后端自身的失败计数。 */
+	failures?: number;
 }
 
 /** 装配端口通过 getter 读取，兼容模型就绪后替换 VectraStore 的生命周期。 */
@@ -129,10 +140,11 @@ export interface PersistentIndexBackendOptions {
 	 */
 	fileRecords?: FileRecordReader | null;
 	/**
-	 * 可选:本轮队列/在途/未决事务计数;未注入时按 0 计。
+	 * 可选:本轮队列/在途/未决事务计数,以及协调器视角的扫描完成与失败计数;未注入时按 0 计。
 	 *
-	 * 缺省风险(T7 待办):计数缺失时会得到「队列已空、无在途、无未决事务」的结论,
-	 * 装配遗漏时仍可能宣告完成;装配点必须保证协调器计数器注入。
+	 * 缺省风险(T7 待办):计数缺失时会得到「队列已空、无在途、无未决事务、扫描未完成」的结论
+	 * —— 协调器模式下 `scanComplete` 只能来自本端口,不注入时 `isIndexComplete()` 恒为 false;
+	 * 装配点必须保证协调器计数器注入(`() => coordinator.counters()` 结构兼容)。
 	 */
 	getRoundCounters?: () => IndexRoundCounters;
 }
@@ -262,16 +274,19 @@ export class PersistentIndexBackend implements IndexBackend {
 	/**
 	 * 本轮索引状态 — 完整性判定与展示读取同一份状态。
 	 *
-	 * 关键路径:未注入协调器计数器时按 0 计(队列空、无在途、无未决事务),
-	 * 这是「缺省即无待处理」的乐观语义 —— 装配遗漏不会在这里暴露,由装配守卫与 T7 装配点负责。
+	 * 关键路径:
+	 * - 未注入协调器计数器时按 0 计(队列空、无在途、无未决事务),扫描状态沿用后端自身;
+	 * - 注入协调器计数器时,`scanComplete`/`failures` 由协调器提供(它才是本轮扫描的驱动方),
+	 *   缺失这两个字段才回落到后端自身的 `runScan` 状态 —— 协调器模式下后端从不跑
+	 *   `runScan`,`round.scanComplete` 恒为 false,必须靠协调器信号才能反映真实收敛。
 	 *
-	 * @returns 本轮扫描/失败状态与协调器计数器(未注入计数器时按 0 计)。
+	 * @returns 本轮扫描/失败状态与协调器计数器。
 	 */
 	roundState(): IndexRoundState {
 		const counters = this.deps.getRoundCounters?.() ?? { queued: 0, active: 0, pendingTransactions: 0 };
 		return {
-			scanComplete: this.round.scanComplete,
-			failures: this.round.failures,
+			scanComplete: counters.scanComplete ?? this.round.scanComplete,
+			failures: counters.failures ?? this.round.failures,
 			queued: counters.queued,
 			active: counters.active,
 			pendingTransactions: counters.pendingTransactions,

@@ -566,6 +566,90 @@ export class IndexFileJournal {
 	}
 
 	/**
+	 * 列出未决事务声明的目标路径 — 纯读入口,不要求写所有权、不做任何写入。
+	 *
+	 * 关键路径:`recover()` 首行就断言写所有权,关闭自动索引时永远不会运行,
+	 * 因此「向量已替换、完成记录未落盘」这个崩溃窗口不会产生任何 `unavailable` 路径状态;
+	 * 只读可见性必须靠本入口枚举这些路径,否则会把旧 present 记录当成本轮可检索依据
+	 * (spec §5 只读契约、A11)。本入口只读 `pending/<transactionId>/prepared.json` 的 `next.path`,
+	 * 不校验分片、不缓存、不修改磁盘,也不登记在途提交。
+	 *
+	 * 已知边界:没有 `prepared.json`、或记录不可解析/路径非法的事务无法归属,
+	 * 不出现在结果里;这类事务由恢复流程或代际隔离处理。
+	 *
+	 * @returns 去重并按路径排序的未决事务目标路径。
+	 */
+	async listPendingPaths(): Promise<string[]> {
+		const dir = await this.resolveInRoot(JOURNAL_PENDING_DIRNAME);
+		const paths = new Set<string>();
+		for (const entry of await this.readDirOrEmpty(dir, 'list-pending-paths')) {
+			if (!entry.isDirectory()) continue;
+			let name: string;
+			try {
+				name = assertSafePartName(entry.name);
+			} catch {
+				// 无法安全处理的名字不做任何猜测性读取。
+				continue;
+			}
+			const raw = await this.readTextOrNull(
+				path.join(await this.transactionDir(name), JOURNAL_PREPARED_FILENAME),
+				'read-prepared',
+			);
+			if (raw === null) continue;
+			let parsed: unknown;
+			try {
+				parsed = JSON.parse(raw);
+			} catch {
+				continue;
+			}
+			const declared = typeof parsed === 'object' && parsed !== null
+				? (parsed as { next?: { path?: unknown } }).next?.path
+				: undefined;
+			if (typeof declared !== 'string') continue;
+			try {
+				paths.add(assertSafeRecordPath(declared));
+			} catch {
+				// 记录内路径非法 → 不可归属;该事务留给恢复/隔离流程,不在这里猜测。
+				continue;
+			}
+		}
+		return [...paths].sort((left, right) => left.localeCompare(right));
+	}
+
+	/**
+	 * 统计因配置指纹不符而被丢弃的完成记录数 — 纯读入口,不要求写所有权、不做任何写入。
+	 *
+	 * 关键路径:`readReceiptFiles()` 对配置不符记录一律静默跳过,只读视图因此只能得出
+	 * 「已知空集」;本入口把「有多少记录因配置代际变化而作废」变成可判定信号,
+	 * 使调用方能显示「配置已变」而不是「0 篇可检索」。只统计**仅**因配置指纹不符
+	 * (错误码 `config-fingerprint-mismatch`)而不被采用的记录:代际不符、schema 不符与
+	 * 损坏记录都不计入,不把它们混成「配置已变」。
+	 *
+	 * @returns 配置指纹与当前实例不一致的完成记录数。
+	 */
+	async countConfigMismatchedReceipts(): Promise<number> {
+		const dir = await this.resolveInRoot(JOURNAL_FILES_DIRNAME);
+		let count = 0;
+		for (const entry of await this.readDirOrEmpty(dir, 'list-receipts')) {
+			if (!entry.isFile() || !entry.name.endsWith('.json')) continue;
+			const raw = await this.readTextOrNull(path.join(dir, entry.name), 'read-receipt');
+			if (raw === null) continue;
+			let parsed: unknown;
+			try {
+				parsed = JSON.parse(raw);
+			} catch {
+				continue;
+			}
+			try {
+				await validateFileCommit(parsed, this.validationOptions());
+			} catch (error) {
+				if (error instanceof IndexValidationError && error.code === 'config-fingerprint-mismatch') count += 1;
+			}
+		}
+		return count;
+	}
+
+	/**
 	 * 读取某路径的持久状态记录。
 	 *
 	 * @param relativePath - vault 相对路径。

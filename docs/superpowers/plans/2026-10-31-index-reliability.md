@@ -8,7 +8,7 @@
 
 **技术栈：** TypeScript、现有 Vectra `FileStorage` 扩展点、Node 文件 API、Embedding Web Worker、Svelte store、Vitest；不新增数据库或原生模块。
 
-关联：`P-INDEX-RELIABILITY` → [S-INDEX-RELIABILITY](../specs/2026-10-31-index-reliability.md) → `BUG-1-INDEX-001`。状态：**In Progress，T0～T3 已完成（证据见 [T0](2026-10-31-index-reliability-t0-evidence.md)、[T1/T2](2026-10-31-index-reliability-t1-t2-evidence.md)、[T3](2026-10-31-index-reliability-t3-evidence.md)），进入 T4**。全量 288 文件 / 2400 passed / 5 skipped；tsc 241 条存量、新增 0。合并与发布仍另行授权。
+关联：`P-INDEX-RELIABILITY` → [S-INDEX-RELIABILITY](../specs/2026-10-31-index-reliability.md) → `BUG-1-INDEX-001`。状态：**In Progress，T0～T4 已完成（证据见 [T0](2026-10-31-index-reliability-t0-evidence.md)、[T1/T2](2026-10-31-index-reliability-t1-t2-evidence.md)、[T3](2026-10-31-index-reliability-t3-evidence.md)、[T4](2026-10-31-index-reliability-t4-evidence.md)），进入 T5**。全量 290 文件 / 2502 passed / 5 skipped；tsc 241 条存量、新增 0。合并与发布仍另行授权。
 
 ## 执行边界与依赖
 
@@ -161,11 +161,11 @@ receipt 与实际块匹配且仅清理未完成 → 只清理，不再嵌入
 
 **文件：** 新建 `src/core/index-task-coordinator.ts`、`src/core/index-search-visibility.ts`、`tests/core/index-task-coordinator.test.ts`、`tests/core/index-search-visibility.test.ts`；修改 `src/core/index-manager.ts`、`src/core/index-controller.ts` 及对应测试。
 
-- [ ] 先写枚举与监听间变更、mtime/size 不变但正文变化、推理中删除、提交中再次修改、连续编辑不饿死其他文件的测试。
-- [ ] 在枚举前注册事件，路径事件序号持续单调增长；按路径合并队列。初始仅一个文件在准备/提交，不为吞吐擅自并发写入；无变化文件核对 hash 后复用。
-- [ ] 读取前后、推理后及提交前检查内容/事件序号/配置。提交后若仍有新事件，保留对应队列项；只有本次输入 hash 完成，不能清空后来事件。读失败区分文件已删除和无法读取，不把读取错误当成空文件提交。
-- [ ] 普通修改先标记 known-stale；删除、排除和损坏立即 deny。扫描期间逐文件核实后可解锁已提交部分，`ready` 要求扫描结束且无待处理失败/事务/事件。
-- [ ] 删除/改名落 durable 事务；空文件提交零块 receipt。初次扫描使用轻量路径列表和逐文件内容，不调用旧 `snapshot()` 生成全库正文数组。
+- [x] 先写枚举与监听间变更、mtime/size 不变但正文变化、推理中删除、提交中再次修改、连续编辑不饿死其他文件的测试。
+- [x] 在枚举前注册事件，路径事件序号持续单调增长；按路径合并队列。初始仅一个文件在准备/提交，不为吞吐擅自并发写入；无变化文件核对 hash 后复用。
+- [x] 读取前后、推理后及提交前检查内容/事件序号/配置。提交后若仍有新事件，保留对应队列项；只有本次输入 hash 完成，不能清空后来事件。读失败区分文件已删除和无法读取，不把读取错误当成空文件提交。
+- [x] 普通修改先标记 known-stale；删除、排除和损坏立即 deny。扫描期间逐文件核实后可解锁已提交部分，`ready` 要求扫描结束且无待处理失败/事务/事件。
+- [x] 删除/改名落 durable 事务；空文件提交零块 receipt。初次扫描使用轻量路径列表和逐文件内容，不调用旧 `snapshot()` 生成全库正文数组。
 
 队列完成的检查规则：
 

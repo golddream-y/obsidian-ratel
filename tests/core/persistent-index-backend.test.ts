@@ -21,6 +21,7 @@ import { PersistentIndexBackend } from '../../src/core/persistent-index-backend'
 import type {
 	CommittedFileRecord,
 	FileRecordReader,
+	IndexRoundCounters,
 	PersistentIndexBackendOptions,
 	SearchableFileRecords,
 } from '../../src/core/persistent-index-backend';
@@ -533,6 +534,29 @@ describe('真实索引持久化', () => {
         expect(first.backend.roundState()).toMatchObject({
             scanComplete: true, queued: 0, active: 0, pendingTransactions: 1,
         });
+    });
+
+    it('完整性判定 - 协调器模式 - 收敛信号注入后才按真实扫描状态宣告完成', async () => {
+        // 协调器模式下本轮扫描不由 `runScan` 驱动:`round.scanComplete` 只能来自协调器计数器。
+        const first = await create();
+        expect(await first.manager.onLayoutReady()).toEqual({ indexed: 2, errors: 0 });
+        first.worker.destroy();
+
+        let counters: IndexRoundCounters = { queued: 0, active: 0, pendingTransactions: 0, scanComplete: false };
+        const second = await create(undefined, 1000, { getRoundCounters: () => counters });
+        // 未收敛:协调器尚未标记扫描结束 → 不得宣告全库完成(T7 只装配协调器而不注入计数器时恒假)。
+        expect(second.backend.roundState()).toMatchObject({ scanComplete: false });
+        expect(await second.backend.isIndexComplete()).toBe(false);
+        // 收敛:协调器标记扫描结束且队列/在途/未决事务清空 → 以真实收敛宣告完成。
+        counters = { ...counters, scanComplete: true };
+        expect(second.backend.roundState()).toMatchObject({ scanComplete: true, failures: 0 });
+        expect(await second.backend.isIndexComplete()).toBe(true);
+        // 未收敛(队列未清空 / 仍有失败)时,即使扫描结束也不能宣告完成。
+        counters = { ...counters, queued: 1 };
+        expect(await second.backend.isIndexComplete()).toBe(false);
+        counters = { queued: 0, active: 0, pendingTransactions: 0, scanComplete: true, failures: 1 };
+        expect(second.backend.roundState()).toMatchObject({ scanComplete: true, failures: 1 });
+        expect(await second.backend.isIndexComplete()).toBe(false);
     });
 
     it('部分可用性 - 注入文件记录端口 - 只返回可检索记录且完整性要求记录覆盖清单', async () => {

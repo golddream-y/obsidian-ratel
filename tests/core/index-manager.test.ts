@@ -6,8 +6,55 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { IndexManager } from '../../src/core/index-manager';
+import { IndexManager, type IndexTaskCoordinatorPort } from '../../src/core/index-manager';
+import type { IndexTaskCounters } from '../../src/core/index-task-coordinator';
 import { get } from 'svelte/store';
+
+/** 协调器替身 — 只暴露管理器依赖的端口,计数可注入。 */
+class CoordinatorStub implements IndexTaskCoordinatorPort {
+    started = 0;
+    readonly notified: Array<{ path: string; op: string }> = [];
+    readonly events: string[] = [];
+    pausedCount = 0;
+    resumedCount = 0;
+    destroyed = 0;
+    private state: IndexTaskCounters = {
+        taskId: 0, phase: 'paused', scanComplete: false, total: 0, committed: 0,
+        committedThisRound: 0, queued: 0, active: 0, pendingTransactions: 0, failures: 0,
+    };
+
+    constructor(private readonly onStart?: () => void) {}
+
+    async start(): Promise<IndexTaskCounters> {
+        this.started += 1;
+        this.events.push('start');
+        this.onStart?.();
+        this.state = { ...this.state, taskId: this.state.taskId + 1, scanComplete: true, phase: 'ready' };
+        return this.counters();
+    }
+
+    counters(): IndexTaskCounters {
+        return { ...this.state };
+    }
+
+    notify(path: string, op: 'upsert' | 'delete'): void {
+        this.notified.push({ path, op });
+    }
+
+    async drain(): Promise<void> {}
+
+    isReady(): boolean {
+        return this.state.phase === 'ready' && this.state.failures === 0;
+    }
+
+    pause(): void { this.pausedCount += 1; }
+    resume(): void { this.resumedCount += 1; }
+    destroy(): void { this.destroyed += 1; }
+
+    set(next: Partial<IndexTaskCounters>): void {
+        this.state = { ...this.state, ...next };
+    }
+}
 
 describe('IndexManager', () => {
     let manager: IndexManager;
@@ -354,6 +401,173 @@ describe('暂停期间的真实完成状态', () => {
         await manager.flush();
         expect(attempts).toBe(2);
         expect(get(manager.status$).state).toBe('Ready');
+        manager.destroy();
+    });
+});
+
+
+describe('协调器接入', () => {
+    const backendStub = () => ({
+        fullReindex: vi.fn().mockResolvedValue({ indexed: 0, errors: 0 }),
+        smartReindex: vi.fn().mockResolvedValue({ indexed: 0, errors: 0, skipped: 0 }),
+        incrementalIndex: vi.fn().mockResolvedValue({ indexed: 1, errors: 0 }),
+        deleteFile: vi.fn().mockResolvedValue(1),
+    });
+
+    it('启动扫描 - 注入协调器 - 由协调器驱动且不再调用整批重扫入口', async () => {
+        const backend = backendStub();
+        const coordinator = new CoordinatorStub();
+        const manager = new IndexManager(backend, coordinator);
+        await manager.onLayoutReady();
+        expect(coordinator.started).toBe(1);
+        expect(backend.smartReindex).not.toHaveBeenCalled();
+        expect(backend.fullReindex).not.toHaveBeenCalled();
+        expect(get(manager.status$)).toMatchObject({ state: 'Ready' });
+        manager.destroy();
+    });
+
+    it('增量事件 - 注入协调器 - 转发给协调器且不调用后端单文件入口', async () => {
+        const backend = backendStub();
+        const coordinator = new CoordinatorStub();
+        const manager = new IndexManager(backend, coordinator);
+        await manager.onLayoutReady();
+        manager.enqueue('a.md', 'upsert', '内容');
+        expect(coordinator.notified).toEqual([{ path: 'a.md', op: 'upsert' }]);
+        expect(backend.incrementalIndex).not.toHaveBeenCalled();
+        expect(backend.deleteFile).not.toHaveBeenCalled();
+        manager.destroy();
+    });
+
+    it('状态展示 - 协调器 ready - 区分总文件数、已提交数与失败数', async () => {
+        const coordinator = new CoordinatorStub();
+        coordinator.set({ committed: 7, total: 9, failures: 0 });
+        const manager = new IndexManager(backendStub(), coordinator);
+        await manager.onLayoutReady();
+        expect(get(manager.status$)).toMatchObject({
+            state: 'Ready', totalDocs: 7, committedDocs: 7, totalFiles: 9, pendingDocs: 0, failedDocs: 0, phase: 'ready',
+        });
+        manager.destroy();
+    });
+
+    it('状态展示 - 新一轮 taskId 递增且未收敛 - 不沿用旧任务完成统计', async () => {
+        const coordinator = new CoordinatorStub();
+        const manager = new IndexManager(backendStub(), coordinator);
+        await manager.onLayoutReady();
+        expect(get(manager.status$)).toMatchObject({ state: 'Ready', totalDocs: 0 });
+        // 新一轮:扫描结束但仍有待处理项,旧任务的 0 篇完成统计不得继续展示为 Ready。
+        coordinator.set({ taskId: 5, phase: 'processing', scanComplete: true, committed: 3, queued: 2, committedThisRound: 1 });
+        manager.enqueue('a.md', 'upsert');
+        const status = get(manager.status$);
+        expect(status.state).toBe('Queueing');
+        expect(status).toMatchObject({ pending: 2, reverifying: true, committed: 3, phase: 'processing' });
+        expect(status).not.toHaveProperty('totalDocs');
+        manager.destroy();
+    });
+
+    it('状态展示 - 协调器报告失败 - 不进入 Ready', async () => {
+        const coordinator = new CoordinatorStub();
+        coordinator.set({ failures: 2, committed: 1, total: 3 });
+        const manager = new IndexManager(backendStub(), coordinator);
+        const result = await manager.onLayoutReady();
+        expect(result).toEqual({ indexed: 0, errors: 2 });
+        expect(coordinator.counters().failures).toBe(2);
+        expect(get(manager.status$).state).toBe('Failed');
+        manager.destroy();
+    });
+
+    it('部分检索可用性 - 后端未实现记录视图 - 返回 null 而不是空集', async () => {
+        const manager = new IndexManager(backendStub());
+        expect(await manager.searchableFileRecords()).toBeNull();
+        manager.destroy();
+    });
+
+    it('部分检索可用性 - 后端实现记录视图 - 原样透传', async () => {
+        const records = { total: 1, records: [{ path: 'a.md', state: 'present' as const, revision: 1, inputHash: 'h', chunkCount: 2 }] };
+        const manager = new IndexManager({ ...backendStub(), searchableFileRecords: vi.fn().mockResolvedValue(records) });
+        expect(await manager.searchableFileRecords()).toEqual(records);
+        manager.destroy();
+    });
+
+    it('暂停与恢复 - 注入协调器 - 透传到协调器', async () => {
+        const coordinator = new CoordinatorStub();
+        const manager = new IndexManager(backendStub(), coordinator);
+        await manager.onLayoutReady();
+        manager.pause();
+        expect(coordinator.pausedCount).toBe(1);
+        expect(get(manager.status$)).toMatchObject({ state: 'Paused' });
+        manager.resume();
+        expect(coordinator.resumedCount).toBe(1);
+        manager.destroy();
+        expect(coordinator.destroyed).toBe(1);
+    });
+
+    it('重建 - 注入协调器 - 先清库再交给协调器重新核对', async () => {
+        const backend = backendStub();
+        const order: string[] = [];
+        backend.fullReindex = vi.fn(async () => { order.push('full'); return { indexed: 0, errors: 0 }; });
+        const coordinator = new CoordinatorStub(() => order.push('coordinator-start'));
+        (backend as { dropIndex?: () => Promise<void> }).dropIndex = async () => { order.push('drop'); };
+        const manager = new IndexManager(backend, coordinator);
+        await manager.onLayoutReady();
+        await manager.reindex();
+        expect(order).toEqual(['coordinator-start', 'drop', 'coordinator-start']);
+        expect(backend.fullReindex).not.toHaveBeenCalled();
+        manager.destroy();
+    });
+
+    it('重建 - 协调器在途 drain - 清库与重扫不与其交错', async () => {
+        const order: string[] = [];
+        let releaseDrain!: () => void;
+        const backend = backendStub();
+        (backend as { dropIndex?: () => Promise<void> }).dropIndex = async () => { order.push('drop'); };
+        const coordinator = new CoordinatorStub(() => order.push('coordinator-start'));
+        // 在途提交:drain 卡住时,清库与重扫必须排在它之后。
+        coordinator.drain = async () => {
+            order.push('drain');
+            await new Promise<void>((resolve) => { releaseDrain = resolve; });
+            order.push('drain-done');
+        };
+        const manager = new IndexManager(backend, coordinator);
+        await manager.onLayoutReady();
+        manager.enqueue('a.md', 'upsert');
+        await vi.waitFor(() => expect(order).toContain('drain'));
+
+        const rebuilding = manager.reindex();
+        await Promise.resolve();
+        // 关键路径:协调器分支若不挂到 this.tail,dropIndex 会在 drain 未收敛时就执行。
+        expect(order).not.toContain('drop');
+        releaseDrain();
+        await rebuilding;
+        expect(order.indexOf('drop')).toBeGreaterThan(order.indexOf('drain-done'));
+        expect(order.indexOf('coordinator-start')).toBeLessThan(order.indexOf('drain'));
+        manager.destroy();
+    });
+
+    it('状态展示 - 新一轮首次发布即扫描结束但未收敛 - 显示重新核对中', async () => {
+        const coordinator = new CoordinatorStub();
+        // 关键路径:发布必须发生在记录 `lastTaskId` 之前 —— 反序会让本轮首次发布永远看不到新 taskId。
+        coordinator.start = async () => {
+            coordinator.set({ taskId: 9, phase: 'processing', scanComplete: true, committed: 3, queued: 2, committedThisRound: 0 });
+            return coordinator.counters();
+        };
+        const manager = new IndexManager(backendStub(), coordinator);
+        await manager.onLayoutReady();
+        expect(get(manager.status$)).toMatchObject({ state: 'Queueing', reverifying: true, pending: 2, committed: 3 });
+        manager.destroy();
+    });
+
+    it('状态展示 - 新一轮 taskId 递增且本轮零提交 - 仍显示重新核对中', async () => {
+        const coordinator = new CoordinatorStub();
+        const manager = new IndexManager(backendStub(), coordinator);
+        await manager.onLayoutReady();
+        // 关键路径:只有 taskId 判据成立(committedThisRound 为 0)时也必须显示重新核对中。
+        coordinator.set({ taskId: 2, phase: 'processing', scanComplete: true, committed: 3, queued: 1, committedThisRound: 0 });
+        manager.enqueue('a.md', 'upsert');
+        expect(get(manager.status$)).toMatchObject({ state: 'Queueing', reverifying: true, committed: 3 });
+        // 反向对照:同一轮(与 lastTaskId 相等)且零提交时不得凭空显示重新核对中。
+        coordinator.set({ taskId: 1, queued: 1, committedThisRound: 0 });
+        manager.enqueue('a.md', 'upsert');
+        expect(get(manager.status$)).toMatchObject({ state: 'Queueing', reverifying: false });
         manager.destroy();
     });
 });

@@ -8,15 +8,45 @@
  * - 启动期连接 vault 事件 → FolderWatcher → IndexManager.enqueue
  * - .ratelignore 过滤后入队;被排除的文件不入队
  * - pause / resume / reindex 三个方法直接透传到 IndexManager
+ * - 自动索引开启时:事件通路先于任何扫描装配;注入 T4 协调器后由经理转发给协调器。
+ * - 自动索引关闭时:保持只读契约 —— 不装配写路径监听、不读全库、不嵌入、不写盘;
+ *   事件只记入内存的「已变更」集合,供检索侧过滤过期候选(黑名单清理只排队)。
  */
 
-import { IndexManager, type IndexBackend } from './index-manager';
+import { IndexManager, type IndexBackend, type IndexTaskCoordinatorPort } from './index-manager';
 import { FolderWatcher } from './folder-watcher';
 import { Ratelignore } from '../utils/ratelignore-parser';
 import { isIndexableMarkdownPath } from '../utils/path-safety';
 import { devLogger } from '../logging/dev-logger';
 import { get } from 'svelte/store';
 import { tNow } from '../i18n';
+
+/**
+ * 只读可见性视图端口 — 由 T4 的 `ReadOnlySearchView` 结构上满足。
+ *
+ * 关键路径:只读通道没有任何写入口;关闭自动索引时检索只消费可信完成记录。
+ */
+export interface ReadOnlySearchViewPort {
+    /** 重新读取可信完成记录(只读,不写盘)。 */
+    refresh(unresolvedPaths?: ReadonlySet<string>): Promise<unknown>;
+    /** 记录是否可判定;`unjudgeable` 时不得显示为「0 篇可检索」。 */
+    recordsKind(): 'known' | 'unjudgeable';
+    /** 候选新鲜度;关闭自动索引时可信记录为 `unknown`。 */
+    freshnessOf(path: string): string;
+    /** 过滤候选,必须在融合/重排之前调用。 */
+    filterCandidates<T extends { path: string }>(candidates: readonly T[]): Promise<{
+        visible: T[];
+        denied: Array<{ path: string; reason: string }>;
+    }>;
+}
+
+/** IndexController 可选装配 — 协调器与只读视图由宿主装配层注入。 */
+export interface IndexControllerOptions {
+    /** 任务协调器;注入后自动索引由协调器持有事件、新鲜度与提交。 */
+    coordinator?: IndexTaskCoordinatorPort;
+    /** 关闭自动索引时使用的只读可见性视图。 */
+    readOnlyView?: ReadOnlySearchViewPort;
+}
 
 /**
  * Vault 事件订阅接口(从 VaultPort 抽离,避免在 IndexController 强依赖全 VaultPort)。
@@ -37,25 +67,75 @@ export class IndexController {
     private ratelignore: Ratelignore;
     private unsubscribers: Array<() => void> = [];
 
-    constructor(private vault: VaultEventListener, backend: IndexBackend, vaultRoot: string) {
-        this.indexManager = new IndexManager(backend);
+    private readonly readOnlyView: ReadOnlySearchViewPort | undefined;
+    /** 只读模式下的内存变更集合 — 不落盘、不读文件,仅供检索侧过滤。 */
+    private readonly readOnlyChangedPaths = new Set<string>();
+    /** 当前已装配的事件通路 — 重复装配必须先去重,否则 vault 订阅会叠加。 */
+    private wiredMode: 'write' | 'read-only' | null = null;
+
+    constructor(private vault: VaultEventListener, backend: IndexBackend, vaultRoot: string, options: IndexControllerOptions = {}) {
+        this.indexManager = new IndexManager(backend, options.coordinator);
         this.ratelignore = new Ratelignore(vaultRoot);
+        this.readOnlyView = options.readOnlyView;
+    }
+
+    /** 只读可见性视图 — 未注入时为 undefined(宿主装配层负责注入)。 */
+    searchVisibilityView(): ReadOnlySearchViewPort | undefined {
+        return this.readOnlyView;
     }
 
     /**
-     * 启动期调用 — 注册 vault 事件 + 索引启动。
+     * 只读模式下已知发生变更的路径 — 检索侧据此过滤过期候选。
      *
-     * 关键路径:
-     * - FolderWatcher 始终启动(无论 autoIndex),用户手动改文件仍增量(spec §5.7)。
-     * - autoIndex=false 时跳过 smartReindex,但保留 FolderWatcher + 手动 /reindex。
+     * 归属:T7 检索侧消费。只读通道没有写路径监听,完成记录不会随用户编辑更新;
+     * 未消费本集合时,只读视图只能靠快照有效期兜底(见 `ReadOnlySearchView` 最大有效期)。
+     */
+    readOnlyChanged(): ReadonlySet<string> {
+        return new Set(this.readOnlyChangedPaths);
+    }
+
+    /**
+     * 启动期调用 — 按「是否自动索引」装配唯一一条事件通路并驱动索引启动。
      *
-     * @param autoIndex - 是否启动自动索引。false 时仅启动 FolderWatcher,不跑 smartReindex。
+     * 关键路径(A11 只读契约):
+     * - `autoIndex=false` 时**不装配写路径监听**:不读文件、不入队、不提交、不嵌入、不写盘;
+     *   事件只记入内存的「已变更」集合,并只读恢复已有的真实就绪状态。
+     * - `autoIndex=true` 时才装配 FolderWatcher 与 vault 事件,并在任何扫描之前完成。
+     * - 两条通路互斥且去重:重复调用只重新装配一次,不会叠加订阅。
+     *
+     * @param autoIndex - 是否启动自动索引。false 时为只读通道,不跑 smartReindex。
      */
     async onLayoutReady(autoIndex = true): Promise<{ indexed: number; errors: number } | null> {
+        // 关键路径:关闭自动索引 = 只读契约。这里**不装配写路径监听**(不读文件、不入队、不提交),
+        // 只把变更记在内存里供检索侧过滤;恢复写事务必须等用户显式启用索引或执行重建。
+        if (!autoIndex) {
+            this.wireReadOnlyEvents();
+            // 修复:禁用扫描不等于禁用已有索引；只读恢复真实就绪状态，仍不报告本次全量完成。
+            await this.indexManager.restoreCommittedState();
+            return null;
+        }
+        this.wireWriteEvents();
+        return this.indexManager.onLayoutReady();
+    }
+
+    /**
+     * 自动索引开启时的事件装配 — 在任何扫描之前完成,并保证只装配一次。
+     *
+     * 关键路径:监听先于扫描装配;枚举与监听之间的空隙由协调器的扫描后核对覆盖。
+     */
+    private wireWriteEvents(): void {
+        if (this.wiredMode === 'write') return;
+        this.unwireEvents();
+        this.wiredMode = 'write';
         this.watcher.start({
             // 关键路径:去抖触发后读取文件内容,随 op 一起入队。
             // 文件可能在去抖期间被删,readFile 失败时静默跳过。
             onUpsert: (p) => {
+                // 关键路径:协调器自行读取并核对磁盘内容,这里读到的正文会被丢弃 —— 不做白读。
+                if (this.indexManager.hasCoordinator()) {
+                    this.indexManager.enqueue(p, 'upsert');
+                    return;
+                }
                 void this.vault.readFile(p).then(
                     (content) => this.indexManager.enqueue(p, 'upsert', content),
                     () => { /* 文件可能在去抖期间被删,忽略 */ },
@@ -85,15 +165,32 @@ export class IndexController {
                 }
             }),
         );
+    }
 
-        // 关键路径:autoIndex=false 时仅启动 FolderWatcher,不跑 smartReindex(spec §5.7)。
-        // 用户手动改文件仍增量,索引不会过期;手动 /reindex 仍可触发全量。
-        if (!autoIndex) {
-            // 修复:禁用扫描不等于禁用已有索引；只读恢复真实就绪状态，仍不报告本次全量完成。
-            await this.indexManager.restoreCommittedState();
-            return null;
-        }
-        return this.indexManager.onLayoutReady();
+    /**
+     * 关闭自动索引时的事件装配 — 只读,零 IO。
+     *
+     * 关键路径:事件只更新内存集合,不读文件、不入队、不写盘;
+     * 黑名单/删除路径由检索侧的可见性门过滤,恢复写事务留给用户显式操作。
+     * 重复调用只装配一次,因此**不会丢弃此前的变更记录**(切换通路时才清空)。
+     */
+    private wireReadOnlyEvents(): void {
+        if (this.wiredMode === 'read-only') return;
+        this.unwireEvents();
+        this.wiredMode = 'read-only';
+        this.readOnlyChangedPaths.clear();
+        const mark = (path: string): void => {
+            if (isIndexableMarkdownPath(path)) this.readOnlyChangedPaths.add(path);
+        };
+        this.unsubscribers.push(
+            this.vault.onFileCreate(mark),
+            this.vault.onFileModify(mark),
+            this.vault.onFileDelete(mark),
+            this.vault.onFileRename((newPath, oldPath) => {
+                mark(oldPath);
+                mark(newPath);
+            }),
+        );
     }
 
     pause(): void { this.indexManager.pause(); }
@@ -121,6 +218,12 @@ export class IndexController {
             this.indexManager.enqueue(path, 'delete');
             return;
         }
+        if (this.indexManager.hasCoordinator()) {
+            // 关键路径:协调器模式不读盘 —— 管理器会丢弃 content,协调器在读取/推理/提交前
+            // 自行核对磁盘内容。这里读一次就是纯白读(每文件 1 次整读 + 1 次 sha256)。
+            this.indexManager.enqueue(path, 'upsert');
+            return;
+        }
         // 关键路径:upsert 需读文件内容,文件可能在写工具执行后被删/移动,失败时静默跳过
         try {
             const content = await this.vault.readFile(path);
@@ -130,11 +233,18 @@ export class IndexController {
         }
     }
 
-    /** 卸载 — 清 watcher + 退订 vault 事件。 */
+    /** 卸载 — 退订所有 vault 事件与 watcher,再卸载管理器。 */
     destroy(): void {
+        this.readOnlyChangedPaths.clear();
+        this.unwireEvents();
         this.indexManager.destroy();
-        this.watcher.stop();
+    }
+
+    /** 退订全部 vault 事件并停掉 watcher;切换通路或卸载时调用,保证订阅不叠加。 */
+    private unwireEvents(): void {
         for (const u of this.unsubscribers) u();
         this.unsubscribers = [];
+        this.watcher.stop();
+        this.wiredMode = null;
     }
 }
