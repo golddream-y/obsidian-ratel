@@ -42,6 +42,7 @@ import { EmbeddingApi } from './adapters/embedding-api';
 import { EmbeddingLocal } from './adapters/embedding-local';
 import { EmbeddingWorkerProxy } from './adapters/embedding-worker-proxy';
 import { VectraStore } from './adapters/vector-vectra';
+import { AtomicIndexStorage } from './adapters/atomic-index-storage';
 import type { EmbeddingsModel, EmbeddingsResponse } from 'vectra';
 import { WorkerManager } from './worker/manager';
 import { InlineWorker } from './worker/inline-worker';
@@ -347,7 +348,8 @@ export default class RatelVaultPlugin extends Plugin {
 		this.indexDir = path.join(pluginDir, '.index');
 		// 关键路径:启动期 vectraStore 可能尚无 embeddings(本地模型在 onLayoutReady 才下载),
 		// 因此只做目录占位;InlineWorker 场景下会在模型就绪后重新创建带 embeddings 的 store。
-		this.vectraStore = new VectraStore(this.indexDir);
+		// 关键路径(B3):必须注入原子存储,否则 getLastWriteOutcome 恒为 null、提交失败只能报「状态不明」。
+		this.vectraStore = new VectraStore(this.indexDir, { storage: this.createIndexStorage(this.indexDir) });
 		ensurePluginGitignore(pluginDir);
 		this.breadcrumbs = new CrashBreadcrumbs({
 			pluginDir,
@@ -385,7 +387,12 @@ export default class RatelVaultPlugin extends Plugin {
 		// embeddingPort.embed + upsertItem 预计算向量路径,绕过 vectra 内部 embeddings 调用。
 		// embeddingPort(this.embedding)在上方 rebuildEmbeddingAdapter 已构造,与记忆索引共享同一份
 		// ONNX FeatureExtractor,确保记忆向量化与 vault 索引向量化维度一致。
-		const memoryVectraStore = new VectraStore(memoryIndexDir, { autoInit: false });
+		// 关键路径(B3):记忆索引同样注入原子存储 —— `endUpdate` 的落盘走临时文件 + rename,
+		// 提交失败时才能按写入结果区分「完整旧版」与「完整新版」,而不是一律报「状态不明」。
+		const memoryVectraStore = new VectraStore(memoryIndexDir, {
+			autoInit: false,
+			storage: this.createIndexStorage(memoryIndexDir),
+		});
 		this.memoryStore = new MemoryStore(memoryDir, memoryVectraStore, this.embedding);
 		this.memoryStore.ensureDir();
 		// 关键路径(S-SR-LAYERING):使用统计与记忆索引同域放 pluginDir,不进 data.json / vault(spec §4)。
@@ -1823,7 +1830,11 @@ export default class RatelVaultPlugin extends Plugin {
 				return { status: 'success', output };
 			},
 		};
-		return new VectraStore(this.indexDir, { embeddings, autoInit: true });
+		return new VectraStore(this.indexDir, {
+			embeddings,
+			autoInit: true,
+			storage: this.createIndexStorage(this.indexDir),
+		});
 	}
 
 	/**
@@ -1836,7 +1847,29 @@ export default class RatelVaultPlugin extends Plugin {
 	 * @returns 不带 embeddings 的 VectraStore 实例。
 	 */
 	private createVectraStore(): VectraStore {
-		return new VectraStore(this.indexDir, { autoInit: true });
+		return new VectraStore(this.indexDir, {
+			autoInit: true,
+			storage: this.createIndexStorage(this.indexDir),
+		});
+	}
+
+	/**
+	 * 创建索引用的原子存储 — 所有生产 VectraStore 构造点共用同一个装配入口。
+	 *
+	 * 关键路径(B3):
+	 * - 注入后 `endUpdate` 的落盘走「同目录临时文件 → rename」,失败时不会留下半截索引;
+	 * - `VectraStore` 通过 `getLastWriteOutcome` 读回本次写入结果,才能区分
+	 *   「完整旧版」(`failed-before-rename`)与「完整新版」(`renamed`/`unknown-after-rename`);
+	 * - 不注入时该读取恒为 null,任何提交失败都只能报「磁盘状态不明」。
+	 *
+	 * 关键路径:代际根就是该索引目录本身 —— 读、写、列举、删除全部限定在其内,
+	 * 记忆索引(`.memory-index`)与 vault 索引(`.index`)各自独立,不共用一个根。
+	 *
+	 * @param generationRoot - 该索引目录的绝对路径。
+	 * @returns 原子索引存储实例。
+	 */
+	private createIndexStorage(generationRoot: string): AtomicIndexStorage {
+		return new AtomicIndexStorage({ generationRoot });
 	}
 
 	/**

@@ -1,15 +1,20 @@
 /**
  * @file tests/worker/index-processor.test.ts
- * @description IndexProcessor 行为 — indexFull / indexIncremental / indexDelete / vectorSearch / status
+ * @description IndexProcessor 行为 — indexFull / indexIncremental / indexDelete / vectorSearch / status,
+ *   以及新存储契约下的单事务替换、原子存储注入与提交失败恢复
  * @module tests/worker/index-processor
- * @depends worker/index-processor, adapters/vector-vectra, ports/embedding
+ * @depends worker/index-processor, adapters/vector-vectra, adapters/atomic-index-storage, ports/embedding
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { IndexProcessor } from '../../src/worker/index-processor';
 import { VectraStore } from '../../src/adapters/vector-vectra';
+import { AtomicIndexStorage } from '../../src/adapters/atomic-index-storage';
+import type { AtomicWriteFileSystem, AtomicWriteHandle } from '../../src/adapters/atomic-index-storage';
+import { chunkMarkdown } from '../../src/worker/chunker';
 import type { EmbeddingsModel, EmbeddingsResponse } from 'vectra';
 import type { EmbeddingPort } from '../../src/ports/embedding';
+import fsp from 'node:fs/promises';
 import path from 'path';
 import fs from 'fs';
 
@@ -273,5 +278,323 @@ describe('IndexProcessor', () => {
         expect(Array.isArray(meta.headingPath)).toBe(true);
 
         if (fs.existsSync(testDir)) fs.rmSync(testDir, { recursive: true });
+    });
+});
+
+// ---------------------------------------------------------------------------
+// 新存储契约:单事务替换、原子存储注入与失败恢复
+// ---------------------------------------------------------------------------
+
+/** 新用例的索引目录根 — 每个用例用独立子目录,结束后统一清理。 */
+const TMP_TX_ROOT = path.join(__dirname, '../tmp/index-processor-tx');
+
+/** 确定性嵌入端口 — 同一文本永远得到同一向量,避免随机向量让断言漂移。 */
+function deterministicPort(dimensions: number): EmbeddingPort {
+    return {
+        dimensions,
+        modelId: 'test:deterministic',
+        async embed(texts: string[]): Promise<number[][]> {
+            return texts.map((text) =>
+                Array.from({ length: dimensions }, (_unused, index) => ((text.length + index) % 7) / 7),
+            );
+        },
+    };
+}
+
+/** 生产装配同款构造 — main.ts / worker/handler.ts 都向 VectraStore 注入原子存储。 */
+async function createProductionStore(indexDir: string, storage: AtomicIndexStorage): Promise<VectraStore> {
+    const store = new VectraStore(indexDir, { autoInit: true, storage });
+    // 关键路径:`init()` 在构造期已触发,但它是异步的;这里用公开方法等它落地,
+    // 否则后续断言会跑在「索引文件尚未创建」的中间态上。
+    await store.isIndexCreated();
+    return store;
+}
+
+/** 生成含 `sectionCount` 个小节的 Markdown,配合默认分块参数约每节一块。 */
+function markdownWithSections(sectionCount: number): string {
+    return Array.from(
+        { length: sectionCount },
+        (_unused, index) => `## 小节 ${index}\n\n第 ${index} 段正文。${'内容填充'.repeat(20)}`,
+    ).join('\n\n');
+}
+
+/** 某路径按生产约定命名的块 ID 序列。 */
+function blockIdsFor(filePath: string, count: number): string[] {
+    return Array.from({ length: count }, (_unused, index) => `${filePath}#chunk-${index}`);
+}
+
+/** 预计算向量 — 只要求有限且同维度,用于播种旧块。 */
+function fixedVector(dimensions: number, seed: number): number[] {
+    return Array.from({ length: dimensions }, (_unused, index) => ((index + seed) % 11) / 11);
+}
+
+/** 在指定路径播种若干旧块(走生产写入路径 `replaceFile`)。 */
+async function seedBlocks(
+    store: VectraStore,
+    filePath: string,
+    count: number,
+    dimensions: number,
+): Promise<void> {
+    await store.replaceFile({
+        path: filePath,
+        commitId: 'seed-commit',
+        blocks: blockIdsFor(filePath, count).map((id, index) => ({
+            id,
+            vector: fixedVector(dimensions, index),
+            metadata: { path: filePath, chunkIndex: index },
+        })),
+    });
+}
+
+/**
+ * 只让第一次「临时文件打开」失败的文件系统接缝。
+ *
+ * 关键路径:EACCES 落在 rename 之前 → 写入结果为 `failed-before-rename`,磁盘仍是完整旧版;
+ * 后续提交恢复正常,才能验证「首次提交失败后同批后续文件仍被处理」。
+ *
+ * @param armed - 是否已进入故障态。
+ * @returns 注入故障的写入接缝。
+ */
+function failFirstCommitFileSystem(armed: () => boolean): AtomicWriteFileSystem {
+    let remainingFailures = 1;
+    return {
+        async openFile(filePath: string): Promise<AtomicWriteHandle> {
+            if (armed() && remainingFailures > 0) {
+                remainingFailures -= 1;
+                const error = new Error('注入故障:临时文件打开失败');
+                (error as { code?: string }).code = 'EACCES';
+                throw error;
+            }
+            const handle = await fsp.open(filePath, 'wx');
+            return {
+                async write(buffer: Uint8Array, offset: number, length: number): Promise<number> {
+                    const result = await handle.write(buffer, offset, length);
+                    return result.bytesWritten;
+                },
+                sync: () => handle.sync(),
+                close: () => handle.close(),
+            };
+        },
+        async openDirectory(directoryPath: string) {
+            const handle = await fsp.open(directoryPath, 'r');
+            return { sync: () => handle.sync(), close: () => handle.close() };
+        },
+        rename: (from: string, to: string) => fsp.rename(from, to),
+        async removeFile(filePath: string): Promise<void> {
+            await fsp.rm(filePath, { force: true });
+        },
+    };
+}
+
+describe('新存储契约 - 单事务替换与原子存储注入', () => {
+    const createdDirs: string[] = [];
+
+    /** 每个用例独立的索引目录。 */
+    function freshDir(name: string): string {
+        const dir = path.join(TMP_TX_ROOT, name);
+        if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+        fs.mkdirSync(dir, { recursive: true });
+        createdDirs.push(dir);
+        return dir;
+    }
+
+    afterEach(() => {
+        while (createdDirs.length > 0) {
+            const dir = createdDirs.pop();
+            if (dir && fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('indexIncremental - 文件变短再变空 - 旧块被清除且返回的 chunkCount 与真实块数一致', async () => {
+        const dir = freshDir('incremental-shrink');
+        const store = await createProductionStore(dir, new AtomicIndexStorage({ generationRoot: dir }));
+        const processor = new IndexProcessor(store, deterministicPort(512), DEFAULT_CHUNK_OPTIONS);
+        const filePath = 'notes/shrink.md';
+
+        const first = await processor.indexIncremental({ path: filePath, content: markdownWithSections(12) });
+        const firstIds = (await store.inspectFile(filePath)).map((block) => block.id);
+        // 关键路径:前置条件 —— 长内容必须真的产生多块,否则「变短」无从谈起。
+        expect(firstIds.length).toBeGreaterThan(1);
+        expect(first).toMatchObject({ indexed: 1, errors: 0, chunkCount: firstIds.length });
+
+        const shortContent = '短内容';
+        const shortExpected = chunkMarkdown(shortContent, DEFAULT_CHUNK_OPTIONS).length;
+        const second = await processor.indexIncremental({ path: filePath, content: shortContent });
+        const secondIds = (await store.inspectFile(filePath)).map((block) => block.id);
+        // 关键路径(B1):只比数量会漏掉「旧块残留、数量看起来仍对得上」的缺陷,必须比 ID 集合。
+        expect(second.chunkCount).toBe(shortExpected);
+        expect(second.chunkCount).toBe(secondIds.length);
+        expect(secondIds).toEqual(blockIdsFor(filePath, shortExpected));
+
+        const third = await processor.indexIncremental({ path: filePath, content: '' });
+        const remaining = await store.inspectFile(filePath);
+        expect({ indexed: third.indexed, errors: third.errors, chunkCount: third.chunkCount, remaining }).toEqual({
+            indexed: 1,
+            errors: 0,
+            chunkCount: 0,
+            remaining: [],
+        });
+
+        // 关键路径:重载后读到的仍是空块集合 —— 删除确实落盘,而不是只改了内存视图。
+        await store.reload();
+        expect(await store.inspectFile(filePath)).toEqual([]);
+    });
+
+    it('空内容 - 三条入口都提交零块替换 - 旧块从磁盘消失', async () => {
+        const entries = ['indexFull', 'indexIncremental', 'indexBatch'] as const;
+        for (const entry of entries) {
+            const dir = freshDir(`empty-${entry}`);
+            const store = await createProductionStore(dir, new AtomicIndexStorage({ generationRoot: dir }));
+            const processor = new IndexProcessor(store, deterministicPort(512), DEFAULT_CHUNK_OPTIONS);
+            const filePath = `notes/${entry}.md`;
+            // 关键路径:先播种旧块 —— 空内容必须提交「零块替换」,不能早退把旧块留在索引里。
+            await seedBlocks(store, filePath, 5, 512);
+            expect((await store.inspectFile(filePath)).length).toBe(5);
+
+            const progress: Array<{ done: number; total: number }> = [];
+            if (entry === 'indexFull') {
+                await processor.indexFull([{ path: filePath, content: '' }], (event) => progress.push(event));
+            } else if (entry === 'indexIncremental') {
+                await processor.indexIncremental({ path: filePath, content: '' }, (event) => progress.push(event));
+            } else {
+                await processor.indexBatch([{ path: filePath, content: '' }], (event) => progress.push(event));
+            }
+
+            expect({ entry, remaining: await store.inspectFile(filePath) }).toEqual({ entry, remaining: [] });
+            // 关键路径:磁盘真值同样为空;空内容必须算处理成功,不能记成错误后跳过删除。
+            await store.reload();
+            expect({ entry, disk: await store.inspectFile(filePath) }).toEqual({ entry, disk: [] });
+            expect({ entry, progress: progress.at(-1) }).toEqual({ entry, progress: { done: 1, total: 1 } });
+        }
+    });
+
+    it('三条写入路径 - 写入的 documentId 一致为块 ID', async () => {
+        const dir = freshDir('document-id');
+        const store = await createProductionStore(dir, new AtomicIndexStorage({ generationRoot: dir }));
+        const processor = new IndexProcessor(store, deterministicPort(512), DEFAULT_CHUNK_OPTIONS);
+
+        await processor.indexFull([{ path: 'notes/full.md', content: '全量入口写入的正文' }]);
+        await processor.indexIncremental({ path: 'notes/incremental.md', content: '增量入口写入的正文' });
+        await processor.indexBatch([{ path: 'notes/batch.md', content: '批量入口写入的正文' }]);
+
+        /**
+         * 核对一个路径的块:`documentId` 必须是块 ID。
+         *
+         * 关键路径(I1):三条入口都经 `replaceFile` 写入,若这里退回文件路径,
+         * `search()` 的聚合粒度会从「top K 片段」静默变成「top K 文件」,且各入口彼此分裂。
+         */
+        const assertDocumentIdIsBlockId = (filePath: string, blocks: Array<{ id: string; metadata: Record<string, unknown> }>): void => {
+            expect({ filePath, count: blocks.length > 0 }).toEqual({ filePath, count: true });
+            for (const block of blocks) {
+                const metadata = block.metadata as { docId?: unknown; documentId?: unknown };
+                expect({ block: block.id, docId: metadata.docId, documentId: metadata.documentId }).toEqual({
+                    block: block.id,
+                    docId: block.id,
+                    documentId: block.id,
+                });
+            }
+        };
+
+        const paths = ['notes/full.md', 'notes/incremental.md', 'notes/batch.md'];
+        for (const filePath of paths) {
+            assertDocumentIdIsBlockId(filePath, await store.inspectFile(filePath));
+        }
+        // 关键路径:重载后再核对一次 —— documentId 必须随块内联落盘,不是只在内存里正确。
+        await store.reload();
+        for (const filePath of paths) {
+            assertDocumentIdIsBlockId(filePath, await store.inspectFile(filePath));
+        }
+    });
+
+    it('生产装配 - 注入原子存储 - 提交经适配器落盘且能读回写入结果', async () => {
+        const dir = freshDir('production-storage');
+        const storage = new AtomicIndexStorage({ generationRoot: dir });
+        const store = await createProductionStore(dir, storage);
+        const processor = new IndexProcessor(store, deterministicPort(512), DEFAULT_CHUNK_OPTIONS);
+        const indexPath = path.join(dir, 'index.json');
+
+        // 关键路径(B3):未注入存储时该读取恒为 null,提交失败只能报「磁盘状态不明」。
+        expect(storage.getLastWriteOutcome(indexPath)).not.toBeNull();
+        storage.clearWriteRecords();
+
+        await processor.indexIncremental({ path: 'notes/storage.md', content: '存储注入生效' });
+
+        const record = storage.getLastWriteOutcome(indexPath);
+        expect(record).not.toBeNull();
+        expect({ path: record?.path, outcome: record?.outcome, bytes: (record?.bytes ?? 0) > 0 }).toEqual({
+            path: indexPath,
+            outcome: 'renamed',
+            bytes: true,
+        });
+        // 关键路径:单文件提交只经过适配器一次 —— 删除与插入在同一事务内完成。
+        expect(storage.getWriteRecords().filter((entry) => entry.path === indexPath).length).toBe(1);
+        // 关键路径:同目录临时文件必须已被 rename 消费,目录里不留 .tmp- 残留。
+        expect(fs.readdirSync(dir).filter((name) => name.includes('.tmp-'))).toEqual([]);
+        expect(store.isReloadRequired()).toBe(false);
+    });
+
+    it('indexBatch - 首个文件提交失败 - 同批后续文件仍被处理(自动 reload)', async () => {
+        const dir = freshDir('batch-recover');
+        let armed = false;
+        const storage = new AtomicIndexStorage({
+            generationRoot: dir,
+            fileSystem: failFirstCommitFileSystem(() => armed),
+        });
+        const store = await createProductionStore(dir, storage);
+        const processor = new IndexProcessor(store, deterministicPort(512), DEFAULT_CHUNK_OPTIONS);
+
+        armed = true;
+        const result = await processor.indexBatch([
+            { path: 'notes/a.md', content: '首个文件(注入提交失败)' },
+            { path: 'notes/b.md', content: '第二个文件' },
+            { path: 'notes/c.md', content: '第三个文件' },
+        ]);
+
+        // 关键路径(I4):首个失败不能把同批后续文件全部算成失败 —— 自动 reload 后必须继续处理。
+        expect({ indexed: result.indexed, errors: result.errors }).toEqual({ indexed: 2, errors: 1 });
+        expect(result.chunkCounts['notes/a.md']).toBeUndefined();
+        expect(result.chunkCounts['notes/b.md']).toBeGreaterThan(0);
+        expect(result.chunkCounts['notes/c.md']).toBeGreaterThan(0);
+        expect(await store.inspectFile('notes/a.md')).toEqual([]);
+        expect((await store.inspectFile('notes/b.md')).length).toBeGreaterThan(0);
+        expect((await store.inspectFile('notes/c.md')).length).toBeGreaterThan(0);
+        // 关键路径:重载成功后存储必须回到可用状态,否则后续增量会被 reload-required 挡住。
+        expect(store.isReloadRequired()).toBe(false);
+        // 关键路径:故障落在 rename 之前 → 磁盘保持完整旧版,记录可查。
+        const failed = storage.getWriteRecords().filter((entry) => entry.outcome === 'failed-before-rename');
+        expect(failed.length).toBe(1);
+    });
+
+    it('indexFull / indexBatch - reload 失败 - 本批中止且未处理文件计入 errors', async () => {
+        // 关键路径(B3b):reload 失败是「无法恢复」路径,本用例只验证 IndexProcessor 的计数契约,
+        // 因此用最小桩把失败注入在存储边界上(提交失败 + 重载失败),不重复覆盖真实 IO。
+        const replaceFile = vi.fn(async () => {
+            throw new Error('注入故障:提交失败');
+        });
+        const reload = vi.fn(async () => {
+            throw new Error('注入故障:重载失败');
+        });
+        const failingStore = { replaceFile, isReloadRequired: () => true, reload } as unknown as VectraStore;
+        const processor = new IndexProcessor(failingStore, deterministicPort(512), DEFAULT_CHUNK_OPTIONS);
+        const files = [
+            { path: 'notes/a.md', content: '第一个文件' },
+            { path: 'notes/b.md', content: '第二个文件' },
+            { path: 'notes/c.md', content: '第三个文件' },
+        ];
+
+        const progress: Array<{ done: number; total: number }> = [];
+        const fullResult = await processor.indexFull(files, (event) => progress.push(event));
+        // 关键路径:1 个失败 + 2 个未处理 = errors 3,indexed 保持 0 —— 未处理绝不能算成已索引。
+        expect(fullResult).toEqual({ indexed: 0, errors: 3 });
+        expect(progress).toEqual([{ done: 1, total: 3 }]);
+        expect(replaceFile).toHaveBeenCalledTimes(1);
+        expect(reload).toHaveBeenCalledTimes(1);
+
+        const batchResult = await processor.indexBatch(files);
+        expect({ indexed: batchResult.indexed, errors: batchResult.errors }).toEqual({ indexed: 0, errors: 3 });
+        expect(batchResult.chunkCounts).toEqual({});
+
+        const incrementalResult = await processor.indexIncremental({ path: 'notes/a.md', content: '单个文件' });
+        expect(incrementalResult).toEqual({ indexed: 0, errors: 1, chunkCount: 0 });
     });
 });

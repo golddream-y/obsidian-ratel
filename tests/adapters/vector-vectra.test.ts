@@ -1,6 +1,13 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
-import { VectraStore } from '../../src/adapters/vector-vectra';
+import { VectraStore, VectorStoreError } from '../../src/adapters/vector-vectra';
+import { AtomicIndexStorage } from '../../src/adapters/atomic-index-storage';
+import type {
+	AtomicDirectoryHandle,
+	AtomicWriteFileSystem,
+	AtomicWriteHandle,
+} from '../../src/adapters/atomic-index-storage';
 import type { EmbeddingsModel, EmbeddingsResponse } from 'vectra';
+import fsp from 'node:fs/promises';
 import path from 'path';
 import fs from 'fs';
 
@@ -312,5 +319,395 @@ describe('deleteByPath 失败保护', () => {
 		if (fs.existsSync(subDir)) {
 			fs.rmSync(subDir, { recursive: true });
 		}
+	});
+});
+
+// ---------------------------------------------------------------------------
+// T2: FileReplaceStore — 完整枚举、同事务替换、故障后重载
+// ---------------------------------------------------------------------------
+
+/** 生成确定性向量(与夹具无关,测试内自足)。 */
+function vectorFor(seed: string, dimensions = 512): number[] {
+	let state = 0x9e3779b9;
+	for (let i = 0; i < seed.length; i++) {
+		state = (Math.imul(state ^ seed.charCodeAt(i), 16777619) >>> 0) || 1;
+	}
+	const vector: number[] = new Array<number>(dimensions);
+	for (let i = 0; i < dimensions; i++) {
+		state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+		vector[i] = state / 0xffffffff - 0.5;
+	}
+	return vector;
+}
+
+/** 构造一条块。 */
+function block(id: string, seed: string, extra: Record<string, unknown> = {}): {
+	id: string;
+	vector: number[];
+	metadata: Record<string, unknown>;
+} {
+	return {
+		id,
+		vector: vectorFor(seed),
+		metadata: { path: 'notes/replace.md', chunkIndex: 0, ...extra },
+	};
+}
+
+/**
+ * 可注入故障的原子写入接缝 — 只覆盖写入路径,读路径仍是真实磁盘。
+ *
+ * 关键路径:`before-rename` 让临时文件打开失败(磁盘保持完整旧版);
+ * `after-rename` 让目录同步失败(rename 已生效,磁盘是完整新版但调用方收到错误)。
+ */
+function faultingFileSystem(
+	failure: 'before-rename' | 'after-rename',
+	armed: () => boolean,
+): AtomicWriteFileSystem {
+	return {
+		async openFile(filePath: string): Promise<AtomicWriteHandle> {
+			if (armed() && failure === 'before-rename') {
+				const error = new Error('注入故障:打开临时文件失败');
+				(error as { code?: string }).code = 'EIO';
+				throw error;
+			}
+			const handle = await fsp.open(filePath, 'wx');
+			return {
+				async write(buffer: Uint8Array, offset: number, length: number): Promise<number> {
+					const result = await handle.write(buffer, offset, length);
+					return result.bytesWritten;
+				},
+				sync: () => handle.sync(),
+				close: () => handle.close(),
+			};
+		},
+		async openDirectory(directoryPath: string): Promise<AtomicDirectoryHandle> {
+			if (armed() && failure === 'after-rename') {
+				const error = new Error('注入故障:目录同步失败');
+				(error as { code?: string }).code = 'EIO';
+				throw error;
+			}
+			const handle = await fsp.open(directoryPath, 'r');
+			return { sync: () => handle.sync(), close: () => handle.close() };
+		},
+		rename: (from: string, to: string) => fsp.rename(from, to),
+		async removeFile(filePath: string): Promise<void> {
+			await fsp.rm(filePath, { force: true });
+		},
+	};
+}
+
+describe('FileReplaceStore 替换语义', () => {
+	/** 每个用例独立的索引目录,结束递归清理。 */
+	function freshDir(name: string): string {
+		const dir = path.join(TEST_INDEX_DIR, name);
+		if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true });
+		fs.mkdirSync(dir, { recursive: true });
+		return dir;
+	}
+
+	it('replaceFile - 删除旧块并写入新块 - 单次索引提交且每个块带 commitId', async () => {
+		const dir = freshDir('replace-basic');
+		const storage = new AtomicIndexStorage({ generationRoot: dir });
+		const store = new VectraStore(dir, { embeddings: mockEmbeddings, storage });
+		await store.init();
+		await store.replaceFile({
+			path: 'notes/replace.md',
+			commitId: 'commit-old',
+			blocks: [block('notes/replace.md#chunk-0', 'old-0'), block('notes/replace.md#chunk-1', 'old-1')],
+		});
+		const writesBefore = storage.getWriteRecords().filter((record) => record.path.endsWith('index.json')).length;
+
+		await store.replaceFile({
+			path: 'notes/replace.md',
+			commitId: 'commit-new',
+			blocks: [block('notes/replace.md#chunk-0', 'new-0')],
+		});
+
+		const blocks = await store.inspectFile('notes/replace.md');
+		expect(blocks.map((entry) => entry.id)).toEqual(['notes/replace.md#chunk-0']);
+		// 关键路径:块 metadata 必须带 commitId,供 T3 的完成记录核对。
+		expect(blocks[0]?.metadata.commitId).toBe('commit-new');
+		expect(blocks[0]?.metadata.path).toBe('notes/replace.md');
+		// 关键路径:删除与插入在同一事务内,只产生一次 index.json 落盘。
+		const writesAfter = storage.getWriteRecords().filter((record) => record.path.endsWith('index.json')).length;
+		expect(writesAfter - writesBefore).toBe(1);
+	});
+
+	it('replaceFile - blocks 为空数组 - 删除该路径全部块', async () => {
+		const dir = freshDir('replace-empty');
+		const store = new VectraStore(dir, { embeddings: mockEmbeddings });
+		await store.init();
+		await store.replaceFile({
+			path: 'notes/replace.md',
+			commitId: 'commit-1',
+			blocks: Array.from({ length: 4 }, (_unused, index) =>
+				block(`notes/replace.md#chunk-${index}`, `seed-${index}`),
+			),
+		});
+		expect((await store.inspectFile('notes/replace.md')).length).toBe(4);
+
+		await store.replaceFile({ path: 'notes/replace.md', commitId: 'commit-2', blocks: [] });
+
+		expect(await store.inspectFile('notes/replace.md')).toEqual([]);
+	});
+
+	it('inspectFile - 全量枚举 - 超过 100 块也全部返回', async () => {
+		const dir = freshDir('replace-inspect-120');
+		const store = new VectraStore(dir, { embeddings: mockEmbeddings });
+		await store.init();
+		await store.replaceFile({
+			path: 'notes/replace.md',
+			commitId: 'commit-120',
+			blocks: Array.from({ length: 120 }, (_unused, index) =>
+				block(`notes/replace.md#chunk-${index}`, `wide-${index}`),
+			),
+		});
+
+		const blocks = await store.inspectFile('notes/replace.md');
+		// 关键路径:零向量查询只返回数组前 100 项,完整枚举必须走 listItems。
+		expect(blocks).toHaveLength(120);
+		expect(new Set(blocks.map((entry) => entry.id)).size).toBe(120);
+	});
+
+	it('replaceFile - 提交前失败 - 磁盘保持完整旧版且存储进入需重载状态', async () => {
+		const dir = freshDir('replace-before-rename');
+		let armed = false;
+		const storage = new AtomicIndexStorage({
+			generationRoot: dir,
+			fileSystem: faultingFileSystem('before-rename', () => armed),
+		});
+		const store = new VectraStore(dir, { embeddings: mockEmbeddings, storage });
+		await store.init();
+		await store.replaceFile({
+			path: 'notes/replace.md',
+			commitId: 'commit-old',
+			blocks: [block('notes/replace.md#chunk-0', 'old-0')],
+		});
+
+		armed = true;
+		let caught: unknown;
+		try {
+			await store.replaceFile({
+				path: 'notes/replace.md',
+				commitId: 'commit-new',
+				blocks: [block('notes/replace.md#chunk-0', 'new-0')],
+			});
+		} catch (error) {
+			caught = error;
+		}
+
+		expect(caught).toBeInstanceOf(VectorStoreError);
+		expect((caught as VectorStoreError).code).toBe('replace-failed');
+		// 关键路径:rename 未执行 = 磁盘仍是完整旧版,不能当成「状态不明」。
+		expect((caught as VectorStoreError).diskState).toBe('complete-previous');
+
+		// 关键路径:失败后不得继续用旧内存缓存服务查询。
+		await expect(store.inspectFile('notes/replace.md')).rejects.toMatchObject({ code: 'reload-required' });
+		await expect(store.search(vectorFor('query'), 5)).rejects.toMatchObject({ code: 'reload-required' });
+
+		await store.reload();
+		const blocks = await store.inspectFile('notes/replace.md');
+		expect(blocks.map((entry) => entry.id)).toEqual(['notes/replace.md#chunk-0']);
+		expect(blocks[0]?.metadata.commitId).toBe('commit-old');
+	});
+
+	it('replaceFile - rename 后失败 - 磁盘为完整新版且重载后读到新块', async () => {
+		const dir = freshDir('replace-after-rename');
+		let armed = false;
+		const storage = new AtomicIndexStorage({
+			generationRoot: dir,
+			fileSystem: faultingFileSystem('after-rename', () => armed),
+		});
+		const store = new VectraStore(dir, { embeddings: mockEmbeddings, storage });
+		await store.init();
+		await store.replaceFile({
+			path: 'notes/replace.md',
+			commitId: 'commit-old',
+			blocks: [block('notes/replace.md#chunk-0', 'old-0'), block('notes/replace.md#chunk-1', 'old-1')],
+		});
+
+		armed = true;
+		let caught: unknown;
+		try {
+			await store.replaceFile({
+				path: 'notes/replace.md',
+				commitId: 'commit-new',
+				blocks: [block('notes/replace.md#chunk-0', 'new-0')],
+			});
+		} catch (error) {
+			caught = error;
+		}
+
+		expect(caught).toBeInstanceOf(VectorStoreError);
+		expect((caught as VectorStoreError).code).toBe('replace-failed');
+		// 关键路径:rename 已执行 = 磁盘是完整新版;把「endUpdate 抛错」当旧版会丢数据。
+		expect((caught as VectorStoreError).diskState).toBe('complete-next');
+
+		await expect(store.inspectFile('notes/replace.md')).rejects.toMatchObject({ code: 'reload-required' });
+		await store.reload();
+		const blocks = await store.inspectFile('notes/replace.md');
+		expect(blocks.map((entry) => entry.id)).toEqual(['notes/replace.md#chunk-0']);
+		expect(blocks[0]?.metadata.commitId).toBe('commit-new');
+	});
+
+	it('replaceFile - 向量含非有限值 - 拒绝写入且索引保持可用', async () => {
+		const dir = freshDir('replace-invalid');
+		const store = new VectraStore(dir, { embeddings: mockEmbeddings });
+		await store.init();
+		await store.replaceFile({
+			path: 'notes/replace.md',
+			commitId: 'commit-old',
+			blocks: [block('notes/replace.md#chunk-0', 'old-0')],
+		});
+
+		const invalid = block('notes/replace.md#chunk-1', 'bad');
+		invalid.vector[0] = Number.NaN;
+		let caught: unknown;
+		try {
+			await store.replaceFile({ path: 'notes/replace.md', commitId: 'commit-bad', blocks: [invalid] });
+		} catch (error) {
+			caught = error;
+		}
+
+		expect(caught).toBeInstanceOf(VectorStoreError);
+		expect((caught as VectorStoreError).code).toBe('invalid-replacement');
+		// 关键路径:输入校验在事务之前完成,索引仍是完整旧版且不需要重载。
+		const blocks = await store.inspectFile('notes/replace.md');
+		expect(blocks.map((entry) => entry.id)).toEqual(['notes/replace.md#chunk-0']);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// 构造判别式:options 与旧签名 `(dir, embeddings?)` 的分流
+// ---------------------------------------------------------------------------
+
+describe('VectraStore 构造判别式', () => {
+	/** 每个用例独立的索引目录,结束递归清理。 */
+	function freshDir(name: string): string {
+		const dir = path.join(TEST_INDEX_DIR, name);
+		if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+		fs.mkdirSync(dir, { recursive: true });
+		return dir;
+	}
+
+	it('构造函数 - { autoInit: false } - 不自动 init,显式 init 后才落地索引文件', async () => {
+		const dir = freshDir('ctor-no-autoinit');
+		const initSpy = vi.spyOn(VectraStore.prototype, 'init');
+		try {
+			const store = new VectraStore(dir, { autoInit: false });
+			// 关键路径:`autoInit: false` 的生产用途是「等模型就绪再 init」;
+			// 构造期触发 init 会在 onload 阶段阻塞主线程。
+			expect(initSpy).not.toHaveBeenCalled();
+			expect(fs.existsSync(path.join(dir, 'index.json'))).toBe(false);
+
+			await store.init();
+			expect(initSpy).toHaveBeenCalledTimes(1);
+			expect(fs.existsSync(path.join(dir, 'index.json'))).toBe(true);
+		} finally {
+			initSpy.mockRestore();
+		}
+	});
+
+	it('构造函数 - 默认 autoInit - 构造期即自动 init 并创建索引文件', async () => {
+		const dir = freshDir('ctor-default-autoinit');
+		const initSpy = vi.spyOn(VectraStore.prototype, 'init');
+		try {
+			const store = new VectraStore(dir, { storage: new AtomicIndexStorage({ generationRoot: dir }) });
+			expect(initSpy).toHaveBeenCalledTimes(1);
+			await store.isIndexCreated();
+			expect(fs.existsSync(path.join(dir, 'index.json'))).toBe(true);
+		} finally {
+			initSpy.mockRestore();
+		}
+	});
+
+	it('构造函数 - { autoInit: false } - options 对象不被误当成 EmbeddingsModel', async () => {
+		const dir = freshDir('ctor-options-not-embeddings');
+		const store = new VectraStore(dir, { autoInit: false });
+		await store.init();
+
+		// 关键路径:若把 options 对象误设成 embeddings,vectra 会去调不存在的
+		// `createEmbeddings` 抛 TypeError;只有「未配置 embeddings」才会是这条稳定文案,
+		// 因此判别式必须落在这里,而不是只看 init 是否被调用。
+		await expect(store.upsert('doc-1', '正文')).rejects.toThrow('Embeddings model not configured');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// 生产装配契约:所有 `new VectraStore(...)` 都必须注入原子存储
+// ---------------------------------------------------------------------------
+
+describe('生产装配 - VectraStore 构造点存储注入契约', () => {
+	/**
+	 * 递归收集目录下的 TypeScript 源文件。
+	 *
+	 * @param root - 起始目录。
+	 * @returns 绝对路径列表(已排序,保证断言稳定)。
+	 */
+	function collectSourceFiles(root: string): string[] {
+		const collected: string[] = [];
+		const pending: string[] = [root];
+		while (pending.length > 0) {
+			const current = pending.pop();
+			if (!current) continue;
+			for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+				const fullPath = path.join(current, entry.name);
+				if (entry.isDirectory()) pending.push(fullPath);
+				else if (entry.isFile() && entry.name.endsWith('.ts')) collected.push(fullPath);
+			}
+		}
+		return collected.sort();
+	}
+
+	/**
+	 * 取出每个 `new VectraStore(` 的完整实参文本。
+	 *
+	 * 关键路径:用括号配平切出整段实参,而不是按行匹配 ——
+	 * 构造参数跨多行(注入 storage 后就是多行),按行判断会漏掉未注入的写法。
+	 *
+	 * @param source - 源文件内容。
+	 * @returns 每处构造的实参文本(含外层括号)。
+	 */
+	function constructArguments(source: string): string[] {
+		const calls: string[] = [];
+		const marker = 'new VectraStore(';
+		let index = source.indexOf(marker);
+		while (index >= 0) {
+			const start = index + marker.length - 1;
+			let depth = 0;
+			let end = start;
+			for (; end < source.length; end += 1) {
+				const char = source[end];
+				if (char === '(') depth += 1;
+				else if (char === ')') {
+					depth -= 1;
+					if (depth === 0) break;
+				}
+			}
+			calls.push(source.slice(start, end + 1));
+			index = source.indexOf(marker, end + 1);
+		}
+		return calls;
+	}
+
+	it('生产构造点 - new VectraStore - 全部注入 storage', () => {
+		const repoRoot = path.resolve(__dirname, '../..');
+		const sites: Array<{ file: string; args: string }> = [];
+		for (const file of collectSourceFiles(path.join(repoRoot, 'src'))) {
+			const source = fs.readFileSync(file, 'utf8');
+			for (const args of constructArguments(source)) {
+				sites.push({ file: path.relative(repoRoot, file), args });
+			}
+		}
+
+		// 关键路径(B3):未注入 storage 的构造点会让 `getLastWriteOutcome` 恒为 null,
+		// 提交失败只能报「磁盘状态不明」,重载决策失去依据。
+		expect(sites.filter((site) => !site.args.includes('storage:')).map((site) => site.file)).toEqual([]);
+		// 关键路径:守卫必须真的扫到生产装配点 —— 全量重写后若命名变化,这里要显式失败而不是静默通过。
+		expect(sites.length).toBeGreaterThanOrEqual(5);
+		expect([...new Set(sites.map((site) => site.file))].sort()).toEqual([
+			'src/main.ts',
+			'src/worker/handler.ts',
+		]);
 	});
 });

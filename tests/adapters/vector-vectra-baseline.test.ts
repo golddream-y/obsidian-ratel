@@ -219,9 +219,9 @@ describe.skipIf(!BASELINE_DIM512)('基线采集 - 512 维写入量（RATEL_T0_DI
 });
 
 describe('增量路径写入计量', () => {
-	it('单文件更新 - reembedFile 先删后写 - 索引文件落盘 2 次', async () => {
-		// 关键路径:reembedFile 先调 deleteByPath(事务外,deleteItems 自行 begin/end 提交一次),
-		// 再 beginFileUpdate/endFileUpdate(提交一次),因此单文件增量实际落盘 2 次。
+	it('单文件更新 - reembedFile 单事务替换 - 索引文件落盘 1 次', async () => {
+		// 关键路径:T2 起 reembedFile 先完成分块与推理,再用 `replaceFile` 在同一个事务里
+		// 删除旧块并写入新块,单文件增量只落盘 1 次(修复前是 deleteByPath + upsert 两次)。
 		// 计数方式:拦截 vectra `LocalFileStorage.upsertFile` 原型方法并调用原实现,
 		// 只观察真实落盘,不改变行为、不访问私有字段。
 		const ws = createTempWorkspace('ratel-t0-incremental-writes-');
@@ -247,7 +247,7 @@ describe('增量路径写入计量', () => {
 				expect(deleted).toBe(6);
 				expect(indexWrites).toHaveLength(1);
 
-				// 阶段 2:重新播种后走生产 indexBatch(reembedFile = 先删后写)。
+				// 阶段 2:重新播种后走生产 indexBatch(reembedFile = 单事务替换)。
 				await seedStoreBlocks(store, 'notes/target.md', 6, 512);
 				indexWrites.length = 0;
 
@@ -256,7 +256,8 @@ describe('增量路径写入计量', () => {
 				const processor = new IndexProcessor(store, new FakeEmbeddingPort(512), T0_CHUNK_OPTIONS);
 				const result = await processor.indexBatch([{ path: 'notes/target.md', content: note?.content ?? '' }]);
 				expect(result.errors).toBe(0);
-				expect(indexWrites).toHaveLength(2);
+				// 关键路径:T2 修复后删除与插入在同一事务内,单文件增量只落盘 1 次。
+				expect(indexWrites).toHaveLength(1);
 			} finally {
 				spy.mockRestore();
 			}

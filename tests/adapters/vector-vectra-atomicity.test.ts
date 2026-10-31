@@ -1,24 +1,26 @@
 /**
  * @file tests/adapters/vector-vectra-atomicity.test.ts
- * @description T0 实验 — 固化 vectra 删除启发式缺陷,验证完整枚举、同事务替换与原子存储注入
+ * @description 替换语义 — T0 固化的 6 个缺陷在 T2 修复生产路径后转为通过,并保留完整枚举/原子存储注入的实验路径
  * @module tests/adapters/vector-vectra-atomicity
  * @depends adapters/vector-vectra, worker/index-processor, vectra
  *
  * 关键路径:
- * - 本文件只做 T0 可行性验证,不修改 `src/` 生产路径;所有磁盘操作都在系统临时目录。
- * - 「现有缺陷固化」用例断言的是**正确行为**,因此在当前实现上必然失败(测试名带 `【预期失败】`),
- *   用于记录真实残留,不允许 skip 或 `it.fails` 伪造通过;T2 修复生产路径后这些断言转为通过。
+ * - 「替换语义 - 修复后」组是 T0「现有缺陷固化 - 预期失败」组的翻转:T0 断言的是正确行为,
+ *   在旧实现上必然失败;T2 修复 `deleteByPath` / `reembedFile` 后同一批断言直接通过,断言强度不降级
+ *   (数量 + 块 ID 集合双重断言),并新增 201 块与「其他文件完整块集合不变」两条强化用例。
+ * - 「现有机制行为记录」保留 vectra 自身的机制事实(零向量查询退化为数组前 100 项等),
+ *   用于解释旧缺陷的根因,不代表生产路径仍在使用这些机制。
  * - 「实验路径」用例只用公开 API(`listItems` / `listItemsByMetadata` / `deleteItems` /
  *   `beginUpdate` / `endUpdate` / `storage` 配置),不访问 vectra 私有字段。
- * - 基线采集(耗时/内存/写入量)已拆到 `vector-vectra-baseline.test.ts`;本文件只保留缺陷固化、
+ * - 基线采集(耗时/内存/写入量)已拆到 `vector-vectra-baseline.test.ts`;本文件只保留替换语义、
  *   行为记录、实验路径、存储注入与门槛守卫。
  */
 
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { LocalDocumentIndex } from 'vectra';
+import { LocalDocumentIndex } from 'vectra';
 import { chunkMarkdown } from '../../src/worker/chunker';
 import { VectraStore } from '../../src/adapters/vector-vectra';
 import { IndexProcessor } from '../../src/worker/index-processor';
@@ -44,7 +46,7 @@ import {
 // 公共测试辅助
 // ---------------------------------------------------------------------------
 
-/** 512 维 — 生产 `deleteByPath` 硬编码的维度。 */
+/** 512 维 — T0 记录的历史缺陷里 `deleteByPath` 硬编码的维度;修复后生产路径不再用相似度查询枚举。 */
 const DIMENSIONS_512 = 512;
 
 /**
@@ -107,12 +109,33 @@ function expectedChunks(content: string): number {
 	return chunkMarkdown(content, T0_CHUNK_OPTIONS).length;
 }
 
+/** 一条块的完整快照 — 证明「其他文件完全不变」必须比向量与 metadata,只比 ID 会漏掉误改。 */
+interface BlockSnapshot {
+	id: string;
+	vector: number[];
+	metadata: Record<string, unknown>;
+}
+
+/** 读取磁盘真值的完整块集合(按块 ID 排序,便于逐字段比较)。 */
+async function listBlocksOf(folderPath: string, filePath: string): Promise<BlockSnapshot[]> {
+	const index = await openIndexForRead(folderPath);
+	const items = await index.listItems();
+	return items
+		.filter((item) => (item.metadata as { path?: string }).path === filePath)
+		.map((item) => ({
+			id: item.id,
+			vector: [...item.vector],
+			metadata: { ...item.metadata },
+		}))
+		.sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
+}
+
 // ---------------------------------------------------------------------------
-// 1. 现有缺陷固化(预期失败)
+// 1. 替换语义(修复后):T0 固化的 6 个缺陷断言在此翻转
 // ---------------------------------------------------------------------------
 
-describe('现有缺陷固化 - 预期失败', () => {
-	it('deleteByPath - 单个文件 150 块 - 应删除该路径全部旧块', async () => {
+describe('替换语义 - 修复后', () => {
+	it('deleteByPath - 单个文件 150 块 - 删除该路径全部旧块', async () => {
 		const ws = workspace('ratel-t0-del-');
 		const dir = ws.mkdir('index');
 		const store = new VectraStore(dir);
@@ -123,11 +146,11 @@ describe('现有缺陷固化 - 预期失败', () => {
 		const deleted = await store.deleteByPath('notes/big.md');
 		const remaining = await countBlocks(dir, 'notes/big.md');
 
-		// 关键路径:期望按路径完整删除 150 块;真实实现只覆盖 top100 候选。
+		// 关键路径:按路径完整删除 150 块;旧实现只覆盖 top100 候选,修复后走 listItems 完整枚举。
 		expect({ before, deleted, remaining }).toEqual({ before: 150, deleted: 150, remaining: 0 });
 	});
 
-	it('deleteByPath - 目标块位于索引数组第 100 项之后 - 应仍能删除该路径全部块', async () => {
+	it('deleteByPath - 目标块位于索引数组第 100 项之后 - 仍删除该路径全部块', async () => {
 		const ws = workspace('ratel-t0-del-after-');
 		const dir = ws.mkdir('index');
 		const store = new VectraStore(dir);
@@ -142,7 +165,7 @@ describe('现有缺陷固化 - 预期失败', () => {
 		expect({ deleted, remaining }).toEqual({ deleted: 30, remaining: 0 });
 	});
 
-	it('indexBatch - 文件变短 - 不应残留旧块', async () => {
+	it('indexBatch - 文件变短 - 不残留旧块', async () => {
 		const ws = workspace('ratel-t0-shrink-');
 		const dir = ws.mkdir('index');
 		const store = new VectraStore(dir);
@@ -157,8 +180,7 @@ describe('现有缺陷固化 - 预期失败', () => {
 		const remainingIds = await listBlocksIn(dir, 'notes/target.md');
 		const expectedIds = chunkIdsFor('notes/target.md', expected);
 
-		// 关键路径:变短后应只剩新块;真实实现会留下旧块(删除启发式没命中)。
-		// 只比数量不够 —— 数量相同也可能残留的是旧块,必须同时核对 ID 集合。
+		// 关键路径:变短后只剩新块;只比数量不够 —— 数量相同也可能残留的是旧块,必须同时核对 ID 集合。
 		expect({
 			errors: result.errors,
 			expected,
@@ -172,7 +194,7 @@ describe('现有缺陷固化 - 预期失败', () => {
 		});
 	});
 
-	it('indexBatch - 文件内容变空 - 应删除该路径全部旧块', async () => {
+	it('indexBatch - 文件内容变空 - 删除该路径全部旧块', async () => {
 		const ws = workspace('ratel-t0-empty-');
 		const dir = ws.mkdir('index');
 		const store = new VectraStore(dir);
@@ -184,7 +206,7 @@ describe('现有缺陷固化 - 预期失败', () => {
 		const result = await processor.indexBatch([{ path: 'notes/target.md', content: '' }]);
 		const remainingIds = await listBlocksIn(dir, 'notes/target.md');
 
-		// 关键路径:空文件应删除全部旧块;真实实现一块都不删,旧内容仍可被检索。
+		// 关键路径:空文件必须提交零块版本并删除全部旧块,否则旧内容仍可被检索。
 		expect({ errors: result.errors, remaining: remainingIds.length, remainingIds }).toEqual({
 			errors: 0,
 			remaining: 0,
@@ -192,12 +214,12 @@ describe('现有缺陷固化 - 预期失败', () => {
 		});
 	});
 
-	it('indexBatch - 非 512 维向量 - 超过 100 块时不应残留旧块', async () => {
+	it('indexBatch - 非 512 维向量 - 超过 100 块时不残留旧块', async () => {
 		const ws = workspace('ratel-t0-768-');
 		const dir = ws.mkdir('index');
 		const store = new VectraStore(dir);
 		await store.isIndexCreated();
-		// 关键路径:768 维向量 + 目标块排在 100 项之后,覆盖「固定 512 维」这一假设。
+		// 关键路径:768 维向量 + 目标块排在 100 项之后,覆盖「固定 512 维」这一历史假设。
 		await seedStoreBlocks(store, 'notes/other.md', 130, 768);
 		await seedStoreBlocks(store, 'notes/target.md', 25, 768);
 
@@ -208,7 +230,7 @@ describe('现有缺陷固化 - 预期失败', () => {
 		const remainingIds = await listBlocksIn(dir, 'notes/target.md');
 		const expectedIds = chunkIdsFor('notes/target.md', expected);
 
-		// 关键路径:维度不同不影响删除正确性;真实实现按 512 维零向量查询,一个都删不掉。
+		// 关键路径:删除按 metadata.path 完整枚举,与向量维度无关。
 		expect({
 			errors: result.errors,
 			expected,
@@ -222,12 +244,12 @@ describe('现有缺陷固化 - 预期失败', () => {
 		});
 	});
 
-	it('indexBatch - 推理阶段失败 - 不应丢失旧块', async () => {
+	it('indexBatch - 推理阶段失败 - 旧块完整保留', async () => {
 		const ws = workspace('ratel-t0-embed-fail-');
 		const dir = ws.mkdir('index');
 		const store = new VectraStore(dir);
 		await store.isIndexCreated();
-		// 关键路径:目标块排在数组前 100 项内,删除启发式会真的删掉它们。
+		// 关键路径:目标块排在数组前 100 项内 —— 旧实现在推理前删除会真的删掉它们。
 		await seedStoreBlocks(store, 'notes/target.md', 6, DIMENSIONS_512);
 		const oldIds = chunkIdsFor('notes/target.md', 6);
 
@@ -235,8 +257,7 @@ describe('现有缺陷固化 - 预期失败', () => {
 		const result = await processor.indexBatch([{ path: 'notes/target.md', content: markdownWithSections(2) }]);
 		const remainingIds = await listBlocksIn(dir, 'notes/target.md');
 
-		// 关键路径:推理失败时应保留完整旧版本;真实实现先删后推理,旧块已丢。
-		// ID 集合是数据丢失的直接证据 —— 剩余数量为 0 时集合必然为空,不能只看数量。
+		// 关键路径:推理失败时保留完整旧版本;ID 集合是数据丢失的直接证据,不能只看数量。
 		expect({
 			errors: result.errors,
 			remaining: remainingIds.length,
@@ -246,6 +267,92 @@ describe('现有缺陷固化 - 预期失败', () => {
 			remaining: 6,
 			remainingIds: [...oldIds].sort(),
 		});
+	});
+
+	it('indexBatch - 目标文件 201 块 - 删除数等于全部旧块且只留新块', async () => {
+		const ws = workspace('ratel-t2-201-');
+		const dir = ws.mkdir('index');
+		const store = new VectraStore(dir);
+		await store.isIndexCreated();
+		await seedStoreBlocks(store, 'notes/other.md', 20, DIMENSIONS_512);
+		const oldIds = await seedStoreBlocks(store, 'notes/target.md', 201, DIMENSIONS_512);
+
+		const content = markdownWithSections(2);
+		const expected = expectedChunks(content);
+		const processor = new IndexProcessor(store, new FakeEmbeddingPort(DIMENSIONS_512), T0_CHUNK_OPTIONS);
+		// 关键路径:直接观察 `deleteItems` 收到的 ID 集合 —— 新块会复用 #chunk-0..#chunk-N 这些 ID,
+		// 只比较「剩余里少了哪些旧 ID」会把这几个复用 ID 算成没删,无法证明删除数等于全部旧块。
+		const spy = vi.spyOn(LocalDocumentIndex.prototype, 'deleteItems');
+		let result: { errors: number } = { errors: -1 };
+		let deletedIds: string[] = [];
+		try {
+			result = await processor.indexBatch([{ path: 'notes/target.md', content }]);
+			// 关键路径:必须在 mockRestore 之前取走调用记录 —— restore 会清空 mock.calls。
+			deletedIds = spy.mock.calls.flatMap((call) => [...(call[0] as Iterable<string>)]);
+		} finally {
+			spy.mockRestore();
+		}
+		const remainingIds = await listBlocksIn(dir, 'notes/target.md');
+		const expectedIds = chunkIdsFor('notes/target.md', expected);
+
+		// 关键路径:201 超过历史 top100 上限;删除集合必须等于全部旧块,而不是「删到 100 就停」。
+		expect(result.errors).toBe(0);
+		expect(deletedIds).toHaveLength(201);
+		expect([...deletedIds].sort()).toEqual([...oldIds].sort());
+		expect(remainingIds).toHaveLength(expected);
+		expect([...remainingIds].sort()).toEqual([...expectedIds].sort());
+	});
+
+	it('indexBatch - 只替换目标文件 - 其他文件完整块集合(ID/向量/metadata)不变', async () => {
+		const ws = workspace('ratel-t2-others-');
+		const dir = ws.mkdir('index');
+		const store = new VectraStore(dir);
+		await store.isIndexCreated();
+		await seedStoreBlocks(store, 'notes/other.md', 120, DIMENSIONS_512);
+		await seedStoreBlocks(store, 'notes/second.md', 7, 768);
+		await seedStoreBlocks(store, 'notes/target.md', 30, DIMENSIONS_512);
+
+		const otherBefore = await listBlocksOf(dir, 'notes/other.md');
+		const secondBefore = await listBlocksOf(dir, 'notes/second.md');
+
+		const processor = new IndexProcessor(store, new FakeEmbeddingPort(DIMENSIONS_512), T0_CHUNK_OPTIONS);
+		const result = await processor.indexBatch([{ path: 'notes/target.md', content: markdownWithSections(3) }]);
+		expect(result.errors).toBe(0);
+
+		// 关键路径:只比块 ID 会漏掉「向量或 metadata 被误改」;这里比较完整块集合。
+		expect(await listBlocksOf(dir, 'notes/other.md')).toEqual(otherBefore);
+		expect(await listBlocksOf(dir, 'notes/second.md')).toEqual(secondBefore);
+	});
+
+	it('reembedFile - 推理进行中 - 旧块完整保留,提交后一次性替换', async () => {
+		const ws = workspace('ratel-t2-order-');
+		const dir = ws.mkdir('index');
+		const store = new VectraStore(dir);
+		await store.isIndexCreated();
+		await seedStoreBlocks(store, 'notes/target.md', 5, DIMENSIONS_512);
+
+		let blocksDuringEmbed = -1;
+		const port = new FakeEmbeddingPort(DIMENSIONS_512);
+		const observingPort = {
+			dimensions: DIMENSIONS_512,
+			modelId: 'test:observing',
+			async embed(texts: string[]): Promise<number[][]> {
+				// 关键路径:在推理回调内读取磁盘真值,确认旧块此刻是否还在。
+				blocksDuringEmbed = await countBlocks(dir, 'notes/target.md');
+				return port.embed(texts);
+			},
+		};
+		const processor = new IndexProcessor(store, observingPort, T0_CHUNK_OPTIONS);
+		const content = markdownWithSections(2);
+		const expected = expectedChunks(content);
+		const result = await processor.indexBatch([{ path: 'notes/target.md', content }]);
+		const remainingIds = await listBlocksIn(dir, 'notes/target.md');
+
+		// 关键路径:旧实现先删后推理(推理时磁盘块数为 0,数据丢失根因);
+		// 修复后推理完成前不触碰磁盘,旧版本必须完整保留。
+		expect(result.errors).toBe(0);
+		expect(blocksDuringEmbed).toBe(5);
+		expect([...remainingIds].sort()).toEqual([...chunkIdsFor('notes/target.md', expected)].sort());
 	});
 });
 
@@ -270,37 +377,6 @@ describe('现有机制行为记录', () => {
 		expect(results.map((result) => result.item.id)).toEqual(allIds.slice(0, 100));
 		expect(results.every((result) => Number.isNaN(result.score))).toBe(true);
 		expect(allIds).toHaveLength(170);
-	});
-
-	it('reembedFile 调用链 - 推理开始前 - 旧块已被删除(先删后推理)', async () => {
-		// 关键路径:调用链为 PersistentIndexBackend.smartReindex → worker `index.batch`
-		// → IndexProcessor.indexBatch → reembedFile → deleteByPath → 分块/嵌入。
-		// 该顺序意味着推理失败时旧版本已经不在索引里;T2 必须改成「推理完成后再替换」。
-		const ws = workspace('ratel-t0-order-');
-		const dir = ws.mkdir('index');
-		const store = new VectraStore(dir);
-		await store.isIndexCreated();
-		await seedStoreBlocks(store, 'notes/target.md', 5, DIMENSIONS_512);
-
-		let blocksDuringEmbed = -1;
-		const port = new FakeEmbeddingPort(DIMENSIONS_512);
-		const observingPort = {
-			dimensions: DIMENSIONS_512,
-			modelId: 'test:observing',
-			async embed(texts: string[]): Promise<number[][]> {
-				// 关键路径:在推理回调内读取磁盘真值,确认旧块此时是否还在。
-				blocksDuringEmbed = await countBlocks(dir, 'notes/target.md');
-				return port.embed(texts);
-			},
-		};
-		const processor = new IndexProcessor(store, observingPort, T0_CHUNK_OPTIONS);
-		const content = markdownWithSections(2);
-		const result = await processor.indexBatch([{ path: 'notes/target.md', content }]);
-
-		expect(result.errors).toBe(0);
-		// 关键路径:当前实现先删旧块,推理时磁盘上已无该路径的块 —— 这是数据丢失的根因。
-		expect(blocksDuringEmbed).toBe(0);
-		expect(await countBlocks(dir, 'notes/target.md')).toBe(expectedChunks(content));
 	});
 
 	it('事务进行中 - 调用 listItems - 返回已提交视图而不含未提交块', async () => {

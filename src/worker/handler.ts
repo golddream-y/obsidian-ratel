@@ -13,6 +13,7 @@
 import type { WorkerRequest, WorkerResponse } from '../types';
 import { IndexProcessor } from './index-processor';
 import { VectraStore } from '../adapters/vector-vectra';
+import { AtomicIndexStorage } from '../adapters/atomic-index-storage';
 import type { EmbeddingsModel } from 'vectra';
 import type { EmbeddingPort } from '../ports/embedding';
 import { createTokenCounter, TOKEN_BUDGET_RESERVE, type TokenCounter } from '../core/token-counter';
@@ -109,7 +110,14 @@ export function initProcessor(
     embeddingPort: EmbeddingPort,
     vocab?: string | null,
 ): void {
-    const store = new VectraStore(indexDir, { embeddings, autoInit: true });
+    // 关键路径(B3):Worker 自建 store 的生产构造点同样注入原子存储 ——
+    // 不注入时 `endUpdate` 提交失败只能报「磁盘状态不明」,重载决策失去依据。
+    // 代际根就是本 Worker 的索引目录,读写路径都限定在其内。
+    const store = new VectraStore(indexDir, {
+        embeddings,
+        autoInit: true,
+        storage: new AtomicIndexStorage({ generationRoot: indexDir }),
+    });
     if (vocab !== undefined) setVocabContent(vocab);
     processor = new IndexProcessor(
         store,

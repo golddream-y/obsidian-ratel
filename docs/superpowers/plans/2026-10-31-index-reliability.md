@@ -8,7 +8,7 @@
 
 **技术栈：** TypeScript、现有 Vectra `FileStorage` 扩展点、Node 文件 API、Embedding Web Worker、Svelte store、Vitest；不新增数据库或原生模块。
 
-关联：`P-INDEX-RELIABILITY` → [S-INDEX-RELIABILITY](../specs/2026-10-31-index-reliability.md) → `BUG-1-INDEX-001`。状态：**In Progress，T0 已完成（证据见 [T0 证据记录](2026-10-31-index-reliability-t0-evidence.md)），进入 T1**。设计审查已由 Agent 裁定；实现按 T1～T8 依赖顺序推进，合并与发布仍另行授权。
+关联：`P-INDEX-RELIABILITY` → [S-INDEX-RELIABILITY](../specs/2026-10-31-index-reliability.md) → `BUG-1-INDEX-001`。状态：**In Progress，T0～T2 已完成（证据见 [T0 证据记录](2026-10-31-index-reliability-t0-evidence.md)、[T1/T2 证据记录](2026-10-31-index-reliability-t1-t2-evidence.md)），进入 T3**。T0 的 6 个缺陷断言已由 T2 翻转为通过；全量 287 文件 / 2336 passed / 5 skipped。合并与发布仍另行授权。
 
 ## 执行边界与依赖
 
@@ -66,8 +66,8 @@
 
 **文件：** 新建 `src/core/index-persistence-types.ts`、`src/adapters/atomic-index-storage.ts`；新建 `tests/adapters/atomic-index-storage.test.ts`、`tests/core/index-persistence-types.test.ts`。
 
-- [ ] 先写 schema 校验失败测试：未知版本、路径越界、指纹不匹配、非有限向量、重复块 ID、损坏 checksum 均拒绝。
-- [ ] 在唯一类型文件定义下列契约；`generationId` 和 `configFingerprint` 分别用于目录身份和配置身份，不混用。配置 fingerprint 使用稳定字段顺序序列化后 SHA-256，排除凭证和临时任务状态。
+- [x] 先写 schema 校验失败测试：未知版本、路径越界、指纹不匹配、非有限向量、重复块 ID、损坏 checksum 均拒绝。
+- [x] 在唯一类型文件定义下列契约；`generationId` 和 `configFingerprint` 分别用于目录身份和配置身份，不混用。配置 fingerprint 使用稳定字段顺序序列化后 SHA-256，排除凭证和临时任务状态。
 
 ```typescript
 interface FileCommitBase {
@@ -97,8 +97,8 @@ export type IndexPhase =
   | 'paused' | 'partial-failure' | 'failed' | 'ready';
 ```
 
-- [ ] 实现原子存储：唯一临时文件以 `wx` 创建 → 写入 → 文件 sync → 关闭 → 同目录 rename → 支持的平台上同步目录。通过公开 `FileStorage` 注入，所有路径限定在所属代际目录；临时文件失败清理不能遮蔽原错误。
-- [ ] 区分提交前失败与 rename 后状态不明；调用者重载验证，不能一律按旧版仍在磁盘继续搜索。对原子替换失败注入短写、磁盘满、rename 错误及目录 sync 错误。
+- [x] 实现原子存储：唯一临时文件以 `wx` 创建 → 写入 → 文件 sync → 关闭 → 同目录 rename → 支持的平台上同步目录。通过公开 `FileStorage` 注入，所有路径限定在所属代际目录；临时文件失败清理不能遮蔽原错误。
+- [x] 区分提交前失败与 rename 后状态不明；调用者重载验证，不能一律按旧版仍在磁盘继续搜索。对原子替换失败注入短写、磁盘满、rename 错误及目录 sync 错误。
 
 **验证：** `npx vitest run tests/adapters/atomic-index-storage.test.ts tests/core/index-persistence-types.test.ts`；断言失败后重新读取的 JSON 为完整旧版或完整新版，不存在半截文件。
 
@@ -106,10 +106,10 @@ export type IndexPhase =
 
 **文件：** 新建 `src/core/index-write-owner.ts`、`tests/core/index-write-owner.test.ts`；修改 `src/adapters/vector-vectra.ts`、`src/worker/index-processor.ts`、`tests/adapters/vector-vectra.test.ts`。
 
-- [ ] 先写同 renderer 两次插件实例交接、旧实例推理迟到、跨进程竞争锁用例；确认现有实例内排队不能保护重载后的新实例。
-- [ ] 共享协调器以 `Symbol.for('ratel.index.write-owner.v2')` 注册在 renderer 的 `globalThis`，内部以规范化根目录为 key。每次实例接管有新 epoch；旧 epoch 不能开始提交，新实例必须等待旧 closing Promise。永久挂起只显示占用，不抢写。
-- [ ] 根目录 owner 锁用排他创建保存本机进程身份、实例令牌与协调器版本。锁的创建/释放/死亡回收经过同一排他恢复门，在门内重新读取并核对旧令牌；两恢复者竞争、PID 存活但身份不明、外机锁、空锁和无权限检查均有明确失败测试。不得按过期时间抢锁，释放前核对令牌，避免旧回收者误删后继实例的锁；无法确认恢复门持有者已退出时也拒绝强抢。
-- [ ] 实现 `replaceFile` 的公共适配器方法，删除和插入在同一事务，空数组也完成删除；为块写入 `commitId`。报错后存储进入需重载状态，不继续拿旧缓存服务查询。
+- [x] 先写同 renderer 两次插件实例交接、旧实例推理迟到、跨进程竞争锁用例；确认现有实例内排队不能保护重载后的新实例。
+- [x] 共享协调器以 `Symbol.for('ratel.index.write-owner.v2')` 注册在 renderer 的 `globalThis`，内部以规范化根目录为 key。每次实例接管有新 epoch；旧 epoch 不能开始提交，新实例必须等待旧 closing Promise。永久挂起只显示占用，不抢写。
+- [x] 根目录 owner 锁用排他创建保存本机进程身份、实例令牌与协调器版本。锁的创建/释放/死亡回收经过同一排他恢复门，在门内重新读取并核对旧令牌；两恢复者竞争、PID 存活但身份不明、外机锁、空锁和无权限检查均有明确失败测试。不得按过期时间抢锁，释放前核对令牌，避免旧回收者误删后继实例的锁；无法确认恢复门持有者已退出时也拒绝强抢。
+- [x] 实现 `replaceFile` 的公共适配器方法，删除和插入在同一事务，空数组也完成删除；为块写入 `commitId`。报错后存储进入需重载状态，不继续拿旧缓存服务查询。
 
 ```typescript
 export interface PreparedBlock {

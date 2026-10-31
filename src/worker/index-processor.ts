@@ -5,13 +5,18 @@
  * @depends worker/chunker, adapters/vector-vectra, ports/embedding
  *
  * 设计要点:
- * - 主线程传文件列表,Worker 内部完成 chunking + 批量 embedding(EmbeddingPort.embed)+ vectra upsertItem(预计算向量)。
+ * - 主线程传文件列表,Worker 内部完成 chunking + 批量 embedding(EmbeddingPort.embed),
+ *   再以 `replaceFile` 把预计算向量提交为「一个文件的完整事务」。
  * - 每个文件处理完就推一次 `index.progress`,UI 实时刷新。
- * - 一个文件一个事务(beginFileUpdate/endFileUpdate),避免每 chunk 一次事务。
+ * - 三个索引入口(`indexFull` / `indexIncremental` / `indexBatch`)统一走 `reembedFile` →
+ *   `replaceFile`:先推理、再在同一事务里删除旧块并写入新块,单文件只落盘一次。
+ *   空内容同样提交「零块替换」,避免旧块残留成可检索的幽灵片段。
+ * - 提交失败会让存储进入需重载状态;入口在失败分支自动 `reload()`,重载失败则中止本批并如实计数。
  */
 
+import { randomUUID } from 'node:crypto';
 import { chunkMarkdown, type Chunk, type ChunkOptions } from './chunker';
-import { VectraStore } from '../adapters/vector-vectra';
+import { VectraStore, type PreparedBlock } from '../adapters/vector-vectra';
 import { devLogger } from '../logging/dev-logger';
 import type { EmbeddingPort } from '../ports/embedding';
 
@@ -62,6 +67,10 @@ export class IndexProcessor {
 
     /**
      * 全量索引入口 — 逐文件处理,每文件完成推一次进度。
+     *
+     * 关键路径(B1):每个文件都走 `reembedFile` 的「单事务替换」,不再逐块 upsert。
+     * 旧实现只写新块、从不删除旧块,文件变短或变空后旧块仍可被检索;
+     * 空内容也必须提交零块替换,否则清单已更新而索引仍留着旧块。
      */
     async indexFull(
         files: IndexFile[],
@@ -72,39 +81,18 @@ export class IndexProcessor {
 
         for (const [i, file] of files.entries()) {
             try {
-                const chunks = this.chunk(file.content);
-                if (chunks.length === 0) {
-                    indexed++;
-                    onProgress?.({ done: i + 1, total: files.length });
-                    continue;
-                }
-
-                // 关键路径:一次性批量 embed 所有 chunk 的嵌入文本(含结构前缀)。
-                const chunkTexts = chunks.map((c) => c.embedText);
-                const vectors = await this.embeddings.embed(chunkTexts);
-
-                await this.store.beginFileUpdate();
-                for (const [idx, chunk] of chunks.entries()) {
-                    await this.store.upsertItem(
-                        `${file.path}#chunk-${idx}`,
-                        vectors[idx]!,
-                        {
-                            path: file.path,
-                            chunkIndex: idx,
-                            startOffset: chunk.startOffset,
-                            // 关键路径:结构信息随块落库,供上层扩展页号与表头。
-                            prefix: chunk.prefix,
-                            headingPath: chunk.headingPath,
-                        },
-                    );
-                }
-                await this.store.endFileUpdate();
+                await this.reembedFile(file.path, file.content);
                 indexed++;
             } catch (err) {
-                // 关键路径:事务回滚,避免半写入的脏数据。
-                try { await this.store.cancelFileUpdate(); } catch { /* 忽略回滚失败 */ }
                 devLogger.error('index', `failed to index ${file.path}`, err);
                 errors++;
+                // 关键路径(B3b):提交失败会把存储置为需重载状态;不重载则同批后续文件全抛 reload-required。
+                if (!(await this.recoverStore())) {
+                    // 重载失败:剩余文件无法处理,一并计入 errors,避免上层把未处理当成已索引。
+                    errors += files.length - i - 1;
+                    onProgress?.({ done: i + 1, total: files.length });
+                    return { indexed, errors };
+                }
             }
             // 关键路径:每个文件处理完推一次进度(不管成功失败),UI 能实时看到数字在增长。
             onProgress?.({ done: i + 1, total: files.length });
@@ -116,8 +104,11 @@ export class IndexProcessor {
     /**
      * 增量索引 — 单文件去抖后入队消费。
      *
-     * 关键路径:不调 `indexFull`(会推一次 done:1, total:1),自己控制进度回调,
-     * 避免上层收到重复事件。
+     * 关键路径:
+     * - 不调 `indexFull`(会推一次 done:1, total:1),自己控制进度回调,
+     *   避免上层收到重复事件。
+     * - 与 `indexFull` / `indexBatch` 共用 `reembedFile`:删除与插入在同一事务内,
+     *   文件变短/变空都不会留下旧块,`chunkCount` 与真实块数一致。
      */
     async indexIncremental(
         file: IndexFile,
@@ -125,42 +116,20 @@ export class IndexProcessor {
     ): Promise<{ indexed: number; errors: number; chunkCount: number }> {
         let indexed = 0;
         let errors = 0;
-        // 关键路径:chunkCount 在 try 外声明,catch 路径也能返回(此时为 0)。
+        // 关键路径:chunkCount 在 try 外声明,失败路径也能返回(此时为 0,表示没有可用块数)。
         let chunkCount = 0;
         try {
-            const chunks = this.chunk(file.content);
-            chunkCount = chunks.length;
-            if (chunks.length === 0) {
-                onProgress?.({ done: 1, total: 1 });
-                return { indexed: 0, errors: 0, chunkCount: 0 };
-            }
-
-            // 关键路径:一次性批量 embed 所有 chunk 的嵌入文本,ONNX 调用从 N 降到 N/16。
-            const chunkTexts = chunks.map((c) => c.embedText);
-            const vectors = await this.embeddings.embed(chunkTexts);
-
-            // 关键路径:一个文件一个事务,避免每 chunk 一次事务。
-            await this.store.beginFileUpdate();
-            for (const [idx, chunk] of chunks.entries()) {
-                await this.store.upsertItem(
-                    `${file.path}#chunk-${idx}`,
-                    vectors[idx]!,
-                    {
-                        path: file.path,
-                        chunkIndex: idx,
-                        startOffset: chunk.startOffset,
-                        prefix: chunk.prefix,
-                        headingPath: chunk.headingPath,
-                    },
-                );
-            }
-            await this.store.endFileUpdate();
+            chunkCount = await this.reembedFile(file.path, file.content);
             indexed = 1;
         } catch (err) {
-            // 关键路径:事务回滚,避免半写入的脏数据。
-            try { await this.store.cancelFileUpdate(); } catch { /* 忽略回滚失败 */ }
             devLogger.error('index', `failed to index ${file.path}`, err);
             errors = 1;
+            chunkCount = 0;
+            // 关键路径(B3b):单文件失败同样尝试恢复,否则下一次增量会被 reload-required 挡住。
+            if (!(await this.recoverStore())) {
+                onProgress?.({ done: 1, total: 1 });
+                return { indexed: 0, errors, chunkCount };
+            }
         }
         onProgress?.({ done: 1, total: 1 });
         return { indexed, errors, chunkCount };
@@ -170,9 +139,10 @@ export class IndexProcessor {
      * 批量索引 — smart reindex 的 toAdd + toUpdate 路径。
      *
      * 关键路径:
-     * - 每个文件 reembed 前先 deleteByPath,防止文件变短时旧 chunk 残留
+     * - 每个文件先分块与推理,再用 `replaceFile` 在同一个事务里删除旧块并写入新块;
+     *   推理失败时旧版本完整保留,单文件提交只落盘一次。
      * - 返回每文件的 chunkCount,供 manifest 记录
-     * - 单文件失败不挂整批(记入 errors 继续)
+     * - 单文件失败不挂整批(记入 errors 继续);存储进入需重载状态时先 `reload()`。
      *
      * @param files - 待 embed 的文件列表(已由主线程读好 content)
      * @param onProgress - 进度回调(每文件一次)
@@ -194,6 +164,14 @@ export class IndexProcessor {
             } catch (err) {
                 devLogger.error('index', `failed to indexBatch ${file.path}`, err);
                 errors++;
+                // 关键路径(I4):首个失败会让存储进入需重载状态;不重载则同批后续文件全抛 reload-required。
+                if (!(await this.recoverStore())) {
+                    // 重载失败:中止本批,剩余文件计入 errors 并保留已完成的 chunkCounts,
+                    // 由上层按「部分失败」处理,不静默当成全部成功。
+                    errors += files.length - i - 1;
+                    onProgress?.({ done: i + 1, total: files.length });
+                    return { indexed, errors, chunkCounts };
+                }
             }
             onProgress?.({ done: i + 1, total: files.length });
         }
@@ -202,43 +180,67 @@ export class IndexProcessor {
     }
 
     /**
-     * 单文件 reembed — 先删旧 chunk 再重插。
+     * 单文件 reembed — 先分块与推理,再一次性替换该路径的全部块。
      *
-     * 关键路径:deleteByPath 是 chunk 残留修复的根治手段。
-     * 一个文件一个事务,失败时 cancelFileUpdate 回滚。
+     * 关键路径:
+     * - 三个索引入口共用本方法:删除与插入在 `replaceFile` 的同一个事务内完成,
+     *   单文件提交只落盘一次,文件变短/变空都不会残留旧块。
+     * - 禁止先删后推理:推理失败时旧版本必须完整保留,否则会丢数据。
+     * - 空文件也提交零块版本(完成删除)。
+     * - 每个块带上本次提交的 `commitId`,供完成记录核对。
      *
      * @returns 该文件的 chunk 数(0 表示空文件)
      */
     private async reembedFile(filePath: string, content: string): Promise<number> {
-        // 关键路径:先删旧 chunk,防止文件变短时残留。
-        await this.store.deleteByPath(filePath);
-
         const chunks = this.chunk(content);
-        if (chunks.length === 0) return 0;
+        // 关键路径:推理完成前不触碰磁盘 —— 这是「推理失败不丢旧版本」的唯一保证。
+        const vectors = chunks.length === 0 ? [] : await this.embeddings.embed(chunks.map((c) => c.embedText));
+        if (vectors.length !== chunks.length) {
+            throw new Error(`嵌入端口返回 ${vectors.length} 个向量,与块数 ${chunks.length} 不一致:${filePath}`);
+        }
 
-        const chunkTexts = chunks.map((c) => c.embedText);
-        const vectors = await this.embeddings.embed(chunkTexts);
-
-        await this.store.beginFileUpdate();
-        try {
-            for (const [idx, chunk] of chunks.entries()) {
-                await this.store.upsertItem(
-                    `${filePath}#chunk-${idx}`,
-                    vectors[idx]!,
-                    {
-                        path: filePath,
-                        chunkIndex: idx,
-                        startOffset: chunk.startOffset,
-                        prefix: chunk.prefix,
-                        headingPath: chunk.headingPath,
-                    },
-                );
+        const commitId = randomUUID();
+        const blocks: PreparedBlock[] = [];
+        for (const [idx, chunk] of chunks.entries()) {
+            const vector = vectors[idx];
+            if (vector === undefined) {
+                throw new Error(`缺少第 ${idx} 块的向量:${filePath}`);
             }
-            await this.store.endFileUpdate();
-            return chunks.length;
+            blocks.push({
+                id: `${filePath}#chunk-${idx}`,
+                vector,
+                metadata: {
+                    path: filePath,
+                    chunkIndex: idx,
+                    startOffset: chunk.startOffset,
+                    // 关键路径:结构信息随块落库,供上层扩展页号与表头。
+                    prefix: chunk.prefix,
+                    headingPath: chunk.headingPath,
+                },
+            });
+        }
+
+        await this.store.replaceFile({ path: filePath, commitId, blocks });
+        return chunks.length;
+    }
+
+    /**
+     * 失败后尝试自动恢复存储 — 提交失败会把存储置为需重载状态,不重载则后续写入全被拒绝。
+     *
+     * 关键路径(B3b):
+     * - 只有存储确实处于需重载状态时才 `reload()`;普通推理/输入校验失败不触发重建。
+     * - 重载失败返回 false,由调用方中止本批并如实计数,不静默继续。
+     *
+     * @returns 已恢复可继续写入为 true;无法恢复为 false。
+     */
+    private async recoverStore(): Promise<boolean> {
+        if (!this.store.isReloadRequired()) return true;
+        try {
+            await this.store.reload();
+            return true;
         } catch (err) {
-            try { await this.store.cancelFileUpdate(); } catch { /* 忽略回滚失败 */ }
-            throw err;
+            devLogger.error('index', '重载索引存储失败,中止本批', err);
+            return false;
         }
     }
 
