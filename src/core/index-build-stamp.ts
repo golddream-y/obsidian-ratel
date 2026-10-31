@@ -40,16 +40,53 @@ export function resolveBuildStampPath(indexDir: string): string {
 }
 
 /**
- * 读取构建戳。
+ * 构建戳读取结论 — T6 迁移需要区分「戳缺失」与「戳损坏」。
  *
- * 关键路径:文件不存在或 JSON 损坏都返回 null —— 调用方据此判定"无法证明索引有效"。
- *
- * @param indexDir - 向量索引目录
- * @returns 构建戳;不存在或无法解析时为 null
+ * 关键路径(spec §5、T6 checkbox 1):旧索引**可能没有构建戳**(更早的版本不写),
+ * 缺失本身不构成不兼容;但戳**存在却无法解析**说明索引形态不可证明,必须按不兼容处理。
  */
-export async function readBuildStamp(indexDir: string): Promise<IndexBuildStamp | null> {
+export const BUILD_STAMP_READ_RESULTS = ['present', 'missing', 'unreadable'] as const;
+
+/** 构建戳读取结论。 */
+export type BuildStampReadResult = (typeof BUILD_STAMP_READ_RESULTS)[number];
+
+/** 构建戳读取结论与内容。 */
+export interface BuildStampReadOutcome {
+	/** 读取结论。 */
+	result: BuildStampReadResult;
+	/** `present` 时的戳内容;其余情况为 null。 */
+	stamp: IndexBuildStamp | null;
+}
+
+/**
+ * 读取构建戳并区分「缺失」与「不可解析」。
+ *
+ * 关键路径:`readBuildStamp` 把两种情况都收敛成 null,调用方无法区分;
+ * 迁移必须区分,否则缺戳的有效旧索引会被误判为不可迁移。
+ *
+ * @param indexDir - 向量索引目录。
+ * @returns 读取结论与内容。
+ */
+export async function readBuildStampOutcome(indexDir: string): Promise<BuildStampReadOutcome> {
+	let raw: string;
 	try {
-		const raw = await fs.promises.readFile(resolveBuildStampPath(indexDir), 'utf8');
+		raw = await fs.promises.readFile(resolveBuildStampPath(indexDir), 'utf8');
+	} catch (error) {
+		const code = (error as NodeJS.ErrnoException).code;
+		return { result: code === 'ENOENT' ? 'missing' : 'unreadable', stamp: null };
+	}
+	const stamp = parseBuildStamp(raw);
+	return stamp === null ? { result: 'unreadable', stamp: null } : { result: 'present', stamp };
+}
+
+/**
+ * 解析构建戳文本 — 字段缺失或类型不符返回 null。
+ *
+ * @param raw - 文件内容。
+ * @returns 构建戳;不可解析时为 null。
+ */
+export function parseBuildStamp(raw: string): IndexBuildStamp | null {
+	try {
 		const parsed = JSON.parse(raw) as Partial<IndexBuildStamp>;
 		if (
 			typeof parsed.chunkerVersion !== 'number' ||
@@ -68,6 +105,19 @@ export async function readBuildStamp(indexDir: string): Promise<IndexBuildStamp 
 	} catch {
 		return null;
 	}
+}
+
+/**
+ * 读取构建戳。
+ *
+ * 关键路径:文件不存在或 JSON 损坏都返回 null —— 调用方据此判定"无法证明索引有效"。
+ * 需要区分「缺失」与「损坏」时用 `readBuildStampOutcome`。
+ *
+ * @param indexDir - 向量索引目录
+ * @returns 构建戳;不存在或无法解析时为 null
+ */
+export async function readBuildStamp(indexDir: string): Promise<IndexBuildStamp | null> {
+	return (await readBuildStampOutcome(indexDir)).stamp;
 }
 
 /**

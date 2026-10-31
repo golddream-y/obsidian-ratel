@@ -17,7 +17,7 @@ import { isSearchReady } from '../../src/ui/chat/chat-send-gate';
 import { createSearchVaultTool } from '../../src/tools/search-vault';
 import { makeToolDef } from '../helpers/make-tool-def';
 import type { WorkerResponse } from '../../src/types';
-import { PersistentIndexBackend } from '../../src/core/persistent-index-backend';
+import { PersistentIndexBackend, IndexDirectoryNotOwnedError } from '../../src/core/persistent-index-backend';
 import type {
 	CommittedFileRecord,
 	FileRecordReader,
@@ -36,6 +36,7 @@ import { InlineWorker } from '../../src/worker/inline-worker';
 import { WorkerManager } from '../../src/worker/manager';
 import { tNow } from '../../src/i18n';
 import { sha256 } from '../../src/utils/hash';
+import { devLogger } from '../../src/logging/dev-logger';
 describe('真实索引持久化', () => {
 	let dir: string;
 	let journalDir: string;
@@ -66,6 +67,38 @@ describe('真实索引持久化', () => {
 				return;
 			if (Date.now() >= deadline)
 				throw new Error(`真实磁盘操作在 ${timeoutMs}ms 墙钟预算内未完成`);
+		}
+	}
+	/**
+	 * 只推进微任务与零延迟定时器,不依赖被 fake 的定时器。
+	 *
+	 * @param ready - 条件。
+	 */
+	async function flushUntil(ready: () => boolean): Promise<void> {
+		for (let attempt = 0; attempt < 200; attempt += 1) {
+			await new Promise<void>(resolve => setImmediate(resolve));
+			// 零延迟定时器与微任务交替推进:不依赖被测代码是否使用定时器,也不要求 mock 定时器。
+			await new Promise<void>(resolve => setTimeout(resolve, 0));
+			if (ready()) return;
+		}
+		throw new Error('条件在 200 次推进内未满足');
+	}
+	/**
+	 * 轮询到某个**异步读取**条件成立(墙钟预算)。
+	 *
+	 * 关键路径(修掉全量并发下的假失败):「写盘被调用」不等于「落盘完成」,
+	 * 定点推进若干次微任务后读磁盘会读到写之前的状态。这里按墙钟等真实 I/O 完成,
+	 * 超时后仍如实失败,不放宽被测语义。
+	 *
+	 * @param ready - 异步条件(通常是一次真实磁盘读取)。
+	 * @param timeoutMs - 墙钟预算。
+	 */
+	async function waitUntil(ready: () => Promise<boolean>, timeoutMs = 10_000): Promise<void> {
+		const deadline = Date.now() + timeoutMs;
+		for (;;) {
+			if (await ready()) return;
+			if (Date.now() >= deadline) throw new Error(`异步条件在 ${timeoutMs}ms 墙钟预算内未满足`);
+			await new Promise<void>(resolve => setImmediate(resolve));
 		}
 	}
 	async function create(embed = vi.fn(async (texts: string[]) => texts.map(() => [1, 0, 0])), timeoutMs = 1000, extra: Partial<PersistentIndexBackendOptions> = {}) {
@@ -710,5 +743,657 @@ describe('真实索引持久化', () => {
         }
         return calls;
     }
+
+
+	describe('迟到终态登记(T6 还清 T5 登记债)', () => {
+		/** 替身捕获到的一次写请求。 */
+		interface DeferredCall {
+			request: { type: string; payload: Record<string, unknown> };
+			options: { taskId?: string; epoch?: number; onLateTerminal?: (response: WorkerResponse) => void };
+			/** 正常终态:结算调用方的等待。 */
+			deliverNormal: (response: WorkerResponse) => void;
+			/** 等待先结束(停滞/超时/取消):此后真实终态只能经迟到通道交付。 */
+			failWaiting: (error: Error) => void;
+			/** 迟到终态:按真实契约要求「等待已结束」,否则显式失败。 */
+			deliverLate: (response: WorkerResponse) => void;
+			/** 人工逆序:迟到回调先于等待结算 —— 仅用于验证 settle-once(真实管理器不会这样交付)。 */
+			deliverLateBeforeSettle: (response: WorkerResponse) => void;
+		}
+
+		/** 捕获 `options` 并允许延后投递真实终态的 WorkerManager 替身。 */
+		interface DeferredWorker {
+			calls: DeferredCall[];
+			/** 被派发的独占操作数 — 证明归属断言不通过时根本没走到 `dropIndex`。 */
+			exclusiveRuns: number;
+			runExclusive: <T>(operation: () => Promise<T> | T) => Promise<T>;
+			request: (
+				request: { type: string; payload: Record<string, unknown> },
+				options?: DeferredCall['options'],
+			) => Promise<WorkerResponse>;
+		}
+
+		/**
+		 * 构造替身 — 「正常结算」与「迟到交付」严格分开。
+		 *
+		 * 关键路径(修掉用例的隐性竞态):真实 `WorkerManager.finishPending` 的契约是
+		 * `onLateTerminal ⟹ 调用方的等待已经结束`。旧替身在 `settle` 之前先调 `onLateTerminal`,
+		 * 违反了这条契约,断言点之后状态还会翻转(约 100ms 才暴露)。这里把两条交付路径显式分开:
+		 * `deliverLate` 在等待未结束时直接抛错,而逆序场景只能通过 `deliverLateBeforeSettle` 显式声明。
+		 */
+		function createDeferredWorker(): DeferredWorker {
+			const calls: DeferredCall[] = [];
+			const worker: DeferredWorker = {
+				calls,
+				exclusiveRuns: 0,
+				runExclusive<T>(operation: () => Promise<T> | T): Promise<T> {
+					worker.exclusiveRuns += 1;
+					return Promise.resolve(operation());
+				},
+				request(request, options = {}): Promise<WorkerResponse> {
+					let waiterSettled = false;
+					let settle: ((value: WorkerResponse) => void) | null = null;
+					let fail: ((reason: Error) => void) | null = null;
+					const waiting = new Promise<WorkerResponse>((resolve, reject) => {
+						settle = resolve;
+						fail = reject;
+					});
+					calls.push({
+						request,
+						options,
+						deliverNormal: (response: WorkerResponse): void => {
+							waiterSettled = true;
+							settle?.(response);
+						},
+						failWaiting: (error: Error): void => {
+							waiterSettled = true;
+							fail?.(error);
+						},
+						deliverLate: (response: WorkerResponse): void => {
+							if (!waiterSettled) throw new Error('契约违例:调用方等待未结束就投递迟到终态');
+							options.onLateTerminal?.(response);
+						},
+						deliverLateBeforeSettle: (response: WorkerResponse): void => {
+							options.onLateTerminal?.(response);
+							waiterSettled = true;
+							settle?.(response);
+						},
+					});
+					return waiting;
+				},
+			};
+			return worker;
+		}
+
+		/** 装配一个 Worker 走替身、其余全走真实磁盘的后端。 */
+		async function createDeferredBackend(options: {
+			indexDir?: string;
+			getTaskId?: () => string;
+			getEpoch?: () => number;
+			onLateTerminalCommitted?: PersistentIndexBackendOptions['onLateTerminalCommitted'];
+			pendingWriteLimit?: number;
+			assertDropOwnership?: PersistentIndexBackendOptions['assertDropOwnership'];
+			/**
+			 * 覆盖磁盘存储。
+			 *
+			 * 关键路径(守卫用例):默认路径会在 `indexDir` 上构造真实 `VectraStore` 并 `autoInit`
+			 * —— 它往被判定目录里写 `index.json`,反而让 pluginDir 形状的目录「看起来像索引目录」。
+			 * 传入未初始化的存储后,目录形状保持原样,守卫是否闭合仍然可证。
+			 */
+			store?: VectraStore;
+		} = {}): Promise<{ dir: string; deferred: DeferredWorker; manifest: IndexManifest; backend: PersistentIndexBackend }> {
+			const indexDir = options.indexDir ?? dir;
+			const deferred = createDeferredWorker();
+			const manifest = new IndexManifest(resolveIndexManifestPath(indexDir));
+			const store = options.store ?? new VectraStore(indexDir);
+			if (!options.store) await store.isIndexCreated();
+			const { indexDir: _unusedIndexDir, store: _unusedStore, ...rest } = options;
+			void _unusedIndexDir;
+			void _unusedStore;
+			const backend = new PersistentIndexBackend({
+				indexDir, manifest, worker: deferred as never, getStore: () => store,
+				vault: { listMarkdownFiles: () => [...files.keys()], readFile: async (p: string) => files.get(p)!, stat: () => ({ mtime: 1 }) },
+				getBuildStamp: () => stamp, getChunkOptions: () => ({ maxTokens: 100, overlapTokens: 0 }),
+				...rest,
+			} as PersistentIndexBackendOptions);
+			return { dir: indexDir, deferred, manifest, backend };
+		}
+
+		/** 写一份空清单 — 单文件提交路径需要磁盘上已有派生视图可写。 */
+		async function seedEmptyManifest(manifest: IndexManifest): Promise<void> {
+			await manifest.save({ version: 1, ...stamp, entries: {}, lastIndexTime: Date.now() });
+		}
+
+		it('迟到终态 - 等待结束前的真实终态 - 正常提交清单与构建戳且不触发迟到回调', async () => {
+			const committed: Array<{ requestType: string; indexed: number }> = [];
+			const { deferred, manifest, backend } = await createDeferredBackend({
+				getTaskId: () => 'task-from-coordinator',
+				getEpoch: () => 7,
+				onLateTerminalCommitted: (info) => committed.push({ requestType: info.requestType, indexed: info.indexed }),
+			});
+
+			const task = backend.fullReindex();
+			void task.catch(() => undefined);
+			await flushUntil(() => deferred.calls.length > 0);
+			const call = deferred.calls[0]!;
+			// 关键路径:T5 登记债的接线证据 —— 任务标识与 epoch 必须随请求显式下发。
+			expect(call.options.taskId).toBe('task-from-coordinator');
+			expect(call.options.epoch).toBe(7);
+			call.deliverNormal({ type: 'index.done', payload: { indexed: 1, errors: 0 } } as never);
+			await task;
+
+			const data = await manifest.load();
+			expect(data?.entries['a.md']).toBeDefined();
+			expect(await readBuildStamp(dir)).toEqual(stamp);
+			// 正常路径不触发迟到回调。
+			expect(committed).toEqual([]);
+			expect(backend.pendingWriteCount()).toBe(0);
+		});
+
+		it('迟到终态 - 正常等待已结算的同一条终态再次投递 - 不重复提交', async () => {
+			const lateCallbacks: unknown[] = [];
+			const { deferred, manifest, backend } = await createDeferredBackend({
+				getTaskId: () => 'task-once',
+				onLateTerminalCommitted: () => lateCallbacks.push('late'),
+			});
+			const save = vi.spyOn(manifest, 'save');
+
+			const task = backend.fullReindex();
+			void task.catch(() => undefined);
+			await flushUntil(() => deferred.calls.length > 0);
+			const call = deferred.calls[0]!;
+			call.deliverNormal({ type: 'index.done', payload: { indexed: 1, errors: 0 } } as never);
+			await task;
+			expect(save).toHaveBeenCalledTimes(1);
+
+			// 同一条终态再经迟到通道到达:settle-once 必须让它成为空操作。
+			call.deliverLate({ type: 'index.done', payload: { indexed: 1, errors: 0 } } as never);
+			// 负向断言的观察窗:重复终态若被排进提交队列,这里才会看到第二次写盘。
+			await new Promise<void>(resolve => setTimeout(resolve, 20));
+
+			expect(save).toHaveBeenCalledTimes(1);
+			// 正常路径已完成提交时,迟到回调不得再报一次成功。
+			expect(lateCallbacks).toEqual([]);
+			const data = await manifest.load();
+			expect(Object.keys(data?.entries ?? {}).sort()).toEqual(['a.md', 'b.md']);
+		});
+
+		it('迟到终态 - 逆序投递(迟到回调先到) - settle-once 保证只提交一次', async () => {
+			// 关键路径:这是审查者探针的顺序。真实管理器不会这样交付,但模块注释声称的
+			// 「同一终态只提交一次」必须在两条顺序下都成立。
+			const lateCallbacks: unknown[] = [];
+			const { deferred, manifest, backend } = await createDeferredBackend({
+				getTaskId: () => 'task-reversed',
+				onLateTerminalCommitted: (info) => lateCallbacks.push(info),
+			});
+			const save = vi.spyOn(manifest, 'save');
+
+			const task = backend.fullReindex();
+			await flushUntil(() => deferred.calls.length > 0);
+			deferred.calls[0]!.deliverLateBeforeSettle({ type: 'index.done', payload: { indexed: 1, errors: 0 } } as never);
+			// 关键路径:逆序下正常路径复用迟到路径的 settlement —— `await task` 返回时提交已完成,
+			// 这里只需一个观察窗确认没有第二次提交被排队。
+			await task;
+			await new Promise<void>(resolve => setTimeout(resolve, 20));
+
+			expect(save).toHaveBeenCalledTimes(1);
+			expect(lateCallbacks).toHaveLength(1);
+			const data = await manifest.load();
+			expect(Object.keys(data?.entries ?? {}).sort()).toEqual(['a.md', 'b.md']);
+		});
+
+		it('迟到终态 - 停滞超时后真实终态到达 - 仍被后端接收并完成提交,回调只在落盘后触发', async () => {
+			const observed: Array<{ diskHash: string | null; stampOnDisk: unknown }> = [];
+			const { deferred, manifest, backend } = await createDeferredBackend({
+				getTaskId: () => 'task-stalled',
+				getEpoch: () => 3,
+				onLateTerminalCommitted: () => {
+					// 关键路径:回调必须在落盘之后触发 —— 这里直接读磁盘证明,而不是只断言「回调被调用」。
+					let diskHash: string | null = null;
+					try {
+						const raw = JSON.parse(fs.readFileSync(resolveIndexManifestPath(dir), 'utf8')) as { entries?: Record<string, { hash?: string }> };
+						diskHash = raw.entries?.['a.md']?.hash ?? null;
+					}
+					catch {
+						diskHash = null;
+					}
+					observed.push({ diskHash, stampOnDisk: fs.existsSync(resolveBuildStampPath(dir)) });
+				},
+			});
+
+			const task = backend.fullReindex();
+			const rejected = expect(task).rejects.toThrow('index-stalled');
+			await flushUntil(() => deferred.calls.length > 0);
+			const call = deferred.calls[0]!;
+			expect(call.options.taskId).toBe('task-stalled');
+			expect(call.options.epoch).toBe(3);
+
+			// 模拟停滞:调用方的等待以超时结束(真实终态此刻还没到)。
+			call.failWaiting(new Error('index-stalled'));
+			await rejected;
+			// 等待结束不等于已提交:此刻不得留下半成品凭据。
+			expect(await manifest.load()).toBeNull();
+
+			// 真实终态迟到到达 —— 必须仍被后端接收并完成清单与构建戳提交。
+			call.deliverLate({ type: 'index.done', payload: { indexed: 2, errors: 0 } } as never);
+			await flushUntil(() => observed.length > 0);
+			const data = await manifest.load();
+			expect(data?.entries['a.md']?.hash).toBe(await sha256('original'));
+			expect(await readBuildStamp(dir)).toEqual(stamp);
+			expect(observed).toEqual([{ diskHash: await sha256('original'), stampOnDisk: true }]);
+		});
+
+		it('阻断 B1 - 同 taskId 的两个请求先后停滞 - 各自终态只作用于自己的提交,无错配无丢失', async () => {
+			// 关键路径:协调器的 taskId 轮内恒定,两个写请求必然拿到同一个 taskId;
+			// 旧实现用 taskId 当 pendingWrites 的键,第二个请求会覆盖第一个的上下文。
+			const { deferred, manifest, backend } = await createDeferredBackend({
+				getTaskId: () => 'same-task',
+				getEpoch: () => 1,
+			});
+			await seedEmptyManifest(manifest);
+
+			const first = backend.incrementalIndex({ path: 'a.md', content: 'A' });
+			const firstRejected = expect(first).rejects.toThrow('index-stalled');
+			void first.catch(() => undefined);
+			await flushUntil(() => deferred.calls.length > 0);
+			deferred.calls[0]!.failWaiting(new Error('index-stalled'));
+			await firstRejected;
+
+			const second = backend.incrementalIndex({ path: 'b.md', content: 'B' });
+			void second.catch(() => undefined);
+			await flushUntil(() => deferred.calls.length > 1);
+			expect(deferred.calls[1]!.options.taskId).toBe('same-task');
+			// 两个请求的挂起上下文都在:每请求唯一键不会被同轮的第二个请求顶掉。
+			expect(backend.pendingWriteCount()).toBe(2);
+
+			// 第一个请求的真实终态迟到到达 —— 只能作用于 a.md。
+			deferred.calls[0]!.deliverLate({ type: 'index.done', payload: { indexed: 1, errors: 0, chunkCount: 1 } } as never);
+			// 第二个请求自己的终态随后到达,不能被顶替,也不能丢失。
+			deferred.calls[1]!.deliverNormal({ type: 'index.done', payload: { indexed: 1, errors: 0, chunkCount: 1 } } as never);
+			await second;
+			// 关键路径:等在途的迟到提交真正落盘后再断言磁盘(「写盘被调用」不等于「已完成」)。
+			await waitUntil(async () => Object.keys((await manifest.load())?.entries ?? {}).length === 2);
+
+			const data = await manifest.load();
+			expect(Object.keys(data?.entries ?? {}).sort()).toEqual(['a.md', 'b.md']);
+			expect(data?.entries['a.md']?.hash).toBe(await sha256('A'));
+			expect(data?.entries['b.md']?.hash).toBe(await sha256('B'));
+			expect(backend.pendingWriteCount()).toBe(0);
+		});
+
+		it('阻断 B2 - index.batch 迟到终态 - 磁盘清单与构建戳必须真的落盘', async () => {
+			const { deferred, manifest, backend } = await createDeferredBackend({
+				getTaskId: () => 'batch-task',
+				getEpoch: () => 1,
+			});
+			// 已有兼容清单 + 已建索引 → smartReindex 走 hash diff 的 index.batch 分支。
+			await seedEmptyManifest(manifest);
+
+			const task = backend.smartReindex();
+			const rejected = expect(task).rejects.toThrow('index-stalled');
+			void task.catch(() => undefined);
+			await flushUntil(() => deferred.calls.length > 0);
+			expect(deferred.calls[0]!.request.type).toBe('index.batch');
+			deferred.calls[0]!.failWaiting(new Error('index-stalled'));
+			await rejected;
+			// 等待结束时刻:清单与戳都还没有本次提交的内容。
+			expect(await manifest.load()).toMatchObject({ entries: {} });
+			expect(await readBuildStamp(dir)).toBeNull();
+
+			deferred.calls[0]!.deliverLate({
+				type: 'index.batch.done',
+				payload: { indexed: 2, errors: 0, chunkCounts: { 'a.md': 1, 'b.md': 1 } },
+			} as never);
+			await waitUntil(async () => (await manifest.load())?.entries['b.md'] !== undefined);
+
+			const data = await manifest.load();
+			expect(data?.entries['a.md']?.hash).toBe(await sha256('original'));
+			expect(data?.entries['b.md']?.hash).toBe(await sha256('unchanged'));
+			expect(await readBuildStamp(dir)).toEqual(stamp);
+		});
+
+		it('迟到终态 - 逆序投递 index.batch(迟到回调先到) - 工作副本改从磁盘真值重建,不覆盖本批', async () => {
+			// 关键路径:审查者探针顺序(真实管理器不会这样交付)。补强前该顺序下批量的正常提交闭包
+			// 被 settle-once 跳过,末尾 `commit` 用「没有本批条目」的陈旧工作副本覆盖磁盘 →
+			// 实测 manifest.save 被调 2 次、磁盘 keys=[]。这里断言磁盘必须保住本批。
+			const { deferred, manifest, backend } = await createDeferredBackend({
+				getTaskId: () => 'batch-reversed',
+				getEpoch: () => 1,
+			});
+			await seedEmptyManifest(manifest);
+			const save = vi.spyOn(manifest, 'save');
+
+			const task = backend.smartReindex();
+			void task.catch(() => undefined);
+			await flushUntil(() => deferred.calls.length > 0);
+			expect(deferred.calls[0]!.request.type).toBe('index.batch');
+			deferred.calls[0]!.deliverLateBeforeSettle({
+				type: 'index.batch.done',
+				payload: { indexed: 2, errors: 0, chunkCounts: { 'a.md': 1, 'b.md': 1 } },
+			} as never);
+			await task;
+			// 负向断言的观察窗:若末尾还排队了一次覆盖写,这里才会看到第二次落盘。
+			await new Promise<void>(resolve => setTimeout(resolve, 20));
+
+			const data = await manifest.load();
+			expect(Object.keys(data?.entries ?? {}).sort()).toEqual(['a.md', 'b.md']);
+			expect(data?.entries['a.md']?.hash).toBe(await sha256('original'));
+			expect(data?.entries['b.md']?.hash).toBe(await sha256('unchanged'));
+			expect(await readBuildStamp(dir)).toEqual(stamp);
+			// 关键路径:迟到路径已把本批落盘,调用方不该再重复同一次提交 —— 逆序与正序都是 1 次。
+			expect(save).toHaveBeenCalledTimes(1);
+		});
+
+		it('影响 - 批量成功但后续删除停滞 - 批量新增先落盘一次,迟到删除不连带丢掉本轮新增', async () => {
+			// 关键路径(镜像代价):旧语义下本轮只有末尾一次 commit。批量正常成功后若某个删除停滞,
+			// 调用方永远走不到末尾 commit,迟到删除只从磁盘真值移除目标条目 —— 本轮全部批量新增
+			// 在磁盘上消失(审查者实测 keys=[])。这里断言批量侧已先落盘一次,迟到删除保留它。
+			const { deferred, manifest, backend } = await createDeferredBackend({
+				getTaskId: () => 'batch-then-stall',
+				getEpoch: () => 1,
+			});
+			await manifest.save({
+				version: 1,
+				...stamp,
+				lastIndexTime: Date.now(),
+				entries: { 'gone.md': { path: 'gone.md', hash: await sha256('G'), mtime: 1, chunkCount: 1 } },
+			});
+
+			const task = backend.smartReindex();
+			const rejected = expect(task).rejects.toThrow('index-stalled');
+			void task.catch(() => undefined);
+			await flushUntil(() => deferred.calls.length > 0);
+			expect(deferred.calls[0]!.request.type).toBe('index.batch');
+			deferred.calls[0]!.deliverNormal({
+				type: 'index.batch.done',
+				payload: { indexed: 2, errors: 0, chunkCounts: { 'a.md': 1, 'b.md': 1 } },
+			} as never);
+			await flushUntil(() => deferred.calls.length > 1);
+			expect(deferred.calls[1]!.request.type).toBe('index.delete');
+			// 关键路径:进入删除循环前批量新增必须已经在磁盘上(否则迟到删除会把它一起丢掉)。
+			const afterBatch = await manifest.load();
+			expect(Object.keys(afterBatch?.entries ?? {}).sort()).toEqual(['a.md', 'b.md', 'gone.md']);
+
+			// 删除停滞:调用方的等待以超时结束,末尾 commit 不会执行。
+			deferred.calls[1]!.failWaiting(new Error('index-stalled'));
+			await rejected;
+			expect(Object.keys((await manifest.load())?.entries ?? {}).sort()).toEqual(['a.md', 'b.md', 'gone.md']);
+
+			deferred.calls[1]!.deliverLate({ type: 'vector.delete.done', payload: { count: 1 } } as never);
+			await waitUntil(async () => (await manifest.load())?.entries['gone.md'] === undefined);
+
+			// 关键路径:最终磁盘 = 本轮批量新增 + 删除已生效,而不是「只剩删除结果」。
+			const data = await manifest.load();
+			expect(Object.keys(data?.entries ?? {}).sort()).toEqual(['a.md', 'b.md']);
+			expect(data?.entries['a.md']?.hash).toBe(await sha256('original'));
+			expect(await readBuildStamp(dir)).toEqual(stamp);
+		});
+
+		it('影响 - 删除路径写盘次数 - deleteFile 一次、smartReindex 的 N 个删除共一次', async () => {
+			// 关键路径:选定语义 = 闭包只改内存、调用方统一落盘(见 `deleteVectors` JSDoc)。
+			// 旧实现闭包内 commitDelete + 调用方再 commit,单文件 2 次、N 个删除 N+1 次。
+			files.set('c.md', 'C');
+			files.set('d.md', 'D');
+			const { deferred, manifest, backend } = await createDeferredBackend({ getEpoch: () => 1 });
+
+			const full = backend.fullReindex();
+			void full.catch(() => undefined);
+			await flushUntil(() => deferred.calls.length > 0);
+			deferred.calls[0]!.deliverNormal({ type: 'index.done', payload: { indexed: 4, errors: 0 } } as never);
+			await full;
+			expect(Object.keys((await manifest.load())?.entries ?? {}).sort()).toEqual(['a.md', 'b.md', 'c.md', 'd.md']);
+
+			const save = vi.spyOn(manifest, 'save');
+			// 单文件删除:1 次写盘。
+			const single = backend.deleteFile('a.md');
+			void single.catch(() => undefined);
+			await flushUntil(() => deferred.calls.length > 1);
+			deferred.calls[1]!.deliverNormal({ type: 'vector.delete.done', payload: { count: 1 } } as never);
+			await single;
+			expect(save).toHaveBeenCalledTimes(1);
+			expect(Object.keys((await manifest.load())?.entries ?? {}).sort()).toEqual(['b.md', 'c.md', 'd.md']);
+
+			// 一轮里删除 2 个文件:共 1 次写盘(N+1 → 1);文件快照与清单同步收缩,避免多出 index.batch。
+			save.mockClear();
+			files.delete('a.md');
+			files.delete('c.md');
+			files.delete('d.md');
+			const diff = backend.smartReindex();
+			void diff.catch(() => undefined);
+			await flushUntil(() => deferred.calls.length > 2);
+			deferred.calls[2]!.deliverNormal({ type: 'vector.delete.done', payload: { count: 1 } } as never);
+			await flushUntil(() => deferred.calls.length > 3);
+			deferred.calls[3]!.deliverNormal({ type: 'vector.delete.done', payload: { count: 1 } } as never);
+			await diff;
+			expect(deferred.calls[2]!.request.type).toBe('index.delete');
+			expect(deferred.calls[3]!.request.type).toBe('index.delete');
+			expect(save).toHaveBeenCalledTimes(1);
+			expect(Object.keys((await manifest.load())?.entries ?? {})).toEqual(['b.md']);
+		});
+
+		it('影响 - 删除迟到终态 - 调用方退出后仍落盘移除条目且只写一次', async () => {
+			// 关键路径:删除的正常路径由调用方落盘;等待一旦停滞,调用方就不会再走到那一步,
+			// 因此迟到路径必须自己完成「重载清单 → removeEntry → 落盘」,且只 removeEntry 一次。
+			const { deferred, manifest, backend } = await createDeferredBackend({ getEpoch: () => 1 });
+
+			const full = backend.fullReindex();
+			void full.catch(() => undefined);
+			await flushUntil(() => deferred.calls.length > 0);
+			deferred.calls[0]!.deliverNormal({ type: 'index.done', payload: { indexed: 2, errors: 0 } } as never);
+			await full;
+			expect(Object.keys((await manifest.load())?.entries ?? {}).sort()).toEqual(['a.md', 'b.md']);
+
+			const save = vi.spyOn(manifest, 'save');
+			const single = backend.deleteFile('a.md');
+			const rejected = expect(single).rejects.toThrow('index-stalled');
+			void single.catch(() => undefined);
+			await flushUntil(() => deferred.calls.length > 1);
+			deferred.calls[1]!.failWaiting(new Error('index-stalled'));
+			await rejected;
+			// 等待结束不等于已提交:此刻磁盘仍是完整旧版。
+			expect(Object.keys((await manifest.load())?.entries ?? {}).sort()).toEqual(['a.md', 'b.md']);
+			expect(save).not.toHaveBeenCalled();
+
+			deferred.calls[1]!.deliverLate({ type: 'vector.delete.done', payload: { count: 1 } } as never);
+			await waitUntil(async () => Object.keys((await manifest.load())?.entries ?? {}).join(',') === 'b.md');
+
+			// 只移除目标路径,且只写盘一次(不重复 removeEntry、不重复 commit)。
+			expect(save).toHaveBeenCalledTimes(1);
+			expect(Object.keys((await manifest.load())?.entries ?? {})).toEqual(['b.md']);
+		});
+
+		it('影响 - pendingWrites 有界回收 - 超限淘汰最旧且清空后迟到终态成为空操作', async () => {
+			const { deferred, manifest, backend } = await createDeferredBackend({
+				getTaskId: () => 'bounded',
+				getEpoch: () => 1,
+				pendingWriteLimit: 1,
+			});
+			await seedEmptyManifest(manifest);
+
+			const first = backend.incrementalIndex({ path: 'a.md', content: 'A' });
+			const firstRejected = expect(first).rejects.toThrow('index-stalled');
+			void first.catch(() => undefined);
+			await flushUntil(() => deferred.calls.length > 0);
+			deferred.calls[0]!.failWaiting(new Error('index-stalled'));
+			await firstRejected;
+			expect(backend.pendingWriteCount()).toBe(1);
+
+			// 第二个停滞请求登记时超限 → 最旧的第一个被淘汰,其闭包不再驻留。
+			const second = backend.incrementalIndex({ path: 'b.md', content: 'B' });
+			const secondRejected = expect(second).rejects.toThrow('index-stalled');
+			void second.catch(() => undefined);
+			await flushUntil(() => deferred.calls.length > 1);
+			deferred.calls[1]!.failWaiting(new Error('index-stalled'));
+			await secondRejected;
+			expect(backend.pendingWriteCount()).toBe(1);
+
+			// 被淘汰的终态不再提交;仍登记的终态照常提交。
+			deferred.calls[0]!.deliverLate({ type: 'index.done', payload: { indexed: 1, errors: 0, chunkCount: 1 } } as never);
+			deferred.calls[1]!.deliverLate({ type: 'index.done', payload: { indexed: 1, errors: 0, chunkCount: 1 } } as never);
+			await flushUntil(() => backend.pendingWriteCount() === 0);
+			await waitUntil(async () => Object.keys((await manifest.load())?.entries ?? {}).join(',') === 'b.md');
+
+			// 显式清空:取消/运行时重置后终态永不投递,闭包必须立刻释放。
+			const third = backend.incrementalIndex({ path: 'a.md', content: 'A2' });
+			const thirdRejected = expect(third).rejects.toThrow('index-stalled');
+			void third.catch(() => undefined);
+			await flushUntil(() => deferred.calls.length > 2);
+			deferred.calls[2]!.failWaiting(new Error('index-stalled'));
+			await thirdRejected;
+			expect(backend.pendingWriteCount()).toBe(1);
+			expect(backend.clearPendingWrites()).toBe(1);
+			expect(backend.pendingWriteCount()).toBe(0);
+			deferred.calls[2]!.deliverLate({ type: 'index.done', payload: { indexed: 1, errors: 0, chunkCount: 1 } } as never);
+			for (let attempt = 0; attempt < 100; attempt += 1) await new Promise<void>(resolve => setImmediate(resolve));
+			expect(Object.keys((await manifest.load())?.entries ?? {})).toEqual(['b.md']);
+		});
+
+		it('阻断 B2 - 归属断言不通过 - 拒绝清库且不删除任何文件', async () => {
+			const root = path.join(dir, '.index');
+			const generation = path.join(root, 'generations', 'gen-0123456789abcdef');
+			fs.mkdirSync(generation, { recursive: true });
+			fs.writeFileSync(path.join(root, 'control.json'), '{"activeGenerationId":"gen-0123456789abcdef"}', 'utf8');
+			fs.writeFileSync(path.join(root, 'owner.lock'), '{}', 'utf8');
+			fs.writeFileSync(path.join(generation, 'index.json'), '{}', 'utf8');
+
+			const { deferred, backend } = await createDeferredBackend({ indexDir: root, getEpoch: () => 1 });
+			await expect(backend.dropIndex()).rejects.toMatchObject({ code: 'index-directory-not-owned' });
+			// 关键路径:断言在 `dropIndex` 之前闭合 —— 独占操作根本没被派发,文件一个都没少。
+			expect(deferred.exclusiveRuns).toBe(0);
+			expect(fs.existsSync(path.join(root, 'control.json'))).toBe(true);
+			expect(fs.existsSync(path.join(root, 'owner.lock'))).toBe(true);
+			expect(fs.existsSync(path.join(generation, 'index.json'))).toBe(true);
+		});
+
+		it('阻断 B2 - generations 下的异形目录 - 归属断言同样拒绝', async () => {
+			const root = path.join(dir, '.index');
+			const foreign = path.join(root, 'generations', 'legacy-index');
+			fs.mkdirSync(foreign, { recursive: true });
+			fs.writeFileSync(path.join(foreign, 'index.json'), '{}', 'utf8');
+
+			const { deferred, backend } = await createDeferredBackend({ indexDir: foreign, getEpoch: () => 1 });
+			await expect(backend.dropIndex()).rejects.toMatchObject({ code: 'index-directory-not-owned' });
+			expect(deferred.exclusiveRuns).toBe(0);
+			expect(fs.existsSync(path.join(foreign, 'index.json'))).toBe(true);
+		});
+
+		it('阻断 B2 - 缺省守卫 - pluginDir 形状的目录 - 拒绝清库且不删除任何文件', async () => {
+			// 关键路径:审查者实测 —— 收紧形状白名单前后端缺省判定也放行了这个目录。
+			// 这里用未初始化的存储:真实 `VectraStore` 的 autoInit 会往被判定目录写 index.json,
+			// 反而让 pluginDir 形状的目标「看起来像索引目录」。
+			const pluginDir = path.join(dir, 'plugin-dir-shape');
+			const attachments = path.join(pluginDir, 'attachments');
+			fs.mkdirSync(attachments, { recursive: true });
+			fs.writeFileSync(path.join(pluginDir, 'main.js'), 'module.exports = {};', 'utf8');
+			fs.writeFileSync(path.join(pluginDir, 'manifest.json'), '{"id":"ratel-vault"}', 'utf8');
+			fs.writeFileSync(path.join(pluginDir, 'data.json'), '{}', 'utf8');
+			fs.writeFileSync(path.join(attachments, 'note.png'), 'BIN', 'utf8');
+
+			const { deferred, backend } = await createDeferredBackend({
+				indexDir: pluginDir,
+				getEpoch: () => 1,
+				store: new VectraStore(path.join(dir, 'unused-store'), { autoInit: false }),
+			});
+			await expect(backend.dropIndex()).rejects.toMatchObject({ code: 'index-directory-not-owned' });
+			// 关键路径:断言在 `dropIndex` 之前闭合 —— 独占操作根本没被派发,文件一个都没少。
+			expect(deferred.exclusiveRuns).toBe(0);
+			expect(fs.readdirSync(pluginDir).sort()).toEqual(['attachments', 'data.json', 'main.js', 'manifest.json']);
+			expect(fs.readdirSync(attachments)).toEqual(['note.png']);
+			expect(fs.existsSync(path.join(pluginDir, 'index.json'))).toBe(false);
+		});
+
+		it('阻断 B2 - 注入严格版归属端口 - 优先于缺省形状白名单(T7 的收紧入口)', async () => {
+			// 关键路径:缺省判定只做到形状白名单(含 index.json 的普通目录放行);T7 装配代际目录后
+			// **必须**注入「basename 是本索引根 `generations/` 下的 `gen-16hex`」的严格版。
+			// 这里证明注入端口确实存在、被优先使用,并且能拒绝缺省会放行的目标。
+			const plain = path.join(dir, 'plain-index-strict');
+			fs.mkdirSync(plain, { recursive: true });
+			fs.writeFileSync(path.join(plain, 'index.json'), '{"version":1,"items":[]}', 'utf8');
+			const rejections: string[] = [];
+			const { deferred, backend } = await createDeferredBackend({
+				indexDir: plain,
+				getEpoch: () => 1,
+				store: new VectraStore(path.join(dir, 'unused-strict'), { autoInit: false }),
+				assertDropOwnership: (indexDir) => {
+					rejections.push(indexDir);
+					throw new IndexDirectoryNotOwnedError(indexDir, '严格版(T7):目标不是本索引根 generations/ 下的代际目录');
+				},
+			});
+
+			await expect(backend.dropIndex()).rejects.toMatchObject({
+				code: 'index-directory-not-owned',
+				reason: expect.stringContaining('严格版(T7)'),
+			});
+			expect(rejections).toEqual([path.resolve(plain)]);
+			expect(deferred.exclusiveRuns).toBe(0);
+			expect(fs.existsSync(path.join(plain, 'index.json'))).toBe(true);
+		});
+
+		it('阻断 B2 - 缺省守卫 - 目录不存在或为空 - 允许清库(形状白名单不误伤)', async () => {
+			// 关键路径:形状白名单只拒绝「非空且无索引特征」;空目录与不存在没有可误删的内容,
+			// 不能因为它们不是索引目录就把清库路径一并堵死。
+			const missing = path.join(dir, 'missing-index');
+			const empty = path.join(dir, 'empty-index');
+			fs.mkdirSync(empty, { recursive: true });
+			for (const [name, target] of [['missing', missing], ['empty', empty]] as const) {
+				const { deferred, backend } = await createDeferredBackend({
+					indexDir: target,
+					getEpoch: () => 1,
+					store: new VectraStore(path.join(dir, `unused-store-${name}`), { autoInit: false }),
+				});
+				await expect(backend.dropIndex()).resolves.not.toThrow();
+				// 允许的判定必须真的走到独占写通道 —— 不是「被拒绝后静默当成功」。
+				expect(deferred.exclusiveRuns).toBe(1);
+			}
+			// 被判定目录本身保持原样:空目录仍为空、不存在的仍未创建。
+			expect(fs.readdirSync(empty)).toEqual([]);
+			expect(fs.existsSync(missing)).toBe(false);
+		});
+
+		it('影响 - getEpoch 缺省 - 明确告警一次且不下发 epoch(fail-open 不静默)', async () => {
+			const warn = vi.spyOn(devLogger, 'warn');
+			try {
+				const { deferred, manifest, backend } = await createDeferredBackend({ getTaskId: () => 'no-epoch' });
+				// 关键路径:缺省必须**可查询**,不能只靠受 `debugLog` 门控的告警 ——
+				// 第一次写请求之前状态里就要能看出「本轮缺少 epoch 保护」。
+				expect(backend.roundState().epochSourceMissing).toBe(true);
+				await seedEmptyManifest(manifest);
+				const task = backend.fullReindex();
+				void task.catch(() => undefined);
+				await flushUntil(() => deferred.calls.length > 0);
+				// 缺省不硬拒绝(装配尚未注入),但必须显式告警且把事实说清楚。
+				expect(deferred.calls[0]!.options.epoch).toBeUndefined();
+				expect(warn).toHaveBeenCalledTimes(1);
+				expect(String(warn.mock.calls[0]?.[1])).toContain('getEpoch');
+				deferred.calls[0]!.deliverNormal({ type: 'index.done', payload: { indexed: 1, errors: 0 } } as never);
+				await task;
+				// 告警有界:后续写请求不再刷屏;结构化标记保持为 true。
+				expect(warn).toHaveBeenCalledTimes(1);
+				expect(backend.roundState().epochSourceMissing).toBe(true);
+			}
+			finally {
+				warn.mockRestore();
+			}
+		});
+
+		it('影响 - getEpoch 注入 - epochSourceMissing 为 false 且不发告警(T7 关闭 fail-open 的判定依据)', async () => {
+			const warn = vi.spyOn(devLogger, 'warn');
+			try {
+				const { deferred, manifest, backend } = await createDeferredBackend({ getEpoch: () => 9 });
+				expect(backend.roundState().epochSourceMissing).toBe(false);
+				await seedEmptyManifest(manifest);
+				const task = backend.fullReindex();
+				void task.catch(() => undefined);
+				await flushUntil(() => deferred.calls.length > 0);
+				expect(deferred.calls[0]!.options.epoch).toBe(9);
+				deferred.calls[0]!.deliverNormal({ type: 'index.done', payload: { indexed: 1, errors: 0 } } as never);
+				await task;
+				expect(warn).not.toHaveBeenCalled();
+				expect(backend.roundState().epochSourceMissing).toBe(false);
+			}
+			finally {
+				warn.mockRestore();
+			}
+		});
+	});
 
 });

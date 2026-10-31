@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { IndexManifest } from '../../src/core/index-manifest';
+import { IndexManifest, parseLegacyManifestEntry } from '../../src/core/index-manifest';
 import path from 'path';
 import fs from 'fs';
 
@@ -270,4 +270,35 @@ describe('IndexManifest', () => {
         expect(data.embedModelId).toBe('m');
         expect(data.chunkSize).toBe(500);
     });
+
+	describe('parseLegacyManifestEntry - 旧清单迁移前的字段级校验', () => {
+		const hash = 'a'.repeat(64);
+
+		it('parseLegacyManifestEntry - 键与记录内路径不一致 - 拒绝(记录内路径不参与文件访问)', () => {
+			expect(parseLegacyManifestEntry('a.md', { path: 'b.md', hash, mtime: 1, chunkCount: 2 }))
+				.toEqual({ ok: false, reason: 'entry-path-mismatch' });
+		});
+
+		it('parseLegacyManifestEntry - 块数为 0 - 单独标记,不当作空文件证据', () => {
+			expect(parseLegacyManifestEntry('a.md', { path: 'a.md', hash, mtime: 1, chunkCount: 0 }))
+				.toEqual({ ok: false, reason: 'entry-chunk-count-zero' });
+		});
+
+		it('parseLegacyManifestEntry - 缺字段或字段类型不符 - 拒绝', () => {
+			expect(parseLegacyManifestEntry('a.md', null)).toEqual({ ok: false, reason: 'entry-shape-invalid' });
+			expect(parseLegacyManifestEntry('a.md', { hash, mtime: 1, chunkCount: 2 }))
+				.toEqual({ ok: false, reason: 'entry-shape-invalid' });
+			expect(parseLegacyManifestEntry('a.md', { path: 'a.md', hash: 'short', mtime: 1, chunkCount: 2 }))
+				.toEqual({ ok: false, reason: 'entry-hash-invalid' });
+			expect(parseLegacyManifestEntry('a.md', { path: 'a.md', hash, mtime: 1, chunkCount: -1 }))
+				.toEqual({ ok: false, reason: 'entry-chunk-count-invalid' });
+			expect(parseLegacyManifestEntry('a.md', { path: 'a.md', hash, mtime: 1, chunkCount: 1.5 }))
+				.toEqual({ ok: false, reason: 'entry-chunk-count-invalid' });
+		});
+
+		it('parseLegacyManifestEntry - 字段齐全 - 返回规范化条目且 mtime 非法按 0 处理', () => {
+			expect(parseLegacyManifestEntry('a.md', { path: 'a.md', hash, mtime: Number.NaN, chunkCount: 3 }))
+				.toEqual({ ok: true, entry: { path: 'a.md', hash, mtime: 0, chunkCount: 3 } });
+		});
+	});
 });

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { VectraStore, VectorStoreError } from '../../src/adapters/vector-vectra';
 import { AtomicIndexStorage } from '../../src/adapters/atomic-index-storage';
 import type {
@@ -10,8 +10,19 @@ import type { EmbeddingsModel, EmbeddingsResponse } from 'vectra';
 import fsp from 'node:fs/promises';
 import path from 'path';
 import fs from 'fs';
+import os from 'node:os';
 
-const TEST_INDEX_DIR = path.join(__dirname, '../tmp/test-vectra-index');
+/**
+ * 每个用例独立的索引根。
+ *
+ * 关键路径(修掉既有 flaky 的根因):此前所有用例共享 `tests/tmp/test-vectra-index` 这个固定目录,
+ * 并在 `beforeAll`/用例内整目录 `rmSync`。并发或背靠背负载下,同一文件的两例、或测试文件之间
+ * 会互相删掉对方正在使用的索引目录(实测表现为「只删目标文件」与「删除旧块」类断言偶发失败)。
+ * 改为每例 `mkdtemp` 独立根 + `afterEach` 清理后,用例之间不再共享任何磁盘状态。
+ */
+let TEST_INDEX_DIR = '';
+beforeEach(() => { TEST_INDEX_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'ratel-vectra-')); });
+afterEach(() => { if (TEST_INDEX_DIR) fs.rmSync(TEST_INDEX_DIR, { recursive: true, force: true }); });
 
 /** Mock embeddings model that returns random 512-dim vectors for testing */
 const mockEmbeddings: EmbeddingsModel = {
@@ -28,19 +39,10 @@ const mockEmbeddings: EmbeddingsModel = {
 describe('VectraStore', () => {
 	let store: VectraStore;
 
-	beforeAll(() => {
-		// Clean up any previous test index
-		if (fs.existsSync(TEST_INDEX_DIR)) {
-			fs.rmSync(TEST_INDEX_DIR, { recursive: true });
-		}
+	beforeEach(() => {
+		// 关键路径:每例新建实例并落在本例独立根上 —— 此前共享 store 时用例之间存在
+		// 「上一例写入的文档」这种隐式依赖(「更新后状态」用例靠前序用例留下文档才会通过)。
 		store = new VectraStore(TEST_INDEX_DIR, mockEmbeddings);
-	});
-
-	afterAll(() => {
-		// Clean up test index
-		if (fs.existsSync(TEST_INDEX_DIR)) {
-			fs.rmSync(TEST_INDEX_DIR, { recursive: true });
-		}
 	});
 
 	it('starts with empty status', async () => {
@@ -65,6 +67,8 @@ describe('VectraStore', () => {
 	});
 
 	it('returns updated status after operations', async () => {
+		// 关键路径:自己播种数据,不再依赖前序用例留下的文档(共享 store 时代的隐式排序依赖)。
+		await store.upsert('doc-status', 'Status content', { path: 'notes/status.md' });
 		const status = await store.status();
 		expect(status.totalDocs).toBeGreaterThan(0);
 	});
@@ -243,6 +247,140 @@ describe('VectraStore', () => {
 	});
 });
 
+/**
+ * 递归删除硬守卫 — `fs.rmSync(indexDir, { recursive: true })` 是本适配器唯一的递归删除边界。
+ *
+ * 关键路径(阻断 B2):代际布局下 `.index/` 根含控制指针、owner 锁与 `generations/` 聚合目录;
+ * 一旦装配层把根或聚合目录当索引目录传进来,必须拒绝并且**不删除任何文件**。
+ */
+describe('dropIndex 递归删除硬守卫', () => {
+	/** 断言拒绝删除且整棵目录树原样保留。 */
+	async function expectRefused(target: string, keptPaths: string[]): Promise<void> {
+		const store = new VectraStore(target, { autoInit: false });
+		let caught: unknown;
+		try {
+			await store.dropIndex();
+		}
+		catch (error) {
+			caught = error;
+		}
+		expect(caught).toBeInstanceOf(VectorStoreError);
+		expect((caught as VectorStoreError).code).toBe('drop-refused');
+		for (const kept of keptPaths) {
+			expect({ kept, exists: fs.existsSync(kept) }).toEqual({ kept, exists: true });
+		}
+	}
+
+	it('dropIndex - 目标是 .index 根(内含 control.json 与 generations/) - 拒绝且不删除任何文件', async () => {
+		const root = path.join(TEST_INDEX_DIR, '.index');
+		const generation = path.join(root, 'generations', 'gen-0123456789abcdef');
+		fs.mkdirSync(generation, { recursive: true });
+		fs.writeFileSync(path.join(root, 'control.json'), '{"activeGenerationId":"gen-0123456789abcdef"}', 'utf8');
+		fs.writeFileSync(path.join(root, 'owner.lock'), '{}', 'utf8');
+		fs.writeFileSync(path.join(generation, 'index.json'), '{}', 'utf8');
+
+		await expectRefused(root, [
+			path.join(root, 'control.json'),
+			path.join(root, 'owner.lock'),
+			path.join(generation, 'index.json'),
+		]);
+		// 关键路径:守卫在任何删除动作与 init 之前闭合 —— 根上不得出现 store 初始化产物。
+		expect(fs.existsSync(path.join(root, 'index.json'))).toBe(false);
+	});
+
+	it('dropIndex - 目标是 generations 聚合目录 - 拒绝且不删除任何代际', async () => {
+		const root = path.join(TEST_INDEX_DIR, '.index');
+		const generations = path.join(root, 'generations');
+		const generation = path.join(generations, 'gen-0123456789abcdef');
+		fs.mkdirSync(generation, { recursive: true });
+		fs.writeFileSync(path.join(generation, 'index.json'), '{}', 'utf8');
+
+		await expectRefused(generations, [
+			path.join(generation, 'index.json'),
+		]);
+		expect(fs.existsSync(generations)).toBe(true);
+	});
+
+	it('dropIndex - 代际目录内含 control.json(内容探测) - 拒绝删除凭据', async () => {
+		const generation = path.join(TEST_INDEX_DIR, 'gen-0123456789abcdef');
+		fs.mkdirSync(generation, { recursive: true });
+		fs.writeFileSync(path.join(generation, 'control.json'), '{}', 'utf8');
+		fs.writeFileSync(path.join(generation, 'index.json'), '{}', 'utf8');
+
+		await expectRefused(generation, [
+			path.join(generation, 'control.json'),
+			path.join(generation, 'index.json'),
+		]);
+	});
+
+	it('dropIndex - 普通索引目录 - 仍正常删除并重建(守卫不误伤)', async () => {
+		const dir = path.join(TEST_INDEX_DIR, 'plain-index');
+		fs.mkdirSync(dir, { recursive: true });
+		const store = new VectraStore(dir, { embeddings: mockEmbeddings });
+		await store.init();
+		await store.beginFileUpdate();
+		await store.upsertItem('plain#0', Array(512).fill(0.5), { path: 'plain.md', chunkIndex: 0 });
+		await store.endFileUpdate();
+
+		await expect(store.dropIndex()).resolves.not.toThrow();
+		const results = await store.search(Array(512).fill(0.5), 10);
+		expect(results).toEqual([]);
+	});
+
+	it('dropIndex - pluginDir 形状的普通目录 - 拒绝且删除前不删任何文件', async () => {
+		// 关键路径:审查者实测 —— 收紧形状白名单之前,这个目录会被静默递归删除
+		// (适配器只探测受保护文件/聚合目录,插件产物目录一条都不命中)。
+		const pluginDir = path.join(TEST_INDEX_DIR, 'plugin-dir-shape');
+		const attachments = path.join(pluginDir, 'attachments');
+		fs.mkdirSync(attachments, { recursive: true });
+		fs.writeFileSync(path.join(pluginDir, 'main.js'), 'module.exports = {};', 'utf8');
+		fs.writeFileSync(path.join(pluginDir, 'manifest.json'), '{"id":"ratel-vault"}', 'utf8');
+		fs.writeFileSync(path.join(pluginDir, 'data.json'), '{}', 'utf8');
+		fs.writeFileSync(path.join(attachments, 'note.png'), 'BIN', 'utf8');
+
+		await expectRefused(pluginDir, [
+			path.join(pluginDir, 'main.js'),
+			path.join(pluginDir, 'manifest.json'),
+			path.join(pluginDir, 'data.json'),
+			path.join(attachments, 'note.png'),
+		]);
+		// 关键路径:拒绝发生在任何删除动作之前 —— 目录结构逐字不变,且没有 store 初始化产物。
+		expect(fs.readdirSync(pluginDir).sort()).toEqual(['attachments', 'data.json', 'main.js', 'manifest.json']);
+		expect(fs.readdirSync(attachments)).toEqual(['note.png']);
+		expect(fs.existsSync(path.join(pluginDir, 'index.json'))).toBe(false);
+	});
+
+	it('dropIndex - generations 下的非代际目录 - 与后端判定一致地拒绝(适配器补第 4 条)', async () => {
+		// 关键路径:这一条此前只在后端 `describeForeignIndexDir` 有,适配器缺失 ——
+		// `generations/legacy-index` 只要含 index.json 就能被递归删掉,两份判定必须一致。
+		const root = path.join(TEST_INDEX_DIR, '.index');
+		const foreign = path.join(root, 'generations', 'legacy-index');
+		fs.mkdirSync(foreign, { recursive: true });
+		fs.writeFileSync(path.join(foreign, 'index.json'), '{}', 'utf8');
+
+		await expectRefused(foreign, [
+			path.join(foreign, 'index.json'),
+			path.join(root, 'generations'),
+		]);
+		expect(fs.existsSync(path.join(root, 'generations'))).toBe(true);
+	});
+
+	it('dropIndex - 含 index.json 的普通索引目录与空目录 - 仍允许删除(形状白名单不误伤全量重建)', async () => {
+		// 关键路径:今天未接线时的全量重建目标就是「普通索引目录 + index.json」;
+		// 形状白名单只拒绝「非空且无索引特征」,不能把它一并拒掉。
+		const plain = path.join(TEST_INDEX_DIR, 'legacy-plain-index');
+		fs.mkdirSync(plain, { recursive: true });
+		fs.writeFileSync(path.join(plain, 'index.json'), '{"version":1,"items":[]}', 'utf8');
+		await expect(new VectraStore(plain, { autoInit: false }).dropIndex()).resolves.not.toThrow();
+		// 删除后按自包含流程重建:目录重新存在且是新索引。
+		expect(fs.existsSync(path.join(plain, 'index.json'))).toBe(true);
+
+		const empty = path.join(TEST_INDEX_DIR, 'empty-index');
+		fs.mkdirSync(empty, { recursive: true });
+		await expect(new VectraStore(empty, { autoInit: false }).dropIndex()).resolves.not.toThrow();
+	});
+});
+
 describe('upsertItem 事务回滚', () => {
 	it('cancelFileUpdate - 事务中写入的 chunk 不被持久化', async () => {
 		// 关键路径:独立子目录,避免污染共享 store。
@@ -351,6 +489,16 @@ function block(id: string, seed: string, extra: Record<string, unknown> = {}): {
 		vector: vectorFor(seed),
 		metadata: { path: 'notes/replace.md', chunkIndex: 0, ...extra },
 	};
+}
+
+/**
+ * 取适配器内部的 `LocalDocumentIndex` — 只用于观察底层枚举次数。
+ *
+ * 关键路径:批量枚举的价值就是「一次 `listItems()`」,这只能通过直接观察内部实例来证明;
+ * 结构替身无法证明真实实现没有退化成逐路径枚举。
+ */
+async function internalIndex(store: VectraStore): Promise<{ listItems(): Promise<unknown[]> }> {
+	return await (store as unknown as { ensureIndex(): Promise<{ listItems(): Promise<unknown[]> }> }).ensureIndex();
 }
 
 /**
@@ -467,6 +615,70 @@ describe('FileReplaceStore 替换语义', () => {
 		// 关键路径:零向量查询只返回数组前 100 项,完整枚举必须走 listItems。
 		expect(blocks).toHaveLength(120);
 		expect(new Set(blocks.map((entry) => entry.id)).size).toBe(120);
+	});
+
+	it('inspectFiles - 与逐条 inspectFile 结果一致且只做一次全量枚举', async () => {
+		const dir = freshDir('replace-inspect-files');
+		const store = new VectraStore(dir, { embeddings: mockEmbeddings });
+		await store.init();
+		await store.replaceFile({
+			path: 'notes/a.md',
+			commitId: 'commit-a',
+			blocks: [block('a#chunk-0', 'a-0'), block('a#chunk-1', 'a-1')],
+		});
+		await store.replaceFile({
+			path: 'notes/b.md',
+			commitId: 'commit-b',
+			blocks: [block('b#chunk-0', 'b-0')],
+		});
+
+		// 关键路径:先取逐条真值(此时不打桩),再打桩测批量入口的枚举次数。
+		const expectedA = await store.inspectFile('notes/a.md');
+		const expectedB = await store.inspectFile('notes/b.md');
+		const index = await internalIndex(store);
+		const listItems = vi.spyOn(index, 'listItems');
+		try {
+			const grouped = await store.inspectFiles(['notes/a.md', 'notes/b.md', 'notes/missing.md', 'notes/a.md']);
+
+			// 关键路径(O(N²) 接缝):逐条调用是「路径数 × 总块数」,批量入口必须只有一次全量枚举。
+			expect(listItems).toHaveBeenCalledTimes(1);
+			expect(grouped.get('notes/a.md')).toEqual(expectedA);
+			expect(grouped.get('notes/b.md')).toEqual(expectedB);
+			// 未命中的请求路径映射为空数组(不是缺键),未请求的路径不出现。
+			expect(grouped.get('notes/missing.md')).toEqual([]);
+			expect(grouped.has('notes/other.md')).toBe(false);
+			expect(grouped.size).toBe(3);
+		}
+		finally {
+			listItems.mockRestore();
+		}
+	});
+
+	it('inspectFiles - 存储需重载时与逐条 inspectFile 一样拒绝', async () => {
+		const dir = freshDir('replace-inspect-files-reload');
+		let armed = false;
+		const faultingStore = new VectraStore(dir, {
+			embeddings: mockEmbeddings,
+			storage: new AtomicIndexStorage({
+				generationRoot: dir,
+				fileSystem: faultingFileSystem('before-rename', () => armed),
+			}),
+		});
+		await faultingStore.init();
+		await faultingStore.replaceFile({
+			path: 'notes/f.md',
+			commitId: 'commit-f',
+			blocks: [block('f#chunk-0', 'f-0')],
+		});
+		armed = true;
+		await expect(faultingStore.replaceFile({
+			path: 'notes/f.md',
+			commitId: 'commit-f2',
+			blocks: [block('f#chunk-0', 'f-1')],
+		})).rejects.toBeInstanceOf(VectorStoreError);
+
+		// 关键路径:批量入口与逐条入口共用同一可用性断言,不得绕过需重载状态。
+		await expect(faultingStore.inspectFiles(['notes/f.md'])).rejects.toMatchObject({ code: 'reload-required' });
 	});
 
 	it('replaceFile - 提交前失败 - 磁盘保持完整旧版且存储进入需重载状态', async () => {

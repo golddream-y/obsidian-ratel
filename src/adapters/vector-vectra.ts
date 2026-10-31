@@ -67,8 +67,68 @@ export interface FileReplaceStore {
 	replaceFile(input: FileReplacement): Promise<void>;
 	/** 完整枚举某个路径的当前块集合(不经过相似度查询)。 */
 	inspectFile(path: string): Promise<PreparedBlock[]>;
+	/**
+	 * 可选:批量枚举多个路径的当前块集合 — 一次全量枚举后按 `metadata.path` 分组。
+	 *
+	 * 关键路径:`inspectFile` 逐条调用等于「路径数 × 总块数」的枚举代价;
+	 * 迁移侧按清单逐文件核对时必须走批量入口。声明为可选是为了不强迫既有替身实现,
+	 * 但 `VectraStore` 始终实现它 —— 调用方应对 `?` 缺省回退到逐条 `inspectFile`。
+	 */
+	inspectFiles?(paths: string[]): Promise<Map<string, PreparedBlock[]>>;
 	/** 丢弃当前内存实例并重建,用于提交失败后核对磁盘真值。 */
 	reload(): Promise<void>;
+}
+
+/**
+ * 代际目录集合名 — 与 `core/index-generations` 的目录布局契约一致。
+ *
+ * 关键路径:这里只做只读判定,不引入代际模块的实现,避免适配器反向依赖编排层。
+ */
+const INDEX_GENERATIONS_DIRNAME = 'generations';
+
+/**
+ * 代际目录名 — 由配置指纹派生(`gen-` + 16 位小写十六进制)。
+ *
+ * 关键路径:与 `core/index-generations` 的派生规则逐字一致;第 4 条守卫据此拒绝
+ * `generations/` 树下的异形目录,使本适配器与后端的缺省判定条数一致。
+ */
+const INDEX_GENERATION_DIR_PATTERN = /^gen-[0-9a-f]{16}$/;
+
+/** Vectra 索引文件 — 普通索引目录的标志性索引特征。 */
+const INDEX_VECTRA_INDEX_FILENAME = 'index.json';
+
+/**
+ * `.index/` 根下的受保护文件 — 递归删除命中任一即拒绝。
+ *
+ * 关键路径:控制指针与 owner 锁是「删除凭据」与并发安全的根,任何递归删除都不得触碰。
+ */
+const INDEX_ROOT_PROTECTED_FILENAMES = ['control.json', 'owner.lock', 'owner.recovery.lock'] as const;
+
+/**
+ * 形状白名单判定 — 目标必须「看起来像一个索引目录」才允许递归删除。
+ *
+ * 关键路径:这是递归删除的**安全边界**,不是代际归属判定。要求是「含索引特征 / 为空 /
+ * 不存在」三者之一:前两者没有可误删的内容,后者是真索引目录(含 `index.json` 的普通布局,
+ * 今天未接线时的全量重建正是这种)的必要特征。pluginDir 形状的目录在没有索引特征时被拒。
+ *
+ * 与后端 `describeForeignIndexDir` 的第 5 条逐条一致:不存在或空 → 允许;非空 → 必须有特征。
+ *
+ * @param target - 已解析为绝对路径的候选目录。
+ * @returns 拒绝原因;允许删除时为 null。
+ */
+function describeNonIndexDirectory(target: string): string | null {
+	let entries: fs.Dirent[];
+	try {
+		entries = fs.readdirSync(target, { withFileTypes: true });
+	}
+	catch {
+		// 读不到按「不存在」处理:递归删除对不存在的目标本就是无操作,不值得升级成拒绝。
+		return null;
+	}
+	if (entries.length === 0) return null;
+	const features = [INDEX_VECTRA_INDEX_FILENAME, INDEX_GENERATIONS_DIRNAME, ...INDEX_ROOT_PROTECTED_FILENAMES];
+	if (features.some(name => fs.existsSync(path.join(target, name)))) return null;
+	return `目标不含任何索引特征(${features.join(' / ')}),拒绝递归删除非索引目录`;
 }
 
 /** 存储错误码。 */
@@ -77,6 +137,7 @@ export const VECTOR_STORE_ERROR_CODES = [
 	'replace-failed',
 	'delete-failed',
 	'invalid-replacement',
+	'drop-refused',
 ] as const;
 
 /** 存储错误码。 */
@@ -244,10 +305,20 @@ export class VectraStore implements VectorStore, FileReplaceStore {
 	/**
 	 * 删除整个索引目录(模型切换/参数变更时全量重建用)。
 	 *
-	 * 关键路径:vectra 没有清空 API,删目录后下次 init 会重建。
-	 * 自包含重置流程:先清 this.index 和 _ready,再删目录,最后 init 重建空索引。
+	 * 关键路径:
+	 * - 这是本模块**唯一**的递归删除边界(`fs.rmSync(..., { recursive: true })`),因此删除前的
+	 *   归属守卫必须在这里闭合:代际布局下 `.index/` 根含控制指针、owner 锁与 `generations/`
+	 *   聚合目录,误把根或聚合目录当索引目录传进来会连带删掉删除凭据与全部代际。
+	 *   守卫失败时抛稳定错误码且**不删除任何文件**。
+	 * - 守卫同时是**形状白名单**:非空且不含索引特征(`index.json` / `generations/` /
+	 *   `control.json`)的目录一律拒绝 —— 装配错误把 pluginDir 当索引目录传进来时,不能静默
+	 *   递归删掉整个插件目录(见 {@link assertDroppableIndexDir})。
+	 * - vectra 没有清空 API,删目录后下次 init 会重建。自包含重置流程:先清 this.index 和
+	 *   `_ready`,再删目录,最后 init 重建空索引。
 	 */
 	async dropIndex(): Promise<void> {
+		// 关键路径(B2):守卫必须在任何删除动作之前执行,且不改动内存状态。
+		this.assertDroppableIndexDir();
 		// 关键路径:先清 this.index,下次 ensureIndex 会重建。
 		this.index = null;
 		this._ready = null;
@@ -257,6 +328,55 @@ export class VectraStore implements VectorStore, FileReplaceStore {
 			fs.rmSync(this.indexDir, { recursive: true, force: true });
 		}
 		await this.init();
+	}
+
+	/**
+	 * 递归删除前的归属守卫 — 拒绝删除 `.index/` 根、`generations/` 聚合目录与非索引目录。
+	 *
+	 * 判定按「规范化路径 + 内容探测 + 形状白名单」:
+	 * 1. 目录名等于 `generations` → 聚合目录,拒绝;
+	 * 2. 目录内含 `control.json` / `owner.lock` / `owner.recovery.lock` → `.index/` 根特征,拒绝;
+	 * 3. 目录内含 `generations/` 子目录 → `.index/` 根特征,拒绝;
+	 * 4. 父目录名为 `generations` 且自身不是 `gen-<16hex>` → 代际树里的异形目录,拒绝;
+	 * 5. **形状白名单**:目录不存在、为空,或内含索引特征(`index.json` / `generations/` /
+	 *    `control.json`)任一,才允许递归删除;非空且不含任何索引特征的一律拒绝 ——
+	 *    pluginDir 形状(含 `main.js` / `data.json` / `attachments` 等插件产物但**没有**索引特征)
+	 *    必须被拒,否则一次装配错误就会静默递归删掉整个插件目录。
+	 *
+	 * 为什么不做「目录名等于 `.index` 一律拒绝」:T7 之前的装配(`src/main.ts`)直接把
+	 * `.index/` 根当索引目录使用,按名拒绝会让清库与重建在迁移完成前直接失效;
+	 * 而内容探测已覆盖真正危险的情形(根上已有控制指针或代际聚合目录)。
+	 *
+	 * 严格版(要求 basename 必须是本索引根 `generations/` 下的 `gen-[0-9a-f]{16}`)不在本适配器内:
+	 * **T7 必须通过后端的注入端口 `assertDropOwnership` 收紧**;这里只承担形状白名单级别的安全
+	 * 边界。本方法与 `core/persistent-index-backend` 的 `describeForeignIndexDir` 必须逐条一致
+	 * (第 4 条此前只在后端有,适配器缺失)。
+	 *
+	 * @throws {VectorStoreError} `drop-refused`;抛出前不删除任何文件。
+	 */
+	private assertDroppableIndexDir(): void {
+		const target = path.resolve(this.indexDir);
+		const reasons: string[] = [];
+		if (path.basename(target) === INDEX_GENERATIONS_DIRNAME) reasons.push('目标是代际聚合目录 generations/');
+		for (const name of INDEX_ROOT_PROTECTED_FILENAMES) {
+			if (fs.existsSync(path.join(target, name))) reasons.push(`目标内含受保护文件 ${name}`);
+		}
+		const generationsPath = path.join(target, INDEX_GENERATIONS_DIRNAME);
+		if (fs.existsSync(generationsPath) && fs.statSync(generationsPath).isDirectory()) {
+			reasons.push('目标是 .index 根(内含 generations/ 聚合目录)');
+		}
+		if (path.basename(path.dirname(target)) === INDEX_GENERATIONS_DIRNAME && !INDEX_GENERATION_DIR_PATTERN.test(path.basename(target))) {
+			reasons.push(`目标是 generations/ 下的非代际目录(${path.basename(target)})`);
+		}
+		if (reasons.length === 0) {
+			const shapeReason = describeNonIndexDirectory(target);
+			if (shapeReason !== null) reasons.push(shapeReason);
+		}
+		if (reasons.length === 0) return;
+		throw new VectorStoreError(
+			'drop-refused',
+			`拒绝递归删除索引目录(${reasons.join(';')}):${target}`,
+		);
 	}
 
 	/**
@@ -600,11 +720,56 @@ export class VectraStore implements VectorStore, FileReplaceStore {
 		const items = await index.listItems();
 		return items
 			.filter((item) => (item.metadata as { path?: string }).path === filePath)
-			.map((item) => ({
-				id: item.id,
-				vector: [...item.vector],
-				metadata: { ...item.metadata },
-			}));
+			.map((item) => this.toPreparedBlock(item));
+	}
+
+	/**
+	 * 批量枚举多个路径的当前块集合 — **一次** `listItems()` 后按 `metadata.path` 分组。
+	 *
+	 * 关键路径(O(N²) 接缝):`inspectFile` 是「全量枚举 + 过滤」,逐条调用等于
+	 * 文件数 × 总块数的代价(250/500/1000/2000 文件实测约 6/25/96/365ms,再叠加
+	 * 每次 `slice()` 的临时垃圾);迁移侧的逐文件兼容校验必须走本入口,
+	 * 把这份代价降为一次枚举加一次分组。
+	 *
+	 * 语义与 {@link inspectFile} 完全一致:
+	 * - 只返回被请求的路径;**未命中的路径映射为空数组**(不是缺键),便于调用方直接遍历;
+	 * - 每个路径的块保持索引内顺序,块形状(浅拷贝 `vector` / `metadata`)与逐条调用相同。
+	 *
+	 * @param paths - vault 相对路径列表;重复路径按一次处理。
+	 * @returns 路径 → 块集合(含被请求但无块的路径)。
+	 * @throws {VectorStoreError} 存储处于需重载状态(`reload-required`)。
+	 */
+	async inspectFiles(paths: string[]): Promise<Map<string, PreparedBlock[]>> {
+		this.assertUsable('inspectFiles');
+		const index = await this.ensureIndex();
+		const wanted = new Set(paths);
+		const grouped = new Map<string, PreparedBlock[]>();
+		for (const filePath of wanted) grouped.set(filePath, []);
+		const items = await index.listItems();
+		for (const item of items) {
+			const itemPath = (item.metadata as { path?: string }).path;
+			if (itemPath === undefined || !wanted.has(itemPath)) continue;
+			grouped.get(itemPath)?.push(this.toPreparedBlock(item));
+		}
+		return grouped;
+	}
+
+	/**
+	 * 索引项 → 待写入块形状。
+	 *
+	 * 关键路径:vector 与 metadata 都做浅拷贝 —— 返回结果不得与 vectra 内存实例共享引用,
+	 * 否则调用方改动会静默污染索引(逐条与批量两条路径必须给出同一形状)。
+	 *
+	 * @param item - `listItems()` 返回的索引项。
+	 * @returns 只含 id/vector/metadata 的块。
+	 */
+	private toPreparedBlock(item: { id: string; vector: ArrayLike<number>; metadata: unknown }): PreparedBlock {
+		return {
+			id: item.id,
+			// 关键路径:ArrayLike 未必可迭代(vector 可能是 Float32Array 或普通数组),统一用 Array.from。
+			vector: Array.from(item.vector),
+			metadata: { ...(item.metadata as Record<string, unknown>) },
+		};
 	}
 
 	/**

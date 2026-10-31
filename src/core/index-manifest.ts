@@ -98,6 +98,66 @@ export interface IndexManifestData {
     entries: Record<string, IndexManifestEntry>;
 }
 
+/** 旧清单条目不可作为迁移依据的原因 — 迁移任务据此定位到具体文件。 */
+export const LEGACY_MANIFEST_ENTRY_REASONS = [
+	'entry-shape-invalid',
+	'entry-path-mismatch',
+	'entry-hash-invalid',
+	'entry-chunk-count-invalid',
+	'entry-chunk-count-zero',
+] as const;
+
+/** 旧清单条目不可作为迁移依据的原因。 */
+export type LegacyManifestEntryReason = (typeof LEGACY_MANIFEST_ENTRY_REASONS)[number];
+
+/** 旧清单条目的解析结论。 */
+export type LegacyManifestEntryResult =
+	| { readonly ok: true; readonly entry: IndexManifestEntry }
+	| { readonly ok: false; readonly reason: LegacyManifestEntryReason };
+
+/**
+ * 解析旧清单条目 — T6 迁移前的字段级校验。
+ *
+ * 关键路径(T6 checkbox 1):
+ * - 条目键必须与条目内 `path` 逐字一致;记录内路径不参与任何文件访问,不一致直接拒绝;
+ * - `mtime` 只作为辅助信息,非法时按 0 处理,不影响可迁移性;
+ * - `chunkCount` 为 0 时**单独标记**(`entry-chunk-count-zero`),不能据此认定空文件 ——
+ *   必须回到实际存储检查该路径是否真的有块。调用方按自己的规则处理这一原因。
+ *
+ * @param key - 清单 `entries` 里的键。
+ * @param value - 条目值。
+ * @returns 解析结论。
+ */
+export function parseLegacyManifestEntry(key: string, value: unknown): LegacyManifestEntryResult {
+	if (typeof key !== 'string' || key.length === 0) return { ok: false, reason: 'entry-shape-invalid' };
+	if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+		return { ok: false, reason: 'entry-shape-invalid' };
+	}
+	const record = value as Record<string, unknown>;
+	const entryPath = record['path'];
+	if (typeof entryPath !== 'string' || entryPath.length === 0) return { ok: false, reason: 'entry-shape-invalid' };
+	if (entryPath !== key) return { ok: false, reason: 'entry-path-mismatch' };
+	const hash = record['hash'];
+	if (typeof hash !== 'string' || !/^[0-9a-f]{64}$/.test(hash)) {
+		return { ok: false, reason: 'entry-hash-invalid' };
+	}
+	const chunkCount = record['chunkCount'];
+	if (typeof chunkCount !== 'number' || !Number.isInteger(chunkCount) || chunkCount < 0) {
+		return { ok: false, reason: 'entry-chunk-count-invalid' };
+	}
+	if (chunkCount === 0) return { ok: false, reason: 'entry-chunk-count-zero' };
+	const mtime = record['mtime'];
+	return {
+		ok: true,
+		entry: {
+			path: entryPath,
+			hash,
+			mtime: typeof mtime === 'number' && Number.isFinite(mtime) ? mtime : 0,
+			chunkCount,
+		},
+	};
+}
+
 /** 当前 manifest 文件的 diff 结果。 */
 export interface ManifestDiff {
     toAdd: Array<{ path: string; content: string; mtime: number }>;

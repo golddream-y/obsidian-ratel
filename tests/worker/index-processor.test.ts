@@ -17,8 +17,16 @@ import type { EmbeddingPort } from '../../src/ports/embedding';
 import fsp from 'node:fs/promises';
 import path from 'path';
 import fs from 'fs';
+import os from 'node:os';
 
-const TMP_DIR = path.join(__dirname, '../tmp/index-processor-test');
+/**
+ * 每例独立的索引根 — 不再共享 `tests/tmp/<固定名>`。
+ *
+ * 关键路径(修掉既有 flaky 的根因):此前用固定共享目录 + 整目录 `rmSync`,
+ * 并发或背靠背跑测时两例会互相删掉对方正在使用的目录(实测 `ENOENT tests/tmp/index-processor-test`)。
+ * 每例 `mkdtemp` + `afterEach` 清理后,用例之间不再共享磁盘状态。
+ */
+let TMP_DIR = '';
 
 const stubEmbedder: EmbeddingsModel = {
     maxTokens: 8192,
@@ -57,8 +65,7 @@ describe('IndexProcessor', () => {
     };
 
     beforeEach(async () => {
-        if (fs.existsSync(TMP_DIR)) fs.rmSync(TMP_DIR, { recursive: true });
-        fs.mkdirSync(TMP_DIR, { recursive: true });
+        TMP_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'ratel-index-processor-'));
         embedCallCount = 0;
         store = new VectraStore(TMP_DIR, { embeddings: stubEmbedder, autoInit: true });
         await store.init();
@@ -66,7 +73,7 @@ describe('IndexProcessor', () => {
     });
 
     afterEach(() => {
-        if (fs.existsSync(TMP_DIR)) fs.rmSync(TMP_DIR, { recursive: true });
+        if (TMP_DIR) fs.rmSync(TMP_DIR, { recursive: true, force: true });
     });
 
     it('indexFull - 推送 done + errors 计数', async () => {
@@ -142,7 +149,7 @@ describe('IndexProcessor', () => {
 
     it('indexBatch - 多文件批量 embed 返回 chunkCounts', async () => {
         // 关键路径:IndexProcessor 需要 store + embeddings。用真实 VectraStore 临时目录 + mock embeddings。
-        const testDir = path.join(__dirname, '../tmp/test-index-batch');
+        const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'test-index-batch-'));
         if (fs.existsSync(testDir)) fs.rmSync(testDir, { recursive: true });
         fs.mkdirSync(testDir, { recursive: true });
 
@@ -172,7 +179,7 @@ describe('IndexProcessor', () => {
     });
 
     it('indexBatch - reembed 前先 deleteByPath 防残留', async () => {
-        const testDir = path.join(__dirname, '../tmp/test-index-batch-residue');
+        const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'test-index-batch-residue-'));
         if (fs.existsSync(testDir)) fs.rmSync(testDir, { recursive: true });
         fs.mkdirSync(testDir, { recursive: true });
 
@@ -217,7 +224,7 @@ describe('IndexProcessor', () => {
     });
 
     it('indexIncremental - 使用构造时传入的 token 预算 - 不再硬编码 500', async () => {
-        const testDir = path.join(__dirname, '../tmp/test-index-chunk-budget');
+        const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'test-index-chunk-budget-'));
         if (fs.existsSync(testDir)) fs.rmSync(testDir, { recursive: true });
         fs.mkdirSync(testDir, { recursive: true });
 
@@ -248,7 +255,7 @@ describe('IndexProcessor', () => {
     });
 
     it('indexIncremental - 嵌入用带结构前缀的文本 - metadata 记 headingPath', async () => {
-        const testDir = path.join(__dirname, '../tmp/test-index-prefix');
+        const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'test-index-prefix-'));
         if (fs.existsSync(testDir)) fs.rmSync(testDir, { recursive: true });
         fs.mkdirSync(testDir, { recursive: true });
 
@@ -285,8 +292,8 @@ describe('IndexProcessor', () => {
 // 新存储契约:单事务替换、原子存储注入与失败恢复
 // ---------------------------------------------------------------------------
 
-/** 新用例的索引目录根 — 每个用例用独立子目录,结束后统一清理。 */
-const TMP_TX_ROOT = path.join(__dirname, '../tmp/index-processor-tx');
+/** 新用例的索引目录根 — 每个用例一个独立临时根,结束后统一清理。 */
+let TMP_TX_ROOT = '';
 
 /** 确定性嵌入端口 — 同一文本永远得到同一向量,避免随机向量让断言漂移。 */
 function deterministicPort(dimensions: number): EmbeddingPort {
@@ -389,7 +396,7 @@ function failFirstCommitFileSystem(armed: () => boolean): AtomicWriteFileSystem 
 describe('新存储契约 - 单事务替换与原子存储注入', () => {
     const createdDirs: string[] = [];
 
-    /** 每个用例独立的索引目录。 */
+    /** 每个用例独立的索引目录(根同样每例独立,避免跨例整树删除互相踩踏)。 */
     function freshDir(name: string): string {
         const dir = path.join(TMP_TX_ROOT, name);
         if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
@@ -398,11 +405,16 @@ describe('新存储契约 - 单事务替换与原子存储注入', () => {
         return dir;
     }
 
+    beforeEach(() => {
+        TMP_TX_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'ratel-index-tx-'));
+    });
+
     afterEach(() => {
         while (createdDirs.length > 0) {
             const dir = createdDirs.pop();
             if (dir && fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
         }
+        if (TMP_TX_ROOT) fs.rmSync(TMP_TX_ROOT, { recursive: true, force: true });
     });
 
     it('indexIncremental - 文件变短再变空 - 旧块被清除且返回的 chunkCount 与真实块数一致', async () => {

@@ -8,7 +8,7 @@
 
 **技术栈：** TypeScript、现有 Vectra `FileStorage` 扩展点、Node 文件 API、Embedding Web Worker、Svelte store、Vitest；不新增数据库或原生模块。
 
-关联：`P-INDEX-RELIABILITY` → [S-INDEX-RELIABILITY](../specs/2026-10-31-index-reliability.md) → `BUG-1-INDEX-001`。状态：**In Progress，T0～T5 已完成（证据见 [T0](2026-10-31-index-reliability-t0-evidence.md)、[T1/T2](2026-10-31-index-reliability-t1-t2-evidence.md)、[T3](2026-10-31-index-reliability-t3-evidence.md)、[T4](2026-10-31-index-reliability-t4-evidence.md)、[T5](2026-10-31-index-reliability-t5-evidence.md)），进入 T6**。全量 291 文件 / 2558 passed / 5 skipped；tsc 241 条存量、新增 0。T5 的生产接线缺口按证据第 5 节分配。合并与发布仍另行授权。
+关联：`P-INDEX-RELIABILITY` → [S-INDEX-RELIABILITY](../specs/2026-10-31-index-reliability.md) → `BUG-1-INDEX-001`。状态：**In Progress，T0～T6 已完成（证据见 `2026-10-31-index-reliability-t{0,1-t2,3,4,5,6}-evidence.md`），进入 T7**。全量 292 文件 / 2669 passed / 5 skipped；tsc 241 条存量、新增 0。T7 的硬前置清单见 T6 证据第 8 节。合并与发布仍另行授权。
 
 ## 执行边界与依赖
 
@@ -214,12 +214,12 @@ export interface EmbedOptions {
 
 **文件：** 新建 `src/core/index-generations.ts`、`tests/core/index-generations.test.ts`；修改 `src/core/index-manifest.ts`、`src/core/index-build-stamp.ts`、`src/core/persistent-index-backend.ts` 及迁移测试。
 
-- [ ] 先写有效旧清单、零块数但实际有块、缺 stamp、块残留、API 同名异端点、迁移中断及控制指针损坏测试。
-- [ ] 配置指纹使用实际模型来源/身份/可确认修订/维度及分块输入；API 身份不可追溯时不假设兼容。兼容旧文件对照内容 hash 与当前分块集合验证，不调用模型；不兼容文件单独重算。
-- [ ] 在 owner 锁内只读复制旧 Vectra 数据及引用外置 metadata 到独立代际目录，核对复制摘要后逐文件写 receipt，最后原子发布 control；旧文件保留，复制中断可重入且不重复嵌入。空间不足只报告迁移失败，不先删旧数据腾空间。旧半成品的重算也逐文件保存检查点。
-- [ ] legacy 清理仅按迁移时验证的旧 Vectra 文件白名单执行，禁止任何路径将 `.index/` 根目录传给递归 dropIndex；保留 control、owner、generations 和未知文件。新增清理测试，断言这些文件和新代际摘要不变。
-- [ ] 首次无活动代际时首个文件提交即可登记活动代际并部分检索；配置变化则建隔离代际，全部核对/提交后切活动指针。切回配置先复核当前文件，不直接恢复旧 ready。
-- [ ] 默认最多活动加一个待建/回退代际。第三配置只回收无活动提交和未解决事务的非活动代际；不能回收时暂停新建，保留可用活动索引。所有清理持有 owner 锁并校验目录归属。
+- [x] 先写有效旧清单、零块数但实际有块、缺 stamp、块残留、API 同名异端点、迁移中断及控制指针损坏测试。
+- [x] 配置指纹使用实际模型来源/身份/可确认修订/维度及分块输入；API 身份不可追溯时不假设兼容。兼容旧文件对照内容 hash 与当前分块集合验证，不调用模型；不兼容文件单独重算。
+- [x] 在 owner 锁内只读复制旧 Vectra 数据及引用外置 metadata 到独立代际目录，核对复制摘要后逐文件写 receipt，最后原子发布 control；旧文件保留，复制中断可重入且不重复嵌入。空间不足只报告迁移失败，不先删旧数据腾空间。旧半成品的重算也逐文件保存检查点。
+- [x] legacy 清理仅按迁移时验证的旧 Vectra 文件白名单执行，禁止任何路径将 `.index/` 根目录传给递归 dropIndex；保留 control、owner、generations 和未知文件。新增清理测试，断言这些文件和新代际摘要不变。
+- [x] 首次无活动代际时首个文件提交即可登记活动代际并部分检索；配置变化则建隔离代际，全部核对/提交后切活动指针。切回配置先复核当前文件，不直接恢复旧 ready。
+- [x] 默认最多活动加一个待建/回退代际。第三配置只回收无活动提交和未解决事务的非活动代际；不能回收时暂停新建，保留可用活动索引。所有清理持有 owner 锁并校验目录归属。
 
 **验证：** `npx vitest run tests/core/index-generations.test.ts tests/core/index-manifest.test.ts tests/core/index-manifest-migrate.test.ts tests/core/index-build-stamp.test.ts tests/core/persistent-index-backend.test.ts`。升级有效且未变文件的嵌入调用数必须为零。
 

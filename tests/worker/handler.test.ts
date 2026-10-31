@@ -5,7 +5,7 @@
  * @depends worker/handler, worker/index-processor
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { initProcessor, handleMessage } from '../../src/worker/handler';
 import { IndexProcessor } from '../../src/worker/index-processor';
 import type { WorkerRequest } from '../../src/types';
@@ -13,8 +13,15 @@ import type { EmbeddingsModel, EmbeddingsResponse } from 'vectra';
 import type { EmbeddingPort } from '../../src/ports/embedding';
 import path from 'path';
 import fs from 'fs';
+import os from 'node:os';
 
-const TMP_HANDLER_DIR = path.join(__dirname, '../tmp/handler-init-test');
+/**
+ * 每例独立的索引根 — 同型固定共享目录(`tests/tmp/handler-init-test`)会与并发用例互相踩。
+ *
+ * 关键路径:`initProcessor` 是模块级状态,前几例的目录被后面的 `afterEach` 删掉后再创建,
+ * 在负载下会出现 `ENOENT tests/tmp/handler-init-test`;每例 `mkdtemp` 后互不影响。
+ */
+let TMP_HANDLER_DIR = '';
 
 const stubEmbedder: EmbeddingsModel = {
     maxTokens: 8192,
@@ -47,9 +54,12 @@ describe('handleMessage - 未初始化', () => {
 
 describe('handleMessage - M-1 真实现', () => {
     beforeEach(() => {
-        if (fs.existsSync(TMP_HANDLER_DIR)) fs.rmSync(TMP_HANDLER_DIR, { recursive: true });
-        fs.mkdirSync(TMP_HANDLER_DIR, { recursive: true });
+        TMP_HANDLER_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'ratel-handler-'));
         initProcessor(TMP_HANDLER_DIR, stubEmbedder, mockEmbeddingPort);
+    });
+
+    afterEach(() => {
+        if (TMP_HANDLER_DIR) fs.rmSync(TMP_HANDLER_DIR, { recursive: true, force: true });
     });
 
     it('index.status - 返真实数据(总文档数 >= 0)', async () => {
