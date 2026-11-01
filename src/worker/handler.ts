@@ -463,6 +463,12 @@ export function cancelIndexRun(target: { requestId?: string; taskId?: string; ep
  * @param embeddings - vectra 内部使用的嵌入模型
  * @param embeddingPort - 批量 embed 端口
  * @param vocab - 本地词表文本(可选);不给则沿用当前已设置的词表
+ *
+ * 目录契约:本函数要求 `indexDir` 是**代际目录**(`<索引根>/generations/<generationId>`)。
+ * 当前生产装配走 InlineWorker,主线程用 `initProcessorWithStore(generationRoot 上的 store)`,
+ * 本函数只由 `src/worker/index.ts` 的 workerData 分支调用 —— 而该分支当前显式不可达
+ * (Obsidian 渲染进程不支持 Worker Threads)。若将来启用,主线程必须传代际目录,
+ * 不能传 `.index` 根:根上承载 `control.json` / `owner.lock` / `generations/`,清库会误删它们。
  */
 export function initProcessor(
     indexDir: string,
@@ -510,6 +516,22 @@ export function initProcessorWithStore(
         decorateEmbeddingPort(embeddingPort),
         buildChunkOptions(counter.maxInputTokens - TOKEN_BUDGET_RESERVE, DEFAULT_CHUNK_OVERLAP),
     );
+}
+
+/**
+ * 当前处理器持有的存储视图(已加访问门与活动上报)。
+ *
+ * 关键路径:装配层需要把 T3 日志绑到**同一个**带门的存储上 —— 协调器驱动的
+ * `replaceFile` 若绕开访问门,查询就可能读到文件事务的中间状态(T5/B1)。
+ * 未初始化处理器时返回 null,调用方回落到主线程自己的存储实例。
+ *
+ * 说明:该入口只在「主线程内模拟 Worker」(InlineWorker)下有意义;真实 Worker 线程
+ * 属于另一个执行环境,主线程拿不到它的存储,此时日志不应由主线程构造。
+ *
+ * @returns 带门的存储视图;尚未初始化时为 null。
+ */
+export function currentProcessorStore(): VectraStore | null {
+    return processor?.store ?? null;
 }
 
 /**

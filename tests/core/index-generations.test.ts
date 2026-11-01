@@ -10,6 +10,9 @@
  * - 所有用例都在系统临时目录上跑真实磁盘,不使用内存替身;`afterEach` 在失败路径同样清理。
  * - 「升级有效且未变化的旧索引 → 零嵌入」用可计数嵌入端口直接断言调用数为 0,并用日志
  *   `verifyReceipt` 的块集合匹配证明「文件确实无需重算」,不用返回值代替。
+ * - 「真实 1.2.0 迁移后启动不复算」用**真实 `PersistentIndexBackend.smartReindex`** 判定
+ *   (`skipped` = 全部文件、`indexed` = 0、嵌入调用数 = 0),并用同一真实后端在「未迁移」与
+ *   「代际目录缺清单与戳」两种目录上做反向对照 —— 只看迁移返回值证明不了启动路径的门禁。
  * - 目录归属与清理范围用逐字摘要比对:`control`/`owner`/新代际摘要在清理前后必须完全一致。
  */
 
@@ -26,7 +29,11 @@ import {
 	INDEX_RECORD_SCHEMA_VERSION,
 	type IndexConfigDescriptor,
 } from '../../src/core/index-persistence-types';
-import { CURRENT_CHUNKER_VERSION, type IndexManifestData, type IndexManifestEntry } from '../../src/core/index-manifest';
+import { CURRENT_CHUNKER_VERSION, IndexManifest, resolveIndexManifestPath, type IndexManifestData, type IndexManifestEntry } from '../../src/core/index-manifest';
+import { isBuildStampCurrent, readBuildStamp, resolveBuildStampPath, type IndexBuildStamp } from '../../src/core/index-build-stamp';
+import { PersistentIndexBackend, type FileRecordReader } from '../../src/core/persistent-index-backend';
+import { InlineWorker } from '../../src/worker/inline-worker';
+import { WorkerManager } from '../../src/worker/manager';
 import {
 	INDEX_GENERATIONS_DIRNAME,
 	INDEX_GENERATION_CONTROL_FILENAME,
@@ -42,6 +49,7 @@ import {
 	isChunkerGenerationUnconfirmable,
 	legacyIndexFileKind,
 	mapLegacyConfigIdentity,
+	normalizeLegacyEmbedModelId,
 	validateLegacyFileBlocks,
 } from '../../src/core/index-generations';
 import type {
@@ -1456,6 +1464,523 @@ describe('IndexGenerations - 兼容旧文件校验', () => {
 		expect(result.statePersisted).toBe(false);
 		expect((await input.generations.readControl()).activeGenerationId).toBe(null);
 		expect(digestTree(legacy.legacyDir)).toEqual(legacyBefore);
+	});
+});
+
+// ==================== 3b. 历史模型标识归一化与真实 1.2.0 升级 ====================
+
+/** 历史(1.2.0 及更早)本地模式下清单与构建戳写入的模型标识 — 无前缀。 */
+const LEGACY_LOCAL_DEFAULT_MODEL_ID = 'Xenova/bge-small-zh-v1.5';
+/** 历史 API 模式的模型标识 — `<embedApiBase>::<embedApiModel>`,无 `api:` 前缀。 */
+const LEGACY_API_MODEL_ID = 'http://localhost:11434/v1::bge-m3';
+
+/** 内置默认本地模型在 T6 约定下的当前标识 — 与默认设置下的 `resolveCurrentEmbedModelId` 一致。 */
+function currentConfigForBuiltinLocal(overrides: Partial<IndexConfigDescriptor> = {}): IndexConfigDescriptor {
+	return currentConfig({ embeddingModelId: `local:${LEGACY_LOCAL_DEFAULT_MODEL_ID}`, embeddingModelRevision: null, ...overrides });
+}
+
+/**
+ * 构造真实的 1.2.0 风格旧索引:Vectra 数据、`ratel-manifest.json` 与 `build-stamp.json` 同处
+ * `.index` 根(旧版 `indexDir`),模型标识使用历史无前缀形式。
+ *
+ * 关键路径:1.2.0 的清单与构建戳由**同一个** `resolveCurrentEmbedModelId` 写出,因此两者标识
+ * 逐字相同;夹具必须保留这一点,否则测不出「戳侧也要归一化」。
+ *
+ * @param workspace - 工作区。
+ * @param files - 合成文件(路径、正文、commitId)。
+ * @param embedModelId - 历史模型标识;缺省用内置默认本地模型。
+ * @returns legacy 夹具(索引目录即 `.index` 根)。
+ */
+async function createLegacyIndexV120(
+	workspace: Workspace,
+	files: ReadonlyArray<{ path: string; content: string; commitId: string }>,
+	embedModelId: string = LEGACY_LOCAL_DEFAULT_MODEL_ID,
+): Promise<LegacyFixture> {
+	const legacyDir = path.join(workspace.root, '.index');
+	const store = await writeIndexBlocks(legacyDir, files);
+	const entries = await Promise.all(
+		files.map(async (file) => ({
+			path: file.path,
+			hash: await sha256(file.content),
+			chunkCount: chunkLines(file.content).length,
+		})),
+	);
+	const manifest = legacyManifest(entries, { embedModelId });
+	const manifestPath = path.join(legacyDir, 'ratel-manifest.json');
+	fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf8');
+	fs.writeFileSync(
+		path.join(legacyDir, 'build-stamp.json'),
+		JSON.stringify(
+			{
+				chunkerVersion: CURRENT_CHUNKER_VERSION,
+				chunkSize: CHUNK_SIZE,
+				chunkOverlap: CHUNK_OVERLAP,
+				embedModelId,
+			},
+			null,
+			2,
+		),
+		'utf8',
+	);
+	return { legacyDir, manifestPath, files, manifest, store };
+}
+
+/** 旧索引自身文件的摘要(白名单数据文件 + 清单 + 构建戳)—— 迁移只读性的比对基线。 */
+function legacyOwnFileDigest(dir: string): Map<string, string> {
+	const result = new Map<string, string>();
+	for (const name of [...whitelistFileNames(dir), 'ratel-manifest.json', 'build-stamp.json']) {
+		const target = path.join(dir, name);
+		if (fs.existsSync(target)) {
+			result.set(name, createHash('sha256').update(fs.readFileSync(target)).digest('hex'));
+		}
+	}
+	return result;
+}
+
+describe('IndexGenerations - 历史模型标识归一化', () => {
+	it('normalizeLegacyEmbedModelId - 白名单内的历史形式 - 归一到内置默认本地模型的当前标识', () => {
+		// 表内两行都必须落到同一规范标识,且与默认设置下 `resolveCurrentEmbedModelId` 的输出逐字一致。
+		expect(normalizeLegacyEmbedModelId('local-default')).toBe(`local:${LEGACY_LOCAL_DEFAULT_MODEL_ID}`);
+		expect(normalizeLegacyEmbedModelId(LEGACY_LOCAL_DEFAULT_MODEL_ID)).toBe(`local:${LEGACY_LOCAL_DEFAULT_MODEL_ID}`);
+		// 已是当前约定形式的不被二次改写。
+		expect(normalizeLegacyEmbedModelId(`local:${LEGACY_LOCAL_DEFAULT_MODEL_ID}`)).toBe(`local:${LEGACY_LOCAL_DEFAULT_MODEL_ID}`);
+	});
+
+	it('normalizeLegacyEmbedModelId - 白名单外形式 - 原样保留并落回不可确认', () => {
+		// 历史 API 形式:端点/模型身份不可追溯,按 spec 不归一化。
+		expect(normalizeLegacyEmbedModelId(LEGACY_API_MODEL_ID)).toBe(LEGACY_API_MODEL_ID);
+		// 自定义本地 id 与近似拼写(大小写、空白)不得被视为同一身份。
+		expect(normalizeLegacyEmbedModelId('Xenova/bge-m3')).toBe('Xenova/bge-m3');
+		expect(normalizeLegacyEmbedModelId('xenova/bge-small-zh-v1.5')).toBe('xenova/bge-small-zh-v1.5');
+		expect(normalizeLegacyEmbedModelId(` ${LEGACY_LOCAL_DEFAULT_MODEL_ID} `)).toBe(` ${LEGACY_LOCAL_DEFAULT_MODEL_ID} `);
+		expect(normalizeLegacyEmbedModelId('')).toBe('');
+		// 白名单外形式映射出的描述仍被判定不可确认(不是被归一化后蒙混过关)。
+		const mapped = mapLegacyConfigIdentity(legacyManifest([], { embedModelId: LEGACY_API_MODEL_ID }), { embeddingDimension: DIMENSIONS });
+		expect(mapped?.embeddingModelId).toBe(LEGACY_API_MODEL_ID);
+		expect(mapped === null ? null : confirmsLegacyConfigIdentity(mapped)).toEqual({ confirmed: false, reason: 'model-id-unrecognized' });
+	});
+
+	it('mapLegacyConfigIdentity - 历史本地默认标识 - 归一化标识且修订仍为 null,不读当前设置', () => {
+		const mapped = mapLegacyConfigIdentity(legacyManifest([], { embedModelId: 'local-default' }), { embeddingDimension: DIMENSIONS });
+		expect(mapped).toEqual({
+			embeddingModelId: `local:${LEGACY_LOCAL_DEFAULT_MODEL_ID}`,
+			embeddingModelRevision: null,
+			embeddingDimension: DIMENSIONS,
+			chunkerVersion: CURRENT_CHUNKER_VERSION,
+			chunkSize: CHUNK_SIZE,
+			chunkOverlap: CHUNK_OVERLAP,
+			embeddingTextVersion: null,
+		});
+		expect(mapped === null ? null : confirmsLegacyConfigIdentity(mapped)).toEqual({ confirmed: true });
+	});
+
+	it('migrate - 真实 1.2.0 风格旧索引(无前缀标识 + 构建戳)- 迁移成功且启动扫描嵌入调用数为 0', async () => {
+		const ws = requireWorkspace();
+		const files = [
+			{ path: 'notes/v120-a.md', content: '第一行\n第二行\n第三行', commitId: 'commit-v120-a' },
+			{ path: 'notes/v120-b.md', content: '甲乙\n丙', commitId: 'commit-v120-b' },
+		];
+		const legacy = await createLegacyIndexV120(ws, files);
+		// 老索引的两处标识都是历史无前缀形式,且逐字相同(同一生产者)。
+		expect((JSON.parse(fs.readFileSync(legacy.manifestPath, 'utf8')) as IndexManifestData).embedModelId).toBe(LEGACY_LOCAL_DEFAULT_MODEL_ID);
+		expect(
+			(JSON.parse(fs.readFileSync(path.join(legacy.legacyDir, 'build-stamp.json'), 'utf8')) as { embedModelId: string }).embedModelId,
+		).toBe(LEGACY_LOCAL_DEFAULT_MODEL_ID);
+
+		const embedPort = new FakeEmbeddingPort(DIMENSIONS);
+		const legacyBefore = legacyOwnFileDigest(legacy.legacyDir);
+		const result = await IndexGenerations.migrateLegacyIndex({
+			...migrationInput(ws, legacy, currentConfigForBuiltinLocal()),
+			currentInputs: await inputHashes(files),
+		});
+
+		expect(result.published).toBe(true);
+		expect(result.committed).toBe(true);
+		expect(result.reason).toBe(null);
+		expect(result.files.map((file) => file.status)).toEqual(['reusable', 'reusable']);
+		expect(result.activeGenerationId).toBe(result.generationId);
+		// 迁移是只读复制:旧索引自身文件逐字不变(代际目录与控制指针属于新增,不在比对范围)。
+		expect(legacyOwnFileDigest(legacy.legacyDir)).toEqual(legacyBefore);
+
+		// receipt 必须与旧索引磁盘上的真实块集合匹配 —— 否则下面那行零嵌入只是假绿。
+		const journal = await journalForGeneration(ws, result.generationId!, result.configFingerprint!);
+		for (const file of files) {
+			const verified = await journal.verifyReceipt(file.path);
+			expect(verified?.matches).toBe(true);
+			expect(verified?.blocks.length).toBe(chunkLines(file.content).length);
+		}
+
+		// 关键验收:真实 1.2.0 老索引升级后,嵌入端口一次都不该被调用。
+		const scan = await probeStartupScan({ journal, port: embedPort, files });
+		expect(scan.reembedded).toEqual([]);
+		expect(scan.reused).toEqual(files.map((file) => file.path));
+		expect(scan.embedCalls).toBe(0);
+		expect(embedPort.callCount).toBe(0);
+	});
+
+	it('migrate - 历史 local-default 回落字面量 - 当前仍用内置默认本地模型时同样零嵌入', async () => {
+		const ws = requireWorkspace();
+		const files = [{ path: 'notes/v120-c.md', content: '甲\n乙\n丙', commitId: 'commit-v120-c' }];
+		const legacy = await createLegacyIndexV120(ws, files, 'local-default');
+		const embedPort = new FakeEmbeddingPort(DIMENSIONS);
+
+		const result = await IndexGenerations.migrateLegacyIndex({
+			...migrationInput(ws, legacy, currentConfigForBuiltinLocal()),
+			currentInputs: await inputHashes(files),
+		});
+
+		expect(result.published).toBe(true);
+		expect(result.files).toEqual([expect.objectContaining({ path: 'notes/v120-c.md', status: 'reusable' })]);
+		const journal = await journalForGeneration(ws, result.generationId!, result.configFingerprint!);
+		expect((await journal.verifyReceipt('notes/v120-c.md'))?.matches).toBe(true);
+		const scan = await probeStartupScan({ journal, port: embedPort, files });
+		expect(scan.embedCalls).toBe(0);
+	});
+
+	it('migrate - 历史无前缀标识但当前本地模型不同 - 判不可确认,不复制、不登记、不发布', async () => {
+		const ws = requireWorkspace();
+		const files = [{ path: 'notes/v120-d.md', content: '甲\n乙', commitId: 'commit-v120-d' }];
+		const legacy = await createLegacyIndexV120(ws, files);
+		const input = migrationInput(ws, legacy, currentConfigForBuiltinLocal({ embeddingModelId: 'local:Xenova/bge-m3' }));
+
+		const result = await IndexGenerations.migrateLegacyIndex({ ...input, currentInputs: await inputHashes(files) });
+
+		expect(result.published).toBe(false);
+		expect(result.committed).toBe(false);
+		expect(result.reason).toBe('config-identity-unconfirmed');
+		expect(result.errorCode).toBe('config-identity-unconfirmed');
+		expect(result.files).toEqual([]);
+		expect(result.generationId).toBe(null);
+		expect(result.copiedFileNames).toEqual([]);
+		expect(result.copiedBytes).toBe(0);
+		// 控制指针未落盘、没有登记任何代际、没有新建代际目录(复制都没开始)。
+		const control = await input.generations.readControl();
+		expect(control.activeGenerationId).toBe(null);
+		expect(control.generations).toEqual({});
+		expect(fs.existsSync(path.join(ws.root, '.index', INDEX_GENERATIONS_DIRNAME))).toBe(false);
+	});
+
+	it('migrate - 历史 API 形式 <base>::<model> - 当前配置即使带修订也不兼容', async () => {
+		const ws = requireWorkspace();
+		const files = [{ path: 'notes/v120-e.md', content: '甲\n乙', commitId: 'commit-v120-e' }];
+		const legacy = await createLegacyIndexV120(ws, files, LEGACY_API_MODEL_ID);
+		// 反证:当前侧的 `api:` 身份带修订、本身可确认 —— 拒绝必须来自「旧身份不可重建」,
+		// 而不是被当前侧的不确认掩盖。
+		const config = currentConfig({
+			embeddingModelId: `api:${LEGACY_API_MODEL_ID}`,
+			embeddingModelRevision: '2024-02-01',
+		});
+		expect(confirmsLegacyConfigIdentity(config)).toEqual({ confirmed: true });
+		const input = migrationInput(ws, legacy, config);
+
+		const result = await IndexGenerations.migrateLegacyIndex({ ...input, currentInputs: await inputHashes(files) });
+
+		expect(result.published).toBe(false);
+		expect(result.reason).toBe('config-identity-unconfirmed');
+		expect(result.errorCode).toBe('config-identity-unconfirmed');
+		expect(result.files).toEqual([]);
+		expect((await input.generations.readControl()).activeGenerationId).toBe(null);
+		expect(fs.existsSync(path.join(ws.root, '.index', INDEX_GENERATIONS_DIRNAME))).toBe(false);
+	});
+
+	it('migrate - 构建戳与清单的互证 - 归一化后同类标识视为一致,不同模型仍判矛盾', async () => {
+		const ws = requireWorkspace();
+		const files = [{ path: 'notes/v120-f.md', content: '甲', commitId: 'commit-v120-f' }];
+		// 清单写内置默认模型原始 id、构建戳写回落字面量:两者指向同一模型,归一化后一致。
+		const legacy = await createLegacyIndexV120(ws, files);
+		fs.writeFileSync(
+			path.join(legacy.legacyDir, 'build-stamp.json'),
+			JSON.stringify(
+				{ chunkerVersion: CURRENT_CHUNKER_VERSION, chunkSize: CHUNK_SIZE, chunkOverlap: CHUNK_OVERLAP, embedModelId: 'local-default' },
+				null,
+				2,
+			),
+			'utf8',
+		);
+		const accepted = await IndexGenerations.migrateLegacyIndex({
+			...migrationInput(ws, legacy, currentConfigForBuiltinLocal()),
+			currentInputs: await inputHashes(files),
+		});
+		expect(accepted.published).toBe(true);
+		expect(accepted.files).toEqual([expect.objectContaining({ path: 'notes/v120-f.md', status: 'reusable' })]);
+
+		// 对照组:戳指向另一个本地模型 —— 互证失败,一律不迁移。
+		const second = createWorkspace();
+		try {
+			const files2 = [{ path: 'notes/v120-g.md', content: '乙', commitId: 'commit-v120-g' }];
+			const legacy2 = await createLegacyIndexV120(second, files2);
+			fs.writeFileSync(
+				path.join(legacy2.legacyDir, 'build-stamp.json'),
+				JSON.stringify(
+					{ chunkerVersion: CURRENT_CHUNKER_VERSION, chunkSize: CHUNK_SIZE, chunkOverlap: CHUNK_OVERLAP, embedModelId: 'Xenova/bge-m3' },
+					null,
+					2,
+				),
+				'utf8',
+			);
+			const rejected = await IndexGenerations.migrateLegacyIndex({
+				...migrationInput(second, legacy2, currentConfigForBuiltinLocal()),
+				currentInputs: await inputHashes(files2),
+			});
+			expect(rejected.published).toBe(false);
+			expect(rejected.reason).toBe('config-identity-unconfirmed');
+			expect(rejected.files).toEqual([]);
+		} finally {
+			second.dispose();
+		}
+	});
+});
+
+// ==================== 3c. 迁移派生视图(清单 + 构建戳)与启动路径门禁 ====================
+
+/** 由当前配置推导装配层会写出的构建戳 — 与 `main.ts` 的 `currentBuildStamp()` 同口径。 */
+function buildStampOf(config: IndexConfigDescriptor): IndexBuildStamp {
+	return {
+		chunkerVersion: config.chunkerVersion,
+		chunkSize: config.chunkSize,
+		chunkOverlap: config.chunkOverlap,
+		embedModelId: config.embeddingModelId,
+	};
+}
+
+/** 真实后端夹具 — 装配关系与 `main.ts` 同构:`indexDir` 即代际目录,清单/戳都落在该目录内。 */
+interface RealBackendFixture {
+	readonly backend: PersistentIndexBackend;
+	readonly store: VectraStore;
+	/** 嵌入端口的**调用次数**(不是文本条数)。 */
+	embedCalls(): number;
+	dispose(): void;
+}
+
+/**
+ * 在给定目录上装配真实 `PersistentIndexBackend`。
+ *
+ * 关键路径:验收必须用**真实后端**判定启动路径是否全量重算 —— 只看迁移返回值无法证明
+ * `smartReindex` 的门禁(清单存在 + 参数兼容 + 构建戳一致 + 与 vault 快照逐文件 hash 一致)。
+ * 这里不注入 `assertDropOwnership`,走后端缺省的归属判定,与生产装配只差归属白名单。
+ *
+ * @param input - 索引目录、vault 文件快照、构建戳与可选的完成记录端口。
+ * @returns 真实后端夹具;`dispose` 负责回收 Worker。
+ */
+async function createRealBackend(input: {
+	indexDir: string;
+	files: ReadonlyArray<{ path: string; content: string }>;
+	stamp: IndexBuildStamp;
+	fileRecords?: FileRecordReader | null;
+}): Promise<RealBackendFixture> {
+	const store = new VectraStore(input.indexDir, {
+		storage: new AtomicIndexStorage({ generationRoot: input.indexDir }),
+	});
+	await store.isIndexCreated();
+	const contents = new Map(input.files.map((file) => [file.path, file.content] as const));
+	let embedCalls = 0;
+	const inline = new InlineWorker();
+	inline.initWithStore(store, {
+		modelId: input.stamp.embedModelId,
+		dimensions: DIMENSIONS,
+		embed: async (texts: string[]): Promise<number[][]> => {
+			embedCalls += 1;
+			return texts.map((text) => deterministicVector(text, DIMENSIONS));
+		},
+	});
+	const worker = new WorkerManager(inline, { timeoutMs: 5_000 });
+	const backend = new PersistentIndexBackend({
+		indexDir: input.indexDir,
+		manifest: new IndexManifest(resolveIndexManifestPath(input.indexDir)),
+		worker,
+		getStore: () => store,
+		vault: {
+			listMarkdownFiles: () => [...contents.keys()],
+			readFile: async (filePath: string) => contents.get(filePath) ?? '',
+			stat: () => ({ mtime: 1 }),
+		},
+		getBuildStamp: () => input.stamp,
+		getChunkOptions: () => ({ maxTokens: CHUNK_SIZE, overlapTokens: CHUNK_OVERLAP }),
+		...(input.fileRecords === undefined ? {} : { fileRecords: input.fileRecords }),
+	});
+	return {
+		backend,
+		store,
+		embedCalls: () => embedCalls,
+		dispose: () => {
+			worker.destroy();
+		},
+	};
+}
+
+describe('IndexGenerations - 迁移派生视图与启动路径门禁', () => {
+	it('migrate - 有效旧索引迁移成功 - 代际目录内含只覆盖已复用文件的清单与当前配置的构建戳', async () => {
+		const ws = requireWorkspace();
+		const config = currentConfig();
+		const files = [
+			{ path: 'notes/view-a.md', content: '第一行\n第二行', commitId: 'commit-view-a' },
+			{ path: 'notes/view-b.md', content: '甲\n乙\n丙', commitId: 'commit-view-b' },
+		];
+		const legacy = await createLegacyFixture(ws, files);
+		const result = await IndexGenerations.migrateLegacyIndex({
+			...migrationInput(ws, legacy, config),
+			// 只给 `notes/view-a.md` 的当前内容 hash —— `notes/view-b.md` 视为内容未知,按重算处理。
+			currentInputs: await inputHashes([files[0]!]),
+		});
+
+		expect(result.published).toBe(true);
+		const statusByPath = new Map(result.files.map((file) => [file.path, file.status] as const));
+		expect(statusByPath.get('notes/view-a.md')).toBe('reusable');
+		expect(statusByPath.get('notes/view-b.md')).toBe('reindex');
+
+		const generationRoot = path.join(ws.root, '.index', INDEX_GENERATIONS_DIRNAME, result.generationId!);
+		// 关键路径:派生视图必须落在**代际目录**内(装配层把 indexDir 绑到这里),不在 `.index` 根。
+		expect(fs.existsSync(path.join(generationRoot, 'ratel-manifest.json'))).toBe(true);
+		expect(fs.existsSync(path.join(generationRoot, 'build-stamp.json'))).toBe(true);
+		expect(fs.existsSync(path.join(ws.root, '.index', 'ratel-manifest.json'))).toBe(false);
+		expect(fs.existsSync(path.join(ws.root, '.index', 'build-stamp.json'))).toBe(false);
+
+		const manifestStore = new IndexManifest(resolveIndexManifestPath(generationRoot));
+		const data = await manifestStore.load();
+		expect(data).not.toBe(null);
+		// 关键路径:条目只覆盖已复用文件 —— 未复用路径不得出现在清单里(它必须按 toAdd 重算)。
+		expect(Object.keys(data!.entries)).toEqual(['notes/view-a.md']);
+		expect(data!.entries['notes/view-a.md']).toEqual({
+			path: 'notes/view-a.md',
+			hash: await sha256(files[0]!.content),
+			mtime: 1_700_000_000_000,
+			chunkCount: chunkLines(files[0]!.content).length,
+		});
+
+		const stamp = buildStampOf(config);
+		expect(data).toMatchObject({ version: 1, ...stamp });
+		expect(Number.isFinite(data!.lastIndexTime)).toBe(true);
+		expect(await readBuildStamp(generationRoot)).toEqual(stamp);
+		// 门禁判定:迁移写出的清单与戳必须让启动路径的「是否需要全量重建」为 false。
+		expect(
+			manifestStore.shouldFullRebuild(data!, stamp.embedModelId, stamp.chunkSize, stamp.chunkOverlap, stamp.chunkerVersion),
+		).toBe(false);
+		expect(isBuildStampCurrent(await readBuildStamp(generationRoot), stamp)).toBe(true);
+	});
+
+	it('启动路径 - 真实 1.2.0 旧索引迁移后 - 真实 smartReindex 不触发全量重算且嵌入调用数为 0', async () => {
+		const ws = requireWorkspace();
+		const config = currentConfigForBuiltinLocal();
+		const files = [
+			{ path: 'notes/view-v120-a.md', content: '第一行\n第二行\n第三行', commitId: 'commit-view-v120-a' },
+			{ path: 'notes/view-v120-b.md', content: '甲乙\n丙', commitId: 'commit-view-v120-b' },
+		];
+		const legacy = await createLegacyIndexV120(ws, files);
+		const result = await IndexGenerations.migrateLegacyIndex({
+			...migrationInput(ws, legacy, config),
+			currentInputs: await inputHashes(files),
+		});
+		expect(result.published).toBe(true);
+		expect(result.files.map((file) => file.status)).toEqual(['reusable', 'reusable']);
+
+		const generationRoot = path.join(ws.root, '.index', INDEX_GENERATIONS_DIRNAME, result.generationId!);
+		// 装配层真实口径:清单绑代际目录、构建戳 `local:<内置模型>`(旧索引的无前缀标识不再被读到)。
+		const fixture = await createRealBackend({
+			indexDir: generationRoot,
+			files,
+			stamp: buildStampOf(config),
+			fileRecords: await journalForGeneration(ws, result.generationId!, result.configFingerprint!),
+		});
+		try {
+			const outcome = await fixture.backend.smartReindex();
+			// 关键验收:三者同时成立才说明走的是 hash diff 分支而不是全量分支
+			// (`full()` 的返回是 `skipped: 0` 且逐文件重嵌入)。
+			expect(outcome.skipped).toBe(files.length);
+			expect(outcome.indexed).toBe(0);
+			expect(outcome.errors).toBe(0);
+			expect(fixture.embedCalls()).toBe(0);
+			// 凭据门禁(清单 + 构建戳 + index.json)一致;全量分支会先 dropStore,目录内文件不会留存。
+			expect(await fixture.backend.readCommittedState()).not.toBe(null);
+			expect(fs.existsSync(path.join(generationRoot, 'ratel-manifest.json'))).toBe(true);
+			expect(fs.existsSync(path.join(generationRoot, 'build-stamp.json'))).toBe(true);
+			expect(fs.existsSync(path.join(generationRoot, 'index.json'))).toBe(true);
+		} finally {
+			fixture.dispose();
+		}
+	});
+
+	it('启动路径 - 未迁移的 1.2.0 目录直接装配 - 真实 smartReindex 判定全量重建并真实调用嵌入(对照)', async () => {
+		const ws = requireWorkspace();
+		const config = currentConfigForBuiltinLocal();
+		const files = [
+			{ path: 'notes/view-control-a.md', content: '甲\n乙', commitId: 'commit-view-control-a' },
+			{ path: 'notes/view-control-b.md', content: '丙\n丁\n戊', commitId: 'commit-view-control-b' },
+		];
+		const legacy = await createLegacyIndexV120(ws, files);
+		// 未迁移:装配层把 `.index` 根当代际目录,读到的是 1.2.0 的无前缀清单 —— 与当前戳逐字不等。
+		const fixture = await createRealBackend({ indexDir: legacy.legacyDir, files, stamp: buildStampOf(config) });
+		try {
+			const outcome = await fixture.backend.smartReindex();
+			// 对照证明门禁真实且嵌入计数有效:`skipped` 为 0 并逐文件真实重嵌入。
+			expect(outcome.skipped).toBe(0);
+			expect(outcome.indexed).toBe(files.length);
+			expect(fixture.embedCalls()).toBeGreaterThan(0);
+
+			// 第二段更忠实地复刻**修复前**的迁移产物:向量已在代际目录内、清单与戳缺失。
+			// 这正是本次修复前的现场 —— 门禁必须仍然判定全量重建(而不是被旧的 `index.json` 骗过),
+			// 用来证明「清单确实是 load-bearing 的那一份文件」。
+			fs.rmSync(resolveIndexManifestPath(legacy.legacyDir), { force: true });
+			fs.rmSync(resolveBuildStampPath(legacy.legacyDir), { force: true });
+			const embedBefore = fixture.embedCalls();
+			const missingManifest = await fixture.backend.smartReindex();
+			expect(missingManifest.skipped).toBe(0);
+			expect(missingManifest.indexed).toBe(files.length);
+			expect(fixture.embedCalls()).toBeGreaterThan(embedBefore);
+		} finally {
+			fixture.dispose();
+		}
+	});
+
+	it('migrate - 派生视图写入失败 - 不发布控制指针也不留下清单与构建戳', async () => {
+		const ws = requireWorkspace();
+		const files = [{ path: 'notes/view-io.md', content: '甲\n乙', commitId: 'commit-view-io' }];
+		const legacy = await createLegacyFixture(ws, files);
+		const input = migrationInput(ws, legacy, currentConfig());
+
+		const result = await IndexGenerations.migrateLegacyIndex({
+			...input,
+			currentInputs: await inputHashes(files),
+			io: { failManifestWrite: 'EIO' },
+		});
+
+		expect(result.published).toBe(false);
+		expect(result.committed).toBe(false);
+		expect(result.phase).toBe('receipts');
+		expect(result.reason).toBe('io-failed');
+		expect(result.errorCode).toBe('migration-io-failed');
+		expect(result.statePersisted).toBe(false);
+		// 控制指针未动、代际未登记:派生视图写失败发生在原子发布之前。
+		const control = await input.generations.readControl();
+		expect(control.activeGenerationId).toBe(null);
+		expect(control.generations).toEqual({});
+		const generationRoot = path.join(ws.root, '.index', INDEX_GENERATIONS_DIRNAME, result.generationId!);
+		expect(fs.existsSync(path.join(generationRoot, 'ratel-manifest.json'))).toBe(false);
+		expect(fs.existsSync(path.join(generationRoot, 'build-stamp.json'))).toBe(false);
+	});
+
+	it('migrate - 身份不可确认 - 不写清单与戳,连代际目录都不建(反向对照)', async () => {
+		const ws = requireWorkspace();
+		const files = [{ path: 'notes/view-reverse.md', content: '甲\n乙', commitId: 'commit-view-reverse' }];
+		// 旧清单缺 `chunkerVersion` → 分块身份不可确认,一块都不复用(不是「清单非法」)。
+		const legacy = await createLegacyFixture(ws, files, { chunkerVersion: undefined as never });
+		const input = migrationInput(ws, legacy, currentConfig());
+		const legacyBefore = legacyOwnFileDigest(legacy.legacyDir);
+
+		const result = await IndexGenerations.migrateLegacyIndex({
+			...input,
+			currentInputs: await inputHashes(files),
+		});
+
+		expect(result.published).toBe(false);
+		expect(result.reason).toBe('config-identity-unconfirmed');
+		expect(result.files).toEqual([]);
+		expect(result.generationId).toBe(null);
+		// 反向对照:没有代际目录,也就没有任何清单/构建戳被写出来。
+		expect(fs.existsSync(path.join(ws.root, '.index'))).toBe(false);
+		expect(fs.existsSync(path.join(ws.root, '.index', INDEX_GENERATIONS_DIRNAME))).toBe(false);
+		// 旧索引目录保持只读:不追加清单与戳。
+		expect(legacyOwnFileDigest(legacy.legacyDir)).toEqual(legacyBefore);
+		expect(fs.existsSync(path.join(legacy.legacyDir, 'build-stamp.json'))).toBe(false);
 	});
 });
 

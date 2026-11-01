@@ -62,6 +62,7 @@ class CoordinatorStub implements IndexTaskCoordinatorPort {
     isReady(): boolean { return this.state.phase === 'ready'; }
 
     pause(): void {}
+    abortActive(): void { this.events.push('abortActive'); }
     resume(): void {}
     destroy(): void { this.events.push('destroy'); }
 }

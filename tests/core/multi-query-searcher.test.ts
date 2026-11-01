@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { MultiQuerySearcher } from '../../src/core/multi-query-searcher';
+import { MultiQuerySearcher, type SearchCandidateGate } from '../../src/core/multi-query-searcher';
 import type { EmbeddingPort } from '../../src/ports/embedding';
 import type { WorkerManager } from '../../src/worker/manager';
 import type { RerankerPort } from '../../src/ports/reranker';
@@ -393,5 +393,195 @@ describe('MultiQuerySearcher', () => {
 		expect(docB!.reranked).toBe(false);
 		// 关键路径:b.md 被丢弃,分数仍是 RRF(非 Reranker 的 0.95)
 		expect(docB!.score).not.toBe(0.95);
+	});
+});
+
+describe('MultiQuerySearcher 可见性门 — 被拒候选不得进入融合与重排输入', () => {
+	/** 构造只按路径判定可见性的门;被拒原因固定为候选自身的过期/删除/排除/未决语义。 */
+	function createGate(denied: Map<string, 'known-stale' | 'deleted' | 'excluded' | 'unresolved-transaction'>): SearchCandidateGate {
+		return {
+			decide: vi.fn(async (path: string) => {
+				const reason = denied.get(path);
+				if (reason !== undefined) {
+					return { visible: false, path, reason, freshness: reason };
+				}
+				return { visible: true, path, freshness: 'verified' as const };
+			}),
+		};
+	}
+
+	it('search - 原始候选含 stale/deleted/excluded/unresolved - 被拒路径进入融合与重排的命中数为 0', async () => {
+		const embedding = createMockEmbedding();
+		const worker = createMockWorkerManager([
+			[
+				{ docId: 'stale.md#chunk-0', score: 0.99, metadata: { path: 'stale.md', chunkIndex: 0 } },
+				{ docId: 'deleted.md#chunk-0', score: 0.98, metadata: { path: 'deleted.md', chunkIndex: 0 } },
+				{ docId: 'excluded.md#chunk-0', score: 0.97, metadata: { path: 'excluded.md', chunkIndex: 0 } },
+				{ docId: 'unresolved.md#chunk-0', score: 0.96, metadata: { path: 'unresolved.md', chunkIndex: 0 } },
+				{ docId: 'ok1.md#chunk-0', score: 0.9, metadata: { path: 'ok1.md', chunkIndex: 0 } },
+				{ docId: 'ok2.md#chunk-0', score: 0.8, metadata: { path: 'ok2.md', chunkIndex: 0 } },
+				{ docId: 'ok3.md#chunk-0', score: 0.7, metadata: { path: 'ok3.md', chunkIndex: 0 } },
+				{ docId: 'ok4.md#chunk-0', score: 0.6, metadata: { path: 'ok4.md', chunkIndex: 0 } },
+			],
+		]);
+		const denied = new Map<string, 'known-stale' | 'deleted' | 'excluded' | 'unresolved-transaction'>([
+			['stale.md', 'known-stale'],
+			['deleted.md', 'deleted'],
+			['excluded.md', 'excluded'],
+			['unresolved.md', 'unresolved-transaction'],
+		]);
+		const gate = createGate(denied);
+		const readPaths: string[] = [];
+		const vault = createMockVault(async (p) => {
+			readPaths.push(p);
+			return `content-of-${p}`;
+		});
+		// 关键路径:rerank 输入是「模型实际会看到的片段」,必须按 spy 实测而不是只看最终结果。
+		const reranker = createMockReranker();
+		const searcher = new MultiQuerySearcher({
+			embedding,
+			workerManager: worker,
+			vault,
+			reranker,
+			visibility: gate,
+		});
+
+		const results = await searcher.search('查询', 5);
+
+		const rerankCalls = (reranker.rerank as ReturnType<typeof vi.fn>).mock.calls;
+		expect(rerankCalls).toHaveLength(1);
+		const sentIds = (rerankCalls[0]![1] as Array<{ id: string }>).map((d) => d.id);
+		const deniedIds = [...denied.keys()].map((p) => `${p}#chunk-0`);
+		// 关键路径:被拒路径在精排输入里的命中数必须为 0,而不是「最终 UI 看不到」。
+		expect(sentIds.filter((id) => deniedIds.includes(id))).toHaveLength(0);
+		// 精排输入恰为四个可见候选(每个可见路径各读一次全文)。
+		expect(sentIds.sort()).toEqual(['ok1.md#chunk-0', 'ok2.md#chunk-0', 'ok3.md#chunk-0', 'ok4.md#chunk-0']);
+		expect(readPaths.filter((p) => denied.has(p))).toHaveLength(0);
+		// 最终结果同样不含被拒路径,且可见候选携带新鲜度。
+		expect(results.map((r) => r.metadata.path).sort()).toEqual(['ok1.md', 'ok2.md', 'ok3.md', 'ok4.md']);
+		expect(results.every((r) => r.freshness === 'verified')).toBe(true);
+		// 门的判定在融合之前完成:每个路径只判定一次。
+		expect((gate.decide as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(8);
+	});
+
+	it('search - 过滤后可见候选不足 topK - 增大抓取量重取候选补足', async () => {
+		const embedding = createMockEmbedding();
+		const topKPerCall: number[] = [];
+		let call = 0;
+		const worker = {
+			request: vi.fn(async (request: { payload: { topK: number } }) => {
+				topKPerCall.push(request.payload.topK);
+				call += 1;
+				// 第一次:3 个被拒 + 1 个可见;第二次:4 个可见。
+				const payload = call === 1
+					? [
+						{ docId: 'stale.md#chunk-0', score: 0.99, metadata: { path: 'stale.md', chunkIndex: 0 } },
+						{ docId: 'deleted.md#chunk-0', score: 0.98, metadata: { path: 'deleted.md', chunkIndex: 0 } },
+						{ docId: 'excluded.md#chunk-0', score: 0.97, metadata: { path: 'excluded.md', chunkIndex: 0 } },
+						{ docId: 'ok1.md#chunk-0', score: 0.9, metadata: { path: 'ok1.md', chunkIndex: 0 } },
+					]
+					: [
+						{ docId: 'ok1.md#chunk-0', score: 0.9, metadata: { path: 'ok1.md', chunkIndex: 0 } },
+						{ docId: 'ok2.md#chunk-0', score: 0.8, metadata: { path: 'ok2.md', chunkIndex: 0 } },
+						{ docId: 'ok3.md#chunk-0', score: 0.7, metadata: { path: 'ok3.md', chunkIndex: 0 } },
+						{ docId: 'ok4.md#chunk-0', score: 0.6, metadata: { path: 'ok4.md', chunkIndex: 0 } },
+					];
+				return { type: 'vector.search.result', payload };
+			}),
+			destroy: vi.fn(),
+		} as unknown as WorkerManager;
+		const gate = createGate(new Map([
+			['stale.md', 'known-stale'],
+			['deleted.md', 'deleted'],
+			['excluded.md', 'excluded'],
+		]));
+		const searcher = new MultiQuerySearcher({
+			embedding,
+			workerManager: worker,
+			vault: createMockVault(async () => 'content'),
+			visibility: gate,
+		});
+
+		const results = await searcher.search('查询', 2);
+
+		// 关键路径:首轮仍是 topK*2 过度抓取;可见不足 topK 时翻倍重取。
+		expect(topKPerCall).toEqual([4, 8]);
+		expect(results).toHaveLength(2);
+		expect(results.map((r) => r.metadata.path).sort()).toEqual(['ok1.md', 'ok2.md']);
+		expect(embedding.embed).toHaveBeenCalledTimes(1);
+	});
+
+	it('search - 门 refresh 每次检索调用一次 - 刷新判定依据', async () => {
+		const embedding = createMockEmbedding();
+		const worker = createMockWorkerManager([
+			[{ docId: 'a.md#chunk-0', score: 0.9, metadata: { path: 'a.md', chunkIndex: 0 } }],
+		]);
+		const refresh = vi.fn(async () => undefined);
+		const gate: SearchCandidateGate = {
+			refresh,
+			decide: vi.fn(async (path: string) => ({ visible: true, path, freshness: 'unknown' as const })),
+		};
+		const searcher = new MultiQuerySearcher({
+			embedding,
+			workerManager: worker,
+			vault: createMockVault(async () => 'content'),
+			visibility: gate,
+		});
+
+		await searcher.search('查询', 5);
+
+		expect(refresh).toHaveBeenCalledTimes(1);
+	});
+
+	it('search - 无可见性门 - 保持原行为不过滤(向后兼容)', async () => {
+		const embedding = createMockEmbedding();
+		const worker = createMockWorkerManager([
+			[
+				{ docId: 'a.md#chunk-0', score: 0.9, metadata: { path: 'a.md', chunkIndex: 0 } },
+				{ docId: 'b.md#chunk-0', score: 0.8, metadata: { path: 'b.md', chunkIndex: 0 } },
+			],
+		]);
+		const searcher = new MultiQuerySearcher({
+			embedding,
+			workerManager: worker,
+			vault: createMockVault(async () => 'content'),
+		});
+
+		const results = await searcher.search('查询', 5);
+
+		expect(results).toHaveLength(2);
+		// 未装配门时新鲜度未知,由调用方决定是否承诺定位。
+		expect(results.every((r) => r.freshness === undefined)).toBe(true);
+		expect(searcher.visibilityDiagnostics()).toBeUndefined();
+	});
+
+	it('search - 门报告记录不可判定 - 诊断暴露 unjudgeable 供工具层如实呈现', async () => {
+		const embedding = createMockEmbedding();
+		const worker = createMockWorkerManager([
+			[{ docId: 'a.md#chunk-0', score: 0.9, metadata: { path: 'a.md', chunkIndex: 0 } }],
+		]);
+		const gate: SearchCandidateGate = {
+			recordsKind: () => 'unjudgeable' as const,
+			decide: vi.fn(async (path: string) => ({
+				visible: false,
+				path,
+				reason: 'unjudgeable',
+				freshness: 'unknown' as const,
+			})),
+		};
+		const searcher = new MultiQuerySearcher({
+			embedding,
+			workerManager: worker,
+			vault: createMockVault(async () => 'content'),
+			visibility: gate,
+		});
+
+		const results = await searcher.search('查询', 5);
+
+		expect(results).toEqual([]);
+		expect(searcher.visibilityDiagnostics()).toMatchObject({
+			recordsKind: 'unjudgeable',
+			denied: 1,
+		});
 	});
 });

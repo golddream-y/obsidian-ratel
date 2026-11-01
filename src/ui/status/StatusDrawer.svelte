@@ -69,6 +69,88 @@
 		}
 	}
 
+	// 关键路径:阶段与须知是 T4/T5/T6 新增的展示面 —— 停滞/正在停止/迁移不改变 index 状态语义,
+	// 但必须可见,否则用户会把停滞看成「正在索引」。
+	function labelPhase(phase: UserStatusSnapshot['indexPhase']): string | undefined {
+		switch (phase) {
+			case 'stalled': return $t('status.phase.stalled');
+			case 'stopping': return $t('status.phase.stopping');
+			case 'migrating': return $t('status.phase.migrating');
+			case 'scanning': return $t('status.indexLabel.scanning');
+			case 'processing': return $t('status.indexLabel.processing');
+			case 'paused': return $t('status.indexLabel.paused');
+			case 'ready': return $t('status.indexLabel.ready');
+			case 'failed':
+			case 'partial-failure': return $t('status.indexLabel.failed');
+			default: return undefined;
+		}
+	}
+
+	function labelNotice(notice: UserStatusSnapshot['indexNotice']): string | undefined {
+		switch (notice) {
+			case 'stalled': return $t('status.detail.stalled');
+			case 'resumed': return $t('status.detail.resumed');
+			case 'stopping': return $t('status.detail.stopping');
+			case 'migrating': return $t('status.detail.migrating');
+			case 'disk-failure': return $t('status.detail.diskFailure');
+			case 'epoch-missing': return $t('status.detail.epochMissing');
+			case 'records-unknown': return $t('status.detail.recordsUnknown');
+			case 'config-mismatch': return $t('status.detail.configMismatch');
+			// 关键路径(T7/I2/T6):降级与配置漂移都必须可见,不允许静默
+			case 'index-unavailable': return $t('status.detail.indexUnavailable');
+			case 'config-drift': return $t('status.detail.configDrift');
+			default: return undefined;
+		}
+	}
+
+	/**
+	 * 迁移/回收结论面的诊断行(T7/I4)。
+	 *
+	 * 关键路径:只在真的有结论面(发生过迁移或新建前回收)时出现;枚举与布尔值用语言中立的记号,
+	 * 不引入第二套用户文案。落点只放结论,不含笔记正文、路径清单或密钥。
+	 */
+	const indexDiagnosticsText = $derived.by(() => {
+		const diag = snap.indexDiagnostics;
+		if (!diag || (!diag.migration && !diag.reconcile)) return undefined;
+		return $t('status.drawer.indexDiagnostics.value', {
+			phase: diag.migration?.phase ?? '—',
+			reused: diag.migration?.reused ?? 0,
+			reindex: diag.migration?.reindex ?? 0,
+			persisted: (diag.migration?.statePersisted ?? true) ? '✓' : '✗',
+			orphans: diag.reconcile?.orphanDirectories ?? 0,
+			quarantineTx: diag.reconcile?.quarantinedTransactions ?? 0,
+			blocked: diag.reconcile?.blocked === true ? (diag.reconcile.blockedReason ?? 'blocked') : '—',
+			quarantined: diag.quarantinedGenerations.length > 0 ? diag.quarantinedGenerations.join(', ') : '—',
+		});
+	});
+
+	const indexPhaseText = $derived(labelPhase(snap.indexPhase));
+
+	const indexCountsText = $derived(
+		snap.indexCommittedFiles === undefined && snap.indexTotalFiles === undefined
+			? undefined
+			: $t('status.counts.value', {
+				committed: snap.indexCommittedFiles ?? 0,
+				total: snap.indexTotalFiles ?? 0,
+				pending: snap.indexPendingFiles ?? 0,
+				failed: snap.indexFailedFiles ?? 0,
+			}),
+	);
+
+	const indexNoticeText = $derived.by(() => {
+		const notice = labelNotice(snap.indexNotice);
+		if (notice !== undefined) return notice;
+		// 关键路径:部分可用没有被宣告为 ready,但已有可检索版本,必须说明而不是只显示进度。
+		if (snap.indexPartial === true) {
+			return $t('status.detail.partial', {
+				committed: snap.indexCommittedFiles ?? 0,
+				total: snap.indexTotalFiles ?? 0,
+				pending: snap.indexPendingFiles ?? 0,
+			});
+		}
+		return undefined;
+	});
+
 	const indexBarColor = $derived.by(() => {
 		const idx = snap.index;
 		if (idx === 'processing' || idx === 'scanning' || idx === 'queueing') return 'var(--text-warning)';
@@ -119,6 +201,30 @@
 		{#if snap.index === 'scanning' || snap.index === 'processing' || snap.index === 'queueing'}
 			<div class="ratel-drawer-progress">
 				<div class="ratel-drawer-progress-fill" style={`width: ${indexProgress}%; background: ${indexBarColor};`}></div>
+			</div>
+		{/if}
+		{#if indexPhaseText}
+			<div class="ratel-drawer-row">
+				<span class="ratel-drawer-label">{$t('status.phase.label')}</span>
+				<span class="ratel-drawer-value">{indexPhaseText}</span>
+			</div>
+		{/if}
+		{#if indexCountsText}
+			<div class="ratel-drawer-row">
+				<span class="ratel-drawer-label">{$t('status.counts.label')}</span>
+				<span class="ratel-drawer-value ratel-drawer-mono">{indexCountsText}</span>
+			</div>
+		{/if}
+		{#if indexNoticeText}
+			<div class="ratel-drawer-row">
+				<span class="ratel-drawer-label">{$t('status.drawer.label.notice')}</span>
+				<span class="ratel-drawer-value">{indexNoticeText}</span>
+			</div>
+		{/if}
+		{#if indexDiagnosticsText}
+			<div class="ratel-drawer-row">
+				<span class="ratel-drawer-label">{$t('status.drawer.label.indexDiagnostics')}</span>
+				<span class="ratel-drawer-value ratel-drawer-mono">{indexDiagnosticsText}</span>
 			</div>
 		{/if}
 		{#if currentFile}

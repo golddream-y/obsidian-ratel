@@ -273,10 +273,10 @@ export interface PersistentIndexBackendOptions {
 	/**
 	 * 可选:文件完成记录端口;注入后完整性判定与部分可用性读取文件记录。
 	 *
-	 * 缺省风险(T7 待办):未注入时 `fileRecordsCoverManifest` 只能按「既有凭据」语义返回 true,
-	 * 也就是无法核验「清单里的每个文件都真有完成记录」。这不是「已核验」,
-	 * 但当前生产装配尚未注入,若改成「缺端口即不完整」会让每次启动都判不完整并触发重建,
-	 * 因此这里保留既有语义,由 T7 装配时注入 `IndexFileJournal`(守卫用例登记装配点)。
+	 * 关键路径(T7 已收紧):**未注入时视为不可判定**,`isIndexComplete()` 与
+	 * `fileRecordsCoverManifest()` 返回 false,不再按旧凭据语义乐观返回 true。
+	 * 生产装配已在 `main.ts` 注入 `IndexFileJournal`(装配守卫强制),缺端口只应出现在
+	 * 测试或错误装配中,而错误装配必须失败关闭、不能声称全库完成。
 	 */
 	fileRecords?: FileRecordReader | null;
 	/**
@@ -802,14 +802,15 @@ export class PersistentIndexBackend implements IndexBackend {
 	/**
 	 * 清单条目是否都有对应的文件完成记录 — 清单是派生视图,文件记录才描述每个文件。
 	 *
-	 * 关键路径:未注入记录端口时保持既有凭据语义(无法判定不伪装成已核验),返回 true;
-	 * 这是缺省乐观语义,装配遗漏时会让 `isIndexComplete` 少一道核对,风险与 T7 待办见
-	 * `PersistentIndexBackendOptions.fileRecords`。这里只消费 present 集:
-	 * tombstone 由 `listTombstones` 提供,不得当作「该路径已提交」。
+	 * 关键路径(T7 收紧):缺记录端口时返回 **false**,即「不可判定」—— 不再按旧凭据语义返回
+	 * true。旧口径是过渡期的缺省乐观值,装配遗漏时会让 `isIndexComplete` 少一道核对,并把
+	 * 「无法核验」说成「已核验」。生产装配由 `main.ts` 注入真实 `IndexFileJournal`
+	 * (装配守卫会强制该注入),只读装配用 `createReadOnlyOwnerGuard` + 同一份日志。
+	 * 这里只消费 present 集:tombstone 由 `listTombstones` 提供,不得当作「该路径已提交」。
 	 */
 	private async fileRecordsCoverManifest(): Promise<boolean> {
 		const reader = this.deps.fileRecords;
-		if (!reader) return true;
+		if (!reader) return false;
 		const data = await this.deps.manifest.load();
 		if (!data) return false;
 		const records = await reader.listReceipts();

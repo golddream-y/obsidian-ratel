@@ -8,7 +8,7 @@
 
 **技术栈：** TypeScript、现有 Vectra `FileStorage` 扩展点、Node 文件 API、Embedding Web Worker、Svelte store、Vitest；不新增数据库或原生模块。
 
-关联：`P-INDEX-RELIABILITY` → [S-INDEX-RELIABILITY](../specs/2026-10-31-index-reliability.md) → `BUG-1-INDEX-001`。状态：**In Progress，T0～T6 已完成（证据见 `2026-10-31-index-reliability-t{0,1-t2,3,4,5,6}-evidence.md`），进入 T7**。全量 292 文件 / 2669 passed / 5 skipped；tsc 241 条存量、新增 0。T7 的硬前置清单见 T6 证据第 8 节。合并与发布仍另行授权。
+关联：`P-INDEX-RELIABILITY` → [S-INDEX-RELIABILITY](../specs/2026-10-31-index-reliability.md) → `BUG-1-INDEX-001`。状态：**In Progress，T0～T7 已完成（证据见 `2026-10-31-index-reliability-t{0,1-t2,3,4,5,6,7}-evidence.md`），进入 T8**。全量 292 文件 / 2752 passed / 5 skipped；tsc 241 条存量、新增 0。真实 ONNX 用例由 `RATEL_ONNX=1` 门控、默认套件不跑；T8 的必做清单（含 main.ts 装配下沉、receipt 优先口径、spec 偏差）见 T7 证据末节。合并与发布仍另行授权。
 
 ## 执行边界与依赖
 
@@ -227,12 +227,12 @@ export interface EmbedOptions {
 
 **文件：** 修改文件结构表中的搜索、反馈、i18n 和 main；修改 `tests/tools/search-vault.test.ts`、`tests/core/feedback-controller.test.ts`、`tests/main-index-lifecycle.test.ts`、`tests/ui/chat/feedback-diagnostics.test.ts`。
 
-- [ ] 先写原始向量候选中包含 stale/deleted/excluded/unresolved 时不能进入 rerank 输入的测试；不仅检查最终 UI 结果。
-- [ ] 将统一 visibility gate 放在向量候选进入融合/重排前，必要时继续取候选补足 topK；不得用后置工具过滤掩盖已发送给模型的片段。引用只对当前核实版本提供定位。
-- [ ] `autoIndex=false` 仅读取可信完成记录并核验本次候选存在性/黑名单，新鲜度显示 unknown；零全库扫描、零嵌入、零恢复写入。黑名单清理只排队，显式启用或授权清理后执行；没有可信记录则不可检索。
-- [ ] 状态展示区分总文件数、已提交数、待处理/失败数和当前阶段；变更导致待处理量增加时说明重新核对，不让旧任务进度污染新任务。Notice 仅真实全库完成时发送。
-- [ ] 增加停滞/恢复、部分可用、正在停止/已暂停、迁移和磁盘失败的 zh/en 文案及类型；取消操作复用现有控制入口，不新增设置页导航。
-- [ ] main 仅装配协调器与销毁；删除直接 drop/rebuild 旁路，确认模型切换、手动重建、Indexer Subagent 均经相同 owner/代际流程。手动强制重建不静默丢弃当前有效索引。
+- [x] 先写原始向量候选中包含 stale/deleted/excluded/unresolved 时不能进入 rerank 输入的测试；不仅检查最终 UI 结果。
+- [x] 将统一 visibility gate 放在向量候选进入融合/重排前，必要时继续取候选补足 topK；不得用后置工具过滤掩盖已发送给模型的片段。引用只对当前核实版本提供定位。
+- [x] `autoIndex=false` 仅读取可信完成记录并核验本次候选存在性/黑名单，新鲜度显示 unknown；零全库扫描、零嵌入、零恢复写入。黑名单清理只排队，显式启用或授权清理后执行；没有可信记录则不可检索。
+- [x] 状态展示区分总文件数、已提交数、待处理/失败数和当前阶段；变更导致待处理量增加时说明重新核对，不让旧任务进度污染新任务。Notice 仅真实全库完成时发送。
+- [x] 增加停滞/恢复、部分可用、正在停止/已暂停、迁移和磁盘失败的 zh/en 文案及类型；取消操作复用现有控制入口，不新增设置页导航。
+- [x] main 仅装配协调器与销毁；删除直接 drop/rebuild 旁路，确认模型切换、手动重建、Indexer Subagent 均经相同 owner/代际流程。手动强制重建不静默丢弃当前有效索引。
 
 **验证：** `npx vitest run tests/tools/search-vault.test.ts tests/core/feedback-controller.test.ts tests/main-index-lifecycle.test.ts tests/ui/chat/feedback-diagnostics.test.ts tests/subagents/indexer.test.ts`。模型/重排 spy 对被排除路径的输入命中数为零。
 

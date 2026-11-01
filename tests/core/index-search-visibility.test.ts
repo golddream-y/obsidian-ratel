@@ -17,6 +17,7 @@ import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { AtomicIndexStorage } from '../../src/adapters/atomic-index-storage';
+import { REGISTERED_INDEX_ASSEMBLY, type GateWiringPointCounts } from '../helpers/index-assembly-registry';
 import type { FileReplaceStore, PreparedBlock } from '../../src/adapters/vector-vectra';
 import {
 	IndexFileJournal,
@@ -839,14 +840,11 @@ describe('ReadOnlySearchView 关闭自动索引的只读通道', () => {
 /** 定义模块自身不算装配点 — 它的导出声明与 JSDoc 示例不是接线。 */
 const MODULE_DEFINITION_FILES = new Set(['src/core/index-search-visibility.ts']);
 
-/** 已登记的可见性门接线点 — 新增接线点未登记即失败(T7 接线后必须同批更新本清单)。 */
-const REGISTERED_GATE_WIRING: string[] = [];
-
 /**
- * 已登记的「尚未注入 fileRecords」的生产构造点 — T7 注入后必须同批删除,
- * 否则下面第二条断言会失败(清单只允许收缩,不允许留有余项)。
+ * 生产装配的唯一登记表 — 与 `tests/core/persistent-index-backend.test.ts` 共用同一份账本
+ * (`tests/helpers/index-assembly-registry.ts`),不再各自维护平行清单。
  */
-const PENDING_FILE_RECORDS_INJECTION: string[] = ['src/main.ts'];
+const REGISTERED_ASSEMBLY = REGISTERED_INDEX_ASSEMBLY;
 
 /** 去掉注释行 —— 守卫只看代码,避免 JSDoc 里的示例被当成装配点。 */
 function codeText(source: string): string {
@@ -879,12 +877,48 @@ function constructArguments(source: string, marker: string): string[] {
 	return calls;
 }
 
-/** 该装配文件是否接线了可见性门(构造只读视图/组装只读来源,或把只读视图交给控制器)。 */
-function wiresVisibilityGate(source: string): boolean {
+/**
+ * 统计标记在文本中出现的次数 —— 逐点计数,不是 `includes` 的文件级布尔。
+ *
+ * 关键路径(S5):守卫要能发现「同一文件内的第二处接线」,就必须按点位计数。
+ *
+ * @param source - 已去注释的源码文本。
+ * @param marker - 要统计的接线标记。
+ * @returns 出现次数。
+ */
+function countOccurrences(source: string, marker: string): number {
+	let count = 0;
+	let index = source.indexOf(marker);
+	while (index >= 0) {
+		count += 1;
+		index = source.indexOf(marker, index + 1);
+	}
+	return count;
+}
+
+/**
+ * 逐点统计该文件的可见性门接线点 — 按接线手法分类。
+ *
+ * 关键路径(S5):文件级布尔在「该文件已接线」成立后就会吞掉同文件的第二处接线;
+ * 这里返回每一类手法的**点位数量**,与账本按计数精确相等,多一个、少一个都红。
+ *
+ * @param source - 文件源码。
+ * @returns 该类文件的接线点计数。
+ */
+function countGateWiringPoints(source: string): GateWiringPointCounts {
 	const code = codeText(source);
-	return code.includes('new ReadOnlySearchView(')
-		|| code.includes('createJournalVisibilitySource(')
-		|| constructArguments(code, 'new IndexController(').some((args) => /\breadOnlyView\s*:/.test(args));
+	return {
+		readOnlySearchViews: countOccurrences(code, 'new ReadOnlySearchView('),
+		journalVisibilitySources: countOccurrences(code, 'createJournalVisibilitySource('),
+		controllerReadOnlyViews: constructArguments(code, 'new IndexController(')
+			.filter((args) => /\breadOnlyView\s*:/.test(args)).length,
+	};
+}
+
+/** 该装配文件是否接线了可见性门 — 由逐点计数派生,不再另维护一套布尔判断。 */
+function wiresVisibilityGate(source: string): boolean {
+	const points = countGateWiringPoints(source);
+	return points.readOnlySearchViews > 0 || points.journalVisibilitySources > 0 || points.controllerReadOnlyViews > 0;
 }
 
 /** 该装配文件是否走「日志只读来源」这条推荐路径 —— 它完全不读后端记录端口。 */
@@ -915,41 +949,53 @@ function collectSourceFiles(root: string): string[] {
 }
 
 describe('装配守卫:可见性门接线与记录端口注入', () => {
-	it('生产装配点 - 接线可见性门 - 必须同批注入 fileRecords 或走日志只读来源', () => {
+	it('生产装配点 - 门接线与 fileRecords 注入同批 - 双向断言唯一登记表', () => {
 		const repoRoot = path.resolve(__dirname, '../..');
 		const sources = new Map(collectSourceFiles(path.join(repoRoot, 'src'))
 			.map((file) => [path.relative(repoRoot, file), fs.readFileSync(file, 'utf8')]));
 		const sourceFiles = [...sources.keys()].filter((file) => !MODULE_DEFINITION_FILES.has(file));
-		const gateWiring = sourceFiles.filter((file) => wiresVisibilityGate(sources.get(file)!));
+		// 关键路径(S5):逐点计数而不是文件级布尔 —— 同一文件里的第二处接线也会改变计数。
+		const gatePointCounts: Record<string, GateWiringPointCounts> = {};
+		for (const file of sourceFiles) {
+			const points = countGateWiringPoints(sources.get(file)!);
+			if (points.readOnlySearchViews > 0 || points.journalVisibilitySources > 0 || points.controllerReadOnlyViews > 0) {
+				gatePointCounts[file] = points;
+			}
+		}
+		const gateWiring = Object.keys(gatePointCounts);
 		const fileRecordSites = new Set(sourceFiles.filter((file) => injectsFileRecords(sources.get(file)!)));
 
 		// 关键路径:后端记录端口未注入时 `searchableFileRecords()` 返回 null,门对 `unjudgeable`
 		// 一律 deny —— 这不是收紧而是检索全量归零。唯一例外是推荐路径
 		// `createJournalVisibilitySource(journal)`:它不读后端记录端口,但也不得叠加后端来源。
 		expect(gateWiring.filter((file) => !fileRecordSites.has(file) && !usesJournalReadOnlySource(sources.get(file)!))).toEqual([]);
-		// 非恒真保证:扫描必须真的覆盖生产源码与生产入口 —— 目录/命名变化时显式失败而不是静默通过。
+		// 关键路径:接线点**按计数**双向 —— 新增接线点未登记会红(含同文件第二处),
+		// 接线被移除/重命名/换手法同样会红;只记总数会漏掉「删一处加一处」。
+		expect(gatePointCounts).toEqual(REGISTERED_ASSEMBLY.gateWiringPointCounts);
+		// 非恒真保证:扫描必须真的覆盖生产源码与生产入口,且登记表不是空的恒真断言。
 		expect(sourceFiles.length).toBeGreaterThan(100);
 		expect(sourceFiles).toContain('src/main.ts');
-		// T7 登记:当前生产装配点尚未接线门;T7 接线后必须同批登记,守卫随即转为强制耦合。
-		expect(gateWiring).toEqual(REGISTERED_GATE_WIRING);
-	});
+		expect(fileRecordSites.size).toBeGreaterThanOrEqual(1);
+		// 非恒真保证:账本里的接线点总数必须为正 —— 全零会让上面的相等断言退化成「扫不到就绿」。
+		expect(Object.values(gatePointCounts).reduce((sum, points) => sum + points.readOnlySearchViews + points.journalVisibilitySources + points.controllerReadOnlyViews, 0)).toBeGreaterThan(0);
 
-	it('生产装配点 - 未注入 fileRecords 的构造点 - 全部落在显式登记的待注入清单里', () => {
-		const repoRoot = path.resolve(__dirname, '../..');
-		const sites: Array<{ file: string; args: string }> = [];
+		// 后端构造点侧同一份账:**逐点计数**,不是「哪些文件有漏点」的文件级集合。
+		const backendConstructionPointCounts: Record<string, number> = {};
+		const pendingFileRecordsPointCounts: Record<string, number> = {};
 		for (const file of collectSourceFiles(path.join(repoRoot, 'src'))) {
 			const source = codeText(fs.readFileSync(file, 'utf8'));
-			for (const args of constructArguments(source, 'new PersistentIndexBackend(')) {
-				sites.push({ file: path.relative(repoRoot, file), args });
-			}
+			const callSites = constructArguments(source, 'new PersistentIndexBackend(');
+			if (callSites.length === 0) continue;
+			const relative = path.relative(repoRoot, file);
+			backendConstructionPointCounts[relative] = callSites.length;
+			const missing = callSites.filter((args) => !/\bfileRecords\s*:/.test(args)).length;
+			if (missing > 0) pendingFileRecordsPointCounts[relative] = missing;
 		}
-		expect(sites.length).toBeGreaterThanOrEqual(1);
-		const pending = [...new Set(sites.filter((site) => !/\bfileRecords\s*:/.test(site.args)).map((site) => site.file))];
-		// 单向:新增未登记漏点立即失败。
-		expect(pending.filter((file) => !PENDING_FILE_RECORDS_INJECTION.includes(file))).toEqual([]);
-		// 关键路径:登记项必须仍然真的缺注入 —— T7 注入后本断言失败,要求同批删除登记项,
-		// 使待注入清单只收缩、不长期留白(守卫因此不会退化成恒真)。
-		expect(PENDING_FILE_RECORDS_INJECTION.filter((file) => !pending.includes(file))).toEqual([]);
+		expect(Object.values(backendConstructionPointCounts).reduce((sum, count) => sum + count, 0)).toBeGreaterThanOrEqual(1);
+		expect(backendConstructionPointCounts).toEqual(REGISTERED_ASSEMBLY.backendConstructionPointCounts);
+		// 双向且逐点:同一文件里第二个漏注入点会被计成 2,未登记立即失败;
+		// 登记项在注入后未删除同样失败(清单只允许收缩到空)。
+		expect(pendingFileRecordsPointCounts).toEqual(REGISTERED_ASSEMBLY.pendingFileRecordsPointCounts);
 	});
 
 	it('守卫判定可被证伪 - 接线门而未注入记录端口的文本会被判为不合规', () => {
@@ -966,5 +1012,38 @@ describe('装配守卫:可见性门接线与记录端口注入', () => {
 		// 控制器侧接线同样被识别;JSDoc 注释里的示例不算装配点。
 		expect(wiresVisibilityGate('new IndexController(vault, backend, root, { readOnlyView: view });')).toBe(true);
 		expect(wiresVisibilityGate(' *   const view = new ReadOnlySearchView({ source, configFingerprint });')).toBe(false);
+	});
+
+	it('守卫判定可被证伪 - 同一文件内新增第二处接线会被逐点计数发现(文件级布尔放行)', () => {
+		// 关键路径(S5 反例):旧守卫是文件级布尔,「该文件已接线」一旦为真,
+		// 文件内再新增第二处「接线门但不读日志只读来源」的接线不会被发现。
+		const oneGate = [
+			'const backend = new PersistentIndexBackend({ indexDir, manifest, worker, getStore, vault, fileRecords: journal });',
+			'const view = new ReadOnlySearchView({ source: createJournalVisibilitySource(journal), configFingerprint });',
+		].join('\n');
+		const twoGates = [
+			oneGate,
+			'const legacyView = new ReadOnlySearchView({ source: createBackendVisibilitySource(backend), configFingerprint });',
+		].join('\n');
+
+		// 旧口径(文件级)对两段文本判定完全相同 —— 这正是「发现不了第二处」的失败证据:
+		// 该文件已有一个注入了 fileRecords 的后端,也已有日志只读来源,语义检查被同文件其它点位满足。
+		expect(wiresVisibilityGate(oneGate)).toBe(wiresVisibilityGate(twoGates));
+		expect(injectsFileRecords(twoGates)).toBe(true);
+		expect(usesJournalReadOnlySource(twoGates)).toBe(true);
+
+		// 新口径(逐点计数)必须随第二处接线变化。
+		const before = countGateWiringPoints(oneGate);
+		const after = countGateWiringPoints(twoGates);
+		expect(before.readOnlySearchViews).toBe(1);
+		expect(after.readOnlySearchViews).toBe(2);
+		expect(after).not.toEqual(before);
+
+		// 与账本比较的**双向**证伪:账本停在 `before` 时 `after` 会红;账本提前写成 `after` 时
+		// `before`(即真实的单点装配)同样会红 —— 不存在「多一个少一个都绿」的写法。
+		const ledgerOfBefore: Record<string, GateWiringPointCounts> = { 'src/main.ts': before };
+		const ledgerOfAfter: Record<string, GateWiringPointCounts> = { 'src/main.ts': after };
+		expect(ledgerOfBefore).not.toEqual({ 'src/main.ts': after });
+		expect(ledgerOfAfter).not.toEqual({ 'src/main.ts': before });
 	});
 });

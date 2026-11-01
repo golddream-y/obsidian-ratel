@@ -30,7 +30,14 @@ export type IndexStatus =
     | { state: 'Processing'; currentBatch: string[] }
     | { state: 'Ready'; totalDocs: number; lastIndexTime: number; committedDocs?: number; totalFiles?: number; pendingDocs?: number; failedDocs?: number; phase?: IndexPhase }
     | { state: 'Paused'; pending: number }
-    | { state: 'Failed'; reason: string }
+    /**
+     * 失败态 — `reason` 是开发向说明,`errorCode` 是**稳定错误码**(存在时)。
+     *
+     * 关键路径(T7/I1):上屏文案必须能按码查表。`String(err)` 早已丢掉错误对象,
+     * 因此失败路径必须在这里把码留下来,否则 `index-directory-not-owned`/`drop-refused`/
+     * `owner-not-writable` 等新码只能落成 `error.index.unknown` + 开发向 message。
+     */
+    | { state: 'Failed'; reason: string; errorCode?: string }
     | { state: 'Unloaded' };
 
 /** 已提交索引的只读摘要，不包含本次扫描或嵌入统计。 */
@@ -84,6 +91,13 @@ export interface IndexTaskCoordinatorPort {
     isReady(): boolean;
     /** 暂停队列消费。 */
     pause(): void;
+    /**
+     * 取消在途处理 — 先撤销在途可取消的调用,再停止调度新文件(T5 的顺序契约)。
+     *
+     * 关键路径:引入协调器后「暂停」不再只是停止消费队列 —— 在途的推理/提交必须被撤销,
+     * 否则用户以为停了,后台仍在写盘。
+     */
+    abortActive(reason?: string): void;
     /** 恢复队列消费与失败重试。 */
     resume(): void;
     /** 卸载并退订事件。 */
@@ -196,7 +210,7 @@ export class IndexManager {
             } catch (err) {
                 this.failed = true;
                 this.scanFailed = true;
-                if (!this.unloaded) this.status$.set({ state: 'Failed', reason: String(err) });
+                if (!this.unloaded) this.status$.set(this.failedStatus(err));
                 devLogger.error('index', '读取已提交索引状态失败', err);
             }
         });
@@ -232,7 +246,7 @@ export class IndexManager {
         catch (err) {
             this.failed = true;
             this.scanFailed = true;
-            if (!this.unloaded) this.status$.set({ state: 'Failed', reason: String(err) });
+            if (!this.unloaded) this.status$.set(this.failedStatus(err));
             devLogger.error('index', '协调器启动索引失败', err);
             return null;
         }
@@ -320,7 +334,7 @@ export class IndexManager {
         } catch (err) {
             this.failed = true;
             this.scanFailed = true;
-            if (!this.unloaded) this.status$.set({ state: 'Failed', reason: String(err) });
+            if (!this.unloaded) this.status$.set(this.failedStatus(err));
             devLogger.error('index', '启动索引失败', err);
             return null;
         }
@@ -355,11 +369,14 @@ export class IndexManager {
         }
     }
 
-    /** 暂停 — 队列继续累积,不消费。 */
+    /** 暂停 — 队列继续累积,不消费;在途调用先被撤销(T5/I6 的顺序契约)。 */
     pause(): void {
         if (this.paused) return;
         this.paused = true;
         this.snapshotForResume();
+        // 关键路径:顺序必须是「先撤销在途调用、再停止调度新文件」—— 反序会留下一个
+        // 「已停止调度但调用仍持证书」的窗口。协调器的 `abortActive` 自带置暂停,`pause()` 幂等。
+        this.coordinator?.abortActive();
         this.coordinator?.pause();
         this.status$.set({ state: 'Paused', pending: this.pendingCount() });
     }
@@ -412,6 +429,12 @@ export class IndexManager {
      * 关键路径:用户手动 /reindex 想强制全量,必须绕过 smartReindex 的 hash diff。
      * 若不清 manifest,smartReindex 会跳过未变更文件,违反用户预期。
      * 清理失败立即停止；backend 未提供清理时仍执行全量。
+     *
+     * 关键路径(代际装配后的语义变化):注入协调器时**不再清库** —— 清库会连带抹掉
+     * 当前代际的向量与日志凭据,等于静默丢弃当前有效索引(spec 明确禁止);重建改为
+     * 「撤销在途调用 → 重新跑一轮逐文件核对」,每个文件的替换仍由同一 owner/代际流程
+     * 在单文件事务里完成,失败只影响该文件,已有版本保持可用。
+     * 未注入协调器时保持旧语义(清库 + 全量),该分支在生产装配下已不可达。
      */
     reindex(): Promise<void> {
         if (this.rebuilding) return this.rebuilding;
@@ -419,13 +442,21 @@ export class IndexManager {
             if (this.unloaded) return;
             try {
                 // 修复:不清事件队列；扫描期间的最新变动必须在重建后追平。
-                await this.backend.dropIndex?.();
+                const coordinator = this.coordinator;
+                if (coordinator) {
+                    // 关键路径:理由只进开发日志,不是用户可见字符串(文案归 i18n 任务)。
+                    coordinator.abortActive('用户手动重建索引');
+                    coordinator.resume();
+                }
+                else {
+                    await this.backend.dropIndex?.();
+                }
                 await this.onManifestReset?.();
-                await (this.coordinator ? this.runCoordinator() : this.scan(true));
+                await (coordinator ? this.runCoordinator() : this.scan(true));
             } catch (err) {
                 this.failed = true;
                 this.scanFailed = true;
-                if (!this.unloaded) this.status$.set({ state: 'Failed', reason: String(err) });
+                if (!this.unloaded) this.status$.set(this.failedStatus(err));
                 devLogger.error('index', '重新索引失败', err);
             }
         });
@@ -462,7 +493,7 @@ export class IndexManager {
         } catch (err) {
             this.failed = true;
             if (!this.queue.has(path)) this.queue.set(path, entry);
-            if (!this.unloaded) this.status$.set({ state: 'Failed', reason: String(err) });
+            if (!this.unloaded) this.status$.set(this.failedStatus(err));
         }
     }
 
@@ -509,6 +540,25 @@ export class IndexManager {
     }
 
     /**
+     * 构造失败状态 — 保留错误的稳定码,让上屏文案能按码表映射(T7/I1)。
+     *
+     * 关键路径:`reason` 仍是开发向说明(日志/诊断用);`errorCode` 只在错误对象确实带字符串码时
+     * 出现 —— 没有码的对象保持既有语义,不伪造一个码。
+     *
+     * @param error - 捕获到的错误。
+     * @param reason - 覆盖用的说明文案(已本地化时传入,例如部分失败计数)。
+     * @returns 失败状态。
+     */
+    private failedStatus(error: unknown, reason?: string): IndexStatus {
+        const code = errorCodeOf(error);
+        return {
+            state: 'Failed',
+            reason: reason ?? String(error),
+            ...(code === undefined ? {} : { errorCode: code }),
+        };
+    }
+
+    /**
      * 内部调度 — 防止并发消费。
      * 多次 enqueue 复用正在等待或执行的 flush。
      */
@@ -521,4 +571,19 @@ export class IndexManager {
         // 修复:运行状态也原样保存；暂停和恢复都不能凭空制造成功状态。
         this.previousState = get(this.status$);
     }
+}
+
+/**
+ * 读取错误的稳定码 — 没有字符串码时为 undefined。
+ *
+ * 关键路径:本模块不能依赖 `feedback-controller`(反向依赖会成环),因此这里保留一份最小实现;
+ * 它只回答「错误对象带没带码」,不参与文案映射。
+ *
+ * @param error - 任意捕获到的错误。
+ * @returns 稳定错误码;不存在时为 undefined。
+ */
+function errorCodeOf(error: unknown): string | undefined {
+    if (typeof error !== 'object' || error === null) return undefined;
+    const code = (error as { code?: unknown }).code;
+    return typeof code === 'string' && code.length > 0 ? code : undefined;
 }

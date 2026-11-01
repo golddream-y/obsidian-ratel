@@ -17,6 +17,10 @@ class CoordinatorStub implements IndexTaskCoordinatorPort {
     readonly events: string[] = [];
     pausedCount = 0;
     resumedCount = 0;
+    /** `abortActive` 调用次数 — 顺序断言(先撤销在途、再停止调度)的可观察点。 */
+    abortCount = 0;
+    /** 调用顺序记录 — 供「先 abortActive 后 pause」的用例断言。 */
+    readonly callOrder: string[] = [];
     destroyed = 0;
     private state: IndexTaskCounters = {
         taskId: 0, phase: 'paused', scanComplete: false, total: 0, committed: 0,
@@ -47,7 +51,8 @@ class CoordinatorStub implements IndexTaskCoordinatorPort {
         return this.state.phase === 'ready' && this.state.failures === 0;
     }
 
-    pause(): void { this.pausedCount += 1; }
+    pause(): void { this.pausedCount += 1; this.callOrder.push('pause'); }
+    abortActive(): void { this.abortCount += 1; this.callOrder.push('abortActive'); }
     resume(): void { this.resumedCount += 1; }
     destroy(): void { this.destroyed += 1; }
 
@@ -501,27 +506,44 @@ describe('协调器接入', () => {
         expect(coordinator.destroyed).toBe(1);
     });
 
-    it('重建 - 注入协调器 - 先清库再交给协调器重新核对', async () => {
+    it('重建 - 注入协调器 - 不清库 - 撤销在途调用后重新核对', async () => {
         const backend = backendStub();
         const order: string[] = [];
         backend.fullReindex = vi.fn(async () => { order.push('full'); return { indexed: 0, errors: 0 }; });
         const coordinator = new CoordinatorStub(() => order.push('coordinator-start'));
-        (backend as { dropIndex?: () => Promise<void> }).dropIndex = async () => { order.push('drop'); };
+        const dropIndex = vi.fn(async () => { order.push('drop'); });
+        (backend as { dropIndex?: () => Promise<void> }).dropIndex = dropIndex;
         const manager = new IndexManager(backend, coordinator);
         await manager.onLayoutReady();
         await manager.reindex();
-        expect(order).toEqual(['coordinator-start', 'drop', 'coordinator-start']);
+        // 关键路径:代际装配下手动重建**不得清库** —— 清库会抹掉当前代际的向量与日志凭据,
+        // 等于静默丢弃当前有效索引;重建改为撤销在途调用后重新跑一轮逐文件核对。
+        expect(order).toEqual(['coordinator-start', 'coordinator-start']);
+        expect(dropIndex).not.toHaveBeenCalled();
+        expect(coordinator.abortCount).toBe(1);
+        expect(coordinator.resumedCount).toBe(1);
         expect(backend.fullReindex).not.toHaveBeenCalled();
         manager.destroy();
     });
 
-    it('重建 - 协调器在途 drain - 清库与重扫不与其交错', async () => {
+    it('暂停 - 注入协调器 - 先撤销在途调用再停止调度', async () => {
+        const coordinator = new CoordinatorStub();
+        const manager = new IndexManager(backendStub(), coordinator);
+        await manager.onLayoutReady();
+        manager.pause();
+        // 关键路径(I6):顺序必须先是 abortActive(撤销在途调用),再是 pause(停止调度新文件)。
+        expect(coordinator.callOrder).toEqual(['abortActive', 'pause']);
+        manager.destroy();
+    });
+
+    it('重建 - 协调器在途 drain - 重扫不与其交错', async () => {
         const order: string[] = [];
         let releaseDrain!: () => void;
         const backend = backendStub();
-        (backend as { dropIndex?: () => Promise<void> }).dropIndex = async () => { order.push('drop'); };
+        const dropIndex = vi.fn(async () => { order.push('drop'); });
+        (backend as { dropIndex?: () => Promise<void> }).dropIndex = dropIndex;
         const coordinator = new CoordinatorStub(() => order.push('coordinator-start'));
-        // 在途提交:drain 卡住时,清库与重扫必须排在它之后。
+        // 在途提交:drain 卡住时,重建必须排在它之后。
         coordinator.drain = async () => {
             order.push('drain');
             await new Promise<void>((resolve) => { releaseDrain = resolve; });
@@ -534,12 +556,14 @@ describe('协调器接入', () => {
 
         const rebuilding = manager.reindex();
         await Promise.resolve();
-        // 关键路径:协调器分支若不挂到 this.tail,dropIndex 会在 drain 未收敛时就执行。
-        expect(order).not.toContain('drop');
+        // 关键路径:协调器分支若不挂到 this.tail,重建会在 drain 未收敛时就开始。
+        expect(order.filter((item) => item === 'coordinator-start')).toHaveLength(1);
         releaseDrain();
         await rebuilding;
-        expect(order.indexOf('drop')).toBeGreaterThan(order.indexOf('drain-done'));
+        expect(order.filter((item) => item === 'coordinator-start')).toHaveLength(2);
+        expect(order.lastIndexOf('coordinator-start')).toBeGreaterThan(order.indexOf('drain-done'));
         expect(order.indexOf('coordinator-start')).toBeLessThan(order.indexOf('drain'));
+        expect(dropIndex).not.toHaveBeenCalled();
         manager.destroy();
     });
 
@@ -569,5 +593,47 @@ describe('协调器接入', () => {
         manager.enqueue('a.md', 'upsert');
         expect(get(manager.status$)).toMatchObject({ state: 'Queueing', reverifying: false });
         manager.destroy();
+    });
+});
+
+
+describe('失败态保留稳定错误码(T7/I1)', () => {
+    it('启动扫描 - 后端抛带码错误 - 失败态携带 errorCode 而不是只留 String(err)', async () => {
+        const busy = Object.assign(new Error('写所有权被占用(开发向)'), { code: 'owner-busy' });
+        const manager = new IndexManager({
+            fullReindex: vi.fn(),
+            incrementalIndex: vi.fn(),
+            deleteFile: vi.fn(),
+            smartReindex: vi.fn().mockRejectedValue(busy),
+        });
+        await manager.onLayoutReady();
+
+        expect(get(manager.status$)).toMatchObject({ state: 'Failed', errorCode: 'owner-busy' });
+        // 开发向 message 仍留在 reason 里(日志/诊断用),但不作为上屏依据。
+        expect((get(manager.status$) as { reason: string }).reason).toContain('写所有权被占用');
+    });
+
+    it('重建 - dropIndex 拒绝(归属断言)- 失败态携带 index-directory-not-owned', async () => {
+        const refused = Object.assign(new Error('索引目录归属断言未通过'), { code: 'index-directory-not-owned' });
+        const manager = new IndexManager({
+            fullReindex: vi.fn(), incrementalIndex: vi.fn(), deleteFile: vi.fn(),
+            dropIndex: async () => { throw refused; },
+        });
+        await manager.reindex();
+
+        expect(get(manager.status$)).toMatchObject({ state: 'Failed', errorCode: 'index-directory-not-owned' });
+    });
+
+    it('启动扫描 - 无码错误 - 不伪造 errorCode,保持既有 reason 语义', async () => {
+        const manager = new IndexManager({
+            fullReindex: vi.fn().mockRejectedValue(new Error('embed failed')),
+            incrementalIndex: vi.fn(), deleteFile: vi.fn(),
+            smartReindex: vi.fn().mockRejectedValue(new Error('embed failed')),
+        });
+        await manager.onLayoutReady();
+
+        const status = get(manager.status$);
+        expect(status.state).toBe('Failed');
+        expect((status as { errorCode?: string }).errorCode).toBeUndefined();
     });
 });

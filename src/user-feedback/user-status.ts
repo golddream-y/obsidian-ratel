@@ -6,6 +6,79 @@
  */
 
 import { writable } from 'svelte/store';
+import type { IndexPhase } from '../core/index-persistence-types';
+
+/**
+ * 索引展示阶段 — T4/T5 的协调器阶段,外加 T6 的「迁移中」。
+ *
+ * 关键路径:`IndexPhase` 是任务阶段的事实源(含 `stalled`/`stopping`);`migrating` 由宿主
+ * 装配层提供(旧索引迁移/迁移后逐文件核对),不属于单一任务阶段,故作为展示层扩展。
+ */
+export type UserIndexPhase = IndexPhase | 'migrating';
+
+/**
+ * 索引须知 — 需要如实告知用户但不能改变 `index` 状态语义的补充事实。
+ *
+ * 关键路径:`unjudgeable` 的记录集与「0 篇可检索」是两件不同的事;缺少 epoch 保护同样是
+ * 必须上屏的事实,不允许静默通过。
+ *
+ * 说明:`reverifying`(重新核对)不是须知 —— 它是 `Queueing` 状态的详情文案
+ * (`status.detail.reverifying`),由 `indexDetail` 承载;把它放进须知枚举会留下一个
+ * 永远没有生产者的不可达分支,故移除(枚举项删除,i18n 键保留给它原本的用途)。
+ */
+export const INDEX_NOTICES = [
+	'resumed',
+	'stalled',
+	'stopping',
+	'migrating',
+	'disk-failure',
+	'epoch-missing',
+	'records-unknown',
+	'config-mismatch',
+	/** 索引运行时装配失败(降级)— 索引不可用但插件其余能力照常,可重试装配。 */
+	'index-unavailable',
+	/** 会话内嵌入配置变更 — 为避免新旧参数混写,索引写入已暂停。 */
+	'config-drift',
+] as const;
+
+/** 索引须知。 */
+export type IndexNotice = (typeof INDEX_NOTICES)[number];
+
+/**
+ * 索引迁移/回收的可报告结论 — 诊断落点,不参与 `index` 状态语义。
+ *
+ * 关键路径(T7/I4):孤儿目录数、取证事务数、迁移状态是否落盘、新建被阻断的原因与代际隔离原因
+ * 原本只出现在 `devLogger` 里;这里给它们一个**可查看的落点**(状态抽屉的诊断行),只放结论面,
+ * 不含笔记正文、路径清单或密钥。
+ */
+export interface IndexConclusionDiagnostics {
+	/** 迁移结论;未发生迁移时为 undefined。 */
+	migration?: {
+		/** 迁移阶段(`inspect` / `copy` / `receipts` / `publish` / `done`)。 */
+		phase: string;
+		/** 可复用的文件数。 */
+		reused: number;
+		/** 需重算的文件数。 */
+		reindex: number;
+		/** 迁移进度状态是否已落盘(`published=true` 而它为 false 是独立结论)。 */
+		statePersisted: boolean;
+	};
+	/** 回收结论;未触发「新建前回收」路径时为 undefined。 */
+	reconcile?: {
+		/** 本次已回收的孤儿代际目录数。 */
+		orphanDirectories: number;
+		/** 被保留(有未决事务/隔离)的代际数。 */
+		retained: number;
+		/** 本次保留的取证事务目录总数。 */
+		quarantinedTransactions: number;
+		/** 是否因无法回收而阻断新建。 */
+		blocked: boolean;
+		/** 阻断原因;未阻断时为 null。 */
+		blockedReason: string | null;
+	};
+	/** 受影响代际的隔离原因(`generationId:reason`),无隔离时为空数组。 */
+	quarantinedGenerations: string[];
+}
 
 /** Chat 侧栏 StatusLine / StatusDrawer 展示的聚合快照 */
 export interface UserStatusSnapshot {
@@ -15,6 +88,22 @@ export interface UserStatusSnapshot {
 	index: 'idle' | 'init' | 'diffing' | 'scanning' | 'queueing' | 'processing' | 'ready' | 'paused' | 'failed';
 	indexDetail?: string;
 	indexDocCount?: number;
+	/** 当前索引阶段(含协调器的 stalled/stopping 与宿主的 migrating)。 */
+	indexPhase?: UserIndexPhase;
+	/** 索引须知;需要用户知道但不改变 index 状态语义的补充事实。 */
+	indexNotice?: IndexNotice;
+	/** 索引尚未收敛但已有可检索版本。 */
+	indexPartial?: boolean;
+	/** 本轮已知文件总数。 */
+	indexTotalFiles?: number;
+	/** 已提交且可检索的文件数。 */
+	indexCommittedFiles?: number;
+	/** 待处理(队列 + 在途 + 未决事务)文件数。 */
+	indexPendingFiles?: number;
+	/** 本轮未清除的失败数(按路径)。 */
+	indexFailedFiles?: number;
+	/** 迁移/回收的可报告结论 — 诊断落点(T7/I4),只放结论面。 */
+	indexDiagnostics?: IndexConclusionDiagnostics;
 
 	embedding: 'loading' | 'ready' | 'unavailable';
 	worker: 'thread' | 'inline';

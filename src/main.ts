@@ -41,9 +41,34 @@ import type { EmbeddingPort } from './ports/embedding';
 import { EmbeddingApi } from './adapters/embedding-api';
 import { EmbeddingLocal } from './adapters/embedding-local';
 import { EmbeddingWorkerProxy } from './adapters/embedding-worker-proxy';
-import { VectraStore } from './adapters/vector-vectra';
+import { VectraStore, type FileReplaceStore } from './adapters/vector-vectra';
 import { AtomicIndexStorage } from './adapters/atomic-index-storage';
-import type { EmbeddingsModel, EmbeddingsResponse } from 'vectra';
+import { randomUUID } from 'node:crypto';
+import { IndexWriteOwner, type IndexWriteOwnerOptions } from './core/index-write-owner';
+import { IndexGenerations } from './core/index-generations';
+import { IndexFileJournal } from './core/index-file-journal';
+import type { IndexRoundState } from './core/persistent-index-backend';
+import { IndexStallWatchdog, IndexTaskCoordinator, type IndexStallSource } from './core/index-task-coordinator';
+import {
+	captureSearchVisibilitySnapshot,
+	createJournalVisibilitySource,
+	createReadOnlyOwnerGuard,
+	ReadOnlySearchView,
+	SearchVisibilityGate,
+} from './core/index-search-visibility';
+import {
+	ChunkingCoordinatorProcessor,
+	createFirstCommitPromoter,
+	createStrictDropOwnershipAssertion,
+	resolveIndexGeneration,
+	type IndexGenerationLegacySource,
+	type ResolveIndexGenerationResult,
+} from './core/index-processor-port';
+import { computeConfigFingerprint, type IndexConfigDescriptor } from './core/index-persistence-types';
+// 关键路径:词表(约 109KB)只传一次 — 模型就绪后由主线程交给 Worker,不进每条索引消息;
+// 协调器在主线程分块,必须与 Worker 读同一份词表才能得到一致的块边界。
+import { currentProcessorStore, getVocabContent, setVocabContent } from './worker/handler';
+import { sha256 } from './utils/hash';
 import { WorkerManager } from './worker/manager';
 import { InlineWorker } from './worker/inline-worker';
 import { createReadNoteTool } from './tools/read-note';
@@ -88,11 +113,17 @@ import type { RerankerPort } from './ports/reranker';
 import { ModelManager } from './core/model-manager';
 import { OrtRuntimeAssets } from './core/ort-runtime-assets';
 import { IndexController } from './core/index-controller';
-import { FeedbackController } from './core/feedback-controller';
-import type { IndexBackend } from './core/index-manager';
+import {
+	describeIndexError,
+	isIndexDiskFailure,
+	FeedbackController,
+	type IndexDisplaySignals,
+} from './core/feedback-controller';
+import type { FeedbackIndexDiagnostics } from './ui/chat/feedback-modal';
+import type { IndexBackend, IndexStatus } from './core/index-manager';
 import { devLogger } from './logging/dev-logger';
 import { UserNotice } from './user-feedback/user-notice';
-import { UserStatus } from './user-feedback/user-status';
+import { UserStatus, type IndexConclusionDiagnostics } from './user-feedback/user-status';
 import { CrashBreadcrumbs, type LastRunDiag } from './logging/breadcrumbs';
 import { isSearchReady } from './ui/chat/chat-send-gate';
 import { applyLangPreference, tNow } from './i18n';
@@ -107,7 +138,11 @@ import {
 	resolveRerankApiKey,
 	resolveMcpSecret,
 } from './secrets/ratel-secrets';
-import { MultiQuerySearcher } from './core/multi-query-searcher';
+import {
+	MultiQuerySearcher,
+	type SearchCandidateGate,
+	type SearchCandidateVerdict,
+} from './core/multi-query-searcher';
 import { McpHost } from './core/mcp-host';
 import { McpHttpTransport } from './adapters/mcp-http';
 import { McpStdioTransport } from './adapters/mcp-stdio';
@@ -120,8 +155,6 @@ import { resolveRerankMode } from './core/rerank-mode';
 // 关键路径(S-RETRIEVAL-QUALITY §4.1/§4.2):token 计数入口 —
 // 主线程只取模型输入上限,精确分词在 Worker 侧用词表做。
 import { createTokenCounter, TOKEN_BUDGET_RESERVE } from './core/token-counter';
-// 关键路径:词表(约 109KB)只传一次 — 模型就绪后由主线程交给 Worker,不进每条索引消息。
-import { setVocabContent } from './worker/handler';
 import { Indexer } from './subagents/indexer';
 import { ChatView, VIEW_TYPE_CHAT } from './ui/chat/ChatView';
 import { MemoryModal, shouldCreateMemoryModal } from './ui/memory-panel/MemoryModal';
@@ -129,7 +162,7 @@ import { McpManageModal, shouldCreateMcpManageModal } from './ui/mcp/McpManageMo
 import { SkillManageModal, shouldCreateSkillManageModal } from './ui/skills/SkillManageModal';
 import { requestMcpSpawnConfirmation } from './ui/mcp/mcp-spawn-confirm-modal';
 import { applyBadgerEmojiToElement, patchAllChatLeafIcons } from './utils/badger-icon';
-import { get } from 'svelte/store';
+import { get, type Readable } from 'svelte/store';
 import { ensurePluginGitignore } from './utils/gitignore-writer';
 import { IndexManifest, migrateLegacyIndexManifest, resolveIndexManifestPath, CURRENT_CHUNKER_VERSION } from './core/index-manifest';
 import { ModelContextRegistry } from './ui/tokens/model-context-registry';
@@ -243,6 +276,67 @@ export default class RatelVaultPlugin extends Plugin {
 	private embeddingWorkerUrl?: string;
 	// 关键路径:indexDir 在 onload 计算,onLayoutReady 初始化 InlineWorker 时需要复用。
 	private indexDir!: string;
+	/**
+	 * 索引根(`.index/`)—— 控制指针、owner 锁与 `generations/` 都在这里。
+	 *
+	 * 关键路径:日志与 `control` 在根、Vectra 数据在 `generations/<id>`;因此
+	 * `indexDir` 是注入给存储与日志的**代际目录**,`indexRoot` 才是受保护的索引根。
+	 * 任何清库都必须指向代际目录,不能是根(T6 §8.1)。
+	 */
+	private indexRoot!: string;
+	/** 写所有权门面 — 同时持有 renderer 内 epoch 租约与索引根 `owner.lock`;只在自动索引开启时获取。 */
+	private indexOwnerLease?: IndexWriteOwner;
+	/** 代际与控制指针管理者。 */
+	private indexGenerations?: IndexGenerations;
+	/** 本实例写入的日志(既是后端记录端口,也是协调器提交端口)。 */
+	private indexJournal?: IndexFileJournal;
+	/** 持久任务协调器(T4 扫描/队列/新鲜度,T5 活动与取消)。 */
+	private indexCoordinator?: IndexTaskCoordinator;
+	/** 停滞看护(T5)。 */
+	private indexStallWatchdog?: IndexStallWatchdog;
+	/** 协调器处理器端口(分块 + 嵌入)。 */
+	private indexProcessorPort?: ChunkingCoordinatorProcessor;
+	/**
+	 * 控制指针上的活动代际 ID;没有活动代际时为 null。
+	 *
+	 * 关键路径:配置变化时本实例解析出的是**隔离的** building/verifying 代际(见
+	 * `resolvedGenerationId`),而本字段在原子切换完成前仍是那个可用的旧代际 ——
+	 * 清库守卫(`isActiveGeneration`)与状态展示据此继续把它当作正在使用的索引。
+	 */
+	private activeGenerationId: string | null = null;
+	/** 本实例解析出的代际 ID(可能是 building/verifying,等待首个提交或本轮核对完成)。 */
+	private resolvedGenerationId: string | null = null;
+	/** 当前配置指纹 — 协调器核对与可见性门共用同一份。 */
+	private indexConfigFingerprint = '';
+	/** 关闭自动索引时注入的只读可见性视图(检索侧消费,归 T7b)。 */
+	private readOnlySearchView?: ReadOnlySearchView;
+	/** 本轮是从旧索引迁移来的(T6 装配期结论)— 状态展示据此说明「迁移中/迁移后核对」。 */
+	private indexMigrated = false;
+	/** 当前解析出的索引目录是否可用(有活动代际或本实例已建代际)。 */
+	private indexDirUsable = false;
+	/** 活动代际登记进行中 — 避免状态订阅重复写控制指针。 */
+	private publishingGeneration = false;
+	/** 状态订阅句柄(活动代际登记用)。 */
+	private generationActivationUnsub?: () => void;
+	/**
+	 * 索引运行时装配失败原因 — 非空表示索引处于**降级状态**(T7/I2)。
+	 *
+	 * 关键路径:迁移失败或没有可用代际时不再让 `onload` reject —— 那会让插件整体不可用
+	 * (连聊天都打不开,且用户看不到原因)。降级只停索引,状态与 Notice 如实说明,并提供重试入口。
+	 */
+	private indexUnavailable: { error: unknown; message: string } | null = null;
+	/**
+	 * 本实例装配时的索引配置身份 — 会话内配置漂移检测的唯一依据(T7/I6)。
+	 *
+	 * 关键路径:`indexConfigFingerprint` 只在装配时算一次;`getBuildStamp()` 却读实时 settings,
+	 * 因此会话内改嵌入模型会让「协调器按旧指纹写日志、清单/戳写新参数」静默混写。这里记住
+	 * 装配期身份,任何一次 `rebuildEmbeddingAdapter` 后逐字比对。
+	 */
+	private indexConfigIdentity: string | null = null;
+	/** 索引迁移/回收结论 — 诊断落点(T7/I4),只放结论面,不含笔记正文。 */
+	private indexConclusion: IndexConclusionDiagnostics | null = null;
+	/** vault 根绝对路径 — 索引对象装配(含降级重试)复用。 */
+	private vaultBase = '';
 	// 关键路径:用户记忆存储,管理 .ratel/memory/ 下的 markdown 文件与 .memory-index/ vectra 索引
 	private memoryStore!: MemoryStore;
 	// 关键路径(S-SR-LAYERING):使用统计存储(pluginDir/usage-stats.json);UI 管理面板读取展示
@@ -259,8 +353,9 @@ export default class RatelVaultPlugin extends Plugin {
 	/** S-MODEL-CATALOG: models.dev 名单缓存。打开对话模型页时才拉取 */
 	modelsDevCatalog!: ModelsDevCatalogCache;
 	indexController!: IndexController;
-	// 关键路径:索引 backend 引用 — smartReindex 直接调 this.indexBackend.fullReindex(),
-	// 避免 this.indexController['indexManager']['backend'] 反模式访问私有字段。
+	// 关键路径:索引 backend 引用 — 完成宣告(`isIndexComplete`)与诊断(`roundState`)都由
+	// 装配层直接读取,避免 this.indexController['indexManager']['backend'] 反模式访问私有字段。
+	// 扫描/提交入口不从这里转发:t7 起协调器持有逐文件核对,清库入口只剩 dropInactiveGenerations。
 	indexBackend!: IndexBackend;
 	// 关键路径:索引清单 — 记每文件 hash + 全局 embedding 参数,启动期 hash diff。
 	indexManifest!: IndexManifest;
@@ -326,6 +421,8 @@ export default class RatelVaultPlugin extends Plugin {
 		// 关键路径:Persistence 分文件 sessions 依赖 pluginDir,须在构造前解析绝对路径
 		const adapter = this.app.vault.adapter as FileSystemAdapter;
 		const vaultBase = adapter.getBasePath();
+		// 关键路径:保留给降级重试复用 —— 重试时 IndexController 需要同一个 vault 根。
+		this.vaultBase = vaultBase;
 		const pluginDir = path.join(vaultBase, this.app.vault.configDir, 'plugins', 'ratel-vault');
 		this.persistence = new PersistenceJson(
 			() => this.loadData(),
@@ -337,7 +434,7 @@ export default class RatelVaultPlugin extends Plugin {
 		// Embedding 适配器:本地 ONNX vs 远端 OpenAI 兼容端点,按设置二选一。
 		this.rebuildEmbeddingAdapter();
 
-		// ==================== 索引目录(启动期) ====================
+		// ==================== 索引目录与代际(启动期) ====================
 		// 关键路径:pluginDir / vaultBase 已在上方构造 Persistence 时解析。
 		// 注入实际 configDir 名,供 path-safety 拦截配置目录访问(兼容用户自定义 configDir)。
 		setConfigDir(this.app.vault.configDir);
@@ -345,11 +442,11 @@ export default class RatelVaultPlugin extends Plugin {
 			const response = await requestUrl({ url, method: 'GET', throw: false });
 			return { status: response.status, text: response.text };
 		});
-		this.indexDir = path.join(pluginDir, '.index');
-		// 关键路径:启动期 vectraStore 可能尚无 embeddings(本地模型在 onLayoutReady 才下载),
-		// 因此只做目录占位;InlineWorker 场景下会在模型就绪后重新创建带 embeddings 的 store。
-		// 关键路径(B3):必须注入原子存储,否则 getLastWriteOutcome 恒为 null、提交失败只能报「状态不明」。
-		this.vectraStore = new VectraStore(this.indexDir, { storage: this.createIndexStorage(this.indexDir) });
+		// 关键路径:代际解析必须早于任何索引 store 构造 —— 注入给存储/日志/后端的 `indexDir`
+		// 是 `generations/<activeGenerationId>`,`.index/` 根只承载 control、owner 锁与日志。
+		// 方法内部会按「活动代际 → legacy 迁移 → 新建 building 代际」的顺序解析,并在
+		// 本实例写入的 `owner.lock` 内完成;只读装配(`autoIndex=false`)不取锁、零写入。
+		await this.setupIndexRuntime(pluginDir);
 		ensurePluginGitignore(pluginDir);
 		this.breadcrumbs = new CrashBreadcrumbs({
 			pluginDir,
@@ -433,28 +530,10 @@ export default class RatelVaultPlugin extends Plugin {
 		const ortAssets = new OrtRuntimeAssets(pluginDir);
 		this.modelManager = new ModelManager(path.join(pluginDir, 'models'), ortAssets);
 
-		// 关键路径:清单落在 .index/ratel-manifest.json;启动时迁入旧版插件根 index-manifest.json
-		try {
-			await migrateLegacyIndexManifest(pluginDir, this.indexDir);
-		} catch (err) {
-			devLogger.warn('index', '旧版 index-manifest 迁移失败(可忽略)', err);
-		}
-		this.indexManifest = new IndexManifest(resolveIndexManifestPath(this.indexDir));
-		this.indexBackend = new PersistentIndexBackend({
-			indexDir: this.indexDir,
-			manifest: this.indexManifest,
-			worker: this.workerManager,
-			getStore: () => this.vectraStore,
-			vault: this.vault,
-			getBuildStamp: () => this.currentBuildStamp(),
-			getChunkOptions: () => this.buildChunkOptions(),
-		});
-
-		// 关键路径:ObsidianVault 已实现 VaultEventListener 接口,直接传入可保证所有 Obsidian API 访问都走外观层。
-		this.indexController = new IndexController(this.vault, this.indexBackend, vaultBase);
-
-		// 关键路径:W4 — Indexer subagent,供其他子代理通过统一接口触发索引。
-		this.indexer = new Indexer({ vault: this.vault, indexController: this.indexController });
+		// 关键路径:索引侧对象装配集中在 assembleIndexObjects —— 降级重试(索引不可用后恢复)
+// 与 onload 必须走同一处,否则两边的清单/后端/控制器装配会漂移。
+		this.assembleIndexObjects();
+		await this.preheatReadOnlyView();
 
 		// ==================== 工具与钩子 ====================
 		this.tools = new ToolRegistry();
@@ -491,6 +570,9 @@ export default class RatelVaultPlugin extends Plugin {
 			vault: this.vault,
 			reranker,
 			queryRewriter,
+			// 关键路径(T7/A11):统一可见性门 —— 原始向量候选进入融合/重排前的唯一闸门;
+			// 写路径用日志+协调器新鲜度,关闭自动索引时用只读视图+内存变更集。
+			visibility: this.createSearchCandidateGate(),
 		});
 
 		this.tools.register(
@@ -653,7 +735,9 @@ export default class RatelVaultPlugin extends Plugin {
 					},
 				},
 				{ settings: this.settings },
-				this.indexController.indexManager.status$,
+				// 关键路径(T7/I2):工具的生命周期长于索引控制器 —— 经延迟解析视图读取,
+				// 降级重试重建控制器后不会继续读旧状态机。
+				this.currentIndexStatus(),
 				toolDefMap.get('get_app_config')!,
 			),
 		);
@@ -988,38 +1072,84 @@ export default class RatelVaultPlugin extends Plugin {
 		},
 	});
 
-	// 命令:重建索引(危险操作 — 走二次确认 Modal,避免误触全量重建)
+	// 命令:重建当前索引(逐文件重新核对,不清库 — 危险操作走二次确认 Modal)
 	this.addCommand({
 		id: 'reindex',
 		name: tNow('cmd.rebuildIndex'),
-		callback: () => showReindexConfirm(this.app, () => this.indexController.reindex()),
+		callback: () => showReindexConfirm(this.app, async () => {
+			try {
+				// 关键路径(T7a 语义):reindex 只做「撤销在途调用 + 逐文件重新核对」,
+				// 不清空当前有效索引。
+				await this.indexController.reindex();
+			} catch (err) {
+				// 关键路径(T7/I1):`IndexController.reindex` 把失败态压成裸 Error(丢码),
+				// 因此优先取管理器的失败态(带 `errorCode`)再映射,保证上屏文案走码表。
+				const status = get(this.indexController.indexManager.status$);
+				const failure: unknown = status.state === 'Failed' ? status : err;
+				this.markIndexDiskFailure(failure);
+				throw new Error(describeIndexError(failure));
+			}
+		}),
 	});
 
-	// 命令:暂停索引(文件事件不再触发增量索引)
+	// 命令:暂停索引(取消在途调用并停止调度;文件事件继续入队但不消费)
 	this.addCommand({
 		id: 'pause-index',
 		name: tNow('cmd.pauseIndex'),
 		callback: () => {
+			// 关键路径:取消入口复用既有控制命令 —— 先撤销在途调用(协调器 + Worker 侧取消),
+			// 再暂停调度;不新增设置页导航。
+			this.cancelIndexRun();
 			this.indexController.pause();
 			this.userNotice.toast(tNow('notice.indexPaused'));
 		},
 	});
 
-	// 命令:恢复索引(继续处理文件事件)
+	// 命令:恢复索引(继续处理文件事件;永久挂起的运行时在这里被重置)
 	this.addCommand({
 		id: 'resume-index',
 		name: tNow('cmd.resumeIndex'),
 		callback: () => {
+			// 关键路径:T5 §6 裁定 —— `resetRuntime` 是「写操作永久挂起」的唯一出口:
+			// 结束所有受影响的等待,让运行时回到可用状态后重新调度;不终止共享 Worker。
+			if (this.workerManager?.isStalled()) {
+				devLogger.warn('index', '恢复索引前重置挂起的索引运行时');
+				this.workerManager.resetRuntime();
+			}
 			this.indexController.resume();
 			this.userNotice.toast(tNow('notice.indexResumed'));
 		},
 	});
 
-	// 命令:清空索引(危险操作 — 强制输入 DELETE 确认,防止误删向量数据)
+	// 命令:清理非活动索引代际(只删未生效代际;强制输入 DELETE 确认)
 	this.addCommand({
 		id: 'drop-index',
 		name: tNow('cmd.dropIndex'),
-		callback: () => showDropIndexConfirm(this.app, () => this.indexBackend.dropIndex!()),
+		callback: () => showDropIndexConfirm(this.app, async () => {
+			try {
+				const dropped = await this.dropInactiveGenerations();
+				if (dropped === null) {
+					// 关键路径:没有写所有权时如实告知「拒绝清理、索引未改动」,不假装成功。
+					this.userNotice.toastError(tNow('notice.dropIndexRefused'));
+					return;
+				}
+				this.userNotice.toast(dropped > 0
+					? tNow('notice.dropIndexDone', { count: dropped })
+					: tNow('notice.dropIndexNothing'));
+			} catch (err) {
+				this.markIndexDiskFailure(err);
+				throw new Error(describeIndexError(err));
+			}
+		}),
+	});
+
+	// 命令:重试索引装配(降级状态下的恢复入口 —— 索引不可用但插件其余能力照常)
+	this.addCommand({
+		id: 'retry-index',
+		name: tNow('cmd.retryIndex'),
+		callback: () => {
+			void this.retryIndexRuntime();
+		},
 	});
 
 	// 命令:重新加载 Skills(手动刷新三源)
@@ -1061,8 +1191,13 @@ export default class RatelVaultPlugin extends Plugin {
 			userStatus: this.userStatus,
 			getEmbeddingReady: () => !(this.embedding instanceof EmbeddingLocal) || this.embedding.isReady,
 			getSettings: () => this.settings,
+			// 关键路径:迁移/epoch 保护/可信记录可判定性不随 IndexStatus 变化,由装配层提供。
+			getIndexSignals: () => this.indexDisplaySignals(),
 		});
 		this.feedbackController.start();
+		// 关键路径(T7 未接线项):装配完成后主动刷新一次索引展示信号 —— 迁移结论、缺少 epoch
+		// 保护、可信记录可判定性都不随 `IndexStatus` 变化;不刷新就要等下一次状态派发才上屏。
+		this.feedbackController.refreshIndexStatus();
 
 		// 关键路径:Obsidian UI 布局就绪后再启动模型下载与索引,避免阻塞 onload。
 		this.app.workspace.onLayoutReady(() => {
@@ -1087,8 +1222,8 @@ export default class RatelVaultPlugin extends Plugin {
 		if (shouldShowReleaseNotes(this.settings.lastSeenRelease, this.manifest.version)) {
 			void openReleaseNotesTab(this, true);
 		}
-		// 关键路径:进度回调 handle 跨 local 块与索引块共用,需在外层声明,
-		// 索引完成后(成功或失败)统一 hide/clear,避免 toast 残留(P3 重构:模型下载与索引启动分离)。
+		// 关键路径:进度回调 handle 在「模型下载 → 索引启动」之间共用 —— 下载阶段的 progress
+		// toast 必须由索引收口统一 hide/clear,否则成功路径会留下一个永不消失的进度条。
 		const indexProgressRef: {
 			handle: ReturnType<UserNotice['toastProgress']> | null;
 		} = { handle: null };
@@ -1146,41 +1281,62 @@ export default class RatelVaultPlugin extends Plugin {
 		}
 
 		// 关键路径:索引启动 — 两条 provider 都走(P3 修复)。
-		// autoIndex=false 时仅启动 FolderWatcher,不跑 smartReindex(spec §5.7)。
+		// autoIndex=false 时不装配写路径监听、不扫描、不嵌入、不写盘;事件只记入内存的
+		// 「已变更」集合供检索侧过滤,恢复写事务必须由用户显式启用索引或执行重建(A11)。
+		// 关键路径(T7/I2):装配降级时即使 autoIndex=true 也不进入写路径 —— 没有代际/没有写
+		// 所有权时跑一轮扫描会尝试在索引根上重建。降级出口只有状态 + Notice + 重试命令。
+		if (this.indexUnavailable) {
+			this.reportIndexUnavailable();
+			return;
+		}
+		await this.startIndexRound(this.settings.autoIndex === true, indexProgressRef);
+	}
+
+	/**
+	 * 跑一轮索引启动 — 启动路径与降级重试共用同一条收口(进度清理、完成宣告、失败映射)。
+	 *
+	 * 关键路径:
+	 * - 停滞看护只在会真正跑任务的写路径上启动 —— 只读通道零隐式副作用,不装定时器;
+	 * - 完成宣告必须先确认 `isIndexComplete()` 为真(部分可用不得宣称全库完成);
+	 * - 失败经 `describeIndexError` 映射错误码,开发向 message 不上屏。
+	 *
+	 * @param autoIndex - 是否进入写路径;只读装配传 false。
+	 * @param progress - 可选的共用进度句柄(启动路径上由模型下载阶段创建)。
+	 */
+	private async startIndexRound(
+		autoIndex: boolean,
+		progress?: { handle: ReturnType<UserNotice['toastProgress']> | null },
+	): Promise<void> {
+		const indexProgressRef = progress ?? { handle: null as ReturnType<UserNotice['toastProgress']> | null };
 		try {
-			const indexResult = await this.indexController.onLayoutReady(this.settings.autoIndex);
+			if (autoIndex) this.indexStallWatchdog?.start();
+			const indexResult = await this.indexController.onLayoutReady(autoIndex);
 			// 关键路径:索引完成后隐藏进度 toast 并清除 callback(成功路径)。
 			indexProgressRef.handle?.hide();
 			indexProgressRef.handle = null;
 			this.workerManager.clearProgressCallback();
 			if (indexResult && indexResult.errors === 0) {
-				this.feedbackController?.notifyFullIndexComplete(indexResult.indexed, indexResult.errors);
+				// 关键路径(A11/状态展示):只有当后端确认**本轮全库真的完成**时才宣告完成 ——
+				// 扫描未结束、队列/在途/未决事务非空、本轮有失败或持久凭据不完整时为假。
+				// 未注入该能力时按既有语义放行(向后兼容)。
+				const complete = await (this.indexBackend?.isIndexComplete?.() ?? Promise.resolve(true));
+				if (complete) {
+					this.feedbackController?.notifyFullIndexComplete(indexResult.indexed, indexResult.errors);
+				} else {
+					devLogger.info('index', '本轮尚未全库完成,不宣告完成(部分可用)');
+				}
 			}
 		} catch (err) {
 			// 关键路径:索引失败也要清理进度 toast 与 callback。
 			indexProgressRef.handle?.hide();
 			indexProgressRef.handle = null;
 			this.workerManager.clearProgressCallback();
-			const message = err instanceof Error ? err.message : String(err);
+			// 关键路径:错误码 → 用户文案(开发向 message 不上屏);磁盘/IO 类失败单独标记。
+			const message = describeIndexError(err);
 			devLogger.error('main', '索引启动失败', err);
 			this.userNotice.toastError(tNow('notice.indexError', { message }));
+			this.markIndexDiskFailure(err);
 		}
-	}
-
-	/**
-	 * smart reindex — 启动期 hash diff,仅对变更文件 batch embed。
-	 *
-	 * 关键路径:
-	 * 1. 索引不存在 → 委托 fullReindex(走 index.full)
-	 * 2. manifest 不存在/损坏 → 全量
-	 * 3. 全局参数(embedModelId/chunkSize)变 → 清 .index/ + manifest → 全量
-	 * 4. 否则 → hash diff,仅 toAdd+toUpdate 走 index.batch,toDelete 走 index.delete
-	 * 5. 失败时不清 manifest,下次启动重试
-	 *
-	 * @returns indexed 为本次实际写入的 chunk 所属文件数,errors 为失败计数,skipped 为未变更文件数。
-	 */
-	async smartReindex(): Promise<{ indexed: number; errors: number; skipped: number }> {
-		return this.indexBackend.smartReindex!();
 	}
 
 	/**
@@ -1197,12 +1353,23 @@ export default class RatelVaultPlugin extends Plugin {
 		};
 	}
 
-	/** 解析当前 embedding 模型 ID(local 用 ModelManager id,api 用 apiBase::model)。 */
+	/**
+	 * 解析当前 embedding 模型身份 — 与 T6 的代际身份约定同源。
+	 *
+	 * 关键路径:`IndexConfigDescriptor.embeddingModelId` 必须是 `local:<id>` / `api:<...>` 形式,
+	 * 否则 `confirmsLegacyConfigIdentity` 一律按 `model-id-unrecognized` 判定不可确认,
+	 * 旧索引迁移永远无法复用任何旧块(每次升级都全量重算)。
+	 * 本方法同时是构建戳/清单的 `embedModelId` 来源:两侧必须逐字一致,否则「旧清单身份」
+	 * 与「当前配置身份」不可比较。API 侧保留端点,避免两个同名模型的端点被当成同一配置。
+	 *
+	 * 影响面:旧版清单写的是无前缀形式(`local-default` 等),因此从旧版本升级会触发一次
+	 * 全量重建 —— 这与仓库既有的「升级后自动重建一次」语义一致,不构成回归。
+	 */
 	private resolveCurrentEmbedModelId(): string {
 		if (this.settings.embedProvider === 'local') {
-			return this.settings.embedLocalModel || 'local-default';
+			return `local:${this.settings.embedLocalModel || 'default'}`;
 		}
-		return `${this.settings.embedApiBase}::${this.settings.embedApiModel}`;
+		return `api:${this.settings.embedApiBase}::${this.settings.embedApiModel}`;
 	}
 
 	/**
@@ -1293,6 +1460,12 @@ export default class RatelVaultPlugin extends Plugin {
 	 *
 	 * 关键路径:同 `rebuildLLM`,embedProvider 切换或 API 类字段改后必须重建。
 	 * 本地模式使用占位适配器,真实 EmbeddingOnnx 在 ModelManager 下载完成后注入。
+	 *
+	 * 关键路径(T7/I6 — 会话内配置漂移):代际身份(指纹)、日志指纹与构建戳只在**装配时**
+	 * 定一次,而 `getBuildStamp()` 读的是实时 settings。会话内改嵌入模型/维度会让协调器按旧
+	 * 指纹写日志、清单与戳写新参数 —— 同维度换模型因此是**静默混写**。这里在装配层显式拒绝:
+	 * 一旦检测到身份变化,立刻暂停索引写入(撤销在途调用 + 停止调度)、把状态打成配置漂移须知,
+	 * 并提示重载插件;不做「本会话内重建代际」——那要重解析代际并重绑控制器,超出本轮范围。
 	 */
 	rebuildEmbeddingAdapter(): void {
 		if (this.settings.embedProvider === 'local') {
@@ -1309,6 +1482,30 @@ export default class RatelVaultPlugin extends Plugin {
 		// 关键路径:重建适配器后需通知 FeedbackController 重评 embedding 状态
 		// (API 模式立即可用→ready;local 占位需等模型下载→loading)。
 		this.feedbackController?.refreshEmbeddingStatus();
+		this.rejectIndexConfigDrift();
+	}
+
+	/**
+	 * 会话内嵌入配置漂移的显式拒绝 — 检测到身份变化就暂停索引写入并上屏(T7/I6)。
+	 *
+	 * 关键路径:装配尚未发生(启动期 `rebuildEmbeddingAdapter` 早于 `setupIndexRuntime`)时
+	 * `indexConfigIdentity` 为 null,不判定 —— 那时的身份由装配本身确定。
+	 */
+	private rejectIndexConfigDrift(): void {
+		// 关键路径:假值判定 —— 装配尚未发生时身份为空(null/undefined),那时不判定漂移。
+		const assembled = this.indexConfigIdentity;
+		if (!assembled) return;
+		const next = this.configIdentityOf(this.currentIndexConfig());
+		if (next === assembled) return;
+		devLogger.warn('index', '会话内嵌入配置漂移:暂停索引写入,要求重新加载插件后重建索引');
+		// 关键路径:先撤销在途调用再停止调度(index-manager 的 pause 顺序契约),
+		// 保证「暂停生效」时不会留下仍持旧指纹在写的调用。
+		this.indexController?.pause();
+		this.userStatus.patch({
+			indexNotice: 'config-drift',
+			indexDetail: tNow('status.detail.configDrift'),
+		});
+		this.userNotice.toastError(tNow('notice.indexConfigChanged'));
 	}
 
 	/**
@@ -1340,6 +1537,20 @@ export default class RatelVaultPlugin extends Plugin {
 		void this.mcpHost?.dispose();
 		this.userStatus?.reset();
 		// 关键路径:先停 IndexController 释放 vault 事件订阅与 watcher,再终止 Worker。
+		// 关键路径:停看护并撤销在途调用,避免卸载后仍有定时器与迟到提交。
+		// 注意实际顺序:写所有权租约在 `workerManager.destroy()` **之后**释放(见下方)——
+		// 因为 `destroy()` 只终止 Worker/清除进度回调,不等在途提交结算;真正等在途提交
+		// 结算的是 `release()`(T2 的 closing 契约),因此它必须在 destroy 之后调用。
+		// 新实例接管靠 `release()` 完成后的 owner 锁交接,不靠销毁顺序。
+		this.indexStallWatchdog?.stop();
+		// 关键路径:退订活动代际登记,避免旧实例在卸载后继续写控制指针。
+		this.generationActivationUnsub?.();
+		this.generationActivationUnsub = undefined;
+		try {
+			this.workerManager?.cancelIndex(this.indexOwnerLease === undefined ? {} : { epoch: this.indexOwnerLease.epoch });
+		} catch (err) {
+			devLogger.warn('index', '卸载时取消在途索引请求失败', err);
+		}
 		this.indexController?.destroy();
 		// 关键路径:terminate EmbeddingWorkerProxy 释放 Web Worker 线程,避免热重载后残留进程 OOM。
 		this.embeddingWorkerProxy?.terminate();
@@ -1351,6 +1562,9 @@ export default class RatelVaultPlugin extends Plugin {
 		// 关键路径(ADR-017 兜底三件套之二):unload 击杀活跃脚本 Worker,不留孤儿线程。
 		this.skillScriptSandbox?.terminateAll();
 		this.workerManager?.destroy();
+		// 关键路径:释放写所有权租约(幂等;等 closing 结算),让下一个实例能立即接管。
+		void this.indexOwnerLease?.release().catch((err) => devLogger.warn('index', '释放索引写所有权失败', err));
+		this.indexOwnerLease = undefined;
 		// 修复:VectraStore 无显式 close,JS 垃圾回收会释放文件句柄;
 		// 之前的 `void this.vectraStore;` 是空操作,已移除。
 		devLogger.info('main', 'Ratel unloaded');
@@ -1802,6 +2016,931 @@ export default class RatelVaultPlugin extends Plugin {
 		);
 	}
 
+	// ==================== 索引运行时装配(代际 / owner / 日志 / 协调器 / 看护)====================
+
+	/** 停滞判定阈值 — 略短于 WorkerManager 的无进展超时,由看护先把阶段标成停滞。 */
+	private static readonly INDEX_STALL_AFTER_MS = 60_000;
+
+	/** 当前配置描述 — 与 T6 的代际身份约定同源(`local:<id>` / `api:<端点::模型>`)。 */
+	private currentIndexConfig(): IndexConfigDescriptor {
+		return {
+			embeddingModelId: this.resolveCurrentEmbedModelId(),
+			embeddingModelRevision: null,
+			embeddingDimension: this.embedding.dimensions,
+			chunkerVersion: CURRENT_CHUNKER_VERSION,
+			chunkSize: this.settings.chunkSize,
+			chunkOverlap: this.settings.chunkOverlap,
+			embeddingTextVersion: null,
+		};
+	}
+
+	/**
+	 * 解析代际目录并装配写所有权、日志、协调器与停滞看护。
+	 *
+	 * 关键路径(T6 §8.1,本任务最高优先级):
+	 * - `.index/` 根只放 `control.json`、`owner.lock` 与 `generations/`;
+	 *   注入给 `VectraStore` / `AtomicIndexStorage` / 日志 / 后端的目录**必须是代际目录**,
+	 *   否则一次全量重建会递归删除控制指针、owner 锁与全部代际;
+	 * - 只有本实例真的会写时才取 owner 锁;`autoIndex=false` 走只读装配,不建 `owner.lock`、
+	 *   **不执行任何写迁移**(旧版清单的 mkdir/rename/unlink 只属于写路径,T7/I3);
+	 * - 旧索引在 owner 锁内迁移;身份不可确认时走显式重建入口,绝不静默复用旧块;
+	 * - 装配失败(含迁移失败、无可用代际)一律**降级**(T7/I2):记录原因、释放已取到的租约、
+	 *   把 `indexDir` 退回索引根,由 `indexUnavailable` 驱动状态与重试入口,不让 onload reject。
+	 *
+	 * @param pluginDir - 插件目录绝对路径。
+	 */
+	private async setupIndexRuntime(pluginDir: string): Promise<void> {
+		this.indexRoot = path.join(pluginDir, '.index');
+		this.indexDir = this.indexRoot;
+		try {
+			const config = this.currentIndexConfig();
+			this.indexConfigFingerprint = await computeConfigFingerprint(config);
+			this.indexConfigIdentity = this.configIdentityOf(config);
+
+			if (this.settings.autoIndex === false) {
+				// 关键路径(T7/I3):只读装配不执行 legacy 清单迁移 —— 该函数在存在旧文件时会
+				// mkdir + rename(甚至 unlink),与「零写入」契约直接冲突,必须在判定之后才调用。
+				await this.setupReadOnlyIndexRuntime(config);
+				return;
+			}
+			await this.migrateLegacyManifestIntoIndexRoot(pluginDir);
+			await this.setupWritableIndexRuntime(config);
+		} catch (err) {
+			this.degradeIndexRuntime(err);
+		}
+	}
+
+	/**
+	 * 把旧版插件根 `index-manifest.json` 迁入 `.index/` 根 — 只在写路径执行。
+	 *
+	 * 关键路径:它是 T6 迁移要读的 legacy 清单位置,不能迁进代际目录(迁移输入要求它在索引根上可枚举)。
+	 *
+	 * @param pluginDir - 插件目录绝对路径。
+	 */
+	private async migrateLegacyManifestIntoIndexRoot(pluginDir: string): Promise<void> {
+		try {
+			await migrateLegacyIndexManifest(pluginDir, this.indexRoot);
+		} catch (err) {
+			devLogger.warn('index', '旧版 index-manifest 迁移失败(可忽略)', err);
+		}
+	}
+
+	/**
+	 * 写路径装配 — 取写所有权、解析代际、装配管线并恢复未决事务。
+	 *
+	 * @param config - 当前配置。
+	 * @throws {Error} 取锁失败、迁移失败或无可用代际;由 `setupIndexRuntime` 捕获后降级。
+	 */
+	private async setupWritableIndexRuntime(config: IndexConfigDescriptor): Promise<void> {
+		let lease: IndexWriteOwner;
+		try {
+			// 关键路径:必须走门面 `IndexWriteOwner.acquire` —— 它同时取得 renderer 内 epoch 租约与
+			// 索引根的跨进程 `owner.lock`;只取租约不会建锁文件,跨进程互斥就不存在。
+			lease = await IndexWriteOwner.acquire({
+				root: this.indexRoot,
+				instanceToken: randomUUID(),
+			} satisfies IndexWriteOwnerOptions);
+		} catch (err) {
+			// 关键路径:坏锁/空锁/外机锁按 spec 保守拒绝且不自动回收;这里如实抛出,
+			// 由降级状态呈现「占用/暂不可写」,不做重试循环(T2 §5.3)。
+			devLogger.error('index', '获取索引写所有权失败(可能被其他实例占用)', err);
+			throw err;
+		}
+		this.indexOwnerLease = lease;
+		const generations = new IndexGenerations({ indexRoot: this.indexRoot, owner: lease });
+		this.indexGenerations = generations;
+
+		const resolution = await resolveIndexGeneration({
+			generations,
+			indexRoot: this.indexRoot,
+			config,
+			owner: lease,
+			allowCreate: true,
+			legacy: await this.describeLegacyIndex(),
+			chunkLimits: { chunkSize: this.settings.chunkSize, chunkOverlap: this.settings.chunkOverlap },
+			expectedDimension: this.embedding.dimensions,
+		});
+		if (!resolution.resolved) {
+			// 关键路径:新建被已保留的代际阻断(回收上限)。这是「索引暂不可用」而不是「插件坏了」,
+			// 因此按降级处理,并把回收决策面(孤儿目录/取证事务/阻断原因)带进诊断落点。
+			this.indexConclusion = this.summarizeIndexConclusion(resolution);
+			// 关键路径(配置变化路径):阻断时控制指针可能仍指向一个可用的旧活动代际,只是它与
+			// 当前配置不兼容。降级不装配任何代际(既不把当前配置写进旧目录,也不切换指针),
+			// 因此错误文案必须如实区分这两种阻断,不能一律说成「没有活动代际」。
+			throw new Error(
+				resolution.control.activeGenerationId === null
+					? '索引代际不可用:没有活动代际,且新建被已保留的代际阻断'
+					: '索引代际不可用:当前配置的隔离代际新建被已保留的代际阻断,旧活动代际与当前配置不兼容',
+			);
+		}
+		this.indexDir = resolution.resolved.generationRoot;
+		this.resolvedGenerationId = resolution.resolved.generationId;
+		// 关键路径(T7 修复):内存里的「活动代际」跟随**控制指针**,而不是「本次解析是否印证了它」。
+		// 配置变化时本实例解析出的是隔离的 building 代际,而控制指针上的活动代际仍是旧的 ——
+		// 旧代际在切换完成前依然是正在使用的索引,清库守卫(`isActiveGeneration`)必须继续拒绝它,
+		// 所以这里不能把内存指针提前写成 null 或新代际。
+		this.activeGenerationId = resolution.control.activeGenerationId;
+		this.indexDirUsable = true;
+		devLogger.info('index', `索引代际目录已解析:${this.indexDir}(活动代际=${String(resolution.resolved.active)})`);
+		if (resolution.migration) {
+			// 消费 T6 的新结论面(statePersisted / phase),不吞掉迁移事实。
+			devLogger.info('index', `旧索引迁移结论:phase=${resolution.migration.phase},published=${String(resolution.migration.published)},statePersisted=${String(resolution.migration.statePersisted)}`);
+			// 关键路径:迁移事实进入状态展示(迁移中/迁移后逐文件核对),不静默。
+			this.indexMigrated = true;
+		}
+		// 关键路径(T7/I4):迁移/回收结论面进诊断落点 —— 不要求上屏,但必须可查看,
+		// 不能只落在 devLogger 里。
+		this.indexConclusion = this.summarizeIndexConclusion(resolution);
+		this.publishIndexConclusion();
+
+		// 关键路径:非活动代际在核对前先降级为「核对中」,并把 `verifiedAt` 清空 ——
+		// 「曾活动」不等于「本轮已核对」,登记活动指针必须等本轮核对完成(T6 §8.5)。
+		// 关键路径(T7 修复):解析层已经对「配置指纹一致/不一致」两侧分别处理 ——
+		// 不一致时新建隔离代际、切回时按指纹取回并降级。这里保留同一判定作为**第二道防线**:
+		// 装配期若再遇到 migrated 的非活动代际(例如解析结论被上层替换),同样必须先降级。
+		if (!resolution.resolved.active && resolution.resolved.status === 'migrated') {
+			await generations.beginVerification({ generationId: resolution.resolved.generationId });
+		}
+
+		this.assembleIndexPipeline(config);
+		await this.recoverIndexJournal();
+	}
+
+	/**
+	 * 装配失败时的降级 — 索引不可用,插件其余能力照常。
+	 *
+	 * 关键路径(T7/I2):
+	 * - 已经取到的写所有权必须立刻释放,降级实例不能再持锁;
+	 * - `indexDir` 退回索引根,严格归属断言对「根」一律拒绝 —— 即使后续误走清库路径也不可能
+	 *   递归删除任何代际目录;
+	 * - 协调器/看护/日志清空,避免半装配状态被后续流程当成可用。
+	 *
+	 * @param error - 装配失败原因(保留原始对象,供错误码映射)。
+	 */
+	private degradeIndexRuntime(error: unknown): void {
+		const message = error instanceof Error ? error.message : String(error);
+		this.indexUnavailable = { error, message };
+		devLogger.error('index', '索引运行时装配失败,插件以降级状态继续启动', error);
+		const lease = this.indexOwnerLease;
+		this.indexOwnerLease = undefined;
+		if (lease !== undefined) {
+			void lease.release().catch((err) => devLogger.warn('index', '降级时释放索引写所有权失败', err));
+		}
+		this.indexGenerations = undefined;
+		this.indexJournal = undefined;
+		this.indexCoordinator = undefined;
+		this.indexStallWatchdog = undefined;
+		this.readOnlySearchView = undefined;
+		this.resolvedGenerationId = null;
+		this.activeGenerationId = null;
+		this.indexDir = this.indexRoot;
+		this.indexDirUsable = false;
+		this.indexMigrated = false;
+	}
+
+	/**
+	 * 由配置描述派生会话内配置身份 — 与配置指纹同源的五个输入,用于同步比对。
+	 *
+	 * @param config - 当前配置描述。
+	 * @returns 身份字符串(仅用于比对,不参与指纹/清单)。
+	 */
+	private configIdentityOf(config: IndexConfigDescriptor): string {
+		return [
+			config.embeddingModelId,
+			String(config.embeddingDimension),
+			String(config.chunkerVersion),
+			String(config.chunkSize),
+			String(config.chunkOverlap),
+		].join('|');
+	}
+
+	/**
+	 * 索引侧对象装配 — 清单、后端、控制器、活动代际订阅与 Indexer。
+	 *
+	 * 关键路径:onload 与降级重试共用同一处装配,不让两边的清单/后端/控制器接线漂移。
+	 * 只读预热(`preheatReadOnlyView`)不在本方法内 —— 它需要 vault 事件通路已装配。
+	 */
+	private assembleIndexObjects(): void {
+		// 关键路径:清单落在代际目录内的 ratel-manifest.json(派生视图,只由后端写);
+		// 旧版插件根的 index-manifest.json 已在 setupIndexRuntime 迁入 `.index/` 根,
+		// 它是 T6 迁移读的 legacy 清单,不再作为本代际的清单路径。
+		this.indexManifest = new IndexManifest(resolveIndexManifestPath(this.indexDir));
+		this.indexBackend = new PersistentIndexBackend({
+			indexDir: this.indexDir,
+			manifest: this.indexManifest,
+			worker: this.workerManager,
+			getStore: () => this.vectraStore,
+			vault: this.vault,
+			getBuildStamp: () => this.currentBuildStamp(),
+			getChunkOptions: () => this.buildChunkOptions(),
+			// 关键路径:可见性门的记录端口必须与门**同批**注入 —— 未注入时
+			// `searchableFileRecords()` 返回 null,门对 `unjudgeable` 一律 deny,
+			// 等于把检索全量归零(不是收紧)。
+			fileRecords: this.indexJournal,
+			// 关键路径:协调器模式下本轮扫描/失败计数只能来自协调器;不注入时
+			// `roundState().scanComplete` 恒 false、`isIndexComplete()` 恒假。
+			getRoundCounters: () => this.indexCoordinator?.counters() ?? { queued: 0, active: 0, pendingTransactions: 0 },
+			// 关键路径:关闭 T6 的 epoch fail-open —— 缺省 epoch 被省略后管理器按 0 处理,
+			// 旧实例的活动不会被拒绝。租约 epoch 从 1 开始,注入后 `epochSourceMissing` 恒为 false。
+			// 注意回落语义:`?? 0` 表示**本实例没有写所有权**时的取值(只读装配、降级状态、
+			// 卸载之后)。它不是「0 也是合法 epoch」,而是「没有租约可校验」;T6 的 fail-open
+			// 关闭只覆盖「有租约但活动没盖章」这一种情况,不能把它读成「已具备 epoch 保护」。
+			getEpoch: () => this.indexOwnerLease?.epoch ?? 0,
+			// 关键路径:协调器 `taskId` 轮内恒定,只做稳定任务身份;后端内部另用每请求唯一键。
+			getTaskId: () => String(this.indexCoordinator?.counters().taskId ?? 0),
+			// 关键路径(T6 §8.2 + T7 收口):严格版归属断言 —— 只允许删除本索引根 generations/ 下的
+			// **非活动**代际目录;把缺省的「形状白名单」收紧成「代际白名单 + 活动代际例外」。
+			assertDropOwnership: (indexDir) => this.assertIndexDropOwnership(indexDir),
+			onLateTerminalCommitted: (info) => this.handleLateTerminalCommitted(info),
+		});
+
+		// 关键路径:ObsidianVault 已实现 VaultEventListener 接口,直接传入可保证所有 Obsidian API 访问都走外观层。
+		// 协调器与只读可见性视图由装配层注入(IndexControllerOptions),控制器据此决定写/只读通路。
+		this.indexController = new IndexController(this.vault, this.indexBackend, this.vaultBase, {
+			coordinator: this.indexCoordinator,
+			readOnlyView: this.readOnlySearchView,
+		});
+		// 关键路径(T7 修复):只要本实例解析出的代际**还不是**控制指针上的活动代际,就必须安装
+		// 发布订阅 —— 它可能处于 building(隔离新建)或 verifying(切回旧配置的重新核对),
+		// 两者都要等本轮核对完成后走 `configured-switch` 才切指针。
+		// 不能用「内存里的 activeGenerationId 为 null」判定:配置变化时内存指针仍指向旧活动代际,
+		// 若据此不安装订阅,T6 §8.5 的原子切换在生产启动路径就永远不可达。
+		// 未 ready 前旧活动索引保持可用,绝不提前切换。重复装配先去订阅,否则会叠加。
+		this.generationActivationUnsub?.();
+		this.generationActivationUnsub = undefined;
+		if (this.resolvedGenerationId !== null && this.activeGenerationId !== this.resolvedGenerationId) {
+			this.watchGenerationActivation(this.resolvedGenerationId);
+		}
+
+		// 关键路径:W4 — Indexer subagent,供其他子代理通过统一接口触发索引。
+		this.indexer = new Indexer({ vault: this.vault, indexController: this.indexController });
+	}
+
+	/**
+	 * 只读装配下预热可见性视图 — 让展示与第一次检索看到同一份判定。
+	 *
+	 * 关键路径(A11):只读、不写盘、不取锁;失败只记录,不影响启动。
+	 */
+	private async preheatReadOnlyView(): Promise<void> {
+		if (this.settings.autoIndex !== false || this.readOnlySearchView === undefined) return;
+		try {
+			await this.readOnlySearchView.refresh(this.indexController.readOnlyChanged());
+		} catch (err) {
+			devLogger.warn('index', '只读可见性视图预热失败,检索按不可判定处理', err);
+		}
+	}
+
+	/**
+	 * 汇总迁移/回收结论面 — 诊断落点的唯一来源(T7/I4)。
+	 *
+	 * 关键路径:孤儿目录数、取证事务数、迁移状态是否落盘、新建被阻断的原因与代际隔离原因
+	 * 全部来自本次解析的结论对象,不从日志反推。
+	 *
+	 * @param resolution - 代际解析结论。
+	 * @returns 结构化结论面(不含笔记正文、路径与密钥)。
+	 */
+	private summarizeIndexConclusion(resolution: ResolveIndexGenerationResult): IndexConclusionDiagnostics {
+		const quarantinedGenerations: string[] = [];
+		for (const [generationId, record] of Object.entries(resolution.control.generations)) {
+			if (record.quarantineReason !== null) quarantinedGenerations.push(`${generationId}:${record.quarantineReason}`);
+		}
+		const summary: IndexConclusionDiagnostics = { quarantinedGenerations };
+		if (resolution.migration !== null) {
+			const files = resolution.migration.files;
+			summary.migration = {
+				phase: resolution.migration.phase,
+				reused: files.filter((file) => file.status === 'reusable').length,
+				reindex: files.filter((file) => file.status === 'reindex').length,
+				statePersisted: resolution.migration.statePersisted,
+			};
+		}
+		if (resolution.reconcile !== null) {
+			const { decision, quarantinedTransactions } = resolution.reconcile;
+			summary.reconcile = {
+				orphanDirectories: decision.orphanDirectories.length,
+				retained: decision.retained.length,
+				quarantinedTransactions,
+				blocked: !decision.canCreate,
+				blockedReason: decision.blockedReason,
+			};
+		}
+		return summary;
+	}
+
+	/**
+	 * 把迁移/回收结论写进状态诊断落点 — 不要求上屏,但必须可查看(T7/I4)。
+	 */
+	private publishIndexConclusion(): void {
+		if (this.indexConclusion === null) return;
+		// 关键路径:装配期不得依赖状态 store 已就绪(装配早于 FeedbackController 与部分宿主字段),
+		// 因此这里可缺省 —— 结论面同时保留在 `indexConclusion` 供诊断读取。
+		this.userStatus?.patch({ indexDiagnostics: this.indexConclusion });
+	}
+
+	/**
+	 * 重新解析的索引状态视图 — 装配期被长期捕获的消费方必须经它读当前实例。
+	 *
+	 * 关键路径(T7/I2):降级重试会重建 `IndexController`(连带换掉 `status$` 实例),
+	 * 工具等长生命周期消费方若直接捕获旧 store,重试后就会一直读已被替换的状态机。
+	 * 这里给出一个**延迟解析**的可读视图:每次 `get()` / 订阅都转发到当前实例。
+	 *
+	 * @returns 与 `IndexManager.status$` 契约一致的只读视图。
+	 */
+	private currentIndexStatus(): Readable<IndexStatus> {
+		return {
+			subscribe: (run: (value: IndexStatus) => void) => this.indexController.indexManager.status$.subscribe(run),
+		};
+	}
+
+	/**
+	 * 读取当前降级原因 — 经方法调用读取,绕开控制流窄化。
+	 *
+	 * 关键路径:同一函数内先把 `indexUnavailable` 置空再 `await` 重试时,控制流分析不会因
+	 * 异步调用而失效,直接在 `if` 里读属性会被推成 `never`;方法调用给出声明类型。
+	 *
+	 * @returns 降级原因;索引可用时为 null。
+	 */
+	private indexUnavailableFailure(): { error: unknown; message: string } | null {
+		// 修复:实例字段在部分宿主形态(仅原型装配)下可能是 undefined;统一按「没有原因」处理。
+		return this.indexUnavailable ?? null;
+	}
+
+	/**
+	 * 索引运行时降级时的用户可见出口 — 状态 + Notice,都走 i18n(T7/I2)。
+	 *
+	 * 关键路径:错误对象优先经 `describeIndexError` 映射稳定错误码;没有码时退回说明性文案。
+	 * 插件其余能力不受影响,重试入口是 `retryIndexRuntime`(命令面板)。
+	 */
+	private reportIndexUnavailable(): void {
+		// 关键路径:用假值判定 —— 装配路径上任何「没有降级原因」的形态(null/undefined)都不上报。
+		const unavailable = this.indexUnavailableFailure();
+		if (!unavailable) return;
+		const reason = describeIndexError(unavailable.error);
+		this.userStatus.patch({
+			index: 'failed',
+			indexNotice: 'index-unavailable',
+			indexDetail: `${tNow('status.detail.indexUnavailable')} ${reason}`,
+		});
+		this.userNotice.toastError(tNow('notice.indexUnavailable', { reason }));
+	}
+
+	/**
+	 * 重试索引运行时装配 — 降级状态下的恢复入口(T7/I2)。
+	 *
+	 * 关键路径:
+	 * - 重新跑 `setupIndexRuntime`(内部已 catch → 再次失败仍保持降级,不抛出);
+	 * - 成功则重建清单/后端/控制器并把 FeedbackController 重新绑到新状态机;
+	 * - `indexUnavailable` 非空时本方法才有意义(用户明确重试)。
+	 *
+	 * @returns 装配后索引是否可用。
+	 */
+	async retryIndexRuntime(): Promise<boolean> {
+		const pluginDir = path.join(this.vaultBase, this.app.vault.configDir, 'plugins', 'ratel-vault');
+		this.indexUnavailable = null;
+		this.indexConclusion = null;
+		await this.setupIndexRuntime(pluginDir);
+		const failure = this.indexUnavailableFailure();
+		if (failure) {
+			this.reportIndexUnavailable();
+			this.userNotice.toastError(tNow('notice.indexRetryFailed', { reason: describeIndexError(failure.error) }));
+			return false;
+		}
+		this.assembleIndexObjects();
+		await this.preheatReadOnlyView();
+		this.feedbackController?.rebindIndexStatus(this.indexController.indexManager.status$);
+		this.userStatus.patch({ indexNotice: undefined, indexDetail: undefined });
+		this.userNotice.toast(tNow('notice.indexRetryOk'));
+		// 关键路径:恢复后立刻跑一轮(与启动同一条路径),不再重复模型下载。
+		await this.startIndexRound(this.settings.autoIndex === true);
+		return true;
+	}
+
+	/**
+	 * 只读装配(`autoIndex=false`)— 零写入契约。
+	 *
+	 * 关键路径(A11):不取 owner 锁(不建 `owner.lock`)、不迁移、不新建代际。
+	 * 用只读哨兵构造日志与可见性视图:有活动代际时读它的可信记录,没有时记录集为空 ——
+	 * 「没有可信记录则不可检索」,而不是伪造一个合法空索引。
+	 *
+	 * @param config - 当前配置。
+	 */
+	private async setupReadOnlyIndexRuntime(config: IndexConfigDescriptor): Promise<void> {
+		const owner = createReadOnlyOwnerGuard();
+		const generations = new IndexGenerations({ indexRoot: this.indexRoot, owner });
+		this.indexGenerations = generations;
+		let control;
+		try {
+			control = await generations.readControl();
+		} catch (err) {
+			devLogger.warn('index', '只读装配读取控制指针失败,检索按不可判定处理', err);
+			return;
+		}
+		// 关键路径:没有活动代际时把索引目录指向代际聚合目录 —— 只读日志在缺失目录上
+		// 返回空记录集(失败关闭);`indexDirUsable` 保持 false,模型就绪后不初始化 worker 存储。
+		if (control.activeGenerationId === null) {
+			this.indexDir = path.join(this.indexRoot, 'generations');
+			devLogger.info('index', '只读装配:尚无活动代际,检索按不可判定处理');
+			return;
+		}
+		const active = control.activeGenerationId;
+		this.indexDir = generations.generationRootOf(active);
+		this.resolvedGenerationId = active;
+		this.activeGenerationId = active;
+		this.indexDirUsable = true;
+		const storage = this.createIndexStorage(this.indexDir);
+		// 关键路径:只读装配不得初始化存储(autoInit:false 才不落盘)。
+		this.vectraStore = this.createVectraStore(false);
+		const journal = new IndexFileJournal({
+			generationRoot: this.indexDir,
+			generationId: active,
+			configFingerprint: this.indexConfigFingerprint,
+			owner,
+			store: this.vectraStore,
+			storage,
+			expectedDimension: config.embeddingDimension,
+		});
+		this.indexJournal = journal;
+		this.readOnlySearchView = new ReadOnlySearchView({
+			source: createJournalVisibilitySource(journal),
+			configFingerprint: this.indexConfigFingerprint,
+			isExcluded: (p) => this.indexController?.isExcluded(p) ?? false,
+			// 关键路径(A11):每次检索只核验候选文件的存在性,不扫描全库;缺失候选被过滤。
+			exists: (p) => this.vault.fileExists(p),
+		});
+	}
+
+	/**
+	 * 写路径管线装配 — 存储、日志、可见性视图、协调器与停滞看护。
+	 *
+	 * 关键路径:
+	 * - 日志与协调器绑定**同一个**底层存储实例:提交写到旧实例、检索读新实例会让视图分叉;
+	 *   模型就绪后不再重建 store(见 `initEmbeddingWorkerProxy`)。
+	 * - 日志的存储视图是**延迟绑定**的:协调器必须在带访问门的存储上提交,
+	 *   而访问门由 InlineWorker 在模型就绪后才建立 —— 这里用转发视图把两者接起来。
+	 * - 可见性视图与 `fileRecords` 端口**同批**注入:门在记录不可判定时失败关闭,
+	 *   缺端口会变成检索全量归零。
+	 *
+	 * @param config - 当前配置。
+	 */
+	private assembleIndexPipeline(config: IndexConfigDescriptor): void {
+		const generationId = this.resolvedGenerationId;
+		const lease = this.indexOwnerLease;
+		if (generationId === null || lease === undefined) throw new Error('装配索引管线失败:缺少代际身份或写所有权');
+		const storage = this.createIndexStorage(this.indexDir);
+		this.vectraStore = new VectraStore(this.indexDir, { storage: storage });
+		const journal = new IndexFileJournal({
+			generationRoot: this.indexDir,
+			generationId,
+			configFingerprint: this.indexConfigFingerprint,
+			owner: lease,
+			store: this.activeFileStore(),
+			storage,
+			expectedDimension: config.embeddingDimension,
+		});
+		this.indexJournal = journal;
+		this.readOnlySearchView = new ReadOnlySearchView({
+			source: createJournalVisibilitySource(journal),
+			configFingerprint: this.indexConfigFingerprint,
+			isExcluded: (p) => this.indexController?.isExcluded(p) ?? false,
+			// 关键路径(A11):存在性核对只针对候选路径,不扫描全库。
+			exists: (p) => this.vault.fileExists(p),
+		});
+		this.indexProcessorPort = new ChunkingCoordinatorProcessor({
+			embedding: this.embedding,
+			// 关键路径:与 Worker 侧 `buildChunkOptions` 同一算法与同一份词表 ——
+			// 计数函数不能过 postMessage,主线程按 Worker 已设置的那份词表重建。
+			getChunkOptions: () => {
+				const budget = this.buildChunkOptions();
+				const counter = createTokenCounter(getVocabContent());
+				return {
+					maxTokens: budget.maxTokens,
+					overlapTokens: budget.overlapTokens,
+					count: (text: string) => counter.count(text),
+				};
+			},
+		});
+		const coordinator = new IndexTaskCoordinator({
+			vault: this.vault,
+			// 关键路径:首个持久提交成功即登记活动代际(spec §5),不等待全库完成。
+			journal: createFirstCommitPromoter({
+				journal,
+				generations: this.indexGenerations!,
+				generationId,
+				// 关键路径(T7 数据风险):登记成功的同一刻更新本实例的 `activeGenerationId`,
+				// 让「活动代际目录不可删除」的断言不存在「清单已登记、内存仍为 null」的空窗。
+				onPromoted: (record) => {
+					const promoted = record.activeGenerationId ?? generationId;
+					if (this.activeGenerationId === null) this.activeGenerationId = promoted;
+					devLogger.info('index', `活动代际已登记:${promoted}(清库入口对该目录一律拒绝)`);
+				},
+			}),
+			processor: this.indexProcessorPort,
+			getConfigFingerprint: () => this.indexConfigFingerprint,
+			isExcluded: (p) => this.indexController?.isExcluded(p) ?? false,
+		});
+		this.indexCoordinator = coordinator;
+		this.indexStallWatchdog = new IndexStallWatchdog({
+			source: this.createStallSource(coordinator),
+			stallAfterMs: RatelVaultPlugin.INDEX_STALL_AFTER_MS,
+			onStall: (info) => devLogger.warn('index', `索引停滞:无有效进展 ${info.idleMs}ms`, info),
+			onResume: (info) => devLogger.info('index', `索引恢复:有效进展 ${info.progressMark}`),
+		});
+	}
+
+	/**
+	 * 日志使用的存储视图 — 延迟绑定到带访问门的处理器存储。
+	 *
+	 * 关键路径(T5/B1):协调器驱动的 `replaceFile` 必须走同一个访问门,否则查询可能读到
+	 * 文件事务的中间状态。模型就绪前处理器尚未初始化,回落到本实例自己的存储实例。
+	 *
+	 * @returns 文件级替换存储视图。
+	 */
+	private activeFileStore(): FileReplaceStore {
+		return {
+			replaceFile: (input) => (currentProcessorStore() ?? this.vectraStore).replaceFile(input),
+			inspectFile: (filePath) => (currentProcessorStore() ?? this.vectraStore).inspectFile(filePath),
+			reload: () => (currentProcessorStore() ?? this.vectraStore).reload(),
+		};
+	}
+
+	/**
+	 * 停滞看护的进展来源 — 空闲(已 ready / 已暂停)时按「有进展」上报。
+	 *
+	 * 关键路径:看护只应判定「任务在跑但没进展」;没有工作时每次都算进展,避免 ready 状态
+	 * 被误报成停滞。此处的空闲判定来自协调器本身,不引入第二份状态。
+	 *
+	 * @param coordinator - 协调器。
+	 * @returns 停滞来源视图。
+	 */
+	private createStallSource(coordinator: IndexTaskCoordinator): IndexStallSource {
+		let idleBump = 0;
+		return {
+			progressMark: () => {
+				if (coordinator.isReady() || coordinator.isPaused()) idleBump += 1;
+				return coordinator.progressMark() + idleBump;
+			},
+			lastActivity: () => coordinator.lastActivity(),
+			markStalled: () => coordinator.markStalled(),
+			markResumed: () => coordinator.markResumed(),
+			expiredRequeues: () => coordinator.expiredRequeues(),
+		};
+	}
+
+	/**
+	 * 检索候选可见性门 — 原始向量候选进入融合/重排前的唯一闸门(T7/A11)。
+	 *
+	 * 关键路径:
+	 * - **写路径装配**:`SearchVisibilityGate` + 文件日志只读来源 + 协调器的运行期新鲜度与
+	 *   未决事务集合;未在本轮核对的候选按 `admit-trusted` 准入(可信完成记录本身是准入依据),
+	 *   已知过期(`known-stale`)、删除、排除、隔离、配置不符与未决事务一律拒绝。
+	 * - **关闭自动索引**:`ReadOnlySearchView` + `readOnlyChanged()`;内存变更集按
+	 *   `known-stale` 处理(不是 `unresolved-transaction`),新鲜度一律 `unknown`。
+	 * - **没有可信记录**(`autoIndex=false` 且无活动代际)时一律拒绝 —— 不把 `null` 当空集。
+	 * - 每次检索 `refresh()` 重读判定依据;`exists` 只核验候选文件,不扫描全库、不嵌入、不写盘。
+	 *
+	 * @returns 与 `MultiQuerySearcher` 契约一致的门。
+	 */
+	private createSearchCandidateGate(): SearchCandidateGate {
+		let readOnly = false;
+		let changed: ReadonlySet<string> = new Set<string>();
+		let view: ReadOnlySearchView | undefined;
+		let gate: SearchVisibilityGate | undefined;
+
+		const decide = async (path: string): Promise<SearchCandidateVerdict> => {
+			if (readOnly) {
+				if (changed.has(path)) {
+					// 关键路径:关闭自动索引时的内存变更集 = 「磁盘内容已与已提交版本不同」,
+					// 语义是 known-stale;按 unresolved-transaction 处理会把普通编辑误报成未结算事务。
+					return { visible: false, path, reason: 'known-stale', freshness: 'known-stale' };
+				}
+				if (view === undefined) {
+					return { visible: false, path, reason: 'unjudgeable', freshness: 'unknown' };
+				}
+				return view.decide(path);
+			}
+			if (gate === undefined) {
+				return { visible: false, path, reason: 'unjudgeable', freshness: 'unknown' };
+			}
+			return gate.decide(path);
+		};
+
+		return {
+			refresh: async () => {
+				readOnly = this.settings.autoIndex === false;
+				changed = this.indexController?.readOnlyChanged() ?? new Set<string>();
+				if (readOnly) {
+					view = this.readOnlySearchView;
+					gate = undefined;
+					// 关键路径:只读视图只读可信完成记录并保持新鲜度 unknown;变更集只用于 known-stale。
+					await view?.refresh(changed);
+					return;
+				}
+				view = undefined;
+				const journal = this.indexJournal;
+				if (journal === undefined) {
+					gate = undefined;
+					return;
+				}
+				const coordinator = this.indexCoordinator;
+				const snapshot = await captureSearchVisibilitySnapshot({
+					source: createJournalVisibilitySource(journal),
+					configFingerprint: this.indexConfigFingerprint,
+					...(coordinator === undefined ? {} : { unresolvedPaths: coordinator.unresolvedPaths() }),
+				});
+				gate = new SearchVisibilityGate({
+					snapshot,
+					// 关键路径:未在本轮核对的候选按可信完成记录准入;本轮已标记 known-stale 的仍会被拒。
+					unverified: 'admit-trusted',
+					configFingerprint: this.indexConfigFingerprint,
+					isExcluded: (path) => this.indexController?.isExcluded(path) ?? false,
+					exists: (path) => this.vault.fileExists(path),
+					...(coordinator === undefined ? {} : { freshnessOf: (path) => coordinator.freshnessOf(path) }),
+				});
+			},
+			decide,
+			recordsKind: () => {
+				if (readOnly) return view?.recordsKind() ?? 'unjudgeable';
+				// 写路径下门已从日志读出行集,不可判定时同样按 unjudgeable 上报。
+				return gate?.snapshot().recordsKind ?? 'unjudgeable';
+			},
+		};
+	}
+
+	/**
+	 * 本轮索引运行状态 — `IndexBackend` 端口未声明该方法,装配层按可选能力读取。
+	 *
+	 * 关键路径:`epochSourceMissing` 是「本轮是否缺少 epoch 保护」的结构化事实,
+	 * 后端未装配该方法时按「无此信号」处理(不猜测为 true)。
+	 *
+	 * @returns 本轮运行状态;后端未提供时为 undefined。
+	 */
+	private indexRoundState(): IndexRoundState | undefined {
+		const backend = this.indexBackend as { roundState?: () => IndexRoundState } | undefined;
+		return backend?.roundState?.();
+	}
+
+	/**
+	 * 索引展示信号 — 迁移结论/缺少 epoch 保护/可信记录可判定性(不属于 IndexManager 状态机)。
+	 *
+	 * 关键路径:只读装配才用只读视图的判定结果;写路径下该视图不随写路径刷新,不能拿来显示。
+	 *
+	 * @returns 供 `FeedbackController` 组装状态展示的信号。
+	 */
+	private indexDisplaySignals(): IndexDisplaySignals {
+		const round = this.indexRoundState();
+		const readOnly = this.settings.autoIndex === false;
+		const view = readOnly ? this.readOnlySearchView : undefined;
+		return {
+			migrating: this.indexMigrated,
+			epochSourceMissing: round?.epochSourceMissing === true,
+			...(readOnly
+				? {
+					recordsKind: view?.recordsKind() ?? 'unjudgeable',
+					recordsConfig: view?.recordsConfig() ?? 'unknown',
+				}
+				: {}),
+		};
+	}
+
+	/**
+	 * 索引诊断切片 — 反馈诊断摘要只放状态/计数/代际 ID,不含笔记正文与密钥。
+	 *
+	 * 关键路径:`epochSourceMissing` 为真时如实列出「本轮缺少 epoch 保护」,不静默;
+	 * 记录不可判定时列出 `unjudgeable`,避免被读成「0 篇可检索」。
+	 *
+	 * @returns 诊断切片(反馈 Modal 读取)。
+	 */
+	indexDiagnostics(): FeedbackIndexDiagnostics {
+		const status = get(this.userStatus.statusBar$);
+		const round = this.indexRoundState();
+		const readOnly = this.settings.autoIndex === false;
+		const view = readOnly ? this.readOnlySearchView : undefined;
+		return {
+			phase: status.indexPhase,
+			committed: status.indexCommittedFiles,
+			total: status.indexTotalFiles,
+			pending: status.indexPendingFiles,
+			failed: status.indexFailedFiles,
+			epochSourceMissing: round?.epochSourceMissing === true,
+			...(readOnly
+				? {
+					recordsKind: view?.recordsKind() ?? 'unjudgeable',
+					recordsConfig: view?.recordsConfig() ?? 'unknown',
+				}
+				: {}),
+			activeGenerationId: this.activeGenerationId,
+			...(this.indexMigrated ? { migrationPhase: 'migrated' } : {}),
+		};
+	}
+
+	/**
+	 * legacy 索引只读描述 — 没有旧索引时返回 null,且不构造任何存储。
+	 *
+	 * @returns 迁移输入;不存在旧索引时为 null。
+	 */
+	private async describeLegacyIndex(): Promise<IndexGenerationLegacySource | null> {
+		// 关键路径:旧版索引根的标志是 `index.json` 与旧清单同时存在;缺一即不构成 legacy,
+		// 不猜测、不迁移(否则会把半截目录当旧索引)。
+		try {
+			if (!fs.statSync(path.join(this.indexRoot, 'index.json')).isFile()) return null;
+		} catch {
+			return null;
+		}
+		const manifestPath = resolveIndexManifestPath(this.indexRoot);
+		if (!fs.existsSync(manifestPath)) return null;
+		// 关键路径:只读枚举旧块,不初始化写入(`autoInit:false`);迁移只读复制,不改旧目录。
+		const legacyStore = new VectraStore(this.indexRoot, {
+			autoInit: false,
+			storage: this.createIndexStorage(this.indexRoot),
+		});
+		const currentInputs = await this.readCurrentInputHashes();
+		return {
+			indexDir: this.indexRoot,
+			manifestPath,
+			store: {
+				inspectFile: (p) => legacyStore.inspectFile(p),
+				...(typeof legacyStore.inspectFiles === 'function'
+					? { inspectFiles: (paths: string[]) => legacyStore.inspectFiles(paths) }
+					: {}),
+			},
+			currentInputs,
+		};
+	}
+
+	/**
+	 * 读取当前 Vault 的内容 hash 视图 — 只读,失败路径按「未知」(null)处理。
+	 *
+	 * @returns 路径 → 内容 hash;不可读为 null。
+	 */
+	private async readCurrentInputHashes(): Promise<Map<string, string | null>> {
+		const inputs = new Map<string, string | null>();
+		for (const filePath of this.vault.listMarkdownFiles()) {
+			try {
+				inputs.set(filePath, await sha256(await this.vault.readFile(filePath)));
+			} catch {
+				// 关键路径:读不了的路径按「未知」,迁移不得据此复用旧块。
+				inputs.set(filePath, null);
+			}
+		}
+		return inputs;
+	}
+
+	/**
+	 * 启动期日志恢复 — 只在存在未决事务时才读全库内容 hash。
+	 *
+	 * 关键路径:恢复必须能证明事务声明的输入仍是当前内容,否则绝不发布为当前版本;
+	 * 没有未决事务时跳过,避免每次启动都读全库正文。
+	 */
+	private async recoverIndexJournal(): Promise<void> {
+		const journal = this.indexJournal;
+		if (!journal) return;
+		let pending: string[];
+		try {
+			pending = await journal.listPendingPaths();
+		} catch (err) {
+			devLogger.error('index', '枚举未决索引事务失败', err);
+			return;
+		}
+		if (pending.length === 0) return;
+		try {
+			const report = await journal.recover({ currentInputs: await this.readCurrentInputHashes() });
+			devLogger.info('index', `索引日志恢复:${report.decisions.length} 条决策,失败事务 ${report.failures.length}`);
+		} catch (err) {
+			devLogger.error('index', '索引日志恢复失败', err);
+		}
+	}
+
+	/** 严格归属断言 — 只允许删除本索引根 `generations/` 下的**非活动**代际目录(T6 §8.2 + T7 收口)。 */
+	private assertIndexDropOwnership(indexDir: string): void {
+		createStrictDropOwnershipAssertion({
+			indexRoot: this.indexRoot,
+			// 关键路径(T7 数据风险):形状/归属合法仍可能是**当前活动代际**。活动代际目录被递归删除
+			// 会抹掉向量、`files/` 完成记录、清单与构建戳,而控制指针仍指向它 —— 这里与
+			// `dropSafeGeneration` 的控制指针校验形成纵深,任何清库入口都过不去。
+			isActiveGeneration: (generationId) => generationId === this.activeGenerationId,
+		})(indexDir);
+	}
+
+	/** 迟到终态的提交诊断 — 只记录事实,不含正文、路径与向量。 */
+	private handleLateTerminalCommitted(info: { requestType: string; taskId: string; epoch: number; indexed: number }): void {
+		devLogger.info('index', `迟到终态已提交:${info.requestType} task=${info.taskId} epoch=${info.epoch} indexed=${info.indexed}`);
+	}
+
+	/**
+	 * 等待本轮核对完成后登记活动代际(`configured-switch`)。
+	 *
+	 * 关键路径(T6 checkbox 5):配置变化建隔离代际,全部核对/提交后才切活动指针。
+	 * 未 ready 时绝不切换,`reverifying` 期间旧活动索引保持可用。
+	 *
+	 * @param generationId - 本实例解析出的代际 ID。
+	 */
+	private watchGenerationActivation(generationId: string): void {
+		const manager = this.indexController?.indexManager;
+		if (!manager || this.generationActivationUnsub) return;
+		this.generationActivationUnsub = manager.status$.subscribe((status) => {
+			if (status.state !== 'Ready') return;
+			void this.publishResolvedGeneration(generationId);
+		});
+		// 关键路径:退订在 `onunload` 统一执行(与其它索引资源同一处收口),不依赖宿主 register。
+	}
+
+	/**
+	 * 把本实例的代际登记为活动代际 — 无活动代际走 `upgrade`,配置切换走 `configured-switch`。
+	 *
+	 * @param generationId - 目标代际 ID。
+	 */
+	private async publishResolvedGeneration(generationId: string): Promise<void> {
+		const generations = this.indexGenerations;
+		const lease = this.indexOwnerLease;
+		if (!generations || !lease || this.publishingGeneration || this.activeGenerationId === generationId) return;
+		this.publishingGeneration = true;
+		try {
+			lease.assertWritable();
+			const control = await generations.readControl();
+			if (control.activeGenerationId === generationId) {
+				this.activeGenerationId = generationId;
+				return;
+			}
+			await generations.markGenerationMigrated({ generationId });
+			await generations.publishActiveGeneration({
+				generationId,
+				mode: control.activeGenerationId === null ? 'upgrade' : 'configured-switch',
+			});
+			this.activeGenerationId = generationId;
+			devLogger.info('index', `代际 ${generationId} 已登记为活动代际(本轮核对完成)`);
+		} catch (err) {
+			devLogger.warn('index', '登记活动代际失败,保留当前活动索引', err);
+		} finally {
+			this.publishingGeneration = false;
+		}
+	}
+
+	/**
+	 * 取消在途索引任务 — 复用既有控制入口的取消路径。
+	 *
+	 * 关键路径(T5 接线):先撤销在途可取消的调用(协调器 + Worker 侧取消),再停止调度新文件。
+	 * 写保护保留到真实终态;不终止共享 Worker,其他查询继续可用。
+	 */
+	private cancelIndexRun(): void {
+		const epoch = this.indexOwnerLease?.epoch;
+		try {
+			this.workerManager?.cancelIndex(epoch === undefined ? {} : { epoch });
+		} catch (err) {
+			devLogger.warn('index', '取消在途索引请求失败', err);
+		}
+		this.indexCoordinator?.abortActive();
+	}
+
+	/**
+	 * 清理非活动代际 — 唯一安全的破坏性入口。
+	 *
+	 * 关键路径:活动代际不可删除(`dropSafeGeneration` 拒绝未登记/活动目标),
+	 * `.index/` 根与 `generations/` 聚合目录也不可删除(T6 §2)。因此本入口只清理
+	 * **非活动**代际;活动索引的强制重建改走 `reindex`(逐文件重新核对),
+	 * **不静默丢弃当前有效索引**。清理正在构建/核对的代际会让本轮工作白做,故跳过。
+	 *
+	 * @returns 实际清理的代际数量;没有写所有权时为 null(调用方据此显示「拒绝清理」)。
+	 */
+	private async dropInactiveGenerations(): Promise<number | null> {
+		const generations = this.indexGenerations;
+		const lease = this.indexOwnerLease;
+		if (!generations || !lease) {
+			devLogger.warn('index', '索引未装配写所有权,拒绝清库');
+			return null;
+		}
+		lease.assertWritable();
+		const control = await generations.readControl();
+		let dropped = 0;
+		for (const [generationId, record] of Object.entries(control.generations)) {
+			if (generationId === control.activeGenerationId) continue;
+			if (record.status === 'building' || record.status === 'verifying') continue;
+			await generations.dropSafeGeneration(generations.generationRootOf(generationId));
+			const next = await generations.readControl();
+			const rest = { ...next.generations };
+			delete rest[generationId];
+			await generations.writeControl({ ...next, generations: rest });
+			dropped += 1;
+		}
+		devLogger.info('index', `已清理 ${dropped} 个非活动代际`);
+		return dropped;
+	}
+
+	/**
+	 * 标记磁盘/IO 类索引失败 — 状态里如实呈现,不静默。
+	 *
+	 * 关键路径:已就绪后再次发布状态时不会覆盖本须知(只有真实 Ready 才清除),
+	 * 因此磁盘失败不会被后续无关的状态更新抹掉。
+	 *
+	 * @param error - 捕获到的错误;非磁盘/IO 类时为 no-op。
+	 */
+	private markIndexDiskFailure(error: unknown): void {
+		if (!isIndexDiskFailure(error)) return;
+		this.userStatus.patch({
+			indexNotice: 'disk-failure',
+			indexDetail: tNow('status.detail.diskFailure'),
+		});
+	}
+
 	/**
 	 * 创建 WorkerManager,使用 InlineWorker。
 	 *
@@ -1813,27 +2952,15 @@ export default class RatelVaultPlugin extends Plugin {
 	private createWorkerManager(): WorkerManager {
 		this.workerMode = 'inline';
 		this.inlineWorker = new InlineWorker();
-		return new WorkerManager(this.inlineWorker);
-	}
-
-	/**
-	 * 用已加载的本地 Embedding 适配器构造带 embeddings 的 VectraStore。
-	 *
-	 * 关键路径:vectra 需要 EmbeddingsModel 接口(createEmbeddings),本方法把 EmbeddingPort 包装进去。
-	 */
-	private createEmbeddingsVectraStore(embedding: EmbeddingPort): VectraStore {
-		const embeddings: EmbeddingsModel = {
-			maxTokens: 8192,
-			async createEmbeddings(inputs: string | string[]): Promise<EmbeddingsResponse> {
-				const arr = Array.isArray(inputs) ? inputs : [inputs];
-				const output = await embedding.embed(arr);
-				return { status: 'success', output };
+		// 关键路径(T5 接线):真实完成的活动推进协调器进展,无进展的停滞与恢复同步到协调器阶段。
+		// 用闭包延迟读取 —— manager 的构造可能早于协调器装配完成。
+		return new WorkerManager(this.inlineWorker, {
+			onActivity: (activity) => { this.indexCoordinator?.observeActivity(activity); },
+			onStall: (info) => {
+				devLogger.warn('index', `Worker 索引请求无有效活动 ${info.stalledMs}ms(阈值 ${info.timeoutMs}ms),标记停滞`, info);
+				this.indexCoordinator?.markStalled();
 			},
-		};
-		return new VectraStore(this.indexDir, {
-			embeddings,
-			autoInit: true,
-			storage: this.createIndexStorage(this.indexDir),
+			onResume: () => { this.indexCoordinator?.markResumed(); },
 		});
 	}
 
@@ -1844,11 +2971,15 @@ export default class RatelVaultPlugin extends Plugin {
 	 * vectra 的 upsertDocument 不再被调用(改用 upsertItem 写预计算向量),
 	 * 所以 VectraStore 不需要 embeddings 配置。search 也用预计算查询向量。
 	 *
+	 * 关键路径(只读装配):`autoInit:false` 是不落盘的唯一保证 —— 关闭自动索引时
+	 * 构造存储本身不得写出 `index.json`。
+	 *
+	 * @param autoInit - 是否在构造期初始化存储;只读装配传 false。
 	 * @returns 不带 embeddings 的 VectraStore 实例。
 	 */
-	private createVectraStore(): VectraStore {
+	private createVectraStore(autoInit = true): VectraStore {
 		return new VectraStore(this.indexDir, {
-			autoInit: true,
+			autoInit,
 			storage: this.createIndexStorage(this.indexDir),
 		});
 	}
@@ -1862,8 +2993,10 @@ export default class RatelVaultPlugin extends Plugin {
 	 *   「完整旧版」(`failed-before-rename`)与「完整新版」(`renamed`/`unknown-after-rename`);
 	 * - 不注入时该读取恒为 null,任何提交失败都只能报「磁盘状态不明」。
 	 *
-	 * 关键路径:代际根就是该索引目录本身 —— 读、写、列举、删除全部限定在其内,
-	 * 记忆索引(`.memory-index`)与 vault 索引(`.index`)各自独立,不共用一个根。
+	 * 关键路径:代际根是该**索引目录本身** —— 读、写、列举、删除全部限定在其内。
+	 * vault 索引必须传 `generations/<generationId>`(不是 `.index/` 根);
+	 * 记忆索引(`.memory-index`)与 vault 索引各自独立,不共用一个根。
+	 * 唯一例外是 legacy 只读枚举:它按 `autoInit:false` 指向 `.index/` 根且只读,不写盘。
 	 *
 	 * @param generationRoot - 该索引目录的绝对路径。
 	 * @returns 原子索引存储实例。
@@ -1922,9 +3055,13 @@ export default class RatelVaultPlugin extends Plugin {
 			throw new Error(tNow('error.probe.requestFailed', { message }));
 		}
 
-		// 关键路径:用不带 embeddings 的 store 覆盖,因为 IndexProcessor 自己调 proxy.embed 批量推理,
-		// vectra 的 upsertDocument 不再被调用(改用 upsertItem 写预计算向量)。
-		this.vectraStore = this.createVectraStore();
+		// 关键路径:不再重建 store —— 日志与协调器已绑定同一个底层实例(经访问门转发),
+		// 重建会让提交写到旧实例、检索读新实例,两个视图从此分叉(T7 装配约束)。
+		// 只读装配且无活动代际时索引目录不可用,不初始化 worker 存储(零写入)。
+		if (!this.indexDirUsable) {
+			devLogger.warn('index', '索引目录不可用(无活动代际),跳过 InlineWorker 存储初始化');
+			return;
+		}
 		// 关键路径:proxy 实现 EmbeddingPort,InlineWorker 用它做批量 embed,索引与搜索都走 Worker 线程。
 		this.inlineWorker!.initWithStore(this.vectraStore, proxy);
 	}

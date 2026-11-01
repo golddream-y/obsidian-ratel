@@ -32,6 +32,7 @@ import { IndexManager } from '../../src/core/index-manager';
 import { IndexManifest, resolveIndexManifestPath, CURRENT_CHUNKER_VERSION } from '../../src/core/index-manifest';
 import { resolveBuildStampPath, readBuildStamp } from '../../src/core/index-build-stamp';
 import { VectraStore } from '../../src/adapters/vector-vectra';
+import { REGISTERED_INDEX_ASSEMBLY } from '../helpers/index-assembly-registry';
 import { InlineWorker } from '../../src/worker/inline-worker';
 import { WorkerManager } from '../../src/worker/manager';
 import { tNow } from '../../src/i18n';
@@ -111,13 +112,42 @@ describe('真实索引持久化', () => {
 		workers.push(worker);
 		const manifest = new IndexManifest(resolveIndexManifestPath(dir));
 		const vault = { listMarkdownFiles: () => [...files.keys()], readFile: async (p: string) => files.get(p)!, stat: () => ({ mtime: 1 }) };
+		// 关键路径(T7 收紧后的夹具口径):生产装配**总是**注入 `fileRecords`,所以默认夹具
+		// 也注入一份「与磁盘清单一致」的记录端口 —— 否则「本轮扫描成功即完成」这类用例会
+		// 因为「缺端口 = 不可判定」而全部变成 false,不再检验它们真正想检验的收敛判据。
+		// 需要「缺端口」语义的用例显式传 `fileRecords: null`(见 `'fileRecords' in extra`)。
 		const backend = new PersistentIndexBackend({
 			indexDir: dir, manifest, worker, getStore: () => store,
 			vault,
 			getBuildStamp: () => stamp, getChunkOptions: () => ({ maxTokens: 100, overlapTokens: 0 }),
+			fileRecords: 'fileRecords' in extra ? extra.fileRecords : manifestDerivedRecords(manifest),
 			...extra,
 		});
 		return { store, inline, worker, manifest, backend, embed, vault, manager: new IndexManager(backend) };
+	}
+	/**
+	 * 从磁盘清单推导的完成记录端口 — 只用于让默认夹具具备「记录覆盖清单」的前提。
+	 *
+	 * 关键路径:它不是产品实现,只代表「装配正确时记录端口与清单一致」。
+	 * 记录语义(含 tombstone 二分、隔离路径排除)由真实 `IndexFileJournal` 用例单独证明。
+	 */
+	function manifestDerivedRecords(manifest: IndexManifest): FileRecordReader {
+		const read = async (): Promise<ReadonlyArray<CommittedFileRecord>> => {
+			const data = await manifest.load();
+			if (!data) return [];
+			return Object.entries(data.entries).map(([entryPath, entry]) => ({
+				path: entryPath,
+				state: 'present' as const,
+				revision: 1,
+				inputHash: entry.hash,
+				chunkCount: entry.chunkCount,
+			}));
+		};
+		return {
+			listReceipts: read,
+			listTombstones: async () => [],
+			listSearchableReceipts: read,
+		};
 	}
 	/**
 	 * 在独立代际根上装配真实的 `IndexFileJournal`。
@@ -631,12 +661,18 @@ describe('真实索引持久化', () => {
         expect(await first.backend.isIndexComplete()).toBe(false);
     });
 
-    it('部分可用性 - 未注入文件记录端口 - 返回 null 表示不可判定', async () => {
-        const first = await create();
+    it('部分可用性 - 未注入文件记录端口 - 返回 null 且完整性判为不可判定', async () => {
+        const first = await create(undefined, 1000, { fileRecords: null });
         await first.manager.onLayoutReady();
         expect(await first.backend.searchableFileRecords()).toBeNull();
-        // 未注入端口时完整性仍按持久凭据与本轮状态判定,不伪装成已核验文件记录。
-        expect(await first.backend.isIndexComplete()).toBe(true);
+        // 关键路径(T7 收紧):缺记录端口是**不可判定**,不是「已核验」—— 不再乐观返回 true。
+        // 生产装配已注入 `IndexFileJournal`(装配守卫强制),因此该分支只应出现在错误装配中,
+        // 而错误装配必须失败关闭、不能宣告全库完成。
+        expect(await first.backend.isIndexComplete()).toBe(false);
+        // 反向对照:同一份磁盘状态注入记录端口后,完整性判定才可能为真。
+        const covered = await create(undefined, 1000, { fileRecords: manifestDerivedRecords(first.manifest) });
+        await covered.manager.onLayoutReady();
+        expect(await covered.backend.isIndexComplete()).toBe(true);
     });
 
     it('契约 - 真实日志注入 - present 集与 tombstone 集语义正确且不互相混入', async () => {
@@ -682,15 +718,24 @@ describe('真实索引持久化', () => {
                 sites.push({ file: path.relative(repoRoot, file), args });
         }
 
-        // 关键路径(T7 待办):文件记录端口与协调器计数器的注入点必须显式登记,
-        // 新增装配点而没有登记时本用例失败,不允许静默多出一个漏注入可选端口的构造点。
-        expect([...new Set(sites.map(site => site.file))]).toEqual(['src/main.ts']);
+        // 关键路径(T7 收口):装配点与「记录端口注入」都用**同一份**登记账本
+// (`tests/helpers/index-assembly-registry.ts`)双向断言 —— 该账本同时被可见性门守卫复用,
+// 不再保留第二份平行清单;新增装配点未登记、或登记项与实际不符都会失败。
+        const constructionPointCounts: Record<string, number> = {};
+        const pendingPointCounts: Record<string, number> = {};
+        for (const site of sites) {
+            constructionPointCounts[site.file] = (constructionPointCounts[site.file] ?? 0) + 1;
+            if (!site.args.includes('fileRecords:')) {
+                pendingPointCounts[site.file] = (pendingPointCounts[site.file] ?? 0) + 1;
+            }
+        }
         expect(sites.length).toBeGreaterThanOrEqual(1);
-        // 关键路径:尚未注入 `fileRecords` 的装配点必须在「待注入登记」里,
-        // T7 注入后待注入集合收缩,本断言仍然成立(只拦未登记的新漏点)。
-        const registeredPendingInjection = ['src/main.ts'];
-        const missing = sites.filter(site => !site.args.includes('fileRecords:')).map(site => site.file);
-        expect(missing.filter(file => !registeredPendingInjection.includes(file))).toEqual([]);
+        // 关键路径(S5):**逐点计数**而不是「哪些文件有构造点」—— 同一文件里的第二个构造点
+        // 会改变计数,不会因为「该文件另有一处合规」被文件级布尔吞掉。
+        expect(constructionPointCounts).toEqual(REGISTERED_INDEX_ASSEMBLY.backendConstructionPointCounts);
+        // 关键路径:缺 `fileRecords` 的装配点**计数**必须与账本精确相等(双向):
+        // 新增漏点未登记立即失败;登记项在注入后未删除同样失败。
+        expect(pendingPointCounts).toEqual(REGISTERED_INDEX_ASSEMBLY.pendingFileRecordsPointCounts);
     });
 
     /**

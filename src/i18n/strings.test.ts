@@ -51,3 +51,43 @@ describe('i18n 翻译表完整性', () => {
     expect(_k3).toBe('memory.settings.heading');
   });
 });
+
+describe('索引可靠性文案语义', () => {
+  it('drop-index 文案与真实语义一致:只清理非活动代际', () => {
+    expect(zh['cmd.dropIndex']).toContain('非活动');
+    expect(en['cmd.dropIndex']).toMatch(/inactive/i);
+    expect(zh['modal.dropIndex.confirmDesc']).toContain('非活动');
+    expect(en['modal.dropIndex.confirmDesc']).toMatch(/inactive/i);
+    // 关键路径:清理不承诺清空活动索引,避免用户以为检索会失效。
+    expect(zh['modal.dropIndex.confirmDesc']).toContain('活动索引');
+  });
+
+  it('重建当前索引文案说明「会重新核对、不会先清空」', () => {
+    expect(zh['cmd.rebuildIndex']).toContain('核对');
+    expect(en['cmd.rebuildIndex']).toMatch(/verif/i);
+    expect(zh['modal.rebuildIndex.confirmDesc']).toContain('不会先清空');
+    expect(en['modal.rebuildIndex.confirmDesc']).toMatch(/not (clear|wipe|erase)/i);
+  });
+
+  it('新增阶段/须知文案 zh 与 en 成对存在且非空', () => {
+    const keys: StringKey[] = [
+      'status.phase.stalled',
+      'status.phase.stopping',
+      'status.phase.migrating',
+      'status.detail.stalled',
+      'status.detail.resumed',
+      'status.detail.partial',
+      'status.detail.stopping',
+      'status.detail.migrating',
+      'status.detail.diskFailure',
+      'status.detail.epochMissing',
+      'status.detail.recordsUnknown',
+      'status.detail.configMismatch',
+      'status.detail.reverifying',
+    ];
+    for (const key of keys) {
+      expect(zh[key], `zh.${key}`).toBeTruthy();
+      expect(en[key], `en.${key}`).toBeTruthy();
+    }
+  });
+});

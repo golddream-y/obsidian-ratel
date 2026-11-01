@@ -31,12 +31,23 @@ export default defineConfig({
 	},
 	test: {
 		// 关键路径:tests/integration 会真实下载模型并跑 ONNX 推理,依赖网络与 wasm,
-		// 默认 npm test 不运行,避免 CI 不稳定;本地手动验证时用 --config 或显式指定路径。
+		// 默认 npm test 不运行,避免 CI 不稳定。
+		// 注意:`exclude` **优先于**命令行路径过滤 —— 被排除的文件即便显式传给 vitest 也只会得到
+		// "No test files found"(叠加 passWithNoTests 后静默 exit 0)。因此需要手动验证的排除项
+		// 一律由环境变量门控,而不是无条件排除。
 		// 关键路径:src/skills、src/tools 与 src/core 下的测试与源码同目录放置,便于查阅;此处显式纳入。
 		// 修复(S-VISION):补 src/ports 与 src/ui —— include 缺失时显式路径会被过滤成
 		// "No test files found",叠加 passWithNoTests 吞成 exit 0(静默假绿)。
 		include: ['tests/**/*.test.ts', 'src/i18n/**/*.test.ts', 'src/skills/**/*.test.ts', 'src/tools/**/*.test.ts', 'src/core/**/*.test.ts', 'src/ports/**/*.test.ts', 'src/ui/**/*.test.ts', 'src/logging/**/*.test.ts'],
-		exclude: ['tests/integration/**'],
+		exclude: [
+			'tests/integration/**',
+			// 关键路径(T7 门禁):T5 追加的真实 ONNX 推理用例不在默认套件内 ——
+			// 夹具 tests/fixtures/bge-small-zh-v1.5/model_quantized.onnx(23M)已被 git 跟踪,
+			// 默认套件会真跑 ORT 会话初始化与推理,而默认 5s 超时对真实 ONNX 从来不够。
+			// 关键路径:排除项由 `RATEL_ONNX=1` 解除,而不是无条件排除 —— 见上方 exclude 优先于
+			// 路径过滤的说明;门控后的运行方式写在 tests/adapters/embedding-onnx.test.ts 文件头。
+			...(process.env.RATEL_ONNX === '1' ? [] : ['tests/adapters/embedding-onnx.test.ts']),
+		],
 		environment: 'node',
 		passWithNoTests: true,
 		// 关键路径:源码为兼容 Obsidian popout 窗口统一用 `window.setTimeout` / `activeDocument`,

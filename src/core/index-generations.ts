@@ -19,12 +19,19 @@
  *   `fingerprint` 是配置身份;两者都在代际记录里,不互相顶替。
  * - 迁移在 owner 锁内做**只读复制**:旧数据原地保留,复制到独立代际目录并逐文件核对摘要,
  *   最后原子发布控制指针;中断可重入、不重复嵌入;空间不足只报告失败,绝不先删旧数据。
+ * - 迁移成功必须在代际目录内补上**该代际作用域**的清单与构建戳(条目只含已复用文件、全局字段取
+ *   当前配置),且早于原子发布:启动路径的门禁读的正是代际目录内的派生视图,缺它会让迁移层
+ *   已证明的零重复嵌入在装配层被 `dropStore()` + 全量重算抵消。
  * - 写所有权是构造前提:{@link IndexGenerations} 必须拿到 owner 门面,任何控制指针变更、
  *   代际删除与 legacy 清理都在写盘前重新断言可写;迁移在发布 control 前再断言一次。
  * - 关键写入(`control.json`、`generation.json`、`config.json`、完成记录)一律用**唯一临时名 +
  *   rename + 文件/目录 flush**,不依赖进程退出回写。
  * - 身份不可证明即不复用:旧清单缺 `chunkerVersion` 等分块代数、块缺少边界/结构元数据时,
  *   一律按不可复用处理,**绝不用当前设置补造旧索引的身份**。
+ * - 白名单归一化是「不可证明即不复用」的唯一例外,且不削弱它:仅
+ *   {@link LEGACY_EMBED_MODEL_ID_ALIASES} 里逐条写明依据的历史模型标识(可证明只对应内置
+ *   默认本地模型)被改写为当前约定,其余形式一律保持不可确认 —— 历史 API 的 `<base>::<model>`
+ *   与自定义本地 id 都走显式重建。
  */
 
 import fs from 'node:fs';
@@ -47,8 +54,13 @@ import {
 	IndexFileJournalError,
 	type JournalWriteOwner,
 } from './index-file-journal';
-import { parseLegacyManifestEntry, type IndexManifestData } from './index-manifest';
-import { readBuildStampOutcome } from './index-build-stamp';
+import {
+	IndexManifest,
+	parseLegacyManifestEntry,
+	resolveIndexManifestPath,
+	type IndexManifestData,
+} from './index-manifest';
+import { readBuildStampOutcome, resolveBuildStampPath, writeBuildStamp, type IndexBuildStamp } from './index-build-stamp';
 import type { PreparedBlock } from '../adapters/vector-vectra';
 
 // ==================== 常量与错误码 ====================
@@ -370,6 +382,8 @@ export interface GenerationMigrationIo {
 	failReceiptWrite?: string;
 	/** 写迁移进度状态文件时注入的错误码;覆盖 publish 之后的窗口。 */
 	failMigrationStateWrite?: string;
+	/** 写代际清单与构建戳时注入的错误码;覆盖「逐文件完成记录之后、原子发布之前」的派生视图窗口。 */
+	failManifestWrite?: string;
 	/** 每次迁移进度状态刷新后的观测回调(测试用)。 */
 	onStateFlush?: (info: { copied: number; payloadBytes: number }) => void;
 }
@@ -476,6 +490,67 @@ export function deriveGenerationId(fingerprint: string): string {
 // ==================== 配置身份 ====================
 
 /**
+ * 内置本地嵌入模型 id — 本地模式实际使用的唯一模型。
+ *
+ * 关键路径(T7a):`embedding-onnx` / `embedding-local` 的本地模型是固定内置模型,
+ * `settings.embedLocalModel` 只作显示字段;该常量与 `DEFAULT_SETTINGS.embedLocalModel`
+ * 和 `DEFAULT_LOCAL_MODEL.modelId` 同值。此处不复用那两个模块的导出:`settings.ts` 依赖
+ * obsidian 与 UI 层,`model-downloader.ts` 依赖 obsidian(`requestUrl`),把它们拉进
+ * `index-generations` 会把宿主依赖带进纯计算模块。改动内置本地模型时三处必须同时改。
+ */
+export const BUILTIN_LOCAL_EMBED_MODEL_ID = 'Xenova/bge-small-zh-v1.5';
+
+/** 内置本地模型在 T6 约定下的规范身份。 */
+const CANONICAL_BUILTIN_LOCAL_MODEL_ID = `local:${BUILTIN_LOCAL_EMBED_MODEL_ID}`;
+
+/**
+ * 历史嵌入模型标识 → 当前约定(`local:<id>` / `api:<...>`)的显式归一化表。
+ *
+ * 关键路径(T7a):1.2.0 及更早版本的 `resolveCurrentEmbedModelId`(见提交 5a80dd7 / caaeff2)
+ * 写的是无前缀形式 —— 本地模式 `embedLocalModel || 'local-default'`,API 模式
+ * `<base>::<model>`;它们与 T6 约定逐字不等,老用户升级会被判 `config-identity-unconfirmed`
+ * 并全量重算。本表**只列身份可重建的历史形式**,每行的 `basis` 写明该行可重建的判据。
+ *
+ * 可重建的判据(两条都满足才允许入表):
+ * 1. 该历史串**唯一**对应一个随插件发布的已知模型,不依赖当前设置即可确定其身份;
+ * 2. 归一化只读入参字符串本身(**绝不**用当前配置值回填未知字段)。
+ * 因此未列入本表的形式(任意自定义本地 id、API 的 `<base>::<model>` 等)一律原样返回,
+ * 由 {@link confirmsLegacyConfigIdentity} 判为不可确认。匹配是逐字比较,不做 trim / 大小写折叠:
+ * 近似形式不能当作同一身份。
+ */
+const LEGACY_EMBED_MODEL_ID_ALIASES = [
+	{
+		/** 历史形式:本地模式下 `embedLocalModel` 为空时的回落字面量。 */
+		legacy: 'local-default',
+		canonical: CANONICAL_BUILTIN_LOCAL_MODEL_ID,
+		/** 依据:该字面量从不指向具体模型文件;本地运行时始终加载内置默认模型,故它只能是内置默认本地模型。 */
+		basis: 'legacy-fallback-literal-denotes-builtin-local-model',
+	},
+	{
+		/** 历史形式:本地模式下直接写出的 `embedLocalModel`,即内置默认模型的原始 id。 */
+		legacy: BUILTIN_LOCAL_EMBED_MODEL_ID,
+		canonical: CANONICAL_BUILTIN_LOCAL_MODEL_ID,
+		/** 依据:该 id 自 0.1.6 起随每个发布 tag 内置且从未变过;历史标识里不含 `::` 时只可能出自本地分支。 */
+		basis: 'builtin-local-model-id-shipped-with-plugin',
+	},
+] as const;
+
+/**
+ * 把历史清单/构建戳里的嵌入模型标识归一化到当前约定。
+ *
+ * 关键路径(spec §5「不可证明即不复用」):只有 {@link LEGACY_EMBED_MODEL_ID_ALIASES} 中
+ * 逐条写明 `basis` 的历史形式才改写;未知形式原样返回,继续按 `model-id-unrecognized`
+ * 走显式重建。归一化是入参字符串的纯函数,不读当前设置,因此不存在「用当前配置回填旧身份」的路径。
+ *
+ * @param modelId - 历史清单或构建戳里的 `embedModelId`。
+ * @returns 当前约定下的模型标识;未知形式返回入参本身。
+ */
+export function normalizeLegacyEmbedModelId(modelId: string): string {
+	const alias = LEGACY_EMBED_MODEL_ID_ALIASES.find((entry) => entry.legacy === modelId);
+	return alias === undefined ? modelId : alias.canonical;
+}
+
+/**
  * 把旧清单里的全局字段映射为可判定的配置描述。
  *
  * 关键路径(B1,spec §5):
@@ -485,6 +560,10 @@ export function deriveGenerationId(fingerprint: string): string {
  *   `chunkerVersion` 在 `IndexManifestData` 上是可选字段:旧清单没有它时读出 `undefined`,
  *   与仓库既有语义一致(`shouldFullRebuild` 认为 `undefined !== CURRENT` → 升级后自动重建一次),
  *   所以这里也必须按「不可确认」处理,否则「旧身份 === 当前配置」的比较会恒真。
+ * - 模型标识先过 {@link normalizeLegacyEmbedModelId}:只有该表列明依据的历史形式才改为当前
+ *   约定(`local-default` / 内置默认本地模型的原始 id → `local:<内置 id>`),其余原样保留,
+ *   仍由 {@link confirmsLegacyConfigIdentity} 判为不可确认。归一化后与当前配置仍是**逐字**
+ *   比较,因此「用户当前用的是别的本地模型」自然落在不确认一侧。
  *
  * @param manifest - 旧清单数据。
  * @param fallbacks - 旧清单确实缺失、但可由当前运行时确认的字段(仅向量维度)。
@@ -506,7 +585,7 @@ export function mapLegacyConfigIdentity(
 	if (typeof chunkerVersion !== 'number' || !Number.isInteger(chunkerVersion) || chunkerVersion <= 0) return null;
 	if (!Number.isInteger(fallbacks.embeddingDimension) || fallbacks.embeddingDimension <= 0) return null;
 	return {
-		embeddingModelId: modelId,
+		embeddingModelId: normalizeLegacyEmbedModelId(modelId),
 		embeddingModelRevision: null,
 		embeddingDimension: fallbacks.embeddingDimension,
 		chunkerVersion,
@@ -1411,7 +1490,11 @@ export class GenerationMigrationEngine {
 		}
 		if (stampOutcome.result === 'present' && stampOutcome.stamp !== null) {
 			const stamp = stampOutcome.stamp;
-			if (stamp.embedModelId !== legacyIdentity.embeddingModelId
+			// 关键路径(T7a):构建戳与清单由**同一个**历史生产者写出(同一个
+			// `resolveCurrentEmbedModelId`),所以戳侧必须施加**同一张**归一化表 —— 否则
+			// 1.2.0 的「清单与戳都写无前缀形式」会在归一化清单侧后互相矛盾,反而永远无法迁移。
+			// 归一化是入参字符串的纯函数,两个方向都不读当前配置,不存在跨侧回填。
+			if (normalizeLegacyEmbedModelId(stamp.embedModelId) !== legacyIdentity.embeddingModelId
 				|| stamp.chunkSize !== legacyIdentity.chunkSize
 				|| stamp.chunkOverlap !== legacyIdentity.chunkOverlap
 				|| stamp.chunkerVersion !== legacyIdentity.chunkerVersion) {
@@ -1455,6 +1538,18 @@ export class GenerationMigrationEngine {
 		// --- 6. 写完成记录 ---
 		const receiptOutcome = await this.writeReceipts(generationRoot, generationId, fingerprint, validations);
 		if (receiptOutcome.failure !== null) {
+			return this.fail('receipts', 'io-failed', 'migration-io-failed', generationId, fingerprint, validations);
+		}
+
+		// --- 6.5 写代际作用域的清单与构建戳 ---
+		// 关键路径(跨层阻断修复):迁移只复制旧向量,**不写**派生视图;而装配层(`main.ts`)
+		// 把清单绑到代际目录,`PersistentIndexBackend.smartReindex` 的门禁是「无清单 →
+		// `dropStore()` + `full()`」—— 缺这两份文件时启动即全量重算,迁移层已证明的
+		// 「零重复嵌入」被就地抵消。写入必须发生在**原子发布之前**:指针一旦指向本代际,
+		// 再发现清单缺失就只能靠重建补救。
+		const derivedViewFailed = await this.writeDerivedIndexView(generationRoot, manifest, validations);
+		if (derivedViewFailed) {
+			// 与完成记录同属「发布前写派生记录」阶段;发布未开始,控制指针不变。
 			return this.fail('receipts', 'io-failed', 'migration-io-failed', generationId, fingerprint, validations);
 		}
 
@@ -1853,6 +1948,88 @@ export class GenerationMigrationEngine {
 			}
 		}
 		return { failure: null };
+	}
+
+	/**
+	 * 写代际作用域的清单与构建戳 — 启动路径「是否需要全量重建」的门禁依据。
+	 *
+	 * 关键路径(跨层阻断修复):装配层把 `indexDir` 绑到**代际目录**,清单与戳就在代际目录内;
+	 * 迁移只复制旧向量而不写这两份派生视图时,`PersistentIndexBackend.smartReindex` 拿到
+	 * `manifest === null` 便走 `dropStore()` + `full()` —— 迁移层已证明的「零重复嵌入」被抵消。
+	 * 因此本方法必须与完成记录同批、且在原子发布控制指针之前完成。
+	 *
+	 * 字段来源(与「补造旧身份」的边界):
+	 * - 条目**只**从本轮核对通过(`reusable`)的路径派生;`reindex` 路径一律不写条目,
+	 *   它们在启动路径按 `toAdd` 正常重算,不会被这份清单冒充成「已索引」;
+	 * - `path` 键与条目内路径由 {@link IndexManifest.recordEntry} 的既有语义保证逐字一致;
+	 * - `hash` 用核对时比过的 `inputHash` —— 它已被证明等于**当前**内容 hash;
+	 * - `chunkCount` 用 `actualChunkCount`(实际枚举到的块数),不用旧清单的声明值;
+	 * - `mtime` 沿用旧清单对该路径的观测值:迁移没有 vault 端口、拿不到真实文件 mtime,
+	 *   而该字段不参与 `IndexManifest.diff` 的判定(只比 hash),内容既未变,沿用旧观测值
+	 *   比伪造迁移时刻更诚实;
+	 * - 全局字段与构建戳取**当前配置**,这不是「补造旧身份」:能走到这里的文件,其旧身份
+	 *   (`embedModelId` / `chunkSize` / `chunkOverlap` / `chunkerVersion`)已被逐字证明等于
+	 *   当前配置,写当前值只是把同一身份落到当前约定的字面上 —— 也正是 `shouldFullRebuild`
+	 *   要与装配层 `getBuildStamp()` 逐字比对的四个字段。
+	 *
+	 * 写盘**复用既有的两个写入口**(`writeBuildStamp` / `IndexManifest.save`)—— 内容形态、
+	 * 字段顺序与运行期写盘由同一份实现唯一保证,不再在本模块里另拼一套 JSON 落盘路径;
+	 * 顺序为**先戳后清单**,与 `PersistentIndexBackend.commit` 同序:两者之间中断时
+	 * 「清单缺失」只会降级成全量重建(安全侧),不会被误判为可用凭据。
+	 * 迁移额外补一次目标文件与父目录的 fsync:既有入口是「同目录 tmp + rename」,
+	 * rename 不改变 inode,因此 `fsync(目标)` 刷的就是同一份数据,足以保证**发布控制指针前
+	 * 派生视图真的落盘**(与本模块自己对 `control.json` 的持久性要求一致)。
+	 *
+	 * @param generationRoot - 代际数据目录(装配层即把此目录当作 `indexDir`)。
+	 * @param manifest - 旧清单(条目 `mtime` 的来源)。
+	 * @param validations - 本轮逐文件核对结论。
+	 * @returns 写失败时为 true;调用方按发布前 IO 失败处理,不发布控制指针。
+	 */
+	private async writeDerivedIndexView(
+		generationRoot: string,
+		manifest: IndexManifestData,
+		validations: readonly GenerationFileValidation[],
+	): Promise<boolean> {
+		if (this.input.io?.failManifestWrite !== undefined) return true;
+		const stamp: IndexBuildStamp = {
+			chunkerVersion: this.input.config.chunkerVersion,
+			chunkSize: this.input.config.chunkSize,
+			chunkOverlap: this.input.config.chunkOverlap,
+			embedModelId: this.input.config.embeddingModelId,
+		};
+		// 关键路径:复用 `IndexManifest` 的条目写入语义,不另造一套清单格式;实例只持有路径,
+		// 构造无副作用(不读盘、不建目录)。
+		const manifestStore = new IndexManifest(resolveIndexManifestPath(generationRoot));
+		const data: IndexManifestData = {
+			version: 1,
+			embedModelId: stamp.embedModelId,
+			chunkSize: stamp.chunkSize,
+			chunkOverlap: stamp.chunkOverlap,
+			chunkerVersion: stamp.chunkerVersion,
+			lastIndexTime: this.now(),
+			entries: {},
+		};
+		for (const validation of validations) {
+			if (validation.status !== 'reusable') continue;
+			const declared = manifest.entries[validation.path];
+			const declaredMtime = declared?.mtime;
+			const mtime = typeof declaredMtime === 'number' && Number.isFinite(declaredMtime) ? declaredMtime : 0;
+			manifestStore.recordEntry(data, validation.path, validation.inputHash, mtime, validation.actualChunkCount);
+		}
+		try {
+			// 关键路径:统一写入口 —— 内容形态/字段顺序由 `writeBuildStamp` 与
+			// `IndexManifest.save` 唯一保证,本模块不再维护第二份 JSON 落盘实现。
+			await writeBuildStamp(generationRoot, stamp);
+			await manifestStore.save(data);
+			// 关键路径:迁移要在发布控制指针前证明派生视图真的落盘;既有入口只做 tmp+rename,
+			// 这里补一次目标与父目录的 fsync(rename 不改 inode,fsync 目标即刷同一份数据)。
+			await flushPath(resolveBuildStampPath(generationRoot));
+			await flushPath(resolveIndexManifestPath(generationRoot));
+			await flushPath(generationRoot);
+		} catch {
+			return true;
+		}
+		return false;
 	}
 }
 

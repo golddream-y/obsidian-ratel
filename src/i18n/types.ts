@@ -332,6 +332,14 @@ export interface ChatStrings {
   'chat.feedback.openIssues': string;
   'chat.feedback.copyOk': string;
   'chat.feedback.copyFail': string;
+  // 关键路径:索引诊断摘要(只放状态/计数/代际 ID,不含笔记正文与密钥)
+  'chat.feedback.diag.indexHeading': string;
+  'chat.feedback.diag.indexPhase': string;
+  'chat.feedback.diag.indexCounts': string;
+  'chat.feedback.diag.indexTrust': string;
+  'chat.feedback.diag.indexEpochMissing': string;
+  'chat.feedback.diag.indexGeneration': string;
+  'chat.feedback.diag.indexMigration': string;
   'chat.workbar.indexing': string;
   'chat.workbar.downloading': string;
   'chat.workbar.preparing': string;
@@ -621,6 +629,15 @@ export interface NoticeStrings {
   'notice.toolRejected': string;
   'notice.toolRejectedDisabled': string;
   'notice.operationFailed': string;
+  // 关键路径:清理非活动代际的用户反馈(drop-index 收窄后的真实语义)
+  'notice.dropIndexDone': string;
+  'notice.dropIndexNothing': string;
+  'notice.dropIndexRefused': string;
+  // 关键路径(T7/I2/I6):索引降级出口与会话内配置漂移的用户可见文案
+  'notice.indexUnavailable': string;
+  'notice.indexRetryOk': string;
+  'notice.indexRetryFailed': string;
+  'notice.indexConfigChanged': string;
   // 关键路径:记忆系统操作反馈(用户可见 Toast)
   'notice.memory.saved': string;
   'notice.memory.forgotten': string;
@@ -749,6 +766,10 @@ export interface StatusStrings {
   'status.drawer.usedMaxValue': string;
   'status.drawer.compactButton': string;
   'status.drawer.docCount': string;
+  'status.drawer.label.notice': string;
+  // 关键路径(T7/I4):迁移/回收结论面的可查看落点
+  'status.drawer.label.indexDiagnostics': string;
+  'status.drawer.indexDiagnostics.value': string;
   'status.drawer.feedback': string;
   'status.drawer.memory': string;
   'status.drawer.goal': string;
@@ -772,6 +793,26 @@ export interface StatusStrings {
   'status.degraded.apiEmbedding': string;
   'status.detail.checkingChanges': string;
   'status.detail.pending': string;
+  // 关键路径:T4/T5/T6 新增阶段与须知(停滞/恢复/部分可用/正在停止/迁移/磁盘失败/缺少 epoch 保护)
+  'status.phase.label': string;
+  'status.phase.stalled': string;
+  'status.phase.stopping': string;
+  'status.phase.migrating': string;
+  'status.counts.label': string;
+  'status.counts.value': string;
+  'status.detail.stalled': string;
+  'status.detail.resumed': string;
+  'status.detail.partial': string;
+  'status.detail.stopping': string;
+  'status.detail.migrating': string;
+  'status.detail.diskFailure': string;
+  'status.detail.epochMissing': string;
+  'status.detail.recordsUnknown': string;
+  'status.detail.configMismatch': string;
+  'status.detail.reverifying': string;
+  // 关键路径(T7/I2/I6):索引不可用与配置漂移是必须上屏的事实
+  'status.detail.indexUnavailable': string;
+  'status.detail.configDrift': string;
 }
 
 // ==================== Diagnostics 子页面 ====================
@@ -981,6 +1022,8 @@ export interface ErrorStrings {
   'error.ecosystem.expiredChange': string;
   // 关键路径:检索就绪状态错误
   'error.search.notReady': string;
+  // 关键路径:没有可信完成记录时不得静默返回空集(关闭自动索引 / 记录端口不可判定)
+  'error.search.indexUnknown': string;
   // 关键路径:模型 / ORT WASM 下载失败错误(用户可见 Notice,经 ratelError 冒泡)
   'error.model.downloadFailed': string;
   'error.ort.downloadFailed': string;
@@ -998,6 +1041,53 @@ export interface ErrorStrings {
   'error.memory.embeddingFailed': string;
   // 关键路径:写入超 10MB 存储上限
   'error.memory.storageFull': string;
+  // 关键路径:索引错误码 → 用户文案映射(消息本体是中文/英文开发向文案,不上屏)
+  // 映射入口:`describeIndexError`(src/core/feedback-controller.ts);码集合来自
+  // WORKER_MANAGER_ERROR_CODES / IndexValidationError / IndexJournalError / IndexGenerationError
+  // 与 `index-directory-not-owned` / `drop-refused`。
+  'error.index.unknown': string;
+  // 关键路径:有稳定码但未单列文案时的兜底(不带开发向 message)
+  'error.index.codeUnknown': string;
+  // 关键路径(T7/I2/I3):迁移、写所有权与控制记录的失败码各自有专门文案
+  'error.index.migrationFailed': string;
+  'error.index.migrationSpaceInsufficient': string;
+  'error.index.migrationIoFailed': string;
+  'error.index.migrationInterrupted': string;
+  'error.index.legacyManifestInvalid': string;
+  'error.index.legacyIndexMissing': string;
+  'error.index.controlInvalid': string;
+  'error.index.spaceBudgetExceeded': string;
+  'error.index.generationNotDroppable': string;
+  'error.index.ownerBusy': string;
+  'error.index.concurrentTakeover': string;
+  'error.index.ownerLockCorrupt': string;
+  'error.index.worker.indexStalled': string;
+  'error.index.worker.indexCancelled': string;
+  'error.index.worker.runtimeReset': string;
+  'error.index.worker.workerDestroyed': string;
+  'error.index.worker.requestBlocked': string;
+  'error.index.worker.requestTimeout': string;
+  'error.index.directoryNotOwned': string;
+  'error.index.dropRefused': string;
+  'error.index.ownerNotWritable': string;
+  // 关键路径:T1 校验错误码中「可能上屏」的四个(版本/代际/配置身份/校验和),其余走带码兜底
+  'error.index.validation.schemaVersionUnknown': string;
+  'error.index.validation.generationMismatch': string;
+  'error.index.validation.configFingerprintMismatch': string;
+  'error.index.validation.checksumMismatch': string;
+  'error.index.validation.other': string;
+  // 关键路径:T3 文件日志错误码
+  'error.index.journal.ownerEpochMismatch': string;
+  'error.index.journal.generationQuarantined': string;
+  'error.index.journal.confirmationRequired': string;
+  'error.index.journal.preparedNotFound': string;
+  'error.index.journal.transactionMismatch': string;
+  'error.index.journal.receiptPathMismatch': string;
+  'error.index.journal.priorVersionMismatch': string;
+  'error.index.journal.priorVersionUnresolved': string;
+  'error.index.journal.pathInFlight': string;
+  'error.index.journal.cleanupFailed': string;
+  'error.index.journal.ioFailure': string;
 }
 
 // ==================== Prompt section labels(设置面板展示用) ====================
@@ -1250,6 +1340,7 @@ export interface CmdStrings {
   'cmd.pauseIndex': string;
   'cmd.resumeIndex': string;
   'cmd.dropIndex': string;
+  'cmd.retryIndex': string;
 }
 
 // ==================== 工具调用摘要(tool-permissions) ====================

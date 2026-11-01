@@ -85,6 +85,20 @@ export class IndexController {
     }
 
     /**
+     * 该路径当前是否被 .ratelignore 排除 — 协调器枚举时的同源判定。
+     *
+     * 关键路径:事件通路已按 `.ratelignore` 过滤,但协调器自己枚举 Vault 时会看到被排除路径;
+     * 装配层把本方法注入协调器的 `isExcluded`,排除项才能「立即 deny 并排队删除」,
+     * 而不是等到某个事件才被发现。判定与事件通路共用同一个解析结果,不重复读盘。
+     *
+     * @param path - vault 相对路径。
+     * @returns 被排除时为 true。
+     */
+    isExcluded(path: string): boolean {
+        return this.ratelignore.ignores(path);
+    }
+
+    /**
      * 只读模式下已知发生变更的路径 — 检索侧据此过滤过期候选。
      *
      * 归属:T7 检索侧消费。只读通道没有写路径监听,完成记录不会随用户编辑更新;

@@ -122,3 +122,92 @@ describe('createSearchVaultTool', () => {
 		await expect(tool.execute({ query: '技术栈' })).rejects.toThrow('Worker timeout');
 	});
 });
+
+describe('createSearchVaultTool 引用定位精度', () => {
+	it('search_vault - 未核实版本 - 剥离精确块定位且携带新鲜度', async () => {
+		const searcher = createMockSearcher([
+			{
+				docId: 'notes/project.md#chunk-3',
+				score: 0.95,
+				metadata: { path: 'notes/project.md', chunkIndex: 3, startOffset: 120 },
+				reranked: false,
+				// 关键路径:普通修改尚未更新 / 关闭自动索引时,记录未被本轮核对。
+				freshness: 'unknown',
+			} as never,
+		]);
+		const tool = createSearchVaultTool(searcher as never, () => true, makeToolDef('search_vault'), createMockVault() as never);
+
+		const result = (await tool.execute({ query: '技术栈', topK: 5 })) as Array<{
+			metadata: Record<string, unknown>;
+			freshness?: string;
+		}>;
+
+		expect(result).toHaveLength(1);
+		// 关键路径:过期结果不得承诺精确块定位 —— 保留 path,剥离块偏移。
+		expect(result[0]!.metadata.path).toBe('notes/project.md');
+		expect(result[0]!.metadata.chunkIndex).toBeUndefined();
+		expect(result[0]!.metadata.startOffset).toBeUndefined();
+		// 关键路径:检索工具必须携带过期状态,模型不得称其为当前内容。
+		expect(result[0]!.freshness).toBe('unknown');
+	});
+
+	it('search_vault - 已核实版本 - 保留精确块定位', async () => {
+		const searcher = createMockSearcher([
+			{
+				docId: 'notes/project.md#chunk-3',
+				score: 0.95,
+				metadata: { path: 'notes/project.md', chunkIndex: 3, startOffset: 120 },
+				reranked: false,
+				freshness: 'verified',
+			} as never,
+		]);
+		const tool = createSearchVaultTool(searcher as never, () => true, makeToolDef('search_vault'), createMockVault() as never);
+
+		const result = (await tool.execute({ query: '技术栈', topK: 5 })) as Array<{
+			metadata: Record<string, unknown>;
+			freshness?: string;
+		}>;
+
+		expect(result[0]!.metadata.chunkIndex).toBe(3);
+		expect(result[0]!.metadata.startOffset).toBe(120);
+		expect(result[0]!.freshness).toBe('verified');
+	});
+
+	it('search_vault - 无可信记录且无命中 - 抛 INDEX_UNVERIFIED 而不是静默返回空集', async () => {
+		const searcher = {
+			search: vi.fn().mockResolvedValue([]),
+			visibilityDiagnostics: vi.fn(() => ({
+				recordsKind: 'unjudgeable' as const,
+				denied: 5,
+				recallAttempts: 1,
+			})),
+		};
+		const tool = createSearchVaultTool(searcher as never, () => true, makeToolDef('search_vault'), createMockVault() as never);
+
+		let caught: (Error & { code?: string }) | null = null;
+		try {
+			await tool.execute({ query: '技术栈' });
+		} catch (err) {
+			caught = err as Error & { code?: string };
+		}
+
+		expect(caught).not.toBeNull();
+		expect(caught?.code).toBe('INDEX_UNVERIFIED');
+		// 关键路径:不可判定不能被伪装成「0 篇可检索」。
+		expect(caught?.message).toContain('可信');
+	});
+
+	it('search_vault - 真的没有命中(记录可判定)- 仍返回空数组', async () => {
+		const searcher = {
+			search: vi.fn().mockResolvedValue([]),
+			visibilityDiagnostics: vi.fn(() => ({
+				recordsKind: 'known' as const,
+				denied: 0,
+				recallAttempts: 1,
+			})),
+		};
+		const tool = createSearchVaultTool(searcher as never, () => true, makeToolDef('search_vault'), createMockVault() as never);
+
+		expect(await tool.execute({ query: '技术栈' })).toEqual([]);
+	});
+});
