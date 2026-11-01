@@ -1,0 +1,38 @@
+name: Index reliability
+
+# 索引可靠性验收(T8:崩溃恢复 + 大库规模 + checkbox 4 门槛判定)。
+#
+# 为什么只用手动触发:
+# - 这套验收使用 `vitest.index-reliability.config.ts`,默认口径包含 3000 篇 @64 维的完整构建、
+#   数百篇级写入行为与队列内存探针。本机 10 核实测单轮约 15 分钟;GitHub 托管 runner 只有 4 核,
+#   同一口径会显著更慢,而 push/PR 的默认门禁(`Lint` + 本地 `npm test`)已覆盖结构性用例。
+# - 崩溃用例会 fork 子进程并在真实磁盘上断言,串行执行(配置里 `fileParallelism:false`),
+#   不适合与其它作业抢核。
+#
+# 需要时手动跑:
+#   gh workflow run index-reliability.yml
+# 更完整的读表(1000 / 3000 篇与 512 维)另需 `RATEL_SCALE=1`,见证据文档的重门控说明与命令。
+on:
+    workflow_dispatch:
+
+jobs:
+    index-reliability:
+        runs-on: ubuntu-latest
+        # 4 核 runner 上单轮显著长于本机的 15 分钟,给足上限而不是让超时把结论淹掉。
+        timeout-minutes: 180
+        steps:
+            - uses: actions/checkout@v6
+
+            - name: Use Node.js
+              uses: actions/setup-node@v6
+              with:
+                  node-version: 24
+                  cache: 'npm'
+
+            # 与 lint.yml / release.yml 同因:macOS 生成的 package-lock 常缺 Linux optional
+            # (@emnapi 等),`npm ci` 在 ubuntu-latest 上 EUSAGE。改用 npm install。
+            - name: Install dependencies
+              run: npm install --no-fund --no-audit
+
+            - name: Index reliability acceptance (crash + scale)
+              run: npm run test:index-reliability

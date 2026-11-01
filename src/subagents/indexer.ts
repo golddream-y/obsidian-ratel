@@ -23,7 +23,8 @@ export interface IndexerDeps {
  * 设计要点:
  * - 封装 IndexController,让其他子代理(如 Librarian)能通过统一接口触发索引操作,
  *   不直接调 IndexController(降低耦合)。
- * - 全量重建委托给 `indexController.reindex`(后者走 IndexManager.reindex → backend.fullReindex)。
+ * - 全量重建委托给 `indexController.reindex`(后者走 `IndexManager.reindex`;注入协调器后
+ *   走「撤销在途调用 + 逐文件重新核对」的协调器分支,**不清库**)。
  * - 增量索引先读文件全文,再 enqueue 到 IndexManager(去抖 + 批处理由 IndexController 内部处理)。
  * - 删除文件不读内容,直接 enqueue delete。
  *
@@ -37,9 +38,11 @@ export class Indexer {
 	constructor(private deps: IndexerDeps) {}
 
 	/**
-	 * 全量重建索引 — 遍历 vault 所有 markdown 文件,送 Worker 索引。
+	 * 全量重建索引 — 遍历 vault 所有 markdown 文件重新核对并提交变更。
 	 *
-	 * 关键路径:委托给 `indexController.reindex`,后者清队列 + 走全量。
+	 * 关键路径:委托给 `indexController.reindex`。协调器分支下它**不清事件队列、不清库**,
+	 * 而是撤销在途调用后重新跑一轮逐文件核对:未变更的文件零重复嵌入,已变更的文件在
+	 * 单文件事务里替换,失败只影响该文件。
 	 *
 	 * @returns 索引统计(indexed 为文件数;当前实现通过 vault.listMarkdownFiles 推断)。
 	 */

@@ -915,11 +915,16 @@ describe('生产装配 - VectraStore 构造点存储注入契约', () => {
 		// 关键路径(B3):未注入 storage 的构造点会让 `getLastWriteOutcome` 恒为 null,
 		// 提交失败只能报「磁盘状态不明」,重载决策失去依据。
 		expect(sites.filter((site) => !site.args.includes('storage:')).map((site) => site.file)).toEqual([]);
-		// 关键路径:守卫必须真的扫到生产装配点 —— 全量重写后若命名变化,这里要显式失败而不是静默通过。
-		expect(sites.length).toBeGreaterThanOrEqual(5);
-		expect([...new Set(sites.map((site) => site.file))].sort()).toEqual([
-			'src/main.ts',
-			'src/worker/handler.ts',
-		]);
+		// 关键路径:守卫必须真的扫到生产装配点 —— 全量重写或装配下沉后若位置/数量变化,
+		// 这里要显式失败而不是静默通过。T8 把通用工厂(`createIndexRuntimeStore`)与 legacy 只读枚举
+		// 两处构造点从 `src/main.ts` 下沉到 `src/core/index-runtime-assembly.ts`,
+		// 因此账本从「main.ts 4 + handler 1」改为下面的逐文件计数(main.ts 只剩 createVectraStore 的转发调用)。
+		const sitesByFile: Record<string, number> = {};
+		for (const site of sites) sitesByFile[site.file] = (sitesByFile[site.file] ?? 0) + 1;
+		expect(sitesByFile).toEqual({
+			'src/core/index-runtime-assembly.ts': 2,
+			'src/main.ts': 1,
+			'src/worker/handler.ts': 1,
+		});
 	});
 });

@@ -49,12 +49,17 @@ export interface IndexAssemblyRegistry {
 /** 唯一账本 — 断言与实际装配点逐项相等。 */
 export const REGISTERED_INDEX_ASSEMBLY: IndexAssemblyRegistry = {
 	gateWiringPointCounts: {
-		'src/main.ts': {
-			// 只读装配 `setupReadOnlyIndexRuntime` 与写路径 `assembleIndexPipeline` 各构造一个视图。
+		// 关键路径(T8 装配下沉):只读装配(1 处视图 + 1 处来源)、写路径管线(1 处视图 + 1 处来源)
+		// 与检索候选门(1 处来源)整体搬到了 `core/index-runtime-assembly`;
+		// `src/main.ts` 只剩「把只读视图交给 IndexController」这一处宿主接线。
+		'src/core/index-runtime-assembly.ts': {
 			readOnlySearchViews: 2,
-			// 两处视图来源 + 检索快照 `captureSearchVisibilitySnapshot` 的组装点。
 			journalVisibilitySources: 3,
-			// 写路径把只读视图交给 `IndexController`。
+			controllerReadOnlyViews: 0,
+		},
+		'src/main.ts': {
+			readOnlySearchViews: 0,
+			journalVisibilitySources: 0,
 			controllerReadOnlyViews: 1,
 		},
 	},

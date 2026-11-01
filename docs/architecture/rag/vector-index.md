@@ -31,9 +31,11 @@
 
 ### 2.2 同 path 去重,单文件失败不挂整批
 
-**决策**:队列用 `Map<path, QueueEntry>` 去重,同文件多次变更只保留最后一次操作。
+**决策**:协调器的事件队列按路径合并（`mergeQueued`），同文件多次变更只保留一项，并只保存路径与事件序号；队列不保留全库正文。
 
-**原因**:Obsidian 保存文件会连续触发 modify 事件,不去重会导致同一文件重复索引。
+**原因**:Obsidian 保存文件会连续触发 modify 事件，不去重会导致同一文件重复索引。队列内存在大库下有界：3000 篇实测 `queued` 峰值等于文件数，读取是「按需读单篇 + 用完即弃」。
+
+**单文件失败**:失败按路径保留在计数里，不把整库标成可用；其他文件继续提交，失败范围可定位。
 
 ### 2.3 5s 单文件去抖,delete 不去抖
 
@@ -58,30 +60,24 @@ sequenceDiagram
     autonumber
     participant Main as 主线程
     participant IC as IndexController
-    participant IM as IndexManager
+    participant TC as IndexTaskCoordinator
     participant FW as FolderWatcher
-    participant WP as Worker
+    participant J as IndexFileJournal
     participant VS as VectraStore
 
-    Note over Main,VS: 首次打开 vault — 全量索引
+    Note over Main,VS: 首次打开 vault — 协调器驱动的全量核对
 
     Main->>IC: onLayoutReady()
     IC->>FW: start(onUpsert, onDelete)
-    IC->>IM: onLayoutReady()
-    IM->>IM: 状态 Init → Scanning
-    IM->>Main: 扫描 vault 文件列表
-    Main-->>IM: files[]
-    IM->>IM: 状态 Scanning → Queueing
-    IM->>IM: enqueue(所有文件, upsert)
-    IM->>IM: 状态 Queueing → Processing
-    loop 逐批处理(10/批)
-        IM->>WP: index.full / index.incremental
-        WP->>WP: chunkMarkdown(content)
-        WP->>VS: upsert(docId, text, metadata)
-        VS->>VS: vectra 内部 embed + 存储
-        WP-->>IM: progress(done, total)
+    IC->>TC: start()
+    Note over TC: 先注册事件监听,再枚举路径列表
+    TC->>TC: 逐文件读取并核对内容 hash
+    loop 逐文件串行(单文件在途,不为吞吐并发写入)
+        TC->>J: prepare(分片 + prepared.json)
+        TC->>VS: replaceFile(同事务删除与插入)
+        TC->>J: commit(写 files/pathHash.json 完成记录)
     end
-    IM->>IM: 状态 Processing → Ready
+    TC->>TC: canMarkReady → phase = ready
 ```
 
 ### 3.2 增量索引(文件变更)
@@ -92,22 +88,22 @@ sequenceDiagram
     participant V as Obsidian Vault
     participant IC as IndexController
     participant FW as FolderWatcher
-    participant IM as IndexManager
-    participant WP as Worker
+    participant TC as IndexTaskCoordinator
 
-    Note over V,WP: 文件变更 — 增量索引
+    Note over V,TC: 文件变更 — 按路径合并的增量索引
 
     V->>IC: onFileModify(path)
     IC->>IC: ratelignore.ignores(path)?
     alt 被排除
-        IC-->>IC: 跳过
+        IC-->>IC: 跳过并排队删除
     else 未排除
         IC->>FW: notify(path, upsert)
         FW->>FW: 5s 去抖
-        FW->>IM: enqueue(path, upsert, content)
-        IM->>WP: index.incremental(file)
-        WP->>WP: chunkMarkdown + upsert
-        WP-->>IM: 完成
+        FW->>IC: onUpsert(path)
+        IC->>TC: notify(path, 'upsert') 事件序号 +1
+        Note over TC: 同路径事件合并为一项(连续编辑不饿死其他文件)
+        TC->>TC: 读取前后 / 推理后 / 提交前各核对一次内容与事件序号
+        TC->>TC: 提交后若仍有新事件,保留队列项继续处理
     end
 ```
 
@@ -119,21 +115,23 @@ sequenceDiagram
     participant V as Obsidian Vault
     participant IC as IndexController
     participant FW as FolderWatcher
-    participant IM as IndexManager
-    participant WP as Worker
+    participant TC as IndexTaskCoordinator
+    participant J as IndexFileJournal
 
-    Note over V,WP: 文件删除 — 立即处理(不去抖)
+    Note over V,J: 文件删除 — 立即处理(不去抖)
 
     V->>IC: onFileDelete(path)
     IC->>FW: notify(path, delete)
-    FW->>IM: enqueue(path, delete)
-    Note over FW,IM: delete 不去抖,立即入队
-    IM->>WP: index.delete(filePath)
-    WP->>WP: 搜索匹配 docId → 删除
-    WP-->>IM: 删除数量
+    FW->>TC: notify(path, 'delete') 立即入队
+    TC->>TC: 新鲜度立即 deny,不等提交
+    TC->>J: prepare(operation='delete')
+    TC->>J: commit → state=deleted / inputHash=null 完成记录
+    Note over J: 删除凭据持久化,重启后不重新嵌入
 ```
 
-### 3.4 Smart Reindex（启动期增量）
+### 3.4 Smart Reindex（启动期增量，历史路径）
+
+> 该时序描述 `PersistentIndexBackend.smartReindex` 的历史形态。协调器（`IndexTaskCoordinator`）接入后，扫描、队列与终态由协调器驱动，`IndexManager.runCoordinator` 不再调用 `smartReindex` / `fullReindex`；公共 `smartReindex()` 已删除，其「整批成功才存清单」的路径由逐文件持久提交取代。
 
 `IndexManager` 协调扫描与事件队列，`PersistentIndexBackend` 负责以下决策和元数据提交。
 
@@ -175,11 +173,12 @@ sequenceDiagram
 
 **关键决策**：
 
-- `autoIndex=false` 仍监听文件事件，跳过启动扫描；只读校验已提交索引及兼容清单／构建戳，有效时恢复 Ready，无效时保持 Idle，不产生全量完成通知。
-- 成功清单兼容时，未修改文件零重复嵌入；当前仍读取并 hash 文件，不能称为零 IO。
-- 缺少清单时，构建戳只能证明规则，无法证明文件内容，保守全量重建。
-- 任意运行错误向上传递，不自动清库重试。超时仍运行的任务占有共享索引保护，迟到终态才释放。
-- `/reindex` 等待既有操作，清库成功后才开始全量，保留期间文件事件。失败不能通知为完成。
+- 启动扫描、事件队列与终态由协调器（`IndexTaskCoordinator`）驱动，`IndexManager` 只负责状态展示与转发；每次启动解析配置代际，只有活动代际的完成记录参与检索。
+- `autoIndex=false` 走只读通道：不扫描、不嵌入、不取写所有权、不写盘，只读已完成记录并核验本次候选的存在性与黑名单，新鲜度显示 `unknown`。
+- 已有持久提交的未修改文件零重复嵌入；当前仍读取并逐文件核对内容 hash，不能称为零 IO。
+- 缺少可信完成记录时不假定旧向量可用：该路径必须重新嵌入后取得完成记录，才重新可检索。
+- 任意运行错误向上传递，不自动清库重试。停滞只改阶段，任务与队列继续持有；恢复完成或显式取消才结束。
+- 「重建当前索引」在注入协调器时执行撤销在途调用后逐文件重新核对，不清空现有索引；清理非活动代际是单独命令。
 
 
 ---
@@ -245,6 +244,22 @@ sequenceDiagram
 
 **关键**:暂停前必须用 `get(status$)` 读取真实状态,不能 hardcode(如 `{ state: 'Ready' }`),否则在 Scanning/Failed 状态暂停后恢复会丢失状态。
 
+### 4.3 协调器阶段
+
+协调器持有独立的阶段判据 `IndexPhase`，与 `IndexStatus` 并存、由状态展示层汇总：
+
+```typescript
+type IndexPhase =
+  | 'scanning' | 'processing' | 'stalled' | 'stopping'
+  | 'paused' | 'partial-failure' | 'failed' | 'ready';
+```
+
+- **`stalled`:** 长时间没有有效进展。停滞只改阶段，任务与队列继续持有（`queued > 0`、`canMarkReady === false`），不丢终态。
+- **`stopping`:** 取消已撤销 epoch 并停止调度新文件，正在等待在途提交结束。
+- **`partial-failure`:** 本轮有失败路径时逐文件保留可用部分，不把整库标成可用。
+- **`ready` 判据:** `canMarkReady` 要求扫描结束、队列与在途均为空、无未结事务、无失败路径，四者同时成立。
+- **状态展示:** 总文件数、已提交数、待处理数和失败数分别呈现；变更导致待处理量增加时提示「重新核对」；只有真实全库完成才发送全量完成 Notice。
+
 ---
 
 ## 5. 分块策略
@@ -288,31 +303,94 @@ graph TD
 
 ## 6. 索引存储
 
-### 6.1 目录结构
+### 6.1 目录布局
 
+`.index/` 根只放控制与互斥文件；**每个配置代际的全部数据**落在 `generations/<generationId>/` 下：
+
+```text
+.index/
+├── control.json               ← 代际控制指针(schema 2:activeGenerationId + generations 表)
+├── owner.lock                 ← 跨实例写所有权锁
+├── owner.recovery.lock        ← 锁回收时的排他恢复门
+└── generations/
+    └── gen-<fingerprint[0:16]>/
+        ├── generation.json          ← 代际入口记录(归属校验依据)
+        ├── config.json              ← 该代际的配置快照(向量空间身份)
+        ├── index.json / catalog.json / <uuid>.json   ← Vectra 数据
+        ├── ratel-manifest.json      ← 代际作用域清单(派生视图)
+        ├── build-stamp.json         ← 代际作用域构建戳
+        ├── files/<pathHash>.json    ← 文件完成记录(receipt)
+        ├── pending/<transactionId>/ ← 未结算事务(分片 + prepared.json)
+        ├── quarantine/              ← 隔离区
+        └── migration.json           ← 旧索引迁移的可重入进度
 ```
-.obsidian/plugins/ratel-vault/
-├── main.js
-├── worker.js                  ← 仅本地开发(InlineWorker);商店 release 不含
-├── manifest.json
-├── data.json                  ← settings(不含 API Keys,走 SecretStorage)
-├── .gitignore                 ← 自动生成,排除 .index/ 与旧版根目录清单
-└── .index/                    ← vectra 索引目录(+ 清单同生命周期)
-    ├── ratel-manifest.json    ← 成功清单（每文件 hash + 全局参数）
-    ├── build-stamp.json       ← 构建规则（不能单独证明内容完整）
-    ├── index.json             ← 文档元数据
-    └── items/                 ← 向量 + 文本
-        ├── …
-        └── …
-```
 
-**清单路径演进:** 旧版写在插件根目录 `index-manifest.json`,易被 Remotely Save 等同步工具删掉 → 每次启动误判「无清单」走全量 embed。现迁至 **`.index/ratel-manifest.json`**,启动期 `migrateLegacyIndexManifest` 兼容旧路径。
+**归属校验:** 代际目录名必须匹配 `gen-<16 位十六进制>`，`dirname` 必须等于所属 `generations/`，且入口记录形状自洽并已登记在 `control.json`。递归删除只有 `IndexGenerations.dropSafeGeneration`（拒绝 `.index` 根与 `generations/` 聚合目录、拒绝活动代际）与 `VectraStore.dropIndex()`（形状白名单）两个入口；`deleteFolder` 拒绝代际根，其余递归删除都经统一的路径包含性校验。
 
-**缺清单但索引仍在**：保守全量重建；不能将当前笔记的 hash 补成清单，再假定旧向量已包含这些内容。全量完成后用实际输入快照提交构建戳和清单，写入错误必须报告失败。
+**清单路径演进:** 旧版写在插件根目录 `index-manifest.json`，易被 Remotely Save 等同步工具删掉 → 每次启动误判「无清单」。现在写路径启动时把旧文件迁入 `.index/` 根，再逐文件核入代际目录；只读装配不执行该迁移。
 
-**ratel-manifest.json 与 data.json 分离:** 记录每文件 sha256 + mtime + chunkCount + 全局 embedModelId/chunkSize/chunkOverlap,启动期 hash diff 跳过未变更文件。独立于 data.json,不走 Obsidian loadData/saveData。原子写(.tmp + rename)避免半写损坏。
+**清单与 data.json 分离:** 清单记录每文件 sha256 + mtime + chunkCount + 全局参数，独立于 data.json，不走 Obsidian loadData/saveData。
 
-### 6.2 metadata 结构
+### 6.2 配置代际
+
+代际由**配置指纹**（`configIdentityOf(fingerprint)`，显式字段白名单按固定顺序序列化后 SHA-256）派生标识 `deriveGenerationId(fingerprint)`。凭证（`apiKey` / `baseUrl`）与临时任务状态是构造性排除项：改动它们不产生新代际。
+
+- **活动指针:** `control.json` 的 `activeGenerationId` 指向当前可检索的代际。启动时若配置指纹与活动代际一致，直接复用；不一致则新建隔离代际，本轮逐文件核对 / 提交全部完成后才以 `configured-switch` 原子切换指针，**部分失败不切**。
+- **首次建库:** 无活动代际时，首个文件持久提交后即可登记活动代际并部分检索，不必等全库完成。
+- **切回旧配置:** 先 `beginVerification` 把该代际降级为核对中，逐文件复核当前内容后才恢复可检索；从不直接恢复旧的 Ready 结论。
+- **旧索引迁移:** 在写所有权锁内只读复制旧 Vectra 数据与外置 metadata 到独立代际目录，核对复制摘要后逐文件写完成记录，最后原子发布 `control`。旧数据保留，中断可重入且不重复嵌入；空间不足只报告失败，不先删旧数据腾空间。旧分块器身份无法确认时不假设兼容，整个代际不建立。
+- **回收:** 默认最多一个活动代际加一个待建 / 回退代际；第三配置出现时只回收无活动提交、无未解决事务的非活动代际，回收不动则暂停新建并保留可用活动索引。所有清理都在写所有权锁内并复核目录归属。
+- **未交付的形态:** 「因空间不足等原因无法建新代际时，让旧配置代际继续只读可用、新配置暂不写」这一模式**尚未实现**；当前行为是整库降级（详见 §8）。
+
+### 6.3 文件级提交
+
+每个文件的写入是一条**先持久暂存、再原子替换、最后确认**的链，由 `IndexFileJournal` 实现：
+
+| 阶段 | 产物 | 语义 |
+|---|---|---|
+| prepare | `pending/<transactionId>/part-*.json` 分片 + `prepared.json` | 保存足以重放的向量与目标提交，`prepared.json` 分片齐全后才原子落盘 |
+| commit | 先 `replaceFile` 替换该路径全部块，再写 `files/<pathHash>.json` 完成记录 | 删除与插入在同一事务内；完成记录落盘后才认为该文件可用 |
+| receipt | `FileCommit`（`state: 'present'` 或 `'deleted'`） | `present` 携带 `inputHash` 与 `chunkCount`；`deleted` 携带 `inputHash: null`、`chunkCount: 0`，作为删除凭据而不在清单视图中出现 |
+
+- **`deleted` 凭据:** 删除以 `state=deleted` 的完成记录持久化，`blockSetHash` 取空集常量。同路径重新创建时 `revision` 单调递增；删除凭据在事务完成前不会被抹掉。
+- **`revision`:** 同路径每次提交递增，只要求单调、不要求 +1。`prepared` 的新 `revision` 必须大于其声明的上一版本，`parts` 计数之和必须等于 `chunkCount`。
+- **单一在途:** 同路径同时只允许一个未决 `prepared`（`path-in-flight`）；后继提交必须核对并结算前驱。完成记录已是更高 `revision` 时，旧日志只允许清理，禁止覆盖后继版本。
+- **空文件:** 以 `present` 且 `chunkCount: 0`、`inputHash` 等于空内容 hash 的完成记录持久化，区别于删除凭据。
+
+### 6.4 恢复决策
+
+`IndexFileJournal.recover()` 在启动装配时逐事务判定，覆盖全部六种情形：
+
+| 磁盘情形 | 动作 |
+|---|---|
+| `prepared` 无效但可可信归属 | 隔离该路径（`quarantined-path/invalid-prepared`）并重算 |
+| `prepared` 无法归属 | 隔离整个代际（`quarantined-generation/unattributable-prepared`） |
+| 完成记录 `revision` 高于 `prepared` | 只清理旧日志，禁止覆盖后继（`cleanup-only/receipt-ahead`） |
+| `prepared` 有效且当前输入匹配 | 检查完整块集合后补写完成记录或重放（`repaired-receipt/*`、`replayed/*`） |
+| `prepared` 已过期且磁盘仍是旧提交 | 保留旧的完整结果，把当前版本排队（`requeue-current/*`） |
+| `prepared` 已过期且磁盘含过期新提交 | 持久记录该路径不可用（`blocked-current/*`），再把当前版本排队 |
+| 完成记录与实际块匹配，仅清理未完成 | 只清理，不再调用嵌入（`cleanup-only/receipt-matches-prepared`） |
+
+- **空事务不升级为代际隔离:** 「无记录、零分片」的事务目录按无内容直接清理（`cleanup-only/empty-transaction`），只有「有记录不可信」或「有分片却无法归属」才隔离代际。
+- **失败范围可定位:** 逐事务 try/catch，单个事务失败只计入报告的 `failures`，不影响其余事务；代际被隔离后立即停止本代际的恢复，不再清理或替换向量。
+- **出口:** 路径隔离由成功提交当前版本后自动清除；代际隔离需要显式解除（`clearGenerationQuarantine({ confirm: true })`）。
+- **回滚与 fs 错误:** 裸 fs 错误收敛为 `io-failure` 稳定码，保留 `errno` / `cause`，消息不含绝对路径。
+- **隔离区三种内容:** `quarantine/<pathHash>.json`（被隔离路径状态）、`quarantine/generation.json`（代际隔离记录，存在即视为隔离）、`quarantine/transactions/<id>/`（仍需保留依据的事务）。当前版本成功提交、路径状态清除后自动回收对应的隔离事务；`reclaimOrphanQuarantinedTransactions()` 只回收**不再被任何路径状态引用**的孤儿事务，返回 `{ reclaimed, retained }`，不误删仍需要的依据。
+
+### 6.5 原子存储
+
+`AtomicIndexStorage` 实现 Vectra 的 `FileStorage` 扩展点，被注入每个 `VectraStore` 构造点：
+
+1. 同目录唯一临时名（`.tmp-` 前缀，`wx` 排他创建）→ 写入 → 文件 `fsync` → 关闭 → `rename` → 支持的平台上同步父目录。
+2. 结果分三态判定：`renamed`（提交成功）、`failed-before-rename`（磁盘必为完整旧版）、`unknown-after-rename`（磁盘可能是新版）。
+3. **失败后必须重载验证**，不能一律按旧版仍在磁盘继续搜索。写失败清理不遮蔽原始错误；`createTempPath` 的拼接结果二次校验包含性，临时文件失败不残留。
+4. 锁与恢复门文件用**临时文件 + fsync + `link`** 落项 —— `link` 在目标已存在时以 EEXIST 原子失败，而 `rename` 会覆盖；平台不支持硬链接时按稳定错误码失败，不退化成建空文件。
+5. `flushPath()` 提供显式落盘，供写完成记录等关键提交点调用。
+6. 故障注入覆盖短写、短写 0 字节、`ENOSPC`、`rename` 失败、目录 `sync` 失败与 `openDirectory` 不支持；断言失败后读回的 JSON 必为完整旧版或完整新版，不存在半截文件。
+
+**耐久性口径:** 分片与 `prepared.json` 是可重算的暂存数据，「没有 `prepared.json` 的事务」在启动时被判为不可重放并重算；向量替换（`index.json`）与完成记录才是提交点。小库档首次构建耗时未达成计划写死的相对门槛，原因与边界见 [T8b-1 证据](../../superpowers/plans/2026-10-31-index-reliability-t8b1-evidence.md)。
+
+### 6.6 metadata 结构
 
 ```typescript
 {
@@ -322,15 +400,13 @@ graph TD
 }
 ```
 
-### 6.3 索引新鲜度
+### 6.7 索引新鲜度
 
-- `.index/ratel-manifest.json` 记录每文件 sha256 + mtime,启动期 hash diff 跳过未变更文件
-- 当前逐文件读取并计算 hash；mtime 作为快照信息记录，不再作为跳过内容核查的唯一依据
-- 文件变更时增量更新(FolderWatcher → enqueue → index.incremental / index.batch),无需全量重建
-- 模型切换 / chunkSize / chunkOverlap 变化时 `shouldFullRebuild` 返回 true,触发 dropIndex + 全量重建(维度不兼容)
-- 超时、嵌入或磁盘错误不自动清库重试；失败后成功元数据撤销，后续启动保守重建
-- `/reindex` 强制绕过 hash diff，经串行通道清库成功后执行全量；清理失败停止
-- 有 `.index/` 无有效清单：构建规则无法证明内容完整，采用全量重建
+- 完成记录记录每文件 sha256 与块数，启动期逐文件读取并核对内容 hash，mtime 只作快照信息，不作为跳过内容核查的依据
+- 未变更文件零重复嵌入；变更只影响对应文件，其他文件的完成记录直接复用
+- 文件变更时由协调器按路径合并入队，无需全量重建
+- 普通修改在提交前标记 `known-stale`，检索立即过滤旧版本；删除、被排除、损坏、未解决事务立即判定为不可用
+- 代际解析失败、磁盘写入失败或装配失败时如实降级并给出重试入口，不自动清库重试
 
 ---
 
@@ -340,12 +416,13 @@ graph TD
 graph TB
     subgraph "主线程"
         IC["IndexController<br/>聚合 + 事件订阅"]
-        IM["IndexManager<br/>状态机 + 队列"]
+        IM["IndexManager<br/>状态展示 + 转发"]
         FW["FolderWatcher<br/>5s 去抖"]
         RI["Ratelignore<br/>排除过滤"]
-        MF["IndexManifest<br/>hash diff 清单"]
+        TC["IndexTaskCoordinator<br/>流式扫描 / 按路径队列 / 终态"]
+        SV["SearchVisibilityGate<br/>融合与重排前的可见性闸门"]
         PB["PersistentIndexBackend<br/>快照 / 差异 / 元数据提交"]
-        WM["WorkerManager<br/>串行通道 / 请求关联 / 活动超时"]
+        WM["WorkerManager<br/>串行通道 / 请求关联 / 活动与 stalls"]
     end
 
     subgraph "索引处理（InlineWorker，主线程）"
@@ -358,8 +435,9 @@ graph TB
     IC --> FW
     IC --> RI
     FW --> IM
-    IM --> PB
-    PB -->|"diff/recordEntry/removeEntry"| MF
+    IM --> TC
+    TC --> SV
+    TC --> PB
     PB --> WM
     WM -->|"postMessage"| IP
     IP --> CK
@@ -370,16 +448,21 @@ graph TB
 
 | 组件 | 职责 | 位置 |
 |---|---|---|
-| IndexController | 聚合 IndexManager + FolderWatcher + Vault 事件 + .ratelignore;autoIndex gate | 主线程 |
-| IndexManager | 状态机 + 队列 + 暂停/恢复/重索引;onLayoutReady 优先 smartReindex | 主线程 |
+| IndexController | 聚合 IndexManager + FolderWatcher + Vault 事件 + .ratelignore;`autoIndex` gate 决定写入或只读通道 | 主线程 |
+| IndexManager | 状态展示与事件转发;注入协调器后不再走整批重扫入口 | 主线程 |
+| IndexTaskCoordinator | 流式扫描、按路径合并的事件队列、单调事件序号、逐文件新鲜度与单文件持久提交 | 主线程 |
+| SearchVisibilityGate | 统一候选可见性判定,在融合与重排之前过滤 | 主线程 |
 | FolderWatcher | 5s 单文件去抖,delete 不去抖 | 主线程 |
 | Ratelignore | 解析 .ratelignore,过滤排除文件 | 主线程 |
-| PersistentIndexBackend | 文件快照、差异决策、向量与元数据提交；失败向上传递 | 主线程 |
-| WorkerManager | 共享索引串行访问、进度关联、活动超时 | 主线程 |
-| IndexManifest | 每文件 sha256/mtime/chunkCount 清单;load/save/diff/shouldFullRebuild;原子写 | 主线程 |
-| IndexProcessor | 批量索引处理(分块 + upsert);reembedFile 先 deleteByPath 防残留 | InlineWorker（主线程） |
+| PersistentIndexBackend | 文件日志读写、向量与元数据提交、代际迁移；失败向上传递 | 主线程 |
+| IndexFileJournal | prepare / commit / recover 与隔离区管理,唯一持有文件级提交语义 | 主线程 |
+| IndexGenerations | 配置指纹、活动指针、迁移与代际回收 | 主线程 |
+| IndexWriteOwner | 跨实例写所有权与根目录排他锁,epoch 撤销旧实例提交权 | 主线程 |
+| WorkerManager | 共享索引串行访问、进度关联、活动停滞与取消 | 主线程 |
+| AtomicIndexStorage | 唯一临时文件 + rename + flush 的原子替换,注入每个 VectraStore | 主线程 |
+| IndexProcessor | 批量索引处理(分块 + upsert);经 `replaceFile` 完成删除与插入的同一事务 | InlineWorker（主线程） |
 | Chunker | Markdown 三级分块 | InlineWorker（主线程） |
-| VectraStore | 向量存储(upsert/search/deleteByPath/dropIndex/isIndexCreated) | InlineWorker（主线程） |
+| VectraStore | 向量存储(upsert/search/replaceFile/inspectFile/reload/dropIndex) | InlineWorker（主线程） |
 
 ---
 
@@ -388,6 +471,10 @@ graph TB
 | 与...的接口 | 方向 | 协议 |
 |---|---|---|
 | [model-management](../llm/model-management.md) | 依赖 | EmbeddingsModel 实例注入 Worker |
-| [retriever](retriever.md) | 提供 | VectraStore.search() 供向量检索 |
+| [retriever](retriever.md) | 提供 | VectraStore.search() 供向量检索；可见性闸门在融合前过滤 |
 | [obsidian-integration](../host/obsidian-integration.md) | 依赖 | Vault 事件 + 文件读取 |
 | [persistence](../host/persistence.md) | 依赖 | 索引目录 + .gitignore |
+| [worker-protocol](../host/worker-protocol.md) | 依赖 | 活动包、取消与迟到终态通道 |
+| [index-controller](../host/index-controller.md) | 被驱动 | 只读通道、装配降级与重试入口 |
+
+**已交付边界:** 用户可见行为以本分支实测证据为准；「回收受阻时旧配置代际继续只读可用」模式未实现，当前为整库降级。

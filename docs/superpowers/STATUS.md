@@ -32,7 +32,7 @@
 
 | ID | 文件 | 状态 | 所属 Spec | 备注 |
 |---|---|---|---|---|
-| P-INDEX-RELIABILITY | [2026-10-31-index-reliability.md](plans/2026-10-31-index-reliability.md) | In Progress | S-INDEX-RELIABILITY | 2026-10-31 在 feat/index-reliability 执行：T0～T7 完成（证据：plans/2026-10-31-index-reliability-t{0,1-t2,3,4,5,6,7}-evidence.md）；全量 292 文件 / 2752 passed / 5 skipped、tsc 新增 0；升级有效且未变化的旧索引零重复嵌入已达成；真实 ONNX 用例由 RATEL_ONNX 门控；T2～T7 的两阶段审查累计 9 个阻断已全部关闭；T8 必做清单见 T7 证据末节（含 main.ts 装配下沉、receipt 优先口径、spec 偏差登记）；下一步 T8 |
+| P-INDEX-RELIABILITY | [2026-10-31-index-reliability.md](plans/2026-10-31-index-reliability.md) | In Progress | S-INDEX-RELIABILITY | 2026-10-31 在 feat/index-reliability 执行：T0～T8 已执行完毕，T8 有一项未闭环、一项未验证（证据：plans/2026-10-31-index-reliability-t{0,1-t2,3,4,5,6,7,8a,8b1,8b2}-evidence.md）；全量 294 文件 / 2774 passed / 18 skipped、tsc 存量 241 新增 0；升级有效且未变化的旧索引零重复嵌入已达成；真实 ONNX 用例由 RATEL_ONNX 门控、默认套件不跑真实推理；T2～T8 两阶段审查累计 10 个阻断已关闭；**T8 checkbox 4 未闭环（小库档性能未达标，需用户在「优化存储 / 修订门槛」间裁定）**、checkbox 6 未验证（无 GUI 驱动，已留 11 项清单）；下一步：等待上述裁定后收口 T8，再按登记债清单推进 |
 | P-RETRIEVAL-QUALITY | [2026-10-20-retrieval-quality.md](plans/2026-10-20-retrieval-quality.md) | Completed | S-RETRIEVAL-QUALITY | 7 个任务已实施：token 计数器、chunker 预算与前缀、参数贯通、chunkerVersion 重建、对话模型精排、开关与来源、验收。2026-10-28 随 1.2.0 发布（caaeff2）；发版前全量 2112 测试通过，[发布 CI](https://github.com/golddream-y/obsidian-ratel/actions/runs/40681329495) 成功，三个附件摘要与本地验证产物一致；待归档 |
 | P-COMPACT-V3-P1F | [2026-10-11-compact-v3-p1f.md](plans/2026-10-11-compact-v3-p1f.md) | Completed | S-COMPACT-V3 | feat-compact-fixes（64db02a、e33f1a3），随 1.1.0 发版；apply_patch 入 R2 登记表 + 字段按工具登记；母 spec 仍 Active，暂留 plans/ |
 | P-MARKETING-VIDEO | [2026-10-11-marketing-video.md](plans/2026-10-11-marketing-video.md) | Pending | S-MARKETING-VIDEO | 规划完成；先安装官方 Skill 和独立工程，再准备素材与首片 |

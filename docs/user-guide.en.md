@@ -29,7 +29,7 @@ In Saved setups, choose New setup; after naming it, the setup page opens directl
 
 You can also configure without a network: a new setup defaults to Custom, so you can fill in the endpoint, key, model name, and context window right away; for an existing setup opened offline, provider choice is locked and shown as offline, while the other fields stay editable and save normally. Once back online, choose the provider or model once more to realign with the provider list. Test connection on the setup page sends one minimal request to verify the endpoint, key, and model; on failure it states the reason (invalid key, unknown model, network failure, or timeout) with a troubleshooting hint.
 
-Embeddings run locally by default. First use downloads the model and WASM runtime assets, then indexes your notes. You can keep using Obsidian during this process. The strip above the chat input shows progress and explains why sending is blocked until ready.
+Embeddings run locally by default. First use downloads the model and WASM runtime assets, then indexes your notes. You can keep using Obsidian during this process. The strip above the chat input shows progress and explains why sending is blocked until ready. Indexing completes note by note: once a note has been verified, it is searchable while the strip says “Partially available,” without waiting for the whole vault.
 
 ### Review permissions
 
@@ -75,6 +75,15 @@ Check for missing material, unsupported assumptions, and irrelevant citations. O
 Tool execution appears in chat; confirmation depends on permissions. Open the destination afterward and check content, links, and scope. Plugin recovery backups are not note version history. Use your own backup or versioning for ordinary note changes.
 
 For local edits, Ratel replaces a uniquely matching passage. To move or copy a note, specify its source and destination paths. Writing tools return Chinese character and Latin word counts for checking length. AGENTS.md files in the note folder and its parent folders provide writing conventions; changing those files still requires confirmation. Patch editing can apply several changes to one note atomically; format errors identify the line and explain how to correct it. Invalid tool arguments receive corrective feedback and are not executed.
+
+### How the index keeps up with your changes
+
+Ratel maintains the index note by note; you do not need to rebuild it by hand:
+
+- **Only changed notes are processed.** Unchanged notes reuse their existing results and are not embedded again; editing one note does not affect the others.
+- **Unfinished content is not exposed to search.** A note you just saved is excluded from search results until its new content is fully written, so you never get stale text back; it re-enters results once that finishes.
+- **Partially available.** Verified notes are searchable immediately while the rest are verified one by one in the same session. Verification happens while Obsidian is running and **does not continue after you close Obsidian**; the next launch resumes from the saved completion records without reprocessing finished notes.
+- **Occasional re-verification.** If you change embedding settings (model or chunking) within one session, the plugin refuses further writes and asks you to reload the plugin and rebuild the index so old and new parameters are not mixed. Follow that prompt when it appears.
 
 ## 3. Install and maintain your plugin setup
 
@@ -224,6 +233,15 @@ Absolute paths copied from your file manager can be pasted into the input but ar
 
 Chat model keys entered in model settings are automatically synced to Obsidian Keychain for encrypted storage, not written to Ratel's `data.json`. The assistant does not fill them in. Local embeddings do not make remote chat offline. Local Ollama with downloaded embedding assets and no external tools can process work on this machine.
 
+### After you turn off automatic indexing
+
+When you turn off **Settings → Ratel → Note index → Automatic indexing**, the plugin runs in **read-only** mode: it does not scan the vault, does not embed, and does not write to the index directory (it creates no new index files and changes none of the existing ones). When you edit notes, it only remembers that those paths changed; it does not index them.
+
+- Search uses only the **existing trusted completion records**, after checking that each candidate still exists and is not excluded.
+- Results are reported with **unknown** freshness: the plugin does not claim it has verified the vault against the current content.
+- When there are no trusted completion records, search is honestly closed (the index state is reported as unknown) rather than pretending the index is empty.
+- Turn automatic indexing back on and the plugin verifies and updates the notes that changed.
+
 A vault-wide blacklist has not been delivered. For material that must not reach a remote endpoint, do not rely only on the scope stated in a prompt. Choose a suitable local model or use a separate vault.
 
 ## 8. Troubleshooting and reference
@@ -234,10 +252,14 @@ A vault-wide blacklist has not been delivered. For material that must not reach 
 |---|---|
 | Cannot send | Read the reason above the input; check keys, endpoint, and indexing status. |
 | First indexing never finishes | Check downloads and network, then expand the strip for progress. A progressing index may run for more than 10 minutes; 10 minutes without progress produces an error. Inspect diagnostics before clearing the index again. |
-| Restarting triggers a full index again | A successfully saved index reuses unchanged notes. Model or chunking changes and missing completion records require rebuilding. Failed or interrupted work is incomplete; an index already missing its completion records may need one full rebuild. |
+| Restarting triggers a full index again | A successfully saved index reuses unchanged notes; only notes that changed are processed again, and completed parts are unaffected. Failed or interrupted work is not complete; the next launch resumes the unfinished verification. |
 | Model request fails | Verify Base, model name, key, and provider quota. For Ollama, check the process and installed model. |
-| A known note is missing | Try original wording or an `@` path. Only Markdown is indexed. Rebuild if needed. |
-| Embedding or chunking changes have no effect | Restart Obsidian, check the index, and use `/reindex` if needed. |
+| A known note is missing | Try original wording or an `@` path. Only Markdown is indexed. Run “Rebuild current index” from the command palette if needed. |
+| Embedding or chunking changes have no effect | Restart Obsidian, check the index, and reload the plugin then run “Rebuild current index” if needed. |
+| The strip says “Partially available” or asks to re-verify | The index is still verifying. Committed notes are searchable; unfinished notes become available shortly. |
+| The strip says the index state is unknown | There are no trusted completion records (automatic indexing is off, or no index exists yet) and search is closed. Enable automatic indexing or rebuild the index in settings. |
+| The strip says the index is unavailable | Run “Retry index setup” from the command palette. If it still fails, check the reason in diagnostics. |
+| Indexing is stalled | Expand the strip to see the phase and run “Resume indexing” from the command palette. Do not clear the index repeatedly when there is no progress. |
 | Diary template or timeline does not work | Check templates, core daily-note folders, and plugin settings. Fully quit and reopen after changing Day Planner's heading. |
 | A plugin behaves incorrectly after a change | Inspect change history, restore the specific backup, reload, and test. |
 | No confirmation appeared | Check Allow settings, mode, chat grants, and goal directory grants. |
@@ -250,6 +272,27 @@ Retries appear at the bottom of chat; Stop interrupts the wait. Expand the statu
 
 For repeated failures, inspect **Settings → Ratel → Advanced → Diagnostics**, including the previous run. Feedback can copy local diagnostics. Review environment information before posting it in an issue, and include reproduction steps and error messages.
 
+### Index status and index commands
+
+Expanding the status strip shows the indexing **file counts** and the **current phase**: `committed 234/1000 · pending 12 · failed 0`, together with phases such as scanning, queued, processing, stalled, and stopping.
+
+- **Partially available:** committed notes are searchable right away; you do not have to wait for the whole vault. Try pending notes again shortly.
+- **Re-verification needed:** a note you just edited is excluded from search until its new version is committed, so stale content is not returned.
+- **Stalled / stopping:** when there has been no effective progress for a while the phase shows stalled, and the task and queue are still held; stopping means the plugin is waiting for the current step to finish. Neither loses what is already committed.
+
+Index-related commands in the command palette:
+
+| Command | Purpose and effect |
+|---|---|
+| Rebuild current index | Verifies each file and updates changed notes without clearing the index first, so the current searchable version stays available. |
+| Clean up inactive index generations (dangerous) | Deletes only inactive index generations to free disk space; the active index and searchable content are unaffected. Type `DELETE` to confirm. When the plugin has no writable ownership (for example another window is using the index), it refuses and changes nothing. |
+| Retry index setup | Rebuilds the index runtime when the index is unavailable because setup failed; on success verification starts, on failure it states why. |
+| Pause indexing / Resume indexing | Pause first cancels in-flight calls and stops scheduling while file events keep queuing; resume continues verification and, if a write is permanently stuck, resets the runtime first. |
+
+**After changing embedding settings:** changing embedding settings (model or chunking) within one session is refused explicitly; the strip says the embedding configuration changed in this session and index writes are paused so old and new parameters are not mixed. **Reload the plugin, then rebuild the index.** Switching to another setup and restarting makes the plugin build a separate index generation for the new configuration; it switches only after verifying every file, and the old generation stays searchable meanwhile. Use “Clean up inactive index generations” to free space; it removes only inactive generations.
+
+**When the index is unavailable:** a failed setup (insufficient disk space, a corrupt control record, another instance holding write ownership, and so on) does not disable the rest of the plugin. Other features keep working, the strip states the reason, and you can recover with “Retry index setup.”
+
 ### Commands and settings
 
 | Input | Purpose |
@@ -258,11 +301,11 @@ For repeated failures, inspect **Settings → Ratel → Advanced → Diagnostics
 | `/goal objective` | Agree and create a long-running goal. |
 | `/compact` | Compress model context while keeping chat history. |
 | `/model` | View model configuration. |
-| `/reindex` | Rebuild the complete index. |
+| `/reindex` | Verify the current index file by file (without clearing it). |
 | `/install-diary-plugins` | Built-in diary setup skill. |
 | `/diary-month-ledger` | Built-in planning, closeout, and monthly review skill; add a task description. |
 
-The first five are fixed commands; the last two come from enabled skills. Selecting a skill or `/goal` puts it in the input for completion and sending. Commands without arguments execute on selection. The command palette also opens chat, shows index status, pauses or resumes automatic indexing, and clears the index.
+The first five are fixed commands; the last two come from enabled skills. Selecting a skill or `/goal` puts it in the input for completion and sending. Commands without arguments execute on selection. The command palette also opens chat, shows index status, pauses or resumes indexing, rebuilds the current index, cleans up inactive index generations, and retries index setup.
 
 | Settings tab | Purpose |
 |---|---|

@@ -24,6 +24,7 @@ import { PersistentIndexBackend } from '../../src/core/persistent-index-backend'
 import { IndexManager } from '../../src/core/index-manager';
 import { IndexManifest, resolveIndexManifestPath, CURRENT_CHUNKER_VERSION } from '../../src/core/index-manifest';
 import type { ChunkOptions } from '../../src/worker/chunker';
+import type { FileStorage } from 'vectra';
 import {
 	FakeEmbeddingPort,
 	MemorySampler,
@@ -77,6 +78,13 @@ export interface ProductionIndexOptions {
 	sampleIntervalMs?: number;
 	/** Worker 请求超时(毫秒),默认 900000。 */
 	timeoutMs?: number;
+	/**
+	 * 注入的文件存储 — 缺省沿用 vectra 默认(非耐久)实现。
+	 *
+	 * 关键路径(T8b 追加,默认行为不变):T0 基线用 vectra 默认存储采集,不含 fsync;
+	 * 「同一口径 A/B」需要一条**耐久性对齐**的对照臂,因此允许注入 T1 的原子存储。
+	 */
+	storage?: FileStorage;
 }
 
 /** 生产链路一次启动的观测结果。 */
@@ -122,7 +130,7 @@ export async function createProductionIndexStack(options: ProductionIndexOptions
 	const port = new FakeEmbeddingPort(options.dimensions);
 	const chunkOptions = options.chunkOptions ?? T0_CHUNK_OPTIONS;
 	const modelId = options.modelId ?? 'test:deterministic';
-	const store = new VectraStore(options.indexDir);
+	const store = new VectraStore(options.indexDir, options.storage === undefined ? undefined : { storage: options.storage });
 	await store.isIndexCreated();
 
 	const inline = new InlineWorker();

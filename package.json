@@ -12,6 +12,7 @@
 		"lint": "eslint .",
 		"svelte-check": "svelte-check --tsconfig tsconfig.json",
 		"test": "vitest run",
+		"test:index-reliability": "vitest run --config vitest.index-reliability.config.ts",
 		"test:watch": "vitest",
 		"link:vault": "node scripts/link-vault.mjs",
 		"link:dev": "npm run build && npm run link:vault --",

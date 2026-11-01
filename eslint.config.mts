@@ -10,7 +10,7 @@ export default tseslint.config(
 		// 关键路径:dist/ 是 esbuild 产物,.trae/ 是技能文件,scripts/ 暂不纳入 lint。
 		// .worktrees/ 是本地 git worktree,含独立 eslint/tsconfig,扫进去会 typed-lint 炸。
 		// tests/ 预存大量 unsafe/mock 债,不挡发版;typed lint 只盯 src(与 Obsidian 产物相关)。
-		// eslint.config.mts / vitest.config.ts 不在 tsconfig include 内,跳过。
+		// eslint.config.mts / vitest*.config.ts 不在 tsconfig include 内,跳过。
 		ignores: [
 			'dist/**',
 			'.trae/**',
@@ -19,6 +19,7 @@ export default tseslint.config(
 			'tests/**',
 			'eslint.config.mts',
 			'vitest.config.ts',
+			'vitest.index-reliability.config.ts',
 		],
 	},
 	js.configs.recommended,
