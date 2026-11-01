@@ -11,8 +11,7 @@
  * - 本模块**不导入 `obsidian`**,也不读写宿主插件的类字段:路径、Vault 端口、嵌入端口、
  *   分块参数、状态落点与存储/Store 工厂全部由调用方以参数注入。装配算法因此可以在
  *   无宿主替身的独立子进程/夹具里直接构造完整索引管线 —— 这正是 T8 崩溃与规模验收的前提。
- * - 行为与迁移前的 `src/main.ts` 逐字一致(日志文案、判定顺序、缺省值都不变);`main.ts`
- *   只保留生命周期与接线,把返回值写回实例字段。
+ * - `main.ts` 只保留生命周期与接线，把返回值写回实例字段；配置身份判定在本模块统一执行。
  * - 只读装配(`autoIndex=false`)与写路径装配共用同一份存储/日志/可见性构造,避免接线漂移。
  */
 
@@ -510,6 +509,29 @@ export interface SetupWritableIndexRuntimeDeps {
 	stallAfterMs?: number;
 }
 
+/**
+ * 隔离代际创建受阻的装配结论：保留活动身份，供宿主决定是否能显式接入旧配置搜索。
+ *
+ * 本错误不携带可写管线，也不承诺旧代际可用；宿主必须持有真实旧嵌入端口并按旧配置
+ * 另行只读装配，不能将当前模型接到该活动目录。
+ */
+export class IndexRuntimeGenerationBlockedError extends Error {
+	readonly code = 'all-generations-retained';
+	readonly activeGenerationId: string | null;
+	readonly activeConfigFingerprint: string | null;
+
+	constructor(control: GenerationControlRecord) {
+		super(control.activeGenerationId === null
+			? '索引代际不可用:没有活动代际,且新建被已保留的代际阻断'
+			: '索引代际不可用:当前配置的隔离代际新建被已保留的代际阻断,旧活动代际与当前配置不兼容');
+		this.name = 'IndexRuntimeGenerationBlockedError';
+		this.activeGenerationId = control.activeGenerationId;
+		this.activeConfigFingerprint = control.activeGenerationId === null
+			? null
+			: control.generations[control.activeGenerationId]?.fingerprint ?? null;
+	}
+}
+
 /** 写路径运行时装配结果。 */
 export interface WritableIndexRuntime {
 	/** 本实例解析出的代际目录。 */
@@ -607,11 +629,8 @@ async function finishWritableRuntime(
 		// 关键路径(配置变化路径):阻断时控制指针可能仍指向一个可用的旧活动代际,只是它与
 		// 当前配置不兼容。降级不装配任何代际,因此错误文案必须如实区分这两种阻断,
 		// 不能一律说成「没有活动代际」。
-		throw new Error(
-			resolution.control.activeGenerationId === null
-				? '索引代际不可用:没有活动代际,且新建被已保留的代际阻断'
-				: '索引代际不可用:当前配置的隔离代际新建被已保留的代际阻断,旧活动代际与当前配置不兼容',
-		);
+		// 修复：受阻是当前配置不可写，不代表旧活动数据已丢失；保留身份供宿主显式接线。
+		throw new IndexRuntimeGenerationBlockedError(resolution.control);
 	}
 	const indexDir = resolution.resolved.generationRoot;
 	const generationId = resolution.resolved.generationId;
@@ -694,8 +713,10 @@ export interface SetupReadOnlyIndexRuntimeDeps {
 export interface ReadOnlyIndexRuntime {
 	/** 只读装配后指向的目录。 */
 	indexDir: string;
-	/** 索引目录是否可用(有活动代际);false 时模型就绪也不初始化 Worker 存储。 */
+	/** 索引目录是否与请求配置兼容；false 时模型就绪也不初始化 Worker 存储。 */
 	indexDirUsable: boolean;
+	/** 不可用的明确原因；省略表示装配成功。 */
+	unavailableReason?: 'control-invalid' | 'no-active-generation' | 'config-mismatch';
 	/** 活动代际 ID;无活动代际时为 null。 */
 	activeGenerationId: string | null;
 	/** 代际管理实例(只读哨兵 owner)。 */
@@ -725,13 +746,24 @@ export async function setupReadOnlyIndexRuntime(
 	const createStore = deps.createStore ?? createIndexRuntimeStore;
 	const owner = createReadOnlyOwnerGuard();
 	const generations = new IndexGenerations({ indexRoot: deps.indexRoot, owner });
-	let control;
+	let resolution: ResolveIndexGenerationResult;
 	try {
-		control = await generations.readControl();
+		// 修复：只读入口也必须经过配置身份解析，不能仅凭控制指针存在就初始化当前模型的存储。
+		resolution = await resolveIndexGeneration({
+			generations,
+			indexRoot: deps.indexRoot,
+			config: deps.config,
+			owner,
+			allowCreate: false,
+		});
 	} catch (err) {
-		devLogger.warn('index', '只读装配读取控制指针失败,检索按不可判定处理', err);
-		return { indexDir: deps.indexRoot, indexDirUsable: false, activeGenerationId: null, generations };
+		devLogger.warn('index', '只读装配解析活动代际失败,检索按不可判定处理', err);
+		return {
+			indexDir: deps.indexRoot, indexDirUsable: false, activeGenerationId: null,
+			unavailableReason: 'control-invalid', generations,
+		};
 	}
+	const control = resolution.control;
 	// 关键路径:没有活动代际时把索引目录指向代际聚合目录 —— 只读日志在缺失目录上
 	// 返回空记录集(失败关闭);`indexDirUsable` 保持 false,模型就绪后不初始化 worker 存储。
 	if (control.activeGenerationId === null) {
@@ -740,6 +772,19 @@ export async function setupReadOnlyIndexRuntime(
 			indexDir: path.join(deps.indexRoot, 'generations'),
 			indexDirUsable: false,
 			activeGenerationId: null,
+			unavailableReason: 'no-active-generation',
+			generations,
+		};
+	}
+	// 关键路径：配置描述、调用方指纹和活动记录三者必须一致，才允许创建可查询视图。
+	// 即使模型同名或维度相同，修订、文本模板与分块身份不同也不能查询旧向量空间。
+	if (resolution.resolved === null || resolution.resolved.configFingerprint !== deps.configFingerprint) {
+		devLogger.warn('index', '只读装配:活动代际与请求配置不兼容,保留旧数据并关闭检索');
+		return {
+			indexDir: generations.generationRootOf(control.activeGenerationId),
+			indexDirUsable: false,
+			activeGenerationId: control.activeGenerationId,
+			unavailableReason: 'config-mismatch',
 			generations,
 		};
 	}

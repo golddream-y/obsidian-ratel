@@ -854,8 +854,9 @@ describe('守卫 — 活动代际目录在任何清库路径上都不可被递�
 		expect(store.dropIndex).not.toHaveBeenCalled();
 		expect(snapshotDir(indexRoot)).toEqual(before);
 
-		// 入口 2:后端内部的「清单缺失/参数不兼容 → dropStore」降级分支。
-		await expect(backend.smartReindex()).rejects.toBeInstanceOf(IndexDirectoryNotOwnedError);
+		// 入口 2:缺失清单且没有可信完成记录时，先拒绝恢复，不再走清库降级。
+		// 拒绝原因可以早于归属断言，但磁盘与 dropIndex 零调用的安全要求不变。
+		await expect(backend.smartReindex()).rejects.toThrow();
 		expect(store.dropIndex).not.toHaveBeenCalled();
 		expect(snapshotDir(indexRoot)).toEqual(before);
 

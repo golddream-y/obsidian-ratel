@@ -219,6 +219,109 @@ describe('真实索引持久化', () => {
 		expect(third.embed).toHaveBeenCalledTimes(1);
 		expect((await third.manifest.load())!.entries['a.md']!.hash).toBe(await sha256('changed'));
 	});
+	it('清单恢复 - 同目录真实完成记录与当前配置匹配 - 保留日志和向量且零嵌入', async () => {
+		const journal = await createJournal(dir);
+		await commitJournalReceipt(journal, 'a.md', 'original');
+		await commitJournalReceipt(journal, 'b.md', 'unchanged');
+		await commitJournalTombstone(journal, 'gone.md');
+		const before = await journal.readReceipt('a.md');
+		const first = await create(undefined, 1000, {
+			fileRecords: journal, getConfigFingerprint: () => 'a'.repeat(64),
+		});
+		const drop = vi.spyOn(first.store, 'dropIndex');
+		const request = vi.spyOn(first.worker, 'request');
+
+		expect(await first.backend.smartReindex()).toEqual({ indexed: 0, errors: 0, skipped: 2 });
+		expect(drop).not.toHaveBeenCalled();
+		expect(request).not.toHaveBeenCalled();
+		expect(first.embed).not.toHaveBeenCalled();
+		expect(await journal.readReceipt('a.md')).toEqual(before);
+		expect((await first.store.inspectFile('a.md')).length).toBe(1);
+		const recovered = (await first.manifest.load())!;
+		expect(Object.keys(recovered.entries).sort()).toEqual(['a.md', 'b.md']);
+		expect(recovered.entries['a.md']).toMatchObject({ hash: await sha256('original'), chunkCount: 1, mtime: 0 });
+		expect(await readBuildStamp(dir)).toEqual(stamp);
+	});
+	it('清单恢复 - 存在不完整事务目录 - 拒绝恢复且保留完成记录', async () => {
+		const journal = await createJournal(dir);
+		await commitJournalReceipt(journal, 'a.md', 'original');
+		await commitJournalReceipt(journal, 'b.md', 'unchanged');
+		const record = await journal.readReceipt('a.md');
+		await fs.promises.mkdir(path.join(dir, 'pending', 'incomplete'), { recursive: true });
+		expect(await journal.listPendingPaths()).toEqual([]);
+		expect(await journal.hasPendingTransactions()).toBe(true);
+		const first = await create(undefined, 1000, {
+			fileRecords: journal, getConfigFingerprint: () => 'a'.repeat(64),
+		});
+		await expect(first.backend.smartReindex()).rejects.toThrow();
+		expect(first.embed).not.toHaveBeenCalled();
+		expect(await first.manifest.load()).toBeNull();
+		expect(await journal.readReceipt('a.md')).toEqual(record);
+	});
+	it('清单恢复 - 完成记录对应向量已损坏 - 不重建清单或清除记录', async () => {
+		const journal = await createJournal(dir);
+		await commitJournalReceipt(journal, 'a.md', 'original');
+		await commitJournalReceipt(journal, 'b.md', 'unchanged');
+		const record = await journal.readReceipt('a.md');
+		// 通过日志实际持有的同一存储删除块，保证 verifyReceipt 检查的就是发生损坏的视图。
+		const journalStore = (journal as unknown as { store: VectraStore }).store;
+		await journalStore.deleteByPath('a.md');
+		expect((await journal.verifyReceipt('a.md'))?.matches).toBe(false);
+		const first = await create(undefined, 1000, {
+			fileRecords: journal, getConfigFingerprint: () => 'a'.repeat(64),
+		});
+		await expect(first.backend.smartReindex()).rejects.toThrow();
+		expect(first.embed).not.toHaveBeenCalled();
+		expect(await first.manifest.load()).toBeNull();
+		expect(await journal.readReceipt('a.md')).toEqual(record);
+	});
+	it.each(['missing-reader', 'missing-identity', 'wrong-identity', 'changed', 'added', 'deleted', 'read-failure', 'unsearchable', 'pending', 'unknown-empty'])('清单恢复 - %s不可安全推导 - 保留有效记录且不绕过日志写入', async invalid => {
+		const journal = await createJournal(dir);
+		await commitJournalReceipt(journal, 'a.md', 'original');
+		await commitJournalReceipt(journal, 'b.md', 'unchanged');
+		const before = await journal.readReceipt('a.md');
+		let reader: FileRecordReader | null = journal;
+		if (invalid === 'missing-reader') reader = null;
+		if (invalid === 'pending') await journal.prepare({
+			path: 'a.md', operation: 'replace', inputHash: await sha256('next'), revision: 2,
+			previousCommitId: before!.commitId, previousRevision: 1,
+			blocks: [{ id: 'a.md#next', vector: [0, 1, 0], metadata: { index: 0 } }],
+		});
+		if (invalid === 'unknown-empty') reader = {
+			listReceipts: async () => [], listTombstones: async () => [], listSearchableReceipts: async () => [],
+			listPendingPaths: async () => [],
+		};
+		if (invalid === 'read-failure') reader = {
+			listReceipts: async () => { throw new Error('read failed'); },
+			listTombstones: () => journal.listTombstones(),
+			listSearchableReceipts: () => journal.listSearchableReceipts(),
+		};
+		if (invalid === 'unsearchable') reader = {
+			listReceipts: () => journal.listReceipts(),
+			listTombstones: () => journal.listTombstones(),
+			listSearchableReceipts: async () => [],
+			listPendingPaths: () => journal.listPendingPaths(),
+		};
+		if (invalid === 'changed') files.set('a.md', 'changed');
+		if (invalid === 'added') files.set('new.md', 'new');
+		if (invalid === 'deleted') files.delete('a.md');
+		const first = await create(undefined, 1000, {
+			fileRecords: reader,
+			getConfigFingerprint: invalid === 'missing-identity' ? undefined : () => (invalid === 'wrong-identity' ? 'b' : 'a').repeat(64),
+		});
+		const drop = vi.spyOn(first.store, 'dropIndex');
+		const request = vi.spyOn(first.worker, 'request');
+
+		await expect(first.backend.smartReindex()).rejects.toThrow();
+		expect(drop).not.toHaveBeenCalled();
+		expect(request).not.toHaveBeenCalled();
+		expect(first.embed).not.toHaveBeenCalled();
+		expect(await journal.readReceipt('a.md')).toEqual(before);
+		expect((await first.store.inspectFile('a.md')).length).toBe(1);
+		expect(await first.manifest.load()).toBeNull();
+		expect(await readBuildStamp(dir)).toBeNull();
+		expect(first.backend.roundState()).toMatchObject({ scanComplete: false, failures: 1 });
+	});
 	it('输入快照 - 嵌入期间文件修改 - 只提交原内容hash并在重启更新', async () => {
 		let release!: () => void;
 		let started!: () => void;
@@ -244,7 +347,7 @@ describe('真实索引持久化', () => {
 		expect(await first.manifest.load()).toBeNull();
 		expect(await readBuildStamp(dir)).toBeNull();
 	});
-	it.each(['manifest', 'stamp'])('全量提交 - %s写入失败 - 不完成且下次重新处理', async (failed) => {
+	it.each(['manifest', 'stamp'])('全量提交 - %s写入失败 - 缺可信完成记录时保留向量并要求显式重建', async (failed) => {
 		const first = await create();
 		let restore: (() => void) | undefined;
 		if (failed === 'manifest')
@@ -268,8 +371,13 @@ describe('真实索引持久化', () => {
 			restore?.();
 		}
 		first.worker.destroy();
+		const vectorsBefore = fs.readFileSync(path.join(dir, 'index.json'));
 		const second = await create();
-		expect(await second.manager.onLayoutReady()).toEqual({ indexed: 2, errors: 0 });
+		expect(await second.manager.onLayoutReady()).toBeNull();
+		expect(second.embed).not.toHaveBeenCalled();
+		expect(fs.readFileSync(path.join(dir, 'index.json'))).toEqual(vectorsBefore);
+		// 旧式后端没有文件日志，无法自动认领向量；显式全量入口仍可重试故障。
+		expect(await second.backend.fullReindex()).toEqual({ indexed: 2, errors: 0 });
 		expect(second.embed).toHaveBeenCalledTimes(2);
 	});
 	it('无进展超时 - 旧任务未结束 - 不清库重试且后续写入失败直至迟到终态', async () => {
@@ -639,7 +747,9 @@ describe('真实索引持久化', () => {
             listSearchableReceipts: async () => receipts.filter(record => record.state === 'present'),
         };
         const first = await create(undefined, 1000, { fileRecords: reader });
-        expect(await first.manager.onLayoutReady()).toEqual({ indexed: 2, errors: 0 });
+        // 关键路径:本用例验证已有清单的覆盖契约,先显式建立清单,不借缺失清单走全量降级。
+        expect(await first.backend.fullReindex()).toEqual({ indexed: 2, errors: 0 });
+        expect(await first.manager.onLayoutReady()).toEqual({ indexed: 0, errors: 0 });
 
         // 两个集合互不混入:present 集没有已删除路径,删除凭据也不冒充完成记录。
         expect((await reader.listReceipts()).map(record => record.path)).toEqual(['a.md', 'b.md']);
@@ -663,6 +773,7 @@ describe('真实索引持久化', () => {
 
     it('部分可用性 - 未注入文件记录端口 - 返回 null 且完整性判为不可判定', async () => {
         const first = await create(undefined, 1000, { fileRecords: null });
+        await first.backend.fullReindex();
         await first.manager.onLayoutReady();
         expect(await first.backend.searchableFileRecords()).toBeNull();
         // 关键路径(T7 收紧):缺记录端口是**不可判定**,不是「已核验」—— 不再乐观返回 true。
@@ -694,7 +805,9 @@ describe('真实索引持久化', () => {
         // `VectraStore.dropIndex()`(递归删除整个 indexDir),把 indexDir 内的日志一起抹掉。
         const reader: FileRecordReader = journal;
         const first = await create(undefined, 1000, { fileRecords: reader });
-        expect(await first.manager.onLayoutReady()).toEqual({ indexed: 2, errors: 0 });
+        // 关键路径:本用例验证已有清单的覆盖契约,先显式建立清单,不借缺失清单走全量降级。
+        expect(await first.backend.fullReindex()).toEqual({ indexed: 2, errors: 0 });
+        expect(await first.manager.onLayoutReady()).toEqual({ indexed: 0, errors: 0 });
         expect(await first.backend.isIndexComplete()).toBe(true);
         const view = await first.backend.searchableFileRecords();
         expect(view?.records.map(record => record.path)).toEqual(['a.md', 'b.md']);

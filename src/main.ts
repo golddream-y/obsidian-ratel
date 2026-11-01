@@ -1271,7 +1271,7 @@ export default class RatelVaultPlugin extends Plugin {
 					if (this.inlineWorker) {
 						// 关键路径:创建 EmbeddingWorkerProxy,把 ONNX 推理移入 Web Worker,主线程零 CPU 阻塞。
 						// Worker 创建/init 失败不降级,直接抛错提示用户接 API Embedding 端点。
-						// vectraStore 在 initEmbeddingWorkerProxy 内部用无 embeddings 版本创建(IndexProcessor 自己调 proxy.embed)。
+						// 共享处理器在 startIndexRound 复用已装配的 store,由 proxy 提供批量嵌入。
 						await this.initEmbeddingWorkerProxy(embedding);
 					}
 				}
@@ -1315,6 +1315,14 @@ export default class RatelVaultPlugin extends Plugin {
 	): Promise<void> {
 		const indexProgressRef = progress ?? { handle: null as ReturnType<UserNotice['toastProgress']> | null };
 		try {
+			// 修复:API 模式同样需要共享检索处理器;复用既有 store,只读装配不触发预热或写盘。
+			// 关键路径:local 必须等代理 ensureReady 完成,重试则把处理器重新绑定到本轮 store。
+			const processorEmbedding = this.settings.embedProvider === 'local'
+				? this.embeddingWorkerProxy
+				: this.embedding;
+			if (this.indexDirUsable && processorEmbedding) {
+				this.inlineWorker?.initWithStore(this.vectraStore, processorEmbedding);
+			}
 			if (autoIndex) this.indexStallWatchdog?.start();
 			const indexResult = await this.indexController.onLayoutReady(autoIndex);
 			// 关键路径:索引完成后隐藏进度 toast 并清除 callback(成功路径)。
@@ -2239,6 +2247,8 @@ export default class RatelVaultPlugin extends Plugin {
 			// 卸载之后)。它不是「0 也是合法 epoch」,而是「没有租约可校验」;T6 的 fail-open
 			// 关闭只覆盖「有租约但活动没盖章」这一种情况,不能把它读成「已具备 epoch 保护」。
 			getEpoch: () => this.indexOwnerLease?.epoch ?? 0,
+			// 完成记录重建派生清单前必须证明属于本轮配置,不能由当前清单反推身份。
+			getConfigFingerprint: () => this.indexConfigFingerprint,
 			// 关键路径:协调器 `taskId` 轮内恒定,只做稳定任务身份;后端内部另用每请求唯一键。
 			getTaskId: () => String(this.indexCoordinator?.counters().taskId ?? 0),
 			// 关键路径(T6 §8.2 + T7 收口):严格版归属断言 —— 只允许删除本索引根 generations/ 下的
@@ -2593,7 +2603,7 @@ export default class RatelVaultPlugin extends Plugin {
 	 * 关键路径:
 	 * - Obsidian 渲染进程的 V8 平台禁用了 Worker Threads(见 ADR-002),
 	 *   直接创建 InlineWorker,不做 try/catch 降级。
-	 * - InlineWorker 复用主线程 VectraStore,避免双写;但初始化延迟到模型下载完成后。
+	 * - InlineWorker 复用主线程 VectraStore,避免双写;处理器在启动索引轮次前统一接线。
 	 */
 	private createWorkerManager(): WorkerManager {
 		this.workerMode = 'inline';
@@ -2702,15 +2712,7 @@ export default class RatelVaultPlugin extends Plugin {
 			throw new Error(tNow('error.probe.requestFailed', { message }));
 		}
 
-		// 关键路径:不再重建 store —— 日志与协调器已绑定同一个底层实例(经访问门转发),
-		// 重建会让提交写到旧实例、检索读新实例,两个视图从此分叉(T7 装配约束)。
-		// 只读装配且无活动代际时索引目录不可用,不初始化 worker 存储(零写入)。
-		if (!this.indexDirUsable) {
-			devLogger.warn('index', '索引目录不可用(无活动代际),跳过 InlineWorker 存储初始化');
-			return;
-		}
-		// 关键路径:proxy 实现 EmbeddingPort,InlineWorker 用它做批量 embed,索引与搜索都走 Worker 线程。
-		this.inlineWorker!.initWithStore(this.vectraStore, proxy);
+		// 关键路径:共享处理器统一在 startIndexRound 接线,不重建已被日志与协调器绑定的 store。
 	}
 
 	/**

@@ -93,7 +93,7 @@ WorkerManager 的请求和 `runExclusive()` 共用串行通道。排队时间不
 
 handler 或入口通过 `{ type: 'error', payload: { code, message }, _requestId }` 返回结构化错误；调用方须检查业务响应类型，不能把收到任意响应视为成功。错误码包含 `NULL_PROCESSOR`、`UNKNOWN_REQUEST`、`WORKER_INIT_FAILED`、`WORKER_ERROR`，以及索引看护的 `index-stalled`、`index-cancelled`、`runtime-reset`、`request-blocked`、`request-timeout`。
 
-`NULL_PROCESSOR` 表示 Worker 存储未初始化。当前装配只在本地嵌入分支初始化 Worker 存储，API 嵌入模式的 `vector.search` 因此会得到该错误；检索侧只告警并按「无命中」处理，与「真的没有命中」在工具层不可区分（已知缺口，见 [T7 证据](../../superpowers/plans/2026-10-31-index-reliability-t7-evidence.md)）。
+`NULL_PROCESSOR` 表示共享检索处理器尚未初始化。`main.startIndexRound` 在启动与重试时统一调用 `InlineWorker.initWithStore`：API 模式绑定当前嵌入端口，本地模式在代理预热完成后绑定代理；两者均复用已装配的存储。只读模式使用 `autoInit:false`，接线本身不初始化磁盘索引；无可用代际时跳过接线。历史上只在本地分支接线导致 API 模式返回空结果的问题，取证见 [T7 证据](../../superpowers/plans/2026-10-31-index-reliability-t7-evidence.md)。
 
 卸载由 main 协调 IndexController、WorkerManager 和嵌入 Worker 的清理。InlineWorker terminate 会阻止后续消息和排队处理，并清空监听器；它不会中断已经进入异步调用的代码。
 

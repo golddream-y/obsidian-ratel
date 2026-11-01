@@ -11,6 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 import RatelVaultPlugin from '../src/main';
 import { InlineWorker } from '../src/worker/inline-worker';
+import { computeConfigFingerprint } from '../src/core/index-persistence-types';
 import { get, writable } from 'svelte/store';
 import { IndexManager } from '../src/core/index-manager';
 import { FeedbackController } from '../src/core/feedback-controller';
@@ -279,8 +280,17 @@ describe('只读装配的检索可见性门(autoIndex=false)', () => {
         try {
             // 夹具:`.index/control.json` 指向一条真实存在的活动代际目录 —— 「有活动代际」是
             // 本用例与「无活动代际」分支的分界,必须真实落到磁盘上。
+            const plugin = barePlugin();
+            plugin.settings = {
+                autoIndex: false, chunkSize: 1000, chunkOverlap: 100,
+                embedProvider: 'local', embedLocalModel: 'default', embedApiBase: '', embedApiModel: '',
+            };
+            plugin.embedding = { dimensions: 512 };
+            plugin.vault = { fileExists: () => false };
+            // 可用分支必须使用真实配置身份；任意假指纹现在应当被只读装配拒绝。
+            const fingerprint = await computeConfigFingerprint(plugin.currentIndexConfig());
             const indexRoot = path.join(pluginDir, '.index');
-            const generationId = 'gen-0123456789abcdef';
+            const generationId = `gen-${fingerprint.slice(0, 16)}`;
             const generationRoot = path.join(indexRoot, 'generations', generationId);
             await fsp.mkdir(generationRoot, { recursive: true });
             await fsp.writeFile(path.join(indexRoot, 'control.json'), JSON.stringify({
@@ -290,7 +300,7 @@ describe('只读装配的检索可见性门(autoIndex=false)', () => {
                     [generationId]: {
                         schemaVersion: 2,
                         generationId,
-                        fingerprint: 'f'.repeat(64),
+                        fingerprint,
                         kind: 'fresh',
                         status: 'active',
                         root: generationRoot,
@@ -308,14 +318,6 @@ describe('只读装配的检索可见性门(autoIndex=false)', () => {
                 version: 1, embedModelId: 'local-default', chunkSize: 1000, embedModelRevision: null,
                 files: {},
             }), 'utf8');
-
-            const plugin = barePlugin();
-            plugin.settings = {
-                autoIndex: false, chunkSize: 1000, chunkOverlap: 100,
-                embedProvider: 'local', embedLocalModel: 'default', embedApiBase: '', embedApiModel: '',
-            };
-            plugin.embedding = { dimensions: 512 };
-            plugin.vault = { fileExists: () => false };
 
             const before = snapshotDirectory(pluginDir);
 

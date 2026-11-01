@@ -274,7 +274,7 @@ For repeated failures, inspect **Settings → Ratel → Advanced → Diagnostics
 
 ### Index status and index commands
 
-Expanding the status strip shows the indexing **file counts** and the **current phase**: `committed 234/1000 · pending 12 · failed 0`, together with phases such as scanning, queued, processing, stalled, and stopping.
+Expand the status strip to see one primary state and an indexed-note count, such as “Indexing notes · 234 / 1000 notes indexed”. Below the progress bar, “23.4% complete · 766 remaining · 0 failed” counts distinct notes, without adding internal tasks or transactions. While the total is unknown, the panel shows scanning without a misleading completion percentage. “Context 7%” at the top right is chat context usage, separate from index progress.
 
 - **Partially available:** committed notes are searchable right away; you do not have to wait for the whole vault. Try pending notes again shortly.
 - **Re-verification needed:** a note you just edited is excluded from search until its new version is committed, so stale content is not returned.
@@ -289,7 +289,7 @@ Index-related commands in the command palette:
 | Retry index setup | Rebuilds the index runtime when the index is unavailable because setup failed; on success verification starts, on failure it states why. |
 | Pause indexing / Resume indexing | Pause first cancels in-flight calls and stops scheduling while file events keep queuing; resume continues verification and, if a write is permanently stuck, resets the runtime first. |
 
-**After changing embedding settings:** changing embedding settings (model or chunking) within one session is refused explicitly; the strip says the embedding configuration changed in this session and index writes are paused so old and new parameters are not mixed. **Reload the plugin, then rebuild the index.** Switching to another setup and restarting makes the plugin build a separate index generation for the new configuration; it switches only after verifying every file, and the old generation stays searchable meanwhile. Use “Clean up inactive index generations” to free space; it removes only inactive generations.
+**After changing embedding settings:** changing embedding settings (model or chunking) within one session is refused explicitly; the strip says the embedding configuration changed in this session and index writes are paused so old and new parameters are not mixed. **Reload the plugin, then rebuild the index.** Switching to another setup and restarting makes the plugin build a separate index generation for the new configuration; it switches only after verifying every file. The old generation's data is preserved, but a separate search path using the old embedding configuration is not yet implemented. Use “Clean up inactive index generations” to free space; it removes only inactive generations.
 
 **When the index is unavailable:** a failed setup (insufficient disk space, a corrupt control record, another instance holding write ownership, and so on) does not disable the rest of the plugin. Other features keep working, the strip states the reason, and you can recover with “Retry index setup.”
 

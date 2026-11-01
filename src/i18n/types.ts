@@ -753,6 +753,13 @@ export interface StatusStrings {
   'status.drawer.collapse': string;
   'status.drawer.tooltip': string;
   'status.drawer.section.index': string;
+  'status.strip.context': string;
+  'status.drawer.indexedCount': string;
+  'status.drawer.indexProgress': string;
+  'status.drawer.remainingCount': string;
+  'status.drawer.failedCount': string;
+  'status.drawer.searchAvailable': string;
+  'status.drawer.totalUnknown': string;
   'status.drawer.label.index': string;
   'status.drawer.label.currentFile': string;
   'status.drawer.label.embedding': string;
@@ -1058,6 +1065,7 @@ export interface ErrorStrings {
   'error.index.controlInvalid': string;
   'error.index.spaceBudgetExceeded': string;
   'error.index.generationNotDroppable': string;
+  'error.index.generationsRetained': string;
   'error.index.ownerBusy': string;
   'error.index.concurrentTakeover': string;
   'error.index.ownerLockCorrupt': string;

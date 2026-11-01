@@ -460,7 +460,7 @@ describe('协调器接入', () => {
         await manager.onLayoutReady();
         expect(get(manager.status$)).toMatchObject({ state: 'Ready', totalDocs: 0 });
         // 新一轮:扫描结束但仍有待处理项,旧任务的 0 篇完成统计不得继续展示为 Ready。
-        coordinator.set({ taskId: 5, phase: 'processing', scanComplete: true, committed: 3, queued: 2, committedThisRound: 1 });
+        coordinator.set({ taskId: 5, phase: 'processing', scanComplete: true, total: 5, committed: 3, queued: 2, committedThisRound: 1 });
         manager.enqueue('a.md', 'upsert');
         const status = get(manager.status$);
         expect(status.state).toBe('Queueing');
@@ -571,7 +571,7 @@ describe('协调器接入', () => {
         const coordinator = new CoordinatorStub();
         // 关键路径:发布必须发生在记录 `lastTaskId` 之前 —— 反序会让本轮首次发布永远看不到新 taskId。
         coordinator.start = async () => {
-            coordinator.set({ taskId: 9, phase: 'processing', scanComplete: true, committed: 3, queued: 2, committedThisRound: 0 });
+            coordinator.set({ taskId: 9, phase: 'processing', scanComplete: true, total: 5, committed: 3, queued: 2, committedThisRound: 0 });
             return coordinator.counters();
         };
         const manager = new IndexManager(backendStub(), coordinator);
@@ -596,6 +596,46 @@ describe('协调器接入', () => {
     });
 });
 
+
+describe('协调器运行中的进度展示', () => {
+    it.each(['完成', '卸载'] as const)('整轮尚未返回 - 中途计数刷新且%s后停止采样', async ending => {
+        vi.useFakeTimers();
+        const coordinator = new CoordinatorStub();
+        let release!: (value: IndexTaskCounters) => void;
+        const started = new Promise<void>(resolve => {
+            vi.spyOn(coordinator, 'start').mockImplementation(() => {
+                resolve();
+                return new Promise<IndexTaskCounters>(done => { release = done; });
+            });
+        });
+        const manager = new IndexManager({
+            fullReindex: vi.fn(), incrementalIndex: vi.fn(), deleteFile: vi.fn(),
+        }, coordinator);
+        const startup = manager.onLayoutReady();
+        try {
+            await started;
+            coordinator.set({ taskId: 1, total: 100, committed: 12, active: 1, queued: 87, phase: 'processing', scanComplete: true });
+            await vi.advanceTimersByTimeAsync(500);
+            expect(get(manager.status$)).toMatchObject({
+                state: 'Queueing', total: 100, committed: 12, pending: 88, phase: 'processing',
+            });
+            if (ending === '卸载') {
+                manager.destroy();
+                expect(vi.getTimerCount()).toBe(0);
+            }
+            coordinator.set({ total: 100, committed: 100, committedThisRound: 100, active: 0, queued: 0, phase: 'ready' });
+            release(coordinator.counters());
+            await startup;
+            expect(vi.getTimerCount()).toBe(0);
+            expect(get(manager.status$).state).toBe(ending === '卸载' ? 'Unloaded' : 'Ready');
+        } finally {
+            release(coordinator.counters());
+            await startup;
+            manager.destroy();
+            vi.useRealTimers();
+        }
+    });
+});
 
 describe('失败态保留稳定错误码(T7/I1)', () => {
     it('启动扫描 - 后端抛带码错误 - 失败态携带 errorCode 而不是只留 String(err)', async () => {

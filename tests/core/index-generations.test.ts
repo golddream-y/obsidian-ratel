@@ -1916,16 +1916,16 @@ describe('IndexGenerations - 迁移派生视图与启动路径门禁', () => {
 			expect(outcome.indexed).toBe(files.length);
 			expect(fixture.embedCalls()).toBeGreaterThan(0);
 
-			// 第二段更忠实地复刻**修复前**的迁移产物:向量已在代际目录内、清单与戳缺失。
-			// 这正是本次修复前的现场 —— 门禁必须仍然判定全量重建(而不是被旧的 `index.json` 骗过),
-			// 用来证明「清单确实是 load-bearing 的那一份文件」。
+			// 清单与戳缺失且没有可核验的完成记录时，必须保留向量并拒绝旧式清库回退。
+			// 反向对照：不能因 index.json 存在就补造可信记录，也不能用重嵌入掩盖身份缺失。
 			fs.rmSync(resolveIndexManifestPath(legacy.legacyDir), { force: true });
 			fs.rmSync(resolveBuildStampPath(legacy.legacyDir), { force: true });
 			const embedBefore = fixture.embedCalls();
-			const missingManifest = await fixture.backend.smartReindex();
-			expect(missingManifest.skipped).toBe(0);
-			expect(missingManifest.indexed).toBe(files.length);
-			expect(fixture.embedCalls()).toBeGreaterThan(embedBefore);
+			const vectorsBefore = fs.readFileSync(path.join(legacy.legacyDir, 'index.json'));
+			await expect(fixture.backend.smartReindex()).rejects.toThrow();
+			expect(fixture.embedCalls()).toBe(embedBefore);
+			expect(fs.readFileSync(path.join(legacy.legacyDir, 'index.json'))).toEqual(vectorsBefore);
+			expect(fs.existsSync(resolveIndexManifestPath(legacy.legacyDir))).toBe(false);
 		} finally {
 			fixture.dispose();
 		}

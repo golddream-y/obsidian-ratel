@@ -331,6 +331,8 @@ graph TD
 
 **清单与 data.json 分离:** 清单记录每文件 sha256 + mtime + chunkCount + 全局参数，独立于 data.json，不走 Obsidian loadData/saveData。
 
+**清单丢失的旧后端入口:** `PersistentIndexBackend.smartReindex` 在向量索引存在、清单缺失时先核验完成记录：当前配置指纹、present/deleted 记录、可检索集、未决事务、完成记录对应的向量块以及当前正文 hash 必须全部一致，才重建派生清单与构建戳，不派发嵌入或清库请求。身份未知、文件已变更或有未决事务时拒绝该恢复路径，保留原数据；生产扫描仍由协调器逐文件核对。
+
 ### 6.2 配置代际
 
 代际由**配置指纹**（`configIdentityOf(fingerprint)`，显式字段白名单按固定顺序序列化后 SHA-256）派生标识 `deriveGenerationId(fingerprint)`。凭证（`apiKey` / `baseUrl`）与临时任务状态是构造性排除项：改动它们不产生新代际。

@@ -9,6 +9,7 @@
 	import type { UserStatusSnapshot, ContextUsage } from '../../user-feedback/user-status';
 	import { t } from '../../i18n';
 	import { clampContextPct } from './strip-label';
+	import { indexProgressView } from './index-progress';
 
 	let {
 		expanded,
@@ -124,123 +125,76 @@
 		});
 	});
 
-	const indexPhaseText = $derived(labelPhase(snap.indexPhase));
-
-	const indexCountsText = $derived(
-		snap.indexCommittedFiles === undefined && snap.indexTotalFiles === undefined
-			? undefined
-			: $t('status.counts.value', {
-				committed: snap.indexCommittedFiles ?? 0,
-				total: snap.indexTotalFiles ?? 0,
-				pending: snap.indexPendingFiles ?? 0,
-				failed: snap.indexFailedFiles ?? 0,
-			}),
+	const progress = $derived(indexProgressView(snap));
+	// 错误和暂停优先于阶段；正常运行只保留一个主状态，避免排队中/处理中并列。
+	const indexValue = $derived(
+		snap.index === 'failed' || snap.index === 'paused'
+			? labelIndex(snap.index)
+			: labelPhase(snap.indexPhase) ?? labelIndex(snap.index),
 	);
+	const indexing = $derived(['scanning', 'processing', 'queueing', 'diffing', 'init'].includes(snap.index));
 
 	const indexNoticeText = $derived.by(() => {
 		const notice = labelNotice(snap.indexNotice);
 		if (notice !== undefined) return notice;
+		if (snap.index === 'failed' && snap.indexDetail) return snap.indexDetail;
 		// 关键路径:部分可用没有被宣告为 ready,但已有可检索版本,必须说明而不是只显示进度。
-		if (snap.indexPartial === true) {
-			return $t('status.detail.partial', {
-				committed: snap.indexCommittedFiles ?? 0,
-				total: snap.indexTotalFiles ?? 0,
-				pending: snap.indexPendingFiles ?? 0,
-			});
-		}
+		if (snap.indexPartial === true) return $t('status.drawer.searchAvailable');
 		return undefined;
 	});
 
 	const indexBarColor = $derived.by(() => {
 		const idx = snap.index;
-		if (idx === 'processing' || idx === 'scanning' || idx === 'queueing') return 'var(--text-warning)';
+		if (snap.indexPhase === 'stalled' || snap.indexPhase === 'stopping') return 'var(--text-warning)';
+		if (idx === 'failed') return 'var(--text-error)';
+		if (idx === 'processing' || idx === 'scanning' || idx === 'queueing') return 'var(--interactive-accent)';
 		if (idx === 'ready') return 'var(--text-success)';
 		return 'var(--text-muted)';
 	});
 
-	const indexProgress = $derived.by(() => {
-		const detail = snap.indexDetail;
-		if (!detail) return snap.index === 'ready' ? 100 : 0;
-		const m = detail.match(/(\d+)\/(\d+)/);
-		if (m) return Math.round((parseInt(m[1]!) / parseInt(m[2]!)) * 100);
-		return snap.index === 'ready' ? 100 : 0;
-	});
-
-	const indexValue = $derived.by(() => {
-		let lbl = labelIndex(snap.index);
-		// 修复:0 篇时不拼括号,避免「就绪 (0 篇)」看起来像异常
-		if (snap.indexDocCount != null && snap.indexDocCount > 0 && snap.index === 'ready') {
-			lbl += ' ' + $t('status.drawer.docCount', { count: snap.indexDocCount });
-		} else if (snap.indexDetail && /^\d+\/\d+$/.test(snap.indexDetail)) {
-			lbl += ` ${snap.indexDetail}`;
-		}
-		return lbl;
-	});
-
 	const ctxPct = $derived(clampContextPct(usage.percentage));
 
-	const currentFile = $derived.by(() => {
-		if (snap.index === 'processing' && snap.indexDetail) {
-			// 关键路径:排除进度格式("数字/数字")和 pending 消息("数字 + 空格 + 文字"),
-			// 剩余的视为当前文件名。文件名通常不以数字开头。不依赖具体语言匹配。
-			if (/^\d+\/\d+$/.test(snap.indexDetail)) return null;
-			if (/^\d+\s/.test(snap.indexDetail)) return null;
-			return snap.indexDetail;
-		}
-		return null;
-	});
+
 </script>
 
 <div class="ratel-drawer" class:ratel-drawer-open={expanded}>
 	<div class="ratel-drawer-inner">
 		<div class="ratel-drawer-section-title">{$t('status.drawer.section.index')}</div>
-		<div class="ratel-drawer-row">
-			<span class="ratel-drawer-label">{$t('status.drawer.label.index')}</span>
-			<span class="ratel-drawer-value">{indexValue}</span>
+		<div class="ratel-index-heading">
+			<span class="ratel-index-state">{indexValue}</span>
+			{#if progress.total > 0}
+				<span class="ratel-index-count">{$t('status.drawer.indexedCount', { count: progress.completed, total: progress.total })}</span>
+			{/if}
 		</div>
-		{#if snap.index === 'scanning' || snap.index === 'processing' || snap.index === 'queueing'}
-			<div class="ratel-drawer-progress">
-				<div class="ratel-drawer-progress-fill" style={`width: ${indexProgress}%; background: ${indexBarColor};`}></div>
+		{#if indexing || progress.total > 0}
+			<div class="ratel-drawer-progress" role="progressbar"
+				aria-label={$t('status.drawer.label.index')}
+				aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress.percentage ?? undefined}>
+				<div class="ratel-drawer-progress-fill" class:ratel-progress-unknown={progress.percentage === null && indexing}
+					style={`width: ${progress.percentage ?? (indexing ? 28 : 0)}%; background: ${indexBarColor};`}></div>
 			</div>
 		{/if}
-		{#if indexPhaseText}
-			<div class="ratel-drawer-row">
-				<span class="ratel-drawer-label">{$t('status.phase.label')}</span>
-				<span class="ratel-drawer-value">{indexPhaseText}</span>
-			</div>
-		{/if}
-		{#if indexCountsText}
-			<div class="ratel-drawer-row">
-				<span class="ratel-drawer-label">{$t('status.counts.label')}</span>
-				<span class="ratel-drawer-value ratel-drawer-mono">{indexCountsText}</span>
+		{#if progress.hasCounts}
+			<div class="ratel-index-metrics">
+				<span>{progress.percentage === null ? $t('status.drawer.totalUnknown') : $t('status.drawer.indexProgress', { percent: progress.percentage })}</span>
+				{#if progress.total > 0 || progress.pending > 0}<span>{$t('status.drawer.remainingCount', { count: progress.pending })}</span>{/if}
+				<span class:ratel-index-failed={progress.failed > 0}>{$t('status.drawer.failedCount', { count: progress.failed })}</span>
 			</div>
 		{/if}
 		{#if indexNoticeText}
-			<div class="ratel-drawer-row">
-				<span class="ratel-drawer-label">{$t('status.drawer.label.notice')}</span>
-				<span class="ratel-drawer-value">{indexNoticeText}</span>
-			</div>
+			<p class="ratel-index-notice" class:ratel-index-warning={snap.indexNotice !== undefined}>{indexNoticeText}</p>
 		{/if}
 		{#if indexDiagnosticsText}
-			<div class="ratel-drawer-row">
-				<span class="ratel-drawer-label">{$t('status.drawer.label.indexDiagnostics')}</span>
-				<span class="ratel-drawer-value ratel-drawer-mono">{indexDiagnosticsText}</span>
-			</div>
-		{/if}
-		{#if currentFile}
-			<div class="ratel-drawer-row">
-				<span class="ratel-drawer-label">{$t('status.drawer.label.currentFile')}</span>
-				<span class="ratel-drawer-value ratel-drawer-mono">{currentFile}</span>
-			</div>
+			<details class="ratel-index-diagnostics">
+				<summary>{$t('status.drawer.label.indexDiagnostics')}</summary>
+				<p>{indexDiagnosticsText}</p>
+			</details>
 		{/if}
 		<div class="ratel-drawer-row">
 			<span class="ratel-drawer-label">{$t('status.drawer.label.embedding')}</span>
-			<span class="ratel-drawer-value">{labelEmbedding(snap.embedding)}</span>
-		</div>
-		<div class="ratel-drawer-row">
-			<span class="ratel-drawer-label">{$t('status.drawer.label.embedKind')}</span>
 			<span class="ratel-drawer-value">
 				{embedKind === 'api' ? $t('status.drawer.embedKind.api') : $t('status.drawer.embedKind.local')}
+				· {labelEmbedding(snap.embedding)}
 			</span>
 		</div>
 		<div class="ratel-drawer-section-title">{$t('status.drawer.section.context')}</div>
@@ -430,6 +384,43 @@
 	.ratel-drawer-section-title:first-child {
 		margin-top: 0;
 	}
+
+	.ratel-index-heading {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		flex-wrap: wrap;
+		gap: 4px 12px;
+		padding: 12px 0 6px;
+		font-size: 12px;
+	}
+
+	.ratel-index-state { font-weight: 600; color: var(--text-normal); }
+	.ratel-index-count { color: var(--text-normal); font-variant-numeric: tabular-nums; }
+	.ratel-index-metrics {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px 16px;
+		padding: 4px 0 8px;
+		font-size: 11px;
+		color: var(--text-muted);
+		font-variant-numeric: tabular-nums;
+	}
+	.ratel-index-failed { color: var(--text-error); }
+	.ratel-index-notice {
+		margin: 0 0 10px;
+		font-size: 11px;
+		line-height: 1.6;
+		color: var(--text-muted);
+		overflow-wrap: anywhere;
+	}
+	.ratel-index-warning { color: var(--text-warning); }
+	.ratel-index-diagnostics { margin: 4px 0 10px; font-size: 11px; color: var(--text-muted); }
+	.ratel-index-diagnostics summary { cursor: pointer; }
+	.ratel-index-diagnostics p { line-height: 1.6; overflow-wrap: anywhere; }
+	.ratel-progress-unknown { animation: ratel-index-indeterminate 1.6s ease-in-out infinite alternate; }
+	@keyframes ratel-index-indeterminate { from { transform: translateX(0); } to { transform: translateX(250%); } }
+	@media (prefers-reduced-motion: reduce) { .ratel-progress-unknown { animation: none; } }
 
 	.ratel-drawer-row {
 		display: flex;

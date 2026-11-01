@@ -179,6 +179,8 @@ export interface CommittedFileRecord {
 	inputHash: string | null;
 	/** 块数量。 */
 	chunkCount: number;
+	/** 完成记录的配置身份;缺失时不能用于重建派生清单。 */
+	configFingerprint?: string;
 }
 
 /**
@@ -200,6 +202,12 @@ export interface FileRecordReader {
 	listTombstones(): Promise<ReadonlyArray<CommittedFileRecord>>;
 	/** 可检索的完成记录 — 已排除 tombstone 与不可用路径。 */
 	listSearchableReceipts(): Promise<ReadonlyArray<CommittedFileRecord>>;
+	/** 未决事务路径;清单恢复需要确认旧完成记录未被在途事务覆盖。 */
+	listPendingPaths?(): Promise<string[]>;
+	/** 未决目录存在任何条目时均为 true，包含损坏或未准备完毕的事务。 */
+	hasPendingTransactions?(): Promise<boolean>;
+	/** 核对当前向量块与完成记录；恢复清单时必须提供。 */
+	verifyReceipt?(path: string): Promise<{ matches: boolean; receipt: CommittedFileRecord } | null>;
 }
 
 /** 部分检索可用性视图。 */
@@ -279,6 +287,8 @@ export interface PersistentIndexBackendOptions {
 	 * 测试或错误装配中,而错误装配必须失败关闭、不能声称全库完成。
 	 */
 	fileRecords?: FileRecordReader | null;
+	/** 当前代际的配置指纹;清单恢复必须与每份完成记录核对,缺省不可判定。 */
+	getConfigFingerprint?: () => string;
 	/**
 	 * 可选:本轮队列/在途/未决事务计数,以及协调器视角的扫描完成与失败计数;未注入时按 0 计。
 	 *
@@ -379,7 +389,7 @@ export class PersistentIndexBackend implements IndexBackend {
 	private pendingWrites = new Map<string, PendingWriteState>();
 	constructor(private deps: PersistentIndexBackendOptions) {}
 
-	/** 启动时对已成功提交的清单做 hash diff；未知完整性的旧索引保守重建一次。 */
+	/** 启动时对成功清单做 hash diff;派生清单缺失时先核验完成记录,未知状态拒绝清库。 */
 	smartReindex(): Promise<IndexResult & {
 		skipped: number;
 	}> {
@@ -388,6 +398,8 @@ export class PersistentIndexBackend implements IndexBackend {
 			const chunkOptions = this.deps.getChunkOptions();
 			const manifest = await this.deps.manifest.load();
 			const exists = await this.isIndexCreated();
+			// 修复:派生清单丢失不能删除文件完成记录,先核验日志并重建视图。
+			if (exists && !manifest) return this.recoverMissingManifest(stamp);
 			if (!exists || !manifest || this.deps.manifest.shouldFullRebuild(manifest, stamp.embedModelId, stamp.chunkSize, stamp.chunkOverlap, stamp.chunkerVersion)) {
 				// 关键路径:只在缺少有效清单或参数不兼容时重建，不把运行失败当作损坏。
 				if (exists)
@@ -452,6 +464,79 @@ export class PersistentIndexBackend implements IndexBackend {
 			if (needsRoundCommit) await this.commit(roundManifest, stamp);
 			return { indexed, errors: 0, skipped: diff.unchanged.length };
 		}));
+	}
+
+	/**
+	 * 从可信完成记录恢复清单;无法证明配置或需要修改文件时交还协调器处理。
+	 *
+	 * 关键路径:此入口不派发 batch/delete/full,避免绕过文件日志重嵌入或递归清除凭据。
+	 * 仅旧式空索引允许首次全量初始化,空集必须由记录端口与磁盘内容共同证明。
+	 */
+	private async recoverMissingManifest(stamp: IndexBuildStamp): Promise<IndexResult & { skipped: number }> {
+		const reader = this.deps.fileRecords;
+		if (!reader) throw this.unexpectedResponse();
+		const [receipts, tombstones, searchable] = await Promise.all([
+			reader.listReceipts(), reader.listTombstones(), reader.listSearchableReceipts(),
+		]);
+		// 仅在回调内核验容器，保留外层只读记录类型，避免 Array.isArray 收窄成 any[]。
+		if (![receipts, tombstones, searchable].every(records => Array.isArray(records))) {
+			throw this.unexpectedResponse();
+		}
+		if (receipts.length === 0 && tombstones.length === 0 && searchable.length === 0
+			&& !this.deps.getConfigFingerprint && !reader.listPendingPaths) {
+			// 关键路径:status() 在读取失败时也返回 0,不能用它证明空索引。
+			const disk = JSON.parse(await fs.promises.readFile(path.join(this.deps.indexDir, INDEX_VECTRA_INDEX_FILENAME), 'utf8')) as { items?: unknown } | null;
+			if (!disk || !Array.isArray(disk.items) || disk.items.length !== 0) throw this.unexpectedResponse();
+			return { ...await this.full(), skipped: 0 };
+		}
+		const fingerprint = this.deps.getConfigFingerprint?.();
+		if (!fingerprint || !/^[0-9a-f]{64}$/.test(fingerprint) || !reader.listPendingPaths || !reader.hasPendingTransactions || !reader.verifyReceipt) throw this.unexpectedResponse();
+		if (await reader.hasPendingTransactions()) throw this.unexpectedResponse();
+		const pendingPaths = await reader.listPendingPaths();
+		const round = this.roundState();
+		if (!Array.isArray(pendingPaths) || pendingPaths.length > 0 || round.active > 0 || round.pendingTransactions > 0) {
+			throw this.unexpectedResponse();
+		}
+		const seen = new Set<string>();
+		for (const [records, state] of [[receipts, 'present'], [tombstones, 'deleted']] as const) {
+			for (const record of records) {
+				if (!record || record.state !== state || typeof record.path !== 'string' || record.path.length === 0
+					|| seen.has(record.path) || record.configFingerprint !== fingerprint
+					|| !Number.isSafeInteger(record.revision) || record.revision < 1
+					|| !Number.isSafeInteger(record.chunkCount) || record.chunkCount < 0
+					|| (state === 'present' ? typeof record.inputHash !== 'string' || !/^[0-9a-f]{64}$/.test(record.inputHash)
+						: record.inputHash !== null || record.chunkCount !== 0)) throw this.unexpectedResponse();
+				seen.add(record.path);
+			}
+		}
+		// 关键路径:隔离/不可用的旧凭据不能证明当前向量;读空集也不能冒充已核验。
+		const searchableByPath = new Map(searchable.map(record => [record.path, record]));
+		if (receipts.length + tombstones.length === 0 || searchable.length !== receipts.length
+			|| searchableByPath.size !== receipts.length || receipts.some(record => {
+				const candidate = searchableByPath.get(record.path);
+				return !candidate || candidate.state !== 'present' || candidate.inputHash !== record.inputHash
+					|| candidate.revision !== record.revision || candidate.chunkCount !== record.chunkCount
+					|| candidate.configFingerprint !== fingerprint;
+			})) throw this.unexpectedResponse();
+		// 完成记录只能证明提交过；恢复前还须逐条核对当前向量值和块集合，包括删除记录。
+		for (const record of [...receipts, ...tombstones]) {
+			const verified = await reader.verifyReceipt(record.path);
+			if (!verified?.matches || verified.receipt.path !== record.path
+				|| verified.receipt.revision !== record.revision || verified.receipt.state !== record.state
+				|| verified.receipt.inputHash !== record.inputHash || verified.receipt.chunkCount !== record.chunkCount
+				|| verified.receipt.configFingerprint !== fingerprint) throw this.unexpectedResponse();
+		}
+		const persistedStamp = await readBuildStamp(this.deps.indexDir);
+		if (persistedStamp && !isBuildStampCurrent(persistedStamp, stamp)) throw this.unexpectedResponse();
+		const data = this.blankManifest(stamp);
+		// 关键路径:mtime 只能来自实际索引时的快照,日志没有该字段时设 0,不能借当前 stat 伪造。
+		data.entries = Object.fromEntries(receipts.map(record => [record.path, {
+			path: record.path, hash: record.inputHash!, mtime: 0, chunkCount: record.chunkCount,
+		}]));
+		const diff = this.deps.manifest.diff(data, await this.snapshot());
+		if (diff.toAdd.length > 0 || diff.toUpdate.length > 0 || diff.toDelete.length > 0) throw this.unexpectedResponse();
+		await this.commit(data, stamp);
+		return { indexed: 0, errors: 0, skipped: diff.unchanged.length };
 	}
 
 	/** 手动全量入口；只有所有输入文件与元数据都写成功才返回。 */

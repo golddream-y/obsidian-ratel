@@ -169,6 +169,8 @@ export interface IndexTaskCounters {
 	total: number;
 	/** 已核实且可作为检索依据的文件数。 */
 	committed: number;
+	/** 尚未核实且没有失败记录的唯一文件数；展示专用，不与事务数相加。 */
+	pendingFiles?: number;
 	/** 本轮真正写入完成记录的次数(替换 + 删除);内容未变的复用不计入。 */
 	committedThisRound: number;
 	/** 仍有待处理工作的文件数(待重试、失败保留项与被队列上界丢弃尚未回收的路径)。 */
@@ -649,12 +651,17 @@ export class IndexTaskCoordinator {
 
 	/** 当前计数快照。 */
 	counters(): IndexTaskCounters {
+		let pendingFiles = 0;
+		for (const path of this.knownPaths) {
+			if (!this.verified.has(path) && !this.failingPaths.has(path)) pendingFiles += 1;
+		}
 		return {
 			taskId: this.taskId,
 			phase: this.phase,
 			scanComplete: this.scanComplete,
 			total: this.knownPaths.size,
 			committed: this.verified.size,
+			pendingFiles,
 			committedThisRound: this.committedThisRound,
 			// 关键路径:被队列上界丢弃但尚未回收的路径仍有待处理工作,必须计入 queued,
 			// 否则 canMarkReady 会在「已知路径没有完成记录也没有失败」的情况下成立。

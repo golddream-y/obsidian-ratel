@@ -19,6 +19,15 @@ import { UserStatus } from '../../src/user-feedback/user-status';
 import type { UserNotice } from '../../src/user-feedback/user-notice';
 
 describe('FeedbackController', () => {
+	it('正在处理与部分失败 - 主状态和文件计数 - 不显示排队或过期零失败', () => {
+		const controller = createController();
+		controller.start();
+		indexStatus$.set({ state: 'Queueing', phase: 'processing', total: 100, committed: 20, pending: 80, failed: 0 });
+		expect(get(userStatus.statusBar$)).toMatchObject({ index: 'processing', indexTotalFiles: 100, indexCommittedFiles: 20, indexPendingFiles: 80 });
+		indexStatus$.set({ state: 'Failed', reason: '部分文件失败', phase: 'partial-failure', total: 100, committed: 20, pending: 78, failed: 2 });
+		expect(get(userStatus.statusBar$)).toMatchObject({ index: 'failed', indexPhase: 'partial-failure', indexTotalFiles: 100, indexCommittedFiles: 20, indexPendingFiles: 78, indexFailedFiles: 2 });
+		controller.destroy();
+	});
 	const modelStatus$ = writable<ModelStatus>({ state: 'NotStarted' });
 	const indexStatus$ = writable<IndexStatus>({ state: 'Idle' });
 	let userStatus: UserStatus;
@@ -387,6 +396,7 @@ describe('索引错误码 → 用户文案映射', () => {
 			'control-invalid',
 			'space-budget-exceeded',
 			'generation-not-droppable',
+			'all-generations-retained',
 		] as const;
 		for (const code of INDEX_GENERATION_ERROR_CODES) {
 			const text = describeIndexError({ code, message: 'dev' });

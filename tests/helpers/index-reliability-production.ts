@@ -152,6 +152,13 @@ export async function createProductionIndexStack(options: ProductionIndexOptions
 			manifest,
 			worker,
 			getStore: () => store,
+			// 旧路径对照臂不使用文件日志；首次空库仍须经后端直接核验 index.json.items 为空。
+			// 非空索引丢失清单时，此空端口不能证明可恢复，也不能触发清库。
+			fileRecords: {
+				listReceipts: async () => [],
+				listTombstones: async () => [],
+				listSearchableReceipts: async () => [],
+			},
 			vault: createSyntheticVault(options.vaultDir, options.notePaths),
 			getBuildStamp: () => ({
 				chunkerVersion: CURRENT_CHUNKER_VERSION,

@@ -297,7 +297,7 @@ export class FeedbackController {
 	 */
 	private mapIndexStatus(status: IndexStatus): Partial<UserStatusSnapshot> {
 		// 关键路径:只有携带 phase 的状态才带阶段;其余状态按「未知」处理,不猜测。
-		const phase = status.state === 'Scanning' || status.state === 'Queueing' || status.state === 'Ready'
+		const phase = status.state === 'Scanning' || status.state === 'Queueing' || status.state === 'Ready' || status.state === 'Failed'
 			? status.phase
 			: undefined;
 		// 关键路径:识别「停滞 → 恢复」需要上一次已发布阶段;不引入第二份状态机。
@@ -334,7 +334,7 @@ export class FeedbackController {
 				break;
 			case 'Queueing':
 				Object.assign(patch, {
-					index: 'queueing',
+					index: phase === 'processing' ? 'processing' : 'queueing',
 					// 关键路径:待处理量增加(重新核对)与单纯排队必须分开说明。
 					indexDetail: status.reverifying === true
 						? tNow('status.detail.reverifying')
@@ -376,6 +376,11 @@ export class FeedbackController {
 			case 'Failed':
 				// 关键路径(T7/I1):详情同样经码表映射,不让开发向 message 出现在状态抽屉里。
 				Object.assign(patch, { index: 'failed', indexDetail: describeIndexFailure(status) });
+				if (status.total !== undefined) Object.assign(patch, {
+					indexTotalFiles: status.total, indexCommittedFiles: status.committed ?? 0,
+					indexPendingFiles: status.pending ?? 0, indexFailedFiles: status.failed ?? 0,
+					indexPartial: (status.committed ?? 0) > 0,
+				});
 				break;
 			case 'Unloaded':
 				Object.assign(patch, { index: 'idle', indexDetail: undefined });
@@ -476,7 +481,8 @@ type IndexErrorTextCode =
 	// Vectra 存储拒绝清库(drop-refused)
 	| 'drop-refused'
 	// 迁移失败的兜底码(迁移结论没有稳定码时由装配层赋予)
-	| 'migration-failed';
+	| 'migration-failed'
+	| 'all-generations-retained';
 
 /** 错误码 → i18n key 映射 — 开发向 Error.message 一律不上屏。 */
 const INDEX_ERROR_TEXT_KEYS: Partial<Record<IndexErrorTextCode, StringKey>> = {
@@ -501,6 +507,7 @@ const INDEX_ERROR_TEXT_KEYS: Partial<Record<IndexErrorTextCode, StringKey>> = {
 	'control-invalid': 'error.index.controlInvalid',
 	'space-budget-exceeded': 'error.index.spaceBudgetExceeded',
 	'generation-not-droppable': 'error.index.generationNotDroppable',
+	'all-generations-retained': 'error.index.generationsRetained',
 	// T2 写所有权:取锁失败是「索引暂不可写」最常见的原因
 	'owner-busy': 'error.index.ownerBusy',
 	'concurrent-takeover': 'error.index.concurrentTakeover',

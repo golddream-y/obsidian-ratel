@@ -565,6 +565,12 @@ export class IndexFileJournal {
 		return receipts.filter((record) => !blocked.has(pathHash(record.path)));
 	}
 
+	/** 判断是否存在任何未决事务目录，包括无法解析或尚未写入 prepared 的条目。 */
+	async hasPendingTransactions(): Promise<boolean> {
+		const dir = await this.resolveInRoot(JOURNAL_PENDING_DIRNAME);
+		return (await this.readDirOrEmpty(dir, 'has-pending-transactions')).length > 0;
+	}
+
 	/**
 	 * 列出未决事务声明的目标路径 — 纯读入口,不要求写所有权、不做任何写入。
 	 *

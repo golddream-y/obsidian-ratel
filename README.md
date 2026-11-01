@@ -10,7 +10,7 @@
 
 Ratel is an AI assistant that can read notes and take action inside Obsidian. Ask it to find information across your notes, develop ideas, and turn scattered material into a document, or install and configure a daily-note workflow. It remembers your folders and preferences, answers with sources you can open, and follows your tool permissions.
 
-Your notes remain ordinary Markdown files. Choose DeepSeek, Ollama, or an OpenAI-compatible chat endpoint. The search index is generated locally by default.
+Your notes remain ordinary Markdown files. Choose DeepSeek, Ollama, or an OpenAI-compatible chat endpoint. The search index is generated locally by default. Indexing saves progress note by note, so it can resume after an interruption; completed notes are available for search while the rest are being indexed.
 
 [Get started](docs/user-guide.en.md#1-install-and-complete-your-first-query) · [User guide](docs/user-guide.en.md) · [Changelog](CHANGELOG.md)
 

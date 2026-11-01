@@ -358,6 +358,29 @@ async function createHarness(root: string, notePaths: string[]): Promise<Harness
 
 // ==================== 终态判据 ====================
 
+describe('展示用唯一文件计数', () => {
+	it('文件同时排队、执行与持有事务 - 剩余文件只计一次 - 不改变完成判据', async () => {
+		const root = await makeTempRoot();
+		const h = await createHarness(root, ['a.md', 'b.md', 'c.md']);
+		for (const name of ['a.md', 'b.md', 'c.md']) h.vault.files.set(name, '正文');
+		const entered = deferred();
+		const gate = deferred();
+		h.setCommitHook(async () => { entered.release(); await gate.promise; });
+		const coordinator = h.newCoordinator();
+		const running = coordinator.start();
+		try {
+			await entered.promise;
+			const c = coordinator.counters();
+			expect(c.active).toBe(1);
+			expect(c.pendingTransactions).toBe(1);
+			expect(c.pendingFiles).toBe(3);
+			expect(c.committed + c.pendingFiles!).toBe(c.total);
+			expect(coordinator.isReady()).toBe(false);
+		} finally { gate.release(); await running; coordinator.destroy(); }
+		expect(coordinator.counters().pendingFiles).toBe(0);
+	});
+});
+
 describe('canMarkReady', () => {
 	it('全部条件满足 - 返回 true', () => {
 		expect(canMarkReady({ scanComplete: true, queued: 0, active: 0, pendingTransactions: 0, failures: 0 })).toBe(true);

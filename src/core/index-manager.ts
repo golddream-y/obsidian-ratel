@@ -37,7 +37,7 @@ export type IndexStatus =
      * 因此失败路径必须在这里把码留下来,否则 `index-directory-not-owned`/`drop-refused`/
      * `owner-not-writable` 等新码只能落成 `error.index.unknown` + 开发向 message。
      */
-    | { state: 'Failed'; reason: string; errorCode?: string }
+    | { state: 'Failed'; reason: string; errorCode?: string; committed?: number; total?: number; pending?: number; failed?: number; phase?: IndexPhase }
     | { state: 'Unloaded' };
 
 /** 已提交索引的只读摘要，不包含本次扫描或嵌入统计。 */
@@ -145,6 +145,8 @@ export class IndexManager {
     private previousState: IndexStatus = { state: 'Idle' };
     /** 最近一次已发布状态对应的协调器任务标识 — 旧任务的进度不得污染新任务。 */
     private lastTaskId = 0;
+    /** 仅采样展示计数，不产生任务活动，也不延长停滞预算。 */
+    private coordinatorProgressTimer: ReturnType<typeof globalThis.setInterval> | null = null;
     // 兼容额外清单清理器；实际持久化 backend 的 dropIndex 已清理同目录元数据。
     private onManifestReset: (() => Promise<void>) | null = null;
 
@@ -232,6 +234,10 @@ export class IndexManager {
         this.status$.set({
             state: 'Scanning', scanned: 0, total: 0, committed: 0, pending: 0, failed: 0, phase: 'scanning',
         });
+        // 修复：start 等待整轮收敛，不能等它返回才发布进度，否则长索引始终显示扫描中 0/0。
+        this.coordinatorProgressTimer = globalThis.setInterval(() => {
+            if (!this.unloaded) this.publishCoordinatorStatus(coordinator.counters());
+        }, 250);
         try {
             const counters = await coordinator.start();
             if (this.unloaded) return null;
@@ -249,7 +255,16 @@ export class IndexManager {
             if (!this.unloaded) this.status$.set(this.failedStatus(err));
             devLogger.error('index', '协调器启动索引失败', err);
             return null;
+        } finally {
+            this.stopCoordinatorProgress();
         }
+    }
+
+    /** 整轮结束或卸载时停止展示采样，避免悬挂任务保留定时器。 */
+    private stopCoordinatorProgress(): void {
+        if (this.coordinatorProgressTimer === null) return;
+        globalThis.clearInterval(this.coordinatorProgressTimer);
+        this.coordinatorProgressTimer = null;
     }
 
     /**
@@ -259,7 +274,8 @@ export class IndexManager {
      */
     private publishCoordinatorStatus(counters: IndexTaskCounters): void {
         if (this.unloaded) return;
-        const pending = counters.queued + counters.active + counters.pendingTransactions;
+        // 展示按唯一文件计数；调度与 canMarkReady 仍保留原始队列/事务口径。
+        const pending = counters.pendingFiles ?? Math.max(0, counters.total - counters.committed - counters.failures);
         if (this.paused) {
             this.status$.set({ state: 'Paused', pending });
             return;
@@ -278,7 +294,8 @@ export class IndexManager {
             return;
         }
         if (counters.failures > 0) {
-            this.status$.set({ state: 'Failed', reason: tNow('notice.indexPartialFailure', { count: counters.failures }) });
+            this.status$.set({ state: 'Failed', reason: tNow('notice.indexPartialFailure', { count: counters.failures }),
+                committed: counters.committed, total: counters.total, pending, failed: counters.failures, phase: counters.phase });
             return;
         }
         if (!counters.scanComplete) {
@@ -311,7 +328,7 @@ export class IndexManager {
     private pendingCount(): number {
         if (!this.coordinator) return this.queue.size;
         const counters = this.coordinator.counters();
-        return counters.queued + counters.active + counters.pendingTransactions;
+        return counters.pendingFiles ?? Math.max(0, counters.total - counters.committed - counters.failures);
     }
 
     private async scan(forceFull = false): Promise<{ indexed: number; errors: number } | null> {
@@ -528,6 +545,7 @@ export class IndexManager {
     /** 卸载后不再开始新写入；正在运行的底层任务由 WorkerManager 负责清理等待。 */
     destroy(): void {
         this.unloaded = true;
+        this.stopCoordinatorProgress();
         this.queue.clear();
         this.coordinator?.destroy();
         this.status$.set({ state: 'Unloaded' });

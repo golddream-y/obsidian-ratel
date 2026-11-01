@@ -123,6 +123,7 @@
 		class:ratel-sl-text-muted={state.tone === 'unconfigured' && !busyHard}
 	>{label}</span>
 	<span class="ratel-sl-pct" style:color={pctColor}>
+		<span class="ratel-sl-context-label">{$t('status.strip.context')}</span>
 		{#if pctText.startsWith('<')}
 			{pctText}
 		{:else}
@@ -154,6 +155,8 @@
 	.ratel-status-line:hover {
 		background: color-mix(in srgb, var(--text-normal) 2%, transparent);
 	}
+
+	.ratel-sl-context-label { color: var(--text-muted); margin-right: 4px; font-weight: 400; }
 
 	.ratel-sl-dot {
 		width: 6px;
