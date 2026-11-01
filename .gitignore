@@ -37,6 +37,10 @@ data.json
 # 含本机绝对路径的 Cursor 规则，不进 GitHub
 .cursor/rules/*.local.mdc
 
+# 含本机绝对路径的本地指令层（宿主叠加加载），不进 GitHub
+AGENTS.local.md
+CLAUDE.local.md
+
 # Superpowers brainstorming 可视化会话（仅本机）
 .superpowers/
 
