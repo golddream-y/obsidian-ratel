@@ -108,3 +108,63 @@ describe('索引 Worker 入口', () => {
 		expect(() => guarded['fs.write']!({})).toThrow('只读运行时拒绝写入');
 	});
 });
+
+describe('入口装配索引会话', () => {
+	/** 自动应答嵌入请求的假作用域。 */
+	function makeEmbedScope(): {
+		scope: { postMessage: (m: unknown) => void; onmessage: ((e: { data: unknown }) => void) | null };
+		out: Array<Record<string, unknown>>;
+	} {
+		const out: Array<Record<string, unknown>> = [];
+		const scope: { postMessage: (m: unknown) => void; onmessage: ((e: { data: unknown }) => void) | null } = {
+			postMessage: (message) => {
+				out.push(message as Record<string, unknown>);
+				const frame = message as { kind?: string; callId?: string; payload?: { texts?: string[] } };
+				if (frame.kind !== 'call' || frame.callId === undefined) return;
+				const texts = frame.payload?.texts ?? [];
+				void Promise.resolve().then(() => {
+					scope.onmessage?.({
+						data: {
+							kind: 'call-result', protocolVersion: 1, runtimeId: 'rt-1', epoch: 1,
+							callId: frame.callId, ok: true,
+							result: texts.map(() => Array.from({ length: 8 }, () => 0.1)),
+						},
+					});
+				});
+			},
+			onmessage: null,
+		};
+		return { scope, out };
+	}
+
+	it('读写模式 - 会话打开并写入 - 状态反映真实块数', async () => {
+		const { scope, out } = makeEmbedScope();
+		const entry = startIndexRuntimeWorker({ scope, fsOverride: makeFs() });
+		scope.onmessage?.({ data: { kind: 'init', runtimeId: 'rt-1', epoch: 1, root, access: 'read-write', chunkOptions: { maxTokens: 500, overlapTokens: 100 } } });
+		await entry.ready;
+		scope.onmessage?.({ data: request('rt-1', 'session.open', {}, 'r1') });
+		await vi.waitFor(() => expect(out.some((m) => m.requestId === 'r1')).toBe(true));
+		expect(out.find((m) => m.requestId === 'r1')).toMatchObject({ ok: true });
+
+		scope.onmessage?.({ data: request('rt-1', 'session.upsertFile', { path: 'a.md', content: '一段正文' }, 'r2') });
+		await vi.waitFor(() => expect(out.some((m) => m.requestId === 'r2')).toBe(true), { timeout: 5000 });
+		const written = out.find((m) => m.requestId === 'r2') as { ok: boolean; result: { chunkCount: number } };
+		expect(written.ok).toBe(true);
+		expect(written.result.chunkCount).toBeGreaterThan(0);
+
+		scope.onmessage?.({ data: request('rt-1', 'session.status', {}, 'r3') });
+		await vi.waitFor(() => expect(out.some((m) => m.requestId === 'r3')).toBe(true));
+		expect(out.find((m) => m.requestId === 'r3')).toMatchObject({ ok: true, result: { totalDocs: written.result.chunkCount } });
+	});
+
+	it('只读模式 - 不装配会话入口 - 写入请求被拒', async () => {
+		const { scope, out } = makeEmbedScope();
+		const entry = startIndexRuntimeWorker({ scope, fsOverride: makeFs() });
+		scope.onmessage?.({ data: { kind: 'init', runtimeId: 'rt-1', epoch: 1, root, access: 'read-only' } });
+		await entry.ready;
+		scope.onmessage?.({ data: request('rt-1', 'session.open', {}, 'r1') });
+		await vi.waitFor(() => expect(out).toHaveLength(1));
+		expect(out[0]).toMatchObject({ ok: false });
+		expect(String(out[0]?.error)).toContain('未知方法');
+	});
+});

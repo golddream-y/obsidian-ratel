@@ -10,12 +10,14 @@
  * - 撤销后服务循环回报 drained,宿主据此转交写入权。
  */
 
-import { serveRuntime, type RuntimeServer, type RuntimeServerPort } from './index-runtime-worker';
+import { serveRuntime, type RuntimeHandlers, type RuntimeServer, type RuntimeServerPort } from './index-runtime-worker';
+import { createIndexSessionHandlers } from './index-runtime-session';
+import { createTokenCounter, TOKEN_BUDGET_RESERVE } from '../core/token-counter';
+import { DEFAULT_CHUNK_OVERLAP } from './chunker';
 import {
 	createIndexRuntimeHandlers,
 	type RuntimeFileSystem,
 } from './index-runtime-fs-handlers';
-import type { RuntimeHandlers } from './index-runtime-worker';
 
 /** Worker 作用域的最小接口。 */
 export interface RuntimeWorkerScope {
@@ -30,6 +32,8 @@ export interface RuntimeInitMessage {
 	epoch: number;
 	root: string;
 	access: 'read-only' | 'read-write';
+	/** 分块预算;缺省按模型输入上限留出保留区。 */
+	chunkOptions?: { maxTokens?: number; overlapTokens?: number };
 }
 
 /** 判断是否为 init 帧。 */
@@ -98,11 +102,11 @@ export function startIndexRuntimeWorker(options: {
 				fs: options.fsOverride ?? loadNodeFileSystem(options.requireFn),
 				root: data.root,
 			});
-			server = serveRuntime({
-				port,
-				grant,
-				handlers: data.access === 'read-only' ? guardReadOnly(baseHandlers) : baseHandlers,
-			});
+			// 关键路径:只读模式不装配索引入口 —— 关闭自动索引时必须零写入,不能靠上层不调用。
+			const handlers: RuntimeHandlers = data.access === 'read-only'
+				? guardReadOnly(baseHandlers)
+				: { ...baseHandlers, ...createIndexSessionHandlers({ root: data.root, chunkOptions: resolveChunkOptions(data.chunkOptions) }) };
+			server = serveRuntime({ port, grant, handlers });
 			resolveReady();
 			return;
 		}
@@ -116,6 +120,16 @@ export function startIndexRuntimeWorker(options: {
 		dispose: () => {
 			scope.onmessage = null;
 		},
+	};
+}
+
+/** 构造分块参数 — count 是函数,不能过 postMessage,必须在 Worker 内部构造。 */
+function resolveChunkOptions(overrides?: { maxTokens?: number; overlapTokens?: number }): { maxTokens: number; overlapTokens: number; count: (text: string) => number } {
+	const counter = createTokenCounter(null);
+	return {
+		maxTokens: overrides?.maxTokens ?? counter.maxInputTokens - TOKEN_BUDGET_RESERVE,
+		overlapTokens: overrides?.overlapTokens ?? DEFAULT_CHUNK_OVERLAP,
+		count: (text: string) => counter.count(text),
 	};
 }
 

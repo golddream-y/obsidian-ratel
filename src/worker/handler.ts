@@ -20,6 +20,7 @@ import type { EmbeddingPort } from '../ports/embedding';
 import { throwIfEmbeddingAborted } from '../ports/embedding';
 import type { EmbedOptions, IndexActivity, IndexActivityStage } from '../core/index-persistence-types';
 import { createTokenCounter, TOKEN_BUDGET_RESERVE, type TokenCounter } from '../core/token-counter';
+import { DEFAULT_CHUNK_OVERLAP } from './chunker';
 import { devLogger } from '../logging/dev-logger';
 
 let processor: IndexProcessor | null = null;
@@ -27,7 +28,6 @@ let processor: IndexProcessor | null = null;
 /**
  * 默认块间重叠 — 消息未带 chunkOptions 时的兜底值,与设置默认值一致。
  */
-const DEFAULT_CHUNK_OVERLAP = 100;
 
 /**
  * 词表内容 — 模型就绪后由主线程注入一次(约 109KB)。

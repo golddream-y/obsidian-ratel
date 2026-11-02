@@ -27,6 +27,9 @@ export interface Chunk {
 /**
  * 分块参数。
  */
+/** 块间默认重叠 token 数 — 主线程与 Worker 共用同一默认值,避免两边算出不同块长。 */
+export const DEFAULT_CHUNK_OVERLAP = 100;
+
 export interface ChunkOptions {
 	/** 单块总预算(含结构前缀)。 */
 	maxTokens: number;
