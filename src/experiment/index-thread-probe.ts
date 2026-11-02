@@ -30,15 +30,36 @@ self.onmessage = function (event) {
 		items.push({ path: 'note-' + i + '.md', vector: vector });
 	}
 	var text = JSON.stringify({ version: 1, items: items });
+	var fsOk = false;
+	var fsError = '';
+	try {
+		var fs = require('node:fs');
+		var p = require('node:path');
+		var probe = p.join(task.dir, 'worker-fs-probe.txt');
+		fs.writeFileSync(probe, 'probe');
+		fsOk = fs.readFileSync(probe, 'utf8') === 'probe';
+	} catch (error) {
+		fsError = String((error && error.message) || error);
+	}
 	self.postMessage({
 		bytes: text.length,
 		hasRequire: typeof require !== 'undefined',
 		hasProcess: typeof process !== 'undefined',
+		fsOk: fsOk,
+		fsError: fsError,
 	});
 };
 `;
 
 /** 读数。 */
+export interface WebWorkerResult {
+	bytes: number;
+	hasRequire: boolean;
+	hasProcess: boolean;
+	fsOk: boolean;
+	fsError: string;
+}
+
 export interface StallReading {
 	maxGapMs: number;
 	p95GapMs: number;
@@ -50,7 +71,7 @@ export interface ExperimentReport {
 	startedAt: string;
 	environment: string;
 	nodeWorker: { supported: boolean; error?: string };
-	webWorker: { bytes: number; hasRequire: boolean; hasProcess: boolean; stall: StallReading };
+	webWorker: WebWorkerResult & { stall: StallReading };
 	mainThread: { bytes: number; stall: StallReading };
 	asyncWholeWrite: StallReading;
 	shardedWrite: { shards: number; stall: StallReading };
@@ -75,8 +96,9 @@ async function measure(run: () => unknown): Promise<StallReading> {
 	}, HEARTBEAT_MS);
 	try {
 		await run();
-		// 让一次已到期的心跳先执行，避免同步长任务结束时被直接清除而漏记。
-		await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+		// 关键路径:Chromium 里 0ms 超时可能先于已到期心跳执行,导致同步长任务漏采;
+		// 等两个心跳周期,确保至少一次心跳在停表前落地。
+		await new Promise<void>((resolve) => window.setTimeout(resolve, HEARTBEAT_MS * 2));
 		return summarize(gaps);
 	} finally {
 		window.clearInterval(timer);
@@ -96,7 +118,7 @@ function stringifyOnMainThread(docs: number, dims: number): { bytes: number; tex
 }
 
 /** 在 Web Worker 里做同一份序列化。 */
-function stringifyInWebWorker(docs: number, dims: number): Promise<{ bytes: number; hasRequire: boolean; hasProcess: boolean }> {
+function stringifyInWebWorker(dir: string, docs: number, dims: number): Promise<WebWorkerResult> {
 	const url = URL.createObjectURL(new Blob([WEB_WORKER_SOURCE], { type: 'text/javascript' }));
 	const worker = new Worker(url);
 	const finish = (): void => {
@@ -104,7 +126,7 @@ function stringifyInWebWorker(docs: number, dims: number): Promise<{ bytes: numb
 		URL.revokeObjectURL(url);
 	};
 	return new Promise((resolve, reject) => {
-		worker.onmessage = (event: MessageEvent<{ bytes: number; hasRequire: boolean; hasProcess: boolean }>) => {
+		worker.onmessage = (event: MessageEvent<WebWorkerResult>) => {
 			finish();
 			resolve(event.data);
 		};
@@ -112,7 +134,7 @@ function stringifyInWebWorker(docs: number, dims: number): Promise<{ bytes: numb
 			finish();
 			reject(new Error(event.message || 'Web Worker 执行失败'));
 		};
-		worker.postMessage({ kind: 'stringify', docs, dims });
+		worker.postMessage({ kind: 'stringify', docs, dims, dir });
 	});
 }
 
@@ -180,9 +202,9 @@ export async function runIndexThreadExperiment(
 	});
 
 	// 4) Web Worker 承担同一份序列化。
-	let webResult = { bytes: 0, hasRequire: false, hasProcess: false };
+	let webResult: WebWorkerResult = { bytes: 0, hasRequire: false, hasProcess: false, fsOk: false, fsError: '' };
 	const webStall = await measure(async () => {
-		webResult = await stringifyInWebWorker(docs, dims);
+		webResult = await stringifyInWebWorker(dir, docs, dims);
 	});
 	if (!webResult.bytes) throw new Error('Web Worker 未返回结果');
 
@@ -190,7 +212,7 @@ export async function runIndexThreadExperiment(
 	const asyncWholeWrite = await measure(() => writeWhole(dir, mainText));
 
 	// 6) 主线程异步分片写入。
-	const shardCount = 400;
+	const shardCount = 120;
 	const shardedStall = await measure(() => writeSharded(dir, shardCount, dims));
 
 	const report: ExperimentReport = {

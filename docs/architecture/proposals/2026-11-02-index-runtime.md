@@ -6,6 +6,12 @@
 
 关联需求：`BUG-1-INDEX-PERF-001`，见[需求正文](../../prd/adaptive-indexing.md)。本次改造范围与验收另见 [S-ADAPTIVE-INDEX](../../superpowers/specs/2026-11-02-adaptive-indexing.md)，实施计划见 [P-ADAPTIVE-INDEX](../../superpowers/plans/2026-11-02-adaptive-indexing.md)，状态 Pending。
 
+## T0 实验结论（2026-11-02）
+
+真实 Obsidian（1.15.0，沙箱库）实测：Node `worker_threads` 不可用（V8 platform 不支持创建 Worker）；Blob Web Worker 可用，且具备 Node 集成——Worker 内 `require('node:fs')` 可写入并读回临时文件。主线程实测：整库 12.2 MB 序列化约 38 ms；单次异步整文件写约 1.7 ms；120 片顺序异步写阻塞约 0.43 s。
+
+据此修正本文载体约定：独立索引线程改为**常驻 Blob Web Worker**，由它同时承担 CPU 与文件/存储职责；不再假设 Node 线程，也不把文件 IO 留在主线程。其余设计（单一存储视图、owner、恢复、查询背压、自适应）不变。证据见 [T0 记录](../superpowers/plans/2026-11-02-adaptive-indexing-t0-evidence.md)。
+
 ## 背景与设计决定
 
 1.3.0 支持文件级提交与中断续建，但 `IndexTaskCoordinator.runDrainLoop()` 持续消费文件，`EmbeddingOnnx.embed()` 连续推理批次，尚未形成资源反馈控制。嵌入计算在 Web Worker 中且 ONNX 已设单线程，不代表 CPU 无持续占用。
