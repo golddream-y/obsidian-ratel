@@ -34,7 +34,15 @@ M1 的目标是「索引期间 Obsidian 能正常使用」，写放大属于**�
 2. 在 Obsidian 预览库中**重载插件**（或重启应用）。加载后 5 秒会自动跑一次实验，命令面板入口保留。
 3. 报告写入系统临时目录：`ratel-index-thread-experiment-*.json`（新文件名带时间戳）。
 
-### 判读方法
+### 判读方法（报告里已有机械判读字段）
+
+报告新增 `gates` 段，直接给出三个判定，避免事后挑口径：
+
+- `gates.selfCheckOk`：探针自检是否检出注入延迟（阈值 250 ms）。
+- `gates.fluidity`：`better` / `not-better` / `inconclusive`（任一侧出错即 inconclusive）。
+- `gates.reopenOk`：关闭重开后是否仍能检索到已提交内容。
+
+
 
 - `selfCheck.maxGapMs` ≥ 250：探针可信，否则整份报告作废。
 - 流畅度通过条件：`runtime.stall.maxGapMs` **明显低于** `mainThreadIndex.stall.maxGapMs`（同一台机器、同一份两篇笔记的负载）。

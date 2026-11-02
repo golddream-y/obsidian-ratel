@@ -87,6 +87,15 @@ export interface ExperimentReport {
 	reopen: { found: boolean; error?: string };
 	/** 同一负载在主线程序列化 + 写入的对照。 */
 	mainThreadIndex: { indexed: number; stall: StallReading; error?: string };
+	/** 机械判读 — 避免事后挑口径。 */
+	gates: {
+		/** 探针自检是否检出注入延迟。 */
+		selfCheckOk: boolean;
+		/** 线程索引期间主线程迟到是否低于主线程直跑。 */
+		fluidity: 'better' | 'not-better' | 'inconclusive';
+		/** 关闭重开后仍能检索到已提交内容。 */
+		reopenOk: boolean;
+	};
 }
 
 /** 采样迟到量。 */
@@ -364,6 +373,15 @@ export async function runIndexThreadExperiment(
 		mainThreadIndex.error = String((error as Error)?.message ?? error);
 	}
 
+	const gates: ExperimentReport['gates'] = {
+		// 自检注入 300ms;检出阈值取 250ms,留出计时抖动余量。
+		selfCheckOk: selfCheck.maxGapMs >= 250,
+		fluidity: runtime.error !== undefined || mainThreadIndex.error !== undefined
+			? 'inconclusive'
+			: runtime.stall.maxGapMs < mainThreadIndex.stall.maxGapMs ? 'better' : 'not-better',
+		reopenOk: reopen.found,
+	};
+
 	const report: ExperimentReport = {
 		startedAt: new Date().toISOString(),
 		environment,
@@ -377,6 +395,7 @@ export async function runIndexThreadExperiment(
 		runtime,
 		reopen,
 		mainThreadIndex,
+		gates,
 	};
 	const reportPath = path.join(os.tmpdir(), `ratel-index-thread-experiment-${Date.now()}.json`);
 	await fsp.writeFile(reportPath, JSON.stringify(report, null, 2), 'utf8');
