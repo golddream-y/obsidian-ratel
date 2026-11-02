@@ -58,14 +58,21 @@
 - 实验命令新增 `runtime` 段：用真实常驻 Worker 跑「init → 索引两篇 → 查询 → 状态 → 关闭」，记录主线程迟到。实验包已构建并链接预览库，**尚未在宿主内执行**。
 - 构建侧：运行时 Worker 产物需要把 `node:` 前缀内置模块标为 external，并复用主包的 vectra/transformers 替身；否则 browser 平台会因无法解析 Node 内置而构建失败。
 
-## 新模块（未接线）
+## 已接线清单（原「未接线」项）
 
-| 模块 | 内容 | 接线待做 |
-| --- | --- | --- |
-| `src/core/index-manifest-recovery.ts` | 从 `recoverMissingManifest` 提炼的纯函数：15 个拒绝原因码，成功返回清单+构建戳，不写盘 | 后端改为调用它；需只读暴露日志的 `configFingerprint` |
-| `src/adapters/index-write-flush.ts` | 共享落盘：临时文件 wx → 全量写 → sync → rename → 目录 sync；`onCommitted` 区分重试与重载；目录降级集含 ENOSYS | 原子存储 `upsertFile`/`flushPath` 待接线；迁移侧 `writeJsonAtomically`、清单 `save` 已改走它 |
+| 模块 | 状态 |
+| --- | --- |
+| 索引运行时客户端 `index-runtime-client` | 装配进 `main.ts`（`indexThreadMode`），含崩后 `restart()` |
+| 线程协调器 `index-thread-coordinator` | 线程模式的首选协调器，崩溃恢复上界 2 次/轮 |
+| 线程装配 `index-thread-assembly` | 先跑 `resolveIndexGeneration` 再交线程 |
+| 嵌入桥接 `index-runtime-embedding-bridge` | 接真实 `EmbeddingPort`，按批切分与维度校验 |
+| 嵌入仲裁 `index-embedding-arbiter` | 接进客户端 `onCall`，查询优先（端到端验证） |
+| 候选来源 `index-thread-candidate-source` | 装配进 `MultiQuerySearcher`，回落 Worker |
+| 可见性门 `index-thread-visibility-gate` | 委派门：线程就绪用线程记录，否则主线程语义 |
+| 后端适配 `index-thread-backend` | 线程模式替换主线程后端 |
+| 身份守卫 `index-runtime-identity-guard` | 接进 `setupWritableIndexRuntime` 与插件生命周期 |
 
-两模块均零运行时耦合（只 `import type`），接线前不影响现役行为。
+**仍未接线**：只读装配的线程版（当前只读仍走主线程只读视图）；效率组的「累计写量」尚未按字节统计写入次数（只统计目录最终体积）。
 
 ## T9 采集状态
 
@@ -79,6 +86,12 @@
 - 检索：`MultiQuerySearcher.candidateSource` 走线程；委派门在线程就绪前保持主线程语义。
 - 体积代价：主包从 11.9 MB 涨到 **15.5 MB**（线程运行时与 Worker 产物内联）。最初是 19.1 MB，其中 Worker 产物 6.96 MB —— 逐项拆开发现 vectra 的 BM25 分支把 wink 英文模型（约 3.4 MB）与 gpt-tokenizer（2.7 MB）一起带了进来；仅对索引线程打桩 wink 后 Worker 降到 3.33 MB。
 - **不能连 gpt-tokenizer 一起打桩**：`LocalDocumentIndex` 构造时默认用它做块切分，替身会让构造直接抛错（宿主才暴露，Node 用例测不到）。
+
+## 全量回归（2026-11-02）
+
+- `npx vitest run`：**322 文件 / 2999 passed / 23 skipped / 0 failed**（1.3.0 发布时为 297 文件 / 2812 passed）。
+- tsc 保持 241 条基线（相对本轮修改新增 0）；lint 0 error。
+- 生产构建 15.5 MB；实验构建可运行且默认产物不含实验命令。
 
 ## 验证边界
 
