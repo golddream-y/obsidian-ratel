@@ -213,6 +213,28 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 			return { ok: true };
 		},
 
+		'session.searchVector': async (payload) => {
+			const store = requireStore();
+			const vector = (payload as { vector?: unknown } | null)?.vector;
+			if (!Array.isArray(vector) || vector.length === 0 || !vector.every((value) => typeof value === 'number')) {
+				throw new Error('查询向量不合法');
+			}
+			const rawTopK = (payload as { topK?: unknown }).topK;
+			const topK = rawTopK === undefined ? 10 : rawTopK;
+			if (typeof topK !== 'number' || !Number.isSafeInteger(topK) || topK <= 0 || topK > 500) {
+				throw new Error('topK 必须是 1~500 的整数');
+			}
+			const hits = await store.search(vector as number[], topK);
+			return {
+				hits: hits.map((hit) => ({
+					docId: typeof hit.metadata['path'] === 'string' ? hit.metadata['path'] : hit.docId,
+					score: hit.score,
+					path: typeof hit.metadata['path'] === 'string' ? hit.metadata['path'] : '',
+					chunkIndex: typeof hit.metadata['chunkIndex'] === 'number' ? hit.metadata['chunkIndex'] : null,
+				})),
+			};
+		},
+
 		'session.recover': async (payload) => {
 			if (state.journal === null) throw new Error('会话未启用日志,无法恢复');
 			const inputs = (payload as { inputs?: unknown } | null)?.inputs;

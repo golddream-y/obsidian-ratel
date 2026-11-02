@@ -44,6 +44,8 @@ export interface IndexRuntimeClientOptions {
 
 /** 查询命中。 */
 export interface IndexRuntimeHit {
+	/** 文档标识;线程侧用路径作为文档级标识。 */
+	docId?: string;
 	path: string;
 	score: number;
 	chunkIndex: number | null;
@@ -124,6 +126,20 @@ export class IndexRuntimeClient {
 	async search(query: string, topK = 10): Promise<IndexRuntimeHit[]> {
 		this.assertOpen();
 		const result = await this.host.request<{ hits: IndexRuntimeHit[] }>('session.search', { query, topK });
+		return result.hits;
+	}
+
+	/**
+	 * 按向量查询 — 供检索编排层使用,避免宿主再算一次向量。
+	 * @param vector 查询向量
+	 * @param topK 返回条数
+	 */
+	async searchByVector(vector: readonly number[], topK = 10): Promise<IndexRuntimeHit[]> {
+		this.assertOpen();
+		const result = await this.host.request<{ hits: IndexRuntimeHit[] }>('session.searchVector', {
+			vector: [...vector],
+			topK,
+		});
 		return result.hits;
 	}
 

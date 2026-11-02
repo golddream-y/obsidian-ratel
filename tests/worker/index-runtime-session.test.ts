@@ -307,3 +307,24 @@ describe('崩溃现场恢复（未提交事务）', () => {
 		expect(await verifier.listPendingPaths()).toEqual([]);
 	});
 });
+
+describe('按向量查询', () => {
+	it('写入后按向量查 - 命中带路径与块号', async () => {
+		const handlers = createIndexSessionHandlers({ root, chunkOptions: CHUNK_OPTIONS });
+		await handlers['session.open']!({});
+		await handlers['session.upsertFile']!({ path: 'a.md', content: '一段正文' }, makeContext().ctx);
+		const result = await handlers['session.searchVector']!({ vector: Array.from({ length: DIMENSIONS }, () => 0.1), topK: 5 }) as {
+			hits: Array<{ docId: string; path: string; chunkIndex: number | null }>;
+		};
+		expect(result.hits.length).toBeGreaterThan(0);
+		expect(result.hits[0]).toMatchObject({ docId: 'a.md', path: 'a.md' });
+	});
+
+	it('向量或 topK 不合法 - 明确拒绝', async () => {
+		const handlers = createIndexSessionHandlers({ root, chunkOptions: CHUNK_OPTIONS });
+		await handlers['session.open']!({});
+		await expect(handlers['session.searchVector']!({ vector: [], topK: 5 })).rejects.toThrow('查询向量不合法');
+		await expect(handlers['session.searchVector']!({ vector: [0.1], topK: 0 })).rejects.toThrow('topK');
+		await expect(handlers['session.searchVector']!({ vector: [0.1], topK: 501 })).rejects.toThrow('topK');
+	});
+});
