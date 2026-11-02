@@ -213,6 +213,20 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 			return { ok: true };
 		},
 
+		'session.listCommitted': async () => {
+			if (state.journal === null) throw new Error('会话未启用日志,没有可信完成记录');
+			const receipts = await state.journal.listReceipts();
+			return {
+				records: receipts.map((record) => ({
+					path: record.path,
+					state: record.state,
+					revision: record.revision,
+					inputHash: record.inputHash,
+					chunkCount: record.chunkCount,
+				})),
+			};
+		},
+
 		'session.searchVector': async (payload) => {
 			const store = requireStore();
 			const vector = (payload as { vector?: unknown } | null)?.vector;

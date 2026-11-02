@@ -149,6 +149,16 @@ export class IndexRuntimeClient {
 		return this.host.request('session.recover', { inputs });
 	}
 
+	/**
+	 * 读取可信完成记录 — 供宿主侧可见性门判定候选是否可检索。
+	 * @returns 完成记录列表
+	 */
+	async listCommitted(): Promise<Array<{ path: string; state: 'present' | 'deleted'; revision: number; inputHash: string | null; chunkCount: number }>> {
+		this.assertOpen();
+		const result = await this.host.request<{ records: Array<{ path: string; state: 'present' | 'deleted'; revision: number; inputHash: string | null; chunkCount: number }> }>('session.listCommitted');
+		return result.records;
+	}
+
 	/** 读会话状态。 */
 	async status(): Promise<{ totalDocs: number; written: number }> {
 		this.assertOpen();

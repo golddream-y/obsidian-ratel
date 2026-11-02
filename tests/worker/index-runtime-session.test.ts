@@ -328,3 +328,22 @@ describe('按向量查询', () => {
 		await expect(handlers['session.searchVector']!({ vector: [0.1], topK: 501 })).rejects.toThrow('topK');
 	});
 });
+
+describe('可信完成记录列表', () => {
+	const FINGERPRINT = 'd'.repeat(64);
+
+	it('写入后 - 列表包含该路径 - 状态为 present', async () => {
+		const handlers = createIndexSessionHandlers({ root, chunkOptions: CHUNK_OPTIONS, epoch: 1 });
+		await handlers['session.open']!({ generationId: 'gen-l', configFingerprint: FINGERPRINT, expectedDimension: DIMENSIONS });
+		await handlers['session.upsertFile']!({ path: 'a.md', content: '正文' }, makeContext().ctx);
+		const listed = await handlers['session.listCommitted']!({}) as { records: Array<{ path: string; state: string }> };
+		expect(listed.records.map((record) => record.path)).toContain('a.md');
+		expect(listed.records[0]?.state).toBe('present');
+	});
+
+	it('未启用日志 - 明确拒绝 - 不返回空集冒充无记录', async () => {
+		const handlers = createIndexSessionHandlers({ root, chunkOptions: CHUNK_OPTIONS });
+		await handlers['session.open']!({});
+		await expect(handlers['session.listCommitted']!({})).rejects.toThrow('未启用日志');
+	});
+});
