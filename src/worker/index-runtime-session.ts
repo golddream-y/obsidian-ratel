@@ -119,7 +119,7 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 			// 关键路径:先拿到全部向量再动磁盘,推理失败时旧版本块保持不变。
 			const vectors = chunks.length === 0
 				? []
-				: await callEmbed(ctx, chunks.map((chunk) => chunk.embedText));
+				: await callEmbed(ctx, chunks.map((chunk) => chunk.embedText), 'index');
 			if (vectors.length !== chunks.length) {
 				throw new Error(`嵌入返回 ${vectors.length} 条,与块数 ${chunks.length} 不一致`);
 			}
@@ -171,7 +171,7 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 				throw new Error('topK 必须是 1~100 的整数');
 			}
 			// 关键路径:查询向量同样借宿主通道,不在索引线程里再加载一次模型。
-			const vectors = await callEmbed(ctx, [query]);
+			const vectors = await callEmbed(ctx, [query], 'query');
 			const queryVector = vectors[0];
 			if (!Array.isArray(queryVector) || queryVector.length === 0) throw new Error('查询向量不可用');
 			const hits = await store.search(queryVector, topK);
@@ -246,9 +246,14 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
  * @param ctx 处理器上下文
  * @param texts 待嵌入文本
  */
-async function callEmbed(ctx: RuntimeHandlerContext | undefined, texts: readonly string[]): Promise<number[][]> {
+async function callEmbed(
+	ctx: RuntimeHandlerContext | undefined,
+	texts: readonly string[],
+	workload: 'query' | 'index',
+): Promise<number[][]> {
 	if (ctx === undefined) throw new Error('缺少宿主调用通道,无法取得向量');
-	const result = await ctx.callHost('embed', { texts }, 120_000);
+	// 关键路径:把工作类型传出去,宿主据此让查询插到索引批次之间。
+	const result = await ctx.callHost('embed', { texts, workload }, 120_000);
 	if (!Array.isArray(result)) throw new Error('宿主嵌入通道返回了非数组结果');
 	return result as number[][];
 }

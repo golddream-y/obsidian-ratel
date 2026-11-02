@@ -94,6 +94,11 @@ export class IndexRuntimeHost {
 		this.onCall = options.onCall;
 	}
 
+	/** 运行时标识;协议帧与 init 授权必须一致。 */
+	get runtimeIdValue(): string {
+		return this.runtimeId;
+	}
+
 	/** 当前 epoch;0 表示尚未启动。 */
 	get epoch(): number {
 		return this.epochValue;
