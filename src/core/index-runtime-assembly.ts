@@ -30,6 +30,7 @@ import {
 	type GenerationControlRecord,
 } from './index-generations';
 import { IndexFileJournal } from './index-file-journal';
+import type { IndexTaskCoordinatorPort } from './index-manager';
 import {
 	IndexStallWatchdog,
 	IndexTaskCoordinator,
@@ -1028,7 +1029,7 @@ export interface IndexCancelTarget {
  */
 export function cancelIndexRun(options: {
 	worker?: IndexCancelTarget;
-	coordinator?: IndexTaskCoordinator;
+	coordinator?: IndexTaskCoordinatorPort;
 	epoch?: number;
 }): void {
 	const epoch = options.epoch;

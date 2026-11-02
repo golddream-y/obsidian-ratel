@@ -79,6 +79,7 @@ import {
 import { IndexRuntimeIdentityGuard } from './core/index-runtime-identity-guard';
 import { IndexRuntimeClient } from './worker/index-runtime-client';
 import { IndexThreadCoordinator } from './core/index-thread-coordinator';
+import type { IndexTaskCoordinatorPort } from './core/index-manager';
 // 关键路径:词表(约 109KB)只传一次 — 模型就绪后由主线程交给 Worker,不进每条索引消息;
 // 协调器在主线程分块,必须与 Worker 读同一份词表才能得到一致的块边界。
 import { currentProcessorStore, getVocabContent, setVocabContent } from './worker/handler';
@@ -2395,7 +2396,7 @@ export default class RatelVaultPlugin extends Plugin {
 			fileRecords: this.indexJournal,
 			// 关键路径:协调器模式下本轮扫描/失败计数只能来自协调器;不注入时
 			// `roundState().scanComplete` 恒 false、`isIndexComplete()` 恒假。
-			getRoundCounters: () => this.indexCoordinator?.counters() ?? { queued: 0, active: 0, pendingTransactions: 0 },
+			getRoundCounters: () => this.activeTaskCoordinator?.counters() ?? { queued: 0, active: 0, pendingTransactions: 0 },
 			// 关键路径:关闭 T6 的 epoch fail-open —— 缺省 epoch 被省略后管理器按 0 处理,
 			// 旧实例的活动不会被拒绝。租约 epoch 从 1 开始,注入后 `epochSourceMissing` 恒为 false。
 			// 注意回落语义:`?? 0` 表示**本实例没有写所有权**时的取值(只读装配、降级状态、
@@ -2405,7 +2406,7 @@ export default class RatelVaultPlugin extends Plugin {
 			// 完成记录重建派生清单前必须证明属于本轮配置,不能由当前清单反推身份。
 			getConfigFingerprint: () => this.indexConfigFingerprint,
 			// 关键路径:协调器 `taskId` 轮内恒定,只做稳定任务身份;后端内部另用每请求唯一键。
-			getTaskId: () => String(this.indexCoordinator?.counters().taskId ?? 0),
+			getTaskId: () => String(this.activeTaskCoordinator?.counters().taskId ?? 0),
 			// 关键路径(T6 §8.2 + T7 收口):严格版归属断言 —— 只允许删除本索引根 generations/ 下的
 			// **非活动**代际目录;把缺省的「形状白名单」收紧成「代际白名单 + 活动代际例外」。
 			assertDropOwnership: (indexDir) => this.assertIndexDropOwnership(indexDir),
@@ -2758,11 +2759,18 @@ export default class RatelVaultPlugin extends Plugin {
 	 * 写保护保留到真实终态;不终止共享 Worker,其他查询继续可用。
 	 */
 	private cancelIndexRun(): void {
+		// 关键路径:线程模式下撤销的是线程内调用,主线程 Worker 的取消与之无关;
+		// 两者共用同一段逻辑,由「当前协调器」决定撤销谁。
 		cancelIndexRun({
-			worker: this.workerManager,
-			coordinator: this.indexCoordinator,
+			worker: this.indexThreadClient === undefined ? this.workerManager : undefined,
+			coordinator: this.activeTaskCoordinator,
 			...(this.indexOwnerLease === undefined ? {} : { epoch: this.indexOwnerLease.epoch }),
 		});
+	}
+
+	/** 当前生效的任务协调器 — 线程模式优先,主线程模式回落。 */
+	private get activeTaskCoordinator(): IndexTaskCoordinatorPort | undefined {
+		return this.indexThreadCoordinator ?? this.indexCoordinator;
 	}
 
 	/**

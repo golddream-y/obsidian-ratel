@@ -80,6 +80,12 @@
 - 协议见 [T9 三区分验收协议](2026-11-02-adaptive-indexing-t9-protocol.md)：正确性/流畅度已有数据来源，效率组的构建耗时、峰值内存、累计写量尚无基准脚本，不得标通过。
 - 宿主内尚未执行任何一次完整采集。
 
+## 线程模式的命令面
+
+- 暂停/恢复、撤销在途：`cancelIndexRun` 现在按「当前协调器」决定撤销线程还是主线程 Worker，线程模式下暂停会真正停下线程内调用。
+- 计数展示：`getRoundCounters` / `getTaskId` 走同一入口，线程模式下不再永远显示 0。
+- 重建索引走 `reindex → 协调器重跑`，清理非活动代际走既有 `dropInactiveGenerations`（线程模式同样持有代际实例与租约）。
+
 ## 线程模式开关
 
 - `settings.indexThreadMode`（默认 false）：开启后启动走线程装配，失败自动回落到主线程；主线程路径行为不变。
