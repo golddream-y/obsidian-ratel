@@ -294,6 +294,16 @@ export async function recoverIndexJournal(options: {
 }): Promise<void> {
 	const journal = options.journal;
 	if (!journal) return;
+	// 关键路径:孤儿隔离事务不需要读正文就能判定,先回收再走恢复;
+	// 回收失败不影响恢复本身,但必须留下日志,不能静默累积磁盘垃圾。
+	try {
+		const reclaimed = await journal.reclaimOrphanQuarantinedTransactions();
+		if (reclaimed.reclaimed.length > 0) {
+			devLogger.info('index', `回收孤立隔离事务:${reclaimed.reclaimed.length} 个,保留 ${reclaimed.retained.length} 个`);
+		}
+	} catch (err) {
+		devLogger.error('index', '回收孤立隔离事务失败', err);
+	}
 	let pending: string[];
 	try {
 		pending = await journal.listPendingPaths();
