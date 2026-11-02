@@ -83,6 +83,8 @@ export interface ExperimentReport {
 	channel: { ping: string; written: boolean; readBack: string | null; stall: StallReading; error?: string };
 	/** 索引线程会话链路:索引两篇 → 查询 → 状态。 */
 	runtime: { indexed: number; hits: number; totalDocs: number; stall: StallReading; error?: string };
+	/** 同一负载在主线程序列化 + 写入的对照。 */
+	mainThreadIndex: { indexed: number; stall: StallReading; error?: string };
 }
 
 /** 采样迟到量。 */
@@ -278,6 +280,40 @@ export async function runIndexThreadExperiment(
 		runtime.error = String((error as Error)?.message ?? error);
 	}
 
+	// 9) 对照:同一负载在主线程切块 + Vectra 写入,用于与线程链路比主线程迟到。
+	let mainThreadIndex: ExperimentReport['mainThreadIndex'] = { indexed: 0, stall: { maxGapMs: 0, p95GapMs: 0, samples: 0 } };
+	try {
+		const { VectraStore } = await import('../adapters/vector-vectra');
+		const { chunkMarkdown } = await import('../worker/chunker');
+		const baselineRoot = path.join(dir, 'baseline');
+		await fsp.mkdir(baselineRoot, { recursive: true });
+		const baselineStore = new VectraStore(baselineRoot, { autoInit: true });
+		await baselineStore.init();
+		const chunkOptions = { maxTokens: 500, overlapTokens: 100, count: (text: string) => text.length };
+		const sources = [
+			['note-a.md', '第一段关于索引的正文\n第二段正文'],
+			['note-b.md', '另一篇笔记的正文'],
+		] as const;
+		mainThreadIndex.stall = await measure(async () => {
+			for (const [filePath, content] of sources) {
+				const chunks = chunkMarkdown(content, chunkOptions);
+				const commitId = `baseline-${filePath}`;
+				await baselineStore.replaceFile({
+					path: filePath,
+					commitId,
+					blocks: chunks.map((chunk, index) => ({
+						id: `${filePath}#chunk-${index}`,
+						vector: Array.from({ length: 8 }, () => 0.1),
+						metadata: { path: filePath, chunkIndex: index, startOffset: chunk.startOffset, commitId },
+					})),
+				});
+				mainThreadIndex.indexed += 1;
+			}
+		});
+	} catch (error) {
+		mainThreadIndex.error = String((error as Error)?.message ?? error);
+	}
+
 	const report: ExperimentReport = {
 		startedAt: new Date().toISOString(),
 		environment,
@@ -289,6 +325,7 @@ export async function runIndexThreadExperiment(
 		selfCheck,
 		channel,
 		runtime,
+		mainThreadIndex,
 	};
 	const reportPath = path.join(os.tmpdir(), `ratel-index-thread-experiment-${Date.now()}.json`);
 	await fsp.writeFile(reportPath, JSON.stringify(report, null, 2), 'utf8');
