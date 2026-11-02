@@ -77,7 +77,8 @@
 
 - `settings.indexThreadMode`（默认 false）：开启后启动走线程装配，失败自动回落到主线程；主线程路径行为不变。
 - 检索：`MultiQuerySearcher.candidateSource` 走线程；委派门在线程就绪前保持主线程语义。
-- 体积代价：主包从 11.9 MB 涨到 19.1 MB（线程运行时与 Worker 代码进入产物）。这是效率组要量的项，也是「默认开启」前必须处理的成本。
+- 体积代价：主包从 11.9 MB 涨到 **15.5 MB**（线程运行时与 Worker 产物内联）。最初是 19.1 MB，其中 Worker 产物 6.96 MB —— 逐项拆开发现 vectra 的 BM25 分支把 wink 英文模型（约 3.4 MB）与 gpt-tokenizer（2.7 MB）一起带了进来；仅对索引线程打桩 wink 后 Worker 降到 3.33 MB。
+- **不能连 gpt-tokenizer 一起打桩**：`LocalDocumentIndex` 构造时默认用它做块切分，替身会让构造直接抛错（宿主才暴露，Node 用例测不到）。
 
 ## 验证边界
 

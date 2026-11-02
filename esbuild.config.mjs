@@ -402,8 +402,16 @@ const runtimeWorkerContext = await esbuild.context({
 	// 索引线程只做纯 JS 向量运算,不需要它们。
 	alias: {
 		'vectra': path.resolve(__dirname, 'node_modules/vectra/lib/browser.js'),
+		// 关键路径:索引线程不做推理,但分块链会间接 import onnxruntime-web;
+		// 若不打桩,会把整段 WASM bundle(数 MB)打进 Worker 产物。
+		'onnxruntime-web': path.resolve(__dirname, 'src/adapters/empty-module.cjs'),
 		'onnxruntime-node': path.resolve(__dirname, 'src/adapters/empty-module.cjs'),
 		'@huggingface/transformers': path.resolve(__dirname, 'src/adapters/empty-transformers.cjs'),
+		// 关键路径:vectra 的 BM25 全文检索分支会带进 wink 英文模型(约 3.4MB);
+		// 索引线程只做向量写入与检索,用不到 BM25。gpt-tokenizer 必须保留 ——
+		// `LocalDocumentIndex` 构造时会用它做块切分,替身会让构造直接抛错。
+		'wink-bm25-text-search': path.resolve(__dirname, 'src/adapters/empty-module.cjs'),
+		'wink-eng-lite-web-model': path.resolve(__dirname, 'src/adapters/empty-module.cjs'),
 	},
 	plugins: [],
 });
