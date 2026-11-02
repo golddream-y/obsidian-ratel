@@ -16,6 +16,7 @@
  * - 提交之外的持久化由调用方显式 `flushPath` 强制落盘(例如 T3 写 receipt 之后),不依赖进程退出。
  */
 
+import { writeFileAtomic, type WriteFlushFileSystem } from './index-write-flush';
 import { randomUUID } from 'node:crypto';
 import { access, mkdir, open, readdir, readFile, rename, rm, stat, unlink, writeFile } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
@@ -453,45 +454,51 @@ export class AtomicIndexStorage implements FileStorage {
 		const buffer = typeof content === 'string' ? Buffer.from(content, 'utf8') : content;
 		// 关键路径:临时路径生成后必须再次校验包含性(目标为代际根时会落到根外)。
 		const tempPath = await this.createTempPath(target);
+		let committed = false;
 		let renameAttempted = false;
-		let renamed = false;
+		// 关键路径:rename 是否发出过决定「提交后状态不明」的判定,共享模块不暴露该阶段,
+		// 因此在这里包装一次 rename 记录尝试。
+		const flushFileSystem = this.sharedFlushFileSystem({
+			onRenameAttempt: () => { renameAttempted = true; },
+		});
 		try {
-			const handle = await this.fileSystem.openFile(tempPath);
-			await this.writeAndClose(handle, buffer);
-			renameAttempted = true;
-			await this.fileSystem.rename(tempPath, target);
-			renamed = true;
-			await this.syncParentDirectory(path.dirname(target));
+			// 关键路径:提交语义与其余写入口共用一份实现(唯一临时名、短写循环、父目录 fsync、
+			// 平台不支持目录同步时降级);错误仍原样抛出,由本层补上阶段与写入记录。
+			await writeFileAtomic(flushFileSystem, target, buffer, {
+				createTempPath: () => tempPath,
+				onCommitted: () => { committed = true; },
+			});
 		} catch (error) {
-			if (!renamed) {
-				// 关键路径:清理失败不能遮蔽原始错误,因此清理异常只吞掉。
-				await this.removeTempQuietly(tempPath);
-				const outcome: AtomicWriteOutcome =
-					renameAttempted && isRenameOutcomeUnknown(error)
-						? 'unknown-after-rename'
-						: 'failed-before-rename';
-				this.appendRecord(target, buffer.byteLength, outcome, error);
-				if (outcome === 'unknown-after-rename') {
-					throw new AtomicStorageError(
-						'unknown-after-rename',
-						`原子替换后状态不明(rename 可能已生效):${path.basename(target)}`,
-						{ path: target, cause: error },
-					);
-				}
+			const unknown = committed || (renameAttempted && isRenameOutcomeUnknown(error));
+			const outcome: AtomicWriteOutcome = unknown ? 'unknown-after-rename' : 'failed-before-rename';
+			this.appendRecord(target, buffer.byteLength, outcome, error);
+			if (unknown) {
 				throw new AtomicStorageError(
-					'write-failed',
-					`原子替换失败(rename 前):${path.basename(target)}`,
+					'unknown-after-rename',
+					`原子替换后状态不明(rename 可能已生效):${path.basename(target)}`,
 					{ path: target, cause: error },
 				);
 			}
-			this.appendRecord(target, buffer.byteLength, 'unknown-after-rename', error);
 			throw new AtomicStorageError(
-				'unknown-after-rename',
-				`原子替换后状态不明(rename 已执行):${path.basename(target)}`,
+				'write-failed',
+				`原子替换失败(rename 前):${path.basename(target)}`,
 				{ path: target, cause: error },
 			);
 		}
 		this.appendRecord(target, buffer.byteLength, 'renamed', null);
+	}
+
+	/** 把注入的文件系统接成共享落盘模块的形状 — 只做名称与返回类型转换。 */
+	private sharedFlushFileSystem(hooks: { onRenameAttempt?: () => void } = {}): WriteFlushFileSystem {
+		return {
+			open: (absolutePath) => this.fileSystem.openFile(absolutePath),
+			openDirectory: (absolutePath) => this.fileSystem.openDirectory(absolutePath),
+			rename: async (from, to) => {
+				hooks.onRenameAttempt?.();
+				await this.fileSystem.rename(from, to);
+			},
+			unlink: (absolutePath) => this.fileSystem.removeFile(absolutePath),
+		};
 	}
 
 	/**

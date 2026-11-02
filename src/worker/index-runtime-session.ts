@@ -12,6 +12,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { VectraStore, type PreparedBlock } from '../adapters/vector-vectra';
+import { AtomicIndexStorage } from '../adapters/atomic-index-storage';
 import { chunkMarkdown, type ChunkOptions } from './chunker';
 import { createWorkerJournal, WorkerJournalOwner } from './index-runtime-journal';
 import type { IndexFileJournal } from '../core/index-file-journal';
@@ -25,8 +26,10 @@ export interface IndexSessionOptions {
 	root: string;
 	/** 分块参数。 */
 	chunkOptions: ChunkOptions;
-	/** 存储工厂;缺省用真实 Vectra。 */
-	createStore?: (root: string) => VectraStore;
+	/** 存储工厂;缺省用真实 Vectra(必须注入同一份原子存储)。 */
+	createStore?: (root: string, storage: AtomicIndexStorage) => VectraStore;
+	/** 原子存储工厂;缺省按索引根新建。 */
+	createStorage?: (root: string) => AtomicIndexStorage;
 	/** 写权 epoch;提供日志装载时用于构造写所有权。 */
 	epoch?: number;
 }
@@ -62,7 +65,10 @@ function stringField(payload: unknown, key: string): string {
  */
 export function createIndexSessionHandlers(options: IndexSessionOptions): RuntimeHandlers {
 	const state: SessionState = { store: null, journal: null, owner: null, manifest: null, chunkOptions: options.chunkOptions, written: 0 };
-	const createStore = options.createStore ?? ((root: string) => new VectraStore(root, { embeddings: NO_EMBEDDINGS, autoInit: true }));
+	const createStorage = options.createStorage ?? ((root: string) => new AtomicIndexStorage({ generationRoot: root }));
+	// 关键路径:存储与日志必须共用同一份原子存储,否则写入结果记录与提交语义会分叉。
+	const createStore = options.createStore
+		?? ((root: string, storage: AtomicIndexStorage) => new VectraStore(root, { embeddings: NO_EMBEDDINGS, storage: storage, autoInit: true }));
 
 	/** 取已打开的存储;未打开时明确失败,不隐式创建。 */
 	const requireStore = (): VectraStore => {
@@ -73,7 +79,8 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 	return {
 		'session.open': async (payload) => {
 			if (state.store !== null) return { alreadyOpen: true };
-			const store = createStore(options.root);
+			const storage = createStorage(options.root);
+			const store = createStore(options.root, storage);
 			await store.init();
 			state.store = store;
 			// 关键路径:清单也由本线程读写;主线程不再序列化整份清单。
@@ -91,6 +98,7 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 					store,
 					owner,
 					expectedDimension: typeof journalPayload.expectedDimension === 'number' ? journalPayload.expectedDimension : undefined,
+					storage,
 				});
 			}
 			return { alreadyOpen: false, journal: state.journal !== null };

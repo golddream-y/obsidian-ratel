@@ -284,10 +284,14 @@ export async function runIndexThreadExperiment(
 	let mainThreadIndex: ExperimentReport['mainThreadIndex'] = { indexed: 0, stall: { maxGapMs: 0, p95GapMs: 0, samples: 0 } };
 	try {
 		const { VectraStore } = await import('../adapters/vector-vectra');
+		const { AtomicIndexStorage } = await import('../adapters/atomic-index-storage');
 		const { chunkMarkdown } = await import('../worker/chunker');
 		const baselineRoot = path.join(dir, 'baseline');
 		await fsp.mkdir(baselineRoot, { recursive: true });
-		const baselineStore = new VectraStore(baselineRoot, { autoInit: true });
+		const baselineStore = new VectraStore(baselineRoot, {
+			storage: new AtomicIndexStorage({ generationRoot: baselineRoot }),
+			autoInit: true,
+		});
 		await baselineStore.init();
 		const chunkOptions = { maxTokens: 500, overlapTokens: 100, count: (text: string) => text.length };
 		const sources = [

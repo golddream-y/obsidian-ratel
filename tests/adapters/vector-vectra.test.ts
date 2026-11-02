@@ -925,6 +925,9 @@ describe('生产装配 - VectraStore 构造点存储注入契约', () => {
 			'src/core/index-runtime-assembly.ts': 2,
 			'src/main.ts': 1,
 			'src/worker/handler.ts': 1,
+			// 索引线程与 T0 实验各有一处构造点,同样必须注入同一份原子存储。
+			'src/worker/index-runtime-session.ts': 1,
+			'src/experiment/index-thread-probe.ts': 1,
 		});
 	});
 });
