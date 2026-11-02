@@ -16,6 +16,7 @@ import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { AtomicIndexStorage } from '../../src/adapters/atomic-index-storage';
+import { open, rename, rm } from 'node:fs/promises';
 import { VectraStore } from '../../src/adapters/vector-vectra';
 import { chunkMarkdown } from '../../src/worker/chunker';
 import { createWorkerJournal, WorkerJournalOwner } from '../../src/worker/index-runtime-journal';
@@ -53,7 +54,32 @@ describe.skipIf(!ENABLED)('效率基准', () => {
 		roots.push(root);
 		// 关键路径:必须带上文件日志与完成记录,否则测到的只是 Vectra 落盘,
 		// 会漏掉真实路径里每条完成记录一次原子写(实测约 15ms/篇)的成本。
-		const storage = new AtomicIndexStorage({ generationRoot: root });
+		// 关键路径:统计「实际写入字节」必须包在文件系统层 —— 只量目录最终体积会漏掉
+		// 临时文件与完成记录的重复写入,那是真实磨损与耗时来源。
+		let writtenBytes = 0;
+		const countingFs = {
+			async openFile(absolutePath: string) {
+				const handle = await open(absolutePath, 'wx');
+				return {
+					async write(buffer: Uint8Array, offset: number, length: number) {
+						const result = await handle.write(buffer, offset, length);
+						writtenBytes += result.bytesWritten;
+						return result.bytesWritten;
+					},
+					sync: () => handle.sync(),
+					close: () => handle.close(),
+				};
+			},
+			async openDirectory(absolutePath: string) {
+				const handle = await open(absolutePath, 'r');
+				return { sync: () => handle.sync(), close: () => handle.close() };
+			},
+			rename: (from: string, to: string) => rename(from, to),
+			async removeFile(absolutePath: string) {
+				await rm(absolutePath, { force: true });
+			},
+		};
+		const storage = new AtomicIndexStorage({ generationRoot: root, fileSystem: countingFs });
 		const store = new VectraStore(root, { storage, autoInit: true });
 		await store.init();
 		const journal = createWorkerJournal({
@@ -97,8 +123,9 @@ describe.skipIf(!ENABLED)('效率基准', () => {
 		const bytes = await directoryBytes(root);
 		const perFileMs = elapsedMs / FILE_COUNT;
 		console.info(
-			`[效率基准] 文件=${FILE_COUNT} 总耗时=${elapsedMs.toFixed(0)}ms 每篇=${perFileMs.toFixed(1)}ms 峰值堆=${(peakHeap / 1024 / 1024).toFixed(1)}MB 落盘=${(bytes / 1024).toFixed(0)}KB`,
+			`[效率基准] 文件=${FILE_COUNT} 总耗时=${elapsedMs.toFixed(0)}ms 每篇=${perFileMs.toFixed(1)}ms 峰值堆=${(peakHeap / 1024 / 1024).toFixed(1)}MB 落盘=${(bytes / 1024).toFixed(0)}KB 写入字节=${(writtenBytes / 1024).toFixed(0)}KB 每篇写入=${(writtenBytes / FILE_COUNT).toFixed(0)}B`,
 		);
+		expect(writtenBytes).toBeGreaterThan(0);
 		// 只做健全性断言:数字必须为正,避免采样失败被当成「很快」。
 		expect(elapsedMs).toBeGreaterThan(0);
 		expect(peakHeap).toBeGreaterThan(0);
