@@ -37,6 +37,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
+import { writeFileAtomic } from '../adapters/index-write-flush';
+import { nodeWriteFlushFileSystem } from '../adapters/index-write-flush-node';
 import {
 	INDEX_RECORD_SCHEMA_VERSION,
 	computeBlockSetHash,
@@ -2304,27 +2306,20 @@ function readCommitId(blocks: readonly PreparedBlock[]): string {
 }
 
 /**
- * 原子写文本:同目录**唯一**临时文件 → fsync → rename → fsync 目标与父目录。
+ * 原子写文本 — 走共享落盘模块,与运行期写入口保持同一套提交语义。
  *
- * 关键路径:临时名必须唯一(`.tmp` 固定名会让两个写入者互相覆盖,中断也会留下歧义残留);
- * rename 之前先 fsync 临时文件,保证「rename 生效即内容完整」;rename 之后再 fsync 目标与
- * 父目录,保证目录项也落盘。
+ * 关键路径:此前迁移侧自己实现「tmp → fsync → rename → fsync 目标与父目录」,与原子存储的
+ * 实现存在差异(临时名、短写处理、close 错误、降级范围)。改走共享模块后只有一份语义:
+ * 排他创建临时文件 → 循环写满 → 刷文件 → rename → 刷父目录;rename 前失败清理临时文件。
  *
  * @param target - 目标文件绝对路径。
  * @param payload - 已序列化的内容。
  */
 async function writeJsonText(target: string, payload: string): Promise<void> {
-	const tmp = `${target}.tmp-${process.pid}-${randomUUID()}`;
-	await fs.promises.writeFile(tmp, payload, 'utf8');
-	try {
-		await flushPath(tmp);
-		await fs.promises.rename(tmp, target);
-	} catch (error) {
-		await fs.promises.rm(tmp, { force: true }).catch(() => undefined);
-		throw error;
-	}
-	await flushPath(target);
-	await flushPath(path.dirname(target));
+	await writeFileAtomic(nodeWriteFlushFileSystem, target, Buffer.from(payload, 'utf8'), {
+		// 关键路径:临时名必须唯一,固定 `.tmp` 会让两个写入者互相覆盖并留下歧义残留。
+		createTempPath: (targetPath) => `${targetPath}.tmp-${process.pid}-${randomUUID()}`,
+	});
 }
 
 /** 原子写 JSON 值 — 唯一临时名 + 文件/目录 flush。 */

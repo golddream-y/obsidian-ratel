@@ -763,7 +763,7 @@ describe('IndexGenerations - 目录与代际布局', () => {
 		expect(fs.readFileSync(sentinel, 'utf8')).toBe('哨兵');
 	});
 
-	it('writeControl - 唯一临时名与 flush - 不覆盖同名遗留临时文件,写入后对目标与目录 fsync', async () => {
+	it('writeControl - 唯一临时名与 flush - 不覆盖同名遗留临时文件,rename 前刷临时文件、提交后刷父目录', async () => {
 		const ws = requireWorkspace();
 		const generations = generationsFor(ws);
 		const controlPath = generations.controlPath;
@@ -785,10 +785,10 @@ describe('IndexGenerations - 目录与代际布局', () => {
 		}
 
 		expect(fs.readFileSync(legacyTmp, 'utf8')).toBe('遗留固定名临时文件');
-		expect(opened).toContain(controlPath);
-		expect(opened).toContain(path.dirname(controlPath));
-		// 临时文件名必须带唯一后缀,不能是固定 `${target}.tmp`。
+		// 关键路径:提交语义是「刷临时文件 → rename → 刷父目录」;rename 不改变 inode,
+		// 数据已在临时句柄刷过,因此不再重开目标文件刷一次(重开是冗余,不是更强的保证)。
 		expect(opened.some((target) => target.startsWith(`${controlPath}.tmp-`))).toBe(true);
+		expect(opened).toContain(path.dirname(controlPath));
 		expect(fs.readdirSync(path.dirname(controlPath)).some((name) => name.startsWith('control.json.tmp-'))).toBe(false);
 	});
 });
