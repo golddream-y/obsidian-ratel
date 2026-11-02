@@ -77,6 +77,22 @@ RATEL_EFFICIENCY=1 RATEL_EFFICIENCY_FILES=100 npx vitest run tests/core/index-ef
 
 线程版对照必须在宿主内采集,不能用这里的数字冒充。
 
+## 隔离代理：一次否定结果
+
+`RATEL_ISOLATION=1 RATEL_ISOLATION_FILES=N npx vitest run tests/core/index-isolation-proxy.test.ts` 用 Node worker 线程跑与产品同源的提交链，对照主线程内直接跑时的迟到：
+
+| 文件数 | 主线程内 max / p95 | 独立线程 max / p95 |
+| --- | --- | --- |
+| 50 | 10.2 ms / 1.8 ms | 13.8 ms / 1.3 ms |
+| 300 | 41 ms / 1.7 ms | 25 ms / 1.2 ms |
+| 800 | 51 ms / 1.7 ms | 55 ms / 1.7 ms |
+
+结论：**这个代理没有稳定复现「搬到线程就更快」**。原因是这条链路上主线程大部分时间在等异步 IO，真正的整份索引序列化阻塞要等规模更大才显著；而 Node worker 自身有启动与内存压力开销。因此：
+
+1. 不用这组数字支撑任何流畅度结论；
+2. 流畅度的决定性读数仍必须在 Obsidian 内采集（T0 的 434 ms / 38 ms 就是在宿主里测的）；
+3. 保留该用例作为趋势观察工具，不断言线程更快。
+
 ## 当前状态
 
 - 已具备：实验入口、线程链路、主线程对照、Node 侧正确性用例。
