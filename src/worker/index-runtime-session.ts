@@ -123,6 +123,16 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 			const content = (payload as { content?: unknown }).content;
 			if (typeof content !== 'string') throw new Error('缺少字段 content');
 
+			// 关键路径:内容未变就不重新分块与嵌入 —— 这是「未变文件零重复嵌入」的判据,
+			// 也是重跑/reindex 不把整库重嵌一遍的唯一防线。
+			const inputHash = await sha256(content);
+			if (state.journal !== null) {
+				const existing = await state.journal.readReceipt(filePath);
+				if (existing !== null && existing.inputHash === inputHash) {
+					return { chunkCount: existing.chunkCount, skipped: true };
+				}
+			}
+
 			const chunks = chunkMarkdown(content, state.chunkOptions);
 			// 关键路径:先拿到全部向量再动磁盘,推理失败时旧版本块保持不变。
 			const vectors = chunks.length === 0
@@ -152,7 +162,7 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 				const prepared = await state.journal.prepare({
 					path: filePath,
 					operation: 'replace',
-					inputHash: await sha256(content),
+					inputHash,
 					revision: (receipt?.revision ?? 0) + 1,
 					previousCommitId: receipt?.commitId ?? null,
 					previousRevision: receipt?.revision ?? 0,

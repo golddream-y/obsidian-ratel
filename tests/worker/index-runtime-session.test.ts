@@ -347,3 +347,29 @@ describe('可信完成记录列表', () => {
 		await expect(handlers['session.listCommitted']!({})).rejects.toThrow('未启用日志');
 	});
 });
+
+describe('未变内容不重复嵌入', () => {
+	const FINGERPRINT = 'e'.repeat(64);
+
+	it('同一内容写两次 - 第二次跳过 - 嵌入只调用一次', async () => {
+		const handlers = createIndexSessionHandlers({ root, chunkOptions: CHUNK_OPTIONS, epoch: 1 });
+		await handlers['session.open']!({ generationId: 'gen-skip', configFingerprint: FINGERPRINT, expectedDimension: DIMENSIONS });
+		const context = makeContext();
+		const first = await handlers['session.upsertFile']!({ path: 'a.md', content: '同样的正文' }, context.ctx) as { chunkCount: number; skipped?: boolean };
+		const second = await handlers['session.upsertFile']!({ path: 'a.md', content: '同样的正文' }, context.ctx) as { chunkCount: number; skipped?: boolean };
+		expect(first.skipped).toBeUndefined();
+		expect(second).toMatchObject({ skipped: true, chunkCount: first.chunkCount });
+		// 嵌入调用次数 = 上下文里的调用记录条数。
+		expect(context.calls).toHaveLength(1);
+	});
+
+	it('内容变化 - 重新嵌入 - 不跳过', async () => {
+		const handlers = createIndexSessionHandlers({ root, chunkOptions: CHUNK_OPTIONS, epoch: 1 });
+		await handlers['session.open']!({ generationId: 'gen-skip2', configFingerprint: FINGERPRINT, expectedDimension: DIMENSIONS });
+		const context = makeContext();
+		await handlers['session.upsertFile']!({ path: 'a.md', content: '第一版' }, context.ctx);
+		const second = await handlers['session.upsertFile']!({ path: 'a.md', content: '第二版内容' }, context.ctx) as { skipped?: boolean };
+		expect(second.skipped).toBeUndefined();
+		expect(context.calls).toHaveLength(2);
+	});
+});
