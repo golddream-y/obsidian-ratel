@@ -109,34 +109,35 @@ describe('索引 Worker 入口', () => {
 	});
 });
 
-describe('入口装配索引会话', () => {
-	/** 自动应答嵌入请求的假作用域。 */
-	function makeEmbedScope(): {
-		scope: { postMessage: (m: unknown) => void; onmessage: ((e: { data: unknown }) => void) | null };
-		out: Array<Record<string, unknown>>;
-	} {
-		const out: Array<Record<string, unknown>> = [];
-		const scope: { postMessage: (m: unknown) => void; onmessage: ((e: { data: unknown }) => void) | null } = {
-			postMessage: (message) => {
-				out.push(message as Record<string, unknown>);
-				const frame = message as { kind?: string; callId?: string; payload?: { texts?: string[] } };
-				if (frame.kind !== 'call' || frame.callId === undefined) return;
-				const texts = frame.payload?.texts ?? [];
-				void Promise.resolve().then(() => {
-					scope.onmessage?.({
-						data: {
-							kind: 'call-result', protocolVersion: 1, runtimeId: 'rt-1', epoch: 1,
-							callId: frame.callId, ok: true,
-							result: texts.map(() => Array.from({ length: 8 }, () => 0.1)),
-						},
-					});
+/** 自动应答嵌入请求的假作用域。 */
+function makeEmbedScope(): {
+	scope: { postMessage: (m: unknown) => void; onmessage: ((e: { data: unknown }) => void) | null };
+	out: Array<Record<string, unknown>>;
+} {
+	const out: Array<Record<string, unknown>> = [];
+	const scope: { postMessage: (m: unknown) => void; onmessage: ((e: { data: unknown }) => void) | null } = {
+		postMessage: (message) => {
+			out.push(message as Record<string, unknown>);
+			const frame = message as { kind?: string; callId?: string; payload?: { texts?: string[] } };
+			if (frame.kind !== 'call' || frame.callId === undefined) return;
+			const texts = frame.payload?.texts ?? [];
+			void Promise.resolve().then(() => {
+				scope.onmessage?.({
+					data: {
+						kind: 'call-result', protocolVersion: 1, runtimeId: 'rt-1', epoch: 1,
+						callId: frame.callId, ok: true,
+						result: texts.map(() => Array.from({ length: 8 }, () => 0.1)),
+					},
 				});
-			},
-			onmessage: null,
-		};
-		return { scope, out };
-	}
+			});
+		},
+		onmessage: null,
+	};
+	return { scope, out };
+}
 
+
+describe('入口装配索引会话', () => {
 	it('读写模式 - 会话打开并写入 - 状态反映真实块数', async () => {
 		const { scope, out } = makeEmbedScope();
 		const entry = startIndexRuntimeWorker({ scope, fsOverride: makeFs() });
@@ -166,5 +167,23 @@ describe('入口装配索引会话', () => {
 		await vi.waitFor(() => expect(out).toHaveLength(1));
 		expect(out[0]).toMatchObject({ ok: false });
 		expect(String(out[0]?.error)).toContain('未知方法');
+	});
+});
+
+describe('撤销时的会话收尾', () => {
+	it('撤销后 - 会话写入被拒绝 - 不再产生新块', async () => {
+		const { scope, out } = makeEmbedScope();
+		const entry = startIndexRuntimeWorker({ scope, fsOverride: makeFs() });
+		scope.onmessage?.({ data: { kind: 'init', runtimeId: 'rt-1', epoch: 1, root, access: 'read-write', chunkOptions: { maxTokens: 500, overlapTokens: 100 } } });
+		await entry.ready;
+		scope.onmessage?.({ data: request('rt-1', 'session.open', {}, 'r1') });
+		await vi.waitFor(() => expect(out.some((m) => m.requestId === 'r1')).toBe(true));
+
+		scope.onmessage?.({ data: { kind: 'control', protocolVersion: 1, runtimeId: 'rt-1', epoch: 1, control: 'revoke', reason: '用户暂停' } });
+		await vi.waitFor(() => expect(out.some((m) => m.control === 'revoked-and-drained')).toBe(true));
+
+		scope.onmessage?.({ data: request('rt-1', 'session.upsertFile', { path: 'a.md', content: '正文' }, 'r2') });
+		await vi.waitFor(() => expect(out.some((m) => m.requestId === 'r2')).toBe(true));
+		expect(out.find((m) => m.requestId === 'r2')).toMatchObject({ ok: false });
 	});
 });

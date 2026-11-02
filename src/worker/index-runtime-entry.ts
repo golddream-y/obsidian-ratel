@@ -106,7 +106,21 @@ export function startIndexRuntimeWorker(options: {
 			const handlers: RuntimeHandlers = data.access === 'read-only'
 				? guardReadOnly(baseHandlers)
 				: { ...baseHandlers, ...createIndexSessionHandlers({ root: data.root, chunkOptions: resolveChunkOptions(data.chunkOptions) }) };
-			server = serveRuntime({ port, grant, handlers });
+			const sessionClose = handlers['session.close'];
+			server = serveRuntime({
+				port,
+				grant,
+				handlers,
+				// 关键路径:撤销时先关会话 —— 写权与存储句柄必须随运行时一起释放,
+				// 不能等宿主停掉线程才发现还有在途写。
+				onRevoked: async () => {
+					try {
+						await sessionClose?.({});
+					} catch {
+						// 关闭失败不阻止回报 drained;写权已由运行时撤销。
+					}
+				},
+			});
 			resolveReady();
 			return;
 		}
