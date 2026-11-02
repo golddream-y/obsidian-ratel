@@ -114,6 +114,23 @@ export interface MultiQuerySearcherDeps {
 	reranker?: RerankerPort | RerankerFactory;
 	queryRewriter?: { rewrite: (q: string) => Promise<string[]> };
 	visibility?: SearchCandidateGate;
+	/**
+	 * 候选来源端口;缺省走 Worker `vector.search`。
+	 *
+	 * 关键路径:索引迁入独立线程后,检索候选由线程内存储返回,但融合/可见性/精排
+	 * 仍在本类。抽一个端口而不是在类里分支,保证两条路径的语义完全一致。
+	 */
+	candidateSource?: SearchCandidateSource;
+}
+
+/** 候选召回端口 — 与 Worker `vector.search` 同语义。 */
+export interface SearchCandidateSource {
+	/**
+	 * 按查询向量取候选。
+	 * @param queryVector 查询向量
+	 * @param topK 召回路数上限
+	 */
+	search(queryVector: number[], topK: number): Promise<VectorSearchResult[]>;
 }
 
 /** 一次召回与过滤的中间结果。 */
@@ -159,6 +176,39 @@ export class MultiQuerySearcher {
 	/** 最近一次检索的可见性诊断 — 工具层据此区分「真的没命中」与「记录不可判定」。 */
 	visibilityDiagnostics(): SearchVisibilityDiagnostics | undefined {
 		return this.lastDiagnostics;
+	}
+
+	/**
+	 * 召回候选 — 有端口走端口,否则走 Worker。
+	 *
+	 * @param queryVector 查询向量
+	 * @param topK 召回路数上限
+	 * @param attempt 第几次召回(仅用于日志)
+	 */
+	private async recallCandidates(queryVector: number[], topK: number, attempt: number): Promise<VectorSearchResult[]> {
+		const source = this.deps.candidateSource;
+		if (source !== undefined) {
+			try {
+				return await source.search(queryVector, topK);
+			} catch (err) {
+				const message = err instanceof Error ? err.message : String(err);
+				devLogger.warn('search', `候选来源失败 (attempt ${attempt}): ${message}`);
+				return [];
+			}
+		}
+		const response = await this.deps.workerManager.request({
+			type: 'vector.search',
+			payload: { queryVector, topK },
+		});
+		if (response.type !== 'vector.search.result') {
+			// 修复:Worker 返回 error 时打印 payload 详情,便于排查(如 HANDLER_ERROR / NULL_PROCESSOR)。
+			const errMsg = response.type === 'error'
+				? (response.payload as { message?: string })?.message ?? 'unknown error'
+				: `unexpected type: ${response.type}`;
+			devLogger.warn('search', `vector.search failed (attempt ${attempt}): ${errMsg}`);
+			return [];
+		}
+		return response.payload;
 	}
 
 	/**
@@ -223,20 +273,9 @@ export class MultiQuerySearcher {
 			recallAttempts = attempt + 1;
 			let addedCandidates = false;
 			for (const [index, queryVector] of queryVectors.entries()) {
-				const response = await this.deps.workerManager.request({
-					type: 'vector.search',
-					payload: { queryVector, topK: overFetchTopK },
-				});
-				if (response.type !== 'vector.search.result') {
-					// 修复:Worker 返回 error 时打印 payload 详情,便于排查(如 HANDLER_ERROR / NULL_PROCESSOR)。
-					const errMsg = response.type === 'error'
-						? (response.payload as { message?: string })?.message ?? 'unknown error'
-						: `unexpected type: ${response.type}`;
-					devLogger.warn('search', `vector.search failed (attempt ${recallAttempts}): ${errMsg}`);
-					continue;
-				}
+				const candidates = await this.recallCandidates(queryVector, overFetchTopK, recallAttempts);
 				const seen = seenDocIds[index]!;
-				for (const result of response.payload) {
+				for (const result of candidates) {
 					if (seen.has(result.docId)) continue;
 					seen.add(result.docId);
 					accumulated[index]!.push(result);

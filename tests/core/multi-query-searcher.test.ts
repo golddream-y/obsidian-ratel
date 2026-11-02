@@ -585,3 +585,40 @@ describe('MultiQuerySearcher 可见性门 — 被拒候选不得进入融合与�
 		});
 	});
 });
+
+describe('候选来源端口', () => {
+	it('提供端口时 - 走端口取候选 - 不再调用 Worker', async () => {
+		const embedding = createMockEmbedding();
+		const worker = createMockWorkerManager([[]]);
+		const candidateSource = {
+			search: vi.fn(async (): Promise<VectorSearchResult[]> => [
+				{ docId: 'd1', score: 0.9, metadata: { path: 'a.md', chunkIndex: 0 } },
+			]),
+		};
+		const searcher = new MultiQuerySearcher({
+			embedding,
+			workerManager: worker,
+			vault: createMockVault(async () => '正文'),
+			candidateSource,
+		});
+		const results = await searcher.search('查询', 5);
+		expect(candidateSource.search).toHaveBeenCalledTimes(1);
+		expect(worker.request).not.toHaveBeenCalled();
+		expect(results.map((result) => result.docId)).toContain('d1');
+	});
+
+	it('端口抛错 - 与 Worker 失败同语义 - 返回空结果而不是抛出', async () => {
+		const embedding = createMockEmbedding();
+		const worker = createMockWorkerManager([[]]);
+		const candidateSource = {
+			search: vi.fn(async (): Promise<VectorSearchResult[]> => { throw new Error('线程已停止'); }),
+		};
+		const searcher = new MultiQuerySearcher({
+			embedding,
+			workerManager: worker,
+			vault: createMockVault(async () => '正文'),
+			candidateSource,
+		});
+		await expect(searcher.search('查询', 5)).resolves.toEqual([]);
+	});
+});
