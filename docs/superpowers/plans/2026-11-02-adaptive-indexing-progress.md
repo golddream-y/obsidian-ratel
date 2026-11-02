@@ -112,6 +112,19 @@
 - tsc 保持 241 条基线（相对本轮修改新增 0）；lint 0 error。
 - 生产构建 15.5 MB；实验构建可运行且默认产物不含实验命令。
 
+## 交付面状态（收尾）
+
+- 预览库链接指向本仓库 `dist`，当前 `dist/main.js` 是**生产构建**（15.51 MB，不含实验探针）；`indexThreadMode` 默认 `false`，重载后行为与 1.3.0 一致。
+- 要采 T9 流畅度读数时再执行：`RATEL_INDEX_EXPERIMENT=1 node esbuild.config.mjs production && node scripts/link-vault.mjs "<sandbox>"`，重载后 5 秒自动采集。
+- 分支：`main` / `develop` / `feat/index-reliability` 三者一致；每个单元独立提交并已推送。
+
+## 仍未完成（明确挂账）
+
+1. **T9 流畅度组**：缺宿主内一次采集（唯一阻塞项，需人工重载）。
+2. **写放大 O(N²)**：已量化并给出三条候选方案，属后续 spec。
+3. **只读线程版**：明确不在 M1 范围（见 cutover §5）。
+4. **效率组「累计写量」通过线**：目前只记录数字，判定线待与写放大一起确定。
+
 ## 验证边界
 
 - 已跑：Node 环境下 32 个运行时用例、7 个票据用例、11 个 T-REL 用例；生产构建与内联检查通过。
