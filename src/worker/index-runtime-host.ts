@@ -212,6 +212,14 @@ export class IndexRuntimeHost {
 		});
 	}
 
+	/**
+	 * 发送一帧非请求消息(例如 init 授权)。
+	 * @param message 已构造好的协议帧
+	 */
+	send(message: unknown): void {
+		this.worker?.postMessage(message);
+	}
+
 	/** 处理入站消息。 */
 	private handleMessage(data: unknown): void {
 		const message = parseRuntimeMessage(data);

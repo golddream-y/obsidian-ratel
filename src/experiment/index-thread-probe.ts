@@ -14,6 +14,7 @@ import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { Platform, apiVersion } from 'obsidian';
+import { createInlineIndexRuntimeHost } from '../worker/index-runtime-browser';
 
 /** 心跳间隔。 */
 const HEARTBEAT_MS = 10;
@@ -76,6 +77,8 @@ export interface ExperimentReport {
 	asyncWholeWrite: StallReading;
 	shardedWrite: { shards: number; stall: StallReading };
 	selfCheck: StallReading;
+	/** 真实常驻 Worker 链路:init → ping → 写 → 读。 */
+	channel: { ping: string; written: boolean; readBack: string | null; stall: StallReading; error?: string };
 }
 
 /** 采样迟到量。 */
@@ -215,6 +218,25 @@ export async function runIndexThreadExperiment(
 	const shardCount = 120;
 	const shardedStall = await measure(() => writeSharded(dir, shardCount, dims));
 
+	// 7) 真实链路:常驻 Blob Worker + init 授权 + 受限文件读写。
+	let channel: ExperimentReport['channel'] = { ping: '', written: false, readBack: null, stall: { maxGapMs: 0, p95GapMs: 0, samples: 0 } };
+	try {
+		const host = createInlineIndexRuntimeHost({ runtimeId: 'experiment', requestTimeoutMs: 15_000 });
+		host.start();
+		host.send({ kind: 'init', runtimeId: 'experiment', epoch: host.epoch, root: dir, access: 'read-write' });
+		const pong = await host.request<string>('ping');
+		channel.ping = pong;
+		channel.stall = await measure(async () => {
+			await host.request('fs.write', { path: 'probe.txt', data: 'hello-worker' });
+			channel.written = true;
+		});
+		const read = await host.request<{ data: string | null }>('fs.read', { path: 'probe.txt' });
+		channel.readBack = read.data;
+		await host.stop('experiment done');
+	} catch (error) {
+		channel.error = String((error as Error)?.message ?? error);
+	}
+
 	const report: ExperimentReport = {
 		startedAt: new Date().toISOString(),
 		environment,
@@ -224,6 +246,7 @@ export async function runIndexThreadExperiment(
 		asyncWholeWrite,
 		shardedWrite: { shards: shardCount, stall: shardedStall },
 		selfCheck,
+		channel,
 	};
 	const reportPath = path.join(os.tmpdir(), `ratel-index-thread-experiment-${Date.now()}.json`);
 	await fsp.writeFile(reportPath, JSON.stringify(report, null, 2), 'utf8');

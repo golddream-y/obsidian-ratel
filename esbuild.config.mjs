@@ -12,6 +12,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const EMBEDDING_WORKER_OUT = path.resolve(__dirname, 'dist/embedding-worker.js');
 const SKILL_SCRIPT_WORKER_OUT = path.resolve(__dirname, 'dist/skill-script-worker.js');
+const RUNTIME_WORKER_OUT = path.resolve(__dirname, 'dist/index-runtime-worker.js');
 
 // 内置 Skill 源目录 — 直接子目录 + SKILL.md,与 SkillFsAdapter 扫描契约一致
 const BUILTIN_SKILLS_DIR = path.resolve(__dirname, 'src/skills/builtin');
@@ -62,6 +63,31 @@ function inlineSkillScriptWorkerPlugin() {
 				}
 				return {
 					contents: `export const SKILL_SCRIPT_WORKER_CODE = ${JSON.stringify(code)};\n`,
+					loader: 'js',
+				};
+			});
+		},
+	};
+}
+
+
+/**
+ * 将 dist/index-runtime-worker.js 内联进 main.js — 运行时以 Blob Worker 常驻加载。
+ * 关键路径:商店只发三文件,Worker 代码必须随 main.js 一起走;先构建 Worker 再构建主包。
+ */
+function inlineRuntimeWorkerPlugin() {
+	return {
+		name: 'inline-runtime-worker',
+		setup(build) {
+			build.onResolve({ filter: /^@ratel\/index-runtime-worker-code$/ }, () => ({
+				path: '@ratel/index-runtime-worker-code',
+				namespace: 'ratel-runtime-worker',
+			}));
+			build.onLoad({ filter: /.*/, namespace: 'ratel-runtime-worker' }, () => {
+				let code = '';
+				if (existsSync(RUNTIME_WORKER_OUT)) code = readFileSync(RUNTIME_WORKER_OUT, 'utf-8');
+				return {
+					contents: `export const INDEX_RUNTIME_WORKER_CODE = ${JSON.stringify(code)};\n`,
 					loader: 'js',
 				};
 			});
@@ -270,6 +296,7 @@ const mainContext = await esbuild.context({
 		externalOnnxruntimeNodePlugin(),
 		inlineEmbeddingWorkerPlugin(),
 		inlineSkillScriptWorkerPlugin(),
+		inlineRuntimeWorkerPlugin(),
 		inlineBuiltinSkillsPlugin(),
 	],
 });
@@ -354,9 +381,29 @@ const skillScriptWorkerContext = await esbuild.context({
 	plugins: [],
 });
 
+
+// 索引运行时 Worker bundle(纯浏览器 Worker + Node 集成,由宿主注入 require)
+// 关键路径:platform browser 避免 esbuild 尝试 polyfill node:fs;builtins external 交给运行时。
+const runtimeWorkerContext = await esbuild.context({
+	entryPoints: ['src/worker/index-runtime-entry.ts'],
+	bundle: true,
+	platform: 'browser',
+	format: 'iife',
+	target: 'es2021',
+	logLevel: 'info',
+	sourcemap: prod ? false : 'inline',
+	treeShaking: true,
+	outfile: 'dist/index-runtime-worker.js',
+	minify: prod,
+	external: [...builtinModules],
+	plugins: [],
+});
+
 if (prod) {
 	await embeddingWorkerContext.rebuild();
 	await skillScriptWorkerContext.rebuild();
+	// 关键路径:主包内联运行时 Worker 代码,必须先产出该 artifact。
+	await runtimeWorkerContext.rebuild();
 	const mainResult = await mainContext.rebuild();
 	await workerContext.rebuild();
 	if (mainResult.metafile) {
@@ -368,6 +415,7 @@ if (prod) {
 } else {
 	await embeddingWorkerContext.rebuild();
 	await skillScriptWorkerContext.rebuild();
+	await runtimeWorkerContext.rebuild();
 	await mainContext.watch();
 	await workerContext.watch();
 	await embeddingWorkerContext.watch();

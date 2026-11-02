@@ -170,3 +170,10 @@ export function loadNodeFileSystem(requireFn?: (id: string) => unknown): Runtime
 		}
 	}
 }
+
+// 关键路径:作为独立 Worker 产物执行时自举;在 Node 测试中 self 不存在,不触发。
+if (typeof self !== 'undefined' && typeof (self as unknown as { postMessage?: unknown }).postMessage === 'function') {
+	const scope = self as unknown as RuntimeWorkerScope;
+	const loader = (self as unknown as { require?: (id: string) => unknown }).require;
+	if (typeof loader === 'function') startIndexRuntimeWorker({ scope, requireFn: (id) => loader.call(self, id) });
+}
