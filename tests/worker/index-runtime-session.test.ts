@@ -172,3 +172,40 @@ describe('会话内日志提交', () => {
 		expect(written.chunkCount).toBeGreaterThan(0);
 	});
 });
+
+describe('会话内清单读写', () => {
+	const MANIFEST = {
+		schemaVersion: 1,
+		entries: { 'a.md': { path: 'a.md', hash: 'd'.repeat(64), mtime: 0, chunkCount: 2 } },
+	};
+
+	it('保存后可读回 - 数据一致', async () => {
+		const handlers = createIndexSessionHandlers({ root, chunkOptions: CHUNK_OPTIONS });
+		await handlers['session.open']!({});
+		await handlers['session.manifest.save']!({ manifest: MANIFEST });
+		const loaded = await handlers['session.manifest.load']!({}) as { manifest: { entries: Record<string, { chunkCount: number }> } | null };
+		expect(loaded.manifest?.entries['a.md']?.chunkCount).toBe(2);
+	});
+
+	it('清单缺失 - 读回 null - 不抛错', async () => {
+		const handlers = createIndexSessionHandlers({ root, chunkOptions: CHUNK_OPTIONS });
+		await handlers['session.open']!({});
+		const loaded = await handlers['session.manifest.load']!({}) as { manifest: unknown };
+		expect(loaded.manifest).toBeNull();
+	});
+
+	it('载荷不是对象 - 拒绝保存 - 不覆盖已有清单', async () => {
+		const handlers = createIndexSessionHandlers({ root, chunkOptions: CHUNK_OPTIONS });
+		await handlers['session.open']!({});
+		await handlers['session.manifest.save']!({ manifest: MANIFEST });
+		await expect(handlers['session.manifest.save']!({ manifest: [1, 2, 3] })).rejects.toThrow('清单载荷不合法');
+		const loaded = await handlers['session.manifest.load']!({}) as { manifest: { entries: Record<string, unknown> } | null };
+		expect(Object.keys(loaded.manifest?.entries ?? {})).toEqual(['a.md']);
+	});
+
+	it('未打开 - 读写清单都拒绝', async () => {
+		const handlers = createIndexSessionHandlers({ root, chunkOptions: CHUNK_OPTIONS });
+		await expect(handlers['session.manifest.load']!({})).rejects.toThrow('尚未打开');
+		await expect(handlers['session.manifest.save']!({ manifest: MANIFEST })).rejects.toThrow('尚未打开');
+	});
+});

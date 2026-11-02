@@ -13,6 +13,9 @@
  */
 import fs from 'fs';
 import path from 'path';
+import { randomUUID } from 'node:crypto';
+import { writeFileAtomic } from '../adapters/index-write-flush';
+import { nodeWriteFlushFileSystem } from '../adapters/index-write-flush-node';
 
 /** 当前清单文件名(位于 `.index/` 内) */
 export const INDEX_MANIFEST_FILENAME = 'ratel-manifest.json';
@@ -189,13 +192,17 @@ export class IndexManifest {
         }
     }
 
-    /** 原子写:先写 .tmp 再 rename,避免半写损坏。 */
+    /**
+     * 原子写:走共享落盘语义,避免半写损坏。
+     *
+     * 关键路径:此前用固定 `.tmp` 名且不刷盘,两个写入者会互相覆盖,断电后也可能只剩
+     * 可见但未落盘的目录项。改用共享模块后:唯一临时名 → 刷文件 → rename → 刷父目录。
+     */
     async save(data: IndexManifestData): Promise<void> {
-        // 关键路径:同目录 rename 是原子操作,防半写状态导致 manifest 损坏。
-        const tmpPath = this.path + '.tmp';
         const json = JSON.stringify(data, null, 2);
-        await fs.promises.writeFile(tmpPath, json, 'utf8');
-        await fs.promises.rename(tmpPath, this.path);
+        await writeFileAtomic(nodeWriteFlushFileSystem, this.path, Buffer.from(json, 'utf8'), {
+            createTempPath: (targetPath) => `${targetPath}.tmp-${process.pid}-${randomUUID()}`,
+        });
         this.data = data;
     }
 

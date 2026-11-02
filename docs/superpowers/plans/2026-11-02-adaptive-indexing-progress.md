@@ -11,7 +11,7 @@
 | T0 真实宿主实验 | 完成 | Node 线程不可用、Blob Worker 具备 Node 文件能力的宿主读数；载体改为常驻 Web Worker | — |
 | T1 有界协议与宿主 | 完成 | 信封/版本/grant/控制消息、载荷预算、一次性结算；常驻宿主生命周期、超时、取消、崩溃收敛、epoch 隔离（16 用例） | 未接入真实索引会话 |
 | T2 提交票据桥 | 完成 | 授予、嵌套复用、撤销禁止新写、迟到授权结算（7 用例） | 未接入日志写入口 |
-| T3 索引会话迁移 | **进行中** | 受限文件处理器（7 用例）、入口握手与只读守卫（6 用例）、服务循环（7 用例）、常驻装配与构建内联、反向 RPC（Worker 借宿主嵌入，22 用例）、**会话处理器**：分块 + Vectra 单文件提交/替换/删除（7 用例） | 会话已接进入口（init 后装配，只读模式不装配）；**文件日志与完成记录已可在 Worker 内提交**（写权撤销、prepare/commit、读回完成记录）；清单/代际仍在主线程；Sandbox 真实链路未执行 |
+| T3 索引会话迁移 | **进行中** | 受限文件处理器（7 用例）、入口握手与只读守卫（6 用例）、服务循环（7 用例）、常驻装配与构建内联、反向 RPC（Worker 借宿主嵌入，22 用例）、**会话处理器**：分块 + Vectra 单文件提交/替换/删除（7 用例） | 会话已接进入口（init 后装配，只读模式不装配）；**文件日志、完成记录与清单均已可在 Worker 内读写**（写权撤销、prepare/commit、清单 load/save）；代际装配仍在主线程；Sandbox 真实链路未执行 |
 | T4 查询与只读 | 未开始 | — | — |
 | T5 崩溃与生命周期 | 未开始 | — | — |
 | T6 共享模型仲裁 | 未开始 | — | — |
@@ -45,7 +45,7 @@
 | 模块 | 内容 | 接线待做 |
 | --- | --- | --- |
 | `src/core/index-manifest-recovery.ts` | 从 `recoverMissingManifest` 提炼的纯函数：15 个拒绝原因码，成功返回清单+构建戳，不写盘 | 后端改为调用它；需只读暴露日志的 `configFingerprint` |
-| `src/adapters/index-write-flush.ts` | 共享落盘：临时文件 wx → 全量写 → sync → rename → 目录 sync；`onCommitted` 区分重试与重载；目录降级集含 ENOSYS | 原子存储 `upsertFile`/`flushPath` 与迁移侧 `writeJsonAtomically` 改走它 |
+| `src/adapters/index-write-flush.ts` | 共享落盘：临时文件 wx → 全量写 → sync → rename → 目录 sync；`onCommitted` 区分重试与重载；目录降级集含 ENOSYS | 原子存储 `upsertFile`/`flushPath` 待接线；迁移侧 `writeJsonAtomically`、清单 `save` 已改走它 |
 
 两模块均零运行时耦合（只 `import type`），接线前不影响现役行为。
 

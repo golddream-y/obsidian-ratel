@@ -16,6 +16,7 @@ import { chunkMarkdown, type ChunkOptions } from './chunker';
 import { createWorkerJournal, WorkerJournalOwner } from './index-runtime-journal';
 import type { IndexFileJournal } from '../core/index-file-journal';
 import { sha256 } from '../utils/hash';
+import { IndexManifest, resolveIndexManifestPath, type IndexManifestData } from '../core/index-manifest';
 import type { RuntimeHandlers, RuntimeHandlerContext } from './index-runtime-worker';
 
 /** 会话依赖。 */
@@ -35,6 +36,7 @@ interface SessionState {
 	store: VectraStore | null;
 	journal: IndexFileJournal | null;
 	owner: WorkerJournalOwner | null;
+	manifest: IndexManifest | null;
 	chunkOptions: ChunkOptions;
 	written: number;
 }
@@ -59,7 +61,7 @@ function stringField(payload: unknown, key: string): string {
  * @param options 索引根与分块参数
  */
 export function createIndexSessionHandlers(options: IndexSessionOptions): RuntimeHandlers {
-	const state: SessionState = { store: null, journal: null, owner: null, chunkOptions: options.chunkOptions, written: 0 };
+	const state: SessionState = { store: null, journal: null, owner: null, manifest: null, chunkOptions: options.chunkOptions, written: 0 };
 	const createStore = options.createStore ?? ((root: string) => new VectraStore(root, { embeddings: NO_EMBEDDINGS, autoInit: true }));
 
 	/** 取已打开的存储;未打开时明确失败,不隐式创建。 */
@@ -74,6 +76,8 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 			const store = createStore(options.root);
 			await store.init();
 			state.store = store;
+			// 关键路径:清单也由本线程读写;主线程不再序列化整份清单。
+			state.manifest = new IndexManifest(resolveIndexManifestPath(options.root));
 
 			// 关键路径:给了日志授权才启用「带完成记录」的提交;否则退回纯存储写入。
 			const journalPayload = payload as { generationId?: unknown; configFingerprint?: unknown; expectedDimension?: unknown } | null;
@@ -186,12 +190,28 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 			return { removed };
 		},
 
+		'session.manifest.load': async () => {
+			if (state.manifest === null) throw new Error('索引会话尚未打开');
+			return { manifest: await state.manifest.load() };
+		},
+
+		'session.manifest.save': async (payload) => {
+			if (state.manifest === null) throw new Error('索引会话尚未打开');
+			const manifest = (payload as { manifest?: unknown } | null)?.manifest;
+			if (manifest === null || typeof manifest !== 'object' || Array.isArray(manifest)) {
+				throw new Error('清单载荷不合法');
+			}
+			await state.manifest.save(manifest as IndexManifestData);
+			return { ok: true };
+		},
+
 		'session.close': async () => {
 			// 关键路径:关会话即放弃写权,后续写入必须失败;在途提交未结算时如实报告。
 			const inflight = state.owner?.inflightCommits ?? 0;
 			state.owner?.revoke('会话关闭');
 			state.journal = null;
 			state.owner = null;
+			state.manifest = null;
 			state.store = null;
 			return { closed: true, inflight };
 		},
