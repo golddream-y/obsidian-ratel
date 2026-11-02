@@ -4,9 +4,51 @@
 
 ## 状态
 
-进行中。Node 侧实验已通过；**真实 Obsidian 运行时尚未执行**，因此 T0 未通过，不得进入 T1。
+进行中，且已出现**方向性负结果**：真实 Obsidian 渲染进程无法创建 Node `worker_threads` 子线程。按计划 T0 不通过，不得进入 T1；替代路径（Web Worker 承担 CPU + 主线程异步 IO + 分片存储）正在验证。
 
-## 被测对象
+## 真实 Obsidian 首次执行（v1）
+
+- 时间：2026-11-02 14:00（本地）。
+- 宿主：Obsidian 沙箱库（临时库），插件为实验构建（`RATEL_INDEX_EXPERIMENT=1`）。
+- 结果：命令 `运行索引线程实验(调试)` 失败，提示
+  `Failed to construct 'Worker': The V8 platform used by this instance of Node does not support creating Workers`。
+- 判读：这不是脚本错误，而是宿主的 Node 运行时未启用 worker 支持。插件内既有的 Worker 是 **Blob URL Web Worker**（`EmbeddingWorkerProxy`、Skill 脚本沙箱），不是 `worker_threads`。
+- 影响：架构提案中「独立 Node 能力索引 Worker 承载 Vectra 与 JSON 提交」的前提不成立；不能靠 Node 子线程迁出存储与文件 IO。
+
+## 替代路径（v2，验证中）
+
+在 Web Worker 内做纯 CPU（构造、序列化、hash、分块），文件 IO 留在主线程用异步 API，存储改为分片以避免整库一次序列化。v2 实验测量：
+
+1. Node 子线程是否可用（保留负结果，供证据链闭合）；
+2. 同一份 12.2 MB 序列化在主线程与 Web Worker 的主线程迟到对比；
+3. 主线程异步整文件写入的迟到；
+4. 主线程 400 片异步写入的迟到。
+
+## Node 侧读数（v1）
+
+| 项 | 值 |
+| --- | --- |
+| 系统 | macOS（开发机） |
+| Node | v24.11.0 |
+| 运行方式 | `npx vitest run tests/worker/index-thread-capability.test.ts` 与同源 TS 脚本 |
+| 向量来源 | 确定性替身，不加载 ONNX、不访问网络 |
+
+| 场景 | 最大迟到 | p95 迟到 | 样本数 |
+| --- | --- | --- | --- |
+| 探针自检（注入 300 ms 忙等） | 检出同量级迟到（用例断言 ≥250 ms） | — | — |
+| 主线程直跑 12.2 MB 提交 | 98.0 ms | 98.0 ms | 1 |
+| 子线程执行同一提交 | 1.7 ms | 1.7 ms | 13 |
+
+- 两侧 `bytes` 一致（12,197,537），排除两边造了不同负载。
+- 该读数只证明 Node 运行时内隔离有效，**已被宿主负结果推翻其可迁移性**。
+
+## 结论（更新）
+
+- 方向需要修正：不能依赖 Node 子线程。宿主可用的独立线程只有 Web Worker，且没有文件能力。
+- 因界阻塞的主因仍须实测：整库 `JSON.stringify`（v1 实测约 98 ms/12.2 MB）与同步写入路径。若 Serialize 迁到 Web Worker、写盘走异步并以分片替代整库重写，界面阻塞可显著下降——待 v2 宿主读数确认。
+- 在拿到 v2 宿主证据前，T0 仍未通过，T1 不启动。
+
+## 被测对象（v1 Node 侧）
 
 - 同一份整库 JSON 提交：4000 篇笔记 × 512 维确定性向量，序列化后约 12.2 MB（与生产「整库 `index.json` 一次写入 + fsync」同形态）。
 - 对照组：主线程直接构造并序列化；实验组：真实 `worker_threads` 子线程落盘脚本、构造、序列化并 fsync。

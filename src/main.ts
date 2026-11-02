@@ -1161,7 +1161,7 @@ export default class RatelVaultPlugin extends Plugin {
 					const { report, reportPath } = await runIndexThreadExperiment();
 					this.userNotice.toast(tNow('notice.indexThreadExperimentDone', {
 						main: String(Math.round(report.mainThread.stall.maxGapMs)),
-						worker: String(Math.round(report.workerThread.stall.maxGapMs)),
+						worker: String(Math.round(report.webWorker.stall.maxGapMs)),
 						path: reportPath,
 					}));
 				} catch (err) {

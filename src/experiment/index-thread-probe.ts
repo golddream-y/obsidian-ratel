@@ -1,66 +1,44 @@
 /**
  * @file src/experiment/index-thread-probe.ts
- * @description T0 实验 — 在真实 Obsidian 中比较主线程与独立 Node 子线程执行同一份整库 JSON 提交的界面阻塞
+ * @description T0 实验 v2 — 真实 Obsidian 中验证 Node 子线程不可用，并测 Web Worker 承担 CPU、主线程异步写是否阻塞
  * @module src/experiment
  *
  * 关键路径:
- * - 只有用构建期开关 `RATEL_INDEX_EXPERIMENT=1` 构建时才注册命令，正常产物不含实验入口。
- * - 实验只读运行：写临时目录与报告文件，不读也不写索引目录，不触碰生产数据。
- * - 阻塞量用主线程心跳迟到量表示；同步长任务期间定时器排不上队，迟到量就是可观测的界面阻塞量级。
- * - 子线程脚本运行时落盘再启动，与生产「bundle 内联、运行时写出」形态一致。
+ * - v1 已证明 Obsidian 渲染进程**不能**创建 Node `worker_threads`（V8 platform 不支持）；本版保留该负结果并继续测替代路径。
+ * - Web Worker 是宿主支持的独立线程形态（插件既有嵌入 Worker 即 Blob URL 模式）；它没有 Node 文件能力，因此 CPU 与 IO 必须分开验证。
+ * - 阻塞量仍用主线程心跳迟到量表示；只有探针能检出 300 ms 长任务，读数才有效。
+ * - 实验只写系统临时目录，不读也不写索引。
  */
 
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { Worker } from 'node:worker_threads';
 import { Platform, apiVersion } from 'obsidian';
 
 /** 心跳间隔。 */
 const HEARTBEAT_MS = 10;
 
-/** 子线程脚本：CommonJS，避免依赖宿主包的模块类型推断。 */
-const WORKER_SOURCE = String.raw`
-const { parentPort, workerData, threadId, isMainThread } = require('node:worker_threads');
-const fs = require('node:fs');
-const path = require('node:path');
-
-function buildDocuments(count, dims) {
-	const documents = [];
-	for (let i = 0; i < count; i += 1) {
-		const vector = new Array(dims);
-		for (let j = 0; j < dims; j += 1) vector[j] = ((i * 31 + j * 17) % 1000) / 1000;
-		documents.push({ path: 'note-' + i + '.md', vector });
+/** Web Worker 源码：纯 CPU，无 Node 能力。 */
+const WEB_WORKER_SOURCE = String.raw`
+self.onmessage = function (event) {
+	var task = event.data;
+	if (task.kind !== 'stringify') return;
+	var items = [];
+	for (var i = 0; i < task.docs; i += 1) {
+		var vector = new Array(task.dims);
+		for (var j = 0; j < task.dims; j += 1) vector[j] = ((i * 31 + j * 17) % 1000) / 1000;
+		items.push({ path: 'note-' + i + '.md', vector: vector });
 	}
-	return documents;
-}
-
-function commitJson(dir, docs, dims) {
-	const documents = buildDocuments(docs, dims);
-	const text = JSON.stringify({ version: 1, items: documents });
-	const file = path.join(dir, 'index.json');
-	const fd = fs.openSync(file, 'w');
-	try {
-		fs.writeFileSync(fd, text);
-		fs.fsyncSync(fd);
-	} finally {
-		fs.closeSync(fd);
-	}
-	return { bytes: Buffer.byteLength(text), docs: documents.length };
-}
-
-try {
-	const task = workerData.task;
-	const result = task.kind === 'identity'
-		? { threadId, isMainThread }
-		: { threadId, isMainThread, ...commitJson(workerData.dir, task.docs, task.dims) };
-	parentPort.postMessage({ ok: true, result });
-} catch (error) {
-	parentPort.postMessage({ ok: false, error: String((error && error.message) || error) });
-}
+	var text = JSON.stringify({ version: 1, items: items });
+	self.postMessage({
+		bytes: text.length,
+		hasRequire: typeof require !== 'undefined',
+		hasProcess: typeof process !== 'undefined',
+	});
+};
 `;
 
-/** 一次测量的读数。 */
+/** 读数。 */
 export interface StallReading {
 	maxGapMs: number;
 	p95GapMs: number;
@@ -71,9 +49,11 @@ export interface StallReading {
 export interface ExperimentReport {
 	startedAt: string;
 	environment: string;
-	threadId: number;
+	nodeWorker: { supported: boolean; error?: string };
+	webWorker: { bytes: number; hasRequire: boolean; hasProcess: boolean; stall: StallReading };
 	mainThread: { bytes: number; stall: StallReading };
-	workerThread: { bytes: number; stall: StallReading };
+	asyncWholeWrite: StallReading;
+	shardedWrite: { shards: number; stall: StallReading };
 	selfCheck: StallReading;
 }
 
@@ -103,8 +83,8 @@ async function measure(run: () => unknown): Promise<StallReading> {
 	}
 }
 
-/** 主线程直接执行同形态提交（只测序列化与构造成本）。 */
-function commitOnMainThread(docs: number, dims: number): { bytes: number } {
+/** 主线程构造并序列化（阻塞基线）。 */
+function stringifyOnMainThread(docs: number, dims: number): { bytes: number; text: string } {
 	const items: Array<{ path: string; vector: number[] }> = [];
 	for (let i = 0; i < docs; i += 1) {
 		const vector = new Array<number>(dims);
@@ -112,31 +92,57 @@ function commitOnMainThread(docs: number, dims: number): { bytes: number } {
 		items.push({ path: `note-${i}.md`, vector });
 	}
 	const text = JSON.stringify({ version: 1, items });
-	return { bytes: Buffer.byteLength(text) };
+	return { bytes: text.length, text };
 }
 
-/** 子线程执行同形态提交。 */
-async function commitOnWorker(dir: string, docs: number, dims: number): Promise<{ bytes: number; threadId: number }> {
-	const script = path.join(dir, 'worker.cjs');
-	await fsp.writeFile(script, WORKER_SOURCE, 'utf8');
-	const worker = new Worker(script, { workerData: { task: { kind: 'json-commit', docs, dims }, dir } });
+/** 在 Web Worker 里做同一份序列化。 */
+function stringifyInWebWorker(docs: number, dims: number): Promise<{ bytes: number; hasRequire: boolean; hasProcess: boolean }> {
+	const url = URL.createObjectURL(new Blob([WEB_WORKER_SOURCE], { type: 'text/javascript' }));
+	const worker = new Worker(url);
+	const finish = (): void => {
+		worker.terminate();
+		URL.revokeObjectURL(url);
+	};
+	return new Promise((resolve, reject) => {
+		worker.onmessage = (event: MessageEvent<{ bytes: number; hasRequire: boolean; hasProcess: boolean }>) => {
+			finish();
+			resolve(event.data);
+		};
+		worker.onerror = (event) => {
+			finish();
+			reject(new Error(event.message || 'Web Worker 执行失败'));
+		};
+		worker.postMessage({ kind: 'stringify', docs, dims });
+	});
+}
+
+/** 主线程异步整文件写入。 */
+async function writeWhole(dir: string, text: string): Promise<void> {
+	const file = path.join(dir, 'whole.json');
+	const handle = await fsp.open(file, 'w');
 	try {
-		return await new Promise<{ bytes: number; threadId: number }>((resolve, reject) => {
-			worker.once('message', (message: { ok: boolean; result?: { bytes: number; threadId: number }; error?: string }) => {
-				if (message.ok && message.result) resolve(message.result);
-				else reject(new Error(message.error ?? '子线程执行失败'));
-			});
-			worker.once('error', reject);
-		});
+		await handle.write(text);
+		await handle.sync();
 	} finally {
-		await worker.terminate();
+		await handle.close();
+	}
+}
+
+/** 主线程异步分片写入：模拟按文件/桶分片，避免整库一次序列化。 */
+async function writeSharded(dir: string, shards: number, dims: number): Promise<void> {
+	const bucket = path.join(dir, 'shards');
+	await fsp.mkdir(bucket, { recursive: true });
+	for (let i = 0; i < shards; i += 1) {
+		const vector = new Array<number>(dims);
+		for (let j = 0; j < dims; j += 1) vector[j] = ((i * 31 + j * 17) % 1000) / 1000;
+		await fsp.writeFile(path.join(bucket, `shard-${i}.json`), JSON.stringify({ path: `note-${i}.md`, vector }), 'utf8');
 	}
 }
 
 /**
- * 运行实验并把报告写到临时目录。
- * @param docs 构造的笔记条数
- * @param dims 每条向量维度
+ * 运行实验 v2 并写报告。
+ * @param docs 笔记条数
+ * @param dims 向量维度
  */
 export async function runIndexThreadExperiment(
 	docs = 4000,
@@ -146,32 +152,55 @@ export async function runIndexThreadExperiment(
 	const osName = Platform.isMacOS ? 'macOS' : Platform.isWin ? 'Windows' : Platform.isLinux ? 'Linux' : 'unknown';
 	const environment = `${osName} / Obsidian ${apiVersion}`;
 
+	// 1) Node worker_threads：保留 v1 负结果，供证据链闭合。
+	let nodeWorker: { supported: boolean; error?: string } = { supported: true };
+	try {
+		const { Worker } = await import('node:worker_threads');
+		const probe = new Worker('void 0;', { eval: true });
+		await probe.terminate();
+	} catch (error) {
+		nodeWorker = { supported: false, error: String((error as Error)?.message ?? error) };
+	}
+
+	// 2) 探针自检。
 	const selfCheck = await measure(() => {
 		const until = performance.now() + 300;
 		while (performance.now() < until) {
-			// 故意占用主线程，验证探针能检出长任务。
+			// 故意占用主线程。
 		}
 	});
 
+	// 3) 主线程序列化基线。
 	let mainBytes = 0;
-	const mainStall = await measure(() => {
-		mainBytes = commitOnMainThread(docs, dims).bytes;
+	let mainText = '';
+	const mainThread = await measure(() => {
+		const result = stringifyOnMainThread(docs, dims);
+		mainBytes = result.bytes;
+		mainText = result.text;
 	});
 
-	let workerBytes = 0;
-	let threadId = 0;
-	const workerStall = await measure(async () => {
-		const result = await commitOnWorker(dir, docs, dims);
-		workerBytes = result.bytes;
-		threadId = result.threadId;
+	// 4) Web Worker 承担同一份序列化。
+	let webResult = { bytes: 0, hasRequire: false, hasProcess: false };
+	const webStall = await measure(async () => {
+		webResult = await stringifyInWebWorker(docs, dims);
 	});
+	if (!webResult.bytes) throw new Error('Web Worker 未返回结果');
+
+	// 5) 主线程异步整文件写入。
+	const asyncWholeWrite = await measure(() => writeWhole(dir, mainText));
+
+	// 6) 主线程异步分片写入。
+	const shardCount = 400;
+	const shardedStall = await measure(() => writeSharded(dir, shardCount, dims));
 
 	const report: ExperimentReport = {
 		startedAt: new Date().toISOString(),
 		environment,
-		threadId,
-		mainThread: { bytes: mainBytes, stall: mainStall },
-		workerThread: { bytes: workerBytes, stall: workerStall },
+		nodeWorker,
+		webWorker: { ...webResult, stall: webStall },
+		mainThread: { bytes: mainBytes, stall: mainThread },
+		asyncWholeWrite,
+		shardedWrite: { shards: shardCount, stall: shardedStall },
 		selfCheck,
 	};
 	const reportPath = path.join(os.tmpdir(), `ratel-index-thread-experiment-${Date.now()}.json`);

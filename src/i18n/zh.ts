@@ -1334,7 +1334,7 @@ const cmdZh: CmdStrings = {
   'cmd.dropIndex': '清理非活动索引代际(危险)',
   'cmd.indexThreadExperiment': '运行索引线程实验(调试)',
   'notice.indexThreadExperimentRunning': '索引线程实验运行中,请保持 Obsidian 在前台…',
-  'notice.indexThreadExperimentDone': '实验完成:主线程阻塞 {main}ms,子线程期间 {worker}ms;报告 {path}',
+  'notice.indexThreadExperimentDone': '实验完成:主线程序列化 {main}ms,Web Worker {worker}ms;报告 {path}',
   'notice.indexThreadExperimentFailed': '索引线程实验失败:{message}',
   'cmd.retryIndex': '重试索引装配',
 };
