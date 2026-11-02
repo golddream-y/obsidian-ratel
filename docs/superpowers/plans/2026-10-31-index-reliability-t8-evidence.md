@@ -93,4 +93,5 @@
 - 类型检查仍未通过：最近一次 241 条诊断；其中已有的 `totalDocs` 非法字段诊断随 Failed 类型扩展而改变展开文本，其余一致。Svelte 检查仍为 253 errors / 21 warnings，不宣称通过。
 - 变更与新增文件的本机私有路径及凭证形态扫描未发现命中；`ObsidianVault` 类名造成的初始误报已人工区分。
 - README 与用户指南中英文已同步。性能门槛、Sandbox 宿主验收及第八节尚未实现的契约仍未闭环，plan 保持 In Progress，不归档。当前已在用户明确授权下安装试用，但没有完整宿主验收记录。
-- 用户在审阅以上发布说明与未闭环项后，于 2026-11-02 明确要求“发”，随后要求将主工作区的工程整理也一并提交。按该直接授权发布 1.3.0；这不是对剩余性能、宿主与契约验收的通过确认，plan 保持 In Progress。发布结果另行记录。
+- 用户在审阅以上发布说明与未闭环项后，于 2026-11-02 明确要求“发”，随后要求将主工作区的工程整理也一并提交。按该直接授权发布 1.3.0；这不是对剩余性能、宿主与契约验收的通过确认，plan 保持 In Progress。工程整理提交 9255a85 与本轮修复共同进入发布提交 d4d2717，已推送 main/develop/feat/index-reliability 与 1.3.0 tag。
+- [1.3.0 Release](https://github.com/golddream-y/obsidian-ratel/releases/tag/1.3.0) 为非 draft、非 prerelease；[发布 CI 41326442427](https://github.com/golddream-y/obsidian-ratel/actions/runs/41326442427) 成功。附件恰好三份，下载后 SHA-256 同时匹配 GitHub digest 与本地生产构建，来源签名均通过验证并限定到本仓库的 release workflow 和 refs/tags/1.3.0。
