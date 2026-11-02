@@ -395,7 +395,16 @@ const runtimeWorkerContext = await esbuild.context({
 	treeShaking: true,
 	outfile: 'dist/index-runtime-worker.js',
 	minify: prod,
-	external: [...builtinModules],
+	// 关键路径:browser 平台不认 `node:` 前缀内置模块,必须两种写法都标 external,
+	// 运行时由 Worker 作用域的 Node 集成提供。
+	external: [...builtinModules, ...builtinModules.map((name) => `node:${name}`)],
+	// 关键路径:与主包同一套替身 —— vectra 会尝试加载 transformers/onnxruntime-node,
+	// 索引线程只做纯 JS 向量运算,不需要它们。
+	alias: {
+		'vectra': path.resolve(__dirname, 'node_modules/vectra/lib/browser.js'),
+		'onnxruntime-node': path.resolve(__dirname, 'src/adapters/empty-module.cjs'),
+		'@huggingface/transformers': path.resolve(__dirname, 'src/adapters/empty-transformers.cjs'),
+	},
 	plugins: [],
 });
 

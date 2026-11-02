@@ -14,7 +14,9 @@ import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { Platform, apiVersion } from 'obsidian';
-import { createInlineIndexRuntimeHost } from '../worker/index-runtime-browser';
+import { createInlineIndexRuntimeHost, createInlineRuntimeWorker } from '../worker/index-runtime-browser';
+import { IndexRuntimeClient } from '../worker/index-runtime-client';
+import { createEmbeddingBridge } from '../worker/index-runtime-embedding-bridge';
 
 /** 心跳间隔。 */
 const HEARTBEAT_MS = 10;
@@ -79,6 +81,8 @@ export interface ExperimentReport {
 	selfCheck: StallReading;
 	/** 真实常驻 Worker 链路:init → ping → 写 → 读。 */
 	channel: { ping: string; written: boolean; readBack: string | null; stall: StallReading; error?: string };
+	/** 索引线程会话链路:索引两篇 → 查询 → 状态。 */
+	runtime: { indexed: number; hits: number; totalDocs: number; stall: StallReading; error?: string };
 }
 
 /** 采样迟到量。 */
@@ -237,6 +241,43 @@ export async function runIndexThreadExperiment(
 		channel.error = String((error as Error)?.message ?? error);
 	}
 
+	// 8) 会话链路:真实常驻 Worker 内跑分块 + Vectra + 日志,嵌入用确定性替身。
+	let runtime: ExperimentReport['runtime'] = { indexed: 0, hits: 0, totalDocs: 0, stall: { maxGapMs: 0, p95GapMs: 0, samples: 0 } };
+	try {
+		const sessionRoot = path.join(dir, 'session');
+		await fsp.mkdir(sessionRoot, { recursive: true });
+		const dims = 8;
+		const embedBridge = createEmbeddingBridge({
+			dimensions: dims,
+			modelId: 'experiment:stub',
+			async embed(texts) { return texts.map(() => Array.from({ length: dims }, () => 0.1)); },
+		});
+		const client = new IndexRuntimeClient({
+			// 复用与生产同一个内联 Worker 装配。
+			createWorker: () => createInlineRuntimeWorker(),
+			embed: embedBridge,
+			requestTimeoutMs: 20_000,
+		});
+		runtime.stall = await measure(async () => {
+			await client.start({
+				root: sessionRoot,
+				generationId: 'experiment-gen',
+				configFingerprint: 'a'.repeat(64),
+				expectedDimension: dims,
+				chunkOptions: { maxTokens: 500, overlapTokens: 100 },
+			});
+			await client.indexFile('note-a.md', '第一段关于索引的正文\n第二段正文');
+			await client.indexFile('note-b.md', '另一篇笔记的正文');
+			runtime.indexed = 2;
+			const hits = await client.search('索引', 5);
+			runtime.hits = hits.length;
+			runtime.totalDocs = (await client.status()).totalDocs;
+			await client.close('experiment done');
+		});
+	} catch (error) {
+		runtime.error = String((error as Error)?.message ?? error);
+	}
+
 	const report: ExperimentReport = {
 		startedAt: new Date().toISOString(),
 		environment,
@@ -247,6 +288,7 @@ export async function runIndexThreadExperiment(
 		shardedWrite: { shards: shardCount, stall: shardedStall },
 		selfCheck,
 		channel,
+		runtime,
 	};
 	const reportPath = path.join(os.tmpdir(), `ratel-index-thread-experiment-${Date.now()}.json`);
 	await fsp.writeFile(reportPath, JSON.stringify(report, null, 2), 'utf8');
