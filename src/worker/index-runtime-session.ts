@@ -205,6 +205,29 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 			return { ok: true };
 		},
 
+		'session.recover': async (payload) => {
+			if (state.journal === null) throw new Error('会话未启用日志,无法恢复');
+			const inputs = (payload as { inputs?: unknown } | null)?.inputs;
+			if (!Array.isArray(inputs)) throw new Error('恢复输入不合法');
+			const currentInputs = new Map<string, string | null>();
+			for (const item of inputs) {
+				const record = item as { path?: unknown; hash?: unknown };
+				if (typeof record.path !== 'string' || record.path.length === 0) throw new Error('恢复输入缺少 path');
+				if (record.hash !== null && typeof record.hash !== 'string') throw new Error('恢复输入 hash 不合法');
+				currentInputs.set(record.path, record.hash);
+			}
+			const pending = await state.journal.listPendingPaths();
+			if (pending.length === 0) return { pending: 0, decisions: 0, failures: 0, cleanupPending: 0 };
+			// 关键路径:恢复只重放「输入仍是当前内容」的事务;不匹配的一律不重放。
+			const report = await state.journal.recover({ currentInputs });
+			return {
+				pending: pending.length,
+				decisions: report.decisions.length,
+				failures: report.failures.length,
+				cleanupPending: report.cleanupPending.length,
+			};
+		},
+
 		'session.close': async () => {
 			// 关键路径:关会话即放弃写权,后续写入必须失败;在途提交未结算时如实报告。
 			const inflight = state.owner?.inflightCommits ?? 0;

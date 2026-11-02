@@ -12,6 +12,10 @@ import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createIndexSessionHandlers } from '../../src/worker/index-runtime-session';
+import { createWorkerJournal, WorkerJournalOwner } from '../../src/worker/index-runtime-journal';
+import { AtomicIndexStorage } from '../../src/adapters/atomic-index-storage';
+import { VectraStore } from '../../src/adapters/vector-vectra';
+import { sha256 } from '../../src/utils/hash';
 import type { RuntimeHandlerContext } from '../../src/worker/index-runtime-worker';
 
 const CHUNK_OPTIONS = { maxTokens: 500, overlapTokens: 100, count: (text: string) => text.length };
@@ -207,5 +211,99 @@ describe('会话内清单读写', () => {
 		const handlers = createIndexSessionHandlers({ root, chunkOptions: CHUNK_OPTIONS });
 		await expect(handlers['session.manifest.load']!({})).rejects.toThrow('尚未打开');
 		await expect(handlers['session.manifest.save']!({ manifest: MANIFEST })).rejects.toThrow('尚未打开');
+	});
+});
+
+describe('会话内崩溃恢复', () => {
+	const FINGERPRINT = 'e'.repeat(64);
+
+	it('无未决事务 - 恢复为空操作 - 不触碰存储', async () => {
+		const handlers = createIndexSessionHandlers({ root, chunkOptions: CHUNK_OPTIONS, epoch: 1 });
+		await handlers['session.open']!({ generationId: 'gen-r', configFingerprint: FINGERPRINT });
+		const report = await handlers['session.recover']!({ inputs: [] }) as { pending: number; decisions: number };
+		expect(report).toEqual({ pending: 0, decisions: 0, failures: 0, cleanupPending: 0 });
+	});
+
+	it('未启用日志 - 恢复被拒绝 - 不假装成功', async () => {
+		const handlers = createIndexSessionHandlers({ root, chunkOptions: CHUNK_OPTIONS });
+		await handlers['session.open']!({});
+		await expect(handlers['session.recover']!({ inputs: [] })).rejects.toThrow('未启用日志');
+	});
+
+	it('恢复输入不合法 - 明确拒绝', async () => {
+		const handlers = createIndexSessionHandlers({ root, chunkOptions: CHUNK_OPTIONS, epoch: 1 });
+		await handlers['session.open']!({ generationId: 'gen-r', configFingerprint: FINGERPRINT });
+		await expect(handlers['session.recover']!({ inputs: [{ path: '' }] })).rejects.toThrow('path');
+		await expect(handlers['session.recover']!({ inputs: [{ path: 'a.md', hash: 5 }] })).rejects.toThrow('hash');
+		await expect(handlers['session.recover']!({})).rejects.toThrow('恢复输入不合法');
+	});
+});
+
+describe('崩溃现场恢复（未提交事务）', () => {
+	const FINGERPRINT = 'f'.repeat(64);
+
+	it('遗留未决事务 - 输入未变则重放并产出完成记录', async () => {
+		const storage = new AtomicIndexStorage({ generationRoot: root });
+		const sharedStore = new VectraStore(root, { storage });
+		await sharedStore.init();
+		const content = '崩溃前的正文';
+		const inputHash = await sha256(content);
+
+		// 模拟上一次进程:prepare 之后没来得及 commit。
+		const crashOwner = new WorkerJournalOwner(1);
+		const crashJournal = createWorkerJournal({
+			generationRoot: root, generationId: 'gen-c', configFingerprint: FINGERPRINT,
+			store: sharedStore, owner: crashOwner, expectedDimension: DIMENSIONS, storage,
+		});
+		await crashJournal.prepare({
+			path: 'crashed.md', operation: 'replace', inputHash, revision: 1,
+			previousCommitId: null, previousRevision: 0,
+			blocks: [{ id: 'crashed.md#chunk-0', vector: Array.from({ length: DIMENSIONS }, () => 0.1), metadata: { path: 'crashed.md', chunkIndex: 0, commitId: 'c1' } }],
+		});
+		expect(await crashJournal.listPendingPaths()).toHaveLength(1);
+
+		const handlers = createIndexSessionHandlers({ root, chunkOptions: CHUNK_OPTIONS, epoch: 1, createStore: () => sharedStore });
+		await handlers['session.open']!({ generationId: 'gen-c', configFingerprint: FINGERPRINT, expectedDimension: DIMENSIONS });
+		const report = await handlers['session.recover']!({ inputs: [{ path: 'crashed.md', hash: inputHash }] }) as { pending: number; decisions: number; failures: number };
+		expect(report.pending).toBe(1);
+		expect(report.decisions).toBe(1);
+		expect(report.failures).toBe(0);
+
+		const verifier = createWorkerJournal({
+			generationRoot: root, generationId: 'gen-c', configFingerprint: FINGERPRINT,
+			store: sharedStore, owner: new WorkerJournalOwner(2), expectedDimension: DIMENSIONS, storage,
+		});
+		expect(await verifier.listPendingPaths()).toEqual([]);
+		const receipt = await verifier.readReceipt('crashed.md');
+		expect(receipt?.path).toBe('crashed.md');
+		expect(receipt?.inputHash).toBe(inputHash);
+	});
+
+	it('遗留事务内容已变 - 不重放 - 旧版本不被覆盖', async () => {
+		const storage = new AtomicIndexStorage({ generationRoot: root });
+		const sharedStore = new VectraStore(root, { storage });
+		await sharedStore.init();
+		const staleHash = await sha256('旧正文');
+		const crashJournal = createWorkerJournal({
+			generationRoot: root, generationId: 'gen-d', configFingerprint: FINGERPRINT,
+			store: sharedStore, owner: new WorkerJournalOwner(1), expectedDimension: DIMENSIONS, storage,
+		});
+		await crashJournal.prepare({
+			path: 'stale.md', operation: 'replace', inputHash: staleHash, revision: 1,
+			previousCommitId: null, previousRevision: 0,
+			blocks: [{ id: 'stale.md#chunk-0', vector: Array.from({ length: DIMENSIONS }, () => 0.2), metadata: { path: 'stale.md', chunkIndex: 0, commitId: 'c1' } }],
+		});
+
+		const handlers = createIndexSessionHandlers({ root, chunkOptions: CHUNK_OPTIONS, epoch: 1, createStore: () => sharedStore });
+		await handlers['session.open']!({ generationId: 'gen-d', configFingerprint: FINGERPRINT, expectedDimension: DIMENSIONS });
+		// 当前内容已不同:hash 不匹配,不得重放。
+		await handlers['session.recover']!({ inputs: [{ path: 'stale.md', hash: await sha256('新正文') }] });
+
+		const verifier = createWorkerJournal({
+			generationRoot: root, generationId: 'gen-d', configFingerprint: FINGERPRINT,
+			store: sharedStore, owner: new WorkerJournalOwner(2), expectedDimension: DIMENSIONS, storage,
+		});
+		expect(await verifier.readReceipt('stale.md')).toBeNull();
+		expect(await verifier.listPendingPaths()).toEqual([]);
 	});
 });
