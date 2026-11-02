@@ -117,6 +117,13 @@ export interface RatelVaultSettings {
 	chunkSizePreset: ChunkSizePresetId;
 	chunkOverlap: number;
 	autoIndex: boolean;
+	/**
+	 * 把索引写入交给常驻 Worker（实验开关，默认关闭）。
+	 *
+	 * 关键路径:线程模式尚未在真实库完成三区分验收，因此只作为可选开关存在，
+	 * 默认仍走主线程路径；开启后装配失败会回落到主线程并如实提示。
+	 */
+	indexThreadMode?: boolean;
 	// 关键路径:indexPaused 由用户在设置面板切换;true 时 IndexManager 不消费队列但仍入队,供用户按需恢复。
 	indexPaused: boolean;
 	// 关键路径:embedModelActive 记录当前激活的本地 Embedding 模型 id(支持后续切模型)。
@@ -257,6 +264,7 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 	chunkSizePreset: DEFAULT_CHUNK_SIZE_PRESET,
 	chunkOverlap: 100,
 	autoIndex: true,
+	indexThreadMode: false,
 	// 关键路径:索引暂停默认关闭,起飞期 IndexManager 状态 = Init → Ready,正常消费队列。
 	indexPaused: false,
 	// 关键路径:默认激活 bge-small-zh-v1.5(ONNX 量化模型约 24MB,多数用户零感知下载)。

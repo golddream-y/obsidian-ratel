@@ -46,6 +46,9 @@ import { VectraStore } from './adapters/vector-vectra';
 import { AtomicIndexStorage } from './adapters/atomic-index-storage';
 import { IndexWriteOwner } from './core/index-write-owner';
 import { IndexGenerations } from './core/index-generations';
+import { assembleIndexThreadRuntime } from './core/index-thread-assembly';
+import { createThreadIndexBackend } from './core/index-thread-backend';
+import { createThreadVisibilityGate } from './core/index-thread-visibility-gate';
 import { IndexFileJournal } from './core/index-file-journal';
 import type { IndexRoundState } from './core/persistent-index-backend';
 import { IndexTaskCoordinator, type IndexStallWatchdog } from './core/index-task-coordinator';
@@ -74,6 +77,8 @@ import {
 	type WritableIndexRuntime,
 } from './core/index-runtime-assembly';
 import { IndexRuntimeIdentityGuard } from './core/index-runtime-identity-guard';
+import { IndexRuntimeClient } from './worker/index-runtime-client';
+import { IndexThreadCoordinator } from './core/index-thread-coordinator';
 // 关键路径:词表(约 109KB)只传一次 — 模型就绪后由主线程交给 Worker,不进每条索引消息;
 // 协调器在主线程分块,必须与 Worker 读同一份词表才能得到一致的块边界。
 import { currentProcessorStore, getVocabContent, setVocabContent } from './worker/handler';
@@ -150,6 +155,7 @@ import {
 import {
 	MultiQuerySearcher,
 	type SearchCandidateGate,
+	type SearchCandidateSource,
 } from './core/multi-query-searcher';
 import { McpHost } from './core/mcp-host';
 import { McpHttpTransport } from './adapters/mcp-http';
@@ -296,6 +302,12 @@ export default class RatelVaultPlugin extends Plugin {
 	private indexOwnerLease?: IndexWriteOwner;
 	/** 代际与控制指针管理者。 */
 	private indexGenerations?: IndexGenerations;
+	/** 线程模式下的索引客户端;未启用或回落后为 undefined。 */
+	private indexThreadClient?: IndexRuntimeClient;
+	/** 线程模式下的协调器。 */
+	private indexThreadCoordinator?: IndexThreadCoordinator;
+	/** 线程模式下替换检索可见性门;主线程模式保持 undefined。 */
+	private threadSearchGate?: SearchCandidateGate;
 	/** 写运行时身份守卫 — 同一会话内不同配置的装配会被显式拒绝。 */
 	private readonly indexIdentityGuard = new IndexRuntimeIdentityGuard();
 	/** 本次装配登记的身份释放入口;卸载时调用。 */
@@ -585,6 +597,8 @@ export default class RatelVaultPlugin extends Plugin {
 			// 关键路径(T7/A11):统一可见性门 —— 原始向量候选进入融合/重排前的唯一闸门;
 			// 写路径用日志+协调器新鲜度,关闭自动索引时用只读视图+内存变更集。
 			visibility: this.createSearchCandidateGate(),
+			// 关键路径:线程模式下召回由线程存储提供;主线程模式保持 undefined(仍走 Worker)。
+			...(this.settings.indexThreadMode === true ? { candidateSource: this.createThreadCandidateSource() } : {}),
 		});
 
 		this.tools.register(
@@ -1599,6 +1613,13 @@ export default class RatelVaultPlugin extends Plugin {
 		// 关键路径:释放写所有权租约(幂等;等 closing 结算),让下一个实例能立即接管。
 		void this.indexOwnerLease?.release().catch((err) => devLogger.warn('index', '释放索引写所有权失败', err));
 		this.indexOwnerLease = undefined;
+		// 关键路径:线程客户端要显式关闭(撤销写权并终止线程),否则热重载会留下孤儿线程。
+		if (this.indexThreadClient !== undefined) {
+			void this.indexThreadClient.close('plugin unload').catch((err) => devLogger.warn('index', '关闭索引线程失败', err));
+			this.indexThreadClient = undefined;
+			this.indexThreadCoordinator = undefined;
+			this.threadSearchGate = undefined;
+		}
 		// 关键路径:身份登记必须在租约释放后清掉,否则同一会话内换配置会被自己的旧登记挡住。
 		this.releaseIndexIdentity?.();
 		this.releaseIndexIdentity = undefined;
@@ -2097,8 +2118,14 @@ export default class RatelVaultPlugin extends Plugin {
 				await this.setupReadOnlyIndexRuntime(config);
 				return;
 			}
-			await this.migrateLegacyManifestIntoIndexRoot(pluginDir);
-			await this.setupWritableIndexRuntime(config);
+			// 关键路径:线程模式先尝试线程装配;失败则完整回落到主线程路径并如实记录,
+			// 不留下「一半线程、一半主线程」的中间态。
+			const threadReady = this.settings.indexThreadMode === true
+				&& await this.trySetupThreadIndexRuntime(config);
+			if (!threadReady) {
+				await this.migrateLegacyManifestIntoIndexRoot(pluginDir);
+				await this.setupWritableIndexRuntime(config);
+			}
 		} catch (err) {
 			this.degradeIndexRuntime(err);
 		}
@@ -2128,6 +2155,69 @@ export default class RatelVaultPlugin extends Plugin {
 	 * @param config - 当前配置。
 	 * @throws {Error} 取锁失败、迁移失败或无可用代际。
 	 */
+	/**
+	 * 线程模式装配 — 取写所有权、解析代际、拉起常驻 Worker 并把字段切到线程路径。
+	 *
+	 * 关键路径:失败必须干净回滚(释放租约与身份登记),由调用方回落到主线程装配;
+	 * 不能返回「部分成功」,否则上层会在没有存储的情况下继续启动。
+	 *
+	 * @param config - 当前配置
+	 * @returns 是否成功切到线程路径
+	 */
+	private async trySetupThreadIndexRuntime(config: IndexConfigDescriptor): Promise<boolean> {
+		let lease: IndexWriteOwner | null = null;
+		try {
+			this.indexIdentityGuard.register(this.indexConfigFingerprint);
+			lease = await IndexWriteOwner.acquire({
+				root: this.indexRoot,
+				instanceToken: crypto.randomUUID(),
+			});
+			const generations = new IndexGenerations({ indexRoot: this.indexRoot, owner: lease });
+			const assembled = await assembleIndexThreadRuntime({
+				indexRoot: this.indexRoot,
+				generations,
+				config,
+				owner: lease,
+				expectedDimension: this.embedding.dimensions,
+				embedding: this.embedding,
+				vault: {
+					listMarkdownFiles: () => this.vault.listMarkdownFiles(),
+					readFile: (filePath) => this.vault.readFile(filePath),
+				},
+				chunkLimits: { chunkSize: this.settings.chunkSize, chunkOverlap: this.settings.chunkOverlap },
+				legacy: null,
+			});
+			if (assembled.resolved === null || assembled.pipeline === null) {
+				devLogger.warn('index', '线程装配未解析出可用代际,回落到主线程索引路径');
+				await lease.release().catch(() => undefined);
+				this.indexIdentityGuard.release(this.indexConfigFingerprint);
+				return false;
+			}
+			const control = await generations.readControl();
+			this.indexDir = assembled.resolved.generationRoot;
+			this.resolvedGenerationId = assembled.resolved.generationId;
+			this.activeGenerationId = control.activeGenerationId;
+			this.indexMigrated = false;
+			this.indexDirUsable = true;
+			this.indexOwnerLease = lease;
+			this.indexGenerations = generations;
+			this.indexThreadClient = assembled.pipeline.client;
+			this.indexThreadCoordinator = assembled.pipeline.coordinator;
+			this.threadSearchGate = createThreadVisibilityGate(assembled.pipeline.client);
+			this.releaseIndexIdentity = () => this.indexIdentityGuard.release(this.indexConfigFingerprint);
+			devLogger.info('index', `索引线程模式已启用:代际 ${assembled.resolved.generationId}`);
+			return true;
+		} catch (err) {
+			devLogger.warn('index', '线程装配失败,回落到主线程索引路径', err);
+			this.indexThreadClient = undefined;
+			this.indexThreadCoordinator = undefined;
+			this.threadSearchGate = undefined;
+			if (lease !== null) await lease.release().catch(() => undefined);
+			this.indexIdentityGuard.release(this.indexConfigFingerprint);
+			return false;
+		}
+	}
+
 	private async setupWritableIndexRuntime(config: IndexConfigDescriptor): Promise<void> {
 		const runtime = await setupWritableIndexRuntime({
 			indexRoot: this.indexRoot,
@@ -2267,6 +2357,16 @@ export default class RatelVaultPlugin extends Plugin {
 	 * 只读预热(`preheatReadOnlyView`)不在本方法内 —— 它需要 vault 事件通路已装配。
 	 */
 	private assembleIndexObjects(): void {
+		// 关键路径:线程模式下后端与协调器都来自线程;不能同时构造主线程后端,
+		// 否则两套写入者会各自持有存储视图。
+		if (this.settings.indexThreadMode === true && this.indexThreadClient !== undefined && this.indexThreadCoordinator !== undefined) {
+			this.indexBackend = createThreadIndexBackend(this.indexThreadClient, this.indexThreadCoordinator);
+			this.indexController = new IndexController(this.vault, this.indexBackend, this.vaultBase, {
+				coordinator: this.indexThreadCoordinator,
+			});
+			this.indexer = new Indexer({ vault: this.vault, indexController: this.indexController });
+			return;
+		}
 		// 关键路径:清单落在代际目录内的 ratel-manifest.json(派生视图,只由后端写);
 		// 旧版插件根的 index-manifest.json 已在 setupIndexRuntime 迁入 `.index/` 根,
 		// 它是 T6 迁移读的 legacy 清单,不再作为本代际的清单路径。
@@ -2477,7 +2577,7 @@ export default class RatelVaultPlugin extends Plugin {
 	 * @returns 与 `MultiQuerySearcher` 契约一致的门。
 	 */
 	private createSearchCandidateGate(): SearchCandidateGate {
-		return createSearchCandidateGate({
+		const fallback = createSearchCandidateGate({
 			isReadOnly: () => this.settings.autoIndex === false,
 			readOnlyChanged: () => this.indexController?.readOnlyChanged() ?? new Set<string>(),
 			getReadOnlySearchView: () => this.readOnlySearchView,
@@ -2487,6 +2587,44 @@ export default class RatelVaultPlugin extends Plugin {
 			isExcluded: (path) => this.indexController?.isExcluded(path) ?? false,
 			fileExists: (path) => this.vault.fileExists(path),
 		});
+		// 关键路径:门在检索器构造时就固定下来,而线程客户端要到装配阶段才有;
+		// 因此返回一个委派门:线程就绪用线程门,否则保持主线程语义。
+		return {
+			refresh: async () => {
+				const gate = this.threadSearchGate ?? fallback;
+				if (gate.refresh !== undefined) await gate.refresh();
+			},
+			decide: (path) => (this.threadSearchGate ?? fallback).decide(path),
+			// 关键路径:缺省按「不可判定」而不是「已知为空」。
+			recordsKind: () => (this.threadSearchGate ?? fallback).recordsKind?.() ?? 'unjudgeable',
+		};
+	}
+
+	/**
+	 * 线程模式下的召回来源;线程尚未就绪或已回退时退回 Worker 召回。
+	 *
+	 * 关键路径:回退必须仍能检索,否则「线程装配失败」会连带把检索打挂。
+	 */
+	private createThreadCandidateSource(): SearchCandidateSource {
+		return {
+			search: async (queryVector, topK) => {
+				const client = this.indexThreadClient;
+				if (client !== undefined) {
+					const hits = await client.searchByVector(queryVector, topK);
+					return hits.map((hit) => ({
+						docId: hit.docId ?? hit.path,
+						score: hit.score,
+						metadata: { path: hit.path, chunkIndex: hit.chunkIndex },
+					}));
+				}
+				const response = await this.workerManager.request({
+					type: 'vector.search',
+					payload: { queryVector, topK },
+				});
+				if (response.type !== 'vector.search.result') return [];
+				return response.payload;
+			},
+		};
 	}
 
 	/**
