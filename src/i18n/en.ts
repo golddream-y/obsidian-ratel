@@ -1322,6 +1322,10 @@ export const en: Strings = {
   'cmd.pauseIndex': 'Pause indexing',
   'cmd.resumeIndex': 'Resume indexing',
   'cmd.dropIndex': 'Clean up inactive index generations (dangerous)',
+  'cmd.indexThreadExperiment': 'Run index thread experiment (debug)',
+  'notice.indexThreadExperimentRunning': 'Index thread experiment running. Keep Obsidian in the foreground…',
+  'notice.indexThreadExperimentDone': 'Experiment done: main thread stall {main}ms, during worker {worker}ms; report {path}',
+  'notice.indexThreadExperimentFailed': 'Index thread experiment failed: {message}',
   'cmd.retryIndex': 'Retry index setup',
 
   // ==================== ToolPermStrings ====================

@@ -255,6 +255,10 @@ const mainContext = await esbuild.context({
 	outfile: 'dist/main.js',
 	minify: prod,
 	metafile: true,
+	// 关键路径:T0 线程实验入口只在显式开启时进包,正常产物不注册该命令。
+	define: {
+		__RATEL_INDEX_EXPERIMENT__: JSON.stringify(process.env.RATEL_INDEX_EXPERIMENT === '1'),
+	},
 	// 关键路径:为 .node 原生文件配置 loader,避免 esbuild 因无 loader 而报错。
 	// 这些文件仅来自 onnxruntime-node 的 Node 回退路径,实际在 Obsidian 渲染进程中不会执行。
 	loader: { '.node': 'text' },

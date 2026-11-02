@@ -112,6 +112,7 @@ import { showToolConfirmModal } from './ui/components/confirm-modal';
 import { openReleaseNotesTab, ReleaseNotesView, VIEW_TYPE_RELEASE_NOTES } from './ui/release/release-notes-view';
 import { shouldShowReleaseNotes } from './ui/release/should-show-release-notes';
 import { showReindexConfirm, showDropIndexConfirm } from './ui/confirm-modal';
+import { runIndexThreadExperiment } from './experiment/index-thread-probe';
 import { validateVaultPath, setConfigDir } from './utils/path-safety';
 import { isSafeVaultMentionPath } from './ui/chat/input/mention-parser';
 import { extractToolTargetPath, isDeleteTool } from './hooks/immediate-reindex';
@@ -1148,6 +1149,28 @@ export default class RatelVaultPlugin extends Plugin {
 			}
 		}),
 	});
+
+	// 实验:T0 索引线程可行性 —— 仅在 RATEL_INDEX_EXPERIMENT=1 构建时注册,正常产物不含此入口。
+	if (typeof __RATEL_INDEX_EXPERIMENT__ !== 'undefined' && __RATEL_INDEX_EXPERIMENT__) {
+		this.addCommand({
+			id: 'index-thread-experiment',
+			name: tNow('cmd.indexThreadExperiment'),
+			callback: async () => {
+				this.userNotice.toast(tNow('notice.indexThreadExperimentRunning'));
+				try {
+					const { report, reportPath } = await runIndexThreadExperiment();
+					this.userNotice.toast(tNow('notice.indexThreadExperimentDone', {
+						main: String(Math.round(report.mainThread.stall.maxGapMs)),
+						worker: String(Math.round(report.workerThread.stall.maxGapMs)),
+						path: reportPath,
+					}));
+				} catch (err) {
+					const message = err instanceof Error ? err.message : String(err);
+					this.userNotice.toastError(tNow('notice.indexThreadExperimentFailed', { message }));
+				}
+			},
+		});
+	}
 
 	// 命令:重试索引装配(降级状态下的恢复入口 —— 索引不可用但插件其余能力照常)
 	this.addCommand({

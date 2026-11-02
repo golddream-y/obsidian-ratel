@@ -52,6 +52,8 @@ export default tseslint.config(
 			parserOptions: {
 				project: './tsconfig.json',
 			},
+			// 构建期注入的常量,类型声明在 svelte.d.ts。
+			globals: { __RATEL_INDEX_EXPERIMENT__: 'readonly' },
 		},
 	},
 	{

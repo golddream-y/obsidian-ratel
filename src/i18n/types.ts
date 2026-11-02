@@ -1348,6 +1348,10 @@ export interface CmdStrings {
   'cmd.pauseIndex': string;
   'cmd.resumeIndex': string;
   'cmd.dropIndex': string;
+  'cmd.indexThreadExperiment': string;
+  'notice.indexThreadExperimentRunning': string;
+  'notice.indexThreadExperimentDone': string;
+  'notice.indexThreadExperimentFailed': string;
   'cmd.retryIndex': string;
 }
 
