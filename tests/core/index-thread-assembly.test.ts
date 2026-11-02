@@ -93,3 +93,42 @@ describe('线程版索引装配', () => {
 		pipeline.coordinator.destroy();
 	});
 });
+
+describe('先解析代际再装配', () => {
+	it('活动代际指纹一致 - 直接复用该代际 - 线程拿到代际根', async () => {
+		const { computeConfigFingerprint, INDEX_RECORD_SCHEMA_VERSION } = await import('../../src/core/index-persistence-types');
+		const config = {
+			embeddingModelId: 'local:test', embeddingModelRevision: null, embeddingDimension: DIMENSIONS,
+			chunkerVersion: 1, chunkSize: 400, chunkOverlap: 50, embeddingTextVersion: null,
+		};
+		const fingerprint = await computeConfigFingerprint(config);
+		const record = {
+			schemaVersion: INDEX_RECORD_SCHEMA_VERSION, generationId: 'gen-active', fingerprint,
+			kind: 'fresh' as const, status: 'active' as const, root: '/tmp/gen-active',
+			verifiedAt: 1, createdAt: 1,
+		};
+		const generations = {
+			readControl: async () => ({
+				schemaVersion: INDEX_RECORD_SCHEMA_VERSION,
+				activeGenerationId: 'gen-active',
+				generations: { 'gen-active': record },
+			}),
+			generationRootOf: (id: string) => `/tmp/${id}`,
+		} as never;
+		const owner = { epoch: 1, assertWritable: () => {}, beginCommit: () => ({ settle: () => {} }) };
+		const threadClient = makeThreadClient();
+		const { assembleIndexThreadRuntime } = await import('../../src/core/index-thread-assembly');
+		const result = await assembleIndexThreadRuntime({
+			indexRoot: '/tmp/index-root',
+			generations, config, owner, expectedDimension: DIMENSIONS,
+			embedding: EMBEDDING,
+			vault: { listMarkdownFiles: () => [], readFile: async () => '' },
+			createClient: () => threadClient,
+		});
+		expect(result.resolved).toMatchObject({ generationId: 'gen-active', configFingerprint: fingerprint, active: true });
+		await result.pipeline!.coordinator.start();
+		expect(threadClient.start).toHaveBeenCalledWith(expect.objectContaining({
+			root: '/tmp/gen-active', generationId: 'gen-active', configFingerprint: fingerprint,
+		}));
+	});
+});

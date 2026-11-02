@@ -44,7 +44,7 @@
 
 `src/core/index-thread-assembly.ts` 把「嵌入端口 → 桥接 → 客户端 → 协调器」接成一组，返回与主线程同端口的 `coordinator`。代际参数（root/generationId/fingerprint/维度/分块预算）在装配时透传；3 个用例覆盖参数透传、逐文件索引与单文件失败不清零。
 
-尚未做：代际解析（`resolveIndexGeneration`）与主线程装配点的替换 —— 现在生产路径仍走主线程协调器。
+代际解析已接入：`assembleIndexThreadRuntime` 先跑 `resolveIndexGeneration`（迁移/回收/配置切换都在锁内完成），再把解析出的代际根与指纹交给线程。尚未做：主线程装配点替换 —— 生产路径仍走主线程协调器。
 
 ## 宿主客户端（已接线到协议）
 

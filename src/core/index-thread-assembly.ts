@@ -15,6 +15,10 @@ import { createEmbeddingBridge } from '../worker/index-runtime-embedding-bridge'
 import { IndexRuntimeClient } from '../worker/index-runtime-client';
 import type { RuntimeWorkerFactory } from '../worker/index-runtime-host';
 import { IndexThreadCoordinator, type ThreadIndexClient } from './index-thread-coordinator';
+import { resolveIndexGeneration, type ResolvedIndexGeneration } from './index-processor-port';
+import type { IndexGenerations } from './index-generations';
+import type { IndexConfigDescriptor } from './index-persistence-types';
+import type { JournalWriteOwner } from './index-file-journal';
 
 /** 装配依赖。 */
 export interface AssembleIndexThreadDeps {
@@ -79,4 +83,57 @@ export function assembleIndexThreadPipeline(deps: AssembleIndexThreadDeps): Asse
 		},
 	});
 	return { coordinator, client };
+}
+
+/** 需要先解析代际的装配依赖。 */
+export interface AssembleIndexThreadRuntimeDeps extends Omit<AssembleIndexThreadDeps, 'indexRoot' | 'generationId' | 'configFingerprint' | 'expectedDimension'> {
+	/** `.index/` 根绝对路径。 */
+	indexRoot: string;
+	/** 代际管理实例(已绑定 owner)。 */
+	generations: IndexGenerations;
+	/** 当前配置。 */
+	config: IndexConfigDescriptor;
+	/** 写所有权 — 迁移与新建都在锁内。 */
+	owner: JournalWriteOwner;
+	/** 期望向量维度。 */
+	expectedDimension?: number;
+	/** legacy 只读来源;无旧索引传 null。 */
+	legacy?: Parameters<typeof resolveIndexGeneration>[0]['legacy'];
+	/** 分块边界(与旧清单交叉核对)。 */
+	chunkLimits?: { chunkSize: number; chunkOverlap: number };
+}
+
+/**
+ * 先解析代际,再装配线程版管线。
+ *
+ * 关键路径:代际解析不放进线程 —— 它要读写控制指针、跑迁移与回收,属于装配决策;
+ * 线程只拿「已经解析好的代际目录与指纹」。
+ *
+ * @param deps 代际、配置与端口
+ * @returns 解析结论与管线;无可用代际时 `resolved` 为 null,调用方走只读或降级
+ */
+export async function assembleIndexThreadRuntime(deps: AssembleIndexThreadRuntimeDeps): Promise<{
+	resolved: ResolvedIndexGeneration | null;
+	pipeline: AssembledIndexThreadPipeline | null;
+}> {
+	const resolution = await resolveIndexGeneration({
+		generations: deps.generations,
+		indexRoot: deps.indexRoot,
+		config: deps.config,
+		owner: deps.owner,
+		allowCreate: true,
+		legacy: deps.legacy ?? null,
+		chunkLimits: deps.chunkLimits,
+		expectedDimension: deps.expectedDimension,
+	});
+	const resolved = resolution.resolved;
+	if (resolved === null) return { resolved: null, pipeline: null };
+	const pipeline = assembleIndexThreadPipeline({
+		...deps,
+		indexRoot: resolved.generationRoot,
+		generationId: resolved.generationId,
+		configFingerprint: resolved.configFingerprint,
+		expectedDimension: deps.expectedDimension,
+	});
+	return { resolved, pipeline };
 }
