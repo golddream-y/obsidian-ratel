@@ -205,3 +205,27 @@ describe('撤销在途请求', () => {
 		coordinator.destroy();
 	});
 });
+
+describe('增量收敛与阶段', () => {
+	it('启动后收到文件事件 - drain 处理 - 阶段回到 ready', async () => {
+		const { client, indexed } = makeClient();
+		const coordinator = new IndexThreadCoordinator({ client, vault: VAULT, start: START });
+		await coordinator.start();
+		coordinator.notify('c.md', 'upsert');
+		expect(coordinator.counters().phase).toBe('processing');
+		await coordinator.drain();
+		expect(indexed).toContain('c.md');
+		expect(coordinator.counters().phase).toBe('ready');
+		coordinator.destroy();
+	});
+
+	it('尚未启动时收到事件 - 只入队 - 不调用线程（避免「尚未打开」被记成失败）', async () => {
+		const { client } = makeClient();
+		const coordinator = new IndexThreadCoordinator({ client, vault: VAULT, start: START });
+		coordinator.notify('a.md', 'upsert');
+		await coordinator.drain();
+		expect(client.indexFile).not.toHaveBeenCalled();
+		expect(coordinator.counters().queued).toBe(1);
+		coordinator.destroy();
+	});
+});

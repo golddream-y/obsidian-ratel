@@ -84,6 +84,7 @@
 
 - 暂停/恢复、撤销在途：`cancelIndexRun` 现在按「当前协调器」决定撤销线程还是主线程 Worker，线程模式下暂停会真正停下线程内调用。
 - 计数展示：`getRoundCounters` / `getTaskId` 走同一入口，线程模式下不再永远显示 0。
+- 增量：`notify` 只入队，`drain`（由 `IndexManager.flush` 驱动）消费；未启动时只入队、不调用线程，避免把「尚未打开」记成文件失败。收敛后阶段回到 `ready`/`partial-failure`，不再永远停在「处理中」。
 - 重建索引走 `reindex → 协调器重跑`，清理非活动代际走既有 `dropInactiveGenerations`（线程模式同样持有代际实例与租约）。
 
 ## 线程模式开关

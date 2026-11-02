@@ -99,6 +99,8 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 	private stopping = false;
 	private destroyed = false;
 	private loop: Promise<void> | null = null;
+	/** 是否已完成一次启动(线程已就绪);未启动时事件只入队不消费。 */
+	private started = false;
 	/** 本轮已尝试的崩溃重启次数 — 上界防止「崩-重启-再崩」无限循环。 */
 	private restartsThisRound = 0;
 
@@ -118,6 +120,8 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 		this.running = true;
 		this.restartsThisRound = 0;
 		await this.client.start(this.startOptions);
+		// 关键路径:线程真的起来之后才算已启动,否则启动失败会把后续事件派给不存在的线程。
+		this.started = true;
 
 		const files = this.vault.listMarkdownFiles();
 		for (const filePath of files) {
@@ -128,12 +132,20 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 		this.phaseValue = 'processing';
 		await this.drain();
 		// 关键路径:暂停与撤销优先于「全部成功」—— 不能因为已处理的部分成功就报告 ready。
+		this.refreshPhase();
+		this.running = false;
+		return this.counters();
+	}
+
+	/**
+	 * 按当前状态刷新阶段 — 增量收敛后同样要更新,否则状态会永远停在「处理中」。
+	 */
+	private refreshPhase(): void {
 		if (this.stopping) this.phaseValue = 'stopping';
 		else if (this.pausedValue) this.phaseValue = 'paused';
 		else if (this.failing.size > 0) this.phaseValue = 'partial-failure';
+		else if (this.activeCount > 0 || this.queue.size > 0) this.phaseValue = 'processing';
 		else this.phaseValue = 'ready';
-		this.running = false;
-		return this.counters();
 	}
 
 	/** 计数快照 — 与主线程协调器同口径。 */
@@ -163,14 +175,16 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 		this.phaseValue = this.pausedValue ? 'paused' : 'processing';
 	}
 
-	/** 收敛队列;暂停或销毁时提前返回。 */
+	/** 收敛队列;暂停、销毁或尚未启动时提前返回。 */
 	async drain(): Promise<void> {
+		if (!this.started) return;
 		if (this.loop !== null) return this.loop;
 		this.loop = this.runLoop();
 		try {
 			await this.loop;
 		} finally {
 			this.loop = null;
+			this.refreshPhase();
 		}
 	}
 
