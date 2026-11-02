@@ -1174,12 +1174,42 @@ export default class RatelVaultPlugin extends Plugin {
 		this.addCommand({
 			id: 'index-thread-experiment',
 			name: tNow('cmd.indexThreadExperiment'),
-			callback: () => this.runIndexThreadExperimentCommand(),
+			// 关键路径:实验入口必须整段留在 define 保护内 —— 抽成实例方法会让编译器保留
+			// 对实验模块的引用,生产产物里就会带上探针代码(命令虽不注册,代码仍在)。
+			callback: async () => {
+				this.userNotice.toast(tNow('notice.indexThreadExperimentRunning'));
+				try {
+					const { report, reportPath } = await runIndexThreadExperiment();
+					this.userNotice.toast(tNow('notice.indexThreadExperimentDone', {
+						main: String(Math.round(report.mainThread.stall.maxGapMs)),
+						worker: String(Math.round(report.webWorker.stall.maxGapMs)),
+						path: reportPath,
+					}));
+				} catch (err) {
+					const message = err instanceof Error ? err.message : String(err);
+					this.userNotice.toastError(tNow('notice.indexThreadExperimentFailed', { message }));
+				}
+			},
 		});
 		// 关键路径:调试构建加载后自动跑一次,避免每次都去命令面板点 ——
 		// 少一步人工操作,采集才更可能被真正执行;报告路径由提示给出。
 		this.app.workspace.onLayoutReady(() => {
-			window.setTimeout(() => { void this.runIndexThreadExperimentCommand(); }, 5000);
+			window.setTimeout(() => {
+				void (async () => {
+					this.userNotice.toast(tNow('notice.indexThreadExperimentRunning'));
+					try {
+						const { report, reportPath } = await runIndexThreadExperiment();
+						this.userNotice.toast(tNow('notice.indexThreadExperimentDone', {
+							main: String(Math.round(report.mainThread.stall.maxGapMs)),
+							worker: String(Math.round(report.webWorker.stall.maxGapMs)),
+							path: reportPath,
+						}));
+					} catch (err) {
+						const message = err instanceof Error ? err.message : String(err);
+						this.userNotice.toastError(tNow('notice.indexThreadExperimentFailed', { message }));
+					}
+				})();
+			}, 5000);
 		});
 	}
 
@@ -2247,26 +2277,6 @@ export default class RatelVaultPlugin extends Plugin {
 		});
 		this.releaseIndexIdentity = runtime.releaseIdentity;
 		this.applyWritableIndexRuntime(runtime);
-	}
-
-	/**
-	 * 运行索引线程实验并提示报告路径。
-	 *
-	 * 关键路径:命令面板与自动采集共用同一入口,避免两处逻辑漂移。
-	 */
-	private async runIndexThreadExperimentCommand(): Promise<void> {
-		this.userNotice.toast(tNow('notice.indexThreadExperimentRunning'));
-		try {
-			const { report, reportPath } = await runIndexThreadExperiment();
-			this.userNotice.toast(tNow('notice.indexThreadExperimentDone', {
-				main: String(Math.round(report.mainThread.stall.maxGapMs)),
-				worker: String(Math.round(report.webWorker.stall.maxGapMs)),
-				path: reportPath,
-			}));
-		} catch (err) {
-			const message = err instanceof Error ? err.message : String(err);
-			this.userNotice.toastError(tNow('notice.indexThreadExperimentFailed', { message }));
-		}
 	}
 
 	/**
