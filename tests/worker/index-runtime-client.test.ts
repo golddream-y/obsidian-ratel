@@ -187,3 +187,33 @@ describe('撤销在途请求', () => {
 		await expect(indexing).rejects.toThrow(/取消|aborted/);
 	});
 });
+
+describe('崩溃对查询的影响', () => {
+	it('线程退出后查询失败 - 重启后查询恢复', async () => {
+		const handlers: RuntimeHandlers = {
+			ping: () => 'pong',
+			...createIndexSessionHandlers({ root, chunkOptions: { maxTokens: 500, overlapTokens: 100, count: (t) => t.length }, epoch: 1 }),
+		};
+		let started = 0;
+		let client!: IndexRuntimeClient;
+		const bridges: RuntimeWorkerLike[] = [];
+		client = new IndexRuntimeClient({
+			createWorker: () => {
+				const bridge = makeBridge(handlers, client.runtimeId, ++started);
+				bridges.push(bridge);
+				return bridge;
+			},
+			embed: async (texts) => texts.map(() => Array.from({ length: DIMENSIONS }, () => 0.1)),
+			requestTimeoutMs: 3000,
+		});
+		await client.start({ root, generationId: 'gen-q', configFingerprint: FINGERPRINT, expectedDimension: DIMENSIONS });
+		await client.indexFile('a.md', '可检索正文');
+		expect((await client.search('检索', 3)).length).toBeGreaterThan(0);
+
+		// 模拟线程崩溃:宿主收到退出回调后,在途与后续请求都必须失败而不是挂起。
+		bridges.at(-1)!.onerror?.({ message: 'worker crashed' });
+		await client.restart();
+		const hits = await client.search('检索', 3);
+		expect(hits.length).toBeGreaterThan(0);
+	});
+});
