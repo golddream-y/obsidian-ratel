@@ -263,11 +263,38 @@ export async function runIndexThreadExperiment(
 			embed: embedBridge,
 			requestTimeoutMs: 20_000,
 		});
+		// 关键路径:按生产同一套代际解析拿到目录与指纹,验证启动路径而不只是手工构造参数。
+		const { IndexGenerations } = await import('../core/index-generations');
+		const { resolveIndexGeneration } = await import('../core/index-processor-port');
+		const probeOwner = {
+			epoch: 1,
+			assertWritable() {},
+			beginCommit() { return { settled: false, settle() {} }; },
+		};
+		const generations = new IndexGenerations({ indexRoot: sessionRoot, owner: probeOwner });
+		const resolved = await resolveIndexGeneration({
+			generations,
+			indexRoot: sessionRoot,
+			config: {
+				embeddingModelId: 'experiment:stub',
+				embeddingModelRevision: null,
+				embeddingDimension: dims,
+				chunkerVersion: 1,
+				chunkSize: 500,
+				chunkOverlap: 100,
+				embeddingTextVersion: null,
+			},
+			owner: probeOwner,
+			allowCreate: true,
+			legacy: null,
+		});
+		const generation = resolved.resolved;
+		if (generation === null) throw new Error('实验未解析出可用代际');
 		runtime.stall = await measure(async () => {
 			await client.start({
-				root: sessionRoot,
-				generationId: 'experiment-gen',
-				configFingerprint: 'a'.repeat(64),
+				root: generation.generationRoot,
+				generationId: generation.generationId,
+				configFingerprint: generation.configFingerprint,
 				expectedDimension: dims,
 				chunkOptions: { maxTokens: 500, overlapTokens: 100 },
 			});
@@ -285,9 +312,9 @@ export async function runIndexThreadExperiment(
 				requestTimeoutMs: 20_000,
 			});
 			await reopened.start({
-				root: sessionRoot,
-				generationId: 'experiment-gen',
-				configFingerprint: 'a'.repeat(64),
+				root: generation.generationRoot,
+				generationId: generation.generationId,
+				configFingerprint: generation.configFingerprint,
 				expectedDimension: dims,
 				chunkOptions: { maxTokens: 500, overlapTokens: 100 },
 			});

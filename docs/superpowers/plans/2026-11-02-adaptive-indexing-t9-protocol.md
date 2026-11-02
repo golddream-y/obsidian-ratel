@@ -15,7 +15,7 @@ node scripts/link-vault.mjs "<preview-vault>"
 
 在预览库重载插件 → 命令面板「运行索引线程实验(调试)」→ 报告写到系统临时目录 `ratel-index-thread-experiment-*.json`。
 
-报告字段：`selfCheck`（探针自检）、`channel`（init + 受限文件读写）、`runtime`（线程内索引两篇 → 查询 → 状态）、`mainThreadIndex`（同负载在主线程切块 + 写入的对照）、`webWorker`/`mainThread`（序列化对照）、`asyncWholeWrite`/`shardedWrite`。
+报告字段：`selfCheck`（探针自检）、`channel`（init + 受限文件读写）、`runtime`（**按生产同款代际解析**启动线程 → 索引两篇 → 查询 → 状态）、`reopen`（关闭后重开仍可检索）、`mainThreadIndex`（同负载在主线程切块 + 写入的对照）、`webWorker`/`mainThread`（序列化对照）、`asyncWholeWrite`/`shardedWrite`。
 
 ## 正确性组
 
