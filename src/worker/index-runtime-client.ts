@@ -56,6 +56,8 @@ export class IndexRuntimeClient {
 	private readonly host: IndexRuntimeHost;
 	private readonly arbiter: EmbeddingArbiter;
 	private opened = false;
+	/** 最近一次启动参数 — 崩溃后重启要沿用同一代际与配置身份。 */
+	private lastStart: IndexRuntimeStartOptions | null = null;
 
 	constructor(options: IndexRuntimeClientOptions) {
 		this.arbiter = new EmbeddingArbiter(
@@ -92,6 +94,7 @@ export class IndexRuntimeClient {
 	 * @param options 代际与访问模式
 	 */
 	async start(options: IndexRuntimeStartOptions): Promise<void> {
+		this.lastStart = options;
 		this.host.start();
 		this.host.send({
 			kind: 'init',
@@ -163,6 +166,22 @@ export class IndexRuntimeClient {
 	async status(): Promise<{ totalDocs: number; written: number }> {
 		this.assertOpen();
 		return this.host.request('session.status', {});
+	}
+
+	/**
+	 * 崩溃后重启 — 沿用同一代际与配置身份,不改变写权归属。
+	 *
+	 * 关键路径:崩溃后 epoch 已失效,必须重新 init 并重新开会话;不重启而继续发请求
+	 * 只会得到一串 `worker-exit`,吞掉这些错误会让「索引静默停止」看起来像「已就绪」。
+	 *
+	 * @throws 尚未 start 过时
+	 */
+	async restart(): Promise<void> {
+		const options = this.lastStart;
+		if (options === null) throw new Error('索引线程尚未启动过,无法重启');
+		this.opened = false;
+		if (this.host.running) await this.host.stop('restart');
+		await this.start(options);
 	}
 
 	/** 关闭:先撤销再终止。 */

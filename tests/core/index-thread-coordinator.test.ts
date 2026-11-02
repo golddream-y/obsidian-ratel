@@ -105,3 +105,70 @@ describe('线程版协调器', () => {
 		expect(coordinator.counters().queued).toBe(0);
 	});
 });
+
+describe('线程崩溃恢复', () => {
+	it('首次写入遇到线程退出 - 重启后重试同一文件 - 不记为失败', async () => {
+		let attempts = 0;
+		const client = {
+			start: vi.fn(async () => undefined),
+			indexFile: vi.fn(async () => {
+				attempts += 1;
+				if (attempts === 1) throw new Error('worker-exit');
+				return { chunkCount: 1 };
+			}),
+			deleteFile: vi.fn(async () => ({ removed: 0 })),
+			recover: vi.fn(async () => ({ pending: 0, decisions: 0, failures: 0 })),
+			close: vi.fn(async () => undefined),
+			restart: vi.fn(async () => undefined),
+		};
+		const coordinator = new IndexThreadCoordinator({
+			client: client as never,
+			vault: { listMarkdownFiles: () => ['a.md'], readFile: async () => '正文' },
+			start: START,
+		});
+		const counters = await coordinator.start();
+		expect(client.restart).toHaveBeenCalledTimes(1);
+		expect(counters).toMatchObject({ committed: 1, failures: 0 });
+		coordinator.destroy();
+	});
+
+	it('重启次数用尽后仍崩溃 - 该文件记为失败 - 不无限循环', async () => {
+		const client = {
+			start: vi.fn(async () => undefined),
+			indexFile: vi.fn(async () => { throw new Error('worker-exit'); }),
+			deleteFile: vi.fn(async () => ({ removed: 0 })),
+			recover: vi.fn(async () => ({ pending: 0, decisions: 0, failures: 0 })),
+			close: vi.fn(async () => undefined),
+			restart: vi.fn(async () => undefined),
+		};
+		const coordinator = new IndexThreadCoordinator({
+			client: client as never,
+			vault: { listMarkdownFiles: () => ['a.md'], readFile: async () => '正文' },
+			start: START,
+		});
+		const counters = await coordinator.start();
+		expect(client.restart).toHaveBeenCalledTimes(2);
+		expect(counters).toMatchObject({ committed: 0, failures: 1 });
+		coordinator.destroy();
+	});
+
+	it('非崩溃类错误 - 不触发重启 - 直接记失败', async () => {
+		const client = {
+			start: vi.fn(async () => undefined),
+			indexFile: vi.fn(async () => { throw new Error('提交冲突'); }),
+			deleteFile: vi.fn(async () => ({ removed: 0 })),
+			recover: vi.fn(async () => ({ pending: 0, decisions: 0, failures: 0 })),
+			close: vi.fn(async () => undefined),
+			restart: vi.fn(async () => undefined),
+		};
+		const coordinator = new IndexThreadCoordinator({
+			client: client as never,
+			vault: { listMarkdownFiles: () => ['a.md'], readFile: async () => '正文' },
+			start: START,
+		});
+		const counters = await coordinator.start();
+		expect(client.restart).not.toHaveBeenCalled();
+		expect(counters).toMatchObject({ committed: 0, failures: 1 });
+		coordinator.destroy();
+	});
+});

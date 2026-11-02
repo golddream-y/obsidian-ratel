@@ -34,7 +34,7 @@ afterEach(async () => {
 });
 
 /** 把宿主客户端与服务循环直接对接的假线程。 */
-function makeBridge(handlers: RuntimeHandlers, runtimeId: string): RuntimeWorkerLike {
+function makeBridge(handlers: RuntimeHandlers, runtimeId: string, epoch = 1): RuntimeWorkerLike {
 	const serverPort: RuntimeServerPort = {
 		postMessage: (message) => { worker.onmessage?.({ data: message }); },
 		onmessage: null,
@@ -45,7 +45,7 @@ function makeBridge(handlers: RuntimeHandlers, runtimeId: string): RuntimeWorker
 		postMessage: (message) => { serverPort.onmessage?.({ data: message }); },
 		terminate: async () => {},
 	};
-	serveRuntime({ port: serverPort, grant: { runtimeId, epoch: 1 }, handlers });
+	serveRuntime({ port: serverPort, grant: { runtimeId, epoch }, handlers });
 	return worker;
 }
 
@@ -82,5 +82,44 @@ describe('索引线程客户端', () => {
 		// 索引写入走 index,查询走 query。
 		expect(workloads).toContain('index');
 		expect(workloads).toContain('query');
+	});
+});
+
+describe('崩溃与重启', () => {
+	it('线程退出 - 在途请求以 worker-exit 失败 - 不伪装成功', async () => {
+		const handlers: RuntimeHandlers = {
+			ping: () => 'pong',
+			...createIndexSessionHandlers({ root, chunkOptions: { maxTokens: 500, overlapTokens: 100, count: (t) => t.length }, epoch: 1 }),
+		};
+		let bridge: RuntimeWorkerLike = makeBridge(handlers, '');
+		const client = new IndexRuntimeClient({
+			createWorker: () => bridge,
+			embed: async (texts) => texts.map(() => Array.from({ length: DIMENSIONS }, () => 0.1)),
+			requestTimeoutMs: 2000,
+		});
+		bridge = makeBridge(handlers, client.runtimeId);
+		await client.start({ root, generationId: 'gen-crash', configFingerprint: FINGERPRINT, expectedDimension: DIMENSIONS });
+		// 模拟线程崩溃:触发宿主登记的退出回调。
+		bridge.onerror?.({ message: 'worker crashed' });
+		await expect(client.indexFile('a.md', '正文')).rejects.toThrow();
+	});
+
+	it('重启后 - 沿用同一代际 - 写入恢复可用', async () => {
+		const handlers: RuntimeHandlers = {
+			ping: () => 'pong',
+			...createIndexSessionHandlers({ root, chunkOptions: { maxTokens: 500, overlapTokens: 100, count: (t) => t.length }, epoch: 1 }),
+		};
+		// 关键路径:每次 start 都是新 epoch,桥接必须按同样 epoch 授权,否则帧会被静默丢弃。
+		let started = 0;
+		let client!: IndexRuntimeClient;
+		const clientRef = () => client;
+		client = new IndexRuntimeClient({
+			createWorker: () => makeBridge(handlers, clientRef().runtimeId, ++started),
+			embed: async (texts) => texts.map(() => Array.from({ length: DIMENSIONS }, () => 0.1)),
+			requestTimeoutMs: 5000,
+		});
+		await client.start({ root, generationId: 'gen-restart', configFingerprint: FINGERPRINT, expectedDimension: DIMENSIONS });
+		await client.restart();
+		await expect(client.indexFile('a.md', '正文')).resolves.toMatchObject({ chunkCount: expect.any(Number) });
 	});
 });

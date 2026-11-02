@@ -29,6 +29,8 @@ export interface ThreadIndexClient {
 	deleteFile(filePath: string): Promise<{ removed: number }>;
 	recover(inputs: ReadonlyArray<{ path: string; hash: string | null }>): Promise<{ pending: number; decisions: number; failures: number }>;
 	close(reason?: string): Promise<void>;
+	/** 崩溃后重启;缺失表示该实现不支持自动恢复。 */
+	restart?(): Promise<void>;
 }
 
 /** Vault 端口。 */
@@ -54,6 +56,17 @@ export interface IndexThreadCoordinatorOptions {
 	start: ThreadCoordinatorStartOptions;
 }
 
+/** 每轮允许的崩溃重启次数上界。 */
+const MAX_CRASH_RESTARTS = 2;
+
+/**
+ * 判断错误是否是「线程已退出」类。
+ * @param message 错误消息
+ */
+function isCrashMessage(message: string): boolean {
+	return message.includes('worker-exit') || message.includes('线程已退出') || message.includes('索引线程已退出');
+}
+
 /** 一次待处理动作。 */
 interface ThreadQueueEntry {
 	op: 'upsert' | 'delete';
@@ -76,6 +89,8 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 	private stopping = false;
 	private destroyed = false;
 	private loop: Promise<void> | null = null;
+	/** 本轮已尝试的崩溃重启次数 — 上界防止「崩-重启-再崩」无限循环。 */
+	private restartsThisRound = 0;
 
 	constructor(options: IndexThreadCoordinatorOptions) {
 		this.client = options.client;
@@ -91,6 +106,7 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 		this.phaseValue = 'scanning';
 		this.stopping = false;
 		this.running = true;
+		this.restartsThisRound = 0;
 		await this.client.start(this.startOptions);
 
 		const files = this.vault.listMarkdownFiles();
@@ -186,6 +202,26 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 		void this.client.close('协调器销毁');
 	}
 
+	/**
+	 * 崩溃恢复 — 仅对「线程已退出」类错误重启一次。
+	 *
+	 * @param error 捕获到的错误
+	 * @returns 是否已完成重启并应重试当前文件
+	 */
+	private async recoverFromCrash(error: unknown): Promise<boolean> {
+		if (this.client.restart === undefined) return false;
+		if (this.restartsThisRound >= MAX_CRASH_RESTARTS) return false;
+		const message = error instanceof Error ? error.message : String(error);
+		if (!isCrashMessage(message)) return false;
+		this.restartsThisRound += 1;
+		try {
+			await this.client.restart();
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
 	/** 逐文件消费队列。 */
 	private async runLoop(): Promise<void> {
 		for (;;) {
@@ -206,9 +242,15 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 				this.verified.add(filePath);
 				this.failing.delete(filePath);
 			} catch (error) {
-				void error;
-				// 关键路径:失败保留在集合里,不能当成已处理;同一文件重排队由上层事件驱动。
-				this.failing.add(filePath);
+				// 关键路径(T5):线程崩溃不等于文件内容有问题 —— 先尝试一次重启并重试当前文件;
+				// 重启上界用尽后仍失败才算该文件失败,避免把「线程死了」记成「文件索引失败」。
+				const recovered = await this.recoverFromCrash(error);
+				if (recovered) {
+					this.queue.set(filePath, entry);
+				} else {
+					// 失败保留在集合里,不能当成已处理;同一文件重排队由上层事件驱动。
+					this.failing.add(filePath);
+				}
 			} finally {
 				this.activeCount = 0;
 			}
