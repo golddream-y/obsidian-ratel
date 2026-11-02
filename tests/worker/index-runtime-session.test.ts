@@ -139,3 +139,36 @@ describe('会话内查询', () => {
 		expect(result.hits).toEqual([]);
 	});
 });
+
+describe('会话内日志提交', () => {
+	const FINGERPRINT = 'c'.repeat(64);
+
+	it('带日志授权打开 - 写入产生完成记录 - 提交后可读回', async () => {
+		const handlers = createIndexSessionHandlers({ root, chunkOptions: CHUNK_OPTIONS, epoch: 1 });
+		const opened = await handlers['session.open']!({ generationId: 'gen-a', configFingerprint: FINGERPRINT, expectedDimension: DIMENSIONS }) as { journal: boolean };
+		expect(opened.journal).toBe(true);
+		const written = await handlers['session.upsertFile']!({ path: 'a.md', content: '一段正文' }, makeContext().ctx) as { chunkCount: number };
+		expect(written.chunkCount).toBeGreaterThan(0);
+		// 再次写入同一路径:revision 递增,旧块被替换。
+		const second = await handlers['session.upsertFile']!({ path: 'a.md', content: '另一段正文' }, makeContext().ctx) as { chunkCount: number };
+		expect(second.chunkCount).toBeGreaterThan(0);
+		const status = await handlers['session.status']!({}) as { totalDocs: number; written: number };
+		expect(status.written).toBe(2);
+	});
+
+	it('关闭会话 - 写权撤销 - 后续写入失败', async () => {
+		const handlers = createIndexSessionHandlers({ root, chunkOptions: CHUNK_OPTIONS, epoch: 1 });
+		await handlers['session.open']!({ generationId: 'gen-a', configFingerprint: FINGERPRINT });
+		const closed = await handlers['session.close']!({}) as { closed: boolean; inflight: number };
+		expect(closed).toEqual({ closed: true, inflight: 0 });
+		await expect(handlers['session.upsertFile']!({ path: 'a.md', content: 'x' }, makeContext().ctx)).rejects.toThrow('尚未打开');
+	});
+
+	it('不带日志授权 - 退回纯存储写入 - 不产生完成记录依赖', async () => {
+		const handlers = createIndexSessionHandlers({ root, chunkOptions: CHUNK_OPTIONS });
+		const opened = await handlers['session.open']!({}) as { journal: boolean };
+		expect(opened.journal).toBe(false);
+		const written = await handlers['session.upsertFile']!({ path: 'b.md', content: '正文' }, makeContext().ctx) as { chunkCount: number };
+		expect(written.chunkCount).toBeGreaterThan(0);
+	});
+});

@@ -13,6 +13,9 @@
 import { randomUUID } from 'node:crypto';
 import { VectraStore, type PreparedBlock } from '../adapters/vector-vectra';
 import { chunkMarkdown, type ChunkOptions } from './chunker';
+import { createWorkerJournal, WorkerJournalOwner } from './index-runtime-journal';
+import type { IndexFileJournal } from '../core/index-file-journal';
+import { sha256 } from '../utils/hash';
 import type { RuntimeHandlers, RuntimeHandlerContext } from './index-runtime-worker';
 
 /** 会话依赖。 */
@@ -23,11 +26,15 @@ export interface IndexSessionOptions {
 	chunkOptions: ChunkOptions;
 	/** 存储工厂;缺省用真实 Vectra。 */
 	createStore?: (root: string) => VectraStore;
+	/** 写权 epoch;提供日志装载时用于构造写所有权。 */
+	epoch?: number;
 }
 
 /** 会话内部状态。 */
 interface SessionState {
 	store: VectraStore | null;
+	journal: IndexFileJournal | null;
+	owner: WorkerJournalOwner | null;
 	chunkOptions: ChunkOptions;
 	written: number;
 }
@@ -52,7 +59,7 @@ function stringField(payload: unknown, key: string): string {
  * @param options 索引根与分块参数
  */
 export function createIndexSessionHandlers(options: IndexSessionOptions): RuntimeHandlers {
-	const state: SessionState = { store: null, chunkOptions: options.chunkOptions, written: 0 };
+	const state: SessionState = { store: null, journal: null, owner: null, chunkOptions: options.chunkOptions, written: 0 };
 	const createStore = options.createStore ?? ((root: string) => new VectraStore(root, { embeddings: NO_EMBEDDINGS, autoInit: true }));
 
 	/** 取已打开的存储;未打开时明确失败,不隐式创建。 */
@@ -62,12 +69,27 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 	};
 
 	return {
-		'session.open': async () => {
+		'session.open': async (payload) => {
 			if (state.store !== null) return { alreadyOpen: true };
 			const store = createStore(options.root);
 			await store.init();
 			state.store = store;
-			return { alreadyOpen: false };
+
+			// 关键路径:给了日志授权才启用「带完成记录」的提交;否则退回纯存储写入。
+			const journalPayload = payload as { generationId?: unknown; configFingerprint?: unknown; expectedDimension?: unknown } | null;
+			if (typeof journalPayload?.generationId === 'string' && typeof journalPayload.configFingerprint === 'string') {
+				const owner = new WorkerJournalOwner(options.epoch ?? 1);
+				state.owner = owner;
+				state.journal = createWorkerJournal({
+					generationRoot: options.root,
+					generationId: journalPayload.generationId,
+					configFingerprint: journalPayload.configFingerprint,
+					store,
+					owner,
+					expectedDimension: typeof journalPayload.expectedDimension === 'number' ? journalPayload.expectedDimension : undefined,
+				});
+			}
+			return { alreadyOpen: false, journal: state.journal !== null };
 		},
 
 		'session.status': async () => {
@@ -111,7 +133,27 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 					commitId,
 				},
 			}));
-			await store.replaceFile({ path: filePath, commitId, blocks });
+			// 关键路径:有日志时走「准备 → 提交」,完成记录与块替换同一次提交落盘;
+			// 无日志时保持纯存储写入,供会话级测试与只读调试路径使用。
+			if (state.journal !== null) {
+				const receipt = await state.journal.readReceipt(filePath);
+				const prepared = await state.journal.prepare({
+					path: filePath,
+					operation: 'replace',
+					inputHash: await sha256(content),
+					revision: (receipt?.revision ?? 0) + 1,
+					previousCommitId: receipt?.commitId ?? null,
+					previousRevision: receipt?.revision ?? 0,
+					blocks: blocks.map((block) => ({
+						id: block.id,
+						vector: block.vector,
+						metadata: block.metadata,
+					})),
+				});
+				await state.journal.commit(prepared.transactionId);
+			} else {
+				await store.replaceFile({ path: filePath, commitId, blocks });
+			}
 			state.written += 1;
 			return { chunkCount: blocks.length, commitId };
 		},
@@ -145,8 +187,13 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 		},
 
 		'session.close': async () => {
+			// 关键路径:关会话即放弃写权,后续写入必须失败;在途提交未结算时如实报告。
+			const inflight = state.owner?.inflightCommits ?? 0;
+			state.owner?.revoke('会话关闭');
+			state.journal = null;
+			state.owner = null;
 			state.store = null;
-			return { closed: true };
+			return { closed: true, inflight };
 		},
 	};
 }
