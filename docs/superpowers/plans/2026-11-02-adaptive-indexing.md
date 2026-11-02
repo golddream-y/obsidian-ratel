@@ -66,13 +66,13 @@ T3 的宿主模型接缝先采用独立、可测试的串行转发桥，原样�
 
 **文件：** 新建 `tests/helpers/index-thread-capability.ts`、`tests/worker/index-thread-capability.test.ts`、`tests/helpers/index-ui-probe.ts`；实验构建接入 `esbuild.config.mjs`，尚不替换生产索引。
 
-- [ ] 建立隔离实验：通过宿主可用的 Node Worker 能力执行 `threadId`、受限临时文件读写、Vectra 初始化与 JSON 提交；不复用 Skill 沙箱，不导入 Obsidian，不连接生产索引。
+- [ ] 建立隔离实验：先验证宿主线程载体。实测结论：Node `worker_threads` 不可用（V8 platform 不支持），Blob Web Worker 可用且具备 Node 集成（Worker 内 `require('node:fs')` 可写读）。实验据此以常驻 Blob Web Worker 执行序列化与文件读写；不复用 Skill 沙箱，不导入 Obsidian，不连接生产索引。
 - [ ] 先用 Node 测试验证探针，再只在 Sandbox 加载实验 bundle；验证三文件插件产物可内联加载 Worker、资源路径/CSP 正常，记录线程身份和完整启动/退出。
 - [ ] 固定后续合成矩阵为 100/1000/3000 篇短笔记，另含单篇超过 200 块；向量为 512 维确定性替身。T0 先采集当前 1.3.0 成功路径基线，以最小独立线程实验处理相同预构造数据，测线程能力与大 JSON 提交，不提前实现完整生产会话。T9 再跑全部最终路径矩阵。
 - [ ] 先证明基线探针能检出人为注入的长阻塞，再记录实际主线程提交与实验线程提交的全部读数；实际基线若未出现明显阻塞则如实记录，不为了红灯制造或挑选测量结论。性能样本每组同机同负载三次，假嵌入与真实模型分开。
 - [ ] 通过条件为真实 Obsidian 能执行独立线程/文件/Vectra、无原生模块、无主线程整库复制；不满足则停止 T1，不换成模拟线程继续。
 
-**验证：** `npx vitest run tests/worker/index-thread-capability.test.ts`，以及 Sandbox 实验记录。Node 用例数不得为零；真实 Sandbox 无证据时 T0 未通过。证据写 `docs/superpowers/plans/2026-11-02-adaptive-indexing-t0-evidence.md`，不得含私人路径。
+**验证：** `npx vitest run tests/worker/index-thread-capability.test.ts`，以及 [Sandbox 实验记录](2026-11-02-adaptive-indexing-t0-evidence.md)。Node 用例数不得为零；真实 Sandbox 无证据时 T0 未通过。证据写 `docs/superpowers/plans/2026-11-02-adaptive-indexing-t0-evidence.md`，不得含私人路径。
 
 ## T-REL：可靠性遗留复现与收口（T3 前置）
 
@@ -150,7 +150,7 @@ host revoke → worker reject new mutations → drain commits and file I/O
 - [ ] 先写实际线程身份断言：hash、分块、校验、JSON 序列化、receipt/Vectra 写入均在非宿主线程；Vault 代理只能返回正文/stat/序号。
 - [ ] Worker 会话内装配 coordinator、journal、代际、原子存储及唯一 Vectra。文件事件由宿主转发，读取通过 Vault RPC；嵌入请求先经本任务的 index-embedding-bridge 串行转发至既有模型实例，不在 Worker 加载第二份 ONNX。桥覆盖取消、活动与错误，T3 可独立测试运行；T6 原位接入批次仲裁，不要求提前实现它。
 - [ ] 主线程撤除 Vault 索引的 Vectra/journal 直接实例；记忆索引等其他存储必须明确区分，不能顺手迁移或误删。检索、手动重建、Indexer Subagent 和配置切换均通过相同异步端口。
-- [ ] Worker bundle 依照 T0 验证的 Node 模式内联到 main，构建顺序先 Worker 后主包；虚拟模块测试 stub 明确不代表真实线程测试。只发布既定三文件，不新增运行时下载。
+- [ ] Worker bundle 依照 T0 验证的 Blob Worker 模式内联到 main 并以 **常驻** 方式复用（避免实测中 434 ms 的创建峰值），构建顺序先 Worker 后主包；虚拟模块测试 stub 明确不代表真实线程测试。只发布既定三文件，不新增运行时下载。
 
 Worker 的宿主文件读取结果约定为：
 
