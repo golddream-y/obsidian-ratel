@@ -116,6 +116,28 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 			return { chunkCount: blocks.length, commitId };
 		},
 
+		'session.search': async (payload, ctx) => {
+			const store = requireStore();
+			const query = stringField(payload, 'query');
+			const rawTopK = (payload as { topK?: unknown }).topK;
+			const topK = rawTopK === undefined ? 10 : rawTopK;
+			if (typeof topK !== 'number' || !Number.isSafeInteger(topK) || topK <= 0 || topK > 100) {
+				throw new Error('topK 必须是 1~100 的整数');
+			}
+			// 关键路径:查询向量同样借宿主通道,不在索引线程里再加载一次模型。
+			const vectors = await callEmbed(ctx, [query]);
+			const queryVector = vectors[0];
+			if (!Array.isArray(queryVector) || queryVector.length === 0) throw new Error('查询向量不可用');
+			const hits = await store.search(queryVector, topK);
+			return {
+				hits: hits.map((hit) => ({
+					path: typeof hit.metadata['path'] === 'string' ? hit.metadata['path'] : '',
+					score: hit.score,
+					chunkIndex: typeof hit.metadata['chunkIndex'] === 'number' ? hit.metadata['chunkIndex'] : null,
+				})),
+			};
+		},
+
 		'session.deleteFile': async (payload) => {
 			const store = requireStore();
 			const removed = await store.deleteByPath(stringField(payload, 'path'));

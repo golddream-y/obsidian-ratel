@@ -113,3 +113,29 @@ describe('索引会话', () => {
 		expect(status.totalDocs).toBe(0);
 	});
 });
+
+describe('会话内查询', () => {
+	it('写入后可查 - 命中路径来自已提交块', async () => {
+		const handlers = createIndexSessionHandlers({ root, chunkOptions: CHUNK_OPTIONS });
+		await handlers['session.open']!({});
+		const ctx = makeContext().ctx;
+		await handlers['session.upsertFile']!({ path: 'a.md', content: '关于索引的正文' }, ctx);
+		const result = await handlers['session.search']!({ query: '索引', topK: 5 }, ctx) as { hits: Array<{ path: string }> };
+		expect(result.hits.length).toBeGreaterThan(0);
+		expect(result.hits.map((hit) => hit.path)).toContain('a.md');
+	});
+
+	it('topK 非法 - 明确拒绝 - 不返回半份结果', async () => {
+		const handlers = createIndexSessionHandlers({ root, chunkOptions: CHUNK_OPTIONS });
+		await handlers['session.open']!({});
+		await expect(handlers['session.search']!({ query: 'x', topK: 0 }, makeContext().ctx)).rejects.toThrow('topK');
+		await expect(handlers['session.search']!({ query: 'x', topK: 101 }, makeContext().ctx)).rejects.toThrow('topK');
+	});
+
+	it('空库查询 - 返回空命中 - 不抛错', async () => {
+		const handlers = createIndexSessionHandlers({ root, chunkOptions: CHUNK_OPTIONS });
+		await handlers['session.open']!({});
+		const result = await handlers['session.search']!({ query: '任意' }, makeContext().ctx) as { hits: unknown[] };
+		expect(result.hits).toEqual([]);
+	});
+});
