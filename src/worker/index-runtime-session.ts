@@ -248,7 +248,7 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 			if (typeof topK !== 'number' || !Number.isSafeInteger(topK) || topK <= 0 || topK > 500) {
 				throw new Error('topK 必须是 1~500 的整数');
 			}
-			const hits = await store.search(vector as number[], topK);
+			const hits = await store.search(vector, topK);
 			return {
 				hits: hits.map((hit) => ({
 					docId: typeof hit.metadata['path'] === 'string' ? hit.metadata['path'] : hit.docId,
