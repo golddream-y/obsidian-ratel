@@ -30,7 +30,7 @@
 
 | 面 | 现状 | 切换需要 |
 | --- | --- | --- |
-| 索引写入 | 线程版已可跑（客户端 + 协调器） | 用线程协调器替换 `IndexManager` 的 coordinator |
+| 索引写入 | 线程版已可跑（客户端 + 协调器 + **后端适配**） | 用线程协调器替换 `IndexManager` 的 coordinator；`createThreadIndexBackend` 已把 `IndexBackend` 契约映射到线程（删除目录等不支持操作明确拒绝） |
 | 检索 | 主线程持有 `VectraStore` 直接查 | 改为经线程 `session.search`；`MultiQuerySearcher` 需要「查询向量来自宿主、候选来自线程」的适配层 |
 | 状态/进度 | 读主线程 store/journal | 改为线程 `session.status` + 协调器 `counters()`；**可见性门已完成**：`session.listCommitted` + `createThreadVisibilityGate`（读取失败如实 `unjudgeable`） |
 | 恢复 | 主线程 `recoverIndexJournal` | 改为线程 `session.recover`（已实现） |
