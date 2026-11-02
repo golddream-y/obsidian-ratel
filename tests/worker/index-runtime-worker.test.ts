@@ -105,3 +105,60 @@ describe('索引运行时服务循环', () => {
 		expect(out.length).toBe(1);
 	});
 });
+
+describe('反向调用宿主', () => {
+	it('处理器调用宿主 - 拿到结果 - 超时不悬挂', async () => {
+		const { port, out } = makePort();
+		serveRuntime({
+			port,
+			grant: GRANT,
+			handlers: {
+				embed: async (payload, ctx) => {
+					const vectors = await ctx!.callHost('embed', payload);
+					return { count: Array.isArray(vectors) ? vectors.length : 0 };
+				},
+			},
+		});
+		port.onmessage?.({ data: request('embed', { texts: ['a', 'b'] }, 'r1') });
+		await vi.waitFor(() => expect(out.some((m) => m.kind === 'call')).toBe(true));
+		const call = out.find((m) => m.kind === 'call') as { callId: string };
+		port.onmessage?.({
+			data: {
+				kind: 'call-result',
+				protocolVersion: INDEX_RUNTIME_PROTOCOL_VERSION,
+				runtimeId: GRANT.runtimeId,
+				epoch: GRANT.epoch,
+				callId: call.callId,
+				ok: true,
+				result: [[0.1], [0.2]],
+			},
+		});
+		await vi.waitFor(() => expect(out.some((m) => m.requestId === 'r1')).toBe(true));
+		expect(out.find((m) => m.requestId === 'r1')).toMatchObject({ ok: true, result: { count: 2 } });
+	});
+
+	it('宿主调用失败 - 请求如实失败 - 不静默返回空', async () => {
+		const { port, out } = makePort();
+		serveRuntime({
+			port,
+			grant: GRANT,
+			handlers: { embed: (_payload, ctx) => ctx!.callHost('embed', {}) },
+		});
+		port.onmessage?.({ data: request('embed', {}, 'r1') });
+		await vi.waitFor(() => expect(out.some((m) => m.kind === 'call')).toBe(true));
+		const call = out.find((m) => m.kind === 'call') as { callId: string };
+		port.onmessage?.({
+			data: {
+				kind: 'call-result',
+				protocolVersion: INDEX_RUNTIME_PROTOCOL_VERSION,
+				runtimeId: GRANT.runtimeId,
+				epoch: GRANT.epoch,
+				callId: call.callId,
+				ok: false,
+				error: '模型未就绪',
+			},
+		});
+		await vi.waitFor(() => expect(out.some((m) => m.requestId === 'r1')).toBe(true));
+		expect(out.find((m) => m.requestId === 'r1')).toMatchObject({ ok: false, error: '模型未就绪' });
+	});
+});

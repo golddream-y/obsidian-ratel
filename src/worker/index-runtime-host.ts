@@ -43,6 +43,8 @@ export interface IndexRuntimeHostOptions {
 	maxInflight?: number;
 	/** 在途载荷字节上限。 */
 	maxInflightBytes?: number;
+	/** Worker 反向调用的处理函数(例如请求嵌入向量)。 */
+	onCall?: (method: string, payload: unknown) => unknown;
 }
 
 /** 宿主错误码。 */
@@ -76,6 +78,7 @@ export class IndexRuntimeHost {
 	private readonly requestTimeoutMs: number;
 	private readonly maxInflight: number;
 	private readonly maxInflightBytes: number;
+	private readonly onCall: ((method: string, payload: unknown) => unknown) | undefined;
 	private inflightBytes = 0;
 	private sequence = 0;
 	private readonly createWorker: RuntimeWorkerFactory;
@@ -88,6 +91,7 @@ export class IndexRuntimeHost {
 		this.requestTimeoutMs = options.requestTimeoutMs ?? 30_000;
 		this.maxInflight = options.maxInflight ?? 8;
 		this.maxInflightBytes = options.maxInflightBytes ?? MAX_MESSAGE_BYTES;
+		this.onCall = options.onCall;
 	}
 
 	/** 当前 epoch;0 表示尚未启动。 */
@@ -237,9 +241,47 @@ export class IndexRuntimeHost {
 			this.dropEntry(message.requestId, false);
 			return;
 		}
+		if (message.kind === 'call') {
+			void this.answerCall(message);
+			return;
+		}
 		if (message.kind === 'control' && message.control === 'cancel-ack' && message.requestId !== undefined) {
 			// 关键路径:确认取消后才归还配额,避免取消风暴反复扩大在途。
 			this.dropEntry(message.requestId, false);
+		}
+	}
+
+	/** 应答 Worker 的反向调用;未注册处理器时明确失败,不让对方悬挂。 */
+	private async answerCall(message: { callId: string; method: string; payload?: unknown }): Promise<void> {
+		const worker = this.worker;
+		if (worker === null) return;
+		let ok = true;
+		let result: unknown;
+		let error: string | undefined;
+		if (this.onCall === undefined) {
+			ok = false;
+			error = `未注册反向调用处理器: ${message.method}`;
+		} else {
+			try {
+				result = await this.onCall(message.method, message.payload);
+			} catch (failure) {
+				ok = false;
+				error = failure instanceof Error ? failure.message : String(failure);
+			}
+		}
+		try {
+			worker.postMessage({
+				kind: 'call-result',
+				protocolVersion: INDEX_RUNTIME_PROTOCOL_VERSION,
+				runtimeId: this.runtimeId,
+				epoch: this.epochValue,
+				callId: message.callId,
+				ok,
+				result,
+				error,
+			});
+		} catch {
+			// 端口已关闭:对方随 Worker 退出收敛。
 		}
 	}
 

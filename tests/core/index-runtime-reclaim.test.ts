@@ -9,7 +9,7 @@ import { recoverIndexJournal } from '../../src/core/index-runtime-assembly';
 import type { IndexFileJournal } from '../../src/core/index-file-journal';
 
 /** 只暴露本用例关心的两个方法的假日志。 */
-function makeJournal(overrides: Partial<Record<'reclaim', 'pending' | 'recover'>> = {}): {
+function makeJournal(overrides: { reclaim?: 'reclaim'; pending?: 'pending'; recover?: 'recover' } = {}): {
 	journal: IndexFileJournal;
 	calls: string[];
 } {

@@ -25,8 +25,14 @@ export interface RuntimeServerPort {
 	onmessage: ((event: { data: unknown }) => void) | null;
 }
 
+/** 处理器可用的宿主调用上下文。 */
+export interface RuntimeHandlerContext {
+	/** 反向调用宿主(例如请求嵌入向量)。 */
+	callHost(method: string, payload?: unknown, timeoutMs?: number): Promise<unknown>;
+}
+
 /** 处理器集合:方法名 → 实现。 */
-export type RuntimeHandlers = Record<string, (payload: unknown) => unknown>;
+export type RuntimeHandlers = Record<string, (payload: unknown, ctx?: RuntimeHandlerContext) => unknown>;
 
 /** 服务配置。 */
 export interface RuntimeServerOptions {
@@ -60,6 +66,9 @@ export function serveRuntime(options: RuntimeServerOptions): RuntimeServer {
 	let served = 0;
 	let drainPromise: Promise<void> | null = null;
 	const inflight = new Set<string>();
+	/** 反向调用等待表;callId → 结算器。 */
+	const pendingCalls = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> | null }>();
+	let callSequence = 0;
 
 	const send = (message: IndexRuntimeMessage): void => {
 		try {
@@ -88,6 +97,15 @@ export function serveRuntime(options: RuntimeServerOptions): RuntimeServer {
 		if (message === null) return;
 		if (message.runtimeId !== grant.runtimeId || message.epoch !== grant.epoch) return;
 
+		if (message.kind === 'call-result') {
+			const pending = pendingCalls.get(message.callId);
+			if (pending === undefined) return;
+			pendingCalls.delete(message.callId);
+			if (pending.timer !== null) clearTimeout(pending.timer);
+			if (message.ok) pending.resolve(message.result);
+			else pending.reject(new Error(message.error ?? '宿主调用失败'));
+			return;
+		}
 		if (message.kind === 'control') {
 			handleControl(message);
 			return;
@@ -108,7 +126,7 @@ export function serveRuntime(options: RuntimeServerOptions): RuntimeServer {
 		inflight.add(message.requestId);
 		served += 1;
 		void Promise.resolve()
-			.then(() => handler(message.payload))
+			.then(() => handler(message.payload, context))
 			.then(
 				(result) => respond(message, true, result),
 				(error) => respond(message, false, undefined, error instanceof Error ? error.message : String(error)),
@@ -118,9 +136,37 @@ export function serveRuntime(options: RuntimeServerOptions): RuntimeServer {
 			});
 	};
 
+	const callHost: RuntimeHandlerContext['callHost'] = (method, payload, timeoutMs = 30_000) => {
+		const callId = `call-${++callSequence}`;
+		return new Promise<unknown>((resolve, reject) => {
+			const entry = { resolve, reject, timer: null as ReturnType<typeof setTimeout> | null };
+			pendingCalls.set(callId, entry);
+			entry.timer = setTimeout(() => {
+				pendingCalls.delete(callId);
+				reject(new Error(`宿主调用超时: ${method}`));
+			}, timeoutMs);
+			send({
+				kind: 'call',
+				protocolVersion: INDEX_RUNTIME_PROTOCOL_VERSION,
+				runtimeId: grant.runtimeId,
+				epoch: grant.epoch,
+				callId,
+				method,
+				payload,
+			});
+		});
+	};
+
+	const context: RuntimeHandlerContext = { callHost };
+
 	const doRevoke = (reason?: string): Promise<void> => {
 		if (revoked) return drainPromise ?? Promise.resolve();
 		revoked = true;
+		for (const [, pending] of pendingCalls) {
+			if (pending.timer !== null) clearTimeout(pending.timer);
+			pending.reject(new Error('运行时已撤销'));
+		}
+		pendingCalls.clear();
 		drainPromise = Promise.resolve()
 			.then(async () => { await onRevoked?.(); })
 			.catch(() => {

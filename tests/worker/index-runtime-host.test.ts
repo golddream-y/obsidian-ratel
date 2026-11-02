@@ -221,3 +221,46 @@ describe('索引运行时宿主', () => {
 		expect(host.running).toBe(false);
 	});
 });
+
+describe('宿主应答反向调用', () => {
+	it('Worker 请求嵌入 - 宿主处理并回结果 - 失败如实回错误', async () => {
+		const worker = new FakeWorker();
+		const host = new IndexRuntimeHost({
+			createWorker: () => worker,
+			runtimeId: 'rt-test',
+			requestTimeoutMs: 1000,
+			onCall: async (method, payload) => {
+				if (method === 'embed') return [[0.1], [0.2]];
+				throw new Error(`未知宿主方法 ${method}`);
+			},
+		});
+		host.start();
+		worker.onmessage?.({
+			data: {
+				kind: 'call',
+				protocolVersion: INDEX_RUNTIME_PROTOCOL_VERSION,
+				runtimeId: 'rt-test',
+				epoch: 1,
+				callId: 'c1',
+				method: 'embed',
+				payload: { texts: ['a', 'b'] },
+			},
+		});
+		await vi.waitFor(() => expect(worker.posted.some((m) => (m as { kind?: string }).kind === 'call-result')).toBe(true));
+		const okResult = worker.posted.find((m) => (m as { callId?: string }).callId === 'c1') as { ok: boolean; result: unknown };
+		expect(okResult).toMatchObject({ ok: true, result: [[0.1], [0.2]] });
+
+		worker.onmessage?.({
+			data: {
+				kind: 'call',
+				protocolVersion: INDEX_RUNTIME_PROTOCOL_VERSION,
+				runtimeId: 'rt-test',
+				epoch: 1,
+				callId: 'c2',
+				method: 'unknown',
+			},
+		});
+		await vi.waitFor(() => expect(worker.posted.some((m) => (m as { callId?: string }).callId === 'c2')).toBe(true));
+		expect(worker.posted.find((m) => (m as { callId?: string }).callId === 'c2')).toMatchObject({ ok: false });
+	});
+});

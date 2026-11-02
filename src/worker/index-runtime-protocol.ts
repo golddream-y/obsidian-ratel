@@ -66,8 +66,36 @@ export interface IndexRuntimeControl {
 	reason?: string;
 }
 
+/** Worker → 宿主的反向调用(例如请求一批嵌入向量)。 */
+export interface IndexRuntimeCall {
+	kind: 'call';
+	protocolVersion: typeof INDEX_RUNTIME_PROTOCOL_VERSION;
+	runtimeId: string;
+	epoch: number;
+	callId: string;
+	method: string;
+	payload?: unknown;
+}
+
+/** 宿主对反向调用的应答。 */
+export interface IndexRuntimeCallResult {
+	kind: 'call-result';
+	protocolVersion: typeof INDEX_RUNTIME_PROTOCOL_VERSION;
+	runtimeId: string;
+	epoch: number;
+	callId: string;
+	ok: boolean;
+	result?: unknown;
+	error?: string;
+}
+
 /** 协议消息全集。 */
-export type IndexRuntimeMessage = IndexRuntimeRequest | IndexRuntimeResponse | IndexRuntimeControl;
+export type IndexRuntimeMessage =
+	| IndexRuntimeRequest
+	| IndexRuntimeResponse
+	| IndexRuntimeControl
+	| IndexRuntimeCall
+	| IndexRuntimeCallResult;
 
 /** 单条消息载荷上限（估算字节）。 */
 export const MAX_MESSAGE_BYTES = 24 * 1024 * 1024;
@@ -105,6 +133,14 @@ export function parseRuntimeMessage(value: unknown): IndexRuntimeMessage | null 
 	if (value.kind === 'control') {
 		if (!isControlKind(value.control)) return null;
 		return value as unknown as IndexRuntimeControl;
+	}
+	if (value.kind === 'call') {
+		if (typeof value.callId !== 'string' || typeof value.method !== 'string') return null;
+		return value as unknown as IndexRuntimeCall;
+	}
+	if (value.kind === 'call-result') {
+		if (typeof value.callId !== 'string' || typeof value.ok !== 'boolean') return null;
+		return value as unknown as IndexRuntimeCallResult;
 	}
 	return null;
 }
