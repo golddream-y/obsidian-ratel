@@ -928,6 +928,8 @@ describe('生产装配 - VectraStore 构造点存储注入契约', () => {
 			// 索引线程与 T0 实验各有一处构造点,同样必须注入同一份原子存储。
 			'src/worker/index-runtime-session.ts': 1,
 			'src/experiment/index-thread-probe.ts': 1,
+			// 隔离代理测量同样必须注入同一份原子存储,否则写入记录不可判定。
+			'src/experiment/isolation-proxy-worker.ts': 1,
 		});
 	});
 });

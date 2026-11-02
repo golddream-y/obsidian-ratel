@@ -26,7 +26,7 @@ function makeContent(index: number): string {
 /** 执行索引提交。 */
 export async function runIndexing(root: string, fileCount: number, generationId: string): Promise<number> {
 	const storage = new AtomicIndexStorage({ generationRoot: root });
-	const store = new VectraStore(root, { storage, autoInit: true });
+	const store = new VectraStore(root, { storage: storage, autoInit: true });
 	await store.init();
 	const journal = createWorkerJournal({
 		generationRoot: root,
