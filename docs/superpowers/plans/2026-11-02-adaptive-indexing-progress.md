@@ -17,7 +17,7 @@
 | T6 共享模型仲裁 | 未开始 | — | — |
 | T7～T8 自适应与模式（M2） | 未开始 | — | — |
 | T9 三区分验收 | 未开始 | — | — |
-| T-REL 可靠性遗留 | 部分完成 | 取消信号透传嵌入端口（4 用例）；启动恢复回收孤立隔离事务（3 用例）；配置切换缺口已复现（6 用例）；迁移成本已实测 | 派生清单恢复接线、flush 一致性 |
+| T-REL 可靠性遗留 | 部分完成 | 取消信号透传（4 用例）；孤立隔离事务回收（3 用例）；配置切换缺口复现并修复身份判定（6 用例）；迁移成本实测；派生清单恢复纯模块（26 用例）；共享落盘模块（16 用例） | **接线未做**：后端改调恢复模块、原子存储/迁移侧改走共享落盘 |
 
 ## 配置切换缺口（已复现）
 
@@ -39,6 +39,15 @@
 - 平方代价源：`vector-vectra.ts` 的 `inspectFile` 每次全量 `listItems()` 后 filter；批量入口快 56–77 倍。
 - 真正的大库墙钟成本是线性项：每条完成记录一次 `writeJsonAtomically`（约 15–16 ms/文件），3000 篇外推 45–50 s。
 - 退化入口：`index-generations.ts` 批量枚举缺失或抛错时**静默回退逐条**，无告警。
+
+## 新模块（未接线）
+
+| 模块 | 内容 | 接线待做 |
+| --- | --- | --- |
+| `src/core/index-manifest-recovery.ts` | 从 `recoverMissingManifest` 提炼的纯函数：15 个拒绝原因码，成功返回清单+构建戳，不写盘 | 后端改为调用它；需只读暴露日志的 `configFingerprint` |
+| `src/adapters/index-write-flush.ts` | 共享落盘：临时文件 wx → 全量写 → sync → rename → 目录 sync；`onCommitted` 区分重试与重载；目录降级集含 ENOSYS | 原子存储 `upsertFile`/`flushPath` 与迁移侧 `writeJsonAtomically` 改走它 |
+
+两模块均零运行时耦合（只 `import type`），接线前不影响现役行为。
 
 ## 验证边界
 

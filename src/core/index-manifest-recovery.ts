@@ -205,6 +205,16 @@ function isSafeCount(value: unknown): value is number {
 	return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 }
 
+/**
+ * 只做数组判定。
+ *
+ * 关键路径:`Array.isArray` 的谓词是 `any[]`,直接用在已声明类型的只读数组上会把元素类型
+ * 收窄成 `any`;这里用显式泛型谓词保持元素类型,让后续字段核验仍是强类型。
+ */
+function isReadonlyArray<T>(value: unknown): value is ReadonlyArray<T> {
+	return Array.isArray(value);
+}
+
 /** 构造一条拒绝结果。 */
 function reject(reason: ManifestRecoveryRejectionReason, detail?: string): ManifestRecoveryRejection {
 	return detail === undefined ? { ok: false, reason } : { ok: false, reason, detail };
@@ -282,20 +292,23 @@ export async function recoverDerivedManifest(deps: ManifestRecoveryDeps): Promis
 	}
 
 	// 关键路径:三路记录必须来自同一次读取;分三次串行读取会放大 TOCTOU 窗口。
-	let lists: [ReadonlyArray<ManifestRecoveryRecord>, ReadonlyArray<ManifestRecoveryRecord>, ReadonlyArray<ManifestRecoveryRecord>];
+	type RecordLists = [ReadonlyArray<ManifestRecoveryRecord>, ReadonlyArray<ManifestRecoveryRecord>, ReadonlyArray<ManifestRecoveryRecord>];
+	let lists: RecordLists;
 	try {
 		lists = await Promise.all([
 			deps.fileRecords.listReceipts(),
 			deps.fileRecords.listTombstones(),
 			deps.fileRecords.listSearchableReceipts(),
-		]) as typeof lists;
+		]);
 	}
 	catch {
 		return reject('records-unreadable');
 	}
 	const [receipts, tombstones, searchable] = lists;
 	// 原实现同样拒绝非数组:非数组不能当作空集,否则会把「读失败」伪装成「没有记录」。
-	if (!Array.isArray(receipts) || !Array.isArray(tombstones) || !Array.isArray(searchable)) {
+	if (!isReadonlyArray<ManifestRecoveryRecord>(receipts)
+		|| !isReadonlyArray<ManifestRecoveryRecord>(tombstones)
+		|| !isReadonlyArray<ManifestRecoveryRecord>(searchable)) {
 		return reject('records-unreadable');
 	}
 
@@ -440,7 +453,7 @@ export async function recoverDerivedManifest(deps: ManifestRecoveryDeps): Promis
 	catch {
 		return reject('vault-input-invalid', 'read-failed');
 	}
-	if (!Array.isArray(vaultInputs)) return reject('vault-input-invalid');
+	if (!isReadonlyArray<ManifestRecoveryVaultInput>(vaultInputs)) return reject('vault-input-invalid');
 
 	// 关键路径:mtime 只能来自实际索引时的快照;日志没有该字段,统一设 0 强制下次启动用 hash 核实。
 	const entries: Record<string, IndexManifestEntry> = {};

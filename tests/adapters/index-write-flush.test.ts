@@ -231,6 +231,19 @@ describe('writeFileAtomic', () => {
 		expect(counters.unlink).toBe(1);
 	});
 
+	it('rename 抛错且目标已有旧内容 - 旧内容不变、临时文件清理、错误原样抛出', async () => {
+		await writeFile(target, OLD_PAYLOAD, 'utf8');
+		const fault = errnoError('EACCES', '模拟 rename 失败');
+		const { fileSystem, counters } = createFaultFileSystem({ rename: () => fault });
+
+		await expect(writeFileAtomic(fileSystem, target, NEW_BYTES)).rejects.toBe(fault);
+
+		expect(await readFile(target, 'utf8')).toBe(OLD_PAYLOAD);
+		expect(await readdir(workspace)).toEqual(['index.json']);
+		expect(counters.unlink).toBe(1);
+		expect(counters.directorySync).toBe(0);
+	});
+
 	it.each(['EINVAL', 'ENOTSUP'] as const)(
 		'目录 fsync 返回 %s - 整体成功且内容为新版',
 		async (code) => {
