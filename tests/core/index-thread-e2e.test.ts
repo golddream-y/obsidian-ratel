@@ -108,3 +108,40 @@ describe('线程索引 + 宿主检索编排', () => {
 		await client.close('e2e done');
 	});
 });
+
+describe('重启后仍可检索', () => {
+	it('关闭后重开同一代际 - 已提交内容仍可检索', async () => {
+		const embedding: EmbeddingPort = {
+			dimensions: DIMENSIONS,
+			modelId: 'test:reopen',
+			async embed(texts) {
+				return texts.map(() => Array.from({ length: DIMENSIONS }, () => 0.1));
+			},
+		};
+		/** 起一个全新的客户端 + 服务循环,模拟插件重载。 */
+		const open = () => {
+			const handlers: RuntimeHandlers = {
+				ping: () => 'pong',
+				...createIndexSessionHandlers({ root, chunkOptions: { maxTokens: 500, overlapTokens: 100, count: (t: string) => t.length }, epoch: 1 }),
+			};
+			let bridge: RuntimeWorkerLike | null = null;
+			const client = new IndexRuntimeClient({
+				createWorker: () => bridge!,
+				embed: async (texts) => embedding.embed([...texts]),
+			});
+			bridge = makeBridge(handlers, client.runtimeId);
+			return client;
+		};
+
+		const first = open();
+		await first.start({ root, generationId: 'gen-reopen', configFingerprint: FINGERPRINT, expectedDimension: DIMENSIONS });
+		await first.indexFile('持久.md', '重启后仍然可检索的正文');
+		await first.close('第一次关闭');
+
+		const second = open();
+		await second.start({ root, generationId: 'gen-reopen', configFingerprint: FINGERPRINT, expectedDimension: DIMENSIONS });
+		const hits = await second.search('检索', 5);
+		expect(hits.map((hit) => hit.path)).toContain('持久.md');
+		await second.close('第二次关闭');
+	});
+});

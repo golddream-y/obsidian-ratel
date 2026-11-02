@@ -83,6 +83,8 @@ export interface ExperimentReport {
 	channel: { ping: string; written: boolean; readBack: string | null; stall: StallReading; error?: string };
 	/** 索引线程会话链路:索引两篇 → 查询 → 状态。 */
 	runtime: { indexed: number; hits: number; totalDocs: number; stall: StallReading; error?: string };
+	/** 重开线程后仍能检索到已提交内容(落盘持久性)。 */
+	reopen: { found: boolean; error?: string };
 	/** 同一负载在主线程序列化 + 写入的对照。 */
 	mainThreadIndex: { indexed: number; stall: StallReading; error?: string };
 }
@@ -244,6 +246,7 @@ export async function runIndexThreadExperiment(
 	}
 
 	// 8) 会话链路:真实常驻 Worker 内跑分块 + Vectra + 日志,嵌入用确定性替身。
+	let reopen: ExperimentReport['reopen'] = { found: false };
 	let runtime: ExperimentReport['runtime'] = { indexed: 0, hits: 0, totalDocs: 0, stall: { maxGapMs: 0, p95GapMs: 0, samples: 0 } };
 	try {
 		const sessionRoot = path.join(dir, 'session');
@@ -275,6 +278,22 @@ export async function runIndexThreadExperiment(
 			runtime.hits = hits.length;
 			runtime.totalDocs = (await client.status()).totalDocs;
 			await client.close('experiment done');
+			// 重开一次:验证完成记录与向量确实落盘,而不是只活在线程内存里。
+			const reopened = new IndexRuntimeClient({
+				createWorker: () => createInlineRuntimeWorker(),
+				embed: embedBridge,
+				requestTimeoutMs: 20_000,
+			});
+			await reopened.start({
+				root: sessionRoot,
+				generationId: 'experiment-gen',
+				configFingerprint: 'a'.repeat(64),
+				expectedDimension: dims,
+				chunkOptions: { maxTokens: 500, overlapTokens: 100 },
+			});
+			const after = await reopened.search('索引', 5);
+			reopen = { found: after.length > 0 };
+			await reopened.close('reopen done');
 		});
 	} catch (error) {
 		runtime.error = String((error as Error)?.message ?? error);
@@ -329,6 +348,7 @@ export async function runIndexThreadExperiment(
 		selfCheck,
 		channel,
 		runtime,
+		reopen,
 		mainThreadIndex,
 	};
 	const reportPath = path.join(os.tmpdir(), `ratel-index-thread-experiment-${Date.now()}.json`);

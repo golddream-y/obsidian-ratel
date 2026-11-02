@@ -24,6 +24,7 @@ node scripts/link-vault.mjs "<preview-vault>"
 | 探针可信 | 自检注入 300 ms 被检出（≥250 ms） | `selfCheck` |
 | 单文件提交 | 线程内写入后可查回同一路径，块数为正 | `runtime.hits` / `runtime.totalDocs` |
 | 旧块替换 | 内容变短后旧块不残留 | Node 用例（`index-runtime-session`） |
+| 落盘持久性 | 关闭线程后重开同一代际，已提交内容仍可检索 | Node 用例（`index-thread-e2e`「重启后仍可检索」）+ 实验 `reopen` 字段 |
 | 崩溃恢复 | 未决事务输入未变则重放产出完成记录；内容已变不重放 | Node 用例（会话恢复 2 例） |
 | 写权撤销 | 撤销后写入失败 | Node 用例（入口 + 会话） |
 
