@@ -23,6 +23,7 @@ import { resolveBuildStampPath, readBuildStamp, isBuildStampCurrent, writeBuildS
 import { sha256 } from '../utils/hash';
 import { tNow } from '../i18n';
 import { devLogger } from '../logging/dev-logger';
+import { recoverDerivedManifest } from './index-manifest-recovery';
 interface IndexSnapshot {
 	path: string;
 	content: string;
@@ -475,68 +476,41 @@ export class PersistentIndexBackend implements IndexBackend {
 	private async recoverMissingManifest(stamp: IndexBuildStamp): Promise<IndexResult & { skipped: number }> {
 		const reader = this.deps.fileRecords;
 		if (!reader) throw this.unexpectedResponse();
-		const [receipts, tombstones, searchable] = await Promise.all([
-			reader.listReceipts(), reader.listTombstones(), reader.listSearchableReceipts(),
-		]);
-		// 仅在回调内核验容器，保留外层只读记录类型，避免 Array.isArray 收窄成 any[]。
-		if (![receipts, tombstones, searchable].every(records => Array.isArray(records))) {
-			throw this.unexpectedResponse();
-		}
-		if (receipts.length === 0 && tombstones.length === 0 && searchable.length === 0
-			&& !this.deps.getConfigFingerprint && !reader.listPendingPaths) {
-			// 关键路径:status() 在读取失败时也返回 0,不能用它证明空索引。
+		// 关键路径:纯旧空库没有任何核验能力,只能用磁盘真值证明「确实为空」后走首次构建;
+		// 这条分支与恢复模块的 allowFirstBuild 分开,生产路径不得借用。
+		if (!this.deps.getConfigFingerprint && !reader.listPendingPaths) {
 			const disk = JSON.parse(await fs.promises.readFile(path.join(this.deps.indexDir, INDEX_VECTRA_INDEX_FILENAME), 'utf8')) as { items?: unknown } | null;
 			if (!disk || !Array.isArray(disk.items) || disk.items.length !== 0) throw this.unexpectedResponse();
 			return { ...await this.full(), skipped: 0 };
 		}
 		const fingerprint = this.deps.getConfigFingerprint?.();
-		if (!fingerprint || !/^[0-9a-f]{64}$/.test(fingerprint) || !reader.listPendingPaths || !reader.hasPendingTransactions || !reader.verifyReceipt) throw this.unexpectedResponse();
-		if (await reader.hasPendingTransactions()) throw this.unexpectedResponse();
-		const pendingPaths = await reader.listPendingPaths();
-		const round = this.roundState();
-		if (!Array.isArray(pendingPaths) || pendingPaths.length > 0 || round.active > 0 || round.pendingTransactions > 0) {
+		if (!fingerprint || !/^[0-9a-f]{64}$/.test(fingerprint)
+			|| !reader.listPendingPaths || !reader.hasPendingTransactions || !reader.verifyReceipt) {
 			throw this.unexpectedResponse();
 		}
-		const seen = new Set<string>();
-		for (const [records, state] of [[receipts, 'present'], [tombstones, 'deleted']] as const) {
-			for (const record of records) {
-				if (!record || record.state !== state || typeof record.path !== 'string' || record.path.length === 0
-					|| seen.has(record.path) || record.configFingerprint !== fingerprint
-					|| !Number.isSafeInteger(record.revision) || record.revision < 1
-					|| !Number.isSafeInteger(record.chunkCount) || record.chunkCount < 0
-					|| (state === 'present' ? typeof record.inputHash !== 'string' || !/^[0-9a-f]{64}$/.test(record.inputHash)
-						: record.inputHash !== null || record.chunkCount !== 0)) throw this.unexpectedResponse();
-				seen.add(record.path);
-			}
+		// 关键路径:核验逻辑只在恢复模块里维护一份,拒绝即失败关闭,不清库也不退回全量。
+		const result = await recoverDerivedManifest({
+			fileRecords: {
+				listReceipts: () => reader.listReceipts(),
+				listTombstones: () => reader.listTombstones(),
+				listSearchableReceipts: () => reader.listSearchableReceipts(),
+				hasPendingTransactions: () => reader.hasPendingTransactions!(),
+				listPendingPaths: () => reader.listPendingPaths!(),
+			},
+			verifyBlockSet: (filePath) => reader.verifyReceipt!(filePath),
+			fingerprint: () => this.deps.getConfigFingerprint?.() ?? null,
+			expectedFingerprint: fingerprint,
+			vaultInputs: async () => (await this.snapshot()).map((file) => ({ path: file.path, hash: file.hash })),
+			readStoredStamp: () => readBuildStamp(this.deps.indexDir),
+			buildStamp: stamp,
+			inFlight: () => this.roundState(),
+		});
+		if (!result.ok) {
+			devLogger.warn('index', `派生清单恢复被拒绝:${result.reason}`);
+			throw this.unexpectedResponse();
 		}
-		// 关键路径:隔离/不可用的旧凭据不能证明当前向量;读空集也不能冒充已核验。
-		const searchableByPath = new Map(searchable.map(record => [record.path, record]));
-		if (receipts.length + tombstones.length === 0 || searchable.length !== receipts.length
-			|| searchableByPath.size !== receipts.length || receipts.some(record => {
-				const candidate = searchableByPath.get(record.path);
-				return !candidate || candidate.state !== 'present' || candidate.inputHash !== record.inputHash
-					|| candidate.revision !== record.revision || candidate.chunkCount !== record.chunkCount
-					|| candidate.configFingerprint !== fingerprint;
-			})) throw this.unexpectedResponse();
-		// 完成记录只能证明提交过；恢复前还须逐条核对当前向量值和块集合，包括删除记录。
-		for (const record of [...receipts, ...tombstones]) {
-			const verified = await reader.verifyReceipt(record.path);
-			if (!verified?.matches || verified.receipt.path !== record.path
-				|| verified.receipt.revision !== record.revision || verified.receipt.state !== record.state
-				|| verified.receipt.inputHash !== record.inputHash || verified.receipt.chunkCount !== record.chunkCount
-				|| verified.receipt.configFingerprint !== fingerprint) throw this.unexpectedResponse();
-		}
-		const persistedStamp = await readBuildStamp(this.deps.indexDir);
-		if (persistedStamp && !isBuildStampCurrent(persistedStamp, stamp)) throw this.unexpectedResponse();
-		const data = this.blankManifest(stamp);
-		// 关键路径:mtime 只能来自实际索引时的快照,日志没有该字段时设 0,不能借当前 stat 伪造。
-		data.entries = Object.fromEntries(receipts.map(record => [record.path, {
-			path: record.path, hash: record.inputHash!, mtime: 0, chunkCount: record.chunkCount,
-		}]));
-		const diff = this.deps.manifest.diff(data, await this.snapshot());
-		if (diff.toAdd.length > 0 || diff.toUpdate.length > 0 || diff.toDelete.length > 0) throw this.unexpectedResponse();
-		await this.commit(data, stamp);
-		return { indexed: 0, errors: 0, skipped: diff.unchanged.length };
+		await this.commit(result.manifest, stamp);
+		return { indexed: 0, errors: 0, skipped: result.skipped };
 	}
 
 	/** 手动全量入口；只有所有输入文件与元数据都写成功才返回。 */
