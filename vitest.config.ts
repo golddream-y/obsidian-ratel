@@ -20,6 +20,12 @@ export default defineConfig({
 				__dirname,
 				'tests/helpers/skill-script-worker-code-stub.ts',
 			),
+			// 关键路径:索引线程 Worker 代码同样是构建期虚拟模块;测试里给空实现,
+			// 需要真实线程的验证必须在宿主内进行,不能靠 Node 测试冒充。
+			'@ratel/index-runtime-worker-code': path.resolve(
+				__dirname,
+				'tests/helpers/index-runtime-worker-code-stub.ts',
+			),
 			// 关键路径:esbuild 虚拟模块(内置 skill 清单)在 vitest 无构建期注入,指向空清单 stub;
 			// 导入 main.ts 的测试(settings-adapter / main-rag-loop 等)只关心装配,不依赖内置 skill 内容。
 			'@ratel/builtin-skills-code': path.resolve(

@@ -51,7 +51,7 @@ import {
 	type IndexGenerationLegacySource,
 	type ResolveIndexGenerationResult,
 } from './index-processor-port';
-import type { IndexConfigDescriptor } from './index-persistence-types';
+import { INDEX_CONFIG_FINGERPRINT_FIELDS, type IndexConfigDescriptor } from './index-persistence-types';
 import type { ChunkOptions } from '../worker/chunker';
 import type { EmbeddingPort } from '../ports/embedding';
 import type {
@@ -101,19 +101,16 @@ export function createIndexRuntimeStore(
 // ==================== 纯函数与共用构造 ====================
 
 /**
- * 由配置描述派生会话内配置身份 — 与配置指纹同源的五个输入,用于同步比对。
+ * 由配置描述派生会话内配置身份 — 与配置指纹**同源同序**的全部输入,用于同步比对。
+ *
+ * 关键路径:身份串必须覆盖指纹的全部字段。此前只取 5 个字段,模型修订与嵌入文本模板
+ * 变化会改指纹却不改身份,导致同一会话内「装配期指纹」与「实时参数」不一致而被静默放行。
  *
  * @param config - 当前配置描述。
  * @returns 身份字符串(仅用于比对,不参与指纹/清单)。
  */
 export function configIdentityOf(config: IndexConfigDescriptor): string {
-	return [
-		config.embeddingModelId,
-		String(config.embeddingDimension),
-		String(config.chunkerVersion),
-		String(config.chunkSize),
-		String(config.chunkOverlap),
-	].join('|');
+	return INDEX_CONFIG_FINGERPRINT_FIELDS.map((field) => String(config[field])).join('|');
 }
 
 /**

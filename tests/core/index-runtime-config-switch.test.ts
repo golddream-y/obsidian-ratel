@@ -150,7 +150,7 @@ describe('索引运行时配置切换', () => {
 	 * `configIdentityOf` 只比模型 ID、维度、分块代数/大小/重叠;修订与嵌入文本模板不参与,
 	 * 因此这两类变化在同一会话内不会被 `src/main.ts` 的同步比对发现,而它们**确实**改变配置指纹。
 	 */
-	it('会话内配置身份 - 模型修订或嵌入文本模板变化 - 身份串不变但配置指纹已变化（缺口复现）', async () => {
+	it('会话内配置身份 - 与配置指纹同源同序 - 模型修订与嵌入文本模板变化都能触发漂移', async () => {
 		const current = baseConfig();
 		const revisionChanged = { ...current, embeddingModelRevision: 'revision-2' };
 		const textTemplateChanged = { ...current, embeddingTextVersion: 'template-2' };
@@ -162,10 +162,14 @@ describe('索引运行时配置切换', () => {
 		expect(await computeConfigFingerprint(revisionChanged)).not.toBe(await computeConfigFingerprint(current));
 		expect(await computeConfigFingerprint(textTemplateChanged)).not.toBe(await computeConfigFingerprint(current));
 
-		expect(configIdentityOf(revisionChanged)).toBe(configIdentityOf(current));
-		expect(configIdentityOf(textTemplateChanged)).toBe(configIdentityOf(current));
+		// 修复后:身份串覆盖指纹全部字段,任何指纹变化都必须同时改变身份串,
+		// 否则会话内漂移判定会放行「装配期指纹与实时参数不一致」的写入。
+		expect(configIdentityOf(revisionChanged)).not.toBe(configIdentityOf(current));
+		expect(configIdentityOf(textTemplateChanged)).not.toBe(configIdentityOf(current));
 		expect(configIdentityOf(modelChanged)).not.toBe(configIdentityOf(current));
 		expect(configIdentityOf(dimensionChanged)).not.toBe(configIdentityOf(current));
+		// 反向约束:不参与指纹的字段不得凭空制造漂移。
+		expect(configIdentityOf({ ...current })).toBe(configIdentityOf(current));
 	});
 
 	/**
@@ -191,6 +195,9 @@ describe('索引运行时配置切换', () => {
 		expect(activeBefore).toBe(first.generationId);
 
 		// 同一会话内配置指纹变化后再次装配 —— 当前真实行为是所有权占用失败关闭。
+		// 关键路径:失败不是立即的 —— 要等满生产默认的 5s 关闭超时(closeTimeoutMs 未由装配层暴露),
+		// 这是宿主若在会话内重装会被阻塞的时长。
+		expect(await computeConfigFingerprint(configB)).not.toBe(await computeConfigFingerprint(configA));
 		await expect(
 			assembleWritable(root, configB, new FakeEmbeddingPort(DIMENSIONS), vault),
 		).rejects.toMatchObject({ code: 'predecessor-not-closed' });
@@ -199,11 +206,14 @@ describe('索引运行时配置切换', () => {
 		// 即使接管最终没成功。
 		expect(captureThrow(() => first.lease.assertWritable())).toMatchObject({ code: 'epoch-revoked' });
 
-		// 没有产生第二套代际:代际表只有旧活动代际,指针不动,目录也只有一个。
+		// 没有产生第二套代际:代际表只有旧活动代际,指针不动,目录也只有一个,
+		// owner 锁仍由旧会话持有(没有半接管状态)。
 		const control = await first.generations.readControl();
 		expect(control.activeGenerationId).toBe(first.generationId);
 		expect(Object.keys(control.generations)).toEqual([first.generationId]);
 		expect(fs.readdirSync(path.join(root, 'generations'))).toEqual([first.generationId]);
+		// owner 锁仍记录旧会话的实例令牌 —— 失败的接管没有留下半接管状态。
+		expect(first.lease.snapshot().instanceToken).toBe(first.lease.instanceToken);
 	}, 20_000);
 
 	/**
