@@ -123,3 +123,42 @@ describe('崩溃与重启', () => {
 		await expect(client.indexFile('a.md', '正文')).resolves.toMatchObject({ chunkCount: expect.any(Number) });
 	});
 });
+
+describe('查询与索引的模型公平性', () => {
+	it('索引批次在途时到达的查询 - 插到剩余索引批次之前', async () => {
+		const handlers: RuntimeHandlers = {
+			ping: () => 'pong',
+			...createIndexSessionHandlers({ root, chunkOptions: { maxTokens: 8, overlapTokens: 0, count: (t) => t.length }, epoch: 1 }),
+		};
+		let client!: IndexRuntimeClient;
+		const order: string[] = [];
+		let releaseGate!: () => void;
+		const gate = new Promise<void>((resolve) => { releaseGate = resolve; });
+		let gatedFirstIndex = false;
+		client = new IndexRuntimeClient({
+			createWorker: () => makeBridge(handlers, client.runtimeId),
+			maxBatchSize: 1,
+			embed: async (texts, workload) => {
+				order.push(workload);
+				if (workload === 'index' && !gatedFirstIndex) {
+					gatedFirstIndex = true;
+					await gate;
+				}
+				return texts.map(() => Array.from({ length: DIMENSIONS }, () => 0.1));
+			},
+		});
+		await client.start({ root, generationId: 'gen-fair', configFingerprint: FINGERPRINT, expectedDimension: DIMENSIONS });
+		// 多块正文 → 多个索引批次,才能看出查询是否插队。
+		const longText = Array.from({ length: 8 }, (_, i) => `第${i}段需要被切开的正文内容`).join('\n');
+		const indexing = client.indexFile('a.md', longText);
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		const searching = client.search('查询', 3);
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		releaseGate();
+		await Promise.all([indexing, searching]);
+		// 首个索引批次在途 → 查询插入 → 剩余索引批次。
+		expect(order[0]).toBe('index');
+		expect(order[1]).toBe('query');
+		expect(order.filter((item) => item === 'index').length).toBeGreaterThan(1);
+	});
+});
