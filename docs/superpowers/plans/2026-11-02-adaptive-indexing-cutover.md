@@ -31,7 +31,7 @@
 | 面 | 现状 | 切换需要 |
 | --- | --- | --- |
 | 索引写入 | 线程版已可跑（客户端 + 协调器 + **后端适配**） | 用线程协调器替换 `IndexManager` 的 coordinator；`createThreadIndexBackend` 已把 `IndexBackend` 契约映射到线程（删除目录等不支持操作明确拒绝） |
-| 检索 | 主线程持有 `VectraStore` 直接查 | 改为经线程 `session.search`；`MultiQuerySearcher` 需要「查询向量来自宿主、候选来自线程」的适配层 |
+| 检索 | 主线程持有 `VectraStore` 直接查 | **已完成**：`candidateSource` 端口 + `createThreadCandidateSource`，线程未就绪时退回 Worker |
 | 状态/进度 | 读主线程 store/journal | 改为线程 `session.status` + 协调器 `counters()`；**可见性门已完成**：`session.listCommitted` + `createThreadVisibilityGate`（读取失败如实 `unjudgeable`） |
 | 恢复 | 主线程 `recoverIndexJournal` | 改为线程 `session.recover`（已实现） |
 | 降级 | 主线程装配失败路径 | 线程启动失败要映射到既有「索引暂不可用」状态 |
@@ -49,3 +49,13 @@
 - 检索面是用户主路径，适配层必须先在主线程实现上跑通再切，避免「两套查询语义」。
 - 线程版没有主线程 store，「部分可用」语义（已提交即可检索）要靠线程内读数，不能沿用主线程可见性视图。
 - 体积：线程包会把会话/Vectra 代码带进产物（实验包 19 MB），生产开启后需测量启动与内存。
+
+## 5. 只读模式（`autoIndex=false`）的范围决定
+
+线程版只读**不在 M1 范围内**，理由与代价都记在这里，避免以后误以为是遗漏：
+
+- 只读路径没有索引写入，M1 的目标（索引期间保持可用）不涉及它；现有主线程只读视图已经满足「零写入」并有断言。
+- 线程只读需要一套「不建目录、不建索引文件、不写日志」的存储打开路径。当前 `VectraStore` 的初始化默认会落地索引文件，要支持只读必须先给存储加显式的 `readOnly` 打开模式；在没有宿主实测的情况下引入它，风险高于收益。
+- 线程只读还需要 `listCommitted` 在无日志时给出记录来源（目前明确拒绝），否则可见性门会一直 `unjudgeable`，检索等于不可用。
+
+结论：只读继续走主线程只读视图；若后续要让只读也离开主线程，先补存储的只读打开模式与无日志记录来源，再谈装配。
