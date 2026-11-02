@@ -73,6 +73,7 @@ import {
 	type ReadOnlyIndexRuntime,
 	type WritableIndexRuntime,
 } from './core/index-runtime-assembly';
+import { IndexRuntimeIdentityGuard } from './core/index-runtime-identity-guard';
 // 关键路径:词表(约 109KB)只传一次 — 模型就绪后由主线程交给 Worker,不进每条索引消息;
 // 协调器在主线程分块,必须与 Worker 读同一份词表才能得到一致的块边界。
 import { currentProcessorStore, getVocabContent, setVocabContent } from './worker/handler';
@@ -295,6 +296,10 @@ export default class RatelVaultPlugin extends Plugin {
 	private indexOwnerLease?: IndexWriteOwner;
 	/** 代际与控制指针管理者。 */
 	private indexGenerations?: IndexGenerations;
+	/** 写运行时身份守卫 — 同一会话内不同配置的装配会被显式拒绝。 */
+	private readonly indexIdentityGuard = new IndexRuntimeIdentityGuard();
+	/** 本次装配登记的身份释放入口;卸载时调用。 */
+	private releaseIndexIdentity?: () => void;
 	/** 本实例写入的日志(既是后端记录端口,也是协调器提交端口)。 */
 	private indexJournal?: IndexFileJournal;
 	/** 持久任务协调器(T4 扫描/队列/新鲜度,T5 活动与取消)。 */
@@ -1602,6 +1607,9 @@ export default class RatelVaultPlugin extends Plugin {
 		// 关键路径:释放写所有权租约(幂等;等 closing 结算),让下一个实例能立即接管。
 		void this.indexOwnerLease?.release().catch((err) => devLogger.warn('index', '释放索引写所有权失败', err));
 		this.indexOwnerLease = undefined;
+		// 关键路径:身份登记必须在租约释放后清掉,否则同一会话内换配置会被自己的旧登记挡住。
+		this.releaseIndexIdentity?.();
+		this.releaseIndexIdentity = undefined;
 		// 修复:VectraStore 无显式 close,JS 垃圾回收会释放文件句柄;
 		// 之前的 `void this.vectraStore;` 是空操作,已移除。
 		devLogger.info('main', 'Ratel unloaded');
@@ -2153,7 +2161,9 @@ export default class RatelVaultPlugin extends Plugin {
 			},
 			publishConclusion: (summary) => this.publishIndexConclusion(summary),
 			stallAfterMs: INDEX_RUNTIME_STALL_AFTER_MS,
+			identityGuard: this.indexIdentityGuard,
 		});
+		this.releaseIndexIdentity = runtime.releaseIdentity;
 		this.applyWritableIndexRuntime(runtime);
 	}
 

@@ -52,6 +52,7 @@ import {
 	type ResolveIndexGenerationResult,
 } from './index-processor-port';
 import { INDEX_CONFIG_FINGERPRINT_FIELDS, type IndexConfigDescriptor } from './index-persistence-types';
+import type { IndexRuntimeIdentityGuard } from './index-runtime-identity-guard';
 import type { ChunkOptions } from '../worker/chunker';
 import type { EmbeddingPort } from '../ports/embedding';
 import type {
@@ -399,6 +400,8 @@ export interface AssembleIndexPipelineDeps {
 	wrapJournal?: (journal: IndexFileJournal) => CoordinatorJournalPort;
 	/** 停滞看护阈值;缺省用 {@link INDEX_RUNTIME_STALL_AFTER_MS}。 */
 	stallAfterMs?: number;
+	/** 写运行时身份守卫;提供时同一会话内不同配置会被显式拒绝。 */
+	identityGuard?: IndexRuntimeIdentityGuard;
 }
 
 /** 写路径管线装配结果 — 存储、日志、可见性视图、协调器与看护。 */
@@ -514,6 +517,8 @@ export interface SetupWritableIndexRuntimeDeps {
 	publishConclusion?: (summary: IndexConclusionDiagnostics) => void;
 	/** 停滞看护阈值;缺省用 {@link INDEX_RUNTIME_STALL_AFTER_MS}。 */
 	stallAfterMs?: number;
+	/** 写运行时身份守卫;提供时同一会话内不同配置会被显式拒绝。 */
+	identityGuard?: IndexRuntimeIdentityGuard;
 }
 
 /**
@@ -557,6 +562,8 @@ export interface WritableIndexRuntime {
 	generations: IndexGenerations;
 	/** 装配好的管线。 */
 	pipeline: AssembledIndexPipeline;
+	/** 释放身份登记;宿主卸载时调用。未启用守卫时为 undefined。 */
+	releaseIdentity?: () => void;
 }
 
 /**
@@ -576,6 +583,10 @@ export interface WritableIndexRuntime {
 export async function setupWritableIndexRuntime(
 	deps: SetupWritableIndexRuntimeDeps,
 ): Promise<WritableIndexRuntime> {
+	// 关键路径:身份判定必须在取写所有权之前 —— 配置冲突要立刻返回配置语义的错误,
+	// 而不是先等前任释放、最后报一个只有占用语义的失败。
+	const guard = deps.identityGuard;
+	guard?.register(deps.configFingerprint);
 	let lease: IndexWriteOwner;
 	try {
 		// 关键路径:必须走门面 `IndexWriteOwner.acquire` —— 它同时取得 renderer 内 epoch 租约与
@@ -592,7 +603,11 @@ export async function setupWritableIndexRuntime(
 	}
 	const generations = new IndexGenerations({ indexRoot: deps.indexRoot, owner: lease });
 	try {
-		return await finishWritableRuntime(deps, lease, generations);
+		const runtime = await finishWritableRuntime(deps, lease, generations);
+		if (guard !== undefined) {
+			runtime.releaseIdentity = () => guard.release(deps.configFingerprint);
+		}
+		return runtime;
 	} catch (err) {
 		// 关键路径:装配失败必须释放已取得的写所有权,否则 owner.lock 会留给下一个实例 ——
 		// 迁移前的 `main.ts` 由降级出口释放;算法下沉后由本函数自己兜底(结果对象不会产出,
@@ -600,6 +615,8 @@ export async function setupWritableIndexRuntime(
 		await lease.release().catch((releaseError) => {
 			devLogger.warn('index', '装配失败后释放索引写所有权失败', releaseError);
 		});
+		// 失败路径同样要释放身份登记,否则下一次重试会被自己的登记挡住。
+		guard?.release(deps.configFingerprint);
 		throw err;
 	}
 }
