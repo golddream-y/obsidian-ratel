@@ -255,6 +255,8 @@ export interface IndexBudgetDecision {
 | **流畅度** | 输入/滚动/切换笔记可操作；查询不被索引阻塞；大提交窗口单独计量 | 平均 CPU 下降或吞吐提升不能替代 |
 | **效率** | 全速构建中位耗时 ≤ 1.3.0 基线 1.5 倍；峰值 RSS ≤ 1.25 倍；累计磁盘写量如实记录 | UI 改善不能证明写放大已解决 |
 
+> **当前状态（2026-11-02）**：正确性有 Node 用例、效率有两组数字（线程 76.9 ms/篇 vs 主线程 85.4 ms/篇），**流畅度仍缺宿主读数** —— 唯一待办是「在预览库重载一次插件」，操作步骤与判读方法见 [写放大与流畅度的两项待办](2026-11-02-adaptive-indexing-write-amplification.md)。写放大 O(N²) 已量化并登记为独立后续项，修复前效率组不标通过。
+
 **文件：** 新建 `tests/core/index-thread-performance.test.ts`、`vitest.index-thread.config.ts`、`docs/superpowers/plans/2026-11-02-adaptive-indexing-evidence.md`；更新现役架构、指南、Worker 规则及 CHANGELOG 未发布记录。
 
 - [ ] 专用配置明确包含真实线程/故障/性能用例，设置 `passWithNoTests=false`；默认套件不下载模型。真实 ONNX 在已有资源的 Sandbox 单独验证，不自动产生 API 费用。
