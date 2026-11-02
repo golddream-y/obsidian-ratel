@@ -559,6 +559,8 @@ export async function handleMessage(
     // 关键路径:索引请求建立运行上下文(任务身份 + 活动序号 + 取消句柄),
     // 存储与嵌入步骤据此把活动盖章到正确的任务;运行结束必须注销,旧活动不得影响新状态。
     const run = beginIndexRun(msg, postEvent);
+    // 关键路径:取消信号随请求进入处理器;丢弃它会让「停止索引」只能等整批结束。
+    const embedOptions = run === null ? undefined : { signal: run.controller.signal };
     try {
         switch (msg.type) {
             case 'index.status': {
@@ -572,7 +574,7 @@ export async function handleMessage(
                 const result = await processor.indexFull(req.payload.files, (progress) => {
                     // 关键路径:每处理完一批文件推送进度，由入口附上所属请求 ID。
                     postEvent?.({ type: 'index.progress', payload: progress });
-                });
+                }, embedOptions);
                 return { type: 'index.done', payload: result };
             }
 
@@ -581,7 +583,7 @@ export async function handleMessage(
                 applyChunkOptions(req.payload.chunkOptions);
                 const result = await processor.indexIncremental(req.payload.file, (progress) => {
                     postEvent?.({ type: 'index.progress', payload: progress });
-                });
+                }, embedOptions);
                 return { type: 'index.done', payload: result };
             }
 
@@ -590,7 +592,7 @@ export async function handleMessage(
                 applyChunkOptions(req.payload.chunkOptions);
                 const result = await processor.indexBatch(req.payload.files, (progress) => {
                     postEvent?.({ type: 'index.progress', payload: progress });
-                });
+                }, embedOptions);
                 return { type: 'index.batch.done', payload: result };
             }
 

@@ -18,7 +18,7 @@ import { randomUUID } from 'node:crypto';
 import { chunkMarkdown, type Chunk, type ChunkOptions } from './chunker';
 import { VectraStore, type PreparedBlock } from '../adapters/vector-vectra';
 import { devLogger } from '../logging/dev-logger';
-import type { EmbeddingPort } from '../ports/embedding';
+import type { EmbeddingPort, EmbedOptions } from '../ports/embedding';
 
 export interface IndexFile {
     path: string;
@@ -75,13 +75,14 @@ export class IndexProcessor {
     async indexFull(
         files: IndexFile[],
         onProgress?: (e: ProgressEvent) => void,
+        options?: EmbedOptions,
     ): Promise<{ indexed: number; errors: number }> {
         let indexed = 0;
         let errors = 0;
 
         for (const [i, file] of files.entries()) {
             try {
-                await this.reembedFile(file.path, file.content);
+                await this.reembedFile(file.path, file.content, options);
                 indexed++;
             } catch (err) {
                 devLogger.error('index', `failed to index ${file.path}`, err);
@@ -113,13 +114,14 @@ export class IndexProcessor {
     async indexIncremental(
         file: IndexFile,
         onProgress?: (e: ProgressEvent) => void,
+        options?: EmbedOptions,
     ): Promise<{ indexed: number; errors: number; chunkCount: number }> {
         let indexed = 0;
         let errors = 0;
         // 关键路径:chunkCount 在 try 外声明,失败路径也能返回(此时为 0,表示没有可用块数)。
         let chunkCount = 0;
         try {
-            chunkCount = await this.reembedFile(file.path, file.content);
+            chunkCount = await this.reembedFile(file.path, file.content, options);
             indexed = 1;
         } catch (err) {
             devLogger.error('index', `failed to index ${file.path}`, err);
@@ -151,6 +153,7 @@ export class IndexProcessor {
     async indexBatch(
         files: IndexFile[],
         onProgress?: (e: ProgressEvent) => void,
+        options?: EmbedOptions,
     ): Promise<{ indexed: number; errors: number; chunkCounts: Record<string, number> }> {
         let indexed = 0;
         let errors = 0;
@@ -158,7 +161,7 @@ export class IndexProcessor {
 
         for (const [i, file] of files.entries()) {
             try {
-                const count = await this.reembedFile(file.path, file.content);
+                const count = await this.reembedFile(file.path, file.content, options);
                 chunkCounts[file.path] = count;
                 indexed++; // 空文件也算处理成功
             } catch (err) {
@@ -191,10 +194,11 @@ export class IndexProcessor {
      *
      * @returns 该文件的 chunk 数(0 表示空文件)
      */
-    private async reembedFile(filePath: string, content: string): Promise<number> {
+    private async reembedFile(filePath: string, content: string, options?: EmbedOptions): Promise<number> {
         const chunks = this.chunk(content);
         // 关键路径:推理完成前不触碰磁盘 —— 这是「推理失败不丢旧版本」的唯一保证。
-        const vectors = chunks.length === 0 ? [] : await this.embeddings.embed(chunks.map((c) => c.embedText));
+        // 关键路径:取消信号与批次回调必须随请求进入嵌入端口,否则暂停要等整批跑完。
+        const vectors = chunks.length === 0 ? [] : await this.embeddings.embed(chunks.map((c) => c.embedText), options);
         if (vectors.length !== chunks.length) {
             throw new Error(`嵌入端口返回 ${vectors.length} 个向量,与块数 ${chunks.length} 不一致:${filePath}`);
         }
