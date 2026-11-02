@@ -108,7 +108,7 @@
 
 ## 全量回归（2026-11-02，收尾）
 
-- `npx vitest run`：**323 文件 / 3003 passed / 24 skipped / 0 failed**（1.3.0 发布时为 297 文件 / 2812 passed）。
+- `npx vitest run`：**323 文件 / 3008 passed / 24 skipped / 0 failed**（1.3.0 发布时为 297 文件 / 2812 passed）。
 - tsc 保持 241 条基线（相对本轮修改新增 0）；lint 0 error。
 - 生产构建 15.5 MB；实验构建可运行且默认产物不含实验命令。
 

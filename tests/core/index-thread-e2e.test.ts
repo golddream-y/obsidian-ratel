@@ -145,3 +145,43 @@ describe('重启后仍可检索', () => {
 		await second.close('第二次关闭');
 	});
 });
+
+describe('二次核对不重复嵌入', () => {
+	it('同一批文件跑两轮 - 第二轮全部跳过 - 嵌入调用不翻倍', async () => {
+		const embedCalls: string[][] = [];
+		const handlers: RuntimeHandlers = {
+			ping: () => 'pong',
+			...createIndexSessionHandlers({ root, chunkOptions: { maxTokens: 500, overlapTokens: 100, count: (text: string) => text.length }, epoch: 1 }),
+		};
+		let bridge: RuntimeWorkerLike | null = null;
+		const client = new IndexRuntimeClient({
+			createWorker: () => bridge!,
+			embed: async (texts) => {
+				// 关键路径:记录每次嵌入请求,用来判定第二轮是否真的跳过。
+				embedCalls.push([...texts]);
+				return texts.map(() => Array.from({ length: DIMENSIONS }, () => 0.1));
+			},
+		});
+		bridge = makeBridge(handlers, client.runtimeId);
+		const files = ['一.md', '二.md', '三.md'];
+		const coordinator = new IndexThreadCoordinator({
+			client,
+			vault: {
+				listMarkdownFiles: () => files,
+				readFile: async (filePath: string) => `正文 ${filePath}`,
+			},
+			start: { root, generationId: 'gen-twice', configFingerprint: FINGERPRINT, expectedDimension: DIMENSIONS },
+		});
+
+		await coordinator.start();
+		const firstRound = embedCalls.length;
+		expect(firstRound).toBeGreaterThan(0);
+
+		// 第二轮等价于「重建索引 / 插件重启后的全库核对」。
+		await coordinator.start();
+		expect(embedCalls.length).toBe(firstRound);
+		expect(coordinator.counters()).toMatchObject({ total: files.length, committed: files.length, failures: 0 });
+		coordinator.destroy();
+		await client.close('two rounds done');
+	});
+});
