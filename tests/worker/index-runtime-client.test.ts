@@ -162,3 +162,28 @@ describe('查询与索引的模型公平性', () => {
 		expect(order.filter((item) => item === 'index').length).toBeGreaterThan(1);
 	});
 });
+
+describe('撤销在途请求', () => {
+	it('索引在途时撤销 - 请求以取消失败 - 不留下悬挂调用', async () => {
+		const handlers: RuntimeHandlers = {
+			ping: () => 'pong',
+			...createIndexSessionHandlers({ root, chunkOptions: { maxTokens: 500, overlapTokens: 100, count: (t) => t.length }, epoch: 1 }),
+		};
+		let client!: IndexRuntimeClient;
+		let releaseEmbed!: () => void;
+		const embedGate = new Promise<void>((resolve) => { releaseEmbed = resolve; });
+		client = new IndexRuntimeClient({
+			createWorker: () => makeBridge(handlers, client.runtimeId),
+			embed: async (texts) => {
+				await embedGate;
+				return texts.map(() => Array.from({ length: DIMENSIONS }, () => 0.1));
+			},
+		});
+		await client.start({ root, generationId: 'gen-abort', configFingerprint: FINGERPRINT, expectedDimension: DIMENSIONS });
+		const indexing = client.indexFile('a.md', '正文');
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		client.abortActive('用户暂停');
+		releaseEmbed();
+		await expect(indexing).rejects.toThrow(/取消|aborted/);
+	});
+});

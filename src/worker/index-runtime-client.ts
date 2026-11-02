@@ -58,6 +58,8 @@ export class IndexRuntimeClient {
 	private opened = false;
 	/** 最近一次启动参数 — 崩溃后重启要沿用同一代际与配置身份。 */
 	private lastStart: IndexRuntimeStartOptions | null = null;
+	/** 在途请求的取消句柄 — 暂停/撤销时要能真正停下,而不只是「不再发新的」。 */
+	private readonly activeRequests = new Set<AbortController>();
 
 	constructor(options: IndexRuntimeClientOptions) {
 		this.arbiter = new EmbeddingArbiter(
@@ -116,7 +118,7 @@ export class IndexRuntimeClient {
 	/** 写入单个文件(切块 + 提交都在线程内)。 */
 	async indexFile(filePath: string, content: string): Promise<{ chunkCount: number }> {
 		this.assertOpen();
-		return this.host.request<{ chunkCount: number }>('session.upsertFile', { path: filePath, content });
+		return this.requestWithAbort<{ chunkCount: number }>('session.upsertFile', { path: filePath, content });
 	}
 
 	/** 删除单个文件。 */
@@ -128,7 +130,7 @@ export class IndexRuntimeClient {
 	/** 查询。 */
 	async search(query: string, topK = 10): Promise<IndexRuntimeHit[]> {
 		this.assertOpen();
-		const result = await this.host.request<{ hits: IndexRuntimeHit[] }>('session.search', { query, topK });
+		const result = await this.requestWithAbort<{ hits: IndexRuntimeHit[] }>('session.search', { query, topK });
 		return result.hits;
 	}
 
@@ -139,7 +141,7 @@ export class IndexRuntimeClient {
 	 */
 	async searchByVector(vector: readonly number[], topK = 10): Promise<IndexRuntimeHit[]> {
 		this.assertOpen();
-		const result = await this.host.request<{ hits: IndexRuntimeHit[] }>('session.searchVector', {
+		const result = await this.requestWithAbort<{ hits: IndexRuntimeHit[] }>('session.searchVector', {
 			vector: [...vector],
 			topK,
 		});
@@ -149,7 +151,7 @@ export class IndexRuntimeClient {
 	/** 恢复遗留未决事务。 */
 	async recover(inputs: ReadonlyArray<{ path: string; hash: string | null }>): Promise<{ pending: number; decisions: number; failures: number }> {
 		this.assertOpen();
-		return this.host.request('session.recover', { inputs });
+		return this.requestWithAbort('session.recover', { inputs });
 	}
 
 	/**
@@ -158,14 +160,14 @@ export class IndexRuntimeClient {
 	 */
 	async listCommitted(): Promise<Array<{ path: string; state: 'present' | 'deleted'; revision: number; inputHash: string | null; chunkCount: number }>> {
 		this.assertOpen();
-		const result = await this.host.request<{ records: Array<{ path: string; state: 'present' | 'deleted'; revision: number; inputHash: string | null; chunkCount: number }> }>('session.listCommitted');
+		const result = await this.requestWithAbort<{ records: Array<{ path: string; state: 'present' | 'deleted'; revision: number; inputHash: string | null; chunkCount: number }> }>('session.listCommitted');
 		return result.records;
 	}
 
 	/** 读会话状态。 */
 	async status(): Promise<{ totalDocs: number; written: number }> {
 		this.assertOpen();
-		return this.host.request('session.status', {});
+		return this.requestWithAbort('session.status', {});
 	}
 
 	/**
@@ -182,6 +184,31 @@ export class IndexRuntimeClient {
 		this.opened = false;
 		if (this.host.running) await this.host.stop('restart');
 		await this.start(options);
+	}
+
+	/**
+	 * 撤销在途请求 — 暂停/用户取消时真正停下正在跑的调用。
+	 *
+	 * 关键路径:只停调度不停在途,用户会看到「已经暂停了,写入还在继续」。
+	 * 取消走宿主信号,线程侧收到 `cancel` 控制帧后自行收敛。
+	 *
+	 * @param reason 取消原因(仅用于日志)
+	 */
+	abortActive(reason = 'aborted'): void {
+		void reason;
+		for (const controller of this.activeRequests) controller.abort();
+		this.activeRequests.clear();
+	}
+
+	/** 带取消句柄的请求。 */
+	private async requestWithAbort<T>(method: string, payload?: unknown): Promise<T> {
+		const controller = new AbortController();
+		this.activeRequests.add(controller);
+		try {
+			return await this.host.request<T>(method, payload, controller.signal);
+		} finally {
+			this.activeRequests.delete(controller);
+		}
 	}
 
 	/** 关闭:先撤销再终止。 */

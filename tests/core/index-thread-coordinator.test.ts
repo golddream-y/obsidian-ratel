@@ -172,3 +172,36 @@ describe('线程崩溃恢复', () => {
 		coordinator.destroy();
 	});
 });
+
+describe('撤销在途请求', () => {
+	it('撤销时 - 通知客户端停止在途 - 该文件不记为失败', async () => {
+		let release!: () => void;
+		const gate = new Promise<void>((resolve) => { release = resolve; });
+		const client = {
+			start: vi.fn(async () => undefined),
+			indexFile: vi.fn(async () => {
+				await gate;
+				throw new Error('请求已取消');
+			}),
+			deleteFile: vi.fn(async () => ({ removed: 0 })),
+			recover: vi.fn(async () => ({ pending: 0, decisions: 0, failures: 0 })),
+			close: vi.fn(async () => undefined),
+			abortActive: vi.fn(() => { release(); }),
+		};
+		const coordinator = new IndexThreadCoordinator({
+			client: client as never,
+			vault: { listMarkdownFiles: () => ['a.md'], readFile: async () => '正文' },
+			start: START,
+		});
+		const running = coordinator.start();
+		await Promise.resolve();
+		await Promise.resolve();
+		coordinator.abortActive('用户暂停');
+		const counters = await running;
+		expect(client.abortActive).toHaveBeenCalledWith('用户暂停');
+		// 撤销不是数据问题:不得记为失败,也不得谎报已提交。
+		expect(counters).toMatchObject({ committed: 0, failures: 0 });
+		expect(coordinator.isReady()).toBe(false);
+		coordinator.destroy();
+	});
+});

@@ -31,6 +31,8 @@ export interface ThreadIndexClient {
 	close(reason?: string): Promise<void>;
 	/** 崩溃后重启;缺失表示该实现不支持自动恢复。 */
 	restart?(): Promise<void>;
+	/** 撤销在途请求;缺失表示只能停止调度新文件。 */
+	abortActive?(reason?: string): void;
 }
 
 /** Vault 端口。 */
@@ -54,6 +56,14 @@ export interface IndexThreadCoordinatorOptions {
 	client: ThreadIndexClient;
 	vault: ThreadIndexVault;
 	start: ThreadCoordinatorStartOptions;
+}
+
+/**
+ * 判断错误是否来自「调用被撤销」。
+ * @param message 错误消息
+ */
+function isAbortMessage(message: string): boolean {
+	return message.includes('请求已取消') || message.includes('aborted');
 }
 
 /** 每轮允许的崩溃重启次数上界。 */
@@ -182,9 +192,10 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 	 * 这里只保证不再开始新文件,当前文件要么提交成功、要么失败后被记录。
 	 */
 	abortActive(reason?: string): void {
-		void reason;
 		this.stopping = true;
 		this.phaseValue = 'stopping';
+		// 关键路径:先撤销在途调用,再停止调度 —— 只停调度会让「已暂停」与「仍在校验」并存。
+		this.client.abortActive?.(reason ?? 'aborted');
 	}
 
 	/** 恢复调度。 */
@@ -242,6 +253,11 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 				this.verified.add(filePath);
 				this.failing.delete(filePath);
 			} catch (error) {
+				// 关键路径:撤销不是文件失败 —— 重新排队,由上层在 resume 后继续。
+				if (isAbortMessage(error instanceof Error ? error.message : String(error))) {
+					this.queue.set(filePath, entry);
+					return;
+				}
 				// 关键路径(T5):线程崩溃不等于文件内容有问题 —— 先尝试一次重启并重试当前文件;
 				// 重启上界用尽后仍失败才算该文件失败,避免把「线程死了」记成「文件索引失败」。
 				const recovered = await this.recoverFromCrash(error);
