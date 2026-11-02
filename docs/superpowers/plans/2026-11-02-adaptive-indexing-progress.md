@@ -40,6 +40,12 @@
 - 真正的大库墙钟成本是线性项：每条完成记录一次 `writeJsonAtomically`（约 15–16 ms/文件），3000 篇外推 45–50 s。
 - 退化入口：`index-generations.ts` 批量枚举缺失或抛错时**静默回退逐条**，无告警。
 
+## 线程版装配
+
+`src/core/index-thread-assembly.ts` 把「嵌入端口 → 桥接 → 客户端 → 协调器」接成一组，返回与主线程同端口的 `coordinator`。代际参数（root/generationId/fingerprint/维度/分块预算）在装配时透传；3 个用例覆盖参数透传、逐文件索引与单文件失败不清零。
+
+尚未做：代际解析（`resolveIndexGeneration`）与主线程装配点的替换 —— 现在生产路径仍走主线程协调器。
+
 ## 宿主客户端（已接线到协议）
 
 `src/worker/index-runtime-client.ts` 把宿主侧需要的动作收敛成一个类：`start()`（init + ping + session.open）、`indexFile`、`deleteFile`、`search`、`recover`、`status`、`close`。嵌入请求经仲裁器按 `index`/`query` 分流。
