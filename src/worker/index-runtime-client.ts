@@ -127,6 +127,22 @@ export class IndexRuntimeClient {
 		return this.requestWithAbort<{ chunkCount: number }>('session.upsertFile', { path: filePath, content }, this.upsertTimeoutMs);
 	}
 
+	/**
+	 * 批量写入 — N 篇的向量写入合并成一次落盘。
+	 *
+	 * 关键路径:Vectra 没有增量追加,逐篇提交会把整份索引重写 N 次;批量入口把写量降到 1/N。
+	 * @param files 文件列表
+	 */
+	async indexFiles(files: ReadonlyArray<{ path: string; content: string }>): Promise<Array<{ path: string; chunkCount: number; skipped?: boolean }>> {
+		this.assertOpen();
+		const result = await this.requestWithAbort<{ results: Array<{ path: string; chunkCount: number; skipped?: boolean }> }>(
+			'session.upsertFiles',
+			{ files },
+			this.upsertTimeoutMs,
+		);
+		return result.results;
+	}
+
 	/** 删除单个文件。 */
 	async deleteFile(filePath: string): Promise<{ removed: number }> {
 		this.assertOpen();

@@ -299,3 +299,51 @@ describe('失败重试一轮', () => {
 		coordinator.destroy();
 	});
 });
+
+describe('批量提交', () => {
+	it('客户端支持批量 - 多篇合并成一次调用', async () => {
+		const client = {
+			start: vi.fn(async () => undefined),
+			indexFile: vi.fn(async () => ({ chunkCount: 1 })),
+			indexFiles: vi.fn(async (files: ReadonlyArray<{ path: string }>) =>
+				files.map((file) => ({ path: file.path, chunkCount: 1 }))),
+			deleteFile: vi.fn(async () => ({ removed: 0 })),
+			recover: vi.fn(async () => ({ pending: 0, decisions: 0, failures: 0 })),
+			close: vi.fn(async () => undefined),
+		};
+		const coordinator = new IndexThreadCoordinator({
+			client: client as never,
+			vault: { listMarkdownFiles: () => ['a.md', 'b.md', 'c.md'], readFile: async (p: string) => `正文 ${p}` },
+			start: START,
+		});
+		const counters = await coordinator.start();
+		expect(client.indexFiles).toHaveBeenCalledTimes(1);
+		expect(client.indexFiles.mock.calls[0]![0]).toHaveLength(3);
+		expect(client.indexFile).not.toHaveBeenCalled();
+		expect(counters).toMatchObject({ committed: 3, failures: 0 });
+		coordinator.destroy();
+	});
+
+	it('整批失败 - 退回逐篇 - 只有坏文件记失败', async () => {
+		const client = {
+			start: vi.fn(async () => undefined),
+			indexFile: vi.fn(async (filePath: string) => {
+				if (filePath === 'b.md') throw new Error('内容无法解析');
+				return { chunkCount: 1 };
+			}),
+			indexFiles: vi.fn(async () => { throw new Error('批量提交失败'); }),
+			deleteFile: vi.fn(async () => ({ removed: 0 })),
+			recover: vi.fn(async () => ({ pending: 0, decisions: 0, failures: 0 })),
+			close: vi.fn(async () => undefined),
+		};
+		const coordinator = new IndexThreadCoordinator({
+			client: client as never,
+			vault: { listMarkdownFiles: () => ['a.md', 'b.md', 'c.md'], readFile: async (p: string) => `正文 ${p}` },
+			start: START,
+		});
+		const counters = await coordinator.start();
+		expect(counters).toMatchObject({ committed: 2, failures: 1 });
+		expect(coordinator.failureDetails()[0]?.path).toBe('b.md');
+		coordinator.destroy();
+	});
+});

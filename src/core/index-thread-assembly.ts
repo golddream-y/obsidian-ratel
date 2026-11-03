@@ -67,6 +67,7 @@ export function assembleIndexThreadPipeline(deps: AssembleIndexThreadDeps): Asse
 		: {
 			start: (options) => client.start(options),
 			indexFile: (filePath, content) => client.indexFile(filePath, content),
+			indexFiles: (files) => client.indexFiles(files),
 			deleteFile: (filePath) => client.deleteFile(filePath),
 			recover: (inputs) => client.recover(inputs),
 			close: (reason) => client.close(reason),

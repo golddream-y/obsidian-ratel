@@ -217,6 +217,8 @@ export interface VectraStoreOptions {
  */
 export class VectraStore implements VectorStore, FileReplaceStore {
 	private index: LocalDocumentIndex | null = null;
+	/** 批量写入深度;>0 时 `replaceFile` 只改内存,落盘推迟到 `endWriteBatch`。 */
+	private writeBatchDepth = 0;
 	private readonly indexDir: string;
 	private _lastIndexTime = 0;
 	private readonly embeddings: EmbeddingsModel | undefined;
@@ -672,12 +674,15 @@ export class VectraStore implements VectorStore, FileReplaceStore {
 		const replacement = await this.validateReplacement(input);
 		const index = await this.ensureIndex();
 		const before = this.readLastIndexWrite();
-		await this.beginTransaction('replaceFile', index);
+		// 关键路径:批内由外层统一开启/提交事务 —— 每篇都 begin/end 会让整份索引被重写一次,
+		// 这正是大库上「每篇几十秒」的根因。
+		const batched = this.writeBatchDepth > 0;
+		if (!batched) await this.beginTransaction('replaceFile', index);
 		try {
 			const staleIds = await this.listBlockIdsOf(index, replacement.path);
 			if (staleIds.length === 0 && replacement.blocks.length === 0) {
 				// 关键路径:目标路径既没有旧块也没有新块,磁盘已是目标状态,不产生无意义的整库重写。
-				index.cancelUpdate();
+				if (!batched) index.cancelUpdate();
 				return;
 			}
 			if (staleIds.length > 0) await index.deleteItems(staleIds);
@@ -699,12 +704,58 @@ export class VectraStore implements VectorStore, FileReplaceStore {
 					} as unknown as DocumentChunkMetadata,
 				});
 			}
+			// 批内不在这里落盘:由 `endWriteBatch` 统一提交,把 N 次整库重写压成 1 次。
+			if (!batched) await index.endUpdate();
+			this._lastIndexTime = Date.now();
+		} catch (error) {
+			if (!batched) this.cancelTransactionQuietly(index);
+			throw this.failCommit('replace-failed', `替换文件块失败:${replacement.path}`, before, error);
+		}
+	}
+
+	/**
+	 * 开始批量写入 — 期间多次 `replaceFile` 只改内存,落盘推迟到 {@link endWriteBatch}。
+	 *
+	 * 关键路径:Vectra 的存储接口是整文件读写,没有增量追加;能做的只有「合并提交」,
+	 * 把 N 次整库重写压成 1 次。批量期间若有任何异常,`endWriteBatch` 会取消事务,
+	 * 磁盘保持批前状态(内存改动随事务丢弃)。
+	 *
+	 * @throws {VectorStoreError} 存储处于需重载状态。
+	 */
+	async beginWriteBatch(): Promise<void> {
+		this.assertUsable('beginWriteBatch');
+		if (this.writeBatchDepth > 0) {
+			this.writeBatchDepth += 1;
+			return;
+		}
+		const index = await this.ensureIndex();
+		await this.beginTransaction('beginWriteBatch', index);
+		this.writeBatchDepth = 1;
+	}
+
+	/**
+	 * 结束批量写入并落盘一次。
+	 *
+	 * @throws {VectorStoreError} 提交失败(存储进入需重载状态)。
+	 */
+	async endWriteBatch(): Promise<void> {
+		if (this.writeBatchDepth === 0) return;
+		this.writeBatchDepth -= 1;
+		if (this.writeBatchDepth > 0) return;
+		const index = await this.ensureIndex();
+		const before = this.readLastIndexWrite();
+		try {
 			await index.endUpdate();
 			this._lastIndexTime = Date.now();
 		} catch (error) {
 			this.cancelTransactionQuietly(index);
-			throw this.failCommit('replace-failed', `替换文件块失败:${replacement.path}`, before, error);
+			throw this.failCommit('replace-failed', '批量提交索引失败', before, error);
 		}
+	}
+
+	/** 当前是否处于批量写入中。 */
+	get inWriteBatch(): boolean {
+		return this.writeBatchDepth > 0;
 	}
 
 	/**

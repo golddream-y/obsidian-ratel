@@ -27,6 +27,8 @@ export interface ThreadIndexClient {
 		chunkOptions?: { maxTokens?: number; overlapTokens?: number };
 	}): Promise<void>;
 	indexFile(filePath: string, content: string): Promise<{ chunkCount: number }>;
+	/** 批量写入;缺失时退化为逐个 `indexFile`。 */
+	indexFiles?(files: ReadonlyArray<{ path: string; content: string }>): Promise<Array<{ path: string; chunkCount: number; skipped?: boolean }>>;
 	deleteFile(filePath: string): Promise<{ removed: number }>;
 	recover(inputs: ReadonlyArray<{ path: string; hash: string | null }>): Promise<{ pending: number; decisions: number; failures: number }>;
 	close(reason?: string): Promise<void>;
@@ -67,6 +69,9 @@ function isAbortMessage(message: string): boolean {
 	return message.includes('请求已取消') || message.includes('aborted');
 }
 
+/** 单批最多文件数。 */
+const MAX_BATCH_FILES = 8;
+
 /** 失败样本上限。 */
 const MAX_FAILURE_SAMPLES = 5;
 
@@ -105,6 +110,8 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 	private stopping = false;
 	private destroyed = false;
 	private loop: Promise<void> | null = null;
+	/** 批量通道失败后本轮禁用批量 —— 否则同一批会被反复取到并再次失败(死循环)。 */
+	private batchDisabled = false;
 	/** 是否已完成一次启动(线程已就绪);未启动时事件只入队不消费。 */
 	private started = false;
 	/** 本轮已尝试的崩溃重启次数 — 上界防止「崩-重启-再崩」无限循环。 */
@@ -125,6 +132,7 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 		this.stopping = false;
 		this.running = true;
 		this.restartsThisRound = 0;
+		this.batchDisabled = false;
 		await this.client.start(this.startOptions);
 		// 关键路径:线程真的起来之后才算已启动,否则启动失败会把后续事件派给不存在的线程。
 		this.started = true;
@@ -268,11 +276,57 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 		}
 	}
 
+	/**
+	 * 取一批待写入的文件(最多 {@link MAX_BATCH_FILES})。
+	 *
+	 * 只取 upsert 项;遇到删除即停止,保证顺序与逐条处理一致。
+	 */
+	private takeBatch(): Array<{ path: string; entry: ThreadQueueEntry }> {
+		const batch: Array<{ path: string; entry: ThreadQueueEntry }> = [];
+		if (this.batchDisabled) return batch;
+		for (const [filePath, entry] of this.queue) {
+			if (entry.op !== 'upsert') break;
+			batch.push({ path: filePath, entry });
+			if (batch.length >= MAX_BATCH_FILES) break;
+		}
+		return batch;
+	}
+
 	/** 逐文件消费队列。 */
 	private async runLoop(): Promise<void> {
 		for (;;) {
 			if (this.destroyed) return;
 			if (this.pausedValue || this.stopping) return;
+			// 关键路径:有批量能力时一次取多篇,把 N 次整库重写压成 1 次;
+			// 删除操作不进批(语义不同),保持逐条。
+			const batch = this.client.indexFiles === undefined ? [] : this.takeBatch();
+			if (batch.length > 1) {
+				// 先出队再处理:留在队列里会被下一轮重复取出(死循环)。
+				for (const item of batch) this.queue.delete(item.path);
+				this.activeCount = batch.length;
+				try {
+					const contents: Array<{ path: string; content: string }> = [];
+					for (const item of batch) contents.push({ path: item.path, content: await this.vault.readFile(item.path) });
+					const results = await this.client.indexFiles!(contents);
+					const done = new Set(results.map((item) => item.path));
+					for (const item of batch) {
+						if (done.has(item.path)) {
+							this.verified.add(item.path);
+							this.failing.delete(item.path);
+						} else {
+							this.queue.set(item.path, item.entry);
+						}
+					}
+				} catch {
+					// 关键路径:整批失败时本轮改走逐篇,避免一个坏文件拖垮同批其余文件,
+					// 也避免「同批反复重取 → 反复失败」的死循环。
+					this.batchDisabled = true;
+					for (const item of batch) this.queue.set(item.path, item.entry);
+				} finally {
+					this.activeCount = 0;
+				}
+				continue;
+			}
 			const next = this.queue.entries().next();
 			if (next.done === true) return;
 			const [filePath, entry] = next.value;

@@ -46,6 +46,9 @@ interface SessionState {
 }
 
 /** 只做向量写入的嵌入占位 — 真实向量由宿主通道提供,Vectra 内部不会调用它。 */
+/** 单批最多文件数 — 过大时单次落盘的内存峰值与失败面都会放大。 */
+const MAX_BATCH_FILES = 32;
+
 /** 单文件提交超过该耗时即记录分阶段明细。 */
 const SLOW_FILE_MS = 5000;
 
@@ -80,7 +83,7 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 		return state.store;
 	};
 
-	return {
+	const handlers: RuntimeHandlers = {
 		'session.open': async (payload) => {
 			if (state.store !== null) return { alreadyOpen: true };
 			const storage = createStorage(options.root);
@@ -309,7 +312,37 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 			state.store = null;
 			return { closed: true, inflight };
 		},
+
 	};
+
+	// 关键路径:批量入口把 N 篇的向量写入合并成一次落盘 —— Vectra 没有增量追加,
+	// 逐篇提交会让整份索引被重写 N 次,这正是大库上「每篇几十秒」的根因。
+	handlers['session.upsertFiles'] = async (payload, ctx) => {
+		const store = requireStore();
+		const files = (payload as { files?: unknown } | null)?.files;
+		if (!Array.isArray(files) || files.length === 0) throw new Error('批量写入缺少 files');
+		if (files.length > MAX_BATCH_FILES) throw new Error(`单批最多 ${MAX_BATCH_FILES} 个文件`);
+		const results: Array<{ path: string; chunkCount: number; skipped?: boolean }> = [];
+		await store.beginWriteBatch();
+		try {
+			for (const item of files) {
+				const record = item as { path?: unknown; content?: unknown } | null;
+				const filePath = record?.path;
+				const content = record?.content;
+				if (typeof filePath !== 'string' || filePath.length === 0) throw new Error('批量写入缺少 path');
+				if (typeof content !== 'string') throw new Error('批量写入缺少 content');
+				const result = await handlers['session.upsertFile']!({ path: filePath, content }, ctx) as { chunkCount: number; skipped?: boolean };
+				results.push({ path: filePath, chunkCount: result.chunkCount, ...(result.skipped === true ? { skipped: true } : {}) });
+			}
+		} finally {
+			// 关键路径:无论成功失败都要收尾事务,否则索引停在「更新中」状态。
+			await store.endWriteBatch();
+		}
+		return { results };
+	};
+
+	return handlers;
+
 }
 
 /**

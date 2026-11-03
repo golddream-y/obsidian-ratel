@@ -373,3 +373,31 @@ describe('未变内容不重复嵌入', () => {
 		expect(context.calls).toHaveLength(2);
 	});
 });
+
+describe('批量写入', () => {
+	const FINGERPRINT = 'f'.repeat(64);
+
+	it('三篇一次提交 - 全部可检索 - 结果按路径返回', async () => {
+		const handlers = createIndexSessionHandlers({ root, chunkOptions: CHUNK_OPTIONS, epoch: 1 });
+		await handlers['session.open']!({ generationId: 'gen-batch', configFingerprint: FINGERPRINT, expectedDimension: DIMENSIONS });
+		const context = makeContext();
+		const result = await handlers['session.upsertFiles']!({
+			files: [
+				{ path: 'a.md', content: '第一篇正文' },
+				{ path: 'b.md', content: '第二篇正文' },
+				{ path: 'c.md', content: '第三篇正文' },
+			],
+		}, context.ctx) as { results: Array<{ path: string; chunkCount: number }> };
+		expect(result.results.map((item) => item.path)).toEqual(['a.md', 'b.md', 'c.md']);
+		expect(result.results.every((item) => item.chunkCount > 0)).toBe(true);
+		const hits = await handlers['session.searchVector']!({ vector: Array.from({ length: DIMENSIONS }, () => 0.1), topK: 10 }) as { hits: Array<{ path: string }> };
+		expect(new Set(hits.hits.map((hit) => hit.path)).size).toBe(3);
+	});
+
+	it('缺少 files 或超上限 - 明确拒绝', async () => {
+		const handlers = createIndexSessionHandlers({ root, chunkOptions: CHUNK_OPTIONS, epoch: 1 });
+		await handlers['session.open']!({ generationId: 'gen-batch2', configFingerprint: FINGERPRINT, expectedDimension: DIMENSIONS });
+		await expect(handlers['session.upsertFiles']!({})).rejects.toThrow('缺少 files');
+		await expect(handlers['session.upsertFiles']!({ files: Array.from({ length: 40 }, (_, i) => ({ path: `x${i}.md`, content: 'x' })) })).rejects.toThrow('最多');
+	});
+});
