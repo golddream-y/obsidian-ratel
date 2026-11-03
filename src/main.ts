@@ -1385,8 +1385,13 @@ export default class RatelVaultPlugin extends Plugin {
 			const processorEmbedding = this.settings.embedProvider === 'local'
 				? this.embeddingWorkerProxy
 				: this.embedding;
-			if (this.indexDirUsable && processorEmbedding) {
+			// 关键路径:线程模式下主线程没有 store(索引在 Worker 内),`initWithStore` 会拿
+			// undefined 当 Proxy 目标直接抛错,把整轮启动打断成「索引启动失败」。检索走线程
+			// 候选来源,不需要主线程处理器持有 store。
+			if (this.indexDirUsable && processorEmbedding && this.vectraStore !== undefined) {
 				this.inlineWorker?.initWithStore(this.vectraStore, processorEmbedding);
+			} else if (processorEmbedding !== undefined && this.indexThreadClient !== undefined) {
+				devLogger.info('index', '线程模式:跳过主线程处理器绑定(检索走线程候选来源)');
 			}
 			if (autoIndex) this.indexStallWatchdog?.start();
 			const indexResult = await this.indexController.onLayoutReady(autoIndex);
