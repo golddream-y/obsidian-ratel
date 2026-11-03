@@ -137,6 +137,16 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 		this.scanCompleted = true;
 		this.phaseValue = 'processing';
 		await this.drain();
+		// 关键路径:失败重试一轮 —— 同步盘/远程存储常在扫描期间改写文件,
+		// 一次瞬时读失败不该让文件一直停留在失败集合里。
+		if (!this.stopping && this.failing.size > 0) {
+			for (const failedPath of [...this.failing]) this.queue.set(failedPath, { op: 'upsert' });
+			await this.drain();
+			if (this.failureSamples.length > 0) {
+				const sample = this.failureSamples.map((item) => `${item.path}: ${item.message}`).join('; ');
+				devLogger.warn('index', `本轮仍有 ${this.failing.size} 个文件失败(已重试一次):${sample}`);
+			}
+		}
 		// 关键路径:暂停与撤销优先于「全部成功」—— 不能因为已处理的部分成功就报告 ready。
 		this.refreshPhase();
 		this.running = false;

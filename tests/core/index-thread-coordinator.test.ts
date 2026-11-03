@@ -254,3 +254,48 @@ describe('单文件失败不中断整轮', () => {
 		coordinator.destroy();
 	});
 });
+
+describe('失败重试一轮', () => {
+	it('首次失败但重试成功 - 不记失败 - 计数为已提交', async () => {
+		let attempts = 0;
+		const client = {
+			start: vi.fn(async () => undefined),
+			indexFile: vi.fn(async () => {
+				attempts += 1;
+				if (attempts === 1) throw new Error('文件被同步盘改写');
+				return { chunkCount: 1 };
+			}),
+			deleteFile: vi.fn(async () => ({ removed: 0 })),
+			recover: vi.fn(async () => ({ pending: 0, decisions: 0, failures: 0 })),
+			close: vi.fn(async () => undefined),
+		};
+		const coordinator = new IndexThreadCoordinator({
+			client: client as never,
+			vault: { listMarkdownFiles: () => ['a.md'], readFile: async () => '正文' },
+			start: START,
+		});
+		const counters = await coordinator.start();
+		expect(counters).toMatchObject({ committed: 1, failures: 0, phase: 'ready' });
+		coordinator.destroy();
+	});
+
+	it('重试仍失败 - 保留失败并记录样本', async () => {
+		const client = {
+			start: vi.fn(async () => undefined),
+			indexFile: vi.fn(async () => { throw new Error('内容无法解析'); }),
+			deleteFile: vi.fn(async () => ({ removed: 0 })),
+			recover: vi.fn(async () => ({ pending: 0, decisions: 0, failures: 0 })),
+			close: vi.fn(async () => undefined),
+		};
+		const coordinator = new IndexThreadCoordinator({
+			client: client as never,
+			vault: { listMarkdownFiles: () => ['a.md'], readFile: async () => '正文' },
+			start: START,
+		});
+		const counters = await coordinator.start();
+		expect(counters).toMatchObject({ failures: 1, phase: 'partial-failure' });
+		expect(client.indexFile).toHaveBeenCalledTimes(2);
+		expect(coordinator.failureDetails()[0]?.path).toBe('a.md');
+		coordinator.destroy();
+	});
+});
