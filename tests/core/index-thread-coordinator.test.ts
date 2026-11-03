@@ -229,3 +229,28 @@ describe('增量收敛与阶段', () => {
 		coordinator.destroy();
 	});
 });
+
+describe('单文件失败不中断整轮', () => {
+	it('一个文件超时 - 其余文件继续 - 失败样本记录路径与原因', async () => {
+		const client = {
+			start: vi.fn(async () => undefined),
+			indexFile: vi.fn(async (filePath: string) => {
+				if (filePath === 'b.md') throw new Error('请求超时');
+				return { chunkCount: 1 };
+			}),
+			deleteFile: vi.fn(async () => ({ removed: 0 })),
+			recover: vi.fn(async () => ({ pending: 0, decisions: 0, failures: 0 })),
+			close: vi.fn(async () => undefined),
+		};
+		const coordinator = new IndexThreadCoordinator({
+			client: client as never,
+			vault: { listMarkdownFiles: () => ['a.md', 'b.md', 'c.md'], readFile: async (p: string) => `正文 ${p}` },
+			start: START,
+		});
+		const counters = await coordinator.start();
+		// 关键路径:超时只算该文件失败,不能把整轮提前收工。
+		expect(counters).toMatchObject({ committed: 2, failures: 1 });
+		expect(coordinator.failureDetails()).toEqual([{ path: 'b.md', message: '请求超时' }]);
+		coordinator.destroy();
+	});
+});

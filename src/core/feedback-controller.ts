@@ -269,6 +269,9 @@ export class FeedbackController {
 		}
 	}
 
+	/** 最近一次已提示的索引失败签名 — 用于抑制重复 Toast。 */
+	private lastIndexFailureKey: string | null = null;
+
 	private handleIndexStatus(status: IndexStatus): void {
 		const patch = this.mapIndexStatus(status);
 		if (Object.keys(patch).length > 0) {
@@ -278,7 +281,15 @@ export class FeedbackController {
 		if (status.state === 'Failed') {
 			// 关键路径(T7/I1):失败文案必须经 `describeIndexError` —— 有稳定码时走码表,
 			// 没有码时退回既有 reason(可能已是本地化文案)。绝不把开发向 message 直接上屏。
-			this.deps.userNotice.toastError(tNow('notice.indexFailed', { reason: describeIndexFailure(status) }));
+			// 关键路径:协调器每 250ms 发布一次进度,同一失败会被反复发布;只在失败签名变化时提示一次,
+			// 否则用户会被几十条相同 Toast 淹没。
+			const failureKey = `${describeIndexFailure(status)}|${status.failed ?? 0}|${status.committed ?? 0}`;
+			if (failureKey !== this.lastIndexFailureKey) {
+				this.lastIndexFailureKey = failureKey;
+				this.deps.userNotice.toastError(tNow('notice.indexFailed', { reason: describeIndexFailure(status) }));
+			}
+		} else {
+			this.lastIndexFailureKey = null;
 		}
 	}
 

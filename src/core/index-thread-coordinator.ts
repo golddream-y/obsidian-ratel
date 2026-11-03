@@ -11,6 +11,7 @@
  * - 关闭后不再开始新任务;销毁会关闭线程,释放写权。
  */
 
+import { devLogger } from '../logging/dev-logger';
 import type { IndexPhase } from './index-persistence-types';
 import type { IndexTaskCoordinatorPort } from './index-manager';
 import type { IndexTaskCounters } from './index-task-coordinator';
@@ -66,6 +67,9 @@ function isAbortMessage(message: string): boolean {
 	return message.includes('请求已取消') || message.includes('aborted');
 }
 
+/** 失败样本上限。 */
+const MAX_FAILURE_SAMPLES = 5;
+
 /** 每轮允许的崩溃重启次数上界。 */
 const MAX_CRASH_RESTARTS = 2;
 
@@ -89,6 +93,8 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 	private readonly startOptions: ThreadCoordinatorStartOptions;
 	private readonly queue = new Map<string, ThreadQueueEntry>();
 	private readonly failing = new Set<string>();
+	/** 失败样本(路径 + 原因),最多保留 5 条 —— 状态只报数量时仍能定位是哪个文件、为什么。 */
+	private readonly failureSamples: Array<{ path: string; message: string }> = [];
 	private readonly verified = new Set<string>();
 	private taskIdValue = 0;
 	private phaseValue: IndexPhase = 'ready';
@@ -188,6 +194,11 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 		}
 	}
 
+	/** 失败样本 — 供诊断输出使用。 */
+	failureDetails(): ReadonlyArray<{ path: string; message: string }> {
+		return this.failureSamples;
+	}
+
 	/** 当前是否可标记 ready。 */
 	isReady(): boolean {
 		return this.scanCompleted && this.queue.size === 0 && this.activeCount === 0 && this.failing.size === 0;
@@ -267,8 +278,11 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 				this.verified.add(filePath);
 				this.failing.delete(filePath);
 			} catch (error) {
-				// 关键路径:撤销不是文件失败 —— 重新排队,由上层在 resume 后继续。
-				if (isAbortMessage(error instanceof Error ? error.message : String(error))) {
+				// 关键路径:只有「用户撤销」才算停止信号 —— 重新排队,等 resume 继续。
+				// 若把任意「请求已取消/超时」都当停止,一个文件的超时就会让整轮索引提前收工,
+				// 其余文件永远停在待处理。
+				const message = error instanceof Error ? error.message : String(error);
+				if (isAbortMessage(message) && this.stopping) {
 					this.queue.set(filePath, entry);
 					return;
 				}
@@ -279,6 +293,13 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 					this.queue.set(filePath, entry);
 				} else {
 					// 失败保留在集合里,不能当成已处理;同一文件重排队由上层事件驱动。
+					if (!this.failing.has(filePath)) {
+						// 关键路径:每个文件只记一次,避免重试把日志刷满;样本用于定位具体文件。
+						if (this.failureSamples.length < MAX_FAILURE_SAMPLES) {
+							this.failureSamples.push({ path: filePath, message });
+						}
+						devLogger.warn('index', `线程索引失败:${filePath}:${message}`);
+					}
 					this.failing.add(filePath);
 				}
 			} finally {
