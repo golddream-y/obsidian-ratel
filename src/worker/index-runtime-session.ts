@@ -13,6 +13,7 @@
 import { randomUUID } from 'node:crypto';
 import { VectraStore, type PreparedBlock } from '../adapters/vector-vectra';
 import { AtomicIndexStorage } from '../adapters/atomic-index-storage';
+import { devLogger } from '../logging/dev-logger';
 import { chunkMarkdown, type ChunkOptions } from './chunker';
 import { createWorkerJournal, WorkerJournalOwner } from './index-runtime-journal';
 import type { IndexFileJournal } from '../core/index-file-journal';
@@ -45,6 +46,9 @@ interface SessionState {
 }
 
 /** 只做向量写入的嵌入占位 — 真实向量由宿主通道提供,Vectra 内部不会调用它。 */
+/** 单文件提交超过该耗时即记录分阶段明细。 */
+const SLOW_FILE_MS = 5000;
+
 const NO_EMBEDDINGS = {
 	maxTokens: 8192,
 	async createEmbeddings(): Promise<never> {
@@ -133,7 +137,9 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 				}
 			}
 
+			const startedAt = performance.now();
 			const chunks = chunkMarkdown(content, state.chunkOptions);
+			const chunkedAt = performance.now();
 			// 关键路径:先拿到全部向量再动磁盘,推理失败时旧版本块保持不变。
 			const vectors = chunks.length === 0
 				? []
@@ -142,6 +148,7 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 				throw new Error(`嵌入返回 ${vectors.length} 条,与块数 ${chunks.length} 不一致`);
 			}
 
+			const embeddedAt = performance.now();
 			const commitId = randomUUID();
 			const blocks: PreparedBlock[] = chunks.map((chunk, index) => ({
 				id: `${filePath}#chunk-${index}`,
@@ -175,6 +182,16 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 				await state.journal.commit(prepared.transactionId);
 			} else {
 				await store.replaceFile({ path: filePath, commitId, blocks });
+			}
+			// 关键路径:单文件提交变慢时给出分阶段耗时 —— 只有「分块/嵌入/提交」分别多慢,
+			// 才能判断是模型慢还是整份索引重写慢(后者是写放大的直接症状)。
+			const committedAt = performance.now();
+			const totalMs = committedAt - startedAt;
+			if (totalMs > SLOW_FILE_MS) {
+				devLogger.warn(
+					'index',
+					`单文件提交偏慢(${Math.round(totalMs)}ms):${filePath} 分块=${Math.round(chunkedAt - startedAt)}ms 嵌入=${Math.round(embeddedAt - chunkedAt)}ms 提交=${Math.round(committedAt - embeddedAt)}ms 块数=${chunks.length}`,
+				);
 			}
 			state.written += 1;
 			return { chunkCount: blocks.length, commitId };

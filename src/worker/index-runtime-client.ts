@@ -40,6 +40,8 @@ export interface IndexRuntimeClientOptions {
 	requestTimeoutMs?: number;
 	/** 每批最多文本条数(仲裁用)。 */
 	maxBatchSize?: number;
+	/** 单文件提交超时;缺省 180 秒(大索引下提交会明显变慢)。 */
+	upsertTimeoutMs?: number;
 }
 
 /** 查询命中。 */
@@ -55,6 +57,7 @@ export interface IndexRuntimeHit {
 export class IndexRuntimeClient {
 	private readonly host: IndexRuntimeHost;
 	private readonly arbiter: EmbeddingArbiter;
+	private readonly upsertTimeoutMs: number;
 	private opened = false;
 	/** 最近一次启动参数 — 崩溃后重启要沿用同一代际与配置身份。 */
 	private lastStart: IndexRuntimeStartOptions | null = null;
@@ -62,6 +65,7 @@ export class IndexRuntimeClient {
 	private readonly activeRequests = new Set<AbortController>();
 
 	constructor(options: IndexRuntimeClientOptions) {
+		this.upsertTimeoutMs = options.upsertTimeoutMs ?? 180_000;
 		this.arbiter = new EmbeddingArbiter(
 			(texts, workload) => options.embed(texts, workload),
 			{ maxBatchSize: options.maxBatchSize ?? 8 },
@@ -118,7 +122,9 @@ export class IndexRuntimeClient {
 	/** 写入单个文件(切块 + 提交都在线程内)。 */
 	async indexFile(filePath: string, content: string): Promise<{ chunkCount: number }> {
 		this.assertOpen();
-		return this.requestWithAbort<{ chunkCount: number }>('session.upsertFile', { path: filePath, content });
+		// 关键路径:单文件提交随索引体积增长而变慢(整份索引重写),超时不能与 ping 同级;
+		// 30s 会在生产大库上把正常文件判成失败。
+		return this.requestWithAbort<{ chunkCount: number }>('session.upsertFile', { path: filePath, content }, this.upsertTimeoutMs);
 	}
 
 	/** 删除单个文件。 */
@@ -201,11 +207,11 @@ export class IndexRuntimeClient {
 	}
 
 	/** 带取消句柄的请求。 */
-	private async requestWithAbort<T>(method: string, payload?: unknown): Promise<T> {
+	private async requestWithAbort<T>(method: string, payload?: unknown, timeoutMs?: number): Promise<T> {
 		const controller = new AbortController();
 		this.activeRequests.add(controller);
 		try {
-			return await this.host.request<T>(method, payload, controller.signal);
+			return await this.host.request<T>(method, payload, controller.signal, timeoutMs);
 		} finally {
 			this.activeRequests.delete(controller);
 		}

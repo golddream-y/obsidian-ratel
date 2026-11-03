@@ -156,7 +156,7 @@ export class IndexRuntimeHost {
 	 * @param payload 可结构化克隆的载荷
 	 * @param signal 取消信号
 	 */
-	request<T = unknown>(method: string, payload?: unknown, signal?: AbortSignal): Promise<T> {
+	request<T = unknown>(method: string, payload?: unknown, signal?: AbortSignal, timeoutMs?: number): Promise<T> {
 		const worker = this.worker;
 		if (worker === null) {
 			return Promise.reject(new IndexRuntimeHostError('not-started', '索引线程未启动'));
@@ -164,6 +164,9 @@ export class IndexRuntimeHost {
 		if (this.pending.size >= this.maxInflight) {
 			return Promise.reject(new IndexRuntimeHostError('over-budget', '在途请求已达上限'));
 		}
+		// 关键路径:单文件提交可能因为索引体积增长而变慢,允许调用方按方法放宽超时;
+		// 缺省仍用全局值,避免「一处放宽、处处放宽」。
+		const effectiveTimeout = timeoutMs ?? this.requestTimeoutMs;
 		const bytes = estimatePayloadBytes(payload);
 		if (this.inflightBytes + bytes > this.maxInflightBytes) {
 			return Promise.reject(new IndexRuntimeHostError('over-budget', '在途载荷超过预算'));
@@ -197,8 +200,8 @@ export class IndexRuntimeHost {
 				// 关键路径:超时只结束调用方等待,配额等真实终态;同时发取消。
 				entry.settled.settle(() => reject(new IndexRuntimeHostError('timeout', `请求超时: ${method}`)));
 				this.postControl('cancel', `timeout:${requestId}`, requestId);
-				entry.hardTimer = setTimeout(() => this.dropEntry(requestId, true), this.requestTimeoutMs);
-			}, this.requestTimeoutMs);
+				entry.hardTimer = setTimeout(() => this.dropEntry(requestId, true), effectiveTimeout);
+			}, effectiveTimeout);
 
 			if (signal !== undefined) {
 				if (signal.aborted) {
