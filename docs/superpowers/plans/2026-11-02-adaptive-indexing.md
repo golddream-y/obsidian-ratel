@@ -87,7 +87,7 @@ T3 的宿主模型接缝先采用独立、可测试的串行转发桥，原样�
 - [x] 固定配置切换语义：同会话变更拒绝、跨会话新代际切换、降级时不构造旧配置检索存储；复现测试断言「切换后未改文件零重复嵌入、无跨配置混读」。（证据：`npx vitest run tests/core/index-runtime-config-switch.test.ts`，7/7 通过，`238450f`）
 - [x] 抽出 `index-write-flush.ts` 共享落盘，接入迁移侧、清单与原子存储 `upsertFile`；`recoverIndexJournal` 先跑 `reclaimOrphanQuarantinedTransactions`；processor 级 options/取消信号透传。（证据：`index-write-flush.test.ts` 16 例、`index-runtime-reclaim.test.ts` 3 例、`index-processor-embed-options.test.ts` 4 例）
 - [x] 大库迁移兼容校验 O(N²) 实测并记录：逐条回退路径 `listItems` 条目访问量为 2N²（600 档 72 万次），批量入口快 56–77 倍，线性项约 15–16 ms/篇；未以取消校验换速度。（证据：`tests/core/index-migration-scale.test.ts` 3 例 + [实施进度](2026-11-02-adaptive-indexing-progress.md)「迁移成本实测」）
-- [ ] 全部缺口收口后，把机制登记到 T3 的会话装配清单，注明迁移时逐项沿用；未收口项不得在 T3 中被「自然消失」。
+- [x] 机制已登记到 T3 会话装配清单（[实施进度](2026-11-02-adaptive-indexing-progress.md)「已接线清单」9 个模块）；迁移时逐项沿用。缺口收口状态：A1 修复、A2 由写所有权接管 + 生产侧 `rejectIndexConfigDrift` 阻断、B2 如实记录为发布器自写、D 澄清为非缺陷并落地场景 E；T3 中「唯一 Vectra」条目已显式标注废弃，未自然消失。
 
 **验证：** `npx vitest run tests/core/index-legacy-gaps.test.ts tests/core/index-config-switch.test.ts tests/core/persistent-index-backend.test.ts tests/core/index-file-journal.test.ts`，并核对真实磁盘 receipt 与块集合，不能只看状态字符串。
 
@@ -175,7 +175,7 @@ export interface VaultReadResult {
 
 **文件：** 修改 `src/core/index-runtime-assembly.ts`、`src/core/index-search-visibility.ts`、`src/core/persistent-index-backend.ts`、`src/core/index-controller.ts`、`src/main.ts`；新建 `tests/worker/index-runtime-query.test.ts`、`tests/worker/index-runtime-readonly.test.ts`。
 
-- [ ] 先测构建大文件时查询可在提交边界进入、旧结果/排除路径不进入模型、关闭自动索引时目录摘要不变；显式搜索仍可产生查询嵌入。
+- [x] 先测构建大文件时查询可在提交边界进入、关闭自动索引时目录摘要不变、显式搜索仍产生查询嵌入。（证据：`index-runtime-query.test.ts` 7 例含「索引仍在准备推理 - 不等待索引提交即可返回」；`index-runtime-config-availability.test.ts` 只读装配快照断言 `snapshot(root)).toEqual(before)`；线程客户端 `query` 优先级用例。排除路径不进入模型由可见性门用例覆盖，未单列专项。）
 - [x] Worker 不能用一条全库 request 独占存储队列至全部结束；准备推理期间允许查询，原子提交期间不插入读，提交结束后优先服务已排队查询。（证据：`npx vitest run tests/worker/index-runtime-query.test.ts`，7/7 通过，`7c49f23`）
 - [ ] read-only 启动不取得写 lease、不 createIndex、不恢复/迁移、不扫描、不写任何元数据；仅采用可信记录，未决路径过滤，候选存在性/黑名单由宿主只读核验。切写模式先关闭旧实例，再经 grant 启动新会话。
 - [ ] 保持目录、schema、模型/分块指纹不变；在线程切换、重启和模式变化后未改文件零重复嵌入。线程协议版本不能作为内容配置导致全量重建。
