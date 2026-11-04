@@ -301,7 +301,7 @@ describe('失败重试一轮', () => {
 });
 
 describe('批量提交', () => {
-	it.skip('客户端支持批量 - 多篇合并成一次调用(批量通道已回退,等两阶段落地)', async () => {
+	it('客户端支持批量 - 当前连续队列超过旧固定上限 - 仍整批只调用一次', async () => {
 		const client = {
 			start: vi.fn(async () => undefined),
 			indexFile: vi.fn(async () => ({ chunkCount: 1 })),
@@ -311,16 +311,17 @@ describe('批量提交', () => {
 			recover: vi.fn(async () => ({ pending: 0, decisions: 0, failures: 0 })),
 			close: vi.fn(async () => undefined),
 		};
+		const paths = Array.from({ length: 40 }, (_, index) => `note-${index}.md`);
 		const coordinator = new IndexThreadCoordinator({
 			client: client as never,
-			vault: { listMarkdownFiles: () => ['a.md', 'b.md', 'c.md'], readFile: async (p: string) => `正文 ${p}` },
+			vault: { listMarkdownFiles: () => paths, readFile: async (p: string) => `正文 ${p}` },
 			start: START,
 		});
 		const counters = await coordinator.start();
 		expect(client.indexFiles).toHaveBeenCalledTimes(1);
-		expect(client.indexFiles.mock.calls[0]![0]).toHaveLength(3);
+		expect(client.indexFiles.mock.calls[0]![0]).toHaveLength(paths.length);
 		expect(client.indexFile).not.toHaveBeenCalled();
-		expect(counters).toMatchObject({ committed: 3, failures: 0 });
+		expect(counters).toMatchObject({ committed: paths.length, failures: 0 });
 		coordinator.destroy();
 	});
 
@@ -342,6 +343,8 @@ describe('批量提交', () => {
 			start: START,
 		});
 		const counters = await coordinator.start();
+		expect(client.indexFiles).toHaveBeenCalledTimes(1);
+		expect(client.indexFile).toHaveBeenCalledTimes(4);
 		expect(counters).toMatchObject({ committed: 2, failures: 1 });
 		expect(coordinator.failureDetails()[0]?.path).toBe('b.md');
 		coordinator.destroy();

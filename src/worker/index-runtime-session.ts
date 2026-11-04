@@ -100,9 +100,6 @@ class SessionStoreGate {
 }
 
 /** 只做向量写入的嵌入占位 — 真实向量由宿主通道提供,Vectra 内部不会调用它。 */
-/** 单批最多文件数 — 过大时单次落盘的内存峰值与失败面都会放大。 */
-const MAX_BATCH_FILES = 64;
-
 /** 单文件提交超过该耗时即记录分阶段明细。 */
 const SLOW_FILE_MS = 5000;
 
@@ -234,8 +231,15 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 				},
 			};
 		};
+		// 关键路径:prepare 会落盘并结算前驱,只能由门内的单文件 commit 或批量入口触发;
+		// 缓存同一个 Promise,保证一次文件提交至多 prepare 一次,批量写块与收尾共享同一事务。
+		let journalPreparation: ReturnType<typeof prepareJournal> | null = null;
+		const prepare = () => {
+			journalPreparation ??= prepareJournal();
+			return journalPreparation;
+		};
 		const commit = async () => {
-			const prepared = await prepareJournal();
+			const prepared = await prepare();
 			if (prepared !== null) {
 				await prepared.journal.commit(prepared.transactionId);
 			} else {
@@ -245,21 +249,22 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 		};
 		// 关键路径(两阶段批量):块先落盘、完成记录后写。中断在两者之间时,
 		// 恢复流程能按磁盘分片补写记录(既有决策 3/6),不会留下「有记录无块」的死路径。
-		const preparedForBatch = await prepareJournal();
 		const writeBlocks = async (): Promise<void> => {
-			if (preparedForBatch !== null) {
-				await preparedForBatch.journal.applyBlocks(preparedForBatch.transactionId);
+			const prepared = await prepare();
+			if (prepared !== null) {
+				await prepared.journal.applyBlocks(prepared.transactionId);
 			} else {
 				await store.replaceFile({ path: filePath, commitId, blocks });
 			}
 		};
 		const finalize = async () => {
-			if (preparedForBatch !== null) {
-				await preparedForBatch.journal.finalizeCommit(preparedForBatch.transactionId);
+			const prepared = await prepare();
+			if (prepared !== null) {
+				await prepared.journal.finalizeCommit(prepared.transactionId);
 			}
 			return completeCommit();
 		};
-		return { path: filePath, skipped: false as const, commit, writeBlocks, finalize };
+		return { path: filePath, skipped: false as const, prepare, commit, writeBlocks, finalize };
 	};
 
 	/** 单文件准备完成后进入独立提交窗口。 */
@@ -433,9 +438,8 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 		const store = requireStore();
 		const files = (payload as { files?: unknown } | null)?.files;
 		if (!Array.isArray(files) || files.length === 0) throw new Error('批量写入缺少 files');
-		if (files.length > MAX_BATCH_FILES) throw new Error(`单批最多 ${MAX_BATCH_FILES} 个文件`);
 		const results: Array<{ path: string; chunkCount: number; skipped?: boolean }> = [];
-		type BatchItem = { path: string; writeBlocks: () => Promise<void>; finalize: () => Promise<{ chunkCount: number }> };
+		type BatchItem = { path: string; prepare: () => Promise<unknown>; writeBlocks: () => Promise<void>; finalize: () => Promise<{ chunkCount: number }> };
 		const prepared: BatchItem[] = [];
 		for (const item of files) {
 			const record = item as { path?: unknown; content?: unknown } | null;
@@ -454,13 +458,16 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 			// 关键路径:整批写入必须走同一把提交闸门,否则批内查询会插进提交中间,
 			// 读到半批状态。
 			await storeGate.runCommit(async () => {
-				await store.beginWriteBatch();
+				// 关键路径:全部日志 prepare 都在提交门内且先于向量批,查询不能穿过前驱结算或分片落盘。
+				for (const item of prepared) await item.prepare();
 				try {
+					await store.beginWriteBatch();
 					for (const item of prepared) await item.writeBlocks();
 					await store.endWriteBatch();
 				} catch (error) {
-					// 关键路径:批内失败必须丢弃整批内存改动,磁盘保持批前状态。
+					// 关键路径:begin 失败时深度为 0,abort 无操作也必须 reload;写批中途失败则先丢弃半批再重载。
 					store.abortWriteBatch();
+					await store.reload();
 					throw error;
 				}
 				for (const item of prepared) {

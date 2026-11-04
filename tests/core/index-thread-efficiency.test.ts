@@ -18,6 +18,8 @@ import { IndexRuntimeClient } from '../../src/worker/index-runtime-client';
 import { serveRuntime, type RuntimeHandlers, type RuntimeServerPort } from '../../src/worker/index-runtime-worker';
 import { createIndexSessionHandlers } from '../../src/worker/index-runtime-session';
 import type { RuntimeWorkerLike } from '../../src/worker/index-runtime-host';
+import { AtomicIndexStorage } from '../../src/adapters/atomic-index-storage';
+import { IndexThreadCoordinator } from '../../src/core/index-thread-coordinator';
 
 const ENABLED = process.env.RATEL_EFFICIENCY === '1';
 const FILE_COUNT = Number.parseInt(process.env.RATEL_EFFICIENCY_FILES ?? '100', 10);
@@ -55,28 +57,77 @@ describe.skipIf(!ENABLED)('线程会话效率对照', () => {
 	it(`索引 ${FILE_COUNT} 篇 - 记录每篇成本`, { timeout: 600_000 }, async () => {
 		const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'ratel-thread-efficiency-'));
 		roots.push(root);
+		let writtenBytes = 0;
+		let indexWrites = 0;
+		const countingFs = {
+			async openFile(absolutePath: string) {
+				if (absolutePath.includes('index.json')) indexWrites += 1;
+				const handle = await fsp.open(absolutePath, 'wx');
+				return {
+					async write(buffer: Uint8Array, offset: number, length: number) {
+						const result = await handle.write(buffer, offset, length);
+						writtenBytes += result.bytesWritten;
+						return result.bytesWritten;
+					},
+					sync: () => handle.sync(),
+					close: () => handle.close(),
+				};
+			},
+			async openDirectory(absolutePath: string) {
+				const handle = await fsp.open(absolutePath, 'r');
+				return { sync: () => handle.sync(), close: () => handle.close() };
+			},
+			rename: (from: string, to: string) => fsp.rename(from, to),
+			removeFile: async (absolutePath: string) => { await fsp.rm(absolutePath, { force: true }); },
+		};
 		const handlers: RuntimeHandlers = {
 			ping: () => 'pong',
-			...createIndexSessionHandlers({ root, chunkOptions: CHUNK, epoch: 1 }),
+			...createIndexSessionHandlers({
+				root,
+				chunkOptions: CHUNK,
+				epoch: 1,
+				createStorage: (storageRoot) => new AtomicIndexStorage({ generationRoot: storageRoot, fileSystem: countingFs }),
+			}),
 		};
 		let client!: IndexRuntimeClient;
 		client = new IndexRuntimeClient({
 			createWorker: () => makeBridge(handlers, client.runtimeId),
 			embed: async (texts) => texts.map(() => Array.from({ length: DIMENSIONS }, () => 0.1)),
 		});
-		await client.start({ root, generationId: 'gen-eff', configFingerprint: 'a'.repeat(64), expectedDimension: DIMENSIONS, chunkOptions: CHUNK });
+		const start = { root, generationId: 'gen-eff', configFingerprint: 'a'.repeat(64), expectedDimension: DIMENSIONS, chunkOptions: CHUNK };
+		await client.start(start);
+		const baselineIndexWrites = indexWrites;
+		const indexFiles = client.indexFiles.bind(client);
+		let batchCalls = 0;
+		client.indexFiles = async (files) => {
+			batchCalls += 1;
+			return indexFiles(files);
+		};
+		const files = Array.from({ length: FILE_COUNT }, (_, index) => ({ path: `note-${index}.md`, content: makeContent(index) }));
+		const contents = new Map(files.map((file) => [file.path, file.content]));
+		const coordinator = new IndexThreadCoordinator({
+			client,
+			vault: {
+				listMarkdownFiles: () => files.map((file) => file.path),
+				readFile: async (filePath) => contents.get(filePath)!,
+			},
+			start,
+		});
 
 		let peakHeap = 0;
 		const sampler = setInterval(() => { peakHeap = Math.max(peakHeap, process.memoryUsage().heapUsed); }, 50);
 		const startedAt = performance.now();
-		for (let index = 0; index < FILE_COUNT; index += 1) {
-			await client.indexFile(`note-${index}.md`, makeContent(index));
-		}
+		const counters = await coordinator.start();
 		const elapsedMs = performance.now() - startedAt;
 		clearInterval(sampler);
+		coordinator.destroy();
 		await client.close('efficiency done');
 
-		console.info(`[线程效率] 文件=${FILE_COUNT} 总耗时=${elapsedMs.toFixed(0)}ms 每篇=${(elapsedMs / FILE_COUNT).toFixed(1)}ms 峰值堆=${(peakHeap / 1024 / 1024).toFixed(1)}MB`);
+		console.info(`[线程效率] 文件=${FILE_COUNT} 总耗时=${elapsedMs.toFixed(0)}ms 每篇=${(elapsedMs / FILE_COUNT).toFixed(1)}ms 峰值堆=${(peakHeap / 1024 / 1024).toFixed(1)}MB 写入字节=${(writtenBytes / 1024).toFixed(0)}KB index.json=${indexWrites - baselineIndexWrites}次 批量调用=${batchCalls}次`);
 		expect(elapsedMs).toBeGreaterThan(0);
+		expect(writtenBytes).toBeGreaterThan(0);
+		expect(batchCalls).toBe(1);
+		expect(indexWrites - baselineIndexWrites).toBe(1);
+		expect(counters).toMatchObject({ committed: FILE_COUNT, failures: 0, phase: 'ready' });
 	});
 });

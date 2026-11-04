@@ -160,6 +160,138 @@ describe('会话内日志提交', () => {
 		expect(status.written).toBe(2);
 	});
 
+	it('单文件带日志提交 - 同一请求 - prepared.json 只写一次', async () => {
+		let preparedWrites = 0;
+		const handlers = createIndexSessionHandlers({
+			root,
+			chunkOptions: CHUNK_OPTIONS,
+			epoch: 1,
+			createStorage: (storageRoot) => {
+				const storage = new AtomicIndexStorage({ generationRoot: storageRoot });
+				const upsertFile = storage.upsertFile.bind(storage);
+				storage.upsertFile = async (filePath, content) => {
+					if (path.basename(filePath) === 'prepared.json') preparedWrites += 1;
+					return upsertFile(filePath, content);
+				};
+				return storage;
+			},
+		});
+		await handlers['session.open']!({ generationId: 'gen-single-prepare', configFingerprint: FINGERPRINT, expectedDimension: DIMENSIONS });
+		await handlers['session.upsertFile']!({ path: 'a.md', content: '一段正文' }, makeContext().ctx);
+		expect(preparedWrites).toBe(1);
+	});
+
+	it('带日志准备尚未落盘 - 查询到达 - 等待准备和提交结束后读取', async () => {
+		const events: string[] = [];
+		let releasePrepare!: () => void;
+		const prepareGate = new Promise<void>((resolve) => { releasePrepare = resolve; });
+		let notifyPrepareStarted!: () => void;
+		const prepareStarted = new Promise<void>((resolve) => { notifyPrepareStarted = resolve; });
+		let blockPrepared = true;
+		const handlers = createIndexSessionHandlers({
+			root,
+			chunkOptions: CHUNK_OPTIONS,
+			epoch: 1,
+			createStorage: (storageRoot) => {
+				const storage = new AtomicIndexStorage({ generationRoot: storageRoot });
+				const upsertFile = storage.upsertFile.bind(storage);
+				storage.upsertFile = async (filePath, content) => {
+					if (path.basename(filePath) === 'prepared.json') {
+						events.push('prepare:start');
+						if (blockPrepared) {
+							blockPrepared = false;
+							notifyPrepareStarted();
+							await prepareGate;
+						}
+						events.push('prepare:end');
+					}
+					return upsertFile(filePath, content);
+				};
+				return storage;
+			},
+			createStore: (storeRoot, storage) => {
+				const store = new VectraStore(storeRoot, { storage });
+				const search = store.search.bind(store);
+				store.search = async (vector, topK) => {
+					events.push('search');
+					return search(vector, topK);
+				};
+				return store;
+			},
+		});
+		await handlers['session.open']!({ generationId: 'gen-prepare-query', configFingerprint: FINGERPRINT, expectedDimension: DIMENSIONS });
+		const indexing = handlers['session.upsertFile']!({ path: 'a.md', content: '索引正文' }, makeContext().ctx);
+		await prepareStarted;
+		const querying = handlers['session.searchVector']!({ vector: Array.from({ length: DIMENSIONS }, () => 0.1), topK: 5 });
+		await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+		const eventsBeforeRelease = [...events];
+		releasePrepare();
+		await Promise.all([indexing, querying]);
+		expect(eventsBeforeRelease).toEqual(['prepare:start']);
+		expect(events.at(-1)).toBe('search');
+	});
+
+	it('批量索引写失败 - 下一单文件提交 - 重载后成功', async () => {
+		let failIndexWrite = false;
+		const handlers = createIndexSessionHandlers({
+			root,
+			chunkOptions: CHUNK_OPTIONS,
+			epoch: 1,
+			createStorage: (storageRoot) => {
+				const storage = new AtomicIndexStorage({ generationRoot: storageRoot });
+				const upsertFile = storage.upsertFile.bind(storage);
+				storage.upsertFile = async (filePath, content) => {
+					if (failIndexWrite && path.basename(filePath) === 'index.json') {
+						failIndexWrite = false;
+						throw new Error('注入索引写失败');
+					}
+					return upsertFile(filePath, content);
+				};
+				return storage;
+			},
+		});
+		await handlers['session.open']!({ generationId: 'gen-batch-reload', configFingerprint: FINGERPRINT, expectedDimension: DIMENSIONS });
+		failIndexWrite = true;
+		await expect(handlers['session.upsertFiles']!({
+			files: [{ path: 'a.md', content: '第一篇' }, { path: 'b.md', content: '第二篇' }],
+		}, makeContext().ctx)).rejects.toThrow('批量提交索引失败');
+		const written = await handlers['session.upsertFile']!({ path: 'next.md', content: '失败后仍可提交' }, makeContext().ctx) as { chunkCount: number };
+		expect(written.chunkCount).toBeGreaterThan(0);
+	});
+
+	it('批量开始事务失败 - 写批深度为零 - 下一单文件重载后成功', async () => {
+		const handlers = createIndexSessionHandlers({
+			root,
+			chunkOptions: CHUNK_OPTIONS,
+			epoch: 1,
+			createStore: (storeRoot, storage) => {
+				const store = new VectraStore(storeRoot, { storage });
+				const beginTransaction = (store as unknown as {
+					beginTransaction(operation: string, index: { beginUpdate(): Promise<void> }): Promise<void>;
+				}).beginTransaction.bind(store);
+				store.beginWriteBatch = async () => {
+					try {
+						await beginTransaction('beginWriteBatch 注入', {
+							beginUpdate: async () => { throw new Error('注入开始事务失败'); },
+						});
+					} catch (error) {
+						// 必须走真实 beginTransaction 失败分支,而不是只抛错却不设置 needsReload。
+						expect(store.isReloadRequired()).toBe(true);
+						expect(store.inWriteBatch).toBe(false);
+						throw error;
+					}
+				};
+				return store;
+			},
+		});
+		await handlers['session.open']!({ generationId: 'gen-begin-reload', configFingerprint: FINGERPRINT, expectedDimension: DIMENSIONS });
+		await expect(handlers['session.upsertFiles']!({
+			files: [{ path: 'a.md', content: '第一篇' }, { path: 'b.md', content: '第二篇' }],
+		}, makeContext().ctx)).rejects.toThrow('无法开始 beginWriteBatch 注入 事务');
+		const written = await handlers['session.upsertFile']!({ path: 'next.md', content: '开始失败后仍可提交' }, makeContext().ctx) as { chunkCount: number };
+		expect(written.chunkCount).toBeGreaterThan(0);
+	});
+
 	it('关闭会话 - 写权撤销 - 后续写入失败', async () => {
 		const handlers = createIndexSessionHandlers({ root, chunkOptions: CHUNK_OPTIONS, epoch: 1 });
 		await handlers['session.open']!({ generationId: 'gen-a', configFingerprint: FINGERPRINT });
@@ -428,7 +560,7 @@ describe('批量写入', () => {
 		expect(listed.records.map((record) => record.path)).toEqual(['a.md', 'b.md', 'c.md']);
 	});
 
-	it('四十篇整批写入 - 合并向量落盘 - 索引只写一次且每篇可查回', async () => {
+	it('一百篇整批写入 - 不设固定文件数上限 - 索引只写一次且每篇可查回', async () => {
 		let indexWrites = 0;
 		const handlers = createIndexSessionHandlers({
 			root,
@@ -446,7 +578,7 @@ describe('批量写入', () => {
 		});
 		await handlers['session.open']!({ generationId: 'gen-batch-scale', configFingerprint: FINGERPRINT, expectedDimension: DIMENSIONS });
 		const baseline = indexWrites;
-		const files = Array.from({ length: 40 }, (_, index) => ({ path: `note-${index}.md`, content: `第 ${index} 篇正文` }));
+		const files = Array.from({ length: 100 }, (_, index) => ({ path: `note-${index}.md`, content: `第 ${index} 篇正文` }));
 		const result = await handlers['session.upsertFiles']!({ files }, makeContext().ctx) as { results: Array<{ path: string }> };
 		expect(result.results).toHaveLength(files.length);
 		expect(indexWrites - baseline).toBe(1);
