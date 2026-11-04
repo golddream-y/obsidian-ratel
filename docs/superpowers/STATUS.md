@@ -20,7 +20,7 @@
 | ID | 文件 | 状态 | 创建日期 | 备注 |
 |---|---|---|---|---|
 | S-ADAPTIVE-INDEX | [2026-11-02-adaptive-indexing.md](specs/2026-11-02-adaptive-indexing.md) | Active | 2026-11-02 | BUG-1-INDEX-PERF-001；[总体架构](../architecture/proposals/2026-11-02-index-runtime.md)与 spec 自审通过；2026-11-02 确定交付目标「索引期间 Obsidian 能正常使用」，M1 线程与可靠性、M2 自适应后置，验收分正确性/流畅度/效率三组；关联 P-ADAPTIVE-INDEX，**M1 代码已完成，宿主验收待执行** |
-| S-SHARDED-INDEX | [2026-11-04-sharded-index.md](specs/2026-11-04-sharded-index.md) | Active | 2026-11-04 | BUG-1-INDEX-PERF-001 后续；分片向量索引（16 片按路径哈希路由），解决 231 MB `index.json` 整份重写导致的写入放大与主线程点击卡顿；替代 S-ADAPTIVE-INDEX 的「单份 `index.json`」存储前提；设计与冲突处置见 spec，待设计确认 |
+| S-SHARDED-INDEX | [2026-11-04-sharded-index.md](specs/2026-11-04-sharded-index.md) | Active | 2026-11-04 | BUG-1-INDEX-PERF-001 后续；分片向量索引（16 片按路径哈希路由），解决 231 MB `index.json` 整份重写导致的写入放大与主线程点击卡顿；替代 S-ADAPTIVE-INDEX 的「单份 `index.json`」存储前提；**不做物理合并**，查询为片内扫描 + 跨片 k 路归并；片数自适应 8–64；待设计确认 |
 | S-INDEX-RELIABILITY | [2026-10-31-index-reliability.md](specs/2026-10-31-index-reliability.md) | Active | 2026-10-31 | BUG-1-INDEX-001 后续设计；Agent 自审通过，复跑 7 项均关闭；不等待用户设计确认，实施先验证 T0 存储可行性 |
 | S-RETRIEVAL-QUALITY | [2026-10-20-retrieval-quality.md](specs/2026-10-20-retrieval-quality.md) | Active | 2026-10-20 | 已实现（代码 8e82abc、fd63107）：分块改 token 预算并真正生效、结构前缀、精排支持专用模型与对话模型双来源及候选不足跳过；分块大小改为档位选择并显示实际生效值；升级触发一次全量重建。2026-10-28 随 [1.2.0](https://github.com/golddream-y/obsidian-ratel/releases/tag/1.2.0) 发布（caaeff2），待归档 |
 | S-MULTIFORMAT-FILES | [2026-10-13-multiformat-files-design.md](specs/2026-10-13-multiformat-files-design.md) | Draft | 2026-10-13 | 技术候选；退回目标与需求讨论，未确认范围，不作为实施依据 |
