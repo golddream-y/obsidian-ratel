@@ -98,6 +98,8 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 	private readonly startOptions: ThreadCoordinatorStartOptions;
 	private readonly queue = new Map<string, ThreadQueueEntry>();
 	private readonly failing = new Set<string>();
+	/** 失败文件的原操作 —— 重试必须按原操作重排队,删除失败不能变成重写。 */
+	private readonly failedOps = new Map<string, ThreadQueueEntry['op']>();
 	/** 失败样本(路径 + 原因),最多保留 5 条 —— 状态只报数量时仍能定位是哪个文件、为什么。 */
 	private readonly failureSamples: Array<{ path: string; message: string }> = [];
 	private readonly verified = new Set<string>();
@@ -148,9 +150,13 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 		// 关键路径:失败重试一轮 —— 同步盘/远程存储常在扫描期间改写文件,
 		// 一次瞬时读失败不该让文件一直停留在失败集合里。
 		if (!this.stopping && this.failing.size > 0) {
-			for (const failedPath of [...this.failing]) this.queue.set(failedPath, { op: 'upsert' });
+			// 关键路径:重试保持原操作 —— 删除失败若改成重写,会把已删文件重新嵌入,留下陈旧向量。
+			for (const failedPath of [...this.failing]) {
+				this.queue.set(failedPath, { op: this.failedOps.get(failedPath) ?? 'upsert' });
+			}
 			await this.drain();
-			if (this.failureSamples.length > 0) {
+			// 关键路径:只有重试后仍失败才告警 —— 按样本数判定会把「重试已恢复」误报成失败。
+			if (this.failing.size > 0) {
 				const sample = this.failureSamples.map((item) => `${item.path}: ${item.message}`).join('; ');
 				devLogger.warn('index', `本轮仍有 ${this.failing.size} 个文件失败(已重试一次):${sample}`);
 			}
@@ -215,6 +221,15 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 	/** 失败样本 — 供诊断输出使用。 */
 	failureDetails(): ReadonlyArray<{ path: string; message: string }> {
 		return this.failureSamples;
+	}
+
+	/** 记录成功:清除失败标记、原操作与样本 —— 样本只描述「当前仍失败」的文件。 */
+	private markSuccess(filePath: string): void {
+		this.verified.add(filePath);
+		this.failing.delete(filePath);
+		this.failedOps.delete(filePath);
+		const sampleIndex = this.failureSamples.findIndex((item) => item.path === filePath);
+		if (sampleIndex >= 0) this.failureSamples.splice(sampleIndex, 1);
 	}
 
 	/** 当前是否可标记 ready。 */
@@ -299,7 +314,10 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 			if (this.pausedValue || this.stopping) return;
 			// 关键路径:有批量能力时一次取多篇,把 N 次整库重写压成 1 次;
 			// 删除操作不进批(语义不同),保持逐条。
-			const batch = this.client.indexFiles === undefined ? [] : this.takeBatch();
+			// 关键路径(2026-11-04 回退):批量提交把「完成记录先写、块后落盘」的顺序倒置,
+			// 中途崩溃会留下「有记录无块」的路径,下次 prepare 判定磁盘与记录都不匹配而拒绝。
+			// 在把两阶段(先落盘、再写记录)做完之前,不启用批量通道。
+			const batch: Array<{ path: string; entry: ThreadQueueEntry }> = [];
 			if (batch.length > 1) {
 				// 先出队再处理:留在队列里会被下一轮重复取出(死循环)。
 				for (const item of batch) this.queue.delete(item.path);
@@ -311,8 +329,7 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 					const done = new Set(results.map((item) => item.path));
 					for (const item of batch) {
 						if (done.has(item.path)) {
-							this.verified.add(item.path);
-							this.failing.delete(item.path);
+							this.markSuccess(item.path);
 						} else {
 							this.queue.set(item.path, item.entry);
 						}
@@ -339,8 +356,7 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 					const content = await this.vault.readFile(filePath);
 					await this.client.indexFile(filePath, content);
 				}
-				this.verified.add(filePath);
-				this.failing.delete(filePath);
+				this.markSuccess(filePath);
 			} catch (error) {
 				// 关键路径:只有「用户撤销」才算停止信号 —— 重新排队,等 resume 继续。
 				// 若把任意「请求已取消/超时」都当停止,一个文件的超时就会让整轮索引提前收工,
@@ -357,6 +373,7 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 					this.queue.set(filePath, entry);
 				} else {
 					// 失败保留在集合里,不能当成已处理;同一文件重排队由上层事件驱动。
+					this.failedOps.set(filePath, entry.op);
 					if (!this.failing.has(filePath)) {
 						// 关键路径:每个文件只记一次,避免重试把日志刷满;样本用于定位具体文件。
 						if (this.failureSamples.length < MAX_FAILURE_SAMPLES) {

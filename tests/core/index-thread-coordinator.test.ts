@@ -301,7 +301,7 @@ describe('失败重试一轮', () => {
 });
 
 describe('批量提交', () => {
-	it('客户端支持批量 - 多篇合并成一次调用', async () => {
+	it.skip('客户端支持批量 - 多篇合并成一次调用(批量通道已回退,等两阶段落地)', async () => {
 		const client = {
 			start: vi.fn(async () => undefined),
 			indexFile: vi.fn(async () => ({ chunkCount: 1 })),
