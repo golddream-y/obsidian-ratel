@@ -45,6 +45,60 @@ interface SessionState {
 	written: number;
 }
 
+/**
+ * 会话存储访问门 — 分块与嵌入在门外并行,真实提交、批量事务与读取在门内协调。
+ *
+ * 关键路径:提交之间串行并等待在途读取;提交结束时先唤醒已排队读取,
+ * 再让下一条提交进入,避免连续索引让查询一直排在队尾。
+ */
+class SessionStoreGate {
+	private commitChain: Promise<void> = Promise.resolve();
+	private activeReads = 0;
+	private commitActive = false;
+	private readonly readDrainWaiters: Array<() => void> = [];
+	private readonly readAllowWaiters: Array<() => void> = [];
+
+	/** 执行一次存储读取;原子提交期间排队,提交结束后优先进入。 */
+	async runRead<T>(operation: () => Promise<T>): Promise<T> {
+		while (this.commitActive) {
+			await new Promise<void>((resolve) => { this.readAllowWaiters.push(resolve); });
+		}
+		this.activeReads += 1;
+		try {
+			return await operation();
+		} finally {
+			this.activeReads -= 1;
+			if (this.activeReads === 0) {
+				for (const resolve of this.readDrainWaiters.splice(0)) resolve();
+			}
+		}
+	}
+
+	/** 执行一次原子提交;与其它提交串行,并等待已在读取的查询结束。 */
+	async runCommit<T>(operation: () => Promise<T>): Promise<T> {
+		const previous = this.commitChain;
+		let releaseTurn: () => void = () => undefined;
+		this.commitChain = new Promise<void>((resolve) => { releaseTurn = resolve; });
+		await previous;
+		this.commitActive = true;
+		try {
+			await this.waitForReadDrain();
+			return await operation();
+		} finally {
+			this.commitActive = false;
+			// 关键路径:先放行排队查询,再释放下一次提交;后者会等这些查询读完。
+			for (const resolve of this.readAllowWaiters.splice(0)) resolve();
+			releaseTurn();
+		}
+	}
+
+	/** 等待在途读取结束。 */
+	private waitForReadDrain(): Promise<void> {
+		if (this.activeReads === 0) return Promise.resolve();
+		return new Promise<void>((resolve) => { this.readDrainWaiters.push(resolve); });
+	}
+}
+
 /** 只做向量写入的嵌入占位 — 真实向量由宿主通道提供,Vectra 内部不会调用它。 */
 /** 单批最多文件数 — 过大时单次落盘的内存峰值与失败面都会放大。 */
 const MAX_BATCH_FILES = 32;
@@ -72,6 +126,8 @@ function stringField(payload: unknown, key: string): string {
  */
 export function createIndexSessionHandlers(options: IndexSessionOptions): RuntimeHandlers {
 	const state: SessionState = { store: null, journal: null, owner: null, manifest: null, chunkOptions: options.chunkOptions, written: 0 };
+	// 修复:服务循环会并发派发会话请求,存储访问必须由会话自身保证提交互斥与查询优先级。
+	const storeGate = new SessionStoreGate();
 	const createStorage = options.createStorage ?? ((root: string) => new AtomicIndexStorage({ generationRoot: root }));
 	// 关键路径:存储与日志必须共用同一份原子存储,否则写入结果记录与提交语义会分叉。
 	const createStore = options.createStore
@@ -81,6 +137,91 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 	const requireStore = (): VectraStore => {
 		if (state.store === null) throw new Error('索引会话尚未打开');
 		return state.store;
+	};
+
+	/** 在存储门外完成单文件分块与嵌入,返回仅执行真实提交的闭包。 */
+	const prepareUpsertFile = async (payload: unknown, ctx: RuntimeHandlerContext | undefined) => {
+		const store = requireStore();
+		const filePath = stringField(payload, 'path');
+		const content = (payload as { content?: unknown }).content;
+		if (typeof content !== 'string') throw new Error('缺少字段 content');
+
+		// 关键路径:内容未变就不重新分块与嵌入 —— 这是「未变文件零重复嵌入」的判据,
+		// 也是重跑/reindex 不把整库重嵌一遍的唯一防线。
+		const inputHash = await sha256(content);
+		if (state.journal !== null) {
+			const existing = await state.journal.readReceipt(filePath);
+			if (existing !== null && existing.inputHash === inputHash) {
+				return { path: filePath, chunkCount: existing.chunkCount, skipped: true as const };
+			}
+		}
+
+		const startedAt = performance.now();
+		const chunks = chunkMarkdown(content, state.chunkOptions);
+		const chunkedAt = performance.now();
+		// 关键路径:先拿到全部向量再动磁盘,推理失败时旧版本块保持不变。
+		const vectors = chunks.length === 0
+			? []
+			: await callEmbed(ctx, chunks.map((chunk) => chunk.embedText), 'index');
+		if (vectors.length !== chunks.length) {
+			throw new Error(`嵌入返回 ${vectors.length} 条,与块数 ${chunks.length} 不一致`);
+		}
+
+		const embeddedAt = performance.now();
+		const commitId = randomUUID();
+		const blocks: PreparedBlock[] = chunks.map((chunk, index) => ({
+			id: `${filePath}#chunk-${index}`,
+			vector: vectors[index]!,
+			metadata: {
+				path: filePath,
+				chunkIndex: index,
+				startOffset: chunk.startOffset,
+				prefix: chunk.prefix,
+				headingPath: chunk.headingPath,
+				commitId,
+			},
+		}));
+		const commit = async () => {
+			if (state.journal !== null) {
+				const receipt = await state.journal.readReceipt(filePath);
+				const prepared = await state.journal.prepare({
+					path: filePath,
+					operation: 'replace',
+					inputHash,
+					revision: (receipt?.revision ?? 0) + 1,
+					previousCommitId: receipt?.commitId ?? null,
+					previousRevision: receipt?.revision ?? 0,
+					blocks: blocks.map((block) => ({
+						id: block.id,
+						vector: block.vector,
+						metadata: block.metadata,
+					})),
+				});
+				await state.journal.commit(prepared.transactionId);
+			} else {
+				await store.replaceFile({ path: filePath, commitId, blocks });
+			}
+			// 关键路径:单文件提交变慢时给出分阶段耗时 —— 只有「分块/嵌入/提交」分别多慢,
+			// 才能判断是模型慢还是整份索引重写慢(后者是写放大的直接症状)。
+			const committedAt = performance.now();
+			const totalMs = committedAt - startedAt;
+			if (totalMs > SLOW_FILE_MS) {
+				devLogger.warn(
+					'index',
+					`单文件提交偏慢(${Math.round(totalMs)}ms):${filePath} 分块=${Math.round(chunkedAt - startedAt)}ms 嵌入=${Math.round(embeddedAt - chunkedAt)}ms 提交=${Math.round(committedAt - embeddedAt)}ms 块数=${chunks.length}`,
+				);
+			}
+			state.written += 1;
+			return { chunkCount: blocks.length, commitId };
+		};
+		return { path: filePath, skipped: false as const, commit };
+	};
+
+	/** 单文件准备完成后进入独立提交窗口。 */
+	const upsertFile = async (payload: unknown, ctx: RuntimeHandlerContext | undefined) => {
+		const prepared = await prepareUpsertFile(payload, ctx);
+		if (prepared.skipped) return { chunkCount: prepared.chunkCount, skipped: true };
+		return storeGate.runCommit(prepared.commit);
 	};
 
 	const handlers: RuntimeHandlers = {
@@ -124,81 +265,7 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 			return { ok: true };
 		},
 
-		'session.upsertFile': async (payload, ctx) => {
-			const store = requireStore();
-			const filePath = stringField(payload, 'path');
-			const content = (payload as { content?: unknown }).content;
-			if (typeof content !== 'string') throw new Error('缺少字段 content');
-
-			// 关键路径:内容未变就不重新分块与嵌入 —— 这是「未变文件零重复嵌入」的判据,
-			// 也是重跑/reindex 不把整库重嵌一遍的唯一防线。
-			const inputHash = await sha256(content);
-			if (state.journal !== null) {
-				const existing = await state.journal.readReceipt(filePath);
-				if (existing !== null && existing.inputHash === inputHash) {
-					return { chunkCount: existing.chunkCount, skipped: true };
-				}
-			}
-
-			const startedAt = performance.now();
-			const chunks = chunkMarkdown(content, state.chunkOptions);
-			const chunkedAt = performance.now();
-			// 关键路径:先拿到全部向量再动磁盘,推理失败时旧版本块保持不变。
-			const vectors = chunks.length === 0
-				? []
-				: await callEmbed(ctx, chunks.map((chunk) => chunk.embedText), 'index');
-			if (vectors.length !== chunks.length) {
-				throw new Error(`嵌入返回 ${vectors.length} 条,与块数 ${chunks.length} 不一致`);
-			}
-
-			const embeddedAt = performance.now();
-			const commitId = randomUUID();
-			const blocks: PreparedBlock[] = chunks.map((chunk, index) => ({
-				id: `${filePath}#chunk-${index}`,
-				vector: vectors[index]!,
-				metadata: {
-					path: filePath,
-					chunkIndex: index,
-					startOffset: chunk.startOffset,
-					prefix: chunk.prefix,
-					headingPath: chunk.headingPath,
-					commitId,
-				},
-			}));
-			// 关键路径:有日志时走「准备 → 提交」,完成记录与块替换同一次提交落盘;
-			// 无日志时保持纯存储写入,供会话级测试与只读调试路径使用。
-			if (state.journal !== null) {
-				const receipt = await state.journal.readReceipt(filePath);
-				const prepared = await state.journal.prepare({
-					path: filePath,
-					operation: 'replace',
-					inputHash,
-					revision: (receipt?.revision ?? 0) + 1,
-					previousCommitId: receipt?.commitId ?? null,
-					previousRevision: receipt?.revision ?? 0,
-					blocks: blocks.map((block) => ({
-						id: block.id,
-						vector: block.vector,
-						metadata: block.metadata,
-					})),
-				});
-				await state.journal.commit(prepared.transactionId);
-			} else {
-				await store.replaceFile({ path: filePath, commitId, blocks });
-			}
-			// 关键路径:单文件提交变慢时给出分阶段耗时 —— 只有「分块/嵌入/提交」分别多慢,
-			// 才能判断是模型慢还是整份索引重写慢(后者是写放大的直接症状)。
-			const committedAt = performance.now();
-			const totalMs = committedAt - startedAt;
-			if (totalMs > SLOW_FILE_MS) {
-				devLogger.warn(
-					'index',
-					`单文件提交偏慢(${Math.round(totalMs)}ms):${filePath} 分块=${Math.round(chunkedAt - startedAt)}ms 嵌入=${Math.round(embeddedAt - chunkedAt)}ms 提交=${Math.round(committedAt - embeddedAt)}ms 块数=${chunks.length}`,
-				);
-			}
-			state.written += 1;
-			return { chunkCount: blocks.length, commitId };
-		},
+		'session.upsertFile': (payload, ctx) => upsertFile(payload, ctx),
 
 		'session.search': async (payload, ctx) => {
 			const store = requireStore();
@@ -212,7 +279,7 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 			const vectors = await callEmbed(ctx, [query], 'query');
 			const queryVector = vectors[0];
 			if (!Array.isArray(queryVector) || queryVector.length === 0) throw new Error('查询向量不可用');
-			const hits = await store.search(queryVector, topK);
+			const hits = await storeGate.runRead(() => store.search(queryVector, topK));
 			return {
 				hits: hits.map((hit) => ({
 					path: typeof hit.metadata['path'] === 'string' ? hit.metadata['path'] : '',
@@ -224,7 +291,7 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 
 		'session.deleteFile': async (payload) => {
 			const store = requireStore();
-			const removed = await store.deleteByPath(stringField(payload, 'path'));
+			const removed = await storeGate.runCommit(() => store.deleteByPath(stringField(payload, 'path')));
 			return { removed };
 		},
 
@@ -268,7 +335,7 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 			if (typeof topK !== 'number' || !Number.isSafeInteger(topK) || topK <= 0 || topK > 500) {
 				throw new Error('topK 必须是 1~500 的整数');
 			}
-			const hits = await store.search(vector, topK);
+			const hits = await storeGate.runRead(() => store.search(vector, topK));
 			return {
 				hits: hits.map((hit) => ({
 					docId: typeof hit.metadata['path'] === 'string' ? hit.metadata['path'] : hit.docId,
@@ -322,23 +389,35 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 		const files = (payload as { files?: unknown } | null)?.files;
 		if (!Array.isArray(files) || files.length === 0) throw new Error('批量写入缺少 files');
 		if (files.length > MAX_BATCH_FILES) throw new Error(`单批最多 ${MAX_BATCH_FILES} 个文件`);
-		const results: Array<{ path: string; chunkCount: number; skipped?: boolean }> = [];
-		await store.beginWriteBatch();
-		try {
-			for (const item of files) {
-				const record = item as { path?: unknown; content?: unknown } | null;
-				const filePath = record?.path;
-				const content = record?.content;
-				if (typeof filePath !== 'string' || filePath.length === 0) throw new Error('批量写入缺少 path');
-				if (typeof content !== 'string') throw new Error('批量写入缺少 content');
-				const result = await handlers['session.upsertFile']!({ path: filePath, content }, ctx) as { chunkCount: number; skipped?: boolean };
-				results.push({ path: filePath, chunkCount: result.chunkCount, ...(result.skipped === true ? { skipped: true } : {}) });
-			}
-		} finally {
-			// 关键路径:无论成功失败都要收尾事务,否则索引停在「更新中」状态。
-			await store.endWriteBatch();
+		const preparedFiles: Array<Awaited<ReturnType<typeof prepareUpsertFile>>> = [];
+		// 修复:全批分块与嵌入先在门外完成,宿主推理期间不阻塞查询。
+		for (const item of files) {
+			const record = item as { path?: unknown; content?: unknown } | null;
+			const filePath = record?.path;
+			const content = record?.content;
+			if (typeof filePath !== 'string' || filePath.length === 0) throw new Error('批量写入缺少 path');
+			if (typeof content !== 'string') throw new Error('批量写入缺少 content');
+			preparedFiles.push(await prepareUpsertFile({ path: filePath, content }, ctx));
 		}
-		return { results };
+		const results: Array<{ path: string; chunkCount: number; skipped?: boolean }> = [];
+		// 修复:批量开始到最终落盘必须持有同一提交窗口,查询与后续提交不能穿过收尾。
+		return storeGate.runCommit(async () => {
+			await store.beginWriteBatch();
+			try {
+				for (const preparedFile of preparedFiles) {
+					if (preparedFile.skipped) {
+						results.push({ path: preparedFile.path, chunkCount: preparedFile.chunkCount, skipped: true });
+						continue;
+					}
+					const result = await preparedFile.commit();
+					results.push({ path: preparedFile.path, chunkCount: result.chunkCount });
+				}
+			} finally {
+				// 关键路径:无论成功失败都要收尾事务,否则索引停在「更新中」状态。
+				await store.endWriteBatch();
+			}
+			return { results };
+		});
 	};
 
 	return handlers;
