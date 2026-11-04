@@ -4,6 +4,8 @@
 >
 > **暂停状态：** 2026-11-04 用户要求暂停，已完成证据、未提交边界与续做入口见 [暂停收尾](2026-11-02-adaptive-indexing-pause.md)。
 
+> **2026-11-04 现状校准：** 用户恢复推进并亲自介入真实测试。M1 代码面已完成（线程会话、两阶段批量、配置身份守卫、设置开关默认开启），剩余 50 条 checkbox 中约 20 条需真实宿主证据、14 条属 M2、12 条为实现收敛了设计。存储布局的「单份 `index.json`」前提已被 [S-SHARDED-INDEX](../specs/2026-11-04-sharded-index.md) 取代，相关冲突条目在本文标注废弃。
+
 **目标：** 将索引重计算与唯一存储视图迁出 Obsidian 界面线程，保留逐文件续建，再用自适应调度降低后台占用。
 
 **架构：** 宿主线程负责 Obsidian API、OS owner lease、交互准入与 UI；独立 Node 能力索引 Worker 负责 hash、分块、日志、Vectra 和查询；既有嵌入 Worker 继续运行模型。通过有界数据 RPC、独立控制通道和提交 ticket 连接；自适应预算不改变数据内容、配置指纹及持久化格式。
@@ -150,7 +152,7 @@ host revoke → worker reject new mutations → drain commits and file I/O
 **文件：** 新建 `src/worker/index-runtime-worker.ts`、`src/worker/index-runtime-session.ts`、`src/worker/index-vault-proxy.ts`、`src/core/index-embedding-bridge.ts`、`tests/worker/index-runtime-session.test.ts`、`tests/worker/index-vault-proxy.test.ts`、`tests/core/index-embedding-bridge.test.ts`；修改运行时装配、处理器端口与构建入口。
 
 - [ ] 先写实际线程身份断言：hash、分块、校验、JSON 序列化、receipt/Vectra 写入均在非宿主线程；Vault 代理只能返回正文/stat/序号。
-- [ ] Worker 会话内装配 coordinator、journal、代际、原子存储及唯一 Vectra。文件事件由宿主转发，读取通过 Vault RPC；嵌入请求先经本任务的 index-embedding-bridge 串行转发至既有模型实例，不在 Worker 加载第二份 ONNX。桥覆盖取消、活动与错误，T3 可独立测试运行；T6 原位接入批次仲裁，不要求提前实现它。
+- [ ] ~~Worker 会话内装配 coordinator、journal、代际、原子存储及唯一 Vectra。~~ **（2026-11-04 废弃：与 S-SHARDED-INDEX 的分片存储冲突，改为「按分片路由的存储集合」）**文件事件由宿主转发，读取通过 Vault RPC；嵌入请求先经本任务的 index-embedding-bridge 串行转发至既有模型实例，不在 Worker 加载第二份 ONNX。桥覆盖取消、活动与错误，T3 可独立测试运行；T6 原位接入批次仲裁，不要求提前实现它。
 - [ ] 主线程撤除 Vault 索引的 Vectra/journal 直接实例；记忆索引等其他存储必须明确区分，不能顺手迁移或误删。检索、手动重建、Indexer Subagent 和配置切换均通过相同异步端口。
 - [x] Worker bundle 依 T0 的 Blob Worker 模式内联进 main 并由常驻宿主复用；构建顺序先 Worker 后主包；虚拟模块提供测试 stub 且明确不代表真实线程；产物仍为既定三文件。（证据：`esbuild.config.mjs` 的 `runtimeWorkerContext` / `inlineRuntimeWorkerPlugin`、`tests/helpers/index-runtime-worker-code-stub.ts`；生产构建 15.5 MB、不含实验探针）
 
