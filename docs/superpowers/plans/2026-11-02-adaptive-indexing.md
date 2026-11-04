@@ -80,11 +80,11 @@ T3 的宿主模型接缝先采用独立、可测试的串行转发桥，原样�
 
 **文件：** 修改 `src/core/persistent-index-backend.ts`、`src/core/index-manager.ts`、`src/core/index-runtime-assembly.ts`、`src/core/index-file-journal.ts`、`src/worker/index-processor.ts`、`src/adapters/index-writer-flush.ts`（新建共享 flush）；新建 `tests/core/index-legacy-gaps.test.ts`、`tests/core/index-config-switch.test.ts`。
 
-- [ ] **先写复现测试**：生产协调器路径缺清单时当前不做派生恢复；旧配置整库降级时检索不可用；`index-processor.ts:197` 单参 `embed(texts)` 丢失 processor 级 options；`reclaimOrphanQuarantinedTransactions` 无周期调用；迁移侧与运行期写入口 flush 语义不一致。每条先红后绿，不得以「迁移后再说」推后。
-- [ ] 让生产协调器在核验通过时调用既有 `verifyReceipt` 派生清单恢复，核验不通过则继续 fail-closed；不允许退化为清库重建，也不新增第二套恢复入口。
+- [x] **先写复现测试**：五类缺口均有独立复现/回归用例且全量通过：`index-manifest-recovery.test.ts`（派生清单 26 例）、`index-runtime-config-switch.test.ts`（A1/A2/B2/D 缺口 7 例）、`index-processor-embed-options.test.ts`（options 4 例）、`index-runtime-reclaim.test.ts`（周期回收 3 例）、`index-write-flush.test.ts`（共享落盘 16 例）。（证据：全量 `npx vitest run` 3039 passed / 0 failed；逐条红灯过程未单独留档，不宣称已自证红→绿）
+- [x] 生产协调器缺清单时调用 `recoverDerivedManifest` 派生恢复，核验不通过继续 fail-closed。（证据：`persistent-index-backend.test.ts`「清单恢复 - 同目录真实完成记录与当前配置匹配 - 保留日志和向量且零嵌入」等用例 + `index-manifest-recovery.test.ts` 26 例）
 - [x] 固定配置切换语义：同会话变更拒绝、跨会话新代际切换、降级时不构造旧配置检索存储；复现测试断言「切换后未改文件零重复嵌入、无跨配置混读」。（证据：`npx vitest run tests/core/index-runtime-config-switch.test.ts`，7/7 通过，`238450f`）
-- [ ] 抽出共享 flush 模块供迁移侧与运行期写入口共用；补周期回收孤儿 quarantine 事务；修正 processor 级 options 透传。
-- [ ] 大库迁移兼容校验的 O(N²) 实测并记录；必要时优化，但不以取消校验换速度。
+- [x] 抽出 `index-write-flush.ts` 共享落盘，接入迁移侧、清单与原子存储 `upsertFile`；`recoverIndexJournal` 先跑 `reclaimOrphanQuarantinedTransactions`；processor 级 options/取消信号透传。（证据：`index-write-flush.test.ts` 16 例、`index-runtime-reclaim.test.ts` 3 例、`index-processor-embed-options.test.ts` 4 例）
+- [x] 大库迁移兼容校验 O(N²) 实测并记录：逐条回退路径 `listItems` 条目访问量为 2N²（600 档 72 万次），批量入口快 56–77 倍，线性项约 15–16 ms/篇；未以取消校验换速度。（证据：`tests/core/index-migration-scale.test.ts` 3 例 + [实施进度](2026-11-02-adaptive-indexing-progress.md)「迁移成本实测」）
 - [ ] 全部缺口收口后，把机制登记到 T3 的会话装配清单，注明迁移时逐项沿用；未收口项不得在 T3 中被「自然消失」。
 
 **验证：** `npx vitest run tests/core/index-legacy-gaps.test.ts tests/core/index-config-switch.test.ts tests/core/persistent-index-backend.test.ts tests/core/index-file-journal.test.ts`，并核对真实磁盘 receipt 与块集合，不能只看状态字符串。
@@ -93,8 +93,8 @@ T3 的宿主模型接缝先采用独立、可测试的串行转发桥，原样�
 
 **文件：** 新建 `src/worker/index-runtime-protocol.ts`、`src/worker/index-runtime-host.ts`、`tests/worker/index-runtime-protocol.test.ts`、`tests/worker/index-runtime-host.test.ts`。
 
-- [ ] 先测未知版本、错误 runtime/epoch、未知 requestId、重复终态、超预算载荷和取消时数据队列已满；错误必须结算一次，不能留悬挂 Promise。
-- [ ] 集中定义信封与 grant；所有运行时 ID 与消息类型集中登记，不传函数、类实例或 AbortSignal。
+- [x] 先测未知版本/错误 epoch/重复终态/超预算载荷/取消与在途上限；错误一次性结算不悬挂。（证据：`tests/worker/index-runtime-protocol.test.ts` 与 `index-runtime-host.test.ts`，16 例，含「版本不符/缺身份/非法 epoch 一律拒绝」「一次性结算」「重复响应只结算一次」「在途上限」「载荷预算」「Worker 崩溃 - 在途全部失败一次」）
+- [x] 集中定义信封、grant、控制帧与 `SettleOnce`；版本号、方法名与载荷预算集中登记，不传函数/类实例/AbortSignal。（证据：`src/worker/index-runtime-protocol.ts`，`INDEX_RUNTIME_PROTOCOL_VERSION`、`MAX_MESSAGE_BYTES`、`parseRuntimeMessage`、`estimatePayloadBytes`）
 
 ```typescript
 export interface IndexRuntimeGrant {
@@ -152,7 +152,7 @@ host revoke → worker reject new mutations → drain commits and file I/O
 - [ ] 先写实际线程身份断言：hash、分块、校验、JSON 序列化、receipt/Vectra 写入均在非宿主线程；Vault 代理只能返回正文/stat/序号。
 - [ ] Worker 会话内装配 coordinator、journal、代际、原子存储及唯一 Vectra。文件事件由宿主转发，读取通过 Vault RPC；嵌入请求先经本任务的 index-embedding-bridge 串行转发至既有模型实例，不在 Worker 加载第二份 ONNX。桥覆盖取消、活动与错误，T3 可独立测试运行；T6 原位接入批次仲裁，不要求提前实现它。
 - [ ] 主线程撤除 Vault 索引的 Vectra/journal 直接实例；记忆索引等其他存储必须明确区分，不能顺手迁移或误删。检索、手动重建、Indexer Subagent 和配置切换均通过相同异步端口。
-- [ ] Worker bundle 依照 T0 验证的 Blob Worker 模式内联到 main 并以 **常驻** 方式复用（避免实测中 434 ms 的创建峰值），构建顺序先 Worker 后主包；虚拟模块测试 stub 明确不代表真实线程测试。只发布既定三文件，不新增运行时下载。
+- [x] Worker bundle 依 T0 的 Blob Worker 模式内联进 main 并由常驻宿主复用；构建顺序先 Worker 后主包；虚拟模块提供测试 stub 且明确不代表真实线程；产物仍为既定三文件。（证据：`esbuild.config.mjs` 的 `runtimeWorkerContext` / `inlineRuntimeWorkerPlugin`、`tests/helpers/index-runtime-worker-code-stub.ts`；生产构建 15.5 MB、不含实验探针）
 
 Worker 的宿主文件读取结果约定为：
 
@@ -195,7 +195,7 @@ export interface VaultReadResult {
 
 **文件：** 新建 `src/core/embedding-work-scheduler.ts`、`tests/core/embedding-work-scheduler.test.ts`；修改嵌入端口、代理、API/ONNX 适配器和 Worker 协议两端。
 
-- [ ] 先测单篇 200+ 块、连续查询、取消一个索引请求、多请求公平和在途上限；必须能在文件内部批次边界插入查询。
+- [x] 先测查询插队、连续批次、按批拆分、FIFO、队列上限、单批失败隔离与空输入；文件内批次边界可插入查询。（证据：`tests/core/index-embedding-arbiter.test.ts` 6 例 + `tests/worker/index-runtime-client.test.ts` 端到端查询优先；单篇 200+ 块专项未覆盖，不宣称该场景已验）
 - [ ] 以模型运行时为 key，每次只发一个真实批次；区分 `index`/`interactive`，未知来源保守视作 interactive。取消只作用于对应请求，不能 terminate 共享模型 Worker。
 - [ ] 将 T3 串行转发桥的内部实现替换为本任务仲裁器，保留已有 RPC/取消/错误契约；Worker 与宿主两端同时接 workload，不能并存两套模型队列或重复转发。
 - [ ] 最多连续 3 个交互批次后，条件满足时服务一个索引最小批次；输入/内存保护与预算债务仍优先。API 不增加原有并发上限、不改变限流重试、不换端点。

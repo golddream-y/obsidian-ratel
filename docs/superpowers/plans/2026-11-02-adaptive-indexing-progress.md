@@ -1,6 +1,6 @@
 # P-ADAPTIVE-INDEX 实施进度
 
-> 计划：[2026-11-02-adaptive-indexing.md](2026-11-02-adaptive-indexing.md) · 需求：`BUG-1-INDEX-PERF-001` · 更新：2026-11-02
+> 计划：[2026-11-02-adaptive-indexing.md](2026-11-02-adaptive-indexing.md) · 需求：`BUG-1-INDEX-PERF-001` · 更新：2026-11-04
 
 本文件只登记**实际提交并跑过用例**的内容；计划里的勾选框保持未勾选，直到对应验收真正通过。生产安装与统一验证在全部 spec 内容完成后进行。
 
@@ -16,7 +16,7 @@
 | T5 崩溃与生命周期 | 部分完成 | 撤销即关会话并释放写权；会话内 `session.recover` 按输入哈希重放未决事务（匹配则产出完成记录，内容已变则不重放），真实崩溃现场用例 2 个 | 进程被杀后的代际级隔离、清理重试与宿主侧重启流程未验证 |
 | T6 共享模型仲裁 | 部分完成 | `EmbeddingArbiter`（6 用例）；**已接进宿主 `onCall`**：客户端按 `workload` 路由，查询走优先队列 | 真实嵌入端口（EmbeddingWorkerProxy）尚未接上；批次公平/压力降档属 M2 |
 | T7～T8 自适应与模式（M2） | 未开始 | — | — |
-| T9 三区分验收 | 未开始 | — | — |
+| T9 三区分验收 | 未开始（待宿主实测） | 正确性有 Node 用例、效率有基准与写放大读数 | 流畅度读数、专用配置、三次对照、两阶段审查、架构/指南文档同步 |
 | T-REL 可靠性遗留 | 部分完成 | 取消信号透传；孤立隔离事务回收；配置身份判定修复（6 用例）；迁移成本实测；派生清单恢复纯模块并已接入后端（26+58 用例）；共享落盘并已接入迁移侧与清单；**写运行时身份守卫已接线**（守卫 5 用例 + 装配接线 2 用例） | 原子存储 `upsertFile` 已改走共享落盘（含 rename 尝试记录，保持提交前/后错误分类）；跨代际复用（缺口 D）已澄清为**非缺陷**：跨配置复用向量在数学上不成立；仅「切回旧配置」存在复用机会，改为一条待验证要求（见 [生产切换与跨代际复用判断](2026-11-02-adaptive-indexing-cutover.md)） |
 
 ## 配置切换缺口（已复现）
@@ -106,11 +106,52 @@
 - 即每写一篇重写整份索引文件 → 写入量 O(N²)。界面流畅不代表存储效率没问题，已作为独立遗留项登记（见 T9 协议）。
 - 度量方式：在效率基准里包一层计数文件系统（含临时文件与完成记录），不只量目录最终体积。
 
-## 全量回归（2026-11-02，收尾）
+## 全量回归
 
-- `npx vitest run`：**323 文件 / 3008 passed / 24 skipped / 0 failed**（1.3.0 发布时为 297 文件 / 2812 passed）。
+- 2026-11-04 最新：`npx vitest run` **326 文件 / 3039 passed / 24 skipped / 0 failed**（暂停记录中的 1 条失败已修复）。
+- 2026-11-02：323 文件 / 3008 passed / 24 skipped / 0 failed（1.3.0 发布时为 297 文件 / 2812 passed）。
 - tsc 保持 241 条基线（相对本轮修改新增 0）；lint 0 error。
 - 生产构建 15.5 MB；实验构建可运行且默认产物不含实验命令。
+
+## 夜间核验记录（2026-11-04，无 GUI）
+
+最近提交 `bc33a5c`（向量批量提交）、`3e62a34`（单文件超时 180s）、`f81fcc9`（失败文件重试一轮）之后的实际读数：
+
+| 命令 | 实际结果 |
+| --- | --- |
+| `npm test` | **325 passed \| 4 skipped（329 文件）**；**3019 passed \| 24 skipped（3043 用例）**；0 failed；81.84 s |
+| `npm run test:index-reliability` | **2 passed（2 文件）**；**29 passed \| 6 skipped（35 用例）**；0 failed；770.68 s（6 项跳过为 `RATEL_SCALE=1` 未开启的重样本） |
+| `npx tsc -noEmit -skipLibCheck` | **241 条错误**，与 STATUS 记录的 241 条基线相同，**新增 0**；`npm run typecheck` 在 tsc 阶段失败，svelte-check 未执行，typecheck 仍未通过 |
+| `git status --short` | 核验开始时工作树干净；结束后仅本文件被修改（未提交） |
+
+- 最近提交触及的源码没有新增 tsc 错误；`src/main.ts` 的 3 条（457/1524/1951）为历史存量，`f5669f9` 只改动了 1385 行附近。
+- 本轮**未执行**效率基准与任何实验构建；未设置 `RATEL_ONNX`，默认套件不含真实 ONNX 推理。
+
+### 可无 GUI 执行的验证清单（按顺序）
+
+| # | 项 | 命令 / 入口 | 观察点 | 判据 |
+| --- | --- | --- | --- | --- |
+| 1 | 全量回归 | `npm test` | Test Files / Tests 汇总行 | 0 failed；4 个跳过文件为门控文件 |
+| 2 | 索引可靠性 | `npm run test:index-reliability` | 2 个专用文件汇总行 | 0 failed；重样本跳过数随 `RATEL_SCALE` 变化属预期 |
+| 3 | 正确性 Node 证据 | `npx vitest run tests/worker/index-runtime-session.test.ts tests/core/index-thread-e2e.test.ts tests/core/index-reliability-crash.test.ts`（已含在全量套件内） | 单文件提交可查回、内容变短旧块不残留、关闭重开仍可检索、未决事务重放/内容已变不重放、撤销后写入失败 | 全部通过 |
+| 4 | 效率基准 | `RATEL_EFFICIENCY=1 RATEL_EFFICIENCY_FILES=100 npx vitest run tests/core/index-efficiency-baseline.test.ts tests/core/index-thread-efficiency.test.ts` | 输出 `[效率基准]` 行的总耗时/每篇/峰值堆/写入字节/落盘字节 | 与 1.3.0 同机基线对照每篇 ≤ 1.5 倍、峰值堆 ≤ 1.25 倍；写入字节如实记录，不设通过线 |
+
+### 仍需真实 Obsidian 宿主 / GUI 的验收清单
+
+| # | 验收项 | 操作步骤 | 观察点 | 通过判据 |
+| --- | --- | --- | --- | --- |
+| 1 | V1 真实宿主线程 | `RATEL_INDEX_EXPERIMENT=1 node esbuild.config.mjs production`；`node scripts/link-vault.mjs "<sandbox>"`；重载插件（或重启 Obsidian） | Toast「运行索引线程实验」→ 完成提示给出报告路径；报告 `channel` 段有 init 与受限文件读写 | 真实常驻 Worker 跑通，报告落盘到系统临时目录 `ratel-index-thread-experiment-*.json` |
+| 2 | 探针可信（前置） | 打开报告看 `selfCheck` | `selfCheck.maxGapMs` | ≥ 250 ms，否则整份报告作废，不得引用其余读数 |
+| 3 | 流畅度：索引不占主线程 | 报告 `runtime.stall` 与 `mainThreadIndex.stall`（或命令面板「运行索引线程实验(调试)」重跑） | 两侧最大迟到与 p95 | `runtime.stall` 明显低于 `mainThreadIndex.stall`，`gates.fluidity = better`；接近则为 inconclusive，需加大负载复测，不得宣称卡顿已解决 |
+| 4 | 流畅度：序列化不占主线程 | 报告 `webWorker.stall` 与 `mainThread.stall` | 两侧最大迟到 | `webWorker.stall` < `mainThread.stall` |
+| 5 | 落盘持久性 | 报告 `reopen` | `reopen.found` | `true`，且 `gates.reopenOk = true` |
+| 6 | 交互可操作（人工） | 采集期间持续输入、滚动、切换笔记，并执行一次查询 | 主观卡顿感受 | 可正常输入/滚动/切换，查询在索引期间有返回；主观结论单独记录，不替代读数 |
+| 7 | 大提交窗口 | 报告 `runtime.stall` 的最差窗口（或提高单篇块数后重跑） | 最差窗口超额延迟 | p95 ≤ 50 ms、最长 ≤ 250 ms；单列最差窗口，不用空闲期稀释 |
+| 8 | V8 只读模式 | 预览库中关闭自动索引后重载，观察索引初始化/扫描行为，再执行显式查询 | 是否建库、加写锁、迁移、全量扫描、自动模型请求 | 仅只读打开可信存储；显式查询仍可用；切换写模式不双开存储 |
+| 9 | 查询与提交抢占（V4） | 索引进行中连续发起查询 | 查询是否在提交边界返回、是否被大文件永久阻塞 | 查询可服务，交互队列不被大提交长期占住 |
+
+- 以上 1–9 本轮**均未执行**；T9 唯一阻塞仍是第 3 项的宿主流畅度读数。
+- M2 的真实模型调速、压力降档（V6）不在 M1 验收范围，也需真实宿主与真实模型，本轮未验证。
 
 ## 实施回执
 
@@ -139,5 +180,13 @@
 ## 下一步
 
 1. T3：把索引会话（分块、日志、清单、Vectra）装配进 Worker，宿主侧只保留 API 与准入。
-2. T-REL：派生清单恢复接线、配置切换复现测试。
+2. T-REL：派生清单恢复接线、配置切换复现测试。（2026-11-04：「切回旧配置不重嵌」验收已落地为 `tests/core/index-runtime-config-switch.test.ts` 场景 E——按指纹取回旧代际、核对命中旧完成记录不重嵌、指针可切回；7/7 通过。cutover §1 挂账闭合。）
 3. T4～T6 → T9：查询仲裁、崩溃闭环、模型公平，再做三区分验收。
+
+## 2026-11-04 线5：TypeScript 严格类型清零
+
+- 起始 `npx tsc --noEmit` 237 errors，最终 0 errors；未放宽 tsconfig。
+- 源码修复 106 处：`md-block-enhance` 定时器类型、`outbound-measure` 附件字段、`goal-guard` 空值收窄、`LogModule` 枚举、`main.llm → LLMClient`、`sections` toolPrompt 模板 id、mascot/orbs 索引取值、`utf8-stream-buffer` Buffer 读取。
+- 测试修复 131 处：strict-null 索引、vitest `Mock` 类型、`createEl` polyfill 交集签名、mock 补齐 `VaultPort`/`VaultEventListener`/`Persistence` 契约、`agent-loop` 的 `LLMClient`/`ChatDelta` 字段。
+- 验证：`npm test` 325 文件通过 / 4 跳过，3019 用例通过 / 24 跳过；`npm run lint` 0 errors / 30 既有 warnings。
+- 测试断言语义未改动；`settings-propagation` 的 `config` 访问改为显式窄化以匹配 `LLMClient` 包装类型。

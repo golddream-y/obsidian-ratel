@@ -4,7 +4,7 @@
 
 ## 现在停在哪
 
-- 计划共 62 个 checkbox，本次按证据勾选 **4 条**，保留 **58 条**。勾选的是 T0 载体与实验包、T-REL 配置切换、T4 查询仲裁；证据已写在各条目旁。
+- 计划共 62 个 checkbox，暂停时按证据勾选 **4 条**，保留 **58 条**。2026-11-04 续做时按 Node/真实磁盘证据再勾 8 条，累计 **12 条勾选、50 条保留**（见文末「续做记录」）。
 - T4 查询仲裁已提交 `7c49f23`：定向 **46/46**；T5 `before` 故障注入已提交 `35af592`：真实子进程定向 **23/23**。T5 条目仍不勾，因为子进程证据不等于真实 Worker 生命周期验收。
 - 分块迁移一致性已提交 `602a07d`：真实旧/新链路 **6/6**，覆盖边界、正文、嵌入输入及多类文件差异。
 - 设置页 `indexThreadMode` 已提交 `4b635f0`，默认仍为 `false`，需重载插件生效；未改成默认开启。
@@ -62,3 +62,25 @@ expect(harness.gate.acquired).toBe(3)
 5. 最后才补全量 `npm test`、`npm run lint`、typecheck 诊断集合对比；有 Sandbox 证据前不勾 T9，不改默认开关。
 
 已释放：本轮启动的子代理、定向测试与临时取证 worktree 均已结束或删除。残留检查发现另一会话正在运行全量 Vitest，并非本轮启动，未擅自终止。
+
+
+## 续做记录（2026-11-04）
+
+用户要求「完成的该勾选勾选」并准备亲自介入真实测试。按证据复核后，在主计划再勾 8 条（累计 12/62，剩 50）：
+
+| 任务 | 新勾 | 证据口径 |
+| --- | --- | --- |
+| T-REL | 复现测试、派生恢复接线、共享 flush/回收/options、O(N²) 实测 | 5 个独立测试文件、真实磁盘 receipt/块集合、迁移规模读数 |
+| T1 | 协议失败用例、信封与 grant 集中定义 | `index-runtime-protocol.test.ts` / `index-runtime-host.test.ts` 16 例 |
+| T3 | Worker bundle 内联与常驻复用 | `esbuild.config.mjs`、测试 stub、生产构建 15.5 MB |
+| T6 | 仲裁先测（查询插队/批次/FIFO/上限/失败隔离） | `index-embedding-arbiter.test.ts` 6 例 + 客户端端到端 |
+
+**仍未勾的 50 条，按性质分类**（避免把「未勾」误读成「未做」）：
+
+- **M2 后置 14 条**（T7 4 / T8 5 / T10 5）：明确不属本次交付。
+- **需真实宿主 / GUI / 真实 ONNX 约 20 条**：T0 剩 3、T4 剩 3、T5 剩 4、T9 剩 8，以及 T-REL 剩 1 的登记项。这正是用户接下来要做的实测，Node 用例不能替代。
+- **实现与 plan 设计有偏差约 12 条**：T1 剩 3（单 MessagePort + 反向 RPC，未做独立双池/分片 credit/ACK）、T2 剩 7（ticket 为宿主本地 `CommitTicketBroker`，未走远端 commit-begin/granted/settled）、T3 剩 3（代际解析仍在宿主、主线程保留回落路径、缺真实线程身份断言）。这些不是「漏做」，是落地时收窄了设计；需要设计方裁定改 plan 还是补实现，不能自行勾掉。
+
+**最新验证**：`npx vitest run` 326 文件 / 3039 passed / 24 skipped / 0 failed；工作树含另一条线的类型清零与 4 个写放大修正（未提交，不抢提交）；构建产物按当前工作树生成。
+
+**真实测试入口**：Sandbox 已设 `indexThreadMode: true`，链接指向本仓库 `dist/main.js`；重载应用后真实索引走独立线程。若要观察全量索引期间的流畅度，重载前把 `.index` 移走（已有备份）。机械读数需实验构建：`RATEL_INDEX_EXPERIMENT=1 node esbuild.config.mjs production`，重载后 5 秒自动出带 `gates` 的报告。
