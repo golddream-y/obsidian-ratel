@@ -207,7 +207,7 @@ const settingsZh: SettingsStrings = {
   'settings.indexing.chunkSize.effective': '实际生效 {tokens} token',
   'settings.indexing.chunkOverlap.name': '分块重叠(token)',
   'settings.indexing.threadMode.name': '索引写入使用独立线程',
-  'settings.indexing.threadMode.desc': '开启后分块、向量写入与提交在常驻 Worker 内完成，索引期间主线程只做调度；装配失败会自动回落到主线程。',
+  'settings.indexing.threadMode.desc': '默认开启：分块、向量写入与提交在常驻 Worker 内完成，索引期间主线程只做调度；装配失败会自动回落到主线程，关闭后回到主线程索引。',
   'settings.indexing.autoIndex.name': '自动索引',
   'settings.indexing.autoIndex.desc': '启动时自动扫描 vault 变更并增量索引',
   'settings.autoCompactEnabled.name': '自动压缩上下文',

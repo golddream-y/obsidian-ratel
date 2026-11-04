@@ -264,7 +264,8 @@ export const DEFAULT_SETTINGS: RatelVaultSettings = {
 	chunkSizePreset: DEFAULT_CHUNK_SIZE_PRESET,
 	chunkOverlap: 100,
 	autoIndex: true,
-	indexThreadMode: false,
+	// 关键路径:默认把索引写入放到独立线程;失败自动回落主线程,设置页可关闭。
+	indexThreadMode: true,
 	// 关键路径:索引暂停默认关闭,起飞期 IndexManager 状态 = Init → Ready,正常消费队列。
 	indexPaused: false,
 	// 关键路径:默认激活 bge-small-zh-v1.5(ONNX 量化模型约 24MB,多数用户零感知下载)。

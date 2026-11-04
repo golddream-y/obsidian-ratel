@@ -211,7 +211,7 @@ export const en: Strings = {
   'settings.indexing.chunkSize.effective': 'Effective: {tokens} tokens',
   'settings.indexing.chunkOverlap.name': 'Chunk overlap (tokens)',
   'settings.indexing.threadMode.name': 'Run index writes on a worker thread',
-  'settings.indexing.threadMode.desc': 'Chunking, vector writes and commits run in a persistent worker so the main thread only schedules. Falls back to the main thread automatically if setup fails.',
+  'settings.indexing.threadMode.desc': 'On by default: chunking, vector writes and commits run in a persistent worker so the main thread only schedules. Falls back to the main thread automatically if setup fails; turn it off to index on the main thread.',
   'settings.indexing.autoIndex.name': 'Auto index',
   'settings.indexing.autoIndex.desc': 'Scan vault for changes and incrementally index on startup',
   'settings.autoCompactEnabled.name': 'Auto-compact context',
