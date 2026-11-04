@@ -23,7 +23,7 @@ import { getEffectiveChatModelMaxTokens } from './utils/context-window';
 import { tailBudget } from './core/context-budget';
 import { normalizeMcpServerConfig } from './core/mcp-config';
 import { AttachmentStore } from './core/attachment-store';
-import type { AttachmentRef, LlmRetryWait } from './ports/llm';
+import type { AttachmentRef, LlmRetryWait, LLMClient } from './ports/llm';
 
 import type { AgentEvent, ChunkOptionsPayload } from './types';
 import type { ChunkOptions } from './worker/chunker';
@@ -274,7 +274,7 @@ export default class RatelVaultPlugin extends Plugin {
 	vault!: ObsidianVault;
 	workspacePort!: WorkspacePort;
 	persistence!: PersistenceJson;
-	llm!: OpenAICompatLLM;
+	llm!: LLMClient;
 	embedding!: EmbeddingPort;
 	tools!: ToolRegistry;
 	hooks!: HookRegistry;
@@ -363,7 +363,8 @@ export default class RatelVaultPlugin extends Plugin {
 	/** vault 根绝对路径 — 索引对象装配(含降级重试)复用。 */
 	private vaultBase = '';
 	// 关键路径:用户记忆存储,管理 .ratel/memory/ 下的 markdown 文件与 .memory-index/ vectra 索引
-	private memoryStore!: MemoryStore;
+	// P-MEMORY-UI:MemoryPanel 直接读写(查看/编辑/删除条目),故公开。
+	memoryStore!: MemoryStore;
 	// 关键路径(S-SR-LAYERING):使用统计存储(pluginDir/usage-stats.json);UI 管理面板读取展示
 	usageStats!: UsageStatsStore;
 	// 关键路径:P-SKILL-1-CORE — Skill 三源加载器、注册表、激活器。
@@ -423,7 +424,7 @@ export default class RatelVaultPlugin extends Plugin {
 	private pendingTerminalKind: 'completed' | 'cancelled' | null = null;
 	private pendingTerminalAllowWriteNote = false;
 	// 关键路径:SettingTab 实例在 addSettingTab 时保存,ObsidianWorkspace 经 getter 读最新值定位 tab
-	private settingTab: RatelVaultSettingTab | null = null;
+	settingTab: RatelVaultSettingTab | null = null;
 	private workerMode: 'thread' | 'inline' = 'inline';
 
 	/**
@@ -1301,6 +1302,12 @@ export default class RatelVaultPlugin extends Plugin {
 
 		// 关键路径:模型下载仅 local 模式需要;API 模式无本地模型,但仍要启动索引(P3 修复)。
 		if (this.settings.embedProvider === 'local') {
+			// 关键路径:本地模型下载/编译期间索引还没开始;不先把阶段说清楚,用户只会看到
+			// 「索引空闲」却点哪都卡,误判成索引卡死。
+			this.userStatus?.patch({
+				index: 'init',
+				indexDetail: tNow('status.indexDetail.modelPreparing'),
+			});
 			// 关键路径:全量索引进度由 Worker 回调驱动;FeedbackController 仅更新 statusBar,不弹 progress Notice。
 		this.workerManager.setProgressCallback((done, total) => {
 			const message = tNow('notice.indexProgress', { done, total });
@@ -1351,6 +1358,8 @@ export default class RatelVaultPlugin extends Plugin {
 		}
 		}
 
+		// 关键路径:模型就绪后清掉「加载模型」须知,由扫描/处理阶段接管显示。
+		this.userStatus?.patch({ indexDetail: undefined });
 		// 关键路径:索引启动 — 两条 provider 都走(P3 修复)。
 		// autoIndex=false 时不装配写路径监听、不扫描、不嵌入、不写盘;事件只记入内存的
 		// 「已变更」集合供检索侧过滤,恢复写事务必须由用户显式启用索引或执行重建(A11)。

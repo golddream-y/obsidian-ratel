@@ -790,6 +790,7 @@ export const en: Strings = {
   'status.indexLabel.paused': 'Paused',
   'status.indexLabel.failed': 'Failed',
   'status.indexLabel.initializing': 'Initializing',
+  'status.indexDetail.modelPreparing': 'Loading the embedding model (first run downloads and compiles the runtime)',
   'status.indexLabel.checkingChanges': 'Checking changes',
   'status.indexLabel.idle': 'Idle',
   'status.indexLabel.unknown': '…',

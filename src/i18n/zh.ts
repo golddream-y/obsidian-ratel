@@ -793,6 +793,7 @@ const statusZh: StatusStrings = {
   'status.indexLabel.paused': '已暂停',
   'status.indexLabel.failed': '失败',
   'status.indexLabel.initializing': '初始化',
+  'status.indexDetail.modelPreparing': '正在加载嵌入模型（首次需下载并编译运行时）',
   'status.indexLabel.checkingChanges': '检查变更中',
   'status.indexLabel.idle': '空闲',
   'status.indexLabel.unknown': '…',

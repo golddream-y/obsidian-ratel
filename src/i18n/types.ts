@@ -793,6 +793,7 @@ export interface StatusStrings {
   'status.indexLabel.paused': string;
   'status.indexLabel.failed': string;
   'status.indexLabel.initializing': string;
+  'status.indexDetail.modelPreparing': string;
   'status.indexLabel.checkingChanges': string;
   'status.indexLabel.idle': string;
   'status.indexLabel.unknown': string;
