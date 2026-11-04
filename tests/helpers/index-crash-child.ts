@@ -47,15 +47,21 @@ import { T0_CHUNK_OPTIONS, FakeEmbeddingPort } from './index-reliability-fixture
  *
  * - `prepared-before`:分片已落盘、`prepared.json` 尚未落盘(不完整准备数据,不可重放);
  * - `prepared-after`:待提交事务已落盘、向量尚未提交(应重放暂存向量,零重复嵌入);
+ * - `vector-before`:待提交事务已落盘、向量替换尚未开始(应重放暂存向量,零重复嵌入);
  * - `vector-after`:向量事务已落盘、文件完成记录尚未落盘(应补写完成记录,零重复嵌入);
+ * - `receipt-before`:向量事务已落盘、完成记录写入尚未开始(应补写完成记录,零重复嵌入);
  * - `receipt-after`:文件记录已落盘、事务目录尚未清理(应只清理,零重复嵌入);
+ * - `cleanup-before`:文件记录已落盘、事务目录删除尚未开始(应只清理,零重复嵌入);
  * - `commit-after-cleanup`:提交已返回且事务目录已清理(应完全复用)。
  */
 export const CRASH_STAGES = [
 	'prepared-before',
 	'prepared-after',
+	'vector-before',
 	'vector-after',
+	'receipt-before',
 	'receipt-after',
+	'cleanup-before',
 	'commit-after-cleanup',
 ] as const;
 
@@ -68,10 +74,10 @@ export interface CrashHookState {
 	/** 先让前 N 篇文件完整提交,再对第 N+1 篇生效(用于「已提交文件零重复嵌入」)。 */
 	readonly afterFiles: number;
 	/**
-	 * 已落盘的完成记录数(即已提交文件数)。
+	 * 已落盘的完成记录数(含刚落盘但尚未清理事务的当前文件)。
 	 *
-	 * 关键路径:所有阶段的判定都在**自增之前**读它,因此它与
-	 * {@link CrashHookState.afterFiles} 的比较语义统一为「前 N 篇已提交 → 对第 N+1 篇生效」。
+	 * 关键路径:写入前/后阶段在**自增之前**读它,以 `>= afterFiles` 选中第 N+1 篇;
+	 * `cleanup-before` 在 receipt 落盘并自增后读取,因此改用 `> afterFiles` 选中同一篇。
 	 */
 	receiptsSeen: number;
 	/** 已有已落盘的 `prepared.json`(用于把「文件事务的向量提交」与建库时的索引创建区分开)。 */
@@ -158,10 +164,10 @@ const JOURNAL_PREPARED_FILENAME = 'prepared.json';
 const QUIESCENT_TURNS = 2;
 
 /**
- * 原子存储的崩溃注入包装 — 只在**真实写入完成之后**判定阶段。
+ * 原子存储的崩溃注入包装 — 在真实写入之前或完成之后按阶段判定。
  *
- * 关键路径:判定放在 `super.upsertFile` 之后,因此退出时该文件已经是完整的原子替换结果,
- * 不会出现半截文件;这正是「无半截文件」断言的前提。
+ * 关键路径:before 阶段必须放在 `super.upsertFile` 之前,after 阶段放在其后;
+ * 因此 before 现场尚未发生目标写入,after 现场则是完整的原子替换结果,两者都不会留下半截 JSON。
  *
  * 附带职责(取代调用方的固定睡眠):统计在途写,给装配句柄一个**可判定**的收敛条件。
  * 固定「等 25ms」是在猜窗口 —— 猜短了让断言与真实磁盘赛跑,猜长了拖慢每个用例;
@@ -277,6 +283,7 @@ export class CrashPointStorage extends AtomicIndexStorage {
 			if (this.writeDelayMs > 0) {
 				await new Promise<void>((resolve) => setTimeout(resolve, this.writeDelayMs));
 			}
+			this.onBeforeWrite(filePath);
 			await super.upsertFile(filePath, content);
 			this.onWritten(filePath);
 		});
@@ -296,6 +303,26 @@ export class CrashPointStorage extends AtomicIndexStorage {
 
 	async deleteFolder(folderPath: string): Promise<void> {
 		await this.trackWrite(() => super.deleteFolder(folderPath));
+	}
+
+	/** 写入开始前的阶段判定 — 目标原子替换尚未执行,不得用前一阶段 after 代替。 */
+	private onBeforeWrite(filePath: string): void {
+		const stage = this.state.stage;
+		if ((stage !== 'vector-before' && stage !== 'receipt-before') || this.state.crashed) return;
+		const relativePath = path.relative(this.root, path.resolve(filePath)).split(path.sep).join('/');
+		const name = path.posix.basename(relativePath);
+		if (relativePath === 'index.json' && stage === 'vector-before' && this.state.preparedSeen && this.eligible()) {
+			forceCrash(this.state, this.markerPath, 'vector-before', relativePath);
+		}
+		if (
+			relativePath.startsWith(`${JOURNAL_FILES_DIRNAME}/`)
+			&& name.endsWith('.json')
+			&& stage === 'receipt-before'
+			&& this.state.preparedSeen
+			&& this.eligible()
+		) {
+			forceCrash(this.state, this.markerPath, 'receipt-before', relativePath);
+		}
 	}
 
 	/** 写入完成后的阶段判定 — 绝不改变写入结果。 */
@@ -336,6 +363,36 @@ export class CrashPointStorage extends AtomicIndexStorage {
 			this.state.receiptsSeen += 1;
 		}
 	}
+}
+
+/**
+ * 在事务目录的真实 `rm` 入口前注入清理前崩溃。
+ *
+ * 关键路径:生产清理由 `IndexFileJournal` 直接调用 `fs.promises.rm`,不经过原子存储;
+ * 因此必须在同一 fs 门面拦截目标调用,不能拿 receipt 写完后的时点冒充 cleanup-before。
+ */
+function installCleanupBeforeCrash(
+	generationRoot: string,
+	state: CrashHookState,
+	markerPath?: string,
+): () => void {
+	const originalRm = fs.promises.rm.bind(fs.promises);
+	const wrappedRm = (async (
+		target: Parameters<typeof originalRm>[0],
+		options?: Parameters<typeof originalRm>[1],
+	) => {
+		if (typeof target === 'string' && !state.crashed && state.preparedSeen && state.receiptsSeen > state.afterFiles) {
+			const relativePath = path.relative(generationRoot, path.resolve(target)).split(path.sep).join('/');
+			if (/^pending\/[^/]+$/.test(relativePath)) {
+				forceCrash(state, markerPath, 'cleanup-before', relativePath);
+			}
+		}
+		await originalRm(target, options);
+	}) as typeof fs.promises.rm;
+	fs.promises.rm = wrappedRm;
+	return () => {
+		if (fs.promises.rm === wrappedRm) fs.promises.rm = originalRm;
+	};
 }
 
 /**
@@ -561,6 +618,9 @@ export async function assembleIndexHarness(options: HarnessOptions): Promise<Ind
 			? {}
 			: { wrapJournal: (journal: IndexFileJournal) => wrapJournalForCrash(journal, crash, options.markerPath) }),
 	});
+	const restoreCleanupCrash = crash?.stage === 'cleanup-before'
+		? installCleanupBeforeCrash(runtime.indexDir, crash, options.markerPath)
+		: undefined;
 	const store = runtime.pipeline.store;
 	// 关键路径:先把建库时的 index.json 落盘,否则它与真实文件事务的向量提交会竞争崩溃判定。
 	await store.init();
@@ -605,6 +665,7 @@ export async function assembleIndexHarness(options: HarnessOptions): Promise<Ind
 			disposed = true;
 			runtime.pipeline.stallWatchdog.stop();
 			runtime.pipeline.coordinator.destroy();
+			restoreCleanupCrash?.();
 			// 关键路径:先把在途写收敛到归零,再释放写所有权并返回。
 			// 这里是**可判定条件**(计数归零)而不是固定睡眠:调用方在本函数返回后就做逐字节
 			// 快照与目录删除,任何未结算的落盘都必须在此之前结束;超过上限直接抛错,不静默放过。

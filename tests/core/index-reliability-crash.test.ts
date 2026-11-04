@@ -537,9 +537,9 @@ describe('崩溃恢复 — 子进程按阶段强制退出后重建(A1/A2/A6)', (
 	it.each(CRASH_STAGES)('阶段 %s - 真实磁盘恢复、块集合完整、无半截文件', async (stage) => {
 		const scenario = createScenario(`ratel-t8-${stage}-`, ['a.md', 'b.md', 'c.md']);
 		try {
-			await crashAt(scenario, stage);
+			const { marker } = await crashAt(scenario, stage);
 			const indexDir = indexRootOf(scenario);
-			// 崩溃现场必须通过「无半截文件」检查 —— 崩溃点均在原子替换**完成之后**。
+			// before 在真实写入/删除前退出,after 在原子替换后退出;两者都不得留下半截 JSON。
 			expectNoHalfWrittenJson(indexDir);
 
 			const site = await inspectCrashSite(scenario, scenario.notePaths);
@@ -557,8 +557,22 @@ describe('崩溃恢复 — 子进程按阶段强制退出后重建(A1/A2/A6)', (
 					expect(site.prepared).toHaveLength(1);
 					expect(site.blocks.get(site.prepared[0]!.path)).toHaveLength(0);
 					break;
+				case 'vector-before':
+					// 已在 index.json 的真实原子替换入口前退出:prepared 可重放,目标向量尚未发布。
+					expect(marker.relativePath).toBe('index.json');
+					expect(site.receipts.size).toBe(0);
+					expect(site.prepared).toHaveLength(1);
+					expect(site.blocks.get(site.prepared[0]!.path)).toHaveLength(0);
+					break;
 				case 'vector-after':
 					// 向量已提交、完成记录尚未落盘。
+					expect(site.receipts.size).toBe(0);
+					expect(site.prepared).toHaveLength(1);
+					expect(site.blocks.get(site.prepared[0]!.path)!.length).toBe(site.prepared[0]!.chunkCount);
+					break;
+				case 'receipt-before':
+					// 已在 files/<pathHash>.json 的真实原子替换入口前退出:向量完整,receipt 尚不存在。
+					expect(marker.relativePath).toMatch(/^files\/[^/]+\.json$/);
 					expect(site.receipts.size).toBe(0);
 					expect(site.prepared).toHaveLength(1);
 					expect(site.blocks.get(site.prepared[0]!.path)!.length).toBe(site.prepared[0]!.chunkCount);
@@ -568,6 +582,14 @@ describe('崩溃恢复 — 子进程按阶段强制退出后重建(A1/A2/A6)', (
 					expect(site.receipts.size).toBe(1);
 					expect(site.prepared).toHaveLength(1);
 					expect(site.pendingTransactions).toHaveLength(1);
+					break;
+				case 'cleanup-before':
+					// 已在 pending/<transactionId> 的真实 rm 入口前退出:receipt 与向量完整,事务目录仍在。
+					expect(marker.relativePath).toMatch(/^pending\/[^/]+$/);
+					expect(site.receipts.size).toBe(1);
+					expect(site.prepared).toHaveLength(1);
+					expect(site.pendingTransactions).toEqual([site.prepared[0]!.transactionId]);
+					expect(site.blocks.get(site.prepared[0]!.path)!.length).toBe(site.prepared[0]!.chunkCount);
 					break;
 				case 'commit-after-cleanup':
 					// 提交已返回且日志已清理 —— 磁盘上是可完全复用的状态。
@@ -590,6 +612,7 @@ describe('崩溃恢复 — 子进程按阶段强制退出后重建(A1/A2/A6)', (
 				expectDiskBlocksEqual(await readDiskBlocks(indexDir, filePath), expectedBlocks(filePath, content), filePath);
 				expect(receipts.get(filePath), `${filePath} 完成记录`).toBeDefined();
 			}
+			expect(await readPendingTransactions(indexDir), '恢复后仍有待提交事务').toHaveLength(0);
 			// 关键路径:崩溃时已持久化的文件不得再次嵌入;其余文件必须被真正提交(非空断言)。
 			const embeddedPaths = new Set<string>();
 			for (const text of embedding.texts) {
@@ -613,6 +636,84 @@ describe('崩溃恢复 — 子进程按阶段强制退出后重建(A1/A2/A6)', (
 			await disposeScenario(scenario);
 		}
 	}, 120_000);
+
+	it.each(['vector-before', 'receipt-before', 'cleanup-before'] as const)(
+		'第 N+1 篇 %s 崩溃 - afterFiles=1 - 前 1 篇零重复嵌入且恢复完整',
+		async (stage) => {
+			const scenario = createScenario(`ratel-t8-${stage}-afterfiles-`, ['a.md', 'b.md', 'c.md']);
+			try {
+				const { marker } = await crashAt(scenario, stage, 1);
+				const indexDir = indexRootOf(scenario);
+				const site = await inspectCrashSite(scenario, scenario.notePaths);
+				// 启动扫描并发核对,处理顺序不等于文件名顺序;唯一 pending 才是本次第 N+1 篇。
+				expect(site.prepared).toHaveLength(1);
+				const prepared = site.prepared[0]!;
+				expect(site.pendingTransactions).toEqual([prepared.transactionId]);
+
+				switch (stage) {
+					case 'vector-before':
+						expect(marker.relativePath).toBe('index.json');
+						expect(site.receipts.size).toBe(1);
+						expect(site.blocks.get(prepared.path)).toHaveLength(0);
+						break;
+					case 'receipt-before':
+						expect(marker.relativePath).toMatch(/^files\/[^/]+\.json$/);
+						expect(site.receipts.size).toBe(1);
+						expect(site.blocks.get(prepared.path)!.length).toBe(prepared.chunkCount);
+						break;
+					case 'cleanup-before':
+						expect(marker.relativePath).toBe(`pending/${prepared.transactionId}`);
+						expect(site.receipts.size).toBe(2);
+						expect(site.receipts.has(prepared.path), '第 2 篇 receipt 尚未落盘').toBe(true);
+						expect(site.blocks.get(prepared.path)!.length).toBe(prepared.chunkCount);
+						break;
+				}
+
+				// 排除当前 pending 后必须恰好剩一条 receipt:它才是本次崩溃前已完整提交的前 N 篇。
+				const committedBefore = [...site.receipts.keys()].filter((filePath) => filePath !== prepared.path);
+				expect(committedBefore, '崩溃前完整提交的文件数不是 1').toHaveLength(1);
+				const firstCommittedPath = committedBefore[0]!;
+				const noReembed = await noReembedPaths(site, scenario.vaultDir);
+				expect(noReembed, '前 N 篇与当前篇均已有可恢复持久状态')
+					.toEqual(new Set([firstCommittedPath, prepared.path]));
+				const { embedding, harness, result } = await runRecovery(scenario);
+				await harness.dispose();
+				expect(result, '重建后的索引未完成').not.toBeNull();
+				expect(result!.errors, '重建后仍有失败文件').toBe(0);
+
+				const embeddedPaths = new Set<string>();
+				for (const text of embedding.texts) {
+					for (const filePath of scenario.notePaths) {
+						if (text.includes(path.basename(filePath))) embeddedPaths.add(filePath);
+					}
+				}
+				for (const filePath of scenario.notePaths) {
+					if (noReembed.has(filePath)) {
+						expect(embeddedPaths.has(filePath), `${stage}:已持久化文件 ${filePath} 被重复嵌入`).toBe(false);
+					} else {
+						expect(embeddedPaths.has(filePath), `${stage}:未持久化文件 ${filePath} 未被重算`).toBe(true);
+					}
+				}
+
+				const receipts = await readReceipts(indexDir);
+				expect(receipts.get(firstCommittedPath), '前 N 篇 receipt 在恢复后被改写')
+					.toEqual(site.receipts.get(firstCommittedPath));
+				for (const filePath of scenario.notePaths) {
+					const content = fs.readFileSync(path.join(scenario.vaultDir, filePath), 'utf8');
+					expectDiskBlocksEqual(await readDiskBlocks(indexDir, filePath), expectedBlocks(filePath, content), filePath);
+					expect(receipts.get(filePath), `${filePath} 完成记录`).toBeDefined();
+				}
+				expect(await readPendingTransactions(indexDir), '恢复后仍有待提交事务').toHaveLength(0);
+				const second = await runRecovery(scenario);
+				await second.harness.dispose();
+				expect(second.embedding.callCount, '零变化重启的嵌入调用数').toBe(0);
+				await expectReceiptsMatchVault(scenario);
+			} finally {
+				await disposeScenario(scenario);
+			}
+		},
+		120_000,
+	);
 
 	it('先完整提交两篇再在第三篇 prepared 后崩溃 - 已提交文件零重复嵌入', async () => {
 		const scenario = createScenario('ratel-t8-afterfiles-', ['a.md', 'b.md', 'c.md']);
