@@ -1404,6 +1404,22 @@ export class IndexFileJournal {
 				await this.cleanupQuietly(transaction.transactionId);
 				continue;
 			}
+			// 关键路径(2026-11-04):从未有过完成记录的路径上,若残留一条「块从未落盘」的旧事务,
+			// 磁盘仍是更早版本的块(commitId 不同、块数可能相同),判定会两边都不匹配。
+			// 这种情况是「被打断的提交」留下的孤儿事务:事务目标从未生效,丢弃它并重新计算即可,
+			// 不能因为一条孤儿事务把路径永久卡死。只在没有完成记录时启用,避免掩盖真实分叉。
+			if (receipt === null && blocks.length > 0 && predecessor.next.state === 'present') {
+				const diskCommitIds = new Set(blocks.map((block) => block.metadata['commitId']).filter((id): id is string => typeof id === 'string'));
+				const targetIsOnDisk = diskCommitIds.has(predecessor.next.commitId);
+				if (!targetIsOnDisk && diskCommitIds.size === 1) {
+					devLogger.warn(
+						'index',
+						`丢弃孤儿事务:${normalizedPath} 磁盘提交=${[...diskCommitIds][0] ?? 'unknown'} 事务提交=${predecessor.next.commitId}`,
+					);
+					await this.cleanupQuietly(transaction.transactionId);
+					continue;
+				}
+			}
 			// 真正无法判定归属 → 保留依据并拒绝继续猜测。
 			// 关键路径:先打出判定依据,否则现场只有一句「无法判定」,查不出是记录、事务还是磁盘块的差异。
 			devLogger.warn(
