@@ -40,6 +40,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { AtomicIndexStorage } from '../adapters/atomic-index-storage';
 import { AtomicStorageError, isAtomicTempLeftoverName } from '../adapters/atomic-index-storage';
+import { devLogger } from '../logging/dev-logger';
 import type { FileReplaceStore, PreparedBlock } from '../adapters/vector-vectra';
 import {
 	EMPTY_BLOCK_SET_HASH,
@@ -1404,6 +1405,11 @@ export class IndexFileJournal {
 				continue;
 			}
 			// 真正无法判定归属 → 保留依据并拒绝继续猜测。
+			// 关键路径:先打出判定依据,否则现场只有一句「无法判定」,查不出是记录、事务还是磁盘块的差异。
+			devLogger.warn(
+				'index',
+				`路径状态无法判定:${normalizedPath} 未决事务=${transactions.length} 有完成记录=${receipt !== null} 磁盘块=${blocks.length} 事务目标块=${predecessor.next.chunkCount ?? 'unknown'}`,
+			);
 			await this.writePathState({
 				path: normalizedPath,
 				kind: 'unavailable',
