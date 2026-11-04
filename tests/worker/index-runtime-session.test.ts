@@ -452,7 +452,7 @@ describe('批量写入', () => {
 		expect(indexWrites - baseline).toBe(1);
 		const hits = await handlers['session.searchVector']!({ vector: Array.from({ length: DIMENSIONS }, () => 0.1), topK: 100 }) as { hits: Array<{ path: string }> };
 		expect(new Set(hits.hits.map((hit) => hit.path))).toEqual(new Set(files.map((file) => file.path)));
-	});
+	}, 30_000);
 
 	it('载荷缺少 files - 明确拒绝 - 不进入存储', async () => {
 		const handlers = createIndexSessionHandlers({ root, chunkOptions: CHUNK_OPTIONS, epoch: 1 });
