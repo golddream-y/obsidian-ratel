@@ -193,6 +193,13 @@ export class ShardedVectorStore {
 	async reload(): Promise<void> {
 		for (const store of this.stores.values()) await store.reload();
 	}
+
+	/** 仅测试使用 — 取指定分片的底层存储以注入故障。 */
+	storeForTest(shardId: number): VectraStore {
+		const store = this.stores.get(shardId);
+		if (store === undefined) throw new Error(`分片 ${shardId} 尚未加载`);
+		return store;
+	}
 }
 
 /** 创建分片存储。 */

@@ -37,7 +37,7 @@
 - Create: `src/core/index-shard-routing.ts`
 - Test: `tests/core/index-shard-routing.test.ts`
 
-- [ ] **Step 1: 写失败用例**
+- [x] **Step 1: 写失败用例**
 
 ```ts
 // tests/core/index-shard-routing.test.ts
@@ -87,12 +87,12 @@ describe('分片路由', () => {
 });
 ```
 
-- [ ] **Step 2: 跑用例确认红灯**
+- [x] **Step 2: 跑用例确认红灯**
 
 Run: `./node_modules/.bin/vitest run tests/core/index-shard-routing.test.ts`
 Expected: FAIL，提示无法解析 `../../src/core/index-shard-routing`。
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 ```ts
 // src/core/index-shard-routing.ts
@@ -138,12 +138,12 @@ export function shardDirectoryName(shardId: number): string {
 }
 ```
 
-- [ ] **Step 4: 跑用例确认绿灯**
+- [x] **Step 4: 跑用例确认绿灯**
 
 Run: `./node_modules/.bin/vitest run tests/core/index-shard-routing.test.ts`
 Expected: PASS 5 例。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add src/core/index-shard-routing.ts tests/core/index-shard-routing.test.ts
@@ -160,7 +160,7 @@ git commit -m "feat: 分片数与路径路由纯函数"
 
 现有接口（实施时以 `src/adapters/vector-vectra.ts` 为准）：`init()`、`status()`、`search(queryVector, topK, filter?)`、`deleteByPath(path)`、`replaceFile({path, commitId, blocks})`、`inspectFile(path)`、`inspectFiles(paths)`、`beginWriteBatch()`、`endWriteBatch()`、`abortWriteBatch()`。
 
-- [ ] **Step 1: 写失败用例**
+- [x] **Step 1: 写失败用例**
 
 ```ts
 // tests/adapters/vector-vectra-sharded.test.ts
@@ -234,12 +234,12 @@ describe('分片存储 - 写入隔离', () => {
 });
 ```
 
-- [ ] **Step 2: 跑用例确认红灯**
+- [x] **Step 2: 跑用例确认红灯**
 
 Run: `./node_modules/.bin/vitest run tests/adapters/vector-vectra-sharded.test.ts`
 Expected: FAIL，无法解析 `vector-vectra-sharded`。
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 ```ts
 // src/adapters/vector-vectra-sharded.ts
@@ -379,12 +379,12 @@ export function createShardedStore(options: ShardedStoreOptions): ShardedVectorS
 
 > 实施注意：`beginWriteBatch` 时若某片尚未加载，需要在该片 `replaceFile` 前先 `store.beginWriteBatch()` 并登记到 `batchRoots`，否则该片的批量合并失效。请以「首次写入某片时补开批」实现，并补一条用例覆盖。
 
-- [ ] **Step 4: 跑用例确认绿灯**
+- [x] **Step 4: 跑用例确认绿灯**
 
 Run: `./node_modules/.bin/vitest run tests/adapters/vector-vectra-sharded.test.ts`
-Expected: PASS 3 例。
+Expected: PASS 4 例（含「批内首次写入新片也纳入批量提交」）。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add src/adapters/vector-vectra-sharded.ts tests/adapters/vector-vectra-sharded.test.ts
@@ -399,7 +399,7 @@ git commit -m "feat: 分片存储适配器与按片批量写"
 - Modify: `src/adapters/vector-vectra-sharded.ts`
 - Test: `tests/adapters/vector-vectra-sharded.test.ts`（追加）
 
-- [ ] **Step 1: 写失败用例**
+- [x] **Step 1: 写失败用例**
 
 ```ts
 	it('跨片查询 - 与单份索引结果逐条一致', async () => {
@@ -434,12 +434,12 @@ git commit -m "feat: 分片存储适配器与按片批量写"
 
 > 为支持该用例，在适配器上提供 `storeForTest(shardId)`（仅测试使用，标注注释）。
 
-- [ ] **Step 2: 跑用例确认红灯**
+- [x] **Step 2: 跑用例确认红灯**
 
 Run: `./node_modules/.bin/vitest run tests/adapters/vector-vectra-sharded.test.ts -t "跨片查询"`
 Expected: FAIL，`storeForTest` 未定义。
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 ```ts
 	/** 仅测试使用 — 取指定分片的底层存储以注入故障。 */
@@ -460,12 +460,12 @@ Expected: FAIL，`storeForTest` 未定义。
 	}
 ```
 
-- [ ] **Step 4: 跑用例确认绿灯**
+- [x] **Step 4: 跑用例确认绿灯**
 
 Run: `./node_modules/.bin/vitest run tests/adapters/vector-vectra-sharded.test.ts`
-Expected: PASS 5 例。
+Expected: PASS 6 例（含跨片一致性与单片失败传播）。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add src/adapters/vector-vectra-sharded.ts tests/adapters/vector-vectra-sharded.test.ts

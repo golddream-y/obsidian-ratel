@@ -1,8 +1,10 @@
 import { mkdtemp, rm, stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { AtomicIndexStorage } from '../../src/adapters/atomic-index-storage';
 import { createShardedStore } from '../../src/adapters/vector-vectra-sharded';
+import { VectraStore } from '../../src/adapters/vector-vectra';
 
 const roots: string[] = [];
 
@@ -94,5 +96,36 @@ describe('分片存储 - 写入隔离', () => {
 		expect(await store.deleteByPath('x.md')).toBe(1);
 		expect(await store.inspectFile('x.md')).toHaveLength(0);
 		expect(await store.inspectFile('y.md')).toHaveLength(1);
+	});
+});
+
+describe('分片存储 - 跨片查询', () => {
+	it('跨片查询 - 与单份索引结果逐条一致', async () => {
+		const { store: sharded } = await makeStore(4);
+		const singleRoot = await mkdtemp(path.join(os.tmpdir(), 'ratel-single-'));
+		roots.push(singleRoot);
+		const single = new VectraStore(singleRoot, {
+			autoInit: false,
+			storage: new AtomicIndexStorage({ generationRoot: singleRoot }),
+		});
+		await single.init();
+		const paths = ['n0.md', 'n1.md', 'n2.md', 'n3.md', 'n4.md', 'n5.md', 'n6.md'];
+		for (const [index, p] of paths.entries()) {
+			const vector = [index + 1, 0.1, 0, 0];
+			await sharded.replaceFile({ path: p, commitId: 'c1', blocks: [block(`${p}#0`, vector)] });
+			await single.replaceFile({ path: p, commitId: 'c1', blocks: [block(`${p}#0`, vector)] });
+		}
+		const shardedHits = await sharded.search([1, 0, 0, 0], 3);
+		const singleHits = await single.search([1, 0, 0, 0], 3);
+		expect(shardedHits.map((hit) => hit.docId)).toEqual(singleHits.map((hit) => hit.docId));
+		expect(shardedHits[0]!.score).toBeCloseTo(singleHits[0]!.score, 6);
+	});
+
+	it('单片查询失败 - 整体失败而不是静默当空片', async () => {
+		const { store } = await makeStore(4);
+		const broken = store.shardIdOf('bad.md');
+		await store.replaceFile({ path: 'bad.md', commitId: 'c1', blocks: [block('bad.md#0', [1, 0, 0, 0])] });
+		vi.spyOn(store.storeForTest(broken), 'search').mockRejectedValue(new Error('分片读取失败'));
+		await expect(store.search([1, 0, 0, 0], 3)).rejects.toThrow('分片读取失败');
 	});
 });
