@@ -101,7 +101,7 @@ class SessionStoreGate {
 
 /** 只做向量写入的嵌入占位 — 真实向量由宿主通道提供,Vectra 内部不会调用它。 */
 /** 单批最多文件数 — 过大时单次落盘的内存峰值与失败面都会放大。 */
-const MAX_BATCH_FILES = 32;
+const MAX_BATCH_FILES = 64;
 
 /** 单文件提交超过该耗时即记录分阶段明细。 */
 const SLOW_FILE_MS = 5000;
@@ -181,26 +181,7 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 				commitId,
 			},
 		}));
-		const commit = async () => {
-			if (state.journal !== null) {
-				const receipt = await state.journal.readReceipt(filePath);
-				const prepared = await state.journal.prepare({
-					path: filePath,
-					operation: 'replace',
-					inputHash,
-					revision: (receipt?.revision ?? 0) + 1,
-					previousCommitId: receipt?.commitId ?? null,
-					previousRevision: receipt?.revision ?? 0,
-					blocks: blocks.map((block) => ({
-						id: block.id,
-						vector: block.vector,
-						metadata: block.metadata,
-					})),
-				});
-				await state.journal.commit(prepared.transactionId);
-			} else {
-				await store.replaceFile({ path: filePath, commitId, blocks });
-			}
+		const completeCommit = () => {
 			// 关键路径:单文件提交变慢时给出分阶段耗时 —— 只有「分块/嵌入/提交」分别多慢,
 			// 才能判断是模型慢还是整份索引重写慢(后者是写放大的直接症状)。
 			const committedAt = performance.now();
@@ -214,7 +195,71 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 			state.written += 1;
 			return { chunkCount: blocks.length, commitId };
 		};
-		return { path: filePath, skipped: false as const, commit };
+		const prepareJournal = async () => {
+			const journal = state.journal;
+			if (journal === null) return null;
+			const receipt = await journal.readReceipt(filePath);
+			const prepared = await journal.prepare({
+				path: filePath,
+				operation: 'replace',
+				inputHash,
+				revision: (receipt?.revision ?? 0) + 1,
+				previousCommitId: receipt?.commitId ?? null,
+				previousRevision: receipt?.revision ?? 0,
+				blocks: blocks.map((block) => ({
+					id: block.id,
+					vector: block.vector,
+					metadata: block.metadata,
+				})),
+			});
+			const next = prepared.prepared.next;
+			return {
+				journal,
+				transactionId: prepared.transactionId,
+				replacement: {
+					path: next.path,
+					commitId: next.commitId,
+					// 关键路径:与日志 prepare 的分片元数据逐字段一致,commit 才能凭 diskDone 只补记录。
+					blocks: blocks.map((block) => ({
+						...block,
+						metadata: {
+							...block.metadata,
+							path: next.path,
+							commitId: next.commitId,
+							revision: next.revision,
+							docId: block.id,
+							documentId: block.id,
+						},
+					})),
+				},
+			};
+		};
+		const commit = async () => {
+			const prepared = await prepareJournal();
+			if (prepared !== null) {
+				await prepared.journal.commit(prepared.transactionId);
+			} else {
+				await store.replaceFile({ path: filePath, commitId, blocks });
+			}
+			return completeCommit();
+		};
+		// 关键路径(两阶段批量):块先落盘、完成记录后写。中断在两者之间时,
+		// 恢复流程能按磁盘分片补写记录(既有决策 3/6),不会留下「有记录无块」的死路径。
+		const preparedForBatch = await prepareJournal();
+		const writeBlocks = async (): Promise<void> => {
+			if (preparedForBatch !== null) {
+				await preparedForBatch.journal.applyBlocks(preparedForBatch.transactionId);
+			} else {
+				await store.replaceFile({ path: filePath, commitId, blocks });
+			}
+		};
+		const finalize = async () => {
+			if (preparedForBatch !== null) {
+				await preparedForBatch.journal.finalizeCommit(preparedForBatch.transactionId);
+			}
+			return completeCommit();
+		};
+		return { path: filePath, skipped: false as const, commit, writeBlocks, finalize };
 	};
 
 	/** 单文件准备完成后进入独立提交窗口。 */
@@ -389,35 +434,42 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 		const files = (payload as { files?: unknown } | null)?.files;
 		if (!Array.isArray(files) || files.length === 0) throw new Error('批量写入缺少 files');
 		if (files.length > MAX_BATCH_FILES) throw new Error(`单批最多 ${MAX_BATCH_FILES} 个文件`);
-		const preparedFiles: Array<Awaited<ReturnType<typeof prepareUpsertFile>>> = [];
-		// 修复:全批分块与嵌入先在门外完成,宿主推理期间不阻塞查询。
+		const results: Array<{ path: string; chunkCount: number; skipped?: boolean }> = [];
+		type BatchItem = { path: string; writeBlocks: () => Promise<void>; finalize: () => Promise<{ chunkCount: number }> };
+		const prepared: BatchItem[] = [];
 		for (const item of files) {
 			const record = item as { path?: unknown; content?: unknown } | null;
 			const filePath = record?.path;
 			const content = record?.content;
 			if (typeof filePath !== 'string' || filePath.length === 0) throw new Error('批量写入缺少 path');
 			if (typeof content !== 'string') throw new Error('批量写入缺少 content');
-			preparedFiles.push(await prepareUpsertFile({ path: filePath, content }, ctx));
-		}
-		const results: Array<{ path: string; chunkCount: number; skipped?: boolean }> = [];
-		// 修复:批量开始到最终落盘必须持有同一提交窗口,查询与后续提交不能穿过收尾。
-		return storeGate.runCommit(async () => {
-			await store.beginWriteBatch();
-			try {
-				for (const preparedFile of preparedFiles) {
-					if (preparedFile.skipped) {
-						results.push({ path: preparedFile.path, chunkCount: preparedFile.chunkCount, skipped: true });
-						continue;
-					}
-					const result = await preparedFile.commit();
-					results.push({ path: preparedFile.path, chunkCount: result.chunkCount });
-				}
-			} finally {
-				// 关键路径:无论成功失败都要收尾事务,否则索引停在「更新中」状态。
-				await store.endWriteBatch();
+			const single = await prepareUpsertFile({ path: filePath, content }, ctx);
+			if (single.skipped) {
+				results.push({ path: filePath, chunkCount: single.chunkCount, skipped: true });
+				continue;
 			}
-			return { results };
-		});
+			prepared.push(single);
+		}
+		if (prepared.length > 0) {
+			// 关键路径:整批写入必须走同一把提交闸门,否则批内查询会插进提交中间,
+			// 读到半批状态。
+			await storeGate.runCommit(async () => {
+				await store.beginWriteBatch();
+				try {
+					for (const item of prepared) await item.writeBlocks();
+					await store.endWriteBatch();
+				} catch (error) {
+					// 关键路径:批内失败必须丢弃整批内存改动,磁盘保持批前状态。
+					store.abortWriteBatch();
+					throw error;
+				}
+				for (const item of prepared) {
+					const done = await item.finalize();
+					results.push({ path: item.path, chunkCount: done.chunkCount });
+				}
+			});
+		}
+		return { results };
 	};
 
 	return handlers;

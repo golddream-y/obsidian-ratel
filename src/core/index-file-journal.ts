@@ -826,13 +826,103 @@ export class IndexFileJournal {
 	async commit(transactionId: string): Promise<JournalCommitResult> {
 		this.assertOwned('commit');
 		await this.assertGenerationWritable();
-		const transaction = await this.resolveTransaction(transactionId);
-		const prepared = await this.readValidatedPrepared(transaction);
 		const ticket = this.owner.beginCommit();
 		try {
+			const applied = await this.applyBlocksLocked(transactionId);
+			if (applied.superseded) {
+				return {
+					commit: applied.commit,
+					replayed: false,
+					superseded: true,
+					cleanupPending: !(await this.tryCleanup(transactionId)),
+				};
+			}
+			return await this.finalizeCommitLocked(transactionId, applied.applied);
+		} finally {
+			ticket.settle();
+		}
+	}
+
+	/**
+	 * 第一阶段:把事务的块写入向量存储,**不**写完成记录。
+	 *
+	 * 关键路径:批量提交必须先让块落盘、再写完成记录 —— 反过来的顺序在中断后会留下
+	 * 「有记录无块」的路径,下次判定既不匹配记录也不匹配事务,只能人工介入。
+	 * 中断发生在「块已落盘、记录未写」时,恢复流程能按磁盘分片补写记录(既有决策 3/6)。
+	 *
+	 * @param transactionId - 事务 ID。
+	 * @returns 是否实际写入了块;`superseded` 表示完成记录已是后继版本。
+	 */
+	async applyBlocks(transactionId: string): Promise<{ applied: boolean; superseded: boolean; commit: FileCommit }> {
+		this.assertOwned('applyBlocks');
+		await this.assertGenerationWritable();
+		const ticket = this.owner.beginCommit();
+		try {
+			return await this.applyBlocksLocked(transactionId);
+		} finally {
+			ticket.settle();
+		}
+	}
+
+	/** 第一阶段实现 — 调用方必须已持有写权票据。 */
+	private async applyBlocksLocked(transactionId: string): Promise<{ applied: boolean; superseded: boolean; commit: FileCommit }> {
+		const transaction = await this.resolveTransaction(transactionId);
+		const prepared = await this.readValidatedPrepared(transaction);
+		{
 			const receipt = await this.readReceiptOrNull(prepared.next.path);
 			if (receipt !== null && receipt.revision >= prepared.next.revision) {
-				// 关键路径:完成记录已是后继版本,旧日志只允许清理。
+				return { applied: false, superseded: true, commit: receipt };
+			}
+			if (!predecessorMatchesReceipt(prepared, receipt)) {
+				throw new IndexFileJournalError(
+					'prior-version-mismatch',
+					`事务声明的上一个版本与磁盘完成记录不一致,拒绝提交:${prepared.next.path}`,
+					{
+						path: prepared.next.path,
+						expectedRevision: prepared.previousRevision,
+						actualRevision: receipt?.revision ?? 0,
+					},
+				);
+			}
+			const before = await this.store.inspectFile(prepared.next.path);
+			if (await this.blockSetMatchesCommit(before, prepared.next)) {
+				return { applied: false, superseded: false, commit: prepared.next };
+			}
+			const blocks = await this.loadValidatedBlocks(transaction, prepared);
+			await this.store.replaceFile({
+				path: prepared.next.path,
+				commitId: prepared.next.commitId,
+				blocks,
+			});
+			return { applied: true, superseded: false, commit: prepared.next };
+		}
+	}
+
+	/**
+	 * 第二阶段:写完成记录并清理事务,幂等。
+	 *
+	 * @param transactionId - 事务 ID。
+	 * @param applied - 第一阶段是否真的写过块(用于 `replayed` 判定)。
+	 * @returns 提交结果。
+	 */
+	async finalizeCommit(transactionId: string, applied = true): Promise<JournalCommitResult> {
+		this.assertOwned('finalizeCommit');
+		await this.assertGenerationWritable();
+		const ticket = this.owner.beginCommit();
+		try {
+			return await this.finalizeCommitLocked(transactionId, applied);
+		} finally {
+			ticket.settle();
+		}
+	}
+
+	/** 第二阶段实现 — 调用方必须已持有写权票据。 */
+	private async finalizeCommitLocked(transactionId: string, applied = true): Promise<JournalCommitResult> {
+		const transaction = await this.resolveTransaction(transactionId);
+		const prepared = await this.readValidatedPrepared(transaction);
+		{
+			const receipt = await this.readReceiptOrNull(prepared.next.path);
+			if (receipt !== null && receipt.revision >= prepared.next.revision) {
 				return {
 					commit: receipt,
 					replayed: false,
@@ -851,34 +941,20 @@ export class IndexFileJournal {
 					},
 				);
 			}
-			// 关键路径:成功后要回收被本路径隔离区保留的旧事务依据,先记下它属于哪条事务。
+			// 关键路径:成功后才回收本路径隔离区保留的旧事务依据。
 			const blockedState = await this.readPathState(prepared.next.path);
-			const before = await this.store.inspectFile(prepared.next.path);
-			const diskDone = await this.blockSetMatchesCommit(before, prepared.next);
-			if (!diskDone) {
-				const blocks = await this.loadValidatedBlocks(transaction, prepared);
-				await this.store.replaceFile({
-					path: prepared.next.path,
-					commitId: prepared.next.commitId,
-					blocks,
-				});
-			}
 			await this.writeReceipt(prepared.next);
-			// 关键路径:清理失败(事务目录或路径状态)不撤销已提交结果,只报告待重试。
 			const transactionCleaned = await this.tryCleanup(transactionId);
 			const stateCleared = await this.tryClearPathState(prepared.next.path);
-			// 关键路径:路径状态已清除说明保留依据不再需要,回收对应隔离事务目录(spec §6 及时回收)。
 			if (stateCleared && blockedState !== null && blockedState.path === prepared.next.path) {
 				await this.tryReclaimQuarantinedTransaction(blockedState.transactionId);
 			}
 			return {
 				commit: prepared.next,
-				replayed: !diskDone,
+				replayed: applied,
 				superseded: false,
 				cleanupPending: !transactionCleaned || !stateCleared,
 			};
-		} finally {
-			ticket.settle();
 		}
 	}
 

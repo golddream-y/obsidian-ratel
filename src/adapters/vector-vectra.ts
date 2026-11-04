@@ -753,6 +753,18 @@ export class VectraStore implements VectorStore, FileReplaceStore {
 		}
 	}
 
+	/**
+	 * 放弃批量写入 — 丢弃批内所有内存改动,磁盘保持批前状态。
+	 *
+	 * 关键路径:批内任一事务失败时不能把半批写盘,否则磁盘会出现「部分文件已更新、
+	 * 完成记录未写」的混合状态。
+	 */
+	abortWriteBatch(): void {
+		if (this.writeBatchDepth === 0) return;
+		this.writeBatchDepth = 0;
+		if (this.index !== null) this.cancelTransactionQuietly(this.index);
+	}
+
 	/** 当前是否处于批量写入中。 */
 	get inWriteBatch(): boolean {
 		return this.writeBatchDepth > 0;

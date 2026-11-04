@@ -69,9 +69,6 @@ function isAbortMessage(message: string): boolean {
 	return message.includes('请求已取消') || message.includes('aborted');
 }
 
-/** 单批最多文件数。 */
-const MAX_BATCH_FILES = 8;
-
 /** 失败样本上限。 */
 const MAX_FAILURE_SAMPLES = 5;
 
@@ -292,9 +289,10 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 	}
 
 	/**
-	 * 取一批待写入的文件(最多 {@link MAX_BATCH_FILES})。
+	 * 取当前连续待写入队列的整批文件。
 	 *
 	 * 只取 upsert 项;遇到删除即停止,保证顺序与逐条处理一致。
+	 * 文件数不再设固定上限,消息大小由现有协议载荷预算在发送前约束。
 	 */
 	private takeBatch(): Array<{ path: string; entry: ThreadQueueEntry }> {
 		const batch: Array<{ path: string; entry: ThreadQueueEntry }> = [];
@@ -302,7 +300,6 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 		for (const [filePath, entry] of this.queue) {
 			if (entry.op !== 'upsert') break;
 			batch.push({ path: filePath, entry });
-			if (batch.length >= MAX_BATCH_FILES) break;
 		}
 		return batch;
 	}
@@ -312,12 +309,9 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 		for (;;) {
 			if (this.destroyed) return;
 			if (this.pausedValue || this.stopping) return;
-			// 关键路径:有批量能力时一次取多篇,把 N 次整库重写压成 1 次;
-			// 删除操作不进批(语义不同),保持逐条。
-			// 关键路径(2026-11-04 回退):批量提交把「完成记录先写、块后落盘」的顺序倒置,
-			// 中途崩溃会留下「有记录无块」的路径,下次 prepare 判定磁盘与记录都不匹配而拒绝。
-			// 在把两阶段(先落盘、再写记录)做完之前,不启用批量通道。
-			const batch: Array<{ path: string; entry: ThreadQueueEntry }> = [];
+			// 关键路径:有批量能力时取当前连续 upsert 整批,把 N 次整库重写压成 1 次;
+			// 删除操作不进批(语义不同),保持逐条。线程侧保证先完成全批块落盘,再写完成记录。
+			const batch = this.client.indexFiles === undefined ? [] : this.takeBatch();
 			if (batch.length > 1) {
 				// 先出队再处理:留在队列里会被下一轮重复取出(死循环)。
 				for (const item of batch) this.queue.delete(item.path);

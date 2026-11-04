@@ -394,10 +394,69 @@ describe('批量写入', () => {
 		expect(new Set(hits.hits.map((hit) => hit.path)).size).toBe(3);
 	});
 
-	it('缺少 files 或超上限 - 明确拒绝', async () => {
+	it('批量两阶段提交 - 全批索引落盘刚完成 - 磁盘尚无完成记录', async () => {
+		let receiptsAtBatchEnd: string[] | null = null;
+		const handlers = createIndexSessionHandlers({
+			root,
+			chunkOptions: CHUNK_OPTIONS,
+			epoch: 1,
+			createStore: (storeRoot, storage) => {
+				const store = new VectraStore(storeRoot, { storage });
+				const endWriteBatch = store.endWriteBatch.bind(store);
+				store.endWriteBatch = async () => {
+					await endWriteBatch();
+					try {
+						receiptsAtBatchEnd = await fsp.readdir(path.join(storeRoot, 'files'));
+					} catch (error) {
+						if ((error as { code?: unknown }).code !== 'ENOENT') throw error;
+						receiptsAtBatchEnd = [];
+					}
+				};
+				return store;
+			},
+		});
+		await handlers['session.open']!({ generationId: 'gen-batch-order', configFingerprint: FINGERPRINT, expectedDimension: DIMENSIONS });
+		await handlers['session.upsertFiles']!({
+			files: [
+				{ path: 'a.md', content: '第一篇正文' },
+				{ path: 'b.md', content: '第二篇正文' },
+				{ path: 'c.md', content: '第三篇正文' },
+			],
+		}, makeContext().ctx);
+		expect(receiptsAtBatchEnd).toEqual([]);
+		const listed = await handlers['session.listCommitted']!({}) as { records: Array<{ path: string }> };
+		expect(listed.records.map((record) => record.path)).toEqual(['a.md', 'b.md', 'c.md']);
+	});
+
+	it('四十篇整批写入 - 合并向量落盘 - 索引只写一次且每篇可查回', async () => {
+		let indexWrites = 0;
+		const handlers = createIndexSessionHandlers({
+			root,
+			chunkOptions: CHUNK_OPTIONS,
+			epoch: 1,
+			createStorage: (storageRoot) => {
+				const storage = new AtomicIndexStorage({ generationRoot: storageRoot });
+				const upsertFile = storage.upsertFile.bind(storage);
+				storage.upsertFile = async (filePath, content) => {
+					if (path.basename(filePath) === 'index.json') indexWrites += 1;
+					return upsertFile(filePath, content);
+				};
+				return storage;
+			},
+		});
+		await handlers['session.open']!({ generationId: 'gen-batch-scale', configFingerprint: FINGERPRINT, expectedDimension: DIMENSIONS });
+		const baseline = indexWrites;
+		const files = Array.from({ length: 40 }, (_, index) => ({ path: `note-${index}.md`, content: `第 ${index} 篇正文` }));
+		const result = await handlers['session.upsertFiles']!({ files }, makeContext().ctx) as { results: Array<{ path: string }> };
+		expect(result.results).toHaveLength(files.length);
+		expect(indexWrites - baseline).toBe(1);
+		const hits = await handlers['session.searchVector']!({ vector: Array.from({ length: DIMENSIONS }, () => 0.1), topK: 100 }) as { hits: Array<{ path: string }> };
+		expect(new Set(hits.hits.map((hit) => hit.path))).toEqual(new Set(files.map((file) => file.path)));
+	});
+
+	it('载荷缺少 files - 明确拒绝 - 不进入存储', async () => {
 		const handlers = createIndexSessionHandlers({ root, chunkOptions: CHUNK_OPTIONS, epoch: 1 });
 		await handlers['session.open']!({ generationId: 'gen-batch2', configFingerprint: FINGERPRINT, expectedDimension: DIMENSIONS });
 		await expect(handlers['session.upsertFiles']!({})).rejects.toThrow('缺少 files');
-		await expect(handlers['session.upsertFiles']!({ files: Array.from({ length: 40 }, (_, i) => ({ path: `x${i}.md`, content: 'x' })) })).rejects.toThrow('最多');
 	});
 });
