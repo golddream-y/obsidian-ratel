@@ -1,6 +1,8 @@
 # 独立索引线程与自适应调度实施计划
 
-> **面向执行 Agent：** 使用 `subagent-driven-development` 逐任务实施，每个实现任务使用新的 subagent；先规范、后代码质量两阶段独立审查。本轮仅写计划，所有执行项保持未勾选。
+> **面向执行 Agent：** 使用 `subagent-driven-development` 逐任务实施，每个实现任务使用新的 subagent；先规范、后代码质量两阶段独立审查。执行项只按实际证据勾选。
+>
+> **暂停状态：** 2026-11-04 用户要求暂停，已完成证据、未提交边界与续做入口见 [暂停收尾](2026-11-02-adaptive-indexing-pause.md)。
 
 **目标：** 将索引重计算与唯一存储视图迁出 Obsidian 界面线程，保留逐文件续建，再用自适应调度降低后台占用。
 
@@ -66,8 +68,8 @@ T3 的宿主模型接缝先采用独立、可测试的串行转发桥，原样�
 
 **文件：** 新建 `tests/helpers/index-thread-capability.ts`、`tests/worker/index-thread-capability.test.ts`、`tests/helpers/index-ui-probe.ts`；实验构建接入 `esbuild.config.mjs`，尚不替换生产索引。
 
-- [ ] 建立隔离实验：先验证宿主线程载体。实测结论：Node `worker_threads` 不可用（V8 platform 不支持），Blob Web Worker 可用且具备 Node 集成（Worker 内 `require('node:fs')` 可写读）。实验据此以常驻 Blob Web Worker 执行序列化与文件读写；不复用 Skill 沙箱，不导入 Obsidian，不连接生产索引。
-- [ ] 先用 Node 测试验证探针，再只在 Sandbox 加载实验 bundle；验证三文件插件产物可内联加载 Worker、资源路径/CSP 正常，记录线程身份和完整启动/退出。
+- [x] 建立隔离实验：先验证宿主线程载体。实测结论：Node `worker_threads` 不可用（V8 platform 不支持），Blob Web Worker 可用且具备 Node 集成（Worker 内 `require('node:fs')` 可写读）。实验据此以常驻 Blob Web Worker 执行序列化与文件读写；不复用 Skill 沙箱，不导入 Obsidian，不连接生产索引。（证据：[T0 实验记录](2026-11-02-adaptive-indexing-t0-evidence.md)，`b07600b`）
+- [x] 先用 Node 测试验证探针，再只在 Sandbox 加载实验 bundle；验证三文件插件产物可内联加载 Worker、资源路径/CSP 正常，记录线程身份和完整启动/退出。（证据：`npx vitest run tests/worker/index-thread-capability.test.ts` 与 [T0 实验记录](2026-11-02-adaptive-indexing-t0-evidence.md)，`b07600b`）
 - [ ] 固定后续合成矩阵为 100/1000/3000 篇短笔记，另含单篇超过 200 块；向量为 512 维确定性替身。T0 先采集当前 1.3.0 成功路径基线，以最小独立线程实验处理相同预构造数据，测线程能力与大 JSON 提交，不提前实现完整生产会话。T9 再跑全部最终路径矩阵。
 - [ ] 先证明基线探针能检出人为注入的长阻塞，再记录实际主线程提交与实验线程提交的全部读数；实际基线若未出现明显阻塞则如实记录，不为了红灯制造或挑选测量结论。性能样本每组同机同负载三次，假嵌入与真实模型分开。
 - [ ] 通过条件为真实 Obsidian 能执行独立线程/文件/Vectra、无原生模块、无主线程整库复制；不满足则停止 T1，不换成模拟线程继续。
@@ -80,7 +82,7 @@ T3 的宿主模型接缝先采用独立、可测试的串行转发桥，原样�
 
 - [ ] **先写复现测试**：生产协调器路径缺清单时当前不做派生恢复；旧配置整库降级时检索不可用；`index-processor.ts:197` 单参 `embed(texts)` 丢失 processor 级 options；`reclaimOrphanQuarantinedTransactions` 无周期调用；迁移侧与运行期写入口 flush 语义不一致。每条先红后绿，不得以「迁移后再说」推后。
 - [ ] 让生产协调器在核验通过时调用既有 `verifyReceipt` 派生清单恢复，核验不通过则继续 fail-closed；不允许退化为清库重建，也不新增第二套恢复入口。
-- [ ] 固定配置切换语义：同会话变更拒绝、跨会话新代际切换、降级时不构造旧配置检索存储；复现测试断言「切换后未改文件零重复嵌入、无跨配置混读」。
+- [x] 固定配置切换语义：同会话变更拒绝、跨会话新代际切换、降级时不构造旧配置检索存储；复现测试断言「切换后未改文件零重复嵌入、无跨配置混读」。（证据：`npx vitest run tests/core/index-runtime-config-switch.test.ts`，7/7 通过，`238450f`）
 - [ ] 抽出共享 flush 模块供迁移侧与运行期写入口共用；补周期回收孤儿 quarantine 事务；修正 processor 级 options 透传。
 - [ ] 大库迁移兼容校验的 O(N²) 实测并记录；必要时优化，但不以取消校验换速度。
 - [ ] 全部缺口收口后，把机制登记到 T3 的会话装配清单，注明迁移时逐项沿用；未收口项不得在 T3 中被「自然消失」。
@@ -172,7 +174,7 @@ export interface VaultReadResult {
 **文件：** 修改 `src/core/index-runtime-assembly.ts`、`src/core/index-search-visibility.ts`、`src/core/persistent-index-backend.ts`、`src/core/index-controller.ts`、`src/main.ts`；新建 `tests/worker/index-runtime-query.test.ts`、`tests/worker/index-runtime-readonly.test.ts`。
 
 - [ ] 先测构建大文件时查询可在提交边界进入、旧结果/排除路径不进入模型、关闭自动索引时目录摘要不变；显式搜索仍可产生查询嵌入。
-- [ ] Worker 不能用一条全库 request 独占存储队列至全部结束；准备推理期间允许查询，原子提交期间不插入读，提交结束后优先服务已排队查询。
+- [x] Worker 不能用一条全库 request 独占存储队列至全部结束；准备推理期间允许查询，原子提交期间不插入读，提交结束后优先服务已排队查询。（证据：`npx vitest run tests/worker/index-runtime-query.test.ts`，7/7 通过，`7c49f23`）
 - [ ] read-only 启动不取得写 lease、不 createIndex、不恢复/迁移、不扫描、不写任何元数据；仅采用可信记录，未决路径过滤，候选存在性/黑名单由宿主只读核验。切写模式先关闭旧实例，再经 grant 启动新会话。
 - [ ] 保持目录、schema、模型/分块指纹不变；在线程切换、重启和模式变化后未改文件零重复嵌入。线程协议版本不能作为内容配置导致全量重建。
 
