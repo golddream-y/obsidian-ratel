@@ -833,6 +833,11 @@ export class RatelVaultSettingTab extends PluginSettingTab {
 						desc: tNow('settings.indexing.autoIndex.desc'),
 						control: { type: 'toggle', key: 'autoIndex' },
 					},
+					{
+						name: tNow('settings.indexing.threadMode.name'),
+						desc: tNow('settings.indexing.threadMode.desc'),
+						control: { type: 'toggle', key: 'indexThreadMode' },
+					},
 				],
 			},
 			{

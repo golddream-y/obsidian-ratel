@@ -202,6 +202,8 @@ export interface SettingsStrings {
   'settings.indexing.chunkOverlap.name': string;
   'settings.indexing.autoIndex.name': string;
   'settings.indexing.autoIndex.desc': string;
+  'settings.indexing.threadMode.name': string;
+  'settings.indexing.threadMode.desc': string;
   'settings.autoCompactEnabled.name': string;
   'settings.autoCompactEnabled.desc': string;
   'settings.developer.heading': string;
@@ -512,6 +514,7 @@ export interface ChatStrings {
   'chat.attachments.invalidType': string;
   'chat.attachments.tooLarge': string;
   'chat.attachments.tooMany': string;
+  'chat.attachments.tokenEstimate': string;
   'chat.nav.rail.aria': string;
   'chat.nav.backToBottom': string;
   'chat.nav.tick.aria': string;

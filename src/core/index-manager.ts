@@ -147,6 +147,8 @@ export class IndexManager {
     private lastTaskId = 0;
     /** 仅采样展示计数，不产生任务活动，也不延长停滞预算。 */
     private coordinatorProgressTimer: ReturnType<typeof globalThis.setInterval> | null = null;
+    /** 上一次已发布的进度签名 — 计数未变时不再写 store。 */
+    private lastCoordinatorSignature: string | null = null;
     // 兼容额外清单清理器；实际持久化 backend 的 dropIndex 已清理同目录元数据。
     private onManifestReset: (() => Promise<void>) | null = null;
 
@@ -235,9 +237,20 @@ export class IndexManager {
             state: 'Scanning', scanned: 0, total: 0, committed: 0, pending: 0, failed: 0, phase: 'scanning',
         });
         // 修复：start 等待整轮收敛，不能等它返回才发布进度，否则长索引始终显示扫描中 0/0。
+        // 关键路径:进度采样只在计数真的变化时发布 —— 每 250ms 无条件写 store 会让
+        // 状态栏/抽屉以 4Hz 重渲染,索引期间反而制造主线程卡顿。
+        this.lastCoordinatorSignature = null;
         this.coordinatorProgressTimer = globalThis.setInterval(() => {
-            if (!this.unloaded) this.publishCoordinatorStatus(coordinator.counters());
-        }, 250);
+            if (this.unloaded) return;
+            const counters = coordinator.counters();
+            const signature = [
+                counters.taskId, counters.phase, counters.total, counters.committed,
+                counters.pendingFiles ?? 0, counters.failures, counters.active,
+            ].join('|');
+            if (signature === this.lastCoordinatorSignature) return;
+            this.lastCoordinatorSignature = signature;
+            this.publishCoordinatorStatus(counters);
+        }, 500);
         try {
             const counters = await coordinator.start();
             if (this.unloaded) return null;
