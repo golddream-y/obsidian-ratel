@@ -480,7 +480,7 @@ git commit -m "feat: 跨片查询 k 路归并与失败传播"
 - Create: `src/core/index-shard-migration.ts`
 - Test: `tests/core/index-shard-migration.test.ts`
 
-- [ ] **Step 1: 写失败用例**
+- [x] **Step 1: 写失败用例**
 
 ```ts
 // 关键断言：拆分后块数/向量与旧文件一致；迁移不调用嵌入；失败保留旧布局；重复执行幂等。
@@ -509,12 +509,12 @@ describe('旧单份布局迁移', () => {
 });
 ```
 
-- [ ] **Step 2: 跑用例确认红灯**
+- [x] **Step 2: 跑用例确认红灯**
 
 Run: `./node_modules/.bin/vitest run tests/core/index-shard-migration.test.ts`
 Expected: FAIL，无法解析 `index-shard-migration`。
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 ```ts
 // src/core/index-shard-migration.ts
@@ -582,12 +582,12 @@ async function readShardCount(layoutPath: string): Promise<number> {
 }
 ```
 
-- [ ] **Step 4: 跑用例确认绿灯**
+- [x] **Step 4: 跑用例确认绿灯**
 
 Run: `./node_modules/.bin/vitest run tests/core/index-shard-migration.test.ts`
 Expected: PASS 3 例。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add src/core/index-shard-migration.ts tests/core/index-shard-migration.test.ts
