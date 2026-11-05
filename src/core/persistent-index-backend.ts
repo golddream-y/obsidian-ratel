@@ -668,15 +668,12 @@ export class PersistentIndexBackend implements IndexBackend {
 			const committed = await this.committedStateFromManifest(data, stamp);
 			const layout = await readShardLayout(this.deps.indexDir);
 			if (layout !== null) {
-				if (committed !== null) return committed;
-				// 关键路径:空布局按「已提交的空库」处理 —— 没有向量块需要证明,缺清单/戳
-				// 不能退回 Idle。注意 `layout.blockCount` 只在迁移时写真实块数,新建库恒为 0,
-				// 因此只有清单也证明不了任何文档时才能按空库处理;有文档却缺配置身份必须保持 null。
-				const documentedEntries = data !== null
-					&& typeof data.entries === 'object' && !Array.isArray(data.entries)
-					&& Object.keys(data.entries).length > 0;
-				if (layout.blockCount === 0 && !documentedEntries) return { totalDocs: 0, lastIndexTime: 0 };
-				return null;
+				// 关键路径:分片布局同样只认「清单 + 构建戳都可信」这一条证据。
+				// 曾经把「空 layout(blockCount=0)」当成已提交的空库,结果是新建代际在
+				// 还没索引任何内容、代际记录仍是 building、activeGenerationId 仍是 null 时
+				// 就被宣告 Ready;启动期核对在「已提交」与「仍在构建」之间收不敛,界面卡死。
+				// 没有清单与戳就没有任何东西被证明已提交,必须返回 null 让首轮索引跑起来。
+				return committed;
 			}
 			if (committed === null) return null;
 			try {

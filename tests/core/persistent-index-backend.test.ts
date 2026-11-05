@@ -623,9 +623,10 @@ describe('真实索引持久化', () => {
         } finally { fixture.worker.destroy(); }
     });
 
-    it('已提交状态 - 空 layout(blockCount=0)无清单与戳 - 按空库已提交处理并恢复 Ready', async () => {
-        // 关键路径:全新分片库只写 layout(blockCount=0),首次 autoIndex=false 启动没有清单/戳;
-        // 空布局就是「已提交的空库」,没有向量块需要证明。
+    it('已提交状态 - 空 layout 无清单与戳 - 不可宣告已提交 - 不覆盖正在构建的代际', async () => {
+        // 关键路径(2026-11-05 线上事故):全新分片库只写 layout(blockCount=0)时曾按「已提交的
+        // 空库」返回 Ready,而代际记录仍是 building、activeGenerationId 仍是 null,启动期核对
+        // 在两种状态间收不敛导致界面卡死。没有清单与构建戳就没有任何东西被证明已提交。
         const generation = path.join(dir, 'generations', 'gen-0123456789abcdef');
         fs.mkdirSync(path.join(generation, 'shards'), { recursive: true });
         fs.writeFileSync(
@@ -636,16 +637,9 @@ describe('真实索引持久化', () => {
         const manifest = new IndexManifest(resolveIndexManifestPath(generation));
         const fixture = await create(undefined, 1000, { indexDir: generation, manifest });
         try {
-            expect(await fixture.backend.readCommittedState()).toEqual({ totalDocs: 0, lastIndexTime: 0 });
-            await fixture.manager.restoreCommittedState();
-            expect(get(fixture.manager.status$)).toMatchObject({ state: 'Ready', totalDocs: 0 });
-            // 关键路径:空布局不能掩盖清单里的文档 —— 有文档但缺构建戳时仍不可宣告已提交。
-            await manifest.save({
-                version: 1, ...stamp,
-                entries: { 'a.md': { path: 'a.md', hash: 'a'.repeat(64), mtime: 1, chunkCount: 1 } },
-                lastIndexTime: 1,
-            });
             expect(await fixture.backend.readCommittedState()).toBeNull();
+            await fixture.manager.restoreCommittedState();
+            expect(get(fixture.manager.status$)).not.toMatchObject({ state: 'Ready' });
         } finally { fixture.worker.destroy(); }
     });
 
