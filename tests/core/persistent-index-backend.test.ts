@@ -30,7 +30,7 @@ import type { JournalWriteOwner } from '../../src/core/index-file-journal';
 import { AtomicIndexStorage } from '../../src/adapters/atomic-index-storage';
 import { IndexManager } from '../../src/core/index-manager';
 import { IndexManifest, resolveIndexManifestPath, CURRENT_CHUNKER_VERSION } from '../../src/core/index-manifest';
-import { resolveBuildStampPath, readBuildStamp } from '../../src/core/index-build-stamp';
+import { resolveBuildStampPath, readBuildStamp, writeBuildStamp } from '../../src/core/index-build-stamp';
 import { VectraStore } from '../../src/adapters/vector-vectra';
 import { REGISTERED_INDEX_ASSEMBLY } from '../helpers/index-assembly-registry';
 import { InlineWorker } from '../../src/worker/inline-worker';
@@ -588,6 +588,92 @@ describe('真实索引持久化', () => {
             expect(next.embed).not.toHaveBeenCalled();
             expect(snapshot()).toEqual(before);
         } finally { controller.destroy(); }
+    });
+
+    it('已提交状态 - 分片代际有 layout 无代际 index.json - 返回文档数并恢复 Ready', async () => {
+        // 关键路径(回归):分片代际把向量写进 `shards/<hh>/index.json`,代际根没有 index.json;
+        // 此前直接 stat 代际根会让 autoIndex=false 的启动恒判 Idle,而不是已提交的 Ready。
+        const generation = path.join(dir, 'generations', 'gen-0123456789abcdef');
+        const shardsRoot = path.join(generation, 'shards');
+        fs.mkdirSync(path.join(shardsRoot, '00'), { recursive: true });
+        fs.writeFileSync(
+            path.join(shardsRoot, 'layout.json'),
+            JSON.stringify({ version: 1, shardCount: 16, blockCount: 3, migratedAt: Date.now() }),
+            'utf8',
+        );
+        fs.writeFileSync(path.join(shardsRoot, '00', 'index.json'), '{"version":1,"items":[]}', 'utf8');
+        const lastIndexTime = 1_700_000_000_000;
+        const manifest = new IndexManifest(resolveIndexManifestPath(generation));
+        await manifest.save({
+            version: 1, ...stamp,
+            entries: {
+                'a.md': { path: 'a.md', hash: 'a'.repeat(64), mtime: 1, chunkCount: 2 },
+                'b.md': { path: 'b.md', hash: 'b'.repeat(64), mtime: 1, chunkCount: 1 },
+            },
+            lastIndexTime,
+        });
+        await writeBuildStamp(generation, stamp);
+        const fixture = await create(undefined, 1000, { indexDir: generation, manifest });
+        try {
+            expect(fs.existsSync(path.join(generation, 'index.json'))).toBe(false);
+            // 文档数以清单条目为准:blockCount 是块数,不能顶替文档数。
+            expect(await fixture.backend.readCommittedState()).toEqual({ totalDocs: 2, lastIndexTime });
+            await fixture.manager.restoreCommittedState();
+            expect(get(fixture.manager.status$)).toMatchObject({ state: 'Ready', totalDocs: 2 });
+        } finally { fixture.worker.destroy(); }
+    });
+
+    it('已提交状态 - 空 layout(blockCount=0)无清单与戳 - 按空库已提交处理并恢复 Ready', async () => {
+        // 关键路径:全新分片库只写 layout(blockCount=0),首次 autoIndex=false 启动没有清单/戳;
+        // 空布局就是「已提交的空库」,没有向量块需要证明。
+        const generation = path.join(dir, 'generations', 'gen-0123456789abcdef');
+        fs.mkdirSync(path.join(generation, 'shards'), { recursive: true });
+        fs.writeFileSync(
+            path.join(generation, 'shards', 'layout.json'),
+            JSON.stringify({ version: 1, shardCount: 8, blockCount: 0, migratedAt: Date.now() }),
+            'utf8',
+        );
+        const manifest = new IndexManifest(resolveIndexManifestPath(generation));
+        const fixture = await create(undefined, 1000, { indexDir: generation, manifest });
+        try {
+            expect(await fixture.backend.readCommittedState()).toEqual({ totalDocs: 0, lastIndexTime: 0 });
+            await fixture.manager.restoreCommittedState();
+            expect(get(fixture.manager.status$)).toMatchObject({ state: 'Ready', totalDocs: 0 });
+            // 关键路径:空布局不能掩盖清单里的文档 —— 有文档但缺构建戳时仍不可宣告已提交。
+            await manifest.save({
+                version: 1, ...stamp,
+                entries: { 'a.md': { path: 'a.md', hash: 'a'.repeat(64), mtime: 1, chunkCount: 1 } },
+                lastIndexTime: 1,
+            });
+            expect(await fixture.backend.readCommittedState()).toBeNull();
+        } finally { fixture.worker.destroy(); }
+    });
+
+    it('已提交状态 - 迁移中断(有旧 index.json 无 layout) - 仍按单份索引语义', async () => {
+        // 关键路径:迁移只写 layout 后才归档旧文件;此前的旧布局必须继续按单份语义判定,
+        // 不能被「没有 layout」误判成空库,也不能在旧 index.json 缺失时伪造 Ready。
+        const generation = path.join(dir, 'generations', 'gen-0123456789abcdef');
+        fs.mkdirSync(generation, { recursive: true });
+        fs.writeFileSync(path.join(generation, 'index.json'), '{"version":1,"items":[]}', 'utf8');
+        const lastIndexTime = 1_700_000_000_001;
+        const manifest = new IndexManifest(resolveIndexManifestPath(generation));
+        await manifest.save({
+            version: 1, ...stamp,
+            entries: {
+                'a.md': { path: 'a.md', hash: 'a'.repeat(64), mtime: 1, chunkCount: 1 },
+                'b.md': { path: 'b.md', hash: 'b'.repeat(64), mtime: 1, chunkCount: 1 },
+            },
+            lastIndexTime,
+        });
+        await writeBuildStamp(generation, stamp);
+        const fixture = await create(undefined, 1000, { indexDir: generation, manifest });
+        try {
+            expect(fs.existsSync(path.join(generation, 'shards', 'layout.json'))).toBe(false);
+            expect(await fixture.backend.readCommittedState()).toEqual({ totalDocs: 2, lastIndexTime });
+            // 单份语义的另一半:index.json 缺失即不可宣告已提交。
+            fs.rmSync(path.join(generation, 'index.json'));
+            expect(await fixture.backend.readCommittedState()).toBeNull();
+        } finally { fixture.worker.destroy(); }
     });
 
     it('整批失败 - 已有有效清单与戳 - 保留既有凭据且不整库失效', async () => {
@@ -1457,6 +1543,42 @@ describe('真实索引持久化', () => {
 			expect(fs.readdirSync(pluginDir).sort()).toEqual(['attachments', 'data.json', 'main.js', 'manifest.json']);
 			expect(fs.readdirSync(attachments)).toEqual(['note.png']);
 			expect(fs.existsSync(path.join(pluginDir, 'index.json'))).toBe(false);
+		});
+
+		it('阻断 B2 - 缺省守卫 - 只有 shards/ 的分片代际 - 允许清库与重建', async () => {
+			// 关键路径(回归):分片代际把向量写在 `shards/<hh>/index.json`,代际根没有 index.json;
+			// 形状白名单不认 `shards/` 时,清库/重建会在任何删除前被误拒。
+			const generation = path.join(dir, 'generations', 'gen-0123456789abcdef');
+			const shardsRoot = path.join(generation, 'shards');
+			fs.mkdirSync(path.join(shardsRoot, '00'), { recursive: true });
+			fs.writeFileSync(path.join(shardsRoot, 'layout.json'), '{"version":1,"shardCount":8,"blockCount":0}', 'utf8');
+			fs.writeFileSync(path.join(shardsRoot, '00', 'index.json'), '{"version":1,"items":[]}', 'utf8');
+
+			const { deferred, backend } = await createDeferredBackend({
+				indexDir: generation,
+				getEpoch: () => 1,
+				store: new VectraStore(path.join(dir, 'unused-shards'), { autoInit: false }),
+			});
+			await expect(backend.dropIndex()).resolves.not.toThrow();
+			// 关键路径:放行必须真的走到独占写通道,而不是「被拒绝后静默当成功」。
+			expect(deferred.exclusiveRuns).toBe(1);
+		});
+
+		it('阻断 B2 - 缺省守卫 - 无索引特征的未知目录 - 仍拒绝清库', async () => {
+			// 关键路径:`shards` 必须是目录才算索引特征;同名普通文件不能把未知目录误放行。
+			const unknown = path.join(dir, 'notes-backup');
+			fs.mkdirSync(unknown, { recursive: true });
+			fs.writeFileSync(path.join(unknown, 'notes.md'), '# 正文', 'utf8');
+			fs.writeFileSync(path.join(unknown, 'shards'), 'not-a-directory', 'utf8');
+
+			const { deferred, backend } = await createDeferredBackend({
+				indexDir: unknown,
+				getEpoch: () => 1,
+				store: new VectraStore(path.join(dir, 'unused-unknown'), { autoInit: false }),
+			});
+			await expect(backend.dropIndex()).rejects.toMatchObject({ code: 'index-directory-not-owned' });
+			expect(deferred.exclusiveRuns).toBe(0);
+			expect(fs.readdirSync(unknown).sort()).toEqual(['notes.md', 'shards']);
 		});
 
 		it('阻断 B2 - 注入严格版归属端口 - 优先于缺省形状白名单(T7 的收紧入口)', async () => {

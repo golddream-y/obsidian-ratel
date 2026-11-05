@@ -8,7 +8,8 @@
  * 设计要点:
  * - **目录布局(硬约束)**:`.index/control.json` 是控制指针,`.index/owner.lock` 与
  *   `.index/owner.recovery.lock` 由 T2 写在 `.index/` 根,**每个代际的全部数据**落在
- *   `.index/generations/<generationId>/`(config.json、Vectra 的 index.json/catalog.json、
+ *   `.index/generations/<generationId>/`(config.json、Vectra 的 `shards/<hh>/index.json`
+ *   或旧单份 `index.json`、`catalog.json`、`shards/layout.json` 等布局元数据、
  *   `files/<pathHash>.json`、`pending/`、`quarantine/`)。
  *   因此 `VectraStore` 的索引目录**永远是代际目录**,`.index/` 根绝不能被递归删除:
  *   `VectraStore.dropIndex()` 是 `fs.rmSync(indexDir, { recursive: true })`,把根传进去会

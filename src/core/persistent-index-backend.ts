@@ -24,6 +24,7 @@ import { sha256 } from '../utils/hash';
 import { tNow } from '../i18n';
 import { devLogger } from '../logging/dev-logger';
 import { recoverDerivedManifest } from './index-manifest-recovery';
+import { readShardLayout } from './index-shard-migration';
 interface IndexSnapshot {
 	path: string;
 	content: string;
@@ -102,6 +103,8 @@ const INDEX_GENERATIONS_DIRNAME = 'generations';
 const INDEX_GENERATION_DIR_PATTERN = /^gen-[0-9a-f]{16}$/;
 /** Vectra 索引文件 — 普通索引目录的标志性索引特征。 */
 const INDEX_VECTRA_INDEX_FILENAME = 'index.json';
+/** 分片布局目录 — 分片代际没有代际根 `index.json`,以 `shards/` 作为索引特征。 */
+const INDEX_SHARDS_DIRNAME = 'shards';
 /** `.index/` 根下的受保护文件 — 命中任一即说明目标是根而不是代际目录。 */
 const INDEX_ROOT_PROTECTED_FILENAMES = ['control.json', 'owner.lock', 'owner.recovery.lock'] as const;
 /** `pendingWrites` 缺省容量上限 — 超限按插入顺序淘汰最旧,防止停滞请求永久驻留。 */
@@ -116,9 +119,10 @@ const DEFAULT_PENDING_WRITE_LIMIT = 32;
  * 3. 内含 `generations/` 子目录 → `.index/` 根;
  * 4. 父目录名为 `generations` 时,目录名必须匹配 `gen-<16hex>`,否则是代际树里的异形目录;
  * 5. **形状白名单**:目标必须「看起来像一个索引目录」—— 目录不存在、为空,或内含索引特征
- *    (`index.json` / `generations/` / `control.json`)任一,才允许递归删除;非空且不含任何
- *    索引特征的一律拒绝。pluginDir 形状(内含 `main.js` / `data.json` / `attachments` 等
- *    插件产物但**没有**索引特征)必须被拒 —— 否则一次装配错误就会静默递归删掉整个插件目录。
+ *    (`index.json` / `generations/` / `shards/` / `control.json`)任一,才允许递归删除;非空且
+ *    不含任何索引特征的一律拒绝。分片代际没有代际根 `index.json`,`shards/` 目录就是它的
+ *    索引特征。pluginDir 形状(内含 `main.js` / `data.json` / `attachments` 等插件产物但
+ *    **没有**索引特征)必须被拒 —— 否则一次装配错误就会静默递归删掉整个插件目录。
  *
  * 为什么第 4 条只在 `generations/` 树内强制:T7 之前的装配(`src/main.ts`)把 `.index/` 根
  * 直接当索引目录使用,若要求任意索引目录都必须是 `gen-<16hex>`,清库与参数变更重建会在
@@ -161,7 +165,20 @@ function describeForeignIndexDir(indexDir: string): string | null {
 		...INDEX_ROOT_PROTECTED_FILENAMES,
 	];
 	if (indexFeatures.some(name => fs.existsSync(path.join(indexDir, name)))) return null;
-	return `目标不含任何索引特征(${indexFeatures.join(' / ')}),拒绝递归删除非索引目录`;
+	// 关键路径:分片代际只有 `shards/` 目录而没有代际根 `index.json`;必须按目录判定,
+	// 否则一个恰好叫 `shards` 的普通文件会把非索引目录误放行。
+	if (isDirectorySync(path.join(indexDir, INDEX_SHARDS_DIRNAME))) return null;
+	return `目标不含任何索引特征(${[...indexFeatures, `${INDEX_SHARDS_DIRNAME}/`].join(' / ')}),拒绝递归删除非索引目录`;
+}
+
+/** 判断路径是否为目录;不存在或不可读按否处理。 */
+function isDirectorySync(target: string): boolean {
+	try {
+		return fs.statSync(target).isDirectory();
+	}
+	catch {
+		return false;
+	}
 }
 
 /**
@@ -637,29 +654,57 @@ export class PersistentIndexBackend implements IndexBackend {
 		return { total: records.length, records };
 	}
 
-    /** 只读验证已提交元数据与索引存在性，不初始化存储、不读取vault、不修写凭据。 */
-    readCommittedState(): Promise<CommittedIndexState | null> {
-        return this.serialize(() => this.deps.worker.runExclusive(async () => {
-            const data = await this.deps.manifest.load();
-            const stamp = this.deps.getBuildStamp();
-            if (!data || data.version !== 1 || !data.entries || typeof data.entries !== 'object' || Array.isArray(data.entries)
-                || !Number.isFinite(data.lastIndexTime) || data.lastIndexTime < 0
-                || this.deps.manifest.shouldFullRebuild(data, stamp.embedModelId, stamp.chunkSize, stamp.chunkOverlap, stamp.chunkerVersion)
-                || !isBuildStampCurrent(await readBuildStamp(this.deps.indexDir), stamp)) return null;
-            for (const [filePath, entry] of Object.entries(data.entries)) {
-                if (!entry || entry.path !== filePath || typeof entry.hash !== 'string'
-                    || !Number.isFinite(entry.mtime) || !Number.isInteger(entry.chunkCount) || entry.chunkCount < 0) return null;
-            }
-            try {
-                // 关键路径:VectraStore.isIndexCreated会触发懒初始化；此处必须直接只读检查磁盘。
-                if (!(await fs.promises.stat(path.join(this.deps.indexDir, 'index.json'))).isFile()) return null;
-            } catch (err) {
-                if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
-                throw err;
-            }
-            return { totalDocs: Object.keys(data.entries).length, lastIndexTime: data.lastIndexTime };
-        }));
-    }
+	/**
+	 * 只读验证已提交元数据与索引存在性，不初始化存储、不读取 vault、不修写凭据。
+	 *
+	 * 关键路径(分片代际):分片布局没有代际根 `index.json`,以 `shards/layout.json` 作为
+	 * 已提交标记。先读 layout:存在即按分片语义返回,避免为分片代际要求一个不存在的文件;
+	 * 不存在则保持旧单份语义,迁移中断(有旧 `index.json`、无 layout)不会被误判成空库。
+	 */
+	readCommittedState(): Promise<CommittedIndexState | null> {
+		return this.serialize(() => this.deps.worker.runExclusive(async () => {
+			const data = await this.deps.manifest.load();
+			const stamp = this.deps.getBuildStamp();
+			const committed = await this.committedStateFromManifest(data, stamp);
+			const layout = await readShardLayout(this.deps.indexDir);
+			if (layout !== null) {
+				if (committed !== null) return committed;
+				// 关键路径:空布局按「已提交的空库」处理 —— 没有向量块需要证明,缺清单/戳
+				// 不能退回 Idle。注意 `layout.blockCount` 只在迁移时写真实块数,新建库恒为 0,
+				// 因此只有清单也证明不了任何文档时才能按空库处理;有文档却缺配置身份必须保持 null。
+				const documentedEntries = data !== null
+					&& typeof data.entries === 'object' && !Array.isArray(data.entries)
+					&& Object.keys(data.entries).length > 0;
+				if (layout.blockCount === 0 && !documentedEntries) return { totalDocs: 0, lastIndexTime: 0 };
+				return null;
+			}
+			if (committed === null) return null;
+			try {
+				// 关键路径:VectraStore.isIndexCreated会触发懒初始化；此处必须直接只读检查磁盘。
+				if (!(await fs.promises.stat(path.join(this.deps.indexDir, 'index.json'))).isFile()) return null;
+			} catch (err) {
+				if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+				throw err;
+			}
+			return committed;
+		}));
+	}
+
+	/** 清单与构建戳都可信时返回已提交摘要;否则 null(配置身份不可证明不能宣告 Ready)。 */
+	private async committedStateFromManifest(
+		data: IndexManifestData | null,
+		stamp: IndexBuildStamp,
+	): Promise<CommittedIndexState | null> {
+		if (!data || data.version !== 1 || !data.entries || typeof data.entries !== 'object' || Array.isArray(data.entries)
+			|| !Number.isFinite(data.lastIndexTime) || data.lastIndexTime < 0
+			|| this.deps.manifest.shouldFullRebuild(data, stamp.embedModelId, stamp.chunkSize, stamp.chunkOverlap, stamp.chunkerVersion)
+			|| !isBuildStampCurrent(await readBuildStamp(this.deps.indexDir), stamp)) return null;
+		for (const [filePath, entry] of Object.entries(data.entries)) {
+			if (!entry || entry.path !== filePath || typeof entry.hash !== 'string'
+				|| !Number.isFinite(entry.mtime) || !Number.isInteger(entry.chunkCount) || entry.chunkCount < 0) return null;
+		}
+		return { totalDocs: Object.keys(data.entries).length, lastIndexTime: data.lastIndexTime };
+	}
 
 	/** 读取用于索引的文件内容快照。 */
 	async listMarkdownFiles(): Promise<Array<{
