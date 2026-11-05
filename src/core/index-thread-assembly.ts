@@ -19,6 +19,7 @@ import { ensureShardLayout, migrateSingleFileIndex, readShardLayout } from './in
 import { shardCountForBlocks } from './index-shard-routing';
 import { IndexThreadCoordinator, type ThreadIndexClient } from './index-thread-coordinator';
 import { resolveIndexGeneration, type ResolvedIndexGeneration } from './index-processor-port';
+import { devLogger } from '../logging/dev-logger';
 import type { IndexGenerations } from './index-generations';
 import type { IndexConfigDescriptor } from './index-persistence-types';
 import type { JournalWriteOwner } from './index-file-journal';
@@ -33,6 +34,12 @@ export interface AssembleIndexThreadDeps {
 	configFingerprint: string;
 	/** 期望向量维度。 */
 	expectedDimension?: number;
+	/**
+	 * 代际控制指针 — 用于「首个持久提交后登记活动代际」。
+	 *
+	 * 关键路径:缺失时**不提权**(测试替身与只读场景不需要控制指针),而不是伪造一次登记。
+	 */
+	generations?: IndexGenerations;
 	/** 嵌入端口。 */
 	embedding: EmbeddingPort;
 	/** Vault 端口 — 只用于枚举与读正文。 */
@@ -75,12 +82,26 @@ export function assembleIndexThreadPipeline(deps: AssembleIndexThreadDeps): Asse
 		embed: createEmbeddingBridge(deps.embedding),
 		createWorker: deps.createWorker,
 	});
+	// 关键路径(2026-11-05 缺陷修复):线程模式此前没有任何「首个持久提交后登记活动代际」
+	// 的接线 —— 主线程装配用 `createFirstCommitPromoter` 包装日志端口,但线程的写入真相在
+	// Worker 会话内,主线程拿不到 journal。结果是全量提交成功、完成记录齐全,`activeGenerationId`
+	// 却一直是 null、代际记录停在 building,下次启动被当成未建库重跑且永远到不了 Ready。
+	// 这里按同一语义在宿主侧补上:首次**成功返回**的写入调用之后登记一次,已有活动代际则闩死。
+	const promoteOnce = createThreadGenerationPromoter(deps);
 	const threadClient: ThreadIndexClient = deps.createClient
 		? deps.createClient(client)
 		: {
 			start: (options) => client.start(options),
-			indexFile: (filePath, content) => client.indexFile(filePath, content),
-			indexFiles: (files) => client.indexFiles(files),
+			indexFile: async (filePath, content) => {
+				const result = await client.indexFile(filePath, content);
+				await promoteOnce();
+				return result;
+			},
+			indexFiles: async (files) => {
+				const result = await client.indexFiles(files);
+				await promoteOnce();
+				return result;
+			},
 			deleteFile: (filePath) => client.deleteFile(filePath),
 			recover: (inputs) => client.recover(inputs),
 			close: (reason) => client.close(reason),
@@ -163,4 +184,33 @@ export async function assembleIndexThreadRuntime(deps: AssembleIndexThreadRuntim
 	// 关键路径:layout 在管线装配成功之后才落盘且幂等;装配失败不留假迁移标记。
 	if (layout === null) await ensureShardLayout(resolved.generationRoot, store.shardCount);
 	return { resolved, pipeline };
+}
+
+/**
+ * 线程模式的「首个持久提交后登记活动代际」。
+ *
+ * 语义与主线程的 {@link createFirstCommitPromoter} 保持一致：只在尚无活动代际时以
+ * `upgrade` 模式登记一次；一旦观察到活动指针非空就闩死，不再读控制指针；登记失败只记日志、
+ * 不改变已完成的提交结果，并允许下一次调用重试。
+ */
+function createThreadGenerationPromoter(deps: AssembleIndexThreadDeps): () => Promise<void> {
+	let settled = false;
+	return async () => {
+		if (settled) return;
+		try {
+			const generations = deps.generations;
+			if (generations === undefined) return;
+			const control = await generations.readControl();
+			if (control.activeGenerationId !== null) {
+				settled = true;
+				return;
+			}
+			await generations.publishActiveGeneration({ generationId: deps.generationId, mode: 'upgrade' });
+			settled = true;
+			devLogger.info('index', `线程模式首次提交完成,登记活动代际 ${deps.generationId}`);
+		}
+		catch (error) {
+			devLogger.warn('index', '线程模式登记活动代际失败(提交结果不受影响)', error);
+		}
+	};
 }
