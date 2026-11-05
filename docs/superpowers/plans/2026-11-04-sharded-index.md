@@ -823,3 +823,24 @@ git commit -m "test: 分片写量基准与注册表同步"
 1. **迁移无块数与校验和自证**：spec 写「逐片校验块数与块集合校验和」，实现是「按路径分桶写各片 → 全部写成功后写 layout → 改名」。`writeFile` 失败会抛错并保留旧文件（fail-closed 成立），但没有「各片条目数之和 == 原块数」这类事后自证。风险有限（写失败即中断），但 spec 与实现存在措辞差距，不以「已校验」表述。
 2. **`index.json.legacy` 无清理策略**：保留是为回滚，但生产库 231 MB 会长期多占一份。需要一条「确认新布局可用后删除 `.legacy`」的操作路径，属运维项而非本轮交付。
 3. **`layout.blockCount` 不随写入更新**：`ensureShardLayout` 只在建库时写 0；文档数一律以清单为准。若后续要用它做「片数增长重分布」的触发条件，必须补更新点。
+
+## 线上验证发现（2026-11-05，Sandbox）
+
+**问题 1（已修）卡死**：`readCommittedState` 曾把「空 layout（blockCount=0）」当成已提交的空库，导致新建代际在没有任何清单/戳、代际记录仍是 `building`、`activeGenerationId` 仍是 `null` 时被宣告 Ready；启动期核对在「已提交 / 仍在构建」间收不敛，界面卡死。修法：分片布局同样只认「清单 + 构建戳都可信」，否则返回 null（`a77f546`）。
+
+**问题 2（未修，已定位）线程模式从不登记活动代际**：`createFirstCommitPromoter`（首个持久提交后 `publishActiveGeneration({ mode: 'upgrade' })`）只在 `src/core/index-runtime-assembly.ts:496` 接线，`src/core/index-thread-assembly.ts` **没有任何等价接线**，Worker 会话侧也没有提升路径。后果：线程模式下即使 97 篇全部提交成功、完成记录齐全，`control.json` 的 `activeGenerationId` 仍是 `null`、代际记录仍是 `building`；下次启动会被当成未建库重跑，且永远不会进入 Ready。
+
+证据（Sandbox，线程模式全量一轮）：
+
+```
+activeGenerationId: null
+status: "building"
+verifiedAt: null
+代际目录: shards/ + layout.json + 90 篇完成记录（无根 index.json）
+```
+
+该缺口与分片无关，自线程模式上线即存在；生产库此前走主线程路径所以未暴露。
+
+**临时措施**：Sandbox 已把 `indexThreadMode` 置为 `false`——分片仍生效（主线程装配同样用 `ShardedVectorStore`），且提升钩子在主线程装配里正常接线。
+
+**待办（下一轮）**：给线程装配补提升接线，方案二选一——(a) 线程侧会话在首个 `finalizeCommit` 成功后经宿主 RPC 触发 `publishActiveGeneration`；(b) 宿主侧包装 `client.indexFile/indexFiles`，首次成功后登记一次。需配套用例：线程模式全量一轮后 `activeGenerationId` 非空且 `status === 'active'`。
