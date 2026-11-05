@@ -72,7 +72,8 @@ export async function migrateSingleFileIndex(options: ShardMigrationOptions): Pr
 	const layoutPath = path.join(shardsRoot, 'layout.json');
 
 	const layout = await readLayout(layoutPath);
-	if (layout !== null) return { migrated: false, shardCount: layout.shardCount, blockCount: 0 };
+	// 已迁移时如实返回 layout 里记录的块数;恒返回 0 会让诊断读数与基准失真。
+	if (layout !== null) return { migrated: false, shardCount: layout.shardCount, blockCount: layout.blockCount };
 	if (!(await exists(legacyPath))) return { migrated: false, shardCount: 0, blockCount: 0 };
 
 	const legacy = JSON.parse(await readFile(legacyPath, 'utf8')) as VectraIndexFile;
