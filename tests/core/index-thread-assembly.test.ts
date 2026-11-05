@@ -132,3 +132,69 @@ describe('先解析代际再装配', () => {
 		}));
 	});
 });
+
+describe('线程模式的代际提权（2026-11-05 事故回归）', () => {
+	/** 只提供提权所需的最小控制指针替身。 */
+	function makeGenerations(activeGenerationId: string | null) {
+		const publishActiveGeneration = vi.fn(async ({ generationId }: { generationId: string }) => ({
+			activeGenerationId: generationId,
+			generations: {},
+		}));
+		return {
+			readControl: vi.fn(async () => ({ activeGenerationId, generations: {} })),
+			publishActiveGeneration,
+		};
+	}
+
+	const START = { root: '/tmp/index-root', generationId: 'gen-new', configFingerprint: 'c'.repeat(64), expectedDimension: DIMENSIONS };
+
+	function build(generations: ReturnType<typeof makeGenerations>, fingerprint: string) {
+		const threadClient = makeThreadClient();
+		const pipeline = assembleIndexThreadPipeline({
+			indexRoot: '/tmp/index-root',
+			generationId: 'gen-new',
+			configFingerprint: fingerprint,
+			expectedDimension: DIMENSIONS,
+			embedding: EMBEDDING,
+			// 关键路径:必须经协调器真正走一次写入,否则验不到「提交后才登记」。
+			vault: {
+				listMarkdownFiles: () => ['a.md', 'b.md', 'c.md'],
+				readFile: async (p: string) => `# ${p}`,
+			},
+			chunkOptions: { maxTokens: 400, overlapTokens: 50 },
+			createClient: () => threadClient,
+			generations: generations as never,
+		});
+		return { threadClient, pipeline };
+	}
+
+	it('尚无活动代际 - 首个写入成功后登记一次 - 后续写入不重复登记', async () => {
+		const generations = makeGenerations(null);
+		const { pipeline } = build(generations, 'c'.repeat(64));
+		await pipeline.coordinator.start();
+		expect(generations.publishActiveGeneration).toHaveBeenCalledTimes(1);
+		expect(generations.publishActiveGeneration).toHaveBeenCalledWith({ generationId: 'gen-new', mode: 'upgrade' });
+		pipeline.coordinator.destroy();
+	});
+
+	it('已有活动代际 - 不登记 - 也不重复读控制指针', async () => {
+		const generations = makeGenerations('gen-existing');
+		const { pipeline } = build(generations, 'd'.repeat(64));
+		await pipeline.coordinator.start();
+		expect(generations.publishActiveGeneration).not.toHaveBeenCalled();
+		expect(generations.readControl).toHaveBeenCalledTimes(1);
+		pipeline.coordinator.destroy();
+	});
+
+	it('登记失败 - 提交结果不受影响 - 下一次写入重试', async () => {
+		const generations = makeGenerations(null);
+		generations.publishActiveGeneration.mockRejectedValueOnce(new Error('控制指针写入失败'));
+		const { pipeline } = build(generations, 'e'.repeat(64));
+		const counters = await pipeline.coordinator.start();
+		expect(counters.failures).toBe(0);
+		expect(generations.publishActiveGeneration).toHaveBeenCalledTimes(2);
+		pipeline.coordinator.destroy();
+	});
+
+	void START;
+});

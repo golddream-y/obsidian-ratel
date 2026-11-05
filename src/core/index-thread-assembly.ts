@@ -88,24 +88,34 @@ export function assembleIndexThreadPipeline(deps: AssembleIndexThreadDeps): Asse
 	// 却一直是 null、代际记录停在 building,下次启动被当成未建库重跑且永远到不了 Ready。
 	// 这里按同一语义在宿主侧补上:首次**成功返回**的写入调用之后登记一次,已有活动代际则闩死。
 	const promoteOnce = createThreadGenerationPromoter(deps);
-	const threadClient: ThreadIndexClient = deps.createClient
+	const baseClient: ThreadIndexClient = deps.createClient
 		? deps.createClient(client)
 		: {
 			start: (options) => client.start(options),
-			indexFile: async (filePath, content) => {
-				const result = await client.indexFile(filePath, content);
-				await promoteOnce();
-				return result;
-			},
-			indexFiles: async (files) => {
-				const result = await client.indexFiles(files);
-				await promoteOnce();
-				return result;
-			},
+			indexFile: (filePath, content) => client.indexFile(filePath, content),
+			indexFiles: (files) => client.indexFiles(files),
 			deleteFile: (filePath) => client.deleteFile(filePath),
 			recover: (inputs) => client.recover(inputs),
 			close: (reason) => client.close(reason),
 		};
+	// 关键路径:提权必须包在**最终**选用的客户端上,不能只包默认分支 —— 否则注入
+	// `createClient` 的调用方(测试、替身、将来的自定义传输)会静默失去「首个提交后登记」,
+	// 而这正是 2026-11-05 现场事故的形态:提交全成功、活动指针永远是 null。
+	const threadClient: ThreadIndexClient = {
+		...baseClient,
+		indexFile: async (filePath, content) => {
+			const result = await baseClient.indexFile(filePath, content);
+			await promoteOnce();
+			return result;
+		},
+		...(baseClient.indexFiles === undefined ? {} : {
+			indexFiles: async (files: Array<{ path: string; content: string }>) => {
+				const result = await baseClient.indexFiles!(files);
+				await promoteOnce();
+				return result;
+			},
+		}),
+	};
 	const coordinator = new IndexThreadCoordinator({
 		client: threadClient,
 		vault: deps.vault,
