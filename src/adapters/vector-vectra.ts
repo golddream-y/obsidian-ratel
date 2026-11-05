@@ -85,6 +85,9 @@ export interface FileReplaceStore {
  * 关键路径:这里只做只读判定,不引入代际模块的实现,避免适配器反向依赖编排层。
  */
 const INDEX_GENERATIONS_DIRNAME = 'generations';
+// 关键路径:分片布局的代际目录只有 shards/,没有根 index.json;形状白名单必须认它,
+// 否则单份存储落在分片代际时会以 drop-refused 拒绝删除。
+const INDEX_SHARDS_DIRNAME = 'shards';
 
 /**
  * 代际目录名 — 由配置指纹派生(`gen-` + 16 位小写十六进制)。
@@ -126,7 +129,7 @@ function describeNonIndexDirectory(target: string): string | null {
 		return null;
 	}
 	if (entries.length === 0) return null;
-	const features = [INDEX_VECTRA_INDEX_FILENAME, INDEX_GENERATIONS_DIRNAME, ...INDEX_ROOT_PROTECTED_FILENAMES];
+	const features = [INDEX_VECTRA_INDEX_FILENAME, INDEX_GENERATIONS_DIRNAME, INDEX_SHARDS_DIRNAME, ...INDEX_ROOT_PROTECTED_FILENAMES];
 	if (features.some(name => fs.existsSync(path.join(target, name)))) return null;
 	return `目标不含任何索引特征(${features.join(' / ')}),拒绝递归删除非索引目录`;
 }
