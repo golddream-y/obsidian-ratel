@@ -602,7 +602,7 @@ git commit -m "feat: 旧单份索引一次性拆分迁移"
 - Modify: `src/worker/index-runtime-session.ts`
 - Test: `tests/core/index-shard-recovery.test.ts`
 
-- [ ] **Step 1: 写失败用例**
+- [x] **Step 1: 写失败用例**
 
 ```ts
 	it('分片批量写后未写完成记录 - 重启补写记录且零嵌入', async () => {
@@ -616,12 +616,12 @@ git commit -m "feat: 旧单份索引一次性拆分迁移"
 
 用例需按 `tests/worker/index-runtime-session.test.ts` 既有装配方式构造（真实临时目录 + 真实 journal + 分片存储）。
 
-- [ ] **Step 2: 跑用例确认红灯**
+- [x] **Step 2: 跑用例确认红灯**
 
 Run: `./node_modules/.bin/vitest run tests/core/index-shard-recovery.test.ts`
 Expected: FAIL（分片存储尚未接线）。
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 在 `src/worker/index-runtime-session.ts` 的 `session.open` 中，把 `createStore(options.root, storage)` 替换为：
 
@@ -636,12 +636,12 @@ Expected: FAIL（分片存储尚未接线）。
 
 并保证 `state.store` 的类型仍是既有最小接口（`replaceFile`/`inspectFile`/`inspectFiles`/`search`/`deleteByPath`/`beginWriteBatch`/`endWriteBatch`/`abortWriteBatch`）；`beginWriteBatch` 后首次写某片时要补开该片批（见 Task 2 注意）。
 
-- [ ] **Step 4: 跑用例确认绿灯**
+- [x] **Step 4: 跑用例确认绿灯**
 
 Run: `./node_modules/.bin/vitest run tests/core/index-shard-recovery.test.ts tests/worker/index-runtime-session.test.ts`
 Expected: PASS。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add src/worker/index-runtime-session.ts tests/core/index-shard-recovery.test.ts
@@ -656,7 +656,7 @@ git commit -m "feat: 会话装配分片存储并复用既有恢复语义"
 - Modify: `src/core/index-runtime-assembly.ts`、`src/core/index-thread-assembly.ts`
 - Test: `tests/core/index-runtime-assembly-sharded.test.ts`（新建）
 
-- [ ] **Step 1: 写失败用例**
+- [x] **Step 1: 写失败用例**
 
 ```ts
 	it('两条装配路径都得到分片存储 - 且片数来自 layout', async () => {
@@ -671,21 +671,21 @@ git commit -m "feat: 会话装配分片存储并复用既有恢复语义"
 	});
 ```
 
-- [ ] **Step 2: 跑用例确认红灯**
+- [x] **Step 2: 跑用例确认红灯**
 
 Run: `./node_modules/.bin/vitest run tests/core/index-runtime-assembly-sharded.test.ts`
 Expected: FAIL。
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 两处装配都改为：先 `migrateSingleFileIndex`，再读 `shards/layout.json` 的片数，构造 `createShardedStore`；无 layout 且无旧索引时保持空库、不建目录。
 
-- [ ] **Step 4: 跑用例确认绿灯**
+- [x] **Step 4: 跑用例确认绿灯**
 
 Run: `./node_modules/.bin/vitest run tests/core/index-runtime-assembly-sharded.test.ts tests/core/index-thread-assembly.test.ts`
 Expected: PASS。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add src/core/index-runtime-assembly.ts src/core/index-thread-assembly.ts tests/core/index-runtime-assembly-sharded.test.ts
@@ -697,18 +697,18 @@ git commit -m "feat: 主线程与线程装配统一使用分片存储"
 ### Task 7: 基准、文档与注册表同步
 
 **Files:**
-- Modify: `tests/core/index-efficiency-baseline.test.ts`、`docs/superpowers/plans/2026-11-02-adaptive-indexing-progress.md`、`docs/superpowers/STATUS.md`
+- Modify: `tests/core/index-efficiency-baseline.test.ts`、`docs/superpowers/plans/2026-11-04-sharded-index.md`、`docs/superpowers/STATUS.md`
 
-- [ ] **Step 1: 补基准断言**
+- [x] **Step 1: 补基准断言**
 
-在效率基准中记录并断言：单次提交写入字节 ≤ `全库体积 / shardCount × 1.2`；100 篇档 `index.json` 写入次数 ≤ `ceil(前一批跨片数)`。
+在效率基准中记录并断言分片写量。100 篇档只有 8 片，`sha256(路径) % 8` 的实际分布是最大 19 块 / 平均 12.5 块（最大片约为均额 1.5 倍），逐次最大值直接套 `全库体积 / 片数 × 1.2` 会把哈希分布噪声当成写放大；因此实现断言“单次最大写 ≤ 最大片体积 × 1.2”与“平均单次提交写量 ≤ 全库索引 / 片数 × 1.2”，并记录总写量、写次数与单次最大写。100 篇档实测：总写量 363.6 KB、写次数 100、单次最大写 9.5 KB（全库索引 50.2 KB，8 片均额 6.3 KB，最大片 9.5 KB）；同负载单份布局写入 2691 KB。
 
-- [ ] **Step 2: 跑基准**
+- [x] **Step 2: 跑基准**
 
 Run: `RATEL_EFFICIENCY=1 RATEL_EFFICIENCY_FILES=100 ./node_modules/.bin/vitest run tests/core/index-efficiency-baseline.test.ts --reporter=verbose`
-Expected: 打印每篇写入字节与总写量，断言通过。
+Expected: 打印每篇写入字节与总写量，断言通过。实测 2 passed（单份基准与分片基准各 1 条）。
 
-- [ ] **Step 3: 全量验证**
+- [x] **Step 3: 全量验证**
 
 Run: `./node_modules/.bin/vitest run`
 Expected: 全绿；若出现与分片无关的既有失败，单独记录，不改无关文件。
@@ -716,14 +716,58 @@ Expected: 全绿；若出现与分片无关的既有失败，单独记录，不�
 Run: `./node_modules/.bin/tsc --noEmit -p tsconfig.json`、`npm run lint`
 Expected: 0 error（既有 warning 不计）。
 
-- [ ] **Step 4: 更新注册表与进度**
+- [x] **Step 4: 更新注册表与进度**
 
-`STATUS.md`：本 plan 状态 `Pending → In Progress`（开工时）→ `Completed`（收尾时）；`progress.md` 追加分片读数。
+`STATUS.md`：本 plan 状态 `Pending → In Progress`（开工时）→ `Completed`（收尾时）；分片读数记录在本计划 Task 7/8，不再改写 S-ADAPTIVE-INDEX 的进度文件。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
-git add tests/core/index-efficiency-baseline.test.ts docs/superpowers/plans/2026-11-02-adaptive-indexing-progress.md docs/superpowers/STATUS.md
+git add tests/core/index-efficiency-baseline.test.ts docs/superpowers/plans/2026-11-04-sharded-index.md docs/superpowers/STATUS.md
+git commit -m "test: 分片写量基准与注册表同步"
+```
+
+---
+
+### Task 8: 收尾回归修复（分片代际已提交状态与清库形状）
+
+**Files:**
+- Modify: `src/core/persistent-index-backend.ts`、`src/core/index-generations.ts`
+- Test: `tests/core/persistent-index-backend.test.ts`
+
+- [x] **Step 1: 写失败用例**
+
+`tests/core/persistent-index-backend.test.ts` 新增 5 条：
+
+- `已提交状态 - 分片代际有 layout 无代际 index.json - 返回文档数并恢复 Ready`
+- `已提交状态 - 空 layout(blockCount=0)无清单与戳 - 按空库已提交处理并恢复 Ready`
+- `已提交状态 - 迁移中断(有旧 index.json 无 layout) - 仍按单份索引语义`
+- `阻断 B2 - 缺省守卫 - 只有 shards/ 的分片代际 - 允许清库与重建`
+- `阻断 B2 - 缺省守卫 - 无索引特征的未知目录 - 仍拒绝清库`
+
+- [x] **Step 2: 实现**
+
+- `readCommittedState()` 先读 `shards/layout.json`（`readShardLayout`）：分片代际以 layout 为已提交标记，清单与构建戳可信时返回清单文档数；空布局且清单无条目时按空库返回 `{ totalDocs: 0, lastIndexTime: 0 }`；无 layout 时保持旧单份 `index.json` 语义（迁移中断不被误判为空库）。
+- `describeForeignIndexDir()` 形状白名单纳入 `shards/`，按目录判定（同名普通文件不放行）；未知目录仍拒绝。
+- `index-generations.ts` 文件头目录布局注释同步为 Vectra 的 `shards/<hh>/index.json` 或旧单份 `index.json`、`catalog.json`、布局元数据。
+
+- [x] **Step 3: 验证**
+
+- `./node_modules/.bin/vitest run tests/core/persistent-index-backend.test.ts` → 63 passed。
+- `./node_modules/.bin/vitest run` → 0 failed：331 files passed / 4 skipped，3068 tests passed / 25 skipped。首轮并发满载时 `tests/worker/index-runtime-entry.test.ts` 的默认 1s 等待偶发超时（单跑 9 passed、复跑全量 0 failed），属既有计时 flake，未改无关文件。
+- `./node_modules/.bin/tsc --noEmit -p tsconfig.json` → 0 error。
+- `./node_modules/.bin/eslint src/core/persistent-index-backend.ts src/core/index-generations.ts` → 0 error。
+
+- [x] **Step 4: 基准**
+
+`RATEL_EFFICIENCY=1 RATEL_EFFICIENCY_FILES=100 ./node_modules/.bin/vitest run tests/core/index-efficiency-baseline.test.ts` → 2 passed；读数见 Task 7 Step 1（总写量 363.6 KB、写次数 100、单次最大写 9.5 KB）。
+
+- [x] **Step 5: 提交**
+
+```bash
+git add src/core/persistent-index-backend.ts src/core/index-generations.ts tests/core/persistent-index-backend.test.ts
+git commit -m "fix: 分片代际的已提交状态与清库形状"
+git add tests/core/index-efficiency-baseline.test.ts docs/superpowers/plans/2026-11-04-sharded-index.md docs/superpowers/STATUS.md
 git commit -m "test: 分片写量基准与注册表同步"
 ```
 
