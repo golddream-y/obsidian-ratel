@@ -105,13 +105,16 @@ export function assembleIndexThreadPipeline(deps: AssembleIndexThreadDeps): Asse
 		...baseClient,
 		indexFile: async (filePath, content) => {
 			const result = await baseClient.indexFile(filePath, content);
-			await promoteOnce();
+			// 关键路径(2026-11-05 死锁修复):提权要读控制指针,而读控制指针与索引路径共用同一
+			// 串行化队列;在这里 await 会把下一篇挡在门外 —— 现场表现正是「1 条完成记录后彻底不动」。
+			// 因此只在提交成功后**投递**提权,不占住提权路径。
+			void promoteOnce();
 			return result;
 		},
 		...(baseClient.indexFiles === undefined ? {} : {
 			indexFiles: async (files: Array<{ path: string; content: string }>) => {
 				const result = await baseClient.indexFiles!(files);
-				await promoteOnce();
+				void promoteOnce();
 				return result;
 			},
 		}),
@@ -177,12 +180,15 @@ export async function assembleIndexThreadRuntime(deps: AssembleIndexThreadRuntim
 	// 决定片数,全新库取下限 8。这样线程会话(以及任何重启)打开时读到的都是分片布局,
 	// 不会出现「本次单份、下次分片」的撕裂。
 	// 迁移失败 fail-closed:不吞错,由调用方整体回落到主线程路径。
+	devLogger.info('index', `[diag] 线程装配:代际已解析 ${resolved.generationId}`);
 	await migrateSingleFileIndex({ generationRoot: resolved.generationRoot });
 	const layout = await readShardLayout(resolved.generationRoot);
+	devLogger.info('index', `[diag] 线程装配:迁移完成 layout=${layout === null ? 'null' : layout.shardCount}`);
 	const store = createShardedStore({
 		root: resolved.generationRoot,
 		shardCount: layout?.shardCount ?? shardCountForBlocks(0),
 	});
+	devLogger.info('index', '[diag] 线程装配:开始装配管线');
 	const pipeline = assembleIndexThreadPipeline({
 		...deps,
 		indexRoot: resolved.generationRoot,
@@ -193,6 +199,7 @@ export async function assembleIndexThreadRuntime(deps: AssembleIndexThreadRuntim
 	});
 	// 关键路径:layout 在管线装配成功之后才落盘且幂等;装配失败不留假迁移标记。
 	if (layout === null) await ensureShardLayout(resolved.generationRoot, store.shardCount);
+	devLogger.info('index', `[diag] 线程装配:布局完成 片数=${store.shardCount}`);
 	return { resolved, pipeline };
 }
 
@@ -205,7 +212,8 @@ export async function assembleIndexThreadRuntime(deps: AssembleIndexThreadRuntim
  */
 function createThreadGenerationPromoter(deps: AssembleIndexThreadDeps): () => Promise<void> {
 	let settled = false;
-	return async () => {
+	let inFlight: Promise<void> | null = null;
+	const run = async (): Promise<void> => {
 		if (settled) return;
 		try {
 			const generations = deps.generations;
@@ -222,5 +230,9 @@ function createThreadGenerationPromoter(deps: AssembleIndexThreadDeps): () => Pr
 		catch (error) {
 			devLogger.warn('index', '线程模式登记活动代际失败(提交结果不受影响)', error);
 		}
+	};
+	return () => {
+		inFlight ??= run().finally(() => { inFlight = null; });
+		return inFlight;
 	};
 }
