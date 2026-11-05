@@ -80,7 +80,9 @@ export async function migrateSingleFileIndex(options: ShardMigrationOptions): Pr
 	const shardCount = shardCountForBlocks(items.length);
 	const buckets = new Map<number, VectraIndexItem[]>();
 	for (const item of items) {
-		const relativePath = String(item.metadata?.['path'] ?? '');
+		// 关键路径:只按字符串路径路由;非字符串元数据无法可靠归属,按空路径归片(不抛错,保留旧布局可用)。
+		const rawPath = item.metadata?.['path'];
+		const relativePath = typeof rawPath === 'string' ? rawPath : '';
 		const shardId = shardIdForPath(relativePath, shardCount);
 		const bucket = buckets.get(shardId);
 		if (bucket === undefined) buckets.set(shardId, [item]);
@@ -119,6 +121,21 @@ export async function migrateSingleFileIndex(options: ShardMigrationOptions): Pr
 	return { migrated: true, shardCount, blockCount: items.length };
 }
 
+/**
+ * 只读读取分片布局 — 供会话装配判断本轮该用分片存储还是退回单份存储。
+ *
+ * 关键路径:缺失或非法时返回 null 而不抛错。layout 只是「是否已迁移」的标记,
+ * 一个坏文件不该让索引会话打不开;调用方拿 null 后按旧布局继续装配。
+ *
+ * @param generationRoot - 代际根目录(与 `index.json`、`shards/` 同一层)。
+ * @returns 片数与块数;未迁移或 layout 不可解析时为 null。
+ */
+export async function readShardLayout(generationRoot: string): Promise<{ shardCount: number; blockCount: number } | null> {
+	const layout = await readLayout(path.join(path.resolve(generationRoot), 'shards', 'layout.json'));
+	if (layout === null) return null;
+	return { shardCount: layout.shardCount, blockCount: layout.blockCount };
+}
+
 /** 读取已有布局;不存在或不可解析都视为未迁移。 */
 async function readLayout(layoutPath: string): Promise<ShardLayoutFile | null> {
 	if (!(await exists(layoutPath))) return null;
@@ -128,7 +145,10 @@ async function readLayout(layoutPath: string): Promise<ShardLayoutFile | null> {
 		return {
 			version: 1,
 			shardCount: parsed.shardCount,
-			blockCount: parsed.blockCount ?? 0,
+			// 块数只做诊断读数:缺失或非法按 0 处理,不据此判定「未迁移」。
+			blockCount: typeof parsed.blockCount === 'number' && Number.isFinite(parsed.blockCount) && parsed.blockCount >= 0
+				? parsed.blockCount
+				: 0,
 			migratedAt: parsed.migratedAt ?? 0,
 		};
 	}

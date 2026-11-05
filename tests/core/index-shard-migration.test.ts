@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { AtomicIndexStorage } from '../../src/adapters/atomic-index-storage';
 import { VectraStore } from '../../src/adapters/vector-vectra';
 import { createShardedStore } from '../../src/adapters/vector-vectra-sharded';
-import { migrateSingleFileIndex } from '../../src/core/index-shard-migration';
+import { migrateSingleFileIndex, readShardLayout } from '../../src/core/index-shard-migration';
 
 const roots: string[] = [];
 
@@ -107,5 +107,25 @@ describe('旧单份布局迁移', () => {
 		const retry = await migrateSingleFileIndex({ generationRoot: root });
 		expect(retry.migrated).toBe(true);
 		expect(await exists(path.join(root, 'index.json.legacy'))).toBe(true);
+	});
+});
+
+describe('分片布局只读读取', () => {
+	it('已有布局 - 返回片数与块数', async () => {
+		const root = await mkdtemp(path.join(os.tmpdir(), 'ratel-migrate-'));
+		roots.push(root);
+		await writeLegacyIndex(root);
+		const migrated = await migrateSingleFileIndex({ generationRoot: root });
+		const layout = await readShardLayout(root);
+		expect(layout).not.toBeNull();
+		expect(layout?.shardCount).toBe(migrated.shardCount);
+		expect(layout?.blockCount).toBe(PATHS.length);
+	});
+
+	it('布局缺失 - 返回 null - 不抛错', async () => {
+		const root = await mkdtemp(path.join(os.tmpdir(), 'ratel-migrate-'));
+		roots.push(root);
+		// 未迁移的空目录:既没有 shards/layout.json,也不该因此抛错。
+		await expect(readShardLayout(root)).resolves.toBeNull();
 	});
 });

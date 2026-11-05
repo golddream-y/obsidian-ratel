@@ -12,7 +12,9 @@
 
 import { randomUUID } from 'node:crypto';
 import { VectraStore, type PreparedBlock } from '../adapters/vector-vectra';
+import { createShardedStore, type ShardedVectorStore } from '../adapters/vector-vectra-sharded';
 import { AtomicIndexStorage } from '../adapters/atomic-index-storage';
+import { migrateSingleFileIndex, readShardLayout } from '../core/index-shard-migration';
 import { devLogger } from '../logging/dev-logger';
 import { chunkMarkdown, type ChunkOptions } from './chunker';
 import { createWorkerJournal, WorkerJournalOwner } from './index-runtime-journal';
@@ -35,9 +37,12 @@ export interface IndexSessionOptions {
 	epoch?: number;
 }
 
+/** 会话使用的向量存储 — 单份 Vectra 与分片适配器对上层保持同一最小接口。 */
+type SessionVectorStore = VectraStore | ShardedVectorStore;
+
 /** 会话内部状态。 */
 interface SessionState {
-	store: VectraStore | null;
+	store: SessionVectorStore | null;
 	journal: IndexFileJournal | null;
 	owner: WorkerJournalOwner | null;
 	manifest: IndexManifest | null;
@@ -131,7 +136,7 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 		?? ((root: string, storage: AtomicIndexStorage) => new VectraStore(root, { embeddings: NO_EMBEDDINGS, storage: storage, autoInit: true }));
 
 	/** 取已打开的存储;未打开时明确失败,不隐式创建。 */
-	const requireStore = (): VectraStore => {
+	const requireStore = (): SessionVectorStore => {
 		if (state.store === null) throw new Error('索引会话尚未打开');
 		return state.store;
 	};
@@ -277,8 +282,19 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 	const handlers: RuntimeHandlers = {
 		'session.open': async (payload) => {
 			if (state.store !== null) return { alreadyOpen: true };
+			// 关键路径:启动先尝试一次旧单份布局迁移,再读 layout 决定装配方式。
+			// 迁移失败直接上抛(fail-closed):不吞错、不退回写单份索引 ——
+			// 退回会绕过迁移,让半拆分的旧文件与后续提交同时生效。
+			await migrateSingleFileIndex({ generationRoot: options.root });
+			const layout = await readShardLayout(options.root);
 			const storage = createStorage(options.root);
-			const store = createStore(options.root, storage);
+			const store: SessionVectorStore = layout !== null
+				? createShardedStore({
+					root: options.root,
+					shardCount: layout.shardCount,
+					createStorage: options.createStorage,
+				})
+				: createStore(options.root, storage);
 			await store.init();
 			state.store = store;
 			// 关键路径:清单也由本线程读写;主线程不再序列化整份清单。
