@@ -14,6 +14,7 @@ import type { WorkerRequest, WorkerResponse, IndexRequestIdentityPayload, Search
 import { isWorkerIndexRequest } from '../types';
 import { IndexProcessor } from './index-processor';
 import { VectraStore, type FileReplacement } from '../adapters/vector-vectra';
+import type { IndexVectorStore } from '../adapters/vector-vectra-sharded';
 import { AtomicIndexStorage } from '../adapters/atomic-index-storage';
 import type { EmbeddingsModel } from 'vectra';
 import type { EmbeddingPort } from '../ports/embedding';
@@ -312,7 +313,7 @@ function emitActivity(run: IndexRun, stage: IndexActivityStage, completedUnits: 
  * @param gate - 访问门。
  * @returns 带门与活动上报的存储视图。
  */
-function decorateStore(store: VectraStore, gate: StoreAccessGate): VectraStore {
+function decorateStore(store: IndexVectorStore, gate: StoreAccessGate): IndexVectorStore {
 	/**
 	 * 统一包装一次真实提交:提交开始上报活动(窗口打开),完成后上报完成数(窗口关闭)。
 	 *
@@ -337,9 +338,15 @@ function decorateStore(store: VectraStore, gate: StoreAccessGate): VectraStore {
 	// 关键路径(B1):`deleteByPath` 是 beginTransaction → deleteItems → endUpdate 的多步事务,
 	// 不经 `replaceFile`;查询穿过它就会读到事务中间状态。
 	const deleteByPath = (filePath: string) => runCommit(() => store.deleteByPath(filePath));
-	const upsert = (docId: string, text: string, metadata?: Record<string, unknown>) =>
-		runCommit(() => store.upsert(docId, text, metadata));
-	const remove = (docIds: string[]) => runCommit(() => store.delete(docIds));
+	// 关键路径:文档级 upsert/delete 只有单份布局提供;分片布局按文件路径路由,
+	// 不承诺文档语义,因此这里按能力包装,缺失时把原始值(undefined)透给调用方。
+	const upsert = 'upsert' in store
+		? (docId: string, text: string, metadata?: Record<string, unknown>) =>
+			runCommit(() => store.upsert(docId, text, metadata))
+		: undefined;
+	const remove = 'delete' in store
+		? (docIds: string[]) => runCommit(() => store.delete(docIds))
+		: undefined;
 	// 关键路径(B1):`recoverStore` 用的 `reload` 会重建整个内存视图,查询不得与其重叠。
 	const reload = () => runCommit(() => store.reload());
 	const search = (queryVector: number[], topK: number, filter?: SearchFilter) =>
@@ -349,8 +356,8 @@ function decorateStore(store: VectraStore, gate: StoreAccessGate): VectraStore {
 		get(target, prop) {
 			if (prop === 'replaceFile') return replaceFile;
 			if (prop === 'deleteByPath') return deleteByPath;
-			if (prop === 'upsert') return upsert;
-			if (prop === 'delete') return remove;
+			if (prop === 'upsert' && upsert !== undefined) return upsert;
+			if (prop === 'delete' && remove !== undefined) return remove;
 			if (prop === 'reload') return reload;
 			if (prop === 'search') return search;
 			if (prop === 'status') return status;
@@ -505,7 +512,7 @@ export function initProcessor(
  * @param vocab - 本地词表文本(可选);不给则沿用当前已设置的词表
  */
 export function initProcessorWithStore(
-    store: VectraStore,
+    store: IndexVectorStore,
     embeddingPort: EmbeddingPort,
     vocab?: string | null,
 ): void {
@@ -530,7 +537,7 @@ export function initProcessorWithStore(
  *
  * @returns 带门的存储视图;尚未初始化时为 null。
  */
-export function currentProcessorStore(): VectraStore | null {
+export function currentProcessorStore(): IndexVectorStore | null {
     return processor?.store ?? null;
 }
 
@@ -618,14 +625,19 @@ export async function handleMessage(
             case 'vector.upsert': {
                 const req = msg as WorkerRequest & { payload: { docId: string; text: string; metadata: Record<string, unknown> } };
                 // 关键路径:复用 processor 内部已初始化的 store,不走 await import() 临时构造。
-                await processor.store.upsert(req.payload.docId, req.payload.text, req.payload.metadata);
+                // 分片布局按文件路径路由,没有文档级 upsert;显式失败而不是静默丢写。
+                const store = processor.store;
+                if (!('upsert' in store)) throw new Error('分片布局不支持按文档 upsert,请改走文件级索引入口');
+                await store.upsert(req.payload.docId, req.payload.text, req.payload.metadata);
                 return { type: 'vector.upsert.done', payload: { docId: req.payload.docId } };
             }
 
             case 'vector.delete': {
                 const req = msg as WorkerRequest & { payload: { docIds: string[] } };
-                // 同上:复用 processor.store。
-                const count = await processor.store.delete(req.payload.docIds);
+                // 同上:复用 processor.store;分片布局只提供按路径删除。
+                const store = processor.store;
+                if (!('delete' in store)) throw new Error('分片布局不支持按文档 delete,请改走 deleteByPath');
+                const count = await store.delete(req.payload.docIds);
                 return { type: 'vector.delete.done', payload: { count } };
             }
 

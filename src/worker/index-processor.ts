@@ -16,7 +16,8 @@
 
 import { randomUUID } from 'node:crypto';
 import { chunkMarkdown, type Chunk, type ChunkOptions } from './chunker';
-import { VectraStore, type PreparedBlock } from '../adapters/vector-vectra';
+import type { PreparedBlock } from '../adapters/vector-vectra';
+import type { IndexVectorStore } from '../adapters/vector-vectra-sharded';
 import { devLogger } from '../logging/dev-logger';
 import type { EmbeddingPort, EmbedOptions } from '../ports/embedding';
 
@@ -34,14 +35,15 @@ export interface ProgressEvent {
  * Worker 内的批处理核心 — 接收文件列表,完成分块、向量化、写入 vectra。
  *
  * 关键路径:`store` 字段是 public,handler.ts 中的 `vector.upsert` / `vector.delete`
- * 需要直接复用同一份 VectraStore 引用,避免重复构造。
+ * 需要直接复用同一份向量存储引用,避免重复构造。存储按代际布局可能是单份或分片,
+ * 本类只依赖两者共有的方法语义。
  *
  * 关键路径:分块参数(`chunkOptions`)由构造时注入,三个索引入口统一走 `this.chunk()`,
  * 不再硬编码 500/100 —— 设置项才真正生效。
  */
 export class IndexProcessor {
     constructor(
-        public store: VectraStore,
+        public store: IndexVectorStore,
         private embeddings: EmbeddingPort,
         private chunkOptions: ChunkOptions,
     ) {}

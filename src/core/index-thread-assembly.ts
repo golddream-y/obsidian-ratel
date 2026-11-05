@@ -14,6 +14,9 @@ import type { EmbeddingPort } from '../ports/embedding';
 import { createEmbeddingBridge } from '../worker/index-runtime-embedding-bridge';
 import { IndexRuntimeClient } from '../worker/index-runtime-client';
 import type { RuntimeWorkerFactory } from '../worker/index-runtime-host';
+import { type IndexVectorStore, createShardedStore } from '../adapters/vector-vectra-sharded';
+import { ensureShardLayout, migrateSingleFileIndex, readShardLayout } from './index-shard-migration';
+import { shardCountForBlocks } from './index-shard-routing';
 import { IndexThreadCoordinator, type ThreadIndexClient } from './index-thread-coordinator';
 import { resolveIndexGeneration, type ResolvedIndexGeneration } from './index-processor-port';
 import type { IndexGenerations } from './index-generations';
@@ -43,6 +46,8 @@ export interface AssembleIndexThreadDeps {
 	createWorker?: RuntimeWorkerFactory;
 	/** 自定义客户端(测试注入)。 */
 	createClient?: (client: IndexRuntimeClient) => ThreadIndexClient;
+	/** 已装配好的分片存储(由 `assembleIndexThreadRuntime` 注入;直接调用管线时为 undefined)。 */
+	store?: IndexVectorStore;
 }
 
 /** 装配结果。 */
@@ -51,6 +56,14 @@ export interface AssembledIndexThreadPipeline {
 	coordinator: IndexThreadCoordinator;
 	/** 底层客户端 — 关闭/诊断用。 */
 	client: IndexRuntimeClient;
+	/**
+	 * 本代际的分片存储句柄 — 与主线程装配同一组方法语义。
+	 *
+	 * 关键路径:线程模式下**写入真相**在索引线程的会话内,这里只是装配层持有的
+	 * 同布局句柄(不 init、不参与提交),供状态读取与诊断按布局访问;不能拿它写盘,
+	 * 否则主线程与线程会各持一套存储视图。直接调用本函数(未解析代际)时为 undefined。
+	 */
+	store?: IndexVectorStore;
 }
 
 /**
@@ -83,7 +96,7 @@ export function assembleIndexThreadPipeline(deps: AssembleIndexThreadDeps): Asse
 			chunkOptions: deps.chunkOptions,
 		},
 	});
-	return { coordinator, client };
+	return { coordinator, client, ...(deps.store === undefined ? {} : { store: deps.store }) };
 }
 
 /** 需要先解析代际的装配依赖。 */
@@ -129,12 +142,25 @@ export async function assembleIndexThreadRuntime(deps: AssembleIndexThreadRuntim
 	});
 	const resolved = resolution.resolved;
 	if (resolved === null) return { resolved: null, pipeline: null };
+	// 关键路径:线程装配在起动线程之前就把布局定下来 —— 先迁移旧单份索引,再读 layout
+	// 决定片数,全新库取下限 8。这样线程会话(以及任何重启)打开时读到的都是分片布局,
+	// 不会出现「本次单份、下次分片」的撕裂。
+	// 迁移失败 fail-closed:不吞错,由调用方整体回落到主线程路径。
+	await migrateSingleFileIndex({ generationRoot: resolved.generationRoot });
+	const layout = await readShardLayout(resolved.generationRoot);
+	const store = createShardedStore({
+		root: resolved.generationRoot,
+		shardCount: layout?.shardCount ?? shardCountForBlocks(0),
+	});
 	const pipeline = assembleIndexThreadPipeline({
 		...deps,
 		indexRoot: resolved.generationRoot,
 		generationId: resolved.generationId,
 		configFingerprint: resolved.configFingerprint,
 		expectedDimension: deps.expectedDimension,
+		store,
 	});
+	// 关键路径:layout 在管线装配成功之后才落盘且幂等;装配失败不留假迁移标记。
+	if (layout === null) await ensureShardLayout(resolved.generationRoot, store.shardCount);
 	return { resolved, pipeline };
 }

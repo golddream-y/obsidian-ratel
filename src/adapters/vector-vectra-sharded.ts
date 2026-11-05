@@ -2,7 +2,7 @@
  * @file src/adapters/vector-vectra-sharded.ts
  * @description 分片向量存储适配器 — 按路径哈希路由到 N 个独立本地索引。
  * @module adapters/vector-vectra-sharded
- * @depends node:path、core/index-shard-routing、adapters/vector-vectra、adapters/atomic-index-storage
+ * @depends node:fs、node:path、core/index-shard-routing、adapters/vector-vectra、adapters/atomic-index-storage
  *
  * 设计要点:
  * - 写入只碰目标分片,单次提交体积约为全库 1/N;跨片只影响查询。
@@ -10,6 +10,7 @@
  * - 任一单片失败都必须上抛,不把该片当成空结果静默降级。
  */
 
+import fs from 'node:fs';
 import path from 'node:path';
 import type { FileStorage } from 'vectra';
 import { shardCountForBlocks, shardDirectoryName, shardIdForPath } from '../core/index-shard-routing';
@@ -31,7 +32,22 @@ export interface ShardedStoreOptions {
 	totalBlocks?: number;
 	/** 分片存储工厂;缺省使用原子索引存储。 */
 	createStorage?: (shardRoot: string) => FileStorage;
+	/**
+	 * 单片 VectraStore 工厂;缺省在分片目录内直接构造。
+	 *
+	 * 关键路径:会话/装配侧可借它注入可观测或故障注入的单片实现,但片数、路由与
+	 * 跨片归并语义仍由本适配器决定,注入方不能改变「同一路径只落一片」的契约。
+	 */
+	createStore?: (shardRoot: string, storage: FileStorage) => VectraStore;
 }
+
+/**
+ * 装配侧可见的向量存储类型 — 单份与分片实现对上层保持同一方法语义。
+ *
+ * 关键路径:布局选择只发生在装配层;上层(日志、处理器、后端)拿到的是同一组方法,
+ * 不按布局分支。需要一个具体实现时再按能力收窄(如 `getDocumentText` 仅单份布局提供)。
+ */
+export type IndexVectorStore = VectraStore | ShardedVectorStore;
 
 /**
  * 分片向量存储 — 对上层保持单库语义,内部按路径哈希路由到多个分片。
@@ -45,10 +61,12 @@ export class ShardedVectorStore {
 	private readonly count: number;
 	private batchOpen = false;
 	private readonly createStorage: (shardRoot: string) => FileStorage;
+	private readonly createStore: (shardRoot: string, storage: FileStorage) => VectraStore;
 
 	constructor(private readonly options: ShardedStoreOptions) {
 		this.count = options.shardCount ?? shardCountForBlocks(options.totalBlocks ?? 0);
 		this.createStorage = options.createStorage ?? ((shardRoot) => new AtomicIndexStorage({ generationRoot: shardRoot }));
+		this.createStore = options.createStore ?? ((shardRoot, storage) => new VectraStore(shardRoot, { autoInit: false, storage: storage }));
 	}
 
 	/** 生效片数 — 显式配置优先,否则按总块数自适应。 */
@@ -76,7 +94,7 @@ export class ShardedVectorStore {
 		const existing = this.stores.get(shardId);
 		if (existing !== undefined) return existing;
 		const root = this.shardRoot(shardId);
-		const store = new VectraStore(root, { autoInit: false, storage: this.createStorage(root) });
+		const store = this.createStore(root, this.createStorage(root));
 		await store.init();
 		this.stores.set(shardId, store);
 		return store;
@@ -192,6 +210,41 @@ export class ShardedVectorStore {
 	/** 重载全部片 — 提交失败后核对磁盘真值。 */
 	async reload(): Promise<void> {
 		for (const store of this.stores.values()) await store.reload();
+	}
+
+	/** 任一片需要重载即为真 — 上层据此拒绝用可能过期的内存视图继续查询。 */
+	isReloadRequired(): boolean {
+		for (const store of this.stores.values()) {
+			if (store.isReloadRequired()) return true;
+		}
+		return false;
+	}
+
+	/**
+	 * 分片布局是否已落盘 — 与 `VectraStore.isIndexCreated` 同语义的布局级判定。
+	 *
+	 * 关键路径:只看 `shards/layout.json`。空库只要 layout 存在就是「已建布局」,
+	 * 不能按某片是否有块判定,否则热启动会被误判成首次建库而触发全量重建。
+	 */
+	async isIndexCreated(): Promise<boolean> {
+		return fs.existsSync(path.join(this.options.root, 'shards', 'layout.json'));
+	}
+
+	/**
+	 * 清空全部片的数据 — 与 `VectraStore.dropIndex` 对齐的清库入口。
+	 *
+	 * 关键路径:逐片走各自守卫后的删除,不直接递归删 `shards/` 根;layout 是布局标记,
+	 * 清数据不改变片数,保留它才能让下一轮写入仍落在同一组片目录。
+	 */
+	async dropIndex(): Promise<void> {
+		const shardIds = [...this.stores.keys()].sort((left, right) => left - right);
+		for (const shardId of shardIds) {
+			const store = this.stores.get(shardId);
+			if (store !== undefined) await store.dropIndex();
+		}
+		this.stores.clear();
+		this.batchShards.clear();
+		this.batchOpen = false;
 	}
 
 	/** 仅测试使用 — 取指定分片的底层存储以注入故障。 */

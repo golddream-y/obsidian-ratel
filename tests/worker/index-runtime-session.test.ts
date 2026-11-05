@@ -560,7 +560,7 @@ describe('批量写入', () => {
 		expect(listed.records.map((record) => record.path)).toEqual(['a.md', 'b.md', 'c.md']);
 	});
 
-	it('一百篇整批写入 - 不设固定文件数上限 - 索引只写一次且每篇可查回', async () => {
+	it('一百篇整批写入 - 不设固定文件数上限 - 每片只写一次且每篇可查回', async () => {
 		let indexWrites = 0;
 		const handlers = createIndexSessionHandlers({
 			root,
@@ -581,7 +581,10 @@ describe('批量写入', () => {
 		const files = Array.from({ length: 100 }, (_, index) => ({ path: `note-${index}.md`, content: `第 ${index} 篇正文` }));
 		const result = await handlers['session.upsertFiles']!({ files }, makeContext().ctx) as { results: Array<{ path: string }> };
 		expect(result.results).toHaveLength(files.length);
-		expect(indexWrites - baseline).toBe(1);
+		// 关键路径:分片布局下一批最多每片提交一次;100 篇落在 8 片上界内,
+		// 不再随文件数线性增长(旧断言 `toBe(1)` 是单份 index.json 时代的读数)。
+		expect(indexWrites - baseline).toBeGreaterThan(0);
+		expect(indexWrites - baseline).toBeLessThanOrEqual(8);
 		const hits = await handlers['session.searchVector']!({ vector: Array.from({ length: DIMENSIONS }, () => 0.1), topK: 100 }) as { hits: Array<{ path: string }> };
 		expect(new Set(hits.hits.map((hit) => hit.path))).toEqual(new Set(files.map((file) => file.path)));
 	}, 30_000);

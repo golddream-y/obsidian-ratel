@@ -77,6 +77,23 @@ function makeStore(overrides: {
 	} as unknown as VectraStore;
 }
 
+/**
+ * 折叠分片扇出 — 同一逻辑操作会按片重复记录,连续同值折叠后即逻辑事件序列。
+ *
+ * 关键路径:会话现在总是装配分片存储;查询向每片各发一次,提交只落到目标片。
+ * 用例关心的是会话访问门的**顺序**(提交先于查询、排队查询优先),不是片内次数。
+ *
+ * @param events - 原始存储事件。
+ * @returns 去掉连续重复后的逻辑事件序列。
+ */
+function collapseShardFanout(events: readonly string[]): string[] {
+	const result: string[] = [];
+	for (const event of events) {
+		if (result.at(-1) !== event) result.push(event);
+	}
+	return result;
+}
+
 describe('独立索引会话查询调度', () => {
 	it('查询嵌入与读取 - 索引仍在准备推理 - 不等待索引提交即可返回', async () => {
 		const indexEmbedding = deferred();
@@ -102,7 +119,7 @@ describe('独立索引会话查询调度', () => {
 		try {
 			await expect(querying).resolves.toEqual({ hits: [] });
 			expect(embeddingEvents).toContain('query:embed:end');
-			expect(storageEvents).toEqual(['search']);
+			expect(collapseShardFanout(storageEvents)).toEqual(['search']);
 		} finally {
 			indexEmbedding.release();
 			await indexing;
@@ -141,7 +158,7 @@ describe('独立索引会话查询调度', () => {
 			commit.release();
 			await expectAllFulfilled([indexing, querying]);
 		}
-		expect(storageEvents).toEqual(['commit:start', 'commit:end', 'search']);
+		expect(collapseShardFanout(storageEvents)).toEqual(['commit:start', 'commit:end', 'search']);
 	});
 
 	it('后续索引提交 - 当前提交结束时已有排队查询 - 查询先完成再进入后续提交', async () => {
@@ -189,7 +206,7 @@ describe('独立索引会话查询调度', () => {
 			queryRead.release();
 			await expectAllFulfilled([firstIndexing, querying, secondIndexing]);
 		}
-		expect(storageEvents).toEqual([
+		expect(collapseShardFanout(storageEvents)).toEqual([
 			'commit:a.md:start',
 			'commit:a.md:end',
 			'search:start',
@@ -253,7 +270,7 @@ describe('独立索引会话查询调度', () => {
 			queryRead.release();
 			await expectAllFulfilled([batching, querying, nextIndexing]);
 		}
-		expect(storageEvents).toEqual([
+		expect(collapseShardFanout(storageEvents)).toEqual([
 			'batch:begin',
 			'commit:a.md:start',
 			'commit:a.md:end',
@@ -317,7 +334,7 @@ describe('独立索引会话查询调度', () => {
 			const results = await Promise.allSettled([failedIndexing, querying, nextIndexing]);
 			expect(results.map((result) => result.status)).toEqual(['rejected', 'fulfilled', 'fulfilled']);
 		}
-		expect(storageEvents).toEqual([
+		expect(collapseShardFanout(storageEvents)).toEqual([
 			'commit:a.md:start',
 			'commit:a.md:end',
 			'search:start',
@@ -366,9 +383,10 @@ describe('独立索引会话查询调度', () => {
 			await expectAllFulfilled([batching, querying]);
 		}
 		expect(queryFulfilledBeforeEmbedRelease).toBe(true);
-		expect(storageEventsBeforeEmbedRelease).toEqual(['search']);
+		expect(collapseShardFanout(storageEventsBeforeEmbedRelease)).toEqual(['search']);
 		expect(embeddingEvents.filter((event) => event === 'batch:embed:end')).toHaveLength(2);
-		expect(storageEvents).toEqual(['search', 'batch:begin', 'commit:a.md', 'commit:b.md', 'batch:end']);
+		// 两篇落在不同片:批内首次写每片时各自补开批,因此按片出现两次 batch:begin。
+		expect(collapseShardFanout(storageEvents)).toEqual(['search', 'batch:begin', 'commit:a.md', 'batch:begin', 'commit:b.md', 'batch:end']);
 	});
 
 	it('向量查询拒绝 - 后续提交等待在途读取 - 清理读取计数并唤醒提交', async () => {
@@ -408,7 +426,7 @@ describe('独立索引会话查询调度', () => {
 			const results = await Promise.allSettled([querying, nextIndexing]);
 			expect(results.map((result) => result.status)).toEqual(['rejected', 'fulfilled']);
 		}
-		expect(storageEventsBeforeReadRelease).toEqual(['search:start']);
-		expect(storageEvents).toEqual(['search:start', 'search:end', 'commit:b.md:start', 'commit:b.md:end']);
+		expect(collapseShardFanout(storageEventsBeforeReadRelease)).toEqual(['search:start']);
+		expect(collapseShardFanout(storageEvents)).toEqual(['search:start', 'search:end', 'commit:b.md:start', 'commit:b.md:end']);
 	});
 });

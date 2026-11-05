@@ -30,7 +30,9 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-	if (root) await fsp.rm(root, { recursive: true, force: true });
+	// 关键路径:分片写入在撤销后仍可能有一段收尾 IO,删除目录给少量重试窗口,
+	// 否则偶发 ENOTEMPTY 会把「已断言成功」的用例记成失败。
+	if (root) await fsp.rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 25 });
 });
 
 /** 把宿主客户端与服务循环直接对接的假线程。 */

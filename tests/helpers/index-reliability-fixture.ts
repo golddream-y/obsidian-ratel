@@ -12,7 +12,7 @@
  */
 
 import fsp from 'node:fs/promises';
-import fs from 'node:fs';
+import fs, { type Dirent } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { LocalDocumentIndex, LocalFileStorage } from 'vectra';
@@ -522,12 +522,43 @@ export async function listBlockIdsByMetadata(index: LocalDocumentIndex, filePath
  * @returns 磁盘上的块 ID 列表。
  */
 export async function readDiskBlockIds(folderPath: string, filePath: string): Promise<string[]> {
-	const raw = await fsp.readFile(path.join(folderPath, 'index.json'), 'utf8');
-	const data: unknown = JSON.parse(raw);
-	if (!isIndexFileShape(data)) throw new Error('index.json 结构不符合预期');
-	return data.items
+	// 关键路径:分片布局下块散落在 `shards/<hh>/index.json`;没有分片目录才按旧单份布局读。
+	const files = await indexPersistenceFiles(folderPath);
+	const items: Array<{ id: string; metadata: { path?: string } }> = [];
+	for (const file of files) {
+		let raw: string;
+		try {
+			raw = await fsp.readFile(file, 'utf8');
+		}
+		catch (error) {
+			// 关键路径:片目录可能存在但索引文件尚未落盘,缺文件按空片处理。
+			if ((error as { code?: unknown }).code === 'ENOENT') continue;
+			throw error;
+		}
+		const data: unknown = JSON.parse(raw);
+		if (!isIndexFileShape(data)) throw new Error('index.json 结构不符合预期');
+		items.push(...data.items);
+	}
+	return items
 		.filter((item) => item.metadata.path === filePath)
 		.map((item) => item.id);
+}
+
+/** 列出代际目录下参与块持久化的文件 — 分片布局按片列出,否则回落单份 `index.json`。 */
+async function indexPersistenceFiles(folderPath: string): Promise<string[]> {
+	const shardsRoot = path.join(folderPath, 'shards');
+	let entries: Dirent[];
+	try {
+		entries = await fsp.readdir(shardsRoot, { withFileTypes: true });
+	}
+	catch (error) {
+		if ((error as { code?: unknown }).code !== 'ENOENT') throw error;
+		return [path.join(folderPath, 'index.json')];
+	}
+	const files = entries
+		.filter((entry) => entry.isDirectory())
+		.map((entry) => path.join(shardsRoot, entry.name, 'index.json'));
+	return files.length === 0 ? [path.join(folderPath, 'index.json')] : files;
 }
 
 /** 磁盘 `index.json` 的原始字节数与内容摘要,用于证明「原文件保持」。 */

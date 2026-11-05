@@ -14,7 +14,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import type { VectraStore } from '../adapters/vector-vectra';
+import type { IndexVectorStore } from '../adapters/vector-vectra-sharded';
 import type { WorkerManager, WorkerRequestOptions } from '../worker/manager';
 import type { ChunkOptionsPayload, WorkerRequest, WorkerResponse } from '../types';
 import type { CommittedIndexState, IndexBackend } from './index-manager';
@@ -264,12 +264,12 @@ export interface IndexRoundCounters {
 	failures?: number;
 }
 
-/** 装配端口通过 getter 读取，兼容模型就绪后替换 VectraStore 的生命周期。 */
+/** 装配端口通过 getter 读取，兼容模型就绪后替换存储的生命周期(单份或分片)。 */
 export interface PersistentIndexBackendOptions {
 	indexDir: string;
 	manifest: IndexManifest;
 	worker: WorkerManager;
-	getStore: () => VectraStore;
+	getStore: () => IndexVectorStore;
 	vault: {
 		listMarkdownFiles(): string[];
 		readFile(path: string): Promise<string>;

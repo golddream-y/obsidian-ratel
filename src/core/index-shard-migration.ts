@@ -122,6 +122,43 @@ export async function migrateSingleFileIndex(options: ShardMigrationOptions): Pr
 }
 
 /**
+ * 确保代际目录存在分片布局标记 — 全新库首次装配时写入 `shards/layout.json`。
+ *
+ * 关键路径:
+ * - **幂等**:已有合法布局时原样返回,不覆盖既有片数 —— 片数只允许通过重分布改变,
+ *   装配侧重试或并发装配都不应改写它;
+ * - **成功装配后才写**:调用方必须先构造好分片存储再调用本函数,写入失败时不会留下
+ *   「有 layout 无存储」的假迁移状态;
+ * - **原子写入**:同目录临时文件 + rename,中断不会留下半截 JSON;
+ * - 块数固定为 0:全新库还没有向量,块数只是诊断读数,不参与片数判定。
+ *
+ * @param generationRoot - 代际根目录(与 `index.json`、`shards/` 同一层)。
+ * @param shardCount - 期望片数;必须为正整数(由 `shardCountForBlocks` 派生)。
+ * @returns 生效的片数与块数;已存在布局时返回既有值。
+ * @throws {Error} 片数非法或写入磁盘失败。
+ */
+export async function ensureShardLayout(
+	generationRoot: string,
+	shardCount: number,
+): Promise<{ shardCount: number; blockCount: number }> {
+	const shardsRoot = path.join(path.resolve(generationRoot), 'shards');
+	const layoutPath = path.join(shardsRoot, 'layout.json');
+	// 关键路径:先读已有布局 —— 已存在就不覆盖,避免重试把更大的片数改小。
+	const existing = await readLayout(layoutPath);
+	if (existing !== null) return { shardCount: existing.shardCount, blockCount: existing.blockCount };
+	if (!Number.isInteger(shardCount) || shardCount <= 0) throw new Error(`分片数必须是正整数:${shardCount}`);
+	await mkdir(shardsRoot, { recursive: true });
+	const layoutFile: ShardLayoutFile = {
+		version: 1,
+		shardCount,
+		blockCount: 0,
+		migratedAt: Date.now(),
+	};
+	await writeAtomic(layoutPath, JSON.stringify(layoutFile));
+	return { shardCount, blockCount: 0 };
+}
+
+/**
  * 只读读取分片布局 — 供会话装配判断本轮该用分片存储还是退回单份存储。
  *
  * 关键路径:缺失或非法时返回 null 而不抛错。layout 只是「是否已迁移」的标记,

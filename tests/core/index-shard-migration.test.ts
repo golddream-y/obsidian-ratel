@@ -5,7 +5,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { AtomicIndexStorage } from '../../src/adapters/atomic-index-storage';
 import { VectraStore } from '../../src/adapters/vector-vectra';
 import { createShardedStore } from '../../src/adapters/vector-vectra-sharded';
-import { migrateSingleFileIndex, readShardLayout } from '../../src/core/index-shard-migration';
+import { ensureShardLayout, migrateSingleFileIndex, readShardLayout } from '../../src/core/index-shard-migration';
+import { MIN_SHARDS } from '../../src/core/index-shard-routing';
 
 const roots: string[] = [];
 
@@ -127,5 +128,39 @@ describe('分片布局只读读取', () => {
 		roots.push(root);
 		// 未迁移的空目录:既没有 shards/layout.json,也不该因此抛错。
 		await expect(readShardLayout(root)).resolves.toBeNull();
+	});
+});
+
+describe('全新库布局补齐', () => {
+	it('无布局的空代际 - 写入合法 layout - 片数与块数如实记录', async () => {
+		const root = await mkdtemp(path.join(os.tmpdir(), 'ratel-migrate-'));
+		roots.push(root);
+		const written = await ensureShardLayout(root, MIN_SHARDS);
+		expect(written).toEqual({ shardCount: MIN_SHARDS, blockCount: 0 });
+		const layout = await readShardLayout(root);
+		expect(layout).toEqual({ shardCount: MIN_SHARDS, blockCount: 0 });
+		const raw = JSON.parse(await readFile(path.join(root, 'shards', 'layout.json'), 'utf8')) as Record<string, unknown>;
+		expect(raw).toMatchObject({ version: 1, shardCount: MIN_SHARDS, blockCount: 0 });
+		expect(typeof raw['migratedAt']).toBe('number');
+		// 关键路径:补布局不是迁移,不得产生单份 index.json。
+		expect(await exists(path.join(root, 'index.json'))).toBe(false);
+	});
+
+	it('已有布局 - 原样返回 - 不覆盖既有片数', async () => {
+		const root = await mkdtemp(path.join(os.tmpdir(), 'ratel-migrate-'));
+		roots.push(root);
+		await ensureShardLayout(root, MIN_SHARDS);
+		const before = await readFile(path.join(root, 'shards', 'layout.json'), 'utf8');
+		const second = await ensureShardLayout(root, MIN_SHARDS * 2);
+		expect(second).toEqual({ shardCount: MIN_SHARDS, blockCount: 0 });
+		// 幂等:文件内容逐字不变。
+		expect(await readFile(path.join(root, 'shards', 'layout.json'), 'utf8')).toBe(before);
+	});
+
+	it('片数非法 - 明确拒绝 - 不落任何布局文件', async () => {
+		const root = await mkdtemp(path.join(os.tmpdir(), 'ratel-migrate-'));
+		roots.push(root);
+		await expect(ensureShardLayout(root, 0)).rejects.toThrow('分片数必须是正整数');
+		expect(await exists(path.join(root, 'shards', 'layout.json'))).toBe(false);
 	});
 });

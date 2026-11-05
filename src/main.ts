@@ -43,6 +43,7 @@ import { EmbeddingApi } from './adapters/embedding-api';
 import { EmbeddingLocal } from './adapters/embedding-local';
 import { EmbeddingWorkerProxy } from './adapters/embedding-worker-proxy';
 import { VectraStore } from './adapters/vector-vectra';
+import type { IndexVectorStore } from './adapters/vector-vectra-sharded';
 import { AtomicIndexStorage } from './adapters/atomic-index-storage';
 import { IndexWriteOwner } from './core/index-write-owner';
 import { IndexGenerations } from './core/index-generations';
@@ -281,8 +282,9 @@ export default class RatelVaultPlugin extends Plugin {
 	/** MCP Host — 多 Server 编排；默认空配置零出站 */
 	mcpHost!: McpHost;
 	workerManager!: WorkerManager;
-	// 关键路径:vectraStore 持有 vectra 索引目录的引用,需在 plugin 生命周期内常驻。
-	vectraStore!: VectraStore;
+	// 关键路径:vectraStore 持有向量索引目录的引用,需在 plugin 生命周期内常驻;
+	// 布局按代际固定(分片为常态),上层只依赖两者共有的方法语义。
+	vectraStore!: IndexVectorStore;
 	// 关键路径:InlineWorker 在主线程模拟 Worker,用于 Obsidian 渲染进程不支持 Worker Threads 的环境。
 	private inlineWorker?: InlineWorker;
 	// 关键路径:EmbeddingWorkerProxy 把 ONNX 推理移入 Web Worker,onunload 时需 terminate 释放线程。

@@ -19,8 +19,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 
+import type { FileStorage } from 'vectra';
 import { AtomicIndexStorage } from '../adapters/atomic-index-storage';
 import { VectraStore, type FileReplaceStore } from '../adapters/vector-vectra';
+import { type IndexVectorStore, createShardedStore } from '../adapters/vector-vectra-sharded';
+import {
+	ensureShardLayout,
+	migrateSingleFileIndex,
+	readShardLayout,
+} from './index-shard-migration';
+import { shardCountForBlocks } from './index-shard-routing';
 import { devLogger } from '../logging/dev-logger';
 import { sha256 } from '../utils/hash';
 import { resolveIndexManifestPath } from './index-manifest';
@@ -407,7 +415,8 @@ export interface AssembleIndexPipelineDeps {
 
 /** 写路径管线装配结果 — 存储、日志、可见性视图、协调器与看护。 */
 export interface AssembledIndexPipeline {
-	store: VectraStore;
+	/** 向量存储 — 布局已固定为分片,对上层保持与单份 `VectraStore` 一致的方法语义。 */
+	store: IndexVectorStore;
 	journal: IndexFileJournal;
 	readOnlySearchView: ReadOnlySearchView;
 	processorPort: ChunkingCoordinatorProcessor;
@@ -425,15 +434,36 @@ export interface AssembledIndexPipeline {
  *   而访问门由处理器在模型就绪后才建立 —— 这里用转发视图把两者接起来。
  * - 可见性视图与 `fileRecords` 端口**同批**注入:门在记录不可判定时失败关闭,
  *   缺端口会变成检索全量归零。
+ * - 存储统一走分片:先迁移旧单份索引 → 读 layout → 全新库补 layout → 建分片存储;
+ *   装配成功后才落 layout,失败不会留下「有 layout 无存储」的假迁移标记。
  *
  * @param deps - 装配依赖(全部由调用方注入)。
  * @returns 管线对象。
+ * @throws {Error} 迁移失败或 layout 写入失败;此时不产出任何存储视图。
  */
-export function assembleIndexPipeline(deps: AssembleIndexPipelineDeps): AssembledIndexPipeline {
+export async function assembleIndexPipeline(deps: AssembleIndexPipelineDeps): Promise<AssembledIndexPipeline> {
 	const createStorage = deps.createStorage ?? createIndexRuntimeStorage;
-	const createStore = deps.createStore ?? createIndexRuntimeStore;
 	const storage = createStorage(deps.indexDir);
-	const store = createStore(deps.indexDir, { autoInit: true, storage });
+	// 关键路径:迁移失败 fail-closed(不 try/catch)—— 半拆分的旧文件与后续提交
+	// 同时生效会让块集合无法判定,宁可让上层走降级出口。
+	await migrateSingleFileIndex({ generationRoot: deps.indexDir });
+	const layout = await readShardLayout(deps.indexDir);
+	const store = createShardedStore({
+		root: deps.indexDir,
+		shardCount: layout?.shardCount ?? shardCountForBlocks(0),
+		createStorage: (shardRoot) => createStorage(shardRoot),
+		// 关键路径:注入的存储工厂下沉为**单片**工厂 —— 观测/故障注入的接缝保留,
+		// 但片数、路由与跨片归并仍由分片适配器决定,注入方不能改变布局。
+		...(deps.createStore === undefined
+			? {}
+			: {
+				createStore: (shardRoot: string, shardStorage: FileStorage) =>
+					deps.createStore!(shardRoot, { autoInit: true, storage: shardStorage as AtomicIndexStorage }),
+			}),
+	});
+	// 关键路径:写路径装配沿用旧的「装配即建库」语义 —— 预热全部片,让磁盘上从第一次
+	// 启动起就有可识别的分片索引;否则随后以只读模式启动时的首个查询会补写缺失的片文件。
+	await store.init();
 	const journal = new IndexFileJournal({
 		generationRoot: deps.indexDir,
 		generationId: deps.generationId,
@@ -479,6 +509,10 @@ export function assembleIndexPipeline(deps: AssembleIndexPipelineDeps): Assemble
 		onStall: (info) => devLogger.warn('index', `索引停滞:无有效进展 ${info.idleMs}ms`, info),
 		onResume: (info) => devLogger.info('index', `索引恢复:有效进展 ${info.progressMark}`),
 	});
+	// 关键路径:全新代际(无 layout、无旧索引)也要落布局,使新库从第一次索引起就是分片;
+	// **必须在整条管线装配成功之后**才写,失败路径不会留下「有 layout 无可用装配」的假标记。
+	// 已存在时不覆盖,片数只能通过重分布改变。
+	if (layout === null) await ensureShardLayout(deps.indexDir, store.shardCount);
 	return { store, journal, readOnlySearchView, processorPort, coordinator, stallWatchdog };
 }
 
@@ -680,7 +714,7 @@ async function finishWritableRuntime(
 		await generations.beginVerification({ generationId });
 	}
 
-	const pipeline = assembleIndexPipeline({
+	const pipeline = await assembleIndexPipeline({
 		indexDir,
 		generationId,
 		configFingerprint: deps.configFingerprint,
@@ -751,7 +785,7 @@ export interface ReadOnlyIndexRuntime {
 	/** 只读可见性视图;无活动代际时为 undefined。 */
 	readOnlySearchView?: ReadOnlySearchView;
 	/** 只读存储;无活动代际时为 undefined。 */
-	store?: VectraStore;
+	store?: IndexVectorStore;
 }
 
 /**
@@ -816,8 +850,16 @@ export async function setupReadOnlyIndexRuntime(
 	const active = control.activeGenerationId;
 	const indexDir = generations.generationRootOf(active);
 	const storage = createStorage(indexDir);
-	// 关键路径:只读装配不得初始化存储(autoInit:false 才不落盘)。
-	const store = createStore(indexDir, { autoInit: false, storage });
+	// 关键路径:只读装配只读布局、不迁移也不补 layout(零写入契约)。
+	// 已有分片布局时按 layout 片数装配分片存储;没有布局才回落单份存储。
+	const layout = await readShardLayout(indexDir);
+	const store: IndexVectorStore = layout === null
+		? createStore(indexDir, { autoInit: false, storage })
+		: createShardedStore({
+			root: indexDir,
+			shardCount: layout.shardCount,
+			createStorage: (shardRoot) => createStorage(shardRoot),
+		});
 	const journal = new IndexFileJournal({
 		generationRoot: indexDir,
 		generationId: active,

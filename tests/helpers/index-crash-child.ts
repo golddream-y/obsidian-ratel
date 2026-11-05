@@ -23,7 +23,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 
 import { AtomicIndexStorage } from '../../src/adapters/atomic-index-storage';
-import { VectraStore } from '../../src/adapters/vector-vectra';
+import type { IndexVectorStore } from '../../src/adapters/vector-vectra-sharded';
 import { PersistentIndexBackend } from '../../src/core/persistent-index-backend';
 import { IndexManager } from '../../src/core/index-manager';
 import { IndexManifest, resolveIndexManifestPath, CURRENT_CHUNKER_VERSION } from '../../src/core/index-manifest';
@@ -551,7 +551,7 @@ export interface IndexHarness {
 	readonly indexRoot: string;
 	readonly indexDir: string;
 	readonly generationId: string;
-	readonly store: VectraStore;
+	readonly store: IndexVectorStore;
 	readonly journal: IndexFileJournal;
 	readonly coordinator: IndexTaskCoordinator;
 	readonly generations: IndexGenerations;

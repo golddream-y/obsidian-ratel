@@ -7,7 +7,7 @@
  * 设计要点:
  * - 实现 WorkerLike 接口,对 WorkerManager 透明。
  * - 直接调用 handleMessage,响应通过 setTimeout(..., 0) 异步回调,模拟 postMessage。
- * - 复用主线程的 VectraStore,避免双写冲突。
+ * - 复用主线程的向量存储(单份或分片),避免双写冲突。
  * - 不导入 obsidian,与 Worker 约束一致。
  *
  * T5 分道规则(与 `src/worker/index.ts` 共用 `WorkerMessageLane`):
@@ -19,7 +19,7 @@
 
 import type { WorkerRequest, WorkerResponse } from '../types';
 import { isWorkerReadRequest, isWorkerStoreWriteRequest } from '../types';
-import { VectraStore } from '../adapters/vector-vectra';
+import type { IndexVectorStore } from '../adapters/vector-vectra-sharded';
 import { handleMessage, initProcessorWithStore, cancelIndexRun, WorkerMessageLane } from './handler';
 import type { WorkerLike } from './manager';
 import type { EmbeddingPort } from '../ports/embedding';
@@ -46,13 +46,13 @@ export class InlineWorker implements WorkerLike {
 	private readonly lane = new WorkerMessageLane();
 
 	/**
-	 * 用已构造好的 VectraStore 初始化 processor。
+	 * 用已构造好的向量存储(单份或分片)初始化 processor。
 	 *
 	 * 关键路径:InlineWorker 创建时模型可能尚未下载完成,
 	 * 因此把 init 延迟到主线程 onLayoutReady 模型就绪后。
 	 * `embeddingPort`(EmbeddingPort)由主线程注入,IndexProcessor 用它批量 embed chunk 文本。
 	 */
-	initWithStore(store: VectraStore, embeddingPort: EmbeddingPort): void {
+	initWithStore(store: IndexVectorStore, embeddingPort: EmbeddingPort): void {
 		initProcessorWithStore(store, embeddingPort);
 	}
 

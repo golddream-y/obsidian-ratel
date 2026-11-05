@@ -14,7 +14,8 @@ import { randomUUID } from 'node:crypto';
 import { VectraStore, type PreparedBlock } from '../adapters/vector-vectra';
 import { createShardedStore, type ShardedVectorStore } from '../adapters/vector-vectra-sharded';
 import { AtomicIndexStorage } from '../adapters/atomic-index-storage';
-import { migrateSingleFileIndex, readShardLayout } from '../core/index-shard-migration';
+import { ensureShardLayout, migrateSingleFileIndex, readShardLayout } from '../core/index-shard-migration';
+import { shardCountForBlocks } from '../core/index-shard-routing';
 import { devLogger } from '../logging/dev-logger';
 import { chunkMarkdown, type ChunkOptions } from './chunker';
 import { createWorkerJournal, WorkerJournalOwner } from './index-runtime-journal';
@@ -282,22 +283,25 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 	const handlers: RuntimeHandlers = {
 		'session.open': async (payload) => {
 			if (state.store !== null) return { alreadyOpen: true };
-			// 关键路径:启动先尝试一次旧单份布局迁移,再读 layout 决定装配方式。
+			// 关键路径:启动先尝试一次旧单份布局迁移,再读 layout 决定片数。
 			// 迁移失败直接上抛(fail-closed):不吞错、不退回写单份索引 ——
 			// 退回会绕过迁移,让半拆分的旧文件与后续提交同时生效。
 			await migrateSingleFileIndex({ generationRoot: options.root });
 			const layout = await readShardLayout(options.root);
 			const storage = createStorage(options.root);
-			const store: SessionVectorStore = layout !== null
-				? createShardedStore({
-					root: options.root,
-					shardCount: layout.shardCount,
-					createStorage: options.createStorage,
-				})
-				: createStore(options.root, storage);
+			// 关键路径:全新代际(无 layout、无旧 index.json)也走分片,片数取下限 8。
+			// 这样新装用户从第一次索引起就是分片布局,不再有「单份 → 迁移」的二段式。
+			const store = createShardedStore({
+				root: options.root,
+				shardCount: layout?.shardCount ?? shardCountForBlocks(0),
+				createStorage: (shardRoot) => createStorage(shardRoot),
+				createStore: (shardRoot, shardStorage) => createStore(shardRoot, shardStorage as AtomicIndexStorage),
+			});
 			await store.init();
+			// 关键路径:layout 必须在存储装配成功之后才落盘,并保持幂等(已存在不覆盖)。
+			// 装配失败时不会留下「有 layout 无存储」的假迁移标记,下次启动可安全重试。
+			if (layout === null) await ensureShardLayout(options.root, store.shardCount);
 			state.store = store;
-			// 关键路径:清单也由本线程读写;主线程不再序列化整份清单。
 			state.manifest = new IndexManifest(resolveIndexManifestPath(options.root));
 
 			// 关键路径:给了日志授权才启用「带完成记录」的提交;否则退回纯存储写入。

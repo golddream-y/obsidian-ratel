@@ -57,7 +57,7 @@ describe('VectraStore', () => {
 		const queryVector = Array(512).fill(0).map(() => Math.random());
 		const results = await store.search(queryVector, 5);
 		expect(results.length).toBeGreaterThan(0);
-		expect(results[0].docId).toBe('doc1');
+		expect(results[0]!.docId).toBe('doc1');
 	});
 
 	it('deletes documents', async () => {
@@ -112,7 +112,7 @@ describe('VectraStore', () => {
 
 		const results = await store.search(vector, 1);
 		expect(results.length).toBeGreaterThan(0);
-		expect(results[0].docId).toBe('precomputed-1');
+		expect(results[0]!.docId).toBe('precomputed-1');
 	});
 
 	it('upsertItem - 事务回滚后数据不写入', async () => {
@@ -923,6 +923,8 @@ describe('生产装配 - VectraStore 构造点存储注入契约', () => {
 		for (const site of sites) sitesByFile[site.file] = (sitesByFile[site.file] ?? 0) + 1;
 		expect(sitesByFile).toEqual({
 			'src/core/index-runtime-assembly.ts': 2,
+			// 分片适配器的缺省单片工厂 — 同样必须注入同一份原子存储。
+			'src/adapters/vector-vectra-sharded.ts': 1,
 			'src/main.ts': 1,
 			'src/worker/handler.ts': 1,
 			// 索引线程与 T0 实验各有一处构造点,同样必须注入同一份原子存储。

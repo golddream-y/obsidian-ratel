@@ -75,6 +75,11 @@ export function renderEmbeddingTest(container: HTMLElement, plugin: RatelVaultPl
 				renderError(searchResult, formatError(tNow('diag.embedding.errorNoVectra')));
 				return;
 			}
+			// 关键路径:chunk 原文回查只有单份布局提供;分片布局按路径路由、没有文档目录,
+			// 这里按能力降级为「索引读取失败」提示,不影响检索结果本身。
+			const readDocumentText: (uri: string) => Promise<string | null> = 'getDocumentText' in vectraStore
+				? (uri) => vectraStore.getDocumentText(uri)
+				: async () => null;
 
 			const t0 = performance.now();
 			const vectors = await embedding.embed([query]);
@@ -114,7 +119,7 @@ export function renderEmbeddingTest(container: HTMLElement, plugin: RatelVaultPl
 				// 异步加载 chunk text 摘要
 				const previewDiv = itemDiv.createDiv({ attr: { style: 'font-size:12px;color:var(--text-muted);margin-top:6px;white-space:pre-wrap;' } });
 				previewDiv.createSpan({ text: tNow('diag.embedding.loading'), attr: { style: 'font-style:italic;' } });
-				vectraStore.getDocumentText(r.docId).then((text) => {
+				readDocumentText(r.docId).then((text) => {
 					previewDiv.empty();
 					if (text === null) {
 						previewDiv.createSpan({ text: tNow('diag.embedding.indexReadFailed'), attr: { style: 'font-style:italic;color:var(--text-faint);' } });

@@ -308,14 +308,44 @@ interface DiskBlock {
 	metadata: { path?: string; chunkIndex?: number; commitId?: string };
 }
 
-/** 直读 `index.json` 取某路径的全部块 — 独立于内存视图的磁盘真值。 */
+/** 直读持久化索引取某路径的全部块 — 独立于内存视图的磁盘真值。 */
 async function readDiskBlocks(indexDir: string, filePath: string): Promise<DiskBlock[]> {
-	const raw = await fsp.readFile(path.join(indexDir, 'index.json'), 'utf8');
-	const parsed = JSON.parse(raw) as { items?: Array<{ id: string; vector: number[]; metadata: DiskBlock['metadata'] }> };
-	const items = parsed.items ?? [];
+	// 关键路径:分片布局下块散落在 `shards/<hh>/index.json`;没有分片目录才按旧单份布局读。
+	const files = await indexPersistenceFiles(indexDir);
+	const items: Array<{ id: string; vector: number[]; metadata: DiskBlock['metadata'] }> = [];
+	for (const file of files) {
+		let raw: string;
+		try {
+			raw = await fsp.readFile(file, 'utf8');
+		}
+		catch (error) {
+			// 关键路径:片目录可能存在但索引尚未落盘,缺文件按空片处理。
+			if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
+			throw error;
+		}
+		const parsed = JSON.parse(raw) as { items?: typeof items };
+		items.push(...(parsed.items ?? []));
+	}
 	return items
 		.filter((item) => item.metadata?.path === filePath)
 		.map((item) => ({ id: item.id, vector: item.vector, metadata: item.metadata }));
+}
+
+/** 列出代际目录下参与块持久化的文件 — 分片布局按片列出,否则回落单份 `index.json`。 */
+async function indexPersistenceFiles(indexDir: string): Promise<string[]> {
+	const shardsRoot = path.join(indexDir, 'shards');
+	let entries: fs.Dirent[];
+	try {
+		entries = await fsp.readdir(shardsRoot, { withFileTypes: true });
+	}
+	catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+		return [path.join(indexDir, 'index.json')];
+	}
+	const files = entries
+		.filter((entry) => entry.isDirectory())
+		.map((entry) => path.join(shardsRoot, entry.name, 'index.json'));
+	return files.length === 0 ? [path.join(indexDir, 'index.json')] : files;
 }
 
 /**
@@ -845,7 +875,10 @@ describe('重启语义 — 完整一轮后的零变化与文件变更(A1/A3/A5)'
 			const indexDir = indexRootOf(scenario);
 			const before = await snapshotDir(indexDir);
 			// 前置事实:向量数据确实存在(否则「未重写」无意义)。
-			expect(before.has('index.json')).toBe(true);
+			// 分片布局下块在 `shards/<hh>/index.json`;两种布局都算有向量数据。
+			const hasVectorFiles = [...before.keys()].some((file) => file === 'index.json'
+				|| /^shards[\\/][0-9a-f]{2}[\\/]index\.json$/.test(file));
+			expect(hasVectorFiles).toBe(true);
 
 			const second = await runRecovery(scenario);
 			await second.harness.dispose();
