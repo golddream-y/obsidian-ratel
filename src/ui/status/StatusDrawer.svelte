@@ -151,6 +151,12 @@
 
 </script>
 
+{#snippet indexCount()}
+	{#if progress.total > 0}
+		<span class="ratel-index-count">{$t('status.drawer.indexedCount', { count: progress.completed, total: progress.total })}</span>
+	{/if}
+{/snippet}
+
 <div class="ratel-drawer" class:ratel-drawer-open={expanded}>
 	<div class="ratel-drawer-inner">
 		<div class="ratel-drawer-section-title ratel-drawer-section-title--with-aside">
@@ -159,21 +165,22 @@
 				{embedKind === 'api' ? $t('status.drawer.embedBadge.api') : $t('status.drawer.embedBadge.local')}
 			</span>
 		</div>
+		<!-- 关键路径(2026-11-06):ready 时顶部状态栏已显示「就绪」,抽屉不再重复;
+		     完成的语义由满格进度条与计数表达。计数在 ready 时靠左占据主数据位,
+		     避免左半边全空导致版面发虚。 -->
 		{#if snap.index !== 'ready' || progress.total > 0}
 		<div class="ratel-index-heading">
-			<!-- 关键路径(2026-11-06):ready 时顶部状态栏已经显示「就绪」,抽屉不再重复;
-			     完成的语义交给下面那条满格进度条与计数表达。 -->
-			{#if snap.index !== 'ready'}
+			{#if snap.index === 'ready'}
+				{@render indexCount()}
+			{:else}
 				<span class="ratel-index-state">{indexValue}</span>
+				<span class="ratel-index-aside">
+					{@render indexCount()}
+					{#if snap.indexRate !== undefined && indexing}
+						<span class="ratel-index-rate">{$t('status.drawer.indexRate', { rate: snap.indexRate })}</span>
+					{/if}
+				</span>
 			{/if}
-			<span class="ratel-index-aside">
-				{#if progress.total > 0}
-					<span class="ratel-index-count">{$t('status.drawer.indexedCount', { count: progress.completed, total: progress.total })}</span>
-				{/if}
-				{#if snap.indexRate !== undefined && indexing}
-					<span class="ratel-index-rate">{$t('status.drawer.indexRate', { rate: snap.indexRate })}</span>
-				{/if}
-			</span>
 		</div>
 		{/if}
 		{#if (indexing || snap.index === 'paused' || snap.index === 'failed' || snap.index === 'ready') && progress.total > 0}
@@ -455,6 +462,13 @@
 		align-items: baseline;
 		gap: 8px;
 		margin-left: auto;
+	}
+	/* ready 时计数是主数据，靠左并略提权重；索引中作为右侧次要读数据保持 muted。 */
+	.ratel-index-heading > .ratel-index-count {
+		font-size: 11px;
+		font-weight: 500;
+		color: var(--text-normal);
+		font-variant-numeric: tabular-nums;
 	}
 	.ratel-index-count {
 		font-size: 11px;
