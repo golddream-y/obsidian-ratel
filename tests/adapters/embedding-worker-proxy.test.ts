@@ -243,12 +243,31 @@ describe('EmbeddingWorkerProxy', () => {
 		proxy.terminate();
 	});
 
+	it('请求超时 - 主动结算并重建 Worker - 不让后续请求排队到死', async () => {
+		vi.useFakeTimers();
+		const proxy = new EmbeddingWorkerProxy('mock-url', emptyDeps(), 512);
+		const p = proxy.embed(['a']);
+		// 只推进到 Worker 创建完成,不触发超时。
+		await vi.advanceTimersByTimeAsync(0);
+		mockWorker.postMessage.mockClear();
+		const rejection = expect(p).rejects.toThrow(/请求超时/);
+		// 关键路径:Worker 一直不回复时,120 秒后必须主动失败并重建 Worker,
+		// 否则该请求会永久占住 pending,后面所有嵌入调用相继超时(线上就是这样连片的)。
+		await vi.advanceTimersByTimeAsync(120_000);
+		await rejection;
+		expect(mockWorker.terminate).toHaveBeenCalled();
+		proxy.terminate();
+		vi.useRealTimers();
+	});
+
 	it('构造 - 不立即 new Worker - 直到 embed', async () => {
 		vi.useFakeTimers();
 		const proxy = new EmbeddingWorkerProxy('mock-url', emptyDeps(), 512);
 		expect(global.Worker).not.toHaveBeenCalled();
 		const p = proxy.embed(['a']);
-		await vi.runAllTimersAsync();
+		// 关键路径:此用例只验证「懒创建」,不能 runAllTimers —— 请求级超时也在定时器里,
+		// 全部推进会把请求判超时,断言就跑偏了。
+		await vi.advanceTimersByTimeAsync(0);
 		const embedCall = mockWorker.postMessage.mock.calls.find(
 			(c: unknown[]) => (c[0] as { type: string }).type === 'embed',
 		);

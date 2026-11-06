@@ -94,7 +94,19 @@ interface PendingEmbed {
 	onBatchComplete?: (done: number, total: number) => void;
 	/** 摘除 `signal` 上的 abort 监听;请求结算后必须调用,避免监听器泄漏。 */
 	detachAbort?: () => void;
+	/** 请求级超时计时器 — 结算时必须清除,否则悬挂的定时器会在之后误伤新请求。 */
+	timer?: ReturnType<typeof setTimeout>;
 }
+
+/**
+ * 单次嵌入请求的超时上限。
+ *
+ * 关键路径(2026-11-06 线上):此前没有请求级超时 —— Worker 一旦被某个超大块卡住,
+ * 该请求的 Promise 永远悬挂、pending 不清理,后续所有嵌入请求都排在它后面相继超时,
+ * 表现为「同一目录多个文件连续报宿主调用超时」。超时后必须重建 Worker,
+ * 否则卡住的状态会一直延续下去。
+ */
+const REQUEST_TIMEOUT_MS = 120_000;
 
 /**
  * EmbeddingWorkerProxy — Web Worker 代理实现 EmbeddingPort。
@@ -222,6 +234,13 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 					signal.addEventListener('abort', onAbort, { once: true });
 					entry.detachAbort = () => signal.removeEventListener('abort', onAbort);
 				}
+				// 关键路径:请求级超时 —— 卡住的请求必须主动结算并重建 Worker,
+				// 否则它会永久占住 pending,让后续所有嵌入调用排队到超时。
+				entry.timer = globalThis.setTimeout(() => {
+					if (!this.pending.has(requestId)) return;
+					this.settlePending(requestId, new Error(`Embedding Worker 请求超时(${REQUEST_TIMEOUT_MS / 1000} 秒)`));
+					this.terminateWorker('crash', 'Embedding Worker 因请求超时被重建');
+				}, REQUEST_TIMEOUT_MS);
 				this.pending.set(requestId, entry);
 				const msg: WorkerEmbedMessage = { type: 'embed', texts, requestId };
 				worker.postMessage(msg);
@@ -370,6 +389,10 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 		const entry = this.pending.get(requestId);
 		if (entry === undefined) return;
 		this.pending.delete(requestId);
+		if (entry.timer !== undefined) {
+			globalThis.clearTimeout(entry.timer);
+			entry.timer = undefined;
+		}
 		entry.detachAbort?.();
 		if (error !== undefined) {
 			entry.reject(error);
