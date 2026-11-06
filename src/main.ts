@@ -2249,6 +2249,13 @@ export default class RatelVaultPlugin extends Plugin {
 	 * [diag] 落盘级启动信标 — 主线程空转卡死时无法读控制台,只能靠磁盘上的最后一步定位。
 	 * 同步追加、失败静默:信标本身绝不能影响启动。
 	 */
+	/** [diag] 单次调用超过 1 秒才落盘,避免刷屏;用于判定主线程卡在哪个边界。 */
+	private traceSlow(label: string, startedAt: number, detail?: string): void {
+		const elapsed = Date.now() - startedAt;
+		if (elapsed < 1000) return;
+		this.traceStartup(`slow:${label}=${elapsed}ms${detail === undefined ? '' : ` (${detail})`}`);
+	}
+
 	private traceStartup(step: string): void {
 		try {
 			const dir = this.manifest.dir;
@@ -2280,10 +2287,30 @@ export default class RatelVaultPlugin extends Plugin {
 				config,
 				owner: lease,
 				expectedDimension: this.embedding.dimensions,
-				embedding: this.embedding,
+				embedding: {
+					dimensions: this.embedding.dimensions,
+					modelId: this.embedding.modelId,
+					embed: async (texts: string[]) => {
+						const started = Date.now();
+						try {
+							return await this.embedding.embed(texts);
+						}
+						finally {
+							this.traceSlow(`embedding.embed(${texts.length} 段)`, started);
+						}
+					},
+				},
 				vault: {
 					listMarkdownFiles: () => this.vault.listMarkdownFiles(),
-					readFile: (filePath) => this.vault.readFile(filePath),
+					readFile: async (filePath) => {
+						const started = Date.now();
+						try {
+							return await this.vault.readFile(filePath);
+						}
+						finally {
+							this.traceSlow('vault.readFile', started, filePath);
+						}
+					},
 				},
 				chunkLimits: { chunkSize: this.settings.chunkSize, chunkOverlap: this.settings.chunkOverlap },
 				legacy: null,
