@@ -168,7 +168,7 @@
 				<span class="ratel-index-rate">{$t('status.drawer.indexRate', { rate: snap.indexRate })}</span>
 			{/if}
 		</div>
-		{#if indexing || progress.total > 0}
+		{#if (indexing || snap.index === 'paused' || snap.index === 'failed') && progress.percentage !== 100}
 			<div class="ratel-drawer-progress" role="progressbar"
 				aria-label={$t('status.drawer.label.index')}
 				aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress.percentage ?? undefined}>
@@ -374,12 +374,19 @@
 
 	/* 层次 1/3:分组标签 — 最弱,靠细线与上间距划分区块,不与主状态争夺注意力。 */
 	.ratel-drawer-section-title {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+		/* 关键路径:行高固定,不让右侧按钮/数值决定行高 —— 否则同一 class 的
+		   两个分组标题会因右侧元素不同而高度不同,视觉上显得字号不等。 */
+		min-height: 16px;
 		font-size: 11px;
 		font-weight: 500;
 		letter-spacing: 0.4px;
 		color: var(--text-muted);
-		margin-top: 14px;
-		padding: 0 0 6px;
+		margin-top: 10px;
+		padding: 0 0 5px;
 		border-bottom: 1px solid var(--background-modifier-border);
 	}
 
@@ -389,11 +396,11 @@
 
 	/* 关键路径:嵌入来源放在分组标题右侧,不再单独占一行;badge 用边框+背景明确
 	   它是一个可识别的标识,而不是一行灰色弱文字。 */
-	.ratel-drawer-section-title--with-aside {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 8px;
+	/* 标题内文字显式声明,避免继承漂移。 */
+	.ratel-drawer-section-title > span:first-child {
+		font-size: 11px;
+		font-weight: 500;
+		color: var(--text-muted);
 	}
 	/* 关键路径:这里是**只读信息**,不是可点控件。边框 + 背景会把它画成按钮,
 	   与真正的操作控件(压缩上下文)混淆;因此只保留弱化文字,不用任何控件外观。 */
@@ -406,9 +413,11 @@
 	}
 	/* 标题行内的操作按钮 — 比常规微按钮更小,不撑高分组标题。 */
 	.ratel-drawer-micro-btn--inline {
-		padding: 1px 8px;
+		flex-shrink: 0;
+		padding: 0 6px;
+		height: 16px;
+		line-height: 14px;
 		font-size: 11px;
-		line-height: 1.4;
 	}
 	.ratel-index-rate {
 		font-size: 11px;
@@ -424,11 +433,11 @@
 		justify-content: space-between;
 		flex-wrap: wrap;
 		gap: 4px 12px;
-		padding: 10px 0 8px;
+		padding: 8px 0 6px;
 	}
 
 	.ratel-index-state {
-		font-size: 13px;
+		font-size: 12px;
 		font-weight: 600;
 		color: var(--text-normal);
 	}
@@ -506,7 +515,7 @@
 		background: var(--background-modifier-border);
 		border-radius: 2px;
 		overflow: hidden;
-		margin: 6px 0;
+		margin: 4px 0;
 	}
 
 	.ratel-drawer-progress-fill {
