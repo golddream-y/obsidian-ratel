@@ -159,16 +159,24 @@
 				{embedKind === 'api' ? $t('status.drawer.embedBadge.api') : $t('status.drawer.embedBadge.local')}
 			</span>
 		</div>
+		{#if snap.index !== 'ready' || progress.total > 0}
 		<div class="ratel-index-heading">
-			<span class="ratel-index-state">{indexValue}</span>
-			{#if progress.total > 0}
-				<span class="ratel-index-count">{$t('status.drawer.indexedCount', { count: progress.completed, total: progress.total })}</span>
+			<!-- 关键路径(2026-11-06):ready 时顶部状态栏已经显示「就绪」,抽屉不再重复;
+			     完成的语义交给下面那条满格进度条与计数表达。 -->
+			{#if snap.index !== 'ready'}
+				<span class="ratel-index-state">{indexValue}</span>
 			{/if}
-			{#if snap.indexRate !== undefined && indexing}
-				<span class="ratel-index-rate">{$t('status.drawer.indexRate', { rate: snap.indexRate })}</span>
-			{/if}
+			<span class="ratel-index-aside">
+				{#if progress.total > 0}
+					<span class="ratel-index-count">{$t('status.drawer.indexedCount', { count: progress.completed, total: progress.total })}</span>
+				{/if}
+				{#if snap.indexRate !== undefined && indexing}
+					<span class="ratel-index-rate">{$t('status.drawer.indexRate', { rate: snap.indexRate })}</span>
+				{/if}
+			</span>
 		</div>
-		{#if (indexing || snap.index === 'paused' || snap.index === 'failed') && progress.percentage !== 100}
+		{/if}
+		{#if (indexing || snap.index === 'paused' || snap.index === 'failed' || snap.index === 'ready') && progress.total > 0}
 			<div class="ratel-drawer-progress" role="progressbar"
 				aria-label={$t('status.drawer.label.index')}
 				aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress.percentage ?? undefined}>
@@ -440,6 +448,13 @@
 		font-size: 12px;
 		font-weight: 600;
 		color: var(--text-normal);
+	}
+	/* 右侧数值组 — 无主状态文字时（ready）仍靠右对齐。 */
+	.ratel-index-aside {
+		display: flex;
+		align-items: baseline;
+		gap: 8px;
+		margin-left: auto;
 	}
 	.ratel-index-count {
 		font-size: 11px;
