@@ -802,6 +802,7 @@ export interface StatusStrings {
   'status.embedding.notConfigured': string;
   'status.embedding.unknown': string;
   'status.degraded.apiEmbedding': string;
+  'status.detail.embeddingWriting': string;
   'status.detail.checkingChanges': string;
   'status.detail.pending': string;
   // 关键路径:T4/T5/T6 新增阶段与须知(停滞/恢复/部分可用/正在停止/迁移/磁盘失败/缺少 epoch 保护)

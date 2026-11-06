@@ -301,7 +301,7 @@ describe('失败重试一轮', () => {
 });
 
 describe('批量提交', () => {
-	it('客户端支持批量 - 当前连续队列超过旧固定上限 - 仍整批只调用一次', async () => {
+	it('客户端支持批量 - 单批有界 - 40 篇分成 5 批且进度可分批推进', async () => {
 		const client = {
 			start: vi.fn(async () => undefined),
 			indexFile: vi.fn(async () => ({ chunkCount: 1 })),
@@ -318,8 +318,10 @@ describe('批量提交', () => {
 			start: START,
 		});
 		const counters = await coordinator.start();
-		expect(client.indexFiles).toHaveBeenCalledTimes(1);
-		expect(client.indexFiles.mock.calls[0]![0]).toHaveLength(paths.length);
+		const BATCH_LIMIT = 8;
+		expect(client.indexFiles).toHaveBeenCalledTimes(Math.ceil(paths.length / BATCH_LIMIT));
+		expect(client.indexFiles.mock.calls[0]![0]).toHaveLength(BATCH_LIMIT);
+		expect(client.indexFiles.mock.calls.reduce((sum, call) => sum + call[0].length, 0)).toBe(paths.length);
 		expect(client.indexFile).not.toHaveBeenCalled();
 		expect(counters).toMatchObject({ committed: paths.length, failures: 0 });
 		coordinator.destroy();

@@ -177,7 +177,9 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 
 	/** 计数快照 — 与主线程协调器同口径。 */
 	counters(): IndexTaskCounters {
-		const total = this.verified.size + this.failing.size + this.queue.size;
+		// 关键路径:在途整批已从 queue 出队但尚未完成,必须计入 total;否则批期间
+		// total 归零,进度条进入「未知进度」转圈,与实际情况不符。
+		const total = this.verified.size + this.failing.size + this.queue.size + this.activeCount;
 		const pendingFiles = this.queue.size + this.activeCount;
 		return {
 			taskId: this.taskIdValue,
@@ -294,11 +296,21 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 	 * 只取 upsert 项;遇到删除即停止,保证顺序与逐条处理一致。
 	 * 文件数不再设固定上限,消息大小由现有协议载荷预算在发送前约束。
 	 */
+	/**
+	 * 单批上限 — 进度反馈粒度。
+	 *
+	 * 关键路径(2026-11-06):此前取「队列里全部连续 upsert」作为一批,全新 96 篇库就是
+	 * 一整批。批出队后 `counters().total` 归零(在途没计入)、`markSuccess` 要等整批做完,
+	 * 于是状态栏长时间停在「正在建立索引 + 未知进度转圈」,用户无法判断是否在推进。
+	 * 有界批让完成计数按批递增,状态可感知。
+	 */
+	private static readonly MAX_BATCH_FILES = 8;
+
 	private takeBatch(): Array<{ path: string; entry: ThreadQueueEntry }> {
 		const batch: Array<{ path: string; entry: ThreadQueueEntry }> = [];
 		if (this.batchDisabled) return batch;
 		for (const [filePath, entry] of this.queue) {
-			if (entry.op !== 'upsert') break;
+			if (entry.op !== 'upsert' || batch.length >= IndexThreadCoordinator.MAX_BATCH_FILES) break;
 			batch.push({ path: filePath, entry });
 		}
 		return batch;

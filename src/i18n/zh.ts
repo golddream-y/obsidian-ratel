@@ -789,7 +789,7 @@ const statusZh: StatusStrings = {
   'status.indexLabel.ready': '就绪',
   'status.indexLabel.scanning': '扫描中',
   'status.indexLabel.queued': '排队中',
-  'status.indexLabel.processing': '正在建立索引',
+  'status.indexLabel.processing': '正在生成向量并写入索引',
   'status.indexLabel.paused': '已暂停',
   'status.indexLabel.failed': '失败',
   'status.indexLabel.initializing': '初始化',
@@ -802,6 +802,7 @@ const statusZh: StatusStrings = {
   'status.embedding.notConfigured': '未配置',
   'status.embedding.unknown': '…',
   'status.degraded.apiEmbedding': 'API Embedding 模式暂不支持自动索引,请切换到本地模型',
+  'status.detail.embeddingWriting': '正在分批生成嵌入向量并写入分片索引；已完成的笔记立即可检索',
   'status.detail.checkingChanges': '正在检查 vault 变更...',
   'status.detail.pending': '{count} 待索引',
   // 关键路径:T4/T5/T6 新增阶段与须知

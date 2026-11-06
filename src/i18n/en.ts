@@ -786,7 +786,7 @@ export const en: Strings = {
   'status.indexLabel.ready': 'Ready',
   'status.indexLabel.scanning': 'Scanning',
   'status.indexLabel.queued': 'Queued',
-  'status.indexLabel.processing': 'Indexing notes',
+  'status.indexLabel.processing': 'Embedding notes and writing the index',
   'status.indexLabel.paused': 'Paused',
   'status.indexLabel.failed': 'Failed',
   'status.indexLabel.initializing': 'Initializing',
@@ -799,6 +799,7 @@ export const en: Strings = {
   'status.embedding.notConfigured': 'Not configured',
   'status.embedding.unknown': '…',
   'status.degraded.apiEmbedding': 'API Embedding mode does not support auto-indexing. Switch to a local model.',
+  'status.detail.embeddingWriting': 'Generating embeddings in batches and writing shards; finished notes are searchable immediately',
   'status.detail.checkingChanges': 'Checking vault for changes...',
   'status.detail.pending': '{count} pending index',
   // 关键路径:T4/T5/T6 新增阶段与须知
