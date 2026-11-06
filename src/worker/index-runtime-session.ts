@@ -504,9 +504,25 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 }
 
 /**
+ * 单次宿主嵌入调用携带的文本上限 — 与宿主侧仲裁批大小(8)对齐。
+ *
+ * 关键路径(2026-11-06 线上超时):此前整篇笔记的块一次性发给宿主,超时预算固定 120 秒。
+ * 大文件块多、机器忙时(实测系统负载 40+)单次推理远超预算,整个文件直接判失败。
+ * 拆成有界小批后,每次调用预算只覆盖 8 段,超时影响面从「整篇」缩到「一小批」。
+ */
+const EMBED_CALL_TEXTS = 8;
+/** 单次调用基础预算 — 覆盖排队与模型调度,不随文本量变化。 */
+const EMBED_CALL_BASE_MS = 60_000;
+/** 每段文本的预算 — 正常单段远低于此值,留足高负载余量。 */
+const EMBED_CALL_PER_TEXT_MS = 10_000;
+
+/**
  * 借宿主通道取嵌入向量。
+ *
  * @param ctx 处理器上下文
  * @param texts 待嵌入文本
+ * @param workload 工作类型 — 宿主据此让查询插到索引批次之间
+ * @returns 与 `texts` 等长且顺序一致的向量
  */
 async function callEmbed(
 	ctx: RuntimeHandlerContext | undefined,
@@ -514,8 +530,18 @@ async function callEmbed(
 	workload: 'query' | 'index',
 ): Promise<number[][]> {
 	if (ctx === undefined) throw new Error('缺少宿主调用通道,无法取得向量');
-	// 关键路径:把工作类型传出去,宿主据此让查询插到索引批次之间。
-	const result = await ctx.callHost('embed', { texts, workload }, 120_000);
-	if (!Array.isArray(result)) throw new Error('宿主嵌入通道返回了非数组结果');
-	return result as number[][];
+	if (texts.length === 0) return [];
+	const vectors: number[][] = [];
+	for (let start = 0; start < texts.length; start += EMBED_CALL_TEXTS) {
+		const slice = texts.slice(start, start + EMBED_CALL_TEXTS);
+		const timeoutMs = EMBED_CALL_BASE_MS + slice.length * EMBED_CALL_PER_TEXT_MS;
+		const result = await ctx.callHost('embed', { texts: slice, workload }, timeoutMs);
+		if (!Array.isArray(result)) throw new Error('宿主嵌入通道返回了非数组结果');
+		// 关键路径:按批核对条数,回退时能指出是哪一批不一致,而不是只报总数不符。
+		if (result.length !== slice.length) {
+			throw new Error(`嵌入返回 ${result.length} 条,与本批请求 ${slice.length} 条不一致`);
+		}
+		vectors.push(...(result as number[][]));
+	}
+	return vectors;
 }

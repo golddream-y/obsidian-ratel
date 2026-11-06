@@ -591,6 +591,22 @@ describe('批量写入', () => {
 		// 全量并发时会成倍放大,30s 曾出现假失败,按规模给足预算。
 	}, 120_000);
 
+	it('单篇块数超过单批上限 - 主机调用拆成多次 - 每批不超过 8 段', async () => {
+		// 关键路径(2026-11-06 线上 embed 超时):整篇块一次性发给宿主时超时面是「整篇」,
+		// 拆批后每次调用最多 8 段,单批超时只影响那一批。
+		const handlers = createIndexSessionHandlers({ root, chunkOptions: CHUNK_OPTIONS, epoch: 1 });
+		await handlers['session.open']!({ generationId: 'gen-embed-batch', configFingerprint: FINGERPRINT, expectedDimension: DIMENSIONS });
+		const { ctx, calls } = makeContext();
+		// 长文本会切成多个块,足以触发多次宿主调用。
+		const content = Array.from({ length: 40 }, (_, index) => `## 第${index}节\n${LONG_TEXT}`).join('\n\n');
+		await handlers['session.upsertFile']!({ path: 'wide.md', content }, ctx);
+		const total = calls.reduce((sum, batch) => sum + batch.length, 0);
+		expect(calls.length).toBeGreaterThan(1);
+		for (const batch of calls) expect(batch.length).toBeLessThanOrEqual(8);
+		// 顺序与内容必须守恒:拆批不能丢段或重排。
+		expect(calls.flat()).toHaveLength(total);
+	});
+
 	it('载荷缺少 files - 明确拒绝 - 不进入存储', async () => {
 		const handlers = createIndexSessionHandlers({ root, chunkOptions: CHUNK_OPTIONS, epoch: 1 });
 		await handlers['session.open']!({ generationId: 'gen-batch2', configFingerprint: FINGERPRINT, expectedDimension: DIMENSIONS });
