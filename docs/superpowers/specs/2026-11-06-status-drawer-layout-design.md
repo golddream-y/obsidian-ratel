@@ -84,3 +84,19 @@
 - **一致性**：`progress.completed/total` 仍是唯一数据源；`percentage` 只驱动宽度，不再驱动文字。
 - **范围**：仅展示层，无状态语义、无数据存储、无协议改动，单文件可完成。
 - **歧义**：「失败仅在 >0 时显示」已明确；「剩余删除」已明确；「两区进度条统一」已明确到具体 CSS 属性。
+
+## 第二轮：层次细化（2026-11-06 目视反馈）
+
+用户确认去重无问题，但反馈「层次有点不清晰」。复核后判断根因不是间距，而是**三种不同性质的内容被排成同样权重**：分组标题、主状态行、辅助说明/属性行都是相近字号与颜色，靠几段留白区分，读起来像一串平铺的行。
+
+补一层明确的三级权重（纯 CSS，不改数据、不改文案）：
+
+| 层级 | 元素 | 处理 |
+| --- | --- | --- |
+| 1 分组 | `.ratel-drawer-section-title` | 11px / `--text-faint` / 字距 0.4px / `margin-top: 14px` / 细底边 —— 退为分组标签，不与主状态争夺注意力 |
+| 2 主状态 | `.ratel-index-state` + `.ratel-index-count` | 13px/600 主状态为唯一强权重；计数降为 11.5px `--text-muted` |
+| 3 辅助 | `.ratel-index-notice` + `.ratel-drawer-label` | 说明行加 2px 左侧细线与 8px 缩进，明确「这是主状态的注解」；属性标签用 `--text-faint` |
+
+不引入卡片、背景块或阴影（遵守 `obsidian-ui` 约束）；分组靠间距与细线、从属靠缩进，全部颜色仍走 Obsidian 变量。
+
+验证：`vitest run tests/ui` 425 例通过；`tsc --noEmit` 0 error；`eslint StatusDrawer.svelte` 0 error。待 Sandbox 目视确认。

@@ -378,13 +378,14 @@
 		gap: 0;
 	}
 
+	/* 层次 1/3:分组标签 — 最弱,靠细线与上间距划分区块,不与主状态争夺注意力。 */
 	.ratel-drawer-section-title {
-		font-size: 11.5px;
+		font-size: 11px;
 		font-weight: 600;
-		letter-spacing: 0.2px;
-		color: var(--text-muted);
-		margin-top: 2px;
-		padding: 6px 0;
+		letter-spacing: 0.4px;
+		color: var(--text-faint);
+		margin-top: 14px;
+		padding: 0 0 6px;
 		border-bottom: 1px solid var(--background-modifier-border);
 	}
 
@@ -392,18 +393,26 @@
 		margin-top: 0;
 	}
 
+	/* 层次 2/3:主状态 + 唯一计数 — 该区唯一的强权重行。 */
 	.ratel-index-heading {
 		display: flex;
 		align-items: baseline;
 		justify-content: space-between;
 		flex-wrap: wrap;
 		gap: 4px 12px;
-		padding: 12px 0 6px;
-		font-size: 12px;
+		padding: 10px 0 8px;
 	}
 
-	.ratel-index-state { font-weight: 600; color: var(--text-normal); }
-	.ratel-index-count { color: var(--text-normal); font-variant-numeric: tabular-nums; }
+	.ratel-index-state {
+		font-size: 13px;
+		font-weight: 600;
+		color: var(--text-normal);
+	}
+	.ratel-index-count {
+		font-size: 11.5px;
+		color: var(--text-muted);
+		font-variant-numeric: tabular-nums;
+	}
 	.ratel-index-metrics {
 		display: flex;
 		flex-wrap: wrap;
@@ -414,11 +423,14 @@
 		font-variant-numeric: tabular-nums;
 	}
 	.ratel-index-failed { color: var(--text-error); }
+	/* 层次 3/3:辅助说明 — 左侧细线 + 缩进表明「这是主状态的注解」,不与属性行齐平。 */
 	.ratel-index-notice {
 		margin: 0 0 10px;
-		font-size: 11px;
-		line-height: 1.6;
-		color: var(--text-muted);
+		padding-left: 8px;
+		border-left: 2px solid var(--background-modifier-border);
+		font-size: 10.5px;
+		line-height: 1.5;
+		color: var(--text-faint);
 		overflow-wrap: anywhere;
 	}
 	.ratel-index-warning { color: var(--text-warning); }
@@ -444,7 +456,7 @@
 	}
 
 	.ratel-drawer-label {
-		color: var(--text-muted);
+		color: var(--text-faint);
 		flex-shrink: 0;
 	}
 
