@@ -149,3 +149,42 @@ describe('共享检索处理器生命周期', () => {
 		} finally { plugin.inlineWorker.terminate(); }
 	});
 });
+
+describe('嵌入端口的 Worker 代理时序', () => {
+	it('装配早于代理创建 - embed 仍走后创建的代理 - 不退化到本体', async () => {
+		const plugin = barePlugin(false) as any;
+		const localCalls: string[][] = [];
+		const proxyCalls: string[][] = [];
+		plugin.embedding = {
+			modelId: 'local:onnx', dimensions: 3,
+			embed: async (texts: string[]) => { localCalls.push(texts); return texts.map(() => [0, 0, 1]); },
+		};
+		plugin.embeddingWorkerProxy = undefined;
+
+		// 关键路径:先在代理尚未创建时取端口(模拟 onload 装配),之后才注入代理。
+		const port = plugin.effectiveEmbedding();
+		expect(port.dimensions).toBe(3);
+		plugin.embeddingWorkerProxy = {
+			modelId: 'proxy:worker', dimensions: 3,
+			embed: async (texts: string[]) => { proxyCalls.push(texts); return texts.map(() => [1, 0, 0]); },
+		};
+
+		const result = await port.embed(['a', 'b']);
+		expect(result).toEqual([[1, 0, 0], [1, 0, 0]]);
+		expect(proxyCalls).toEqual([['a', 'b']]);
+		expect(localCalls).toEqual([]);
+	});
+
+	it('代理始终未创建 - 回退本体 - 不吞掉调用', async () => {
+		const plugin = barePlugin(false) as any;
+		const seen: string[][] = [];
+		plugin.embedding = {
+			modelId: 'local', dimensions: 3,
+			embed: async (texts: string[]) => { seen.push(texts); return texts.map(() => [0, 0, 1]); },
+		};
+		plugin.embeddingWorkerProxy = undefined;
+		const port = plugin.effectiveEmbedding();
+		expect(await port.embed(['x'])).toEqual([[0, 0, 1]]);
+		expect(seen).toEqual([['x']]);
+	});
+});

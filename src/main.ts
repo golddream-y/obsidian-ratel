@@ -593,7 +593,7 @@ export default class RatelVaultPlugin extends Plugin {
 		};
 
 		const multiQuerySearcher = new MultiQuerySearcher({
-			embedding: this.embedding,
+			embedding: this.effectiveEmbedding(),
 			workerManager: this.workerManager,
 			vault: this.vault,
 			reranker,
@@ -2225,8 +2225,7 @@ export default class RatelVaultPlugin extends Plugin {
 				config,
 				owner: lease,
 				expectedDimension: this.embedding.dimensions,
-				// 关键路径:本地模式优先用 Worker 代理推理,避免主线程裸跑 ONNX。
-				embedding: this.embeddingWorkerProxy ?? this.embedding,
+				embedding: this.effectiveEmbedding(),
 				vault: {
 					listMarkdownFiles: () => this.vault.listMarkdownFiles(),
 					readFile: (filePath) => this.vault.readFile(filePath),
@@ -2271,7 +2270,7 @@ export default class RatelVaultPlugin extends Plugin {
 			config,
 			configFingerprint: this.indexConfigFingerprint,
 			vault: this.vault,
-			embedding: this.embedding,
+			embedding: this.effectiveEmbedding(),
 			getChunkOptions: () => this.buildCoordinatorChunkOptions(),
 			chunkLimits: { chunkSize: this.settings.chunkSize, chunkOverlap: this.settings.chunkOverlap },
 			expectedDimension: this.embedding.dimensions,
@@ -2894,6 +2893,24 @@ export default class RatelVaultPlugin extends Plugin {
 	 * @param embedding - 已加载的主线程 EmbeddingPort,用于读取 dimensions。
 	 * @throws Error Worker 创建或 init 失败,错误消息引导用户切换到 API Embedding。
 	 */
+	/**
+	 * 供装配与查询链路共用的嵌入端口 — **惰性**解析 Worker 代理。
+	 *
+	 * 关键路径(2026-11-06 两次事故):`EmbeddingWorkerProxy` 在 onLayoutReady 才创建,
+	 * 而主线程/线程装配、查询器都在 onload 阶段构造。若在装配时立即求值
+	 * `proxy ?? embedding`,代理此刻为 undefined,会永久绑定 `EmbeddingLocal` 内的
+	 * ONNX 本体,推理回到主线程 —— 现场表现为每 8 段约 5.9s 长任务、界面严重卡顿。
+	 * 因此必须把解析推迟到每次 `embed` 调用时。
+	 */
+	private effectiveEmbedding(): EmbeddingPort {
+		return {
+			dimensions: this.embedding.dimensions,
+			modelId: this.embedding.modelId,
+			embed: (texts: string[], options?: Parameters<EmbeddingPort['embed']>[1]) =>
+				(this.embeddingWorkerProxy ?? this.embedding).embed(texts, options),
+		};
+	}
+
 	private async initEmbeddingWorkerProxy(embedding: EmbeddingPort): Promise<void> {
 		// 关键路径: embedding worker 脚本在构建期内联进 main.js(ADR-006),不再读磁盘 embedding-worker.js。
 		if (!EMBEDDING_WORKER_CODE) {
