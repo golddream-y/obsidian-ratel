@@ -15,6 +15,5 @@ export function indexProgressView(snap: UserStatusSnapshot) {
 		pending: count(snap.indexPendingFiles),
 		failed: count(snap.indexFailedFiles),
 		percentage: total > 0 ? Math.floor(completed / total * 1000) / 10 : null,
-		hasCounts: snap.indexTotalFiles !== undefined || snap.indexCommittedFiles !== undefined || snap.index === 'ready',
 	};
 }

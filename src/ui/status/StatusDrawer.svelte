@@ -177,11 +177,15 @@
 					style={`width: ${progress.percentage ?? (indexing ? 28 : 0)}%; background: ${indexBarColor};`}></div>
 			</div>
 		{/if}
-		{#if progress.hasCounts}
+		{#if progress.total === 0 || progress.failed > 0}
+			<!-- 关键路径(2026-11-06 版面收敛):「已完成 X%」「剩余 X 篇」与标题的
+			     「8 / 97 篇」是同一份数据的三次重复表达;比例交给进度条,其余不再写文字。
+			     失败为 0 时不占位,只有真失败才提示。 -->
 			<div class="ratel-index-metrics">
-				<span>{progress.percentage === null ? $t('status.drawer.totalUnknown') : $t('status.drawer.indexProgress', { percent: progress.percentage })}</span>
-				{#if progress.total > 0 || progress.pending > 0}<span>{$t('status.drawer.remainingCount', { count: progress.pending })}</span>{/if}
-				<span class:ratel-index-failed={progress.failed > 0}>{$t('status.drawer.failedCount', { count: progress.failed })}</span>
+				{#if progress.total === 0}<span>{$t('status.drawer.totalUnknown')}</span>{/if}
+				{#if progress.failed > 0}
+					<span class="ratel-index-failed">{$t('status.drawer.failedCount', { count: progress.failed })}</span>
+				{/if}
 			</div>
 		{/if}
 		{#if indexNoticeText}
@@ -458,30 +462,24 @@
 		font-size: 11px;
 		font-weight: 400;
 		max-width: 65%;
+		font-variant-numeric: tabular-nums;
 	}
 
-	.ratel-drawer-progress {
-		width: 100%;
-		height: 4px;
-		background: var(--background-modifier-border);
-		border-radius: 2px;
-		overflow: hidden;
-		margin: 4px 0 6px;
-	}
-
-	.ratel-drawer-progress-fill {
-		height: 100%;
-		border-radius: 2px;
-		transition: width 0.3s;
-	}
-
+	/* 关键路径:索引与上下文两条进度条共用同一组值,避免视觉节奏不一致。 */
+	.ratel-drawer-progress,
 	.ratel-drawer-meter {
 		width: 100%;
 		height: 4px;
 		background: var(--background-modifier-border);
 		border-radius: 2px;
 		overflow: hidden;
-		margin: 6px 0 4px;
+		margin: 6px 0;
+	}
+
+	.ratel-drawer-progress-fill {
+		height: 100%;
+		border-radius: 2px;
+		transition: width 0.3s;
 	}
 
 	.ratel-drawer-meter-fill {
