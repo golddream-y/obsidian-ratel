@@ -2256,11 +2256,22 @@ export default class RatelVaultPlugin extends Plugin {
 		this.traceStartup(`slow:${label}=${elapsed}ms${detail === undefined ? '' : ` (${detail})`}`);
 	}
 
+	private traceDirLogged = false;
+
 	private traceStartup(step: string): void {
 		try {
-			const dir = this.manifest.dir;
-			if (!dir) return;
-			const target = path.join(dir, 'diag', 'startup-trace.log');
+			// 关键路径:`manifest.dir` 在宿主里是相对路径,拼出来的目录不可写。
+			// 必须用 vault 根推导绝对路径,否则信标静默丢失(2026-11-06 踩过)。
+			const base = (this.app.vault.adapter as { basePath?: string }).basePath;
+			const dir = base !== undefined && base.length > 0
+				? path.join(base, '.obsidian', 'plugins', 'ratel-vault', 'diag')
+				: (this.manifest.dir === undefined ? undefined : path.resolve(this.manifest.dir, 'diag'));
+			if (dir === undefined) return;
+			if (this.traceDirLogged !== true) {
+				this.traceDirLogged = true;
+				devLogger.info('index', `[diag] 信标目录 ${dir}`);
+			}
+			const target = path.join(dir, 'startup-trace.log');
 			fs.mkdirSync(path.dirname(target), { recursive: true });
 			fs.appendFileSync(target, `${new Date().toISOString()}|${step}\n`, 'utf-8');
 		}
