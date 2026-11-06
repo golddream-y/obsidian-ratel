@@ -341,7 +341,7 @@ export class FeedbackController {
 					indexPendingFiles: status.pending ?? 0,
 					indexFailedFiles: status.failed ?? 0,
 					indexPartial: (status.committed ?? 0) > 0,
-					indexSecondsPerNote: status.secondsPerNote,
+					indexSecondsPerBlock: status.secondsPerBlock,
 				});
 				break;
 			case 'Queueing':
@@ -356,7 +356,7 @@ export class FeedbackController {
 					indexPendingFiles: status.pending,
 					indexFailedFiles: status.failed ?? 0,
 					indexPartial: (status.committed ?? 0) > 0,
-					indexSecondsPerNote: status.secondsPerNote,
+					indexSecondsPerBlock: status.secondsPerBlock,
 				});
 				break;
 			case 'Processing':

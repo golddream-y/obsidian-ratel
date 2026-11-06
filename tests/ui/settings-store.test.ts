@@ -40,7 +40,7 @@ describe('settings-store', () => {
 	it('cloneSettingsSnapshot - 改 toolPermissions 源 - 快照内权限表独立', () => {
 		const live = {
 			...DEFAULT_SETTINGS,
-			toolPermissions: { ...DEFAULT_SETTINGS.toolPermissions, read_note: 'ask' as const },
+			toolPermissions: { ...DEFAULT_SETTINGS.toolPermissions, read_note: 'ask' as 'ask' | 'allow' | 'deny' },
 		};
 		const snap = cloneSettingsSnapshot(live);
 		live.toolPermissions.read_note = 'allow';
@@ -70,7 +70,8 @@ describe('settings-store', () => {
 			promptOverrides: { 'agent.identity': 'A' },
 		};
 		const snap = cloneSettingsSnapshot(live);
-		live.promptOverrides['agent.identity'] = 'B';
-		expect(snap.promptOverrides['agent.identity']).toBe('A');
+		live.promptOverrides = live.promptOverrides ?? {};
+		(live.promptOverrides as Record<string, string | undefined>)['agent.identity'] = 'B';
+		expect((snap.promptOverrides as Record<string, string | undefined>)['agent.identity']).toBe('A');
 	});
 });

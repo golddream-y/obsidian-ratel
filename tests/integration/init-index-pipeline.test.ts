@@ -19,6 +19,7 @@ describe('Init-index 集成 - 1000 文件首扫', () => {
             onFileModify: () => () => {},
             onFileDelete: () => () => {},
             onFileRename: () => () => {},
+            readFile: async () => '',
         };
         const ctl = new IndexController(
             vault,

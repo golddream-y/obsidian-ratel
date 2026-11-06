@@ -39,7 +39,7 @@ describe('Worker self init', () => {
 			},
 		};
 
-		// @ts-expect-error Node 测试环境没有真实 Worker 全局 self
+		// Node 测试环境没有真实 Worker 全局 self
 		vi.stubGlobal('self', selfMock);
 
 		// 关键路径:使用查询参数绕过模块缓存,让每次测试都重新执行入口的 bootstrap。

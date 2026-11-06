@@ -15,7 +15,7 @@ type DomElementInfo = {
 
 /** jsdom 无 Obsidian DOM 助手 — 测试前补齐 createFragment / createEl / appendText */
 beforeAll(() => {
-	const g = globalThis as typeof globalThis & {
+	const g = globalThis as unknown as {
 		createFragment?: () => DocumentFragment;
 		createEl?: (tag: string, o?: DomElementInfo | string) => HTMLElement;
 	};
@@ -29,7 +29,7 @@ beforeAll(() => {
 		};
 	}
 	if (!g.createEl) {
-		g.createEl = (tag, o) => {
+		g.createEl = (tag: string, o?: DomElementInfo | string) => {
 			const el = document.createElement(tag);
 			if (typeof o === 'string') {
 				el.className = o;

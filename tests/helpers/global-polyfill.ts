@@ -50,7 +50,7 @@ if (typeof (globalThis as Record<string, unknown>).DOMParser === 'undefined') {
 
 // 关键路径:jsdom 无 Obsidian HTMLElement 助手；商店 prefer-create-el 要求源码走 createDiv/createEl/setCssProps
 if (typeof HTMLElement !== 'undefined') {
-	const proto = HTMLElement.prototype as HTMLElement & {
+	const proto = HTMLElement.prototype as unknown as {
 		createEl?: (tag: string, o?: { cls?: string; text?: string; attr?: Record<string, string> } | string) => HTMLElement;
 		createDiv?: (o?: { cls?: string; text?: string; attr?: Record<string, string> } | string) => HTMLDivElement;
 		createSpan?: (o?: { cls?: string; text?: string; attr?: Record<string, string> } | string) => HTMLSpanElement;
@@ -66,7 +66,7 @@ if (typeof HTMLElement !== 'undefined') {
 		}
 	};
 	if (!proto.createEl) {
-		proto.createEl = function (this: HTMLElement, tag, o) {
+		proto.createEl = function (this: HTMLElement, tag: string, o?: { cls?: string; text?: string; attr?: Record<string, string> } | string) {
 			const el = document.createElement(tag);
 			apply(el, o);
 			this.appendChild(el);

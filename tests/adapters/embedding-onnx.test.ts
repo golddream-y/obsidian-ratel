@@ -163,7 +163,7 @@ describe.skipIf(!RUN_REAL_ONNX)('EmbeddingOnnx — 真实 ONNX 推理(需 RATEL_
 		expect(out[0]).toHaveLength(512);
 
 		// L2 norm ≈ 1
-		const norm = Math.sqrt(out[0].reduce((sum, v) => sum + v * v, 0));
+		const norm = Math.sqrt(out[0]!.reduce((sum, v) => sum + v * v, 0));
 		expect(norm).toBeCloseTo(1, 5);
 	});
 
@@ -175,9 +175,9 @@ describe.skipIf(!RUN_REAL_ONNX)('EmbeddingOnnx — 真实 ONNX 推理(需 RATEL_
 			'今天天气很好适合去公园散步',
 		]);
 
-		const dot = (x: number[], y: number[]) => x.reduce((sum, v, i) => sum + v * y[i], 0);
-		const simAB = dot(a, b);
-		const simAC = dot(a, c);
+		const dot = (x: number[], y: number[]) => x.reduce((sum, v, i) => sum + v * y[i]!, 0);
+		const simAB = dot(a!, b!);
+		const simAC = dot(a!, c!);
 		expect(simAB).toBeGreaterThan(simAC);
 	});
 

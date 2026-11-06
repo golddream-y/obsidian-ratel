@@ -93,5 +93,5 @@ export function addMockFile(
 	_mtime = Date.now(),
 ): void {
 	void _mtime;
-	(mockApp.vault as { create: (p: string, c: string) => Promise<void> }).create(path, content);
+	(mockApp.vault as unknown as { create: (p: string, c: string) => Promise<void> }).create(path, content);
 }

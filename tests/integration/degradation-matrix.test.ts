@@ -31,6 +31,8 @@ describe('降级矩阵 - Worker 未初始化', () => {
         const res = await handleMessage({ type: 'index.status', payload: {} });
 
         expect(res.type).toBe('error');
-        expect(res.payload.code).toBe('NULL_PROCESSOR');
+        if (res.type === 'error') {
+            expect(res.payload.code).toBe('NULL_PROCESSOR');
+        }
     });
 });

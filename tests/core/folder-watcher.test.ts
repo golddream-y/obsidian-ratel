@@ -6,12 +6,13 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import type { Mock } from 'vitest';
 import { FolderWatcher } from '../../src/core/folder-watcher';
 
 describe('FolderWatcher', () => {
     let watcher: FolderWatcher;
-    let onUpsert: ReturnType<typeof vi.fn>;
-    let onDelete: ReturnType<typeof vi.fn>;
+    let onUpsert: Mock<(path: string) => void>;
+    let onDelete: Mock<(path: string) => void>;
 
     beforeEach(() => {
         vi.useFakeTimers();

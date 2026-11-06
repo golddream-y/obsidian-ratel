@@ -72,7 +72,7 @@
 	function applyCiteEnterAnimation() {
 		if (!containerEl || !motionOn || !messageId || !searchResults?.length) return;
 		const mode = shouldStaggerCite(searchResults.length);
-		const buttons = containerEl.querySelectorAll<HTMLButtonElement>('button.ratel-cite');
+		const buttons = Array.from(containerEl.querySelectorAll<HTMLButtonElement>('button.ratel-cite'));
 		let staggerIdx = 0;
 		for (const btn of buttons) {
 			const n = Number(btn.dataset.citeIndex);
@@ -97,7 +97,7 @@
 			if (path) onOpenPath(path);
 		});
 		const tipCleaners: Array<() => void> = [];
-		for (const btn of containerEl.querySelectorAll<HTMLButtonElement>('button.ratel-cite')) {
+		for (const btn of Array.from(containerEl.querySelectorAll<HTMLButtonElement>('button.ratel-cite'))) {
 			const n = Number(btn.dataset.citeIndex);
 			const path = pathForCiteIndex(searchResults, n);
 			if (!path) continue;

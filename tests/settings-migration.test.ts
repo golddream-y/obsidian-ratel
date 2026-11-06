@@ -55,7 +55,7 @@ describe('Settings 迁移', () => {
         const merged = simulateLoadSettings(oldFormat);
 
         // 旧字段残留(无害,因为没代码读)
-        expect((merged as Record<string, unknown>).embedModel).toBe('bge-large');
+        expect((merged as unknown as Record<string, unknown>).embedModel).toBe('bge-large');
         // 新字段保持默认值
         expect(merged.embedApiModel).toBe(DEFAULT_SETTINGS.embedApiModel);
         expect(merged.embedLocalModel).toBe(DEFAULT_SETTINGS.embedLocalModel);
@@ -173,7 +173,7 @@ describe('normalizeChatProfiles', () => {
 	});
 
 	it('已有 chatProfiles - 不覆盖', () => {
-		const existing = [{ id: 'p1', name: 'A', apiBase: 'http://a', model: 'm1', contextLengthPreset: '128k', chatModelMaxTokens: 128_000 }];
+		const existing = [{ id: 'p1', name: 'A', apiBase: 'http://a', model: 'm1', contextLengthPreset: '128k' as const, chatModelMaxTokens: 128_000 }];
 		const settings = { chatProfiles: existing, activeChatProfileId: 'p1' } as unknown as RatelVaultSettings;
 		normalizeChatProfiles(settings, { chatProfiles: existing });
 		expect(settings.chatProfiles).toBe(existing);

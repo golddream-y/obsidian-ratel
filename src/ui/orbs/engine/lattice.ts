@@ -48,12 +48,13 @@ function applyMoves(
   let [x, y, z] = pt3;
   let inActive = false;
   for (let i = 0; i < moves.length; i++) {
-    if (sc.amount[i] <= 0) continue;
+    const amount = sc.amount[i];
     const mv = moves[i];
+    if (amount === undefined || amount <= 0 || !mv) continue;
     const coord = mv.axis === 0 ? x : mv.axis === 1 ? y : z;
     if (coord < mv.lo || coord >= mv.hi) continue;
     if (i === sc.active) inActive = true;
-    const a = mv.ang * sc.amount[i];
+    const a = mv.ang * amount;
     const ca = Math.cos(a);
     const sa = Math.sin(a);
     if (mv.axis === 0) {

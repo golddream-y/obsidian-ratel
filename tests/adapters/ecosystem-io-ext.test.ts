@@ -68,7 +68,7 @@ describe('AdapterEcosystemIo', () => {
 			},
 			{},
 		);
-		const io = new AdapterEcosystemIo(adapter as DataAdapter, () => ({
+		const io = new AdapterEcosystemIo(adapter as unknown as DataAdapter, () => ({
 			catalogIds: new Set(['calendar']),
 			installedIds: new Set(['calendar']),
 		}));
@@ -83,7 +83,7 @@ describe('AdapterEcosystemIo', () => {
 			},
 			{ [mainRel]: 'module.exports={};' },
 		);
-		const io = new AdapterEcosystemIo(adapter as DataAdapter, () => ({
+		const io = new AdapterEcosystemIo(adapter as unknown as DataAdapter, () => ({
 			catalogIds: new Set(['calendar']),
 			installedIds: new Set(['calendar']),
 		}));

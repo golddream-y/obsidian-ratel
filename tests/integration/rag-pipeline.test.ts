@@ -98,7 +98,7 @@ describe('RAG Pipeline Integration', () => {
 		const queryVector = [0.1, 0.2, 0.3, 0.4];
 		const results = await store.search(queryVector, 5);
 		expect(results.length).toBeGreaterThan(0);
-		expect(results[0].score).toBeGreaterThan(0.5);
+		expect(results[0]!.score).toBeGreaterThan(0.5);
 
 		vi.unstubAllGlobals();
 	});

@@ -42,8 +42,8 @@ function fillSmoothRing(ctx: CanvasRenderingContext2D, ring: EyeRing, size: numb
 	const n = pts.length;
 	if (n < 3) return;
 	const mid = (i: number, j: number) => ({
-		x: (pts[i].x + pts[j].x) / 2,
-		y: (pts[i].y + pts[j].y) / 2,
+		x: (pts[i]!.x + pts[j]!.x) / 2,
+		y: (pts[i]!.y + pts[j]!.y) / 2,
 	});
 	const first = mid(n - 1, 0);
 	ctx.beginPath();
@@ -51,7 +51,7 @@ function fillSmoothRing(ctx: CanvasRenderingContext2D, ring: EyeRing, size: numb
 	for (let i = 0; i < n; i++) {
 		const nxt = (i + 1) % n;
 		const m = mid(i, nxt);
-		ctx.quadraticCurveTo(pts[i].x, pts[i].y, m.x, m.y);
+		ctx.quadraticCurveTo(pts[i]!.x, pts[i]!.y, m.x, m.y);
 	}
 	ctx.closePath();
 	ctx.fill();
@@ -69,8 +69,8 @@ function fillBlobBody(ctx: CanvasRenderingContext2D, rx: number, ry: number): vo
 		pts.push({ x, y });
 	}
 	const mid = (i: number, j: number) => ({
-		x: (pts[i].x + pts[j].x) / 2,
-		y: (pts[i].y + pts[j].y) / 2,
+		x: (pts[i]!.x + pts[j]!.x) / 2,
+		y: (pts[i]!.y + pts[j]!.y) / 2,
 	});
 	const first = mid(n - 1, 0);
 	ctx.beginPath();
@@ -78,7 +78,7 @@ function fillBlobBody(ctx: CanvasRenderingContext2D, rx: number, ry: number): vo
 	for (let i = 0; i < n; i++) {
 		const nxt = (i + 1) % n;
 		const m = mid(i, nxt);
-		ctx.quadraticCurveTo(pts[i].x, pts[i].y, m.x, m.y);
+		ctx.quadraticCurveTo(pts[i]!.x, pts[i]!.y, m.x, m.y);
 	}
 	ctx.closePath();
 }
@@ -86,7 +86,7 @@ function fillBlobBody(ctx: CanvasRenderingContext2D, rx: number, ry: number): vo
 function parseRgbTriplet(color: string): [number, number, number] | null {
 	const hex = color.replace('#', '').trim();
 	if (hex.length === 6 || hex.length === 3) {
-		const full = hex.length === 3 ? hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2] : hex;
+		const full = hex.length === 3 ? hex.charAt(0) + hex.charAt(0) + hex.charAt(1) + hex.charAt(1) + hex.charAt(2) + hex.charAt(2) : hex;
 		if (/^[0-9a-fA-F]{6}$/.test(full)) {
 			const n = parseInt(full, 16);
 			return [(n >> 16) & 255, (n >> 8) & 255, n & 255];

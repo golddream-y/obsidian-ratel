@@ -173,6 +173,8 @@ export interface IndexTaskCounters {
 	pendingFiles?: number;
 	/** 本轮真正写入完成记录的次数(替换 + 删除);内容未变的复用不计入。 */
 	committedThisRound: number;
+	/** 本轮真正写入的块数;缺省时按 0 处理(主线程协调器暂不提供)。 */
+	committedBlocksThisRound?: number;
 	/** 仍有待处理工作的文件数(待重试、失败保留项与被队列上界丢弃尚未回收的路径)。 */
 	queued: number;
 	/** 在途提交数(0 或 1)。 */

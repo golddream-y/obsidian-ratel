@@ -14,6 +14,7 @@ const mockVault: VaultEventListener = {
     onFileModify: () => () => {},
     onFileDelete: () => () => {},
     onFileRename: () => () => {},
+    readFile: async () => '',
 };
 
 describe('Pause/Resume 集成', () => {

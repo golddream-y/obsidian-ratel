@@ -6,6 +6,7 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
+import type { App, PluginManifest } from 'obsidian';
 import RatelVaultPlugin from '../src/main';
 
 // 关键路径:Node 测试环境没有真实 Obsidian 宿主,用最小 stub 让 Plugin 及其子类可实例化。
@@ -75,7 +76,7 @@ vi.mock('../src/ui/memory-panel/MemoryModal', () => ({
 
 describe('main rag loop integration', () => {
 	it('main.ts - search_vault 工具已注册', async () => {
-		const plugin = new RatelVaultPlugin();
+		const plugin = new RatelVaultPlugin({} as App, {} as PluginManifest);
 		plugin.app = {
 			vault: {
 			adapter: { getBasePath: () => '/tmp/vault' },

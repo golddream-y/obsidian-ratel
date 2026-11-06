@@ -242,14 +242,14 @@ describe('FeedbackController 索引阶段与计数展示', () => {
 	it('索引速率 - Scanning 与 Queueing 都透传到快照 - 未提供时不伪造', () => {
 		const controller = createController();
 		controller.start();
-		// 关键路径:每篇耗时必须原样透传;字段名写错会静默丢弃,抽屉就永远不显示速度。
-		indexStatus$.set({ state: 'Scanning', scanned: 5, total: 100, committed: 5, pending: 95, failed: 0, phase: 'scanning', secondsPerNote: 1.5 });
-		expect(get(userStatus.statusBar$).indexSecondsPerNote).toBe(1.5);
-		indexStatus$.set({ state: 'Queueing', phase: 'processing', total: 100, committed: 20, pending: 80, failed: 0, secondsPerNote: 2.4 });
-		expect(get(userStatus.statusBar$).indexSecondsPerNote).toBe(2.4);
+		// 关键路径:每块耗时必须原样透传;字段名写错会静默丢弃,抽屉就永远不显示速度。
+		indexStatus$.set({ state: 'Scanning', scanned: 5, total: 100, committed: 5, pending: 95, failed: 0, phase: 'scanning', secondsPerBlock: 1.5 });
+		expect(get(userStatus.statusBar$).indexSecondsPerBlock).toBe(1.5);
+		indexStatus$.set({ state: 'Queueing', phase: 'processing', total: 100, committed: 20, pending: 80, failed: 0, secondsPerBlock: 2.4 });
+		expect(get(userStatus.statusBar$).indexSecondsPerBlock).toBe(2.4);
 		// 未提供速率时不得沿用上一轮的值。
 		indexStatus$.set({ state: 'Queueing', phase: 'processing', total: 100, committed: 21, pending: 79, failed: 0 });
-		expect(get(userStatus.statusBar$).indexSecondsPerNote).toBeUndefined();
+		expect(get(userStatus.statusBar$).indexSecondsPerBlock).toBeUndefined();
 		controller.destroy();
 	});
 

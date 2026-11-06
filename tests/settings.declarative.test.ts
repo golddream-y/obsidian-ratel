@@ -38,7 +38,8 @@ describe('RatelVaultSettingTab 嵌套 key 读取与声明式定义', () => {
 	});
 
 	it('getControlValue - 嵌套 promptOverrides key - 返回嵌套对象的值', () => {
-		plugin.settings.promptOverrides['system.role'] = 'custom';
+		plugin.settings.promptOverrides = plugin.settings.promptOverrides ?? {};
+		(plugin.settings.promptOverrides as Record<string, string | undefined>)['system.role'] = 'custom';
 		expect(tab.getControlValue('promptOverrides.system.role')).toBe('custom');
 	});
 
@@ -247,7 +248,7 @@ function findGroupWithControlKey(
 	key: string,
 ): { cls?: string; visible?: unknown } | undefined {
 	for (const d of defs) {
-		if (d.type !== 'group' && d.type !== 'list') {
+		if (!('type' in d) || (d.type !== 'group' && d.type !== 'list')) {
 			continue;
 		}
 		const items = d.items ?? [];

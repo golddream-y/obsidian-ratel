@@ -51,6 +51,16 @@ describe('RAG loop integration', () => {
 			getVaultStructure: vi.fn(() => ({ folders: [], tags: [], orphans: [] })),
 			writeFile: vi.fn(),
 			listMarkdownFiles: vi.fn(() => []),
+			stat: vi.fn(() => null),
+			cachedRead: vi.fn(async () => ''),
+			appendFile: vi.fn(async () => {}),
+			trashFile: vi.fn(async () => {}),
+			renameFile: vi.fn(async () => {}),
+			copyFile: vi.fn(async () => {}),
+			trashFolder: vi.fn(async () => {}),
+			listFiles: vi.fn(async () => ({ files: [], folders: [] })),
+			fileExists: vi.fn(async () => false),
+			processFile: vi.fn(async (_path: string, fn: (content: string) => string) => fn('')),
 		};
 
 		// 关键路径:W4 — search_vault 内部改调 MultiQuerySearcher,这里用 mock searcher 返回固定结果
@@ -62,7 +72,7 @@ describe('RAG loop integration', () => {
 
 		const tools = new ToolRegistry();
 		tools.register(createSearchVaultTool(searcher as never, () => true, makeToolDef('search_vault'), vault));
-		tools.register(createReadNoteTool(vault));
+		tools.register(createReadNoteTool(vault, makeToolDef('read_note')));
 
 		const toolCalls: ToolCall[] = [
 			{ id: 'call_1', name: 'search_vault', args: { query: '技术栈', topK: 3 } },

@@ -113,7 +113,7 @@ function orderedVault(order: string[]): VaultEventListener {
     };
 }
 
-const listeners: Record<string, (cb: unknown) => () => void> = {
+const listeners: Record<'create' | 'modify' | 'delete' | 'rename', (cb: unknown) => () => void> = {
     create: vi.fn(),
     modify: vi.fn(),
     delete: vi.fn(),
@@ -172,10 +172,10 @@ describe('IndexController', () => {
         const unsubs = [vi.fn(), vi.fn(), vi.fn(), vi.fn()];
         const ctl = new IndexController(
             {
-                onFileCreate: () => unsubs[0],
-                onFileModify: () => unsubs[1],
-                onFileDelete: () => unsubs[2],
-                onFileRename: () => unsubs[3],
+                onFileCreate: () => unsubs[0]!,
+                onFileModify: () => unsubs[1]!,
+                onFileDelete: () => unsubs[2]!,
+                onFileRename: () => unsubs[3]!,
                 readFile: vi.fn().mockResolvedValue(''),
             },
             {

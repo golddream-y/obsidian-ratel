@@ -767,7 +767,7 @@ export const en: Strings = {
   'status.drawer.embedKind.local': 'Local',
   'status.drawer.embedBadge.local': 'Ratel built-in vectors',
   'status.drawer.embedBadge.api': 'Remote embedding service',
-  'status.drawer.indexSecondsPerNote': 'about {seconds}s per note',
+  'status.drawer.indexSecondsPerBlock': 'about {seconds}s per block',
   'status.drawer.embedKind.api': 'API',
   'status.drawer.section.context': 'Context',
   'status.drawer.label.usedMax': 'Used / Max',

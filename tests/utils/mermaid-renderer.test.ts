@@ -87,7 +87,8 @@ describe('renderMermaidBlocks', () => {
 		const mermaidMod = await import('mermaid');
 		vi.mocked(mermaidMod.default.render).mockResolvedValueOnce({
 			svg: '<svg xmlns="http://www.w3.org/2000/svg"><g><rect/><text>Client</text></g></svg>',
-			bindFunctions: undefined,
+			diagramType: 'flowchart',
+			bindFunctions: () => {},
 		});
 		const root = document.createElement('div');
 		root.innerHTML = `<div class="ratel-md-block" data-ratel-fence="mermaid" data-ratel-src="x"><div class="ratel-md-block-body"><pre><code class="language-mermaid">graph TD; A[Client]</code></pre></div></div>`;

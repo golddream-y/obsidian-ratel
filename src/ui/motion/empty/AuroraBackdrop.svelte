@@ -65,8 +65,7 @@
 	}
 
 	function colorStopsToFlatRgb(stops: [string, string, string]): Float32Array {
-		const [a, b, c] = stops.map(hexToRgb01);
-		return new Float32Array([...a, ...b, ...c]);
+		return new Float32Array(stops.flatMap((hex) => hexToRgb01(hex)));
 	}
 
 	function mountWebGL(host: HTMLDivElement): (() => void) | null {

@@ -124,10 +124,14 @@ export function getEyeRings(face: MascotFace): { left: EyeRing; right: EyeRing }
  */
 export function lerpRings(a: EyeRing, b: EyeRing, t: number): EyeRing {
 	const clamped = Math.min(1, Math.max(0, t));
-	return a.map((p, i) => ({
-		x: p.x + (b[i].x - p.x) * clamped,
-		y: p.y + (b[i].y - p.y) * clamped,
-	}));
+	return a.map((p, i) => {
+		// a / b 均由 sampleEyeRing 生成，长度恒为 EYE_SAMPLES，同下标必存在。
+		const q = b[i]!;
+		return {
+			x: p.x + (q.x - p.x) * clamped,
+			y: p.y + (q.y - p.y) * clamped,
+		};
+	});
 }
 
 /**

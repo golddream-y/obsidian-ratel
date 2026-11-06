@@ -96,7 +96,7 @@ describe('configure', () => {
 		const io = ioCal();
 		await io.writeText('.obsidian/plugins/calendar/manifest.json', '{"id":"calendar"}');
 		const tool = createConfigurePluginTool(
-			{ name: 'configure_plugin', parameters: { type: 'object', properties: {} } },
+			{ name: 'configure_plugin', description: '', parameters: { type: 'object', properties: {} } },
 			{ inspect: (id) => inspectPluginData(id, { io, configDir: '.obsidian' }), apply: async () => { throw new Error('should not apply'); } },
 		);
 		const r = await tool.execute({ pluginId: 'calendar' }) as { keys: string[] };
@@ -104,7 +104,7 @@ describe('configure', () => {
 	});
 	it('configure 工具 - apply 无 patch 抛 invalidArg', async () => {
 		const tool = createConfigurePluginTool(
-			{ name: 'configure_plugin', parameters: { type: 'object', properties: {} } },
+			{ name: 'configure_plugin', description: '', parameters: { type: 'object', properties: {} } },
 			{ inspect: async () => ({ keys: [], values: {} }), apply: async () => ({}) },
 		);
 		await expect(tool.execute({ pluginId: 'calendar', op: 'apply' })).rejects.toThrow();

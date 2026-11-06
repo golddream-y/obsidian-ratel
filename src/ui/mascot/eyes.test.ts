@@ -28,8 +28,8 @@ function ringHeight(ring: EyeRing): number {
 
 /** 左眼内侧是更大的 x */
 function leftEyeInnerOuterY(ring: EyeRing): { innerY: number; outerY: number } {
-	let inner = ring[0];
-	let outer = ring[0];
+	let inner = ring[0]!;
+	let outer = ring[0]!;
 	for (const p of ring) {
 		if (p.x > inner.x) inner = p;
 		if (p.x < outer.x) outer = p;
@@ -39,8 +39,8 @@ function leftEyeInnerOuterY(ring: EyeRing): { innerY: number; outerY: number } {
 
 /** 右眼内侧是更小的 x */
 function rightEyeInnerOuterY(ring: EyeRing): { innerY: number; outerY: number } {
-	let inner = ring[0];
-	let outer = ring[0];
+	let inner = ring[0]!;
+	let outer = ring[0]!;
 	for (const p of ring) {
 		if (p.x < inner.x) inner = p;
 		if (p.x > outer.x) outer = p;
@@ -94,16 +94,16 @@ describe('lerpRings', () => {
 	it('t=0 - 等于起点', () => {
 		const r = lerpRings(a, b, 0);
 		for (let i = 0; i < EYE_SAMPLES; i++) {
-			expect(r[i].x).toBeCloseTo(a[i].x, 8);
-			expect(r[i].y).toBeCloseTo(a[i].y, 8);
+			expect(r[i]!.x).toBeCloseTo(a[i]!.x, 8);
+			expect(r[i]!.y).toBeCloseTo(a[i]!.y, 8);
 		}
 	});
 
 	it('t=1 - 等于终点', () => {
 		const r = lerpRings(a, b, 1);
 		for (let i = 0; i < EYE_SAMPLES; i++) {
-			expect(r[i].x).toBeCloseTo(b[i].x, 8);
-			expect(r[i].y).toBeCloseTo(b[i].y, 8);
+			expect(r[i]!.x).toBeCloseTo(b[i]!.x, 8);
+			expect(r[i]!.y).toBeCloseTo(b[i]!.y, 8);
 		}
 	});
 });
@@ -114,8 +114,8 @@ describe('applyGaze', () => {
 	it('视线 0 - 坐标不变', () => {
 		const out = applyGaze(ring, 0, 0);
 		for (let i = 0; i < EYE_SAMPLES; i++) {
-			expect(out[i].x).toBeCloseTo(ring[i].x, 8);
-			expect(out[i].y).toBeCloseTo(ring[i].y, 8);
+			expect(out[i]!.x).toBeCloseTo(ring[i]!.x, 8);
+			expect(out[i]!.y).toBeCloseTo(ring[i]!.y, 8);
 		}
 	});
 

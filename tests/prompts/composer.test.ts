@@ -72,7 +72,10 @@ describe('composeToolDefinitions', () => {
 	it('read_note description 来自 section 中文', () => {
 		const defs = composeToolDefinitions({}, ['read_note']);
 		expect(defs[0]!.description).toContain('读取');
-		expect(defs[0]!.parameters.properties.path.description).toContain('路径');
+		const params = defs[0]!.parameters as {
+			properties: Record<string, { description?: string }>;
+		};
+		expect(params.properties.path!.description).toContain('路径');
 	});
 
 	it('正文工具契约 - 必填参数 - 全文和替换字段不能遗漏', () => {

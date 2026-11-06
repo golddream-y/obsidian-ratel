@@ -770,7 +770,7 @@ const statusZh: StatusStrings = {
   'status.drawer.embedKind.local': '本地',
   'status.drawer.embedBadge.local': 'Ratel 内置向量',
   'status.drawer.embedBadge.api': '远端向量服务',
-  'status.drawer.indexSecondsPerNote': '约 {seconds} 秒/篇',
+  'status.drawer.indexSecondsPerBlock': '约 {seconds} 秒/块',
   'status.drawer.embedKind.api': 'API',
   'status.drawer.section.context': '上下文',
   'status.drawer.label.usedMax': '已用 / 上限',

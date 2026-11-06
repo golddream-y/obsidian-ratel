@@ -15,6 +15,8 @@
  *   `switch-not-verified` 因此只挡住「绕过发布器的直接切换」;「核对完成后才切指针」的时序
  *   实际由宿主「状态 Ready 才订阅调用」保证,核心层没有独立的核对证据校验。
  * - D:切换配置后新代际没有任何可复用完成记录,未修改文件会被重新嵌入(不存在跨代际复用钩子)。
+ * - E(期望行为验收,非缺口复现):切回曾用过且代际目录仍保留的配置时按指纹取回旧代际,
+ *   逐文件核对命中旧完成记录、不重新嵌入;取回后代际先降级为「核对中」,核对完成后指针切回。
  *
  * 全部用例使用系统临时目录上的真实磁盘,不访问真实 Vault、不联网、不加载模型。
  */
@@ -450,5 +452,93 @@ describe('索引运行时配置切换', () => {
 		// 旧代际的完成记录仍在,新会话没有写进旧代际目录。
 		expect((await sessionA.pipeline.journal.readReceipt('note.md'))?.configFingerprint).toBe(fingerprintA);
 		expect(snapshotDir(dirA)).toEqual(snapshotABefore);
+	}, 30_000);
+
+	/**
+	 * 场景 E — 切回旧配置不重嵌(期望行为验收,非缺口复现)。
+	 *
+	 * 承接 [生产切换与跨代际复用判断](../../docs/superpowers/plans/2026-11-02-adaptive-indexing-cutover.md) §1
+	 * 留下的待验证要求:切回「曾经用过、且代际目录仍保留」的配置时,`resolveIndexGeneration` 按指纹
+	 * 取回旧代际,逐文件核对命中既有完成记录(输入 hash + 配置指纹双匹配),**不重新嵌入**;
+	 * 取回的代际先降级为「核对中」(`verifying`,`verifiedAt` 清空),核对完成后由发布器切回指针。
+	 * 不命中则是实现缺陷,不是设计缺陷 —— 本用例即该判定的执行面。
+	 */
+	it('切回旧配置 - 代际按指纹取回 - 未修改文件命中旧完成记录不重嵌且指针可切回', async () => {
+		const configA = baseConfig();
+		const configB = baseConfig({ embeddingModelId: 'local:test-model-b' });
+		const vault = createVault({ 'note.md': NOTE_CONTENT });
+		const embedding = new FakeEmbeddingPort(DIMENSIONS);
+
+		// 会话一:配置 A 建库完成并登记为活动代际,随后释放写所有权。
+		const sessionA = await assembleWritable(root, configA, embedding, vault);
+		coordinators.push(sessionA.pipeline.coordinator);
+		watchdogs.push(sessionA.pipeline.stallWatchdog);
+		await sessionA.pipeline.store.init();
+		await sessionA.generations.publishActiveGeneration({ generationId: sessionA.generationId, mode: 'upgrade' });
+		await sessionA.pipeline.coordinator.start();
+		const fingerprintA = await computeConfigFingerprint(configA);
+		const generationA = sessionA.generationId;
+		expect(embedding.callCount).toBe(1);
+		expect((await sessionA.pipeline.journal.readReceipt('note.md'))?.configFingerprint).toBe(fingerprintA);
+		await sessionA.lease.release();
+
+		// 会话二:切到配置 B,重嵌一次并完成切换,活动指针离开 A(A 降级为 migrated、目录保留)。
+		const sessionB = await assembleWritable(root, configB, embedding, vault);
+		coordinators.push(sessionB.pipeline.coordinator);
+		watchdogs.push(sessionB.pipeline.stallWatchdog);
+		await sessionB.pipeline.store.init();
+		await sessionB.pipeline.coordinator.start();
+		expect(embedding.callCount).toBe(2);
+		const generationB = sessionB.generationId;
+		await sessionB.generations.markGenerationMigrated({ generationId: generationB });
+		let activePointerB = sessionB.activeGenerationId;
+		const publisherB = new GenerationActivationPublisher({
+			getGenerations: () => sessionB.generations,
+			getLease: () => sessionB.lease,
+			getActiveGenerationId: () => activePointerB,
+			setActiveGenerationId: (generationId) => {
+				activePointerB = generationId;
+			},
+		});
+		await publisherB.publish(generationB);
+		expect((await sessionB.generations.readControl()).generations[generationA]).toMatchObject({ status: 'migrated' });
+		await sessionB.lease.release();
+
+		// 会话三:切回配置 A —— 代际按指纹取回(同一代际 ID),不是新建;活动指针仍停在 B。
+		const sessionC = await assembleWritable(root, configA, embedding, vault);
+		leases.push(sessionC.lease);
+		coordinators.push(sessionC.pipeline.coordinator);
+		watchdogs.push(sessionC.pipeline.stallWatchdog);
+		await sessionC.pipeline.store.init();
+		expect(sessionC.generationId).toBe(generationA);
+		expect(sessionC.activeGenerationId).toBe(generationB);
+		// 「曾活动」不等于「本轮已核对」:取回的代际降级为核对中,verifiedAt 清空。
+		expect((await sessionC.generations.readControl()).generations[generationA]).toMatchObject({
+			status: 'verifying',
+			verifiedAt: null,
+		});
+
+		// 本轮核对:同一篇逐字节未改的笔记命中旧完成记录,不调用嵌入模型。
+		await sessionC.pipeline.coordinator.start();
+		expect(embedding.callCount).toBe(2);
+		expect((await sessionC.pipeline.journal.readReceipt('note.md'))?.configFingerprint).toBe(fingerprintA);
+
+		// 核对完成后指针切回 A,B 降级为 migrated,双方目录都保留。
+		await sessionC.generations.markGenerationMigrated({ generationId: generationA });
+		let activePointerC = sessionC.activeGenerationId;
+		const publisherC = new GenerationActivationPublisher({
+			getGenerations: () => sessionC.generations,
+			getLease: () => sessionC.lease,
+			getActiveGenerationId: () => activePointerC,
+			setActiveGenerationId: (generationId) => {
+				activePointerC = generationId;
+			},
+		});
+		await publisherC.publish(generationA);
+		const switchedBack = await sessionC.generations.readControl();
+		expect(switchedBack.activeGenerationId).toBe(generationA);
+		expect(switchedBack.generations[generationB]).toMatchObject({ status: 'migrated' });
+		expect(fs.existsSync(path.join(root, 'generations', generationA))).toBe(true);
+		expect(fs.existsSync(path.join(root, 'generations', generationB))).toBe(true);
 	}, 30_000);
 });

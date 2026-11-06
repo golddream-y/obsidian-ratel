@@ -12,8 +12,8 @@ describe('chunkMarkdown', () => {
 	it('returns single chunk for short content', () => {
 		const result = chunkMarkdown('Hello world', { maxTokens: 500, overlapTokens: 100, count });
 		expect(result).toHaveLength(1);
-		expect(result[0].text).toBe('Hello world');
-		expect(result[0].index).toBe(0);
+		expect(result[0]!.text).toBe('Hello world');
+		expect(result[0]!.index).toBe(0);
 	});
 
 	it('splits long content into multiple chunks', () => {
@@ -28,15 +28,15 @@ describe('chunkMarkdown', () => {
 	it('respects chunk size approximately', () => {
 		const longText = 'A'.repeat(1000);
 		const result = chunkMarkdown(longText, { maxTokens: 300, overlapTokens: 50, count });
-		expect(result[0].text.length).toBeLessThanOrEqual(350);
+		expect(result[0]!.text.length).toBeLessThanOrEqual(350);
 	});
 
 	it('preserves heading boundaries', () => {
 		const content = '# Section 1\nContent 1\n\n# Section 2\nContent 2';
 		const result = chunkMarkdown(content, { maxTokens: 500, overlapTokens: 100, count });
 		expect(result).toHaveLength(1);
-		expect(result[0].text).toContain('# Section 1');
-		expect(result[0].text).toContain('# Section 2');
+		expect(result[0]!.text).toContain('# Section 1');
+		expect(result[0]!.text).toContain('# Section 2');
 	});
 
 	it('splits at heading boundaries when content is long', () => {
@@ -59,7 +59,7 @@ describe('chunkMarkdown', () => {
 		const content = 'Hello world';
 		const result = chunkMarkdown(content, { maxTokens: content.length, overlapTokens: 0, count });
 		expect(result).toHaveLength(1);
-		expect(result[0].text).toBe(content);
+		expect(result[0]!.text).toBe(content);
 	});
 
 	it('handles overlap larger than chunkSize gracefully', () => {
@@ -70,8 +70,8 @@ describe('chunkMarkdown', () => {
 
 	it('sets startOffset and endOffset', () => {
 		const result = chunkMarkdown('Hello world', { maxTokens: 500, overlapTokens: 100, count });
-		expect(result[0].startOffset).toBe(0);
-		expect(result[0].endOffset).toBeGreaterThan(0);
+		expect(result[0]!.startOffset).toBe(0);
+		expect(result[0]!.endOffset).toBeGreaterThan(0);
 	});
 
 	it('handles Unicode emoji content', () => {

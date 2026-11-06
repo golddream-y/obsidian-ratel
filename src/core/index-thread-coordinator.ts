@@ -133,6 +133,8 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 	 * 速率会算出 40+ 篇/秒这种与推理速度无关的假数字。
 	 */
 	private writtenThisRound = 0;
+	/** 本轮真正写入的**块数** — 按块计量才能反映推理速度,不受文档大小影响。 */
+	private writtenBlocksThisRound = 0;
 	private taskIdValue = 0;
 	private phaseValue: IndexPhase = 'ready';
 	private scanCompleted = false;
@@ -168,6 +170,7 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 		this.retryPass = false;
 		this.deferred.clear();
 		this.writtenThisRound = 0;
+		this.writtenBlocksThisRound = 0;
 		await this.client.start(this.startOptions);
 		// 关键路径:线程真的起来之后才算已启动,否则启动失败会把后续事件派给不存在的线程。
 		this.started = true;
@@ -250,6 +253,7 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 			committed: this.verified.size,
 			pendingFiles,
 			committedThisRound: this.writtenThisRound,
+			committedBlocksThisRound: this.writtenBlocksThisRound,
 			queued: this.queue.size,
 			active: this.activeCount,
 			pendingTransactions: 0,
@@ -284,10 +288,13 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 	}
 
 	/** 记录成功:清除失败标记、原操作与样本 —— 样本只描述「当前仍失败」的文件。 */
-	private markSuccess(filePath: string, written = true): void {
+	private markSuccess(filePath: string, written = true, blocks = 0): void {
 		this.verified.add(filePath);
-		// 关键路径:速率只认真正写入的篇数,跳过(内容未变)不计入。
-		if (written) this.writtenThisRound += 1;
+		// 关键路径:速率只认真正写入的篇数与块数,跳过(内容未变)不计入。
+		if (written) {
+			this.writtenThisRound += 1;
+			this.writtenBlocksThisRound += blocks;
+		}
 		this.failing.delete(filePath);
 		this.failedOps.delete(filePath);
 		const sampleIndex = this.failureSamples.findIndex((item) => item.path === filePath);
@@ -395,10 +402,11 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 					const contents: Array<{ path: string; content: string }> = [];
 					for (const item of batch) contents.push({ path: item.path, content: await this.vault.readFile(item.path) });
 					const results = await this.client.indexFiles!(contents);
-					const done = new Map(results.map((item) => [item.path, item.skipped === true]));
+					const done = new Map(results.map((item) => [item.path, item]));
 					for (const item of batch) {
-						if (done.has(item.path)) {
-							this.markSuccess(item.path, done.get(item.path) !== true);
+						const written = done.get(item.path);
+						if (written !== undefined) {
+							this.markSuccess(item.path, written.skipped !== true, written.chunkCount);
 						} else {
 							this.queue.set(item.path, item.entry);
 						}
@@ -424,7 +432,7 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 				} else {
 					const content = await this.vault.readFile(filePath);
 					const result = await this.client.indexFile(filePath, content);
-					this.markSuccess(filePath, result.skipped !== true);
+					this.markSuccess(filePath, result.skipped !== true, result.chunkCount);
 					continue;
 				}
 				this.markSuccess(filePath);

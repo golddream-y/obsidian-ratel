@@ -25,8 +25,8 @@ export type IndexStatus =
     | { state: 'Idle' }
     | { state: 'Init' }
     | { state: 'Diffing' }
-    | { state: 'Scanning'; scanned: number; total: number; committed?: number; pending?: number; failed?: number; phase?: IndexPhase; secondsPerNote?: number }
-    | { state: 'Queueing'; pending: number; reverifying?: boolean; committed?: number; total?: number; failed?: number; phase?: IndexPhase; secondsPerNote?: number }
+    | { state: 'Scanning'; scanned: number; total: number; committed?: number; pending?: number; failed?: number; phase?: IndexPhase; secondsPerBlock?: number }
+    | { state: 'Queueing'; pending: number; reverifying?: boolean; committed?: number; total?: number; failed?: number; phase?: IndexPhase; secondsPerBlock?: number }
     | { state: 'Processing'; currentBatch: string[] }
     | { state: 'Ready'; totalDocs: number; lastIndexTime: number; committedDocs?: number; totalFiles?: number; pendingDocs?: number; failedDocs?: number; phase?: IndexPhase }
     | { state: 'Paused'; pending: number }
@@ -37,7 +37,7 @@ export type IndexStatus =
      * 因此失败路径必须在这里把码留下来,否则 `index-directory-not-owned`/`drop-refused`/
      * `owner-not-writable` 等新码只能落成 `error.index.unknown` + 开发向 message。
      */
-    | { state: 'Failed'; reason: string; errorCode?: string; committed?: number; total?: number; pending?: number; failed?: number; phase?: IndexPhase; secondsPerNote?: number }
+    | { state: 'Failed'; reason: string; errorCode?: string; committed?: number; total?: number; pending?: number; failed?: number; phase?: IndexPhase; secondsPerBlock?: number }
     | { state: 'Unloaded' };
 
 /** 已提交索引的只读摘要，不包含本次扫描或嵌入统计。 */
@@ -156,7 +156,7 @@ export class IndexManager {
      * 窗口只保留最近 10 秒,避免整轮平均掩盖当前速度。
      */
     private rateSamples: Array<{ at: number; committed: number }> = [];
-    /** 速率样本上限 — 按样本数保留,不按固定时长淘汰(见 `sampleSecondsPerNote`)。 */
+    /** 速率样本上限 — 按样本数保留,不按固定时长淘汰(见 `sampleSecondsPerBlock`)。 */
     private static readonly RATE_MAX_SAMPLES = 8;
     /** 超过该时长没有新的完成计数即视为停滞,不再显示速率。 */
     private static readonly RATE_STALE_MS = 20_000;
@@ -297,13 +297,15 @@ export class IndexManager {
      * 关键路径:未 ready 时不发布 Ready;阶段为 partial-failure 时保持 Failed 并沿用既有文案键。
      */
     /** 由真实完成计数算当前速率(篇/秒);样本不足或窗口内零进展时返回 undefined。 */
-    private sampleSecondsPerNote(counters: IndexTaskCounters): number | undefined {
+    private sampleSecondsPerBlock(counters: IndexTaskCounters): number | undefined {
         const now = Date.now();
         const last = this.rateSamples[this.rateSamples.length - 1];
         // 关键路径:同一 committed 不重复入窗,否则重复发布会把速率压到 0。
         // 关键路径(2026-11-06):速率必须基于**本轮真正写入**的篇数,不能基于「已核实」——
         // 重载后大量未变更笔记按完成记录秒跳过,用核实数会算出 40+ 篇/秒这种假速度。
-        const written = counters.committedThisRound;
+        // 关键路径:按**块**计量 —— 按篇会被超大文档(最大 215 块)拉偏,
+        // 生产库平均 14 块/篇,同一速度在两种口径下能差一个数量级。
+        const written = counters.committedBlocksThisRound ?? 0;
         if (last === undefined || last.committed !== written) {
             this.rateSamples.push({ at: now, committed: written });
             if (this.rateSamples.length > IndexManager.RATE_MAX_SAMPLES) {
@@ -325,17 +327,17 @@ export class IndexManager {
         if (elapsedMs < 1000 || delta <= 0) return undefined;
         // 关键路径(2026-11-06):对外展示「多少秒一篇」而不是「篇/秒」——
         // 索引通常几秒到几十秒一篇,换算成速率会得到 0.1 这类没有直观意义的小数。
-        const secondsPerNote = elapsedMs / (delta * 1000);
+        const secondsPerBlock = elapsedMs / (delta * 1000);
         // 秒数越大越该给小数位:≥10 取整,≥1 保留一位,更快的保留两位。
-        if (secondsPerNote >= 10) return Math.round(secondsPerNote);
-        if (secondsPerNote >= 1) return Math.round(secondsPerNote * 10) / 10;
-        return Math.round(secondsPerNote * 100) / 100;
+        if (secondsPerBlock >= 10) return Math.round(secondsPerBlock);
+        if (secondsPerBlock >= 1) return Math.round(secondsPerBlock * 10) / 10;
+        return Math.round(secondsPerBlock * 100) / 100;
     }
 
     private publishCoordinatorStatus(counters: IndexTaskCounters): void {
         if (this.unloaded) return;
-        // 关键路径:对外是「秒/篇」,沿用 rate 字段名会让人误读成速率,统一改名为 secondsPerNote。
-        const secondsPerNote = this.sampleSecondsPerNote(counters);
+        // 关键路径:对外是「秒/块」,沿用 rate 字段名会让人误读成速率,统一改名为 secondsPerBlock。
+        const secondsPerBlock = this.sampleSecondsPerBlock(counters);
         // 展示按唯一文件计数；调度与 canMarkReady 仍保留原始队列/事务口径。
         const pending = counters.pendingFiles ?? Math.max(0, counters.total - counters.committed - counters.failures);
         if (this.paused) {
@@ -357,7 +359,7 @@ export class IndexManager {
         }
         if (counters.failures > 0) {
             this.status$.set({ state: 'Failed', reason: tNow('notice.indexPartialFailure', { count: counters.failures }),
-                committed: counters.committed, total: counters.total, pending, failed: counters.failures, phase: counters.phase, secondsPerNote });
+                committed: counters.committed, total: counters.total, pending, failed: counters.failures, phase: counters.phase, secondsPerBlock });
             return;
         }
         if (!counters.scanComplete) {
@@ -368,7 +370,7 @@ export class IndexManager {
                 committed: counters.committed,
                 pending,
                 failed: counters.failures,
-                phase: counters.phase, secondsPerNote,
+                phase: counters.phase, secondsPerBlock,
             });
             return;
         }
@@ -382,7 +384,7 @@ export class IndexManager {
             committed: counters.committed,
             total: counters.total,
             failed: counters.failures,
-            phase: counters.phase, secondsPerNote,
+            phase: counters.phase, secondsPerBlock,
         });
     }
 

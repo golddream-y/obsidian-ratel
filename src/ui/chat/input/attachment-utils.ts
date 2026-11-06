@@ -20,11 +20,8 @@ export interface AttachmentFileLike {
 	size: number;
 }
 
-/** 校验结果 */
-export interface ValidateResult {
-	ok: boolean;
-	reason?: string;
-}
+/** 校验结果 — 判别联合:ok=false 时必有 reason 文案 */
+export type ValidateResult = { ok: true; reason?: undefined } | { ok: false; reason: string };
 
 /**
  * 估算图片占用 token 数 — OpenAI Vision 经验公式:ceil(width * height / 750)。

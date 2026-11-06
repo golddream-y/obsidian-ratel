@@ -745,7 +745,9 @@ function buildSections(): SectionMeta[] {
  * @returns 可覆盖的 prompt section
  */
 function toolPrompt(name: string, params: string[]) {
-	const section = (id: string) => ({
+	const section = (
+		id: `tool.${string}.description` | `tool.${string}.param.${string}`,
+	): SectionMeta => ({
 		id,
 		label: tNow(`promptLabel.${id}` as 'promptLabel.tool.install_plugin.description'),
 		description: tNow(`promptLabel.${id}.desc` as 'promptLabel.tool.install_plugin.description.desc'),

@@ -22,6 +22,7 @@ function emptyPersistence(): Persistence {
 		hooks: { append: async () => {}, list: async () => [] },
 		getLastSessionId: async () => null,
 		setLastSessionId: async () => {},
+		listSessionIndex: async () => [],
 	};
 }
 

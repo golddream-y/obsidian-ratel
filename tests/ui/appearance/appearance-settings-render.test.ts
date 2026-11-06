@@ -22,7 +22,7 @@ type DomElementInfo = {
  * jsdom 无 Obsidian Element 助手 — 在 HTMLElement 原型上补 createEl/createDiv/createSpan/appendText。
  */
 beforeAll(() => {
-	const proto = HTMLElement.prototype as HTMLElement & {
+	const proto = HTMLElement.prototype as unknown as {
 		createEl?: (tag: string, o?: DomElementInfo | string) => HTMLElement;
 		createDiv?: (o?: DomElementInfo | string) => HTMLDivElement;
 		createSpan?: (o?: DomElementInfo | string) => HTMLSpanElement;
@@ -46,7 +46,7 @@ beforeAll(() => {
 	};
 
 	if (!proto.createEl) {
-		proto.createEl = function (this: HTMLElement, tag, o) {
+		proto.createEl = function (this: HTMLElement, tag: string, o?: DomElementInfo | string) {
 			const el = document.createElement(tag);
 			applyInfo(el, o);
 			this.appendChild(el);

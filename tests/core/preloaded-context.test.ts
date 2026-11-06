@@ -16,7 +16,7 @@ function createCtx(persistence: Persistence) {
 	return new ContextManager(persistence, {
 		getOverrides: () => ({}),
 		getTools: () => [],
-	});
+	}, 8000);
 }
 
 function createMockPersistence(sessions: Map<string, Session> = new Map()): Persistence {

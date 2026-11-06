@@ -39,8 +39,8 @@ describe('updateManifestAfterIncremental', () => {
 
         const updated = await manifest.load();
         expect(updated).not.toBeNull();
-        expect(updated!.entries['foo.md'].hash).not.toBe('old-hash');
-        expect(updated!.entries['foo.md'].mtime).toBeGreaterThan(1000);
+        expect(updated!.entries['foo.md']!.hash).not.toBe('old-hash');
+        expect(updated!.entries['foo.md']!.mtime).toBeGreaterThan(1000);
     });
 
     it('updateManifestAfterIncremental - 已有 chunkCount - 保留旧值', async () => {
@@ -55,7 +55,7 @@ describe('updateManifestAfterIncremental', () => {
         await updateManifestAfterIncremental(manifest, 'foo.md', 'new content');
 
         const updated = await manifest.load();
-        expect(updated!.entries['foo.md'].chunkCount).toBe(7);
+        expect(updated!.entries['foo.md']!.chunkCount).toBe(7);
     });
 
     it('updateManifestAfterIncremental - 新文件 - chunkCount 默认 0', async () => {
@@ -71,7 +71,7 @@ describe('updateManifestAfterIncremental', () => {
 
         const updated = await manifest.load();
         expect(updated!.entries['new.md']).toBeDefined();
-        expect(updated!.entries['new.md'].chunkCount).toBe(0);
+        expect(updated!.entries['new.md']!.chunkCount).toBe(0);
     });
 
     it('updateManifestAfterIncremental - manifest 不存在 - 跳过不抛错', async () => {

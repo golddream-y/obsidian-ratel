@@ -97,7 +97,7 @@ describe('Settings 变更传播', () => {
 		expect(plugin.llm).not.toBe(oldLlm);
 		expect(plugin.llm).toBeInstanceOf(OpenAICompatLLM);
 		// 关键路径:新 LLM 的 config 反映钥匙串里的新 apiKey
-		expect(plugin.llm.config.apiKey).toBe('sk-new');
+		expect((plugin.llm as unknown as { config: { apiKey: string } }).config.apiKey).toBe('sk-new');
 	});
 
 	it('本地 Ollama Chat 免 Key,rebuildLLM 不读钥匙串,apiKey 为空串', () => {
@@ -107,7 +107,7 @@ describe('Settings 变更传播', () => {
 		plugin.rebuildLLM();
 
 		// 关键路径:localhost 端点 requiresChatApiKey=false,resolveChatApiKey 返回 null → 空串。
-		expect(plugin.llm.config.apiKey).toBe('');
+		expect((plugin.llm as unknown as { config: { apiKey: string } }).config.apiKey).toBe('');
 	});
 
 	it('改 chatApiBase 后 rebuildLLM,新 base 生效', () => {
@@ -117,7 +117,7 @@ describe('Settings 变更传播', () => {
 		plugin.settings.chatApiBase = 'https://new.api';
 		plugin.rebuildLLM();
 
-		expect(plugin.llm.config.apiBase).toBe('https://new.api');
+		expect((plugin.llm as unknown as { config: { apiBase: string } }).config.apiBase).toBe('https://new.api');
 	});
 
 	it('改 embedProvider 从 local 到 api,embedding 类型切换', () => {
@@ -141,7 +141,7 @@ describe('Settings 变更传播', () => {
 		secrets[RATEL_SECRET_IDS.embedOpenAICompatible] = 'sk-embed';
 		plugin.rebuildEmbeddingAdapter();
 
-		expect(plugin.embedding.config.apiKey).toBe('sk-embed');
+		expect((plugin.embedding as unknown as { config: { apiKey: string } }).config.apiKey).toBe('sk-embed');
 	});
 
 	it('local Embedding 免 Key,rebuildEmbeddingAdapter 不读钥匙串', () => {

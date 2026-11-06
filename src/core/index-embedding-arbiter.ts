@@ -12,6 +12,8 @@
  * - 队列长度有上界;超出即明确拒绝,不默默堆积内存。
  */
 
+import { devLogger } from '../logging/dev-logger';
+
 /** 工作类型;`query` 高于 `index`。 */
 export type EmbedWorkload = 'query' | 'index';
 
@@ -90,6 +92,29 @@ export class EmbeddingArbiter {
 		return this.queue.splice(index, 1)[0];
 	}
 
+	/** 吞吐统计用的累计量与下次打点阈值。 */
+	private throughputBlocks = 0;
+	private throughputMs = 0;
+	private nextThroughputLogAt = 50;
+
+	/**
+	 * 记录一批索引嵌入的耗时，累计到 50 块时输出一条实际速度。
+	 *
+	 * @param elapsedMs - 这批推理耗时
+	 * @param blocks - 这批的文本块数
+	 */
+	private recordThroughput(elapsedMs: number, blocks: number): void {
+		this.throughputBlocks += blocks;
+		this.throughputMs += elapsedMs;
+		if (this.throughputBlocks < this.nextThroughputLogAt) return;
+		const secondsPerBlock = this.throughputMs / 1000 / this.throughputBlocks;
+		devLogger.info(
+			'index',
+			`嵌入速度 ${secondsPerBlock.toFixed(2)} 秒/块(累计 ${this.throughputBlocks} 块 / ${Math.round(this.throughputMs / 1000)} 秒)`,
+		);
+		this.nextThroughputLogAt = this.throughputBlocks * 2;
+	}
+
 	/** 逐批执行,直到队列空。 */
 	private async pump(): Promise<void> {
 		if (this.pumping) return;
@@ -99,7 +124,11 @@ export class EmbeddingArbiter {
 				const batch = this.takeNext();
 				if (batch === undefined) return;
 				try {
+					const startedAt = performance.now();
 					const vectors = await this.embed(batch.texts, batch.workload);
+					// 关键路径:给出「每块实际推理耗时」——按篇看会被文件大小淹没,
+					// 只有按块才能判断是模型慢还是文档太大(生产库平均 14 块,最大 215 块)。
+					if (batch.workload === 'index') this.recordThroughput(performance.now() - startedAt, batch.texts.length);
 					batch.resolve(vectors);
 				} catch (error) {
 					batch.reject(error instanceof Error ? error : new Error(String(error)));

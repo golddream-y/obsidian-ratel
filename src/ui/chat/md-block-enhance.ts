@@ -151,7 +151,7 @@ function attachCopyButton(
 		attr: { type: 'button', 'aria-label': labels.copy },
 	});
 
-	let copiedTimer: ReturnType<typeof window.setTimeout> | null = null;
+	let copiedTimer: number | null = null;
 	const onClick = () => {
 		const text = copyTextForBlock(block);
 		void copyText(text).then((ok) => {

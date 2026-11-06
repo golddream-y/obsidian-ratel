@@ -41,9 +41,11 @@ describe('本地 Embedding 端到端', () => {
 		const vocabContent = await readFile(path.join(modelDir, 'vocab.txt'), 'utf-8');
 		const modelBuffer = new Uint8Array(onnxBuffer).buffer;
 
+		const wasmBuffer = await readFile(path.join(modelDir, 'ort-wasm-simd-threaded.wasm')).catch(() => new ArrayBuffer(0));
 		const embedding = new EmbeddingOnnx({
 			vocabContent,
 			modelBuffer,
+			wasmBinary: new Uint8Array(wasmBuffer instanceof ArrayBuffer ? wasmBuffer : wasmBuffer.buffer).buffer,
 		});
 		await embedding.init();
 
@@ -57,9 +59,9 @@ describe('本地 Embedding 端到端', () => {
 		expect(b).toHaveLength(512);
 		expect(c).toHaveLength(512);
 
-		const dot = (x: number[], y: number[]) => x.reduce((sum, v, i) => sum + v * y[i], 0);
-		const simAB = dot(a, b);
-		const simAC = dot(a, c);
+		const dot = (x: number[], y: number[]) => x.reduce((sum, v, i) => sum + v * y[i]!, 0);
+		const simAB = dot(a!, b!);
+		const simAC = dot(a!, c!);
 		// 关键路径:语义相近文本的相似度应明显高于无关文本。
 		expect(simAB).toBeGreaterThan(simAC);
 	}, 120_000);

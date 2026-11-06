@@ -72,7 +72,7 @@ describe('applySettingValue - 活跃对话配置同步', () => {
 		await applySettingValue(plugin, 'chatModel', 'new-active-model');
 
 		expect(plugin.settings.chatModel).toBe('new-active-model');
-		expect(plugin.settings.chatProfiles[0].model).toBe('new-active-model');
-		expect(plugin.settings.chatProfiles[1].model).toBe('other-model');
+		expect(plugin.settings.chatProfiles[0]!.model).toBe('new-active-model');
+		expect(plugin.settings.chatProfiles[1]!.model).toBe('other-model');
 	});
 });

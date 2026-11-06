@@ -47,17 +47,20 @@ export type BudgetAction = 'continue' | 'endRound' | 'askRounds';
  * @returns blocked 与可选原因(含两轮数值对比)
  */
 export function evaluateNoProgress(input: NoProgressInput): NoProgressResult {
-	const hasPredicate = input.remainingPrev !== null && input.remainingNow !== null;
-	const mainStalled = hasPredicate
-		? input.remainingNow >= input.remainingPrev
-		: input.writesThisRound === 0 && input.writesPrevRound === 0;
+	const prev = input.remainingPrev;
+	const now = input.remainingNow;
+	const hasPredicate = prev !== null && now !== null;
+	const mainStalled =
+		prev !== null && now !== null
+			? now >= prev
+			: input.writesThisRound === 0 && input.writesPrevRound === 0;
 
 	if (!mainStalled) {
 		return { blocked: false };
 	}
 
 	const signalDesc = hasPredicate
-		? `剩余集合 ${input.remainingPrev} → ${input.remainingNow}`
+		? `剩余集合 ${prev} → ${now}`
 		: `grant 写入 ${input.writesPrevRound} → ${input.writesThisRound}`;
 	const noteHint =
 		input.progressNoteNow !== input.progressNotePrev

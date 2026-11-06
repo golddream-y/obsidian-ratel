@@ -69,6 +69,9 @@ describe('身份守卫接线', () => {
 		const fingerprint = await computeConfigFingerprint(BASE);
 		const first = await setupWritableIndexRuntime(depsFor(BASE, fingerprint, guard));
 		expect(guard.activeFingerprint).toBe(fingerprint);
+		// 关键路径:装配层以 autoInit 预热线存储;不等待它落地就删临时目录,
+		// 会让 vectra 的 catalog 创建在套件高负载下以未处理拒绝收尾(见 2026-11-04 记录)。
+		await first.pipeline.store.init();
 		first.releaseIdentity?.();
 		await first.lease.release();
 		expect(guard.busy).toBe(false);
@@ -87,6 +90,7 @@ describe('身份守卫接线', () => {
 		// 旧运行时仍在，且指纹没被顶掉。
 		expect(guard.activeFingerprint).toBe(fingerprintA);
 
+		await first.pipeline.store.init();
 		first.releaseIdentity?.();
 		await first.lease.release();
 	}, 30_000);

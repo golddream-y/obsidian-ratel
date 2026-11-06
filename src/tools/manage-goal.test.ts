@@ -152,8 +152,8 @@ describe('manage_goal 工具', () => {
 		expect(result).toMatch(/已创建|创建/);
 		const goals = await store.list();
 		expect(goals).toHaveLength(1);
-		expect(goals[0].status).toBe('active');
-		expect(goals[0].activeSessionId).toBe(SESSION);
+		expect(goals[0]!.status).toBe('active');
+		expect(goals[0]!.activeSessionId).toBe(SESSION);
 	});
 
 	it('create - criteria 为空 - 抛错且不落盘', async () => {

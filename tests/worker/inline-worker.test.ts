@@ -54,7 +54,7 @@ describe('InlineWorker', () => {
 		const responses: unknown[] = [];
 
 		await new Promise<void>((resolve) => {
-			worker.on('message', (data) => {
+			worker.on('message', (data: Record<string, unknown>) => {
 				responses.push(data);
 				resolve();
 			});
@@ -76,7 +76,7 @@ describe('InlineWorker', () => {
 		const allMessages: unknown[] = [];
 		const responses: unknown[] = [];
 		await new Promise<void>((resolve) => {
-			worker.on('message', (data) => {
+			worker.on('message', (data: Record<string, unknown>) => {
 				allMessages.push(data);
 				// 关键路径:进度和终态都带请求 ID，必须先按消息类型区分。
 				if (data._requestId && data.type !== 'index.progress') {
@@ -92,7 +92,10 @@ describe('InlineWorker', () => {
 		});
 
 		// 关键路径:先收到一个 index.progress 事件(done:1,total:1),再收到 index.done 响应。
-		const progressMsgs = allMessages.filter((m: Record<string, unknown>) => m.type === 'index.progress');
+		const progressMsgs = allMessages.filter(
+			(m): m is Record<string, unknown> =>
+				typeof m === 'object' && m !== null && (m as Record<string, unknown>).type === 'index.progress'
+		);
 		expect(progressMsgs).toHaveLength(1);
 		expect((progressMsgs[0] as Record<string, unknown>).payload).toEqual({ done: 1, total: 1 });
 		expect((progressMsgs[0] as Record<string, unknown>)._requestId).toBe('r2');
@@ -112,7 +115,7 @@ describe('InlineWorker', () => {
 
 		const responses: unknown[] = [];
 		let resolved = false;
-		worker.on('message', (data) => {
+		worker.on('message', (data: Record<string, unknown>) => {
 			responses.push(data);
 		});
 		worker.postMessage({ type: 'index.status', payload: {}, _requestId: 'r3' });

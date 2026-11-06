@@ -25,10 +25,11 @@ const MANIFEST_PATH = path.join(TEST_DIR, 'index-manifest.json');
  * 关键路径:适配 EmbeddingPort 契约(必须含 modelId),由 makeBackend 内部调用,
  * 不注入 VectraStore(VectraStore 用 upsertItem 走预计算向量路径,不需要 embeddings)。
  */
+const embedMock = vi.fn().mockImplementation(async (texts: string[]) =>
+    texts.map(() => Array(512).fill(0).map(() => Math.random())),
+);
 const mockEmbedPort: EmbeddingPort = {
-    embed: vi.fn().mockImplementation(async (texts: string[]) =>
-        texts.map(() => Array(512).fill(0).map(() => Math.random())),
-    ),
+    embed: embedMock,
     dimensions: 512,
     modelId: 'mock-bge',
 };
@@ -209,7 +210,7 @@ describe('smart reindex 集成', () => {
     beforeEach(() => {
         if (fs.existsSync(TEST_DIR)) fs.rmSync(TEST_DIR, { recursive: true });
         fs.mkdirSync(TEST_DIR, { recursive: true });
-        mockEmbedPort.embed.mockClear();
+        embedMock.mockClear();
     });
 
     afterEach(() => {
@@ -259,7 +260,7 @@ describe('smart reindex 集成', () => {
         const mgr = new IndexManager(backend);
 
         await mgr.onLayoutReady(); // 冷启动全量
-        mockEmbedPort.embed.mockClear();
+        embedMock.mockClear();
         // 关键路径:不销毁 store,模拟重启后 .index 仍在磁盘。
         await mgr.onLayoutReady(); // 热启动
 
@@ -285,7 +286,7 @@ describe('smart reindex 集成', () => {
         const mgr = new IndexManager(backend);
 
         await mgr.onLayoutReady();
-        mockEmbedPort.embed.mockClear();
+        embedMock.mockClear();
         files.set('a.md', 'new content');
         await mgr.onLayoutReady();
 
@@ -340,7 +341,7 @@ describe('smart reindex 集成', () => {
         const mgr = new IndexManager(backend);
 
         await mgr.onLayoutReady();
-        mockEmbedPort.embed.mockClear();
+        embedMock.mockClear();
 
         // 关键路径:换 embedModelId,触发全量重建。
         const backend2 = makeBackend({
@@ -374,7 +375,7 @@ describe('smart reindex 集成', () => {
         const mgr = new IndexManager(backend);
 
         await mgr.onLayoutReady();
-        mockEmbedPort.embed.mockClear();
+        embedMock.mockClear();
 
         const backend2 = makeBackend({
             store,
@@ -407,7 +408,7 @@ describe('smart reindex 集成', () => {
         const mgr = new IndexManager(backend);
 
         await mgr.onLayoutReady();
-        mockEmbedPort.embed.mockClear();
+        embedMock.mockClear();
 
         // 关键路径:写坏 manifest。
         fs.writeFileSync(MANIFEST_PATH, '{broken json');
@@ -455,7 +456,7 @@ describe('smart reindex 集成', () => {
         const mgr = new IndexManager(backend);
 
         await mgr.onLayoutReady();
-        mockEmbedPort.embed.mockClear();
+        embedMock.mockClear();
         await mgr.onLayoutReady();
 
         expect(mockEmbedPort.embed).not.toHaveBeenCalled();
@@ -481,7 +482,7 @@ describe('smart reindex 集成', () => {
         await mgr.onLayoutReady();
         // 关键路径:缩短到 1 chunk。
         files.set('a.md', 'short');
-        mockEmbedPort.embed.mockClear();
+        embedMock.mockClear();
         await mgr.onLayoutReady();
 
         // 关键路径:搜索不应命中旧的长内容 chunk,只剩 1 个 a.md 文档聚合。

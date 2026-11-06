@@ -282,7 +282,7 @@ describe('GoalRunner.finalizeRound', () => {
 			events: [toolResult('write_note', 'ok'), endEvent(1, 1, 1, 1)],
 		});
 		expect(r1.completed).toBe(true);
-		const goal = await store.get((await store.list())[0].id);
+		const goal = await store.get((await store.list())[0]!.id);
 		expect(goal?.status).toBe('completed');
 	});
 

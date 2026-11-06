@@ -16,6 +16,7 @@ export type RatelOrbBusyKind =
 	| 'index'
 	| 'retry'
 	| 'compact'
+	| 'connecting'
 	| 'idle';
 
 /**

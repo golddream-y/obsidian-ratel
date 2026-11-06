@@ -153,8 +153,9 @@ export async function applySettingValue(plugin: SettingApplier, key: string, val
 			// 当前模型不属于新供应商时，换成这一家的第一个可用模型，窗口才能查到。
 			if (catalog) {
 				const models = listCatalogModels(catalog, id);
-				if (models.length > 0 && !models.includes(plugin.settings.chatModel)) {
-					plugin.settings.chatModel = models[0];
+				const firstModel = models[0];
+				if (firstModel !== undefined && !models.includes(plugin.settings.chatModel)) {
+					plugin.settings.chatModel = firstModel;
 				}
 			}
 		}

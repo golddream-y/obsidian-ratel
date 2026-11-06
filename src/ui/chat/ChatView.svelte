@@ -903,7 +903,7 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 	const lastAssistant = $derived.by(() => {
 		for (let i = messages.length - 1; i >= 0; i--) {
 			const m = messages[i];
-			if (m.role === 'assistant') return m;
+			if (m?.role === 'assistant') return m;
 		}
 		return null;
 	});
@@ -2232,7 +2232,7 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 										<button
 											class="ratel-send"
 											type="button"
-											onclick={sendMessage}
+											onclick={() => sendMessage()}
 											disabled={!input.trim() || !gate.canSend}
 											title={$t('chat.composer.send')}
 											aria-label={$t('chat.composer.send')}

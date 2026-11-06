@@ -22,7 +22,7 @@ type OutboundMessage = {
 	content?: string;
 	reasoning?: string;
 	toolArgs?: Record<string, unknown>;
-	attachments?: ReadonlyArray<{ estimatedTokens?: number }>;
+	attachments?: ReadonlyArray<{ estimatedTokens?: number; id?: string; mimeType?: string; base64?: string }>;
 };
 
 /**

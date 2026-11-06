@@ -41,7 +41,7 @@ function createMockLLM(responses: ChatDelta[][]): LLMClient {
 				yield delta;
 			}
 		},
-		embed: async () => [],
+		supportsImages: false,
 		countTokens: () => 10,
 	};
 }
@@ -564,7 +564,7 @@ describe('agentLoop', () => {
 				controller.abort();
 				yield { text: 'response' };
 			},
-			embed: async () => [],
+			supportsImages: false,
 			countTokens: () => 10,
 		};
 
@@ -597,6 +597,7 @@ describe('agentLoop', () => {
 		let secondRuns = 0;
 		let llmCalls = 0;
 		const llm: LLMClient = {
+			supportsImages: false,
 			async *chat(): AsyncIterable<ChatDelta> {
 				llmCalls += 1;
 				if (llmCalls === 1) {
@@ -650,7 +651,7 @@ describe('agentLoop', () => {
 				yield { text: 'Hello' };
 				controller.abort();
 			},
-			embed: async () => [],
+			supportsImages: false,
 			countTokens: () => 10,
 		};
 
@@ -1235,7 +1236,7 @@ describe('agentLoop', () => {
 		tools.register(writeTool);
 		const llm = createMockLLM([
 			[
-				{ toolCall: { id: 'c1', name: 'mock_write', args: { path: 'a.md' } } },
+				{ text: '', toolCall: { id: 'c1', name: 'mock_write', args: { path: 'a.md' } } },
 				{ text: '', usage: { promptTokens: 10, completionTokens: 5 } },
 			],
 			[
@@ -1322,7 +1323,7 @@ describe('agentLoop', () => {
 				)?.content ?? '';
 				yield { text: 'ok' };
 			},
-			embed: async () => [],
+			supportsImages: false,
 			countTokens: () => 1,
 		};
 		const tools = new ToolRegistry();
@@ -1355,7 +1356,7 @@ describe('agentLoop', () => {
 			async *chat(): AsyncIterable<ChatDelta> {
 				throw new Error('prompt too long');
 			},
-			embed: async () => [],
+			supportsImages: false,
 			countTokens: () => 1,
 		};
 		const tools = new ToolRegistry();
@@ -1393,7 +1394,7 @@ describe('agentLoop', () => {
 				outboundLastUser = users.at(-1)?.content ?? '';
 				yield { text: '收到' };
 			},
-			embed: async () => [],
+			supportsImages: false,
 			countTokens: () => 1,
 		};
 		const tools = new ToolRegistry();
@@ -1532,7 +1533,7 @@ describe('agentLoop', () => {
 				if (calls === 2) return;
 				yield { text: '说完了。' + '正文'.repeat(120) };
 			},
-			embed: async () => [],
+			supportsImages: false,
 			countTokens: () => 10,
 		};
 		const tools = new ToolRegistry();
@@ -1572,7 +1573,7 @@ describe('agentLoop', () => {
 				expect(savedBeforeChat).toBe(true);
 				calls += 1;
 			},
-			embed: async () => [],
+			supportsImages: false,
 			countTokens: () => 10,
 		};
 		const events: AgentEvent[] = [];
@@ -1603,7 +1604,7 @@ describe('agentLoop', () => {
 				seen.push(req.messages.map((m) => m.content).join('\n'));
 				yield { text: '', toolCall: { id: 'c1', name: 'read_note', args: {} } };
 			},
-			embed: async () => [],
+			supportsImages: false,
 			countTokens: () => 10,
 		};
 		const tools = new ToolRegistry();
@@ -1648,7 +1649,7 @@ describe('agentLoop note-agents', () => {
 				}
 				yield { text: 'done' };
 			},
-			embed: async () => [],
+			supportsImages: false,
 			countTokens: () => 10,
 		};
 		const tools = new ToolRegistry();

@@ -36,13 +36,15 @@ export const drawWeb: ModeDraw = (ctx, size, t, dark, o) => {
   // edges between close neighbours, alpha by proximity + depth
   for (let i = 0; i < nodeN; i++) {
     for (let j = i + 1; j < nodeN; j++) {
-      const dx = nodes[i][0] - nodes[j][0];
-      const dy = nodes[i][1] - nodes[j][1];
-      const dz = nodes[i][2] - nodes[j][2];
+      const na = nodes[i]!;
+      const nb = nodes[j]!;
+      const dx = na[0] - nb[0];
+      const dy = na[1] - nb[1];
+      const dz = na[2] - nb[2];
       const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
       if (dist >= thr) continue;
-      const [x1, y1, z1] = pt(nodes[i][0], nodes[i][1], nodes[i][2]);
-      const [x2, y2, z2] = pt(nodes[j][0], nodes[j][1], nodes[j][2]);
+      const [x1, y1, z1] = pt(na[0], na[1], na[2]);
+      const [x2, y2, z2] = pt(nb[0], nb[1], nb[2]);
       const depth = ((z1 + z2) / 2 + 1) / 2;
       lines.push({
         x1,
@@ -57,7 +59,8 @@ export const drawWeb: ModeDraw = (ctx, size, t, dark, o) => {
   }
 
   for (let i = 0; i < nodeN; i++) {
-    const [px, py, z] = pt(nodes[i][0], nodes[i][1], nodes[i][2]);
+    const node = nodes[i]!;
+    const [px, py, z] = pt(node[0], node[1], node[2]);
     const depth = (z + 1) / 2;
     const pulse = 1 + 0.25 * Math.sin(t * 1.4 + i * 2.7);
     dots.push({
@@ -77,9 +80,11 @@ export const drawWeb: ModeDraw = (ctx, size, t, dark, o) => {
     const b = Math.floor(hashD(seg, s * 5.7 + 4.2) * nodeN);
     if (a === b) continue;
     const f = frac(t * 0.55 + s * 7.31);
-    const x = lerp(nodes[a][0], nodes[b][0], f);
-    const y = lerp(nodes[a][1], nodes[b][1], f);
-    const z = lerp(nodes[a][2], nodes[b][2], f);
+    const na = nodes[a]!;
+    const nb = nodes[b]!;
+    const x = lerp(na[0], nb[0], f);
+    const y = lerp(na[1], nb[1], f);
+    const z = lerp(na[2], nb[2], f);
     const l = Math.max(1e-6, Math.sqrt(x * x + y * y + z * z));
     const [px, py, zr] = pt(x / l, y / l, z / l);
     const depth = (zr + 1) / 2;

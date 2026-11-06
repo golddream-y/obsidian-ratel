@@ -20,8 +20,8 @@ function polyPath(verts: ReadonlyArray<readonly [number, number]>): Path {
   const L: number[] = [];
   let total = 0;
   for (let i = 0; i < V; i++) {
-    const a = verts[i];
-    const b = verts[(i + 1) % V];
+    const a = verts[i]!;
+    const b = verts[(i + 1) % V]!;
     const l = Math.hypot(b[0] - a[0], b[1] - a[1]);
     L.push(l);
     total += l;
@@ -29,13 +29,13 @@ function polyPath(verts: ReadonlyArray<readonly [number, number]>): Path {
   return (f) => {
     let target = f * total;
     let i = 0;
-    while (target > L[i] && i < V - 1) {
-      target -= L[i];
+    while (target > L[i]! && i < V - 1) {
+      target -= L[i]!;
       i++;
     }
-    const a = verts[i];
-    const b = verts[(i + 1) % V];
-    const ff = L[i] ? Math.min(1, target / L[i]) : 0;
+    const a = verts[i]!;
+    const b = verts[(i + 1) % V]!;
+    const ff = L[i] ? Math.min(1, target / L[i]!) : 0;
     return [a[0] + (b[0] - a[0]) * ff, a[1] + (b[1] - a[1]) * ff];
   };
 }
@@ -85,8 +85,8 @@ export const drawMorph: ModeDraw = (ctx, size, t, dark, o) => {
   const sprd = o.spread ?? 1;
 
   // blend the two shape PATHS at m, then measure the blended outline
-  const pA = CYCLE[k];
-  const pB = CYCLE[(k + 1) % K];
+  const pA = CYCLE[k]!;
+  const pB = CYCLE[(k + 1) % K]!;
   const M = 160;
   const pts: Array<[number, number]> = [];
   for (let i = 0; i < M; i++) {
@@ -98,8 +98,8 @@ export const drawMorph: ModeDraw = (ctx, size, t, dark, o) => {
   const L: number[] = [];
   let total = 0;
   for (let i = 0; i < M; i++) {
-    const a = pts[i];
-    const b = pts[(i + 1) % M];
+    const a = pts[i]!;
+    const b = pts[(i + 1) % M]!;
     const l = Math.hypot(b[0] - a[0], b[1] - a[1]);
     L.push(l);
     total += l;
@@ -117,13 +117,13 @@ export const drawMorph: ModeDraw = (ctx, size, t, dark, o) => {
   let acc = 0;
   for (let k2 = 0; k2 < n; k2++) {
     const target = (k2 / n) * total;
-    while (acc + L[seg] < target && seg < M - 1) {
-      acc += L[seg];
+    while (acc + L[seg]! < target && seg < M - 1) {
+      acc += L[seg]!;
       seg++;
     }
-    const a = pts[seg];
-    const b = pts[(seg + 1) % M];
-    const f = L[seg] ? Math.min(1, (target - acc) / L[seg]) : 0;
+    const a = pts[seg]!;
+    const b = pts[(seg + 1) % M]!;
+    const f = L[seg] ? Math.min(1, (target - acc) / L[seg]!) : 0;
     const x = (a[0] + (b[0] - a[0]) * f) * pulse;
     const y = (a[1] + (b[1] - a[1]) * f) * pulse;
     dots.push({

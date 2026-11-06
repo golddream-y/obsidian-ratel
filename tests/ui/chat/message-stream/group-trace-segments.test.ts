@@ -22,7 +22,7 @@ describe('groupTraceSegments', () => {
 		expect(blocks).toHaveLength(1);
 		expect(blocks[0]!.kind).toBe('trace');
 		if (blocks[0]!.kind === 'trace') {
-			expect(blocks[0].items).toHaveLength(3);
+			expect(blocks[0]!.items).toHaveLength(3);
 		}
 	});
 

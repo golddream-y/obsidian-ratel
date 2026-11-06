@@ -8,6 +8,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { applySettingValue } from '../src/settings/settings-apply';
 import { DEFAULT_SETTINGS, type RatelVaultSettings } from '../src/settings';
 import type { ModelsDevCatalog } from '../src/settings/model-catalog';
+import type { ModelContextLookup } from '../src/settings/chat-profiles';
 
 function catalogFor(providerId: string, model: string, context: number, output = 1024): ModelsDevCatalog {
 	return {
@@ -29,6 +30,7 @@ function mockApplier() {
 		rebuildEmbeddingAdapter: vi.fn<() => void>(),
 		syncToolDefinitions: vi.fn<() => void>(),
 		modelContextRegistry: undefined as ModelContextLookup | undefined,
+		modelsDevCatalog: undefined as { ensureCatalog(): Promise<ModelsDevCatalog | null> } | undefined,
 	};
 }
 

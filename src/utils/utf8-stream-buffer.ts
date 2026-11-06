@@ -19,7 +19,7 @@ export function utf8IncompleteTailBytes(buf: Buffer): number {
 
 	let i = n - 1;
 	let continuations = 0;
-	while (i >= 0 && (buf[i] & 0xc0) === 0x80) {
+	while (i >= 0 && (buf.readUInt8(i) & 0xc0) === 0x80) {
 		continuations++;
 		i--;
 		if (continuations >= 3) break;
@@ -29,7 +29,7 @@ export function utf8IncompleteTailBytes(buf: Buffer): number {
 		return n;
 	}
 
-	const lead = buf[i];
+	const lead = buf.readUInt8(i);
 	let expected = 0;
 	if ((lead & 0x80) === 0) expected = 1;
 	else if ((lead & 0xe0) === 0xc0) expected = 2;
