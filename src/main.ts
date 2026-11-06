@@ -1,4 +1,3 @@
-// RATEL_TOP_MARKER_ABC
 /**
  * @file src/main.ts
  * @description Ratel Vault 插件入口 — 生命周期、命令、视图注册
@@ -439,37 +438,6 @@ export default class RatelVaultPlugin extends Plugin {
 	 * 3. Worker 路径必须是编译后的 `worker.js`,与 `main.js` 同目录。
 	 */
 	async onload() {
-		this.traceStartup('onload:enter');
-		// [diag] 主线程长任务探针 — 定位「索引期间界面卡顿」是否为主线程被占。
-		// 每 5 秒汇总:长任务次数、最长一次、累计占用。无长任务即可排除主线程。
-		{
-			const perf = (globalThis as { PerformanceObserver?: typeof PerformanceObserver }).PerformanceObserver;
-			if (perf !== undefined) {
-				let count = 0;
-				let max = 0;
-				let total = 0;
-				try {
-					const observer = new perf((list) => {
-						for (const entry of list.getEntries()) {
-							count += 1;
-							total += entry.duration;
-							if (entry.duration > max) max = entry.duration;
-						}
-					});
-					observer.observe({ entryTypes: ['longtask'] });
-					const timer = globalThis.setInterval(() => {
-						if (count === 0) return;
-						devLogger.info('index', `[diag] 主线程长任务 5s 内 ${count} 次,最长 ${Math.round(max)}ms,累计 ${Math.round(total)}ms`);
-						count = 0; max = 0; total = 0;
-					}, 5000);
-					this.registerInterval(timer as unknown as number);
-					this.register(() => observer.disconnect());
-				}
-				catch {
-					// 宿主不支持 longtask 时静默跳过,不影响功能。
-				}
-			}
-		}
 		await this.loadSettings();
 		// 关键路径:启动时根据 settings.language 解析界面语言并写入 langStore,
 		// 必须在所有 tNow 调用之前执行(命令注册、Notice、错误消息都依赖 langStore)。
@@ -1326,7 +1294,6 @@ export default class RatelVaultPlugin extends Plugin {
 	 * - ONNX 推理移入 EmbeddingWorkerProxy(Web Worker),主线程零 CPU 阻塞;proxy 注入 InlineWorker。
 	 */
 	async onLayoutReady(): Promise<void> {
-		this.traceStartup('layout-ready:enter');
 		if (shouldShowReleaseNotes(this.settings.lastSeenRelease, this.manifest.version)) {
 			void openReleaseNotesTab(this, true);
 		}
@@ -2243,84 +2210,26 @@ export default class RatelVaultPlugin extends Plugin {
 	 * @param config - 当前配置
 	 * @returns 是否成功切到线程路径
 	 */
-	/**
-	 * [diag] 落盘级启动信标 — 主线程空转卡死时无法读控制台,只能靠磁盘上的最后一步定位。
-	 * 同步追加、失败静默:信标本身绝不能影响启动。
-	 */
-	/** [diag] 单次调用超过 1 秒才落盘,避免刷屏;用于判定主线程卡在哪个边界。 */
-	private traceSlow(label: string, startedAt: number, detail?: string): void {
-		const elapsed = Date.now() - startedAt;
-		if (elapsed < 1000) return;
-		this.traceStartup(`slow:${label}=${elapsed}ms${detail === undefined ? '' : ` (${detail})`}`);
-	}
-
-	private traceDirLogged = false;
-
-	private traceStartup(step: string): void {
-		try {
-			// 关键路径:`manifest.dir` 在宿主里是相对路径,拼出来的目录不可写。
-			// 必须用 vault 根推导绝对路径,否则信标静默丢失(2026-11-06 踩过)。
-			const base = (this.app.vault.adapter as { basePath?: string }).basePath;
-			const dir = base !== undefined && base.length > 0
-				? path.join(base, '.obsidian', 'plugins', 'ratel-vault', 'diag')
-				: (this.manifest.dir === undefined ? undefined : path.resolve(this.manifest.dir, 'diag'));
-			if (dir === undefined) return;
-			if (this.traceDirLogged !== true) {
-				this.traceDirLogged = true;
-				devLogger.info('index', `[diag] 信标目录 ${dir}`);
-			}
-			const target = path.join(dir, 'startup-trace.log');
-			fs.mkdirSync(path.dirname(target), { recursive: true });
-			fs.appendFileSync(target, `${new Date().toISOString()}|${step}\n`, 'utf-8');
-		}
-		catch {
-			// 信标失败不影响启动。
-		}
-	}
-
 	private async trySetupThreadIndexRuntime(config: IndexConfigDescriptor): Promise<boolean> {
 		let lease: IndexWriteOwner | null = null;
-		this.traceStartup('thread:start');
 		try {
 			this.indexIdentityGuard.register(this.indexConfigFingerprint);
 			lease = await IndexWriteOwner.acquire({
 				root: this.indexRoot,
 				instanceToken: crypto.randomUUID(),
 			});
-			this.traceStartup('thread:lease-acquired');
 			const generations = new IndexGenerations({ indexRoot: this.indexRoot, owner: lease });
-			this.traceStartup('thread:assemble-enter');
 			const assembled = await assembleIndexThreadRuntime({
 				indexRoot: this.indexRoot,
 				generations,
 				config,
 				owner: lease,
 				expectedDimension: this.embedding.dimensions,
-				embedding: {
-					dimensions: this.embedding.dimensions,
-					modelId: this.embedding.modelId,
-					embed: async (texts: string[]) => {
-						const started = Date.now();
-						const runner = this.embeddingWorkerProxy ?? this.embedding;
-						try {
-							return await runner.embed(texts);
-						}
-						finally {
-							this.traceSlow(`embedding.embed(${texts.length} 段)`, started);
-						}
-					},
-				},
+				// 关键路径:本地模式优先用 Worker 代理推理,避免主线程裸跑 ONNX。
+				embedding: this.embeddingWorkerProxy ?? this.embedding,
 				vault: {
 					listMarkdownFiles: () => this.vault.listMarkdownFiles(),
-					readFile: async (filePath) => {
-						const started = Date.now();
-						try {
-							return await this.vault.readFile(filePath);
-						}
-						finally {
-							this.traceSlow('vault.readFile', started, filePath);
-						}
-					},
+					readFile: (filePath) => this.vault.readFile(filePath),
 				},
 				chunkLimits: { chunkSize: this.settings.chunkSize, chunkOverlap: this.settings.chunkOverlap },
 				legacy: null,
@@ -2331,9 +2240,7 @@ export default class RatelVaultPlugin extends Plugin {
 				this.indexIdentityGuard.release(this.indexConfigFingerprint);
 				return false;
 			}
-			this.traceStartup('thread:assemble-done');
 			const control = await generations.readControl();
-			this.traceStartup('thread:control-read');
 			this.indexDir = assembled.resolved.generationRoot;
 			this.resolvedGenerationId = assembled.resolved.generationId;
 			this.activeGenerationId = control.activeGenerationId;
@@ -2345,7 +2252,6 @@ export default class RatelVaultPlugin extends Plugin {
 			this.indexThreadCoordinator = assembled.pipeline.coordinator;
 			this.threadSearchGate = createThreadVisibilityGate(assembled.pipeline.client);
 			this.releaseIndexIdentity = () => this.indexIdentityGuard.release(this.indexConfigFingerprint);
-			this.traceStartup('thread:ready');
 			devLogger.info('index', `索引线程模式已启用:代际 ${assembled.resolved.generationId}`);
 			return true;
 		} catch (err) {

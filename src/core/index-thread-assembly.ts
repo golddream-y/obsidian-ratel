@@ -180,15 +180,12 @@ export async function assembleIndexThreadRuntime(deps: AssembleIndexThreadRuntim
 	// 决定片数,全新库取下限 8。这样线程会话(以及任何重启)打开时读到的都是分片布局,
 	// 不会出现「本次单份、下次分片」的撕裂。
 	// 迁移失败 fail-closed:不吞错,由调用方整体回落到主线程路径。
-	devLogger.info('index', `[diag] 线程装配:代际已解析 ${resolved.generationId}`);
 	await migrateSingleFileIndex({ generationRoot: resolved.generationRoot });
 	const layout = await readShardLayout(resolved.generationRoot);
-	devLogger.info('index', `[diag] 线程装配:迁移完成 layout=${layout === null ? 'null' : layout.shardCount}`);
 	const store = createShardedStore({
 		root: resolved.generationRoot,
 		shardCount: layout?.shardCount ?? shardCountForBlocks(0),
 	});
-	devLogger.info('index', '[diag] 线程装配:开始装配管线');
 	const pipeline = assembleIndexThreadPipeline({
 		...deps,
 		indexRoot: resolved.generationRoot,
@@ -199,7 +196,6 @@ export async function assembleIndexThreadRuntime(deps: AssembleIndexThreadRuntim
 	});
 	// 关键路径:layout 在管线装配成功之后才落盘且幂等;装配失败不留假迁移标记。
 	if (layout === null) await ensureShardLayout(resolved.generationRoot, store.shardCount);
-	devLogger.info('index', `[diag] 线程装配:布局完成 片数=${store.shardCount}`);
 	return { resolved, pipeline };
 }
 
