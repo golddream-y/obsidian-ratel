@@ -375,9 +375,9 @@
 	/* 层次 1/3:分组标签 — 最弱,靠细线与上间距划分区块,不与主状态争夺注意力。 */
 	.ratel-drawer-section-title {
 		font-size: 11px;
-		font-weight: 600;
+		font-weight: 500;
 		letter-spacing: 0.4px;
-		color: var(--text-faint);
+		color: var(--text-muted);
 		margin-top: 14px;
 		padding: 0 0 6px;
 		border-bottom: 1px solid var(--background-modifier-border);
@@ -398,7 +398,7 @@
 	/* 关键路径:这里是**只读信息**,不是可点控件。边框 + 背景会把它画成按钮,
 	   与真正的操作控件(压缩上下文)混淆;因此只保留弱化文字,不用任何控件外观。 */
 	.ratel-embed-badge {
-		font-size: 10px;
+		font-size: 11px;
 		font-weight: 400;
 		letter-spacing: 0;
 		color: var(--text-faint);
@@ -407,12 +407,12 @@
 	/* 标题行内的操作按钮 — 比常规微按钮更小,不撑高分组标题。 */
 	.ratel-drawer-micro-btn--inline {
 		padding: 1px 8px;
-		font-size: 10px;
-		line-height: 1.5;
+		font-size: 11px;
+		line-height: 1.4;
 	}
 	.ratel-index-rate {
-		font-size: 10.5px;
-		color: var(--text-faint);
+		font-size: 11px;
+		color: var(--text-muted);
 		font-variant-numeric: tabular-nums;
 		white-space: nowrap;
 	}
@@ -433,7 +433,7 @@
 		color: var(--text-normal);
 	}
 	.ratel-index-count {
-		font-size: 11.5px;
+		font-size: 11px;
 		color: var(--text-muted);
 		font-variant-numeric: tabular-nums;
 	}
@@ -452,7 +452,7 @@
 		margin: 0 0 10px;
 		padding-left: 8px;
 		border-left: 2px solid var(--background-modifier-border);
-		font-size: 10.5px;
+		font-size: 11px;
 		line-height: 1.5;
 		color: var(--text-faint);
 		overflow-wrap: anywhere;
@@ -469,19 +469,20 @@
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		font-size: 12px;
+		font-size: 11px;
 		padding: 3px 0;
 		gap: 12px;
 	}
 
 	.ratel-drawer-label {
+		font-size: 11px;
 		color: var(--text-faint);
 		flex-shrink: 0;
 	}
 
 	.ratel-drawer-value {
-		color: var(--text-normal);
-		font-weight: 500;
+		color: var(--text-muted);
+		font-weight: 400;
 		text-align: right;
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -492,6 +493,7 @@
 		font-family: var(--font-monospace);
 		font-size: 11px;
 		font-weight: 400;
+		color: var(--text-muted);
 		max-width: 65%;
 		font-variant-numeric: tabular-nums;
 	}
@@ -574,7 +576,7 @@
 		background: transparent;
 		box-shadow: none;
 		color: var(--text-muted);
-		font-size: 11.5px;
+		font-size: 11px;
 		font-weight: inherit;
 		font-family: inherit;
 		line-height: 1.45;
