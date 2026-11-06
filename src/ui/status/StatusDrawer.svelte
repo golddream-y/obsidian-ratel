@@ -436,7 +436,8 @@
 	}
 	.ratel-index-rate {
 		font-size: 11px;
-		color: var(--text-muted);
+		font-weight: 400;
+		color: var(--text-normal);
 		font-variant-numeric: tabular-nums;
 		white-space: nowrap;
 	}
@@ -463,16 +464,12 @@
 		gap: 8px;
 		margin-left: auto;
 	}
-	/* ready 时计数是主数据，靠左并略提权重；索引中作为右侧次要读数据保持 muted。 */
-	.ratel-index-heading > .ratel-index-count {
-		font-size: 11px;
-		font-weight: 500;
-		color: var(--text-normal);
-		font-variant-numeric: tabular-nums;
-	}
+	/* 数据值统一规格 — 索引计数、速率、tokens 同号同色同字重。
+	   标签(faint)与标题(muted/500)都比它弱,保证"数值是这一区最亮的信息"。 */
 	.ratel-index-count {
 		font-size: 11px;
-		color: var(--text-muted);
+		font-weight: 400;
+		color: var(--text-normal);
 		font-variant-numeric: tabular-nums;
 	}
 	.ratel-index-metrics {
@@ -519,7 +516,7 @@
 	}
 
 	.ratel-drawer-value {
-		color: var(--text-muted);
+		color: var(--text-normal);
 		font-weight: 400;
 		text-align: right;
 		overflow: hidden;
@@ -531,7 +528,7 @@
 		font-family: var(--font-monospace);
 		font-size: 11px;
 		font-weight: 400;
-		color: var(--text-muted);
+		color: var(--text-normal);
 		max-width: 65%;
 		font-variant-numeric: tabular-nums;
 	}
