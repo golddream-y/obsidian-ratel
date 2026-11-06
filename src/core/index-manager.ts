@@ -25,8 +25,8 @@ export type IndexStatus =
     | { state: 'Idle' }
     | { state: 'Init' }
     | { state: 'Diffing' }
-    | { state: 'Scanning'; scanned: number; total: number; committed?: number; pending?: number; failed?: number; phase?: IndexPhase; rate?: number }
-    | { state: 'Queueing'; pending: number; reverifying?: boolean; committed?: number; total?: number; failed?: number; phase?: IndexPhase; rate?: number }
+    | { state: 'Scanning'; scanned: number; total: number; committed?: number; pending?: number; failed?: number; phase?: IndexPhase; secondsPerNote?: number }
+    | { state: 'Queueing'; pending: number; reverifying?: boolean; committed?: number; total?: number; failed?: number; phase?: IndexPhase; secondsPerNote?: number }
     | { state: 'Processing'; currentBatch: string[] }
     | { state: 'Ready'; totalDocs: number; lastIndexTime: number; committedDocs?: number; totalFiles?: number; pendingDocs?: number; failedDocs?: number; phase?: IndexPhase }
     | { state: 'Paused'; pending: number }
@@ -37,7 +37,7 @@ export type IndexStatus =
      * 因此失败路径必须在这里把码留下来,否则 `index-directory-not-owned`/`drop-refused`/
      * `owner-not-writable` 等新码只能落成 `error.index.unknown` + 开发向 message。
      */
-    | { state: 'Failed'; reason: string; errorCode?: string; committed?: number; total?: number; pending?: number; failed?: number; phase?: IndexPhase; rate?: number }
+    | { state: 'Failed'; reason: string; errorCode?: string; committed?: number; total?: number; pending?: number; failed?: number; phase?: IndexPhase; secondsPerNote?: number }
     | { state: 'Unloaded' };
 
 /** 已提交索引的只读摘要，不包含本次扫描或嵌入统计。 */
@@ -156,7 +156,7 @@ export class IndexManager {
      * 窗口只保留最近 10 秒,避免整轮平均掩盖当前速度。
      */
     private rateSamples: Array<{ at: number; committed: number }> = [];
-    /** 速率样本上限 — 按样本数保留,不按固定时长淘汰(见 `sampleRate`)。 */
+    /** 速率样本上限 — 按样本数保留,不按固定时长淘汰(见 `sampleSecondsPerNote`)。 */
     private static readonly RATE_MAX_SAMPLES = 8;
     /** 超过该时长没有新的完成计数即视为停滞,不再显示速率。 */
     private static readonly RATE_STALE_MS = 20_000;
@@ -297,7 +297,7 @@ export class IndexManager {
      * 关键路径:未 ready 时不发布 Ready;阶段为 partial-failure 时保持 Failed 并沿用既有文案键。
      */
     /** 由真实完成计数算当前速率(篇/秒);样本不足或窗口内零进展时返回 undefined。 */
-    private sampleRate(counters: IndexTaskCounters): number | undefined {
+    private sampleSecondsPerNote(counters: IndexTaskCounters): number | undefined {
         const now = Date.now();
         const last = this.rateSamples[this.rateSamples.length - 1];
         // 关键路径:同一 committed 不重复入窗,否则重复发布会把速率压到 0。
@@ -323,14 +323,19 @@ export class IndexManager {
         const delta = newest.committed - first.committed;
         // 窗口内没有真正写入(只是在跳过未变更文件)时不显示速率。
         if (elapsedMs < 1000 || delta <= 0) return undefined;
-        const rate = Math.round((delta * 1000 / elapsedMs) * 10) / 10;
-        // 关键路径:四舍五入后为 0 时不显示 —— 「约 0 篇/秒」既无信息又像卡住了。
-        return rate > 0 ? rate : undefined;
+        // 关键路径(2026-11-06):对外展示「多少秒一篇」而不是「篇/秒」——
+        // 索引通常几秒到几十秒一篇,换算成速率会得到 0.1 这类没有直观意义的小数。
+        const secondsPerNote = elapsedMs / (delta * 1000);
+        // 秒数越大越该给小数位:≥10 取整,≥1 保留一位,更快的保留两位。
+        if (secondsPerNote >= 10) return Math.round(secondsPerNote);
+        if (secondsPerNote >= 1) return Math.round(secondsPerNote * 10) / 10;
+        return Math.round(secondsPerNote * 100) / 100;
     }
 
     private publishCoordinatorStatus(counters: IndexTaskCounters): void {
         if (this.unloaded) return;
-        const rate = this.sampleRate(counters);
+        // 关键路径:对外是「秒/篇」,沿用 rate 字段名会让人误读成速率,统一改名为 secondsPerNote。
+        const secondsPerNote = this.sampleSecondsPerNote(counters);
         // 展示按唯一文件计数；调度与 canMarkReady 仍保留原始队列/事务口径。
         const pending = counters.pendingFiles ?? Math.max(0, counters.total - counters.committed - counters.failures);
         if (this.paused) {
@@ -352,7 +357,7 @@ export class IndexManager {
         }
         if (counters.failures > 0) {
             this.status$.set({ state: 'Failed', reason: tNow('notice.indexPartialFailure', { count: counters.failures }),
-                committed: counters.committed, total: counters.total, pending, failed: counters.failures, phase: counters.phase, rate });
+                committed: counters.committed, total: counters.total, pending, failed: counters.failures, phase: counters.phase, secondsPerNote });
             return;
         }
         if (!counters.scanComplete) {
@@ -363,7 +368,7 @@ export class IndexManager {
                 committed: counters.committed,
                 pending,
                 failed: counters.failures,
-                phase: counters.phase, rate,
+                phase: counters.phase, secondsPerNote,
             });
             return;
         }
@@ -377,7 +382,7 @@ export class IndexManager {
             committed: counters.committed,
             total: counters.total,
             failed: counters.failures,
-            phase: counters.phase, rate,
+            phase: counters.phase, secondsPerNote,
         });
     }
 

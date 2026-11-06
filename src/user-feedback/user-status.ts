@@ -99,7 +99,8 @@ export interface UserStatusSnapshot {
 	/** 已提交且可检索的文件数。 */
 	indexCommittedFiles?: number;
 	/** 当前索引速率(篇/秒) — 由真实完成计数滑动窗口推导;样本不足时 undefined。 */
-	indexRate?: number;
+	/** 平均每篇耗时(秒) — 比「篇/秒」更直观,尤其索引偏慢时。 */
+	indexSecondsPerNote?: number;
 	/** 待处理(队列 + 在途 + 未决事务)文件数。 */
 	indexPendingFiles?: number;
 	/** 本轮未清除的失败数(按路径)。 */

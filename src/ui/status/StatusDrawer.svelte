@@ -176,8 +176,8 @@
 				<span class="ratel-index-state">{indexValue}</span>
 				<span class="ratel-index-aside">
 					{@render indexCount()}
-					{#if snap.indexRate !== undefined && indexing}
-						<span class="ratel-index-rate">{$t('status.drawer.indexRate', { rate: snap.indexRate })}</span>
+					{#if snap.indexSecondsPerNote !== undefined && indexing}
+						<span class="ratel-index-rate">{$t('status.drawer.indexSecondsPerNote', { seconds: snap.indexSecondsPerNote })}</span>
 					{/if}
 				</span>
 			{/if}
