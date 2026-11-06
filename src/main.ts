@@ -1,3 +1,4 @@
+// RATEL_TOP_MARKER_ABC
 /**
  * @file src/main.ts
  * @description Ratel Vault 插件入口 — 生命周期、命令、视图注册
@@ -438,6 +439,36 @@ export default class RatelVaultPlugin extends Plugin {
 	 * 3. Worker 路径必须是编译后的 `worker.js`,与 `main.js` 同目录。
 	 */
 	async onload() {
+		// [diag] 主线程长任务探针 — 定位「索引期间界面卡顿」是否为主线程被占。
+		// 每 5 秒汇总:长任务次数、最长一次、累计占用。无长任务即可排除主线程。
+		{
+			const perf = (globalThis as { PerformanceObserver?: typeof PerformanceObserver }).PerformanceObserver;
+			if (perf !== undefined) {
+				let count = 0;
+				let max = 0;
+				let total = 0;
+				try {
+					const observer = new perf((list) => {
+						for (const entry of list.getEntries()) {
+							count += 1;
+							total += entry.duration;
+							if (entry.duration > max) max = entry.duration;
+						}
+					});
+					observer.observe({ entryTypes: ['longtask'] });
+					const timer = globalThis.setInterval(() => {
+						if (count === 0) return;
+						devLogger.info('index', `[diag] 主线程长任务 5s 内 ${count} 次,最长 ${Math.round(max)}ms,累计 ${Math.round(total)}ms`);
+						count = 0; max = 0; total = 0;
+					}, 5000);
+					this.registerInterval(timer as unknown as number);
+					this.register(() => observer.disconnect());
+				}
+				catch {
+					// 宿主不支持 longtask 时静默跳过,不影响功能。
+				}
+			}
+		}
 		await this.loadSettings();
 		// 关键路径:启动时根据 settings.language 解析界面语言并写入 langStore,
 		// 必须在所有 tNow 调用之前执行(命令注册、Notice、错误消息都依赖 langStore)。
@@ -1197,35 +1228,7 @@ export default class RatelVaultPlugin extends Plugin {
 		});
 		// 关键路径:调试构建加载后自动跑一次,避免每次都去命令面板点 ——
 		// 少一步人工操作,采集才更可能被真正执行;报告路径由提示给出。
-		// [diag] 主线程长任务探针 — 定位「索引期间界面卡顿」到底是不是主线程被占。
-		// 每 5 秒汇总一次:长任务次数、最长一次、累计占用。确认无长任务即可排除主线程。
-		this.register(() => {
-			const perf = (globalThis as { PerformanceObserver?: typeof PerformanceObserver }).PerformanceObserver;
-			if (perf === undefined) return;
-			let count = 0;
-			let max = 0;
-			let total = 0;
-			try {
-				const observer = new perf((list) => {
-					for (const entry of list.getEntries()) {
-						count += 1;
-						total += entry.duration;
-						if (entry.duration > max) max = entry.duration;
-					}
-				});
-				observer.observe({ entryTypes: ['longtask'] });
-				const timer = globalThis.setInterval(() => {
-					if (count === 0) return;
-					devLogger.info('index', `[diag] 主线程长任务 5s 内 ${count} 次,最长 ${Math.round(max)}ms,累计 ${Math.round(total)}ms`);
-					count = 0; max = 0; total = 0;
-				}, 5000);
-				this.registerInterval(timer as unknown as number);
-				this.register(() => observer.disconnect());
-			}
-			catch {
-				// 宿主不支持 longtask 时静默跳过,不影响功能。
-			}
-		});
+
 		this.app.workspace.onLayoutReady(() => {
 			window.setTimeout(() => {
 				void (async () => {
