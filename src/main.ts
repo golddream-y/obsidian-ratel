@@ -1375,13 +1375,11 @@ export default class RatelVaultPlugin extends Plugin {
 					// 关键路径:ModelManager.download() 内 status$.set(Ready) 触发 FeedbackController
 					// 时 setEmbedding 尚未执行,isReady 仍为 false;注入后需显式通知状态推进到 ready。
 					this.feedbackController?.notifyEmbeddingReady();
-					// 关键路径:InlineWorker 在主线程运行,模型就绪后注入 VectraStore,embeddings 由 EmbeddingWorkerProxy 提供。
-					if (this.inlineWorker) {
-						// 关键路径:创建 EmbeddingWorkerProxy,把 ONNX 推理移入 Web Worker,主线程零 CPU 阻塞。
-						// Worker 创建/init 失败不降级,直接抛错提示用户接 API Embedding 端点。
-						// 共享处理器在 startIndexRound 复用已装配的 store,由 proxy 提供批量嵌入。
-						await this.initEmbeddingWorkerProxy(embedding);
-					}
+					// 关键路径(2026-11-06 卡顿根因):此前只在 `inlineWorker` 存在时创建代理,
+					// 线程模式跳过了主线程处理器装配,于是 `EmbeddingLocal` 内的 ONNX 直接在
+					// 主线程推理 —— 现场每 8 段约 5.9s、主线程长任务 5–20s 持续不断。
+					// 代理必须与索引路径无关:本地模型就绪即把 ONNX 推理移入 Web Worker。
+					await this.initEmbeddingWorkerProxy(embedding);
 				}
 			} catch (err) {
 			indexProgressRef.handle?.hide();
@@ -2303,8 +2301,9 @@ export default class RatelVaultPlugin extends Plugin {
 					modelId: this.embedding.modelId,
 					embed: async (texts: string[]) => {
 						const started = Date.now();
+						const runner = this.embeddingWorkerProxy ?? this.embedding;
 						try {
-							return await this.embedding.embed(texts);
+							return await runner.embed(texts);
 						}
 						finally {
 							this.traceSlow(`embedding.embed(${texts.length} 段)`, started);
