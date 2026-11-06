@@ -144,7 +144,6 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 
 	/** 在存储门外完成单文件分块与嵌入,返回仅执行真实提交的闭包。 */
 	const prepareUpsertFile = async (payload: unknown, ctx: RuntimeHandlerContext | undefined) => {
-		const store = requireStore();
 		const filePath = stringField(payload, 'path');
 		const content = (payload as { content?: unknown }).content;
 		if (typeof content !== 'string') throw new Error('缺少字段 content');
@@ -158,6 +157,8 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 				return { path: filePath, chunkCount: existing.chunkCount, skipped: true as const };
 			}
 		}
+		// 关键路径:确定要真正写入时才取存储 —— 跳过路径不该为了一份向量库付出打开分片的代价。
+		const store = requireStore();
 
 		const startedAt = performance.now();
 		const chunks = chunkMarkdown(content, state.chunkOptions);

@@ -108,8 +108,18 @@ export class ShardedVectorStore {
 	}
 
 	/** 预热全部片 — 查询需要遍历所有片,提前建好实例避免首个请求抖动。 */
+	/**
+	 * 装配分片存储 — 并发打开全部分片。
+	 *
+	 * 关键路径(2026-11-06 线上):此前是逐个 await 打开,200 MB 级索引在每次重载后
+	 * 都要串行解析 16 份 JSON,表现为「重开后长时间没有进度、随后突然一大批完成」。
+	 * 分片之间互不依赖,并发打开可把这段等待压到原来的几分之一。
+	 *
+	 * 不改为「按需打开」的原因:空分片一旦被打开就会落一份索引文件,而搜索必须覆盖
+	 * 全部分片,按需打开会让搜索把空片也创建出来,破坏「每片只写一次」的写放大不变量。
+	 */
 	async init(): Promise<void> {
-		for (let shardId = 0; shardId < this.count; shardId += 1) await this.storeOf(shardId);
+		await Promise.all(Array.from({ length: this.count }, (_, shardId) => this.storeOf(shardId)));
 	}
 
 	/** 用完整新块集合替换某路径 — 只触碰该路径所在分片。 */

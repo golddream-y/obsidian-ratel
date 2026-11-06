@@ -323,7 +323,9 @@ export class IndexManager {
         const delta = newest.committed - first.committed;
         // 窗口内没有真正写入(只是在跳过未变更文件)时不显示速率。
         if (elapsedMs < 1000 || delta <= 0) return undefined;
-        return Math.round((delta * 1000 / elapsedMs) * 10) / 10;
+        const rate = Math.round((delta * 1000 / elapsedMs) * 10) / 10;
+        // 关键路径:四舍五入后为 0 时不显示 —— 「约 0 篇/秒」既无信息又像卡住了。
+        return rate > 0 ? rate : undefined;
     }
 
     private publishCoordinatorStatus(counters: IndexTaskCounters): void {
