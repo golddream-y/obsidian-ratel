@@ -156,7 +156,10 @@ export class IndexManager {
      * 窗口只保留最近 10 秒,避免整轮平均掩盖当前速度。
      */
     private rateSamples: Array<{ at: number; committed: number }> = [];
-    private static readonly RATE_WINDOW_MS = 10_000;
+    /** 速率样本上限 — 按样本数保留,不按固定时长淘汰(见 `sampleRate`)。 */
+    private static readonly RATE_MAX_SAMPLES = 8;
+    /** 超过该时长没有新的完成计数即视为停滞,不再显示速率。 */
+    private static readonly RATE_STALE_MS = 20_000;
     // 兼容额外清单清理器；实际持久化 backend 的 dropIndex 已清理同目录元数据。
     private onManifestReset: (() => Promise<void>) | null = null;
 
@@ -300,12 +303,19 @@ export class IndexManager {
         // 关键路径:同一 committed 不重复入窗,否则重复发布会把速率压到 0。
         if (last === undefined || last.committed !== counters.committed) {
             this.rateSamples.push({ at: now, committed: counters.committed });
+            if (this.rateSamples.length > IndexManager.RATE_MAX_SAMPLES) {
+                this.rateSamples.splice(0, this.rateSamples.length - IndexManager.RATE_MAX_SAMPLES);
+            }
         }
-        const cutoff = now - IndexManager.RATE_WINDOW_MS;
-        this.rateSamples = this.rateSamples.filter((sample) => sample.at >= cutoff);
-        const first = this.rateSamples[0];
         const newest = this.rateSamples[this.rateSamples.length - 1];
-        if (first === undefined || newest === undefined || newest === first) return undefined;
+        if (newest === undefined) return undefined;
+        // 关键路径:停滞后不显示速率,避免"卡住了还显示 0.4 篇/秒"的误导。
+        if (now - newest.at > IndexManager.RATE_STALE_MS) return undefined;
+        // 关键路径(2026-11-06):此前用「最近 10 秒窗口 + 至少两个样本」。
+        // 大库一批常超过 10 秒,上一个样本总被淘汰,窗口恒只剩 1 个 → 永不显示速率。
+        // 改为按样本数保留(最多 8 个),跨多次发布计算;样本不足两个才返回 undefined。
+        if (this.rateSamples.length < 2) return undefined;
+        const first = this.rateSamples[0]!;
         const elapsedMs = newest.at - first.at;
         const delta = newest.committed - first.committed;
         if (elapsedMs < 1000 || delta <= 0) return undefined;

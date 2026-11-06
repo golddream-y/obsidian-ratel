@@ -719,17 +719,41 @@ describe('索引速率采样（真实完成计数滑动窗口）', () => {
         vi.restoreAllMocks();
     });
 
-    it('超出 10 秒窗口的样本被淘汰 - 速率反映近期而非整轮平均', () => {
+    it('慢批（两次发布间隔超过 10 秒）- 仍能算出速率 - 不再恒为 undefined', () => {
+        // 关键路径(2026-11-06 线上反馈):大库一批常超过 10 秒,旧的「10 秒窗口 + 至少两个样本」
+        // 会永远只剩一个样本,导致速率时有时无。改为按样本数保留后必须能算出速率。
+        const manager = makeManager();
+        let now = 1000;
+        vi.spyOn(Date, 'now').mockImplementation(() => now);
+        expect(manager.sampleRate({ committed: 0 } as never)).toBeUndefined();
+        now = 15_000;   // 间隔 14 秒
+        expect(manager.sampleRate({ committed: 5 } as never)).toBe(0.4);
+        now = 29_000;   // 再间隔 14 秒
+        expect(manager.sampleRate({ committed: 10 } as never)).toBe(0.4);
+        vi.restoreAllMocks();
+    });
+
+
+    it('样本上限 - 只保留最近 8 个 - 不无限增长', () => {
+        const manager = makeManager();
+        let now = 1000;
+        vi.spyOn(Date, 'now').mockImplementation(() => now);
+        for (let i = 0; i <= 20; i += 1) {
+            now = 1000 + i * 500;
+            manager.sampleRate({ committed: i } as never);
+        }
+        expect(manager.rateSamples.length).toBeLessThanOrEqual(8);
+        vi.restoreAllMocks();
+    });
+    it('停滞超过 20 秒没有新完成 - 不显示速率', () => {
         const manager = makeManager();
         let now = 1000;
         vi.spyOn(Date, 'now').mockImplementation(() => now);
         manager.sampleRate({ committed: 0 } as never);
-        now = 2000;
-        manager.sampleRate({ committed: 1 } as never);
-        now = 20_000;   // 旧样本全部过期,此样本成为窗口起点
-        expect(manager.sampleRate({ committed: 2 } as never)).toBeUndefined();
-        now = 22_000;
-        expect(manager.sampleRate({ committed: 4 } as never)).toBe(1);
+        now = 5000;
+        manager.sampleRate({ committed: 4 } as never);
+        now = 60_000;   // 55 秒无进展
+        expect(manager.sampleRate({ committed: 4 } as never)).toBeUndefined();
         vi.restoreAllMocks();
     });
 });
