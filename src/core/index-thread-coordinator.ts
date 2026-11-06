@@ -95,6 +95,16 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 	private readonly startOptions: ThreadCoordinatorStartOptions;
 	private readonly queue = new Map<string, ThreadQueueEntry>();
 	private readonly failing = new Set<string>();
+	/**
+	 * 延后重试的文件 —— 首次失败不立刻算「失败」,先跳过继续处理其余文件。
+	 *
+	 * 关键路径(2026-11-06 线上):大文件在机器繁忙时单篇 embed 可能超时,若立刻计入失败,
+	 * 用户会看到「进度不前、失败数上涨」。改为先记入延后集合,整轮跑完再回来重试一次,
+	 * 只有重试后仍失败才最终计入失败。
+	 */
+	private readonly deferred = new Map<string, ThreadQueueEntry['op']>();
+	/** 当前是否处于「延后重试轮」—— 此轮失败即最终失败。 */
+	private retryPass = false;
 	/** 失败文件的原操作 —— 重试必须按原操作重排队,删除失败不能变成重写。 */
 	private readonly failedOps = new Map<string, ThreadQueueEntry['op']>();
 	/** 失败样本(路径 + 原因),最多保留 5 条 —— 状态只报数量时仍能定位是哪个文件、为什么。 */
@@ -132,6 +142,8 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 		this.running = true;
 		this.restartsThisRound = 0;
 		this.batchDisabled = false;
+		this.retryPass = false;
+		this.deferred.clear();
 		await this.client.start(this.startOptions);
 		// 关键路径:线程真的起来之后才算已启动,否则启动失败会把后续事件派给不存在的线程。
 		this.started = true;
@@ -144,18 +156,20 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 		this.scanCompleted = true;
 		this.phaseValue = 'processing';
 		await this.drain();
-		// 关键路径:失败重试一轮 —— 同步盘/远程存储常在扫描期间改写文件,
-		// 一次瞬时读失败不该让文件一直停留在失败集合里。
-		if (!this.stopping && this.failing.size > 0) {
-			// 关键路径:重试保持原操作 —— 删除失败若改成重写,会把已删文件重新嵌入,留下陈旧向量。
-			for (const failedPath of [...this.failing]) {
-				this.queue.set(failedPath, { op: this.failedOps.get(failedPath) ?? 'upsert' });
+		// 关键路径:先把其余文件处理完,再回来重试延后的那些 —— 机器繁忙时它们不一定真坏。
+		if (!this.stopping && !this.pausedValue && this.deferred.size > 0) {
+			this.retryPass = true;
+			for (const [deferredPath, op] of [...this.deferred]) {
+				// 关键路径:重试保持原操作 —— 删除失败若改成重写,会把已删文件重新嵌入。
+				this.queue.set(deferredPath, { op });
 			}
+			this.deferred.clear();
 			await this.drain();
-			// 关键路径:只有重试后仍失败才告警 —— 按样本数判定会把「重试已恢复」误报成失败。
+			this.retryPass = false;
+			// 关键路径:只有重试后仍失败才告警 —— 首次失败属于「待重试」,不该提前报错。
 			if (this.failing.size > 0) {
 				const sample = this.failureSamples.map((item) => `${item.path}: ${item.message}`).join('; ');
-				devLogger.warn('index', `本轮仍有 ${this.failing.size} 个文件失败(已重试一次):${sample}`);
+				devLogger.warn('index', `本轮仍有 ${this.failing.size} 个文件失败(已延后重试一次):${sample}`);
 			}
 		}
 		// 关键路径:暂停与撤销优先于「全部成功」—— 不能因为已处理的部分成功就报告 ready。
@@ -165,13 +179,25 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 	}
 
 	/**
+	 * 记录失败样本,同一路径只留一条。
+	 *
+	 * 关键路径:延后重试会让同一文件命中失败分支两次(首轮延后、重试轮最终失败),
+	 * 不去重的话状态里会显示重复条目,也白白占掉样本上限。
+	 */
+	private recordFailureSample(filePath: string, message: string): void {
+		if (this.failureSamples.some((sample) => sample.path === filePath)) return;
+		if (this.failureSamples.length >= MAX_FAILURE_SAMPLES) return;
+		this.failureSamples.push({ path: filePath, message });
+	}
+
+	/**
 	 * 按当前状态刷新阶段 — 增量收敛后同样要更新,否则状态会永远停在「处理中」。
 	 */
 	private refreshPhase(): void {
 		if (this.stopping) this.phaseValue = 'stopping';
 		else if (this.pausedValue) this.phaseValue = 'paused';
 		else if (this.failing.size > 0) this.phaseValue = 'partial-failure';
-		else if (this.activeCount > 0 || this.queue.size > 0) this.phaseValue = 'processing';
+		else if (this.activeCount > 0 || this.queue.size > 0 || this.deferred.size > 0) this.phaseValue = 'processing';
 		else this.phaseValue = 'ready';
 	}
 
@@ -179,8 +205,8 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 	counters(): IndexTaskCounters {
 		// 关键路径:在途整批已从 queue 出队但尚未完成,必须计入 total;否则批期间
 		// total 归零,进度条进入「未知进度」转圈,与实际情况不符。
-		const total = this.verified.size + this.failing.size + this.queue.size + this.activeCount;
-		const pendingFiles = this.queue.size + this.activeCount;
+		const total = this.verified.size + this.failing.size + this.deferred.size + this.queue.size + this.activeCount;
+		const pendingFiles = this.queue.size + this.activeCount + this.deferred.size;
 		return {
 			taskId: this.taskIdValue,
 			phase: this.phaseValue,
@@ -377,15 +403,18 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 				const recovered = await this.recoverFromCrash(error);
 				if (recovered) {
 					this.queue.set(filePath, entry);
+				} else if (!this.retryPass) {
+					// 关键路径:首轮失败先「延后」—— 继续处理其余文件,整轮结束后再回来重试,
+					// 期间不计入失败数。机器繁忙时单篇超时很常见,立刻判失败会让进度看起来卡死。
+					this.deferred.set(filePath, entry.op);
+					this.recordFailureSample(filePath, message);
 				} else {
-					// 失败保留在集合里,不能当成已处理;同一文件重排队由上层事件驱动。
+					// 延后重试轮仍失败 → 最终失败,保留在失败集合里,不能当成已处理。
 					this.failedOps.set(filePath, entry.op);
 					if (!this.failing.has(filePath)) {
 						// 关键路径:每个文件只记一次,避免重试把日志刷满;样本用于定位具体文件。
-						if (this.failureSamples.length < MAX_FAILURE_SAMPLES) {
-							this.failureSamples.push({ path: filePath, message });
-						}
-						devLogger.warn('index', `线程索引失败:${filePath}:${message}`);
+						this.recordFailureSample(filePath, message);
+						devLogger.warn('index', `线程索引失败(已延后重试):${filePath}:${message}`);
 					}
 					this.failing.add(filePath);
 				}

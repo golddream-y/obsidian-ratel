@@ -231,6 +231,36 @@ describe('增量收敛与阶段', () => {
 });
 
 describe('单文件失败不中断整轮', () => {
+	it('首轮失败 - 先跳过继续处理其余文件 - 整轮结束后重试成功 - 不计失败', async () => {
+		// 关键路径(2026-11-06 线上):机器繁忙时单篇 embed 超时会让「进度不前、失败数上涨」。
+		// 首轮失败应记为「延后」,等其余文件处理完再回来重试;重试成功就不该算失败。
+		let attempts = 0;
+		const client = {
+			start: vi.fn(async () => undefined),
+			indexFile: vi.fn(async (filePath: string) => {
+				if (filePath === 'b.md') {
+					attempts += 1;
+					if (attempts === 1) throw new Error('宿主调用超时: embed');
+				}
+				return { chunkCount: 1 };
+			}),
+			deleteFile: vi.fn(async () => ({ removed: 0 })),
+			recover: vi.fn(async () => ({ pending: 0, decisions: 0, failures: 0 })),
+			close: vi.fn(async () => undefined),
+		};
+		const coordinator = new IndexThreadCoordinator({
+			client: client as never,
+			vault: { listMarkdownFiles: () => ['a.md', 'b.md', 'c.md'], readFile: async (p: string) => `正文 ${p}` },
+			start: START,
+		});
+		const counters = await coordinator.start();
+		expect(counters).toMatchObject({ committed: 3, failures: 0, phase: 'ready' });
+		// b.md 必须被尝试两次：首轮 + 延后重试轮。
+		expect(attempts).toBe(2);
+		expect(coordinator.failureDetails()).toEqual([]);
+		coordinator.destroy();
+	});
+
 	it('一个文件超时 - 其余文件继续 - 失败样本记录路径与原因', async () => {
 		const client = {
 			start: vi.fn(async () => undefined),
