@@ -196,7 +196,12 @@
 				<p>{indexDiagnosticsText}</p>
 			</details>
 		{/if}
-		<div class="ratel-drawer-section-title">{$t('status.drawer.section.context')}</div>
+		<div class="ratel-drawer-section-title ratel-drawer-section-title--with-aside">
+			<span>{$t('status.drawer.section.context')}</span>
+			<button class="ratel-drawer-micro-btn ratel-drawer-micro-btn--inline" type="button" onclick={onCompact}>
+				{$t('status.drawer.compactButton')}
+			</button>
+		</div>
 		<div class="ratel-drawer-row">
 			<span class="ratel-drawer-label">{$t('status.drawer.label.usedMax')}</span>
 			<span class="ratel-drawer-value ratel-drawer-mono">
@@ -212,9 +217,6 @@
 			aria-valuemax={100}
 		>
 			<div class="ratel-drawer-meter-fill" style={`width: ${ctxPct}%;`}></div>
-		</div>
-		<div class="ratel-drawer-row ratel-drawer-row-end">
-			<button class="ratel-drawer-micro-btn" type="button" onclick={onCompact}>{$t('status.drawer.compactButton')}</button>
 		</div>
 		{#if onFeedback || onMemory || onGoal || onMcp || onSkill || onSponsor}
 			<!-- 左功能(目标/记忆/MCP) · 右反馈类(反馈/赞助);无 aria-label,避免 Obsidian「相关操作」提示 -->
@@ -393,16 +395,20 @@
 		justify-content: space-between;
 		gap: 8px;
 	}
+	/* 关键路径:这里是**只读信息**,不是可点控件。边框 + 背景会把它画成按钮,
+	   与真正的操作控件(压缩上下文)混淆;因此只保留弱化文字,不用任何控件外观。 */
 	.ratel-embed-badge {
 		font-size: 10px;
-		font-weight: 500;
+		font-weight: 400;
 		letter-spacing: 0;
-		color: var(--text-muted);
-		background: var(--background-modifier-form-field);
-		border: 1px solid var(--background-modifier-border);
-		border-radius: 4px;
-		padding: 1px 6px;
+		color: var(--text-faint);
 		white-space: nowrap;
+	}
+	/* 标题行内的操作按钮 — 比常规微按钮更小,不撑高分组标题。 */
+	.ratel-drawer-micro-btn--inline {
+		padding: 1px 8px;
+		font-size: 10px;
+		line-height: 1.5;
 	}
 	.ratel-index-rate {
 		font-size: 10.5px;
@@ -466,11 +472,6 @@
 		font-size: 12px;
 		padding: 3px 0;
 		gap: 12px;
-	}
-
-	.ratel-drawer-row-end {
-		justify-content: flex-end;
-		margin-top: 6px;
 	}
 
 	.ratel-drawer-label {
