@@ -768,6 +768,9 @@ export interface StatusStrings {
   'status.drawer.label.embedding': string;
   'status.drawer.label.embedKind': string;
   'status.drawer.embedKind.local': string;
+  'status.drawer.embedBadge.local': string;
+  'status.drawer.embedBadge.api': string;
+  'status.drawer.indexRate': string;
   'status.drawer.embedKind.api': string;
   'status.drawer.section.context': string;
   'status.drawer.label.usedMax': string;

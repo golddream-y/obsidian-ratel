@@ -677,3 +677,59 @@ describe('失败态保留稳定错误码(T7/I1)', () => {
         expect((status as { errorCode?: string }).errorCode).toBeUndefined();
     });
 });
+
+describe('索引速率采样（真实完成计数滑动窗口）', () => {
+    function makeManager() {
+        const manager = new IndexManager({
+            fullReindex: vi.fn(), incrementalIndex: vi.fn(), deleteFile: vi.fn(), smartReindex: vi.fn(),
+        });
+        return manager as any;
+    }
+
+    it('窗口内完成计数递增 - 返回真实速率', () => {
+        const manager = makeManager();
+        vi.spyOn(Date, 'now')
+            .mockReturnValueOnce(1000).mockReturnValueOnce(3000)
+            .mockReturnValueOnce(3000).mockReturnValueOnce(3000);
+        expect(manager.sampleRate({ committed: 0 } as never)).toBeUndefined();
+        expect(manager.sampleRate({ committed: 4 } as never)).toBe(2);
+        vi.restoreAllMocks();
+    });
+
+    it('重复发布同一计数 - 不重复入窗 - 速率不被压到 0', () => {
+        const manager = makeManager();
+        let now = 1000;
+        vi.spyOn(Date, 'now').mockImplementation(() => now);
+        manager.sampleRate({ committed: 0 } as never);
+        now = 3000;
+        expect(manager.sampleRate({ committed: 4 } as never)).toBe(2);
+        // 同一 committed 再发布多次，窗口内容不变
+        now = 3001;
+        expect(manager.sampleRate({ committed: 4 } as never)).toBe(2);
+        vi.restoreAllMocks();
+    });
+
+    it('窗口内零进展 - 返回 undefined', () => {
+        const manager = makeManager();
+        let now = 1000;
+        vi.spyOn(Date, 'now').mockImplementation(() => now);
+        manager.sampleRate({ committed: 2 } as never);
+        now = 9000;
+        expect(manager.sampleRate({ committed: 2 } as never)).toBeUndefined();
+        vi.restoreAllMocks();
+    });
+
+    it('超出 10 秒窗口的样本被淘汰 - 速率反映近期而非整轮平均', () => {
+        const manager = makeManager();
+        let now = 1000;
+        vi.spyOn(Date, 'now').mockImplementation(() => now);
+        manager.sampleRate({ committed: 0 } as never);
+        now = 2000;
+        manager.sampleRate({ committed: 1 } as never);
+        now = 20_000;   // 旧样本全部过期,此样本成为窗口起点
+        expect(manager.sampleRate({ committed: 2 } as never)).toBeUndefined();
+        now = 22_000;
+        expect(manager.sampleRate({ committed: 4 } as never)).toBe(1);
+        vi.restoreAllMocks();
+    });
+});

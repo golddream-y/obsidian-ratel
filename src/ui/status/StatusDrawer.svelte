@@ -61,15 +61,6 @@
 		}
 	}
 
-	function labelEmbedding(embedding: UserStatusSnapshot['embedding']): string {
-		switch (embedding) {
-			case 'ready': return $t('status.embedding.ready');
-			case 'loading': return $t('status.embedding.loading');
-			case 'unavailable': return $t('status.embedding.notConfigured');
-			default: return $t('status.embedding.unknown');
-		}
-	}
-
 	// 关键路径:阶段与须知是 T4/T5/T6 新增的展示面 —— 停滞/正在停止/迁移不改变 index 状态语义,
 	// 但必须可见,否则用户会把停滞看成「正在索引」。
 	function labelPhase(phase: UserStatusSnapshot['indexPhase']): string | undefined {
@@ -162,11 +153,19 @@
 
 <div class="ratel-drawer" class:ratel-drawer-open={expanded}>
 	<div class="ratel-drawer-inner">
-		<div class="ratel-drawer-section-title">{$t('status.drawer.section.index')}</div>
+		<div class="ratel-drawer-section-title ratel-drawer-section-title--with-aside">
+			<span>{$t('status.drawer.section.index')}</span>
+			<span class="ratel-embed-badge" title={$t('status.drawer.label.embedding')}>
+				{embedKind === 'api' ? $t('status.drawer.embedBadge.api') : $t('status.drawer.embedBadge.local')}
+			</span>
+		</div>
 		<div class="ratel-index-heading">
 			<span class="ratel-index-state">{indexValue}</span>
 			{#if progress.total > 0}
 				<span class="ratel-index-count">{$t('status.drawer.indexedCount', { count: progress.completed, total: progress.total })}</span>
+			{/if}
+			{#if snap.indexRate !== undefined && indexing}
+				<span class="ratel-index-rate">{$t('status.drawer.indexRate', { rate: snap.indexRate })}</span>
 			{/if}
 		</div>
 		{#if indexing || progress.total > 0}
@@ -197,13 +196,6 @@
 				<p>{indexDiagnosticsText}</p>
 			</details>
 		{/if}
-		<div class="ratel-drawer-row">
-			<span class="ratel-drawer-label">{$t('status.drawer.label.embedding')}</span>
-			<span class="ratel-drawer-value">
-				{embedKind === 'api' ? $t('status.drawer.embedKind.api') : $t('status.drawer.embedKind.local')}
-				· {labelEmbedding(snap.embedding)}
-			</span>
-		</div>
 		<div class="ratel-drawer-section-title">{$t('status.drawer.section.context')}</div>
 		<div class="ratel-drawer-row">
 			<span class="ratel-drawer-label">{$t('status.drawer.label.usedMax')}</span>
@@ -391,6 +383,32 @@
 
 	.ratel-drawer-section-title:first-child {
 		margin-top: 0;
+	}
+
+	/* 关键路径:嵌入来源放在分组标题右侧,不再单独占一行;badge 用边框+背景明确
+	   它是一个可识别的标识,而不是一行灰色弱文字。 */
+	.ratel-drawer-section-title--with-aside {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+	}
+	.ratel-embed-badge {
+		font-size: 10px;
+		font-weight: 500;
+		letter-spacing: 0;
+		color: var(--text-muted);
+		background: var(--background-modifier-form-field);
+		border: 1px solid var(--background-modifier-border);
+		border-radius: 4px;
+		padding: 1px 6px;
+		white-space: nowrap;
+	}
+	.ratel-index-rate {
+		font-size: 10.5px;
+		color: var(--text-faint);
+		font-variant-numeric: tabular-nums;
+		white-space: nowrap;
 	}
 
 	/* 层次 2/3:主状态 + 唯一计数 — 该区唯一的强权重行。 */
