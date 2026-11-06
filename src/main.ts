@@ -439,6 +439,7 @@ export default class RatelVaultPlugin extends Plugin {
 	 * 3. Worker 路径必须是编译后的 `worker.js`,与 `main.js` 同目录。
 	 */
 	async onload() {
+		this.traceStartup('onload:enter');
 		// [diag] 主线程长任务探针 — 定位「索引期间界面卡顿」是否为主线程被占。
 		// 每 5 秒汇总:长任务次数、最长一次、累计占用。无长任务即可排除主线程。
 		{
@@ -1325,6 +1326,7 @@ export default class RatelVaultPlugin extends Plugin {
 	 * - ONNX 推理移入 EmbeddingWorkerProxy(Web Worker),主线程零 CPU 阻塞;proxy 注入 InlineWorker。
 	 */
 	async onLayoutReady(): Promise<void> {
+		this.traceStartup('layout-ready:enter');
 		if (shouldShowReleaseNotes(this.settings.lastSeenRelease, this.manifest.version)) {
 			void openReleaseNotesTab(this, true);
 		}
@@ -2243,15 +2245,35 @@ export default class RatelVaultPlugin extends Plugin {
 	 * @param config - 当前配置
 	 * @returns 是否成功切到线程路径
 	 */
+	/**
+	 * [diag] 落盘级启动信标 — 主线程空转卡死时无法读控制台,只能靠磁盘上的最后一步定位。
+	 * 同步追加、失败静默:信标本身绝不能影响启动。
+	 */
+	private traceStartup(step: string): void {
+		try {
+			const dir = this.manifest.dir;
+			if (!dir) return;
+			const target = path.join(dir, 'diag', 'startup-trace.log');
+			fs.mkdirSync(path.dirname(target), { recursive: true });
+			fs.appendFileSync(target, `${new Date().toISOString()}|${step}\n`, 'utf-8');
+		}
+		catch {
+			// 信标失败不影响启动。
+		}
+	}
+
 	private async trySetupThreadIndexRuntime(config: IndexConfigDescriptor): Promise<boolean> {
 		let lease: IndexWriteOwner | null = null;
+		this.traceStartup('thread:start');
 		try {
 			this.indexIdentityGuard.register(this.indexConfigFingerprint);
 			lease = await IndexWriteOwner.acquire({
 				root: this.indexRoot,
 				instanceToken: crypto.randomUUID(),
 			});
+			this.traceStartup('thread:lease-acquired');
 			const generations = new IndexGenerations({ indexRoot: this.indexRoot, owner: lease });
+			this.traceStartup('thread:assemble-enter');
 			const assembled = await assembleIndexThreadRuntime({
 				indexRoot: this.indexRoot,
 				generations,
@@ -2272,7 +2294,9 @@ export default class RatelVaultPlugin extends Plugin {
 				this.indexIdentityGuard.release(this.indexConfigFingerprint);
 				return false;
 			}
+			this.traceStartup('thread:assemble-done');
 			const control = await generations.readControl();
+			this.traceStartup('thread:control-read');
 			this.indexDir = assembled.resolved.generationRoot;
 			this.resolvedGenerationId = assembled.resolved.generationId;
 			this.activeGenerationId = control.activeGenerationId;
@@ -2284,6 +2308,7 @@ export default class RatelVaultPlugin extends Plugin {
 			this.indexThreadCoordinator = assembled.pipeline.coordinator;
 			this.threadSearchGate = createThreadVisibilityGate(assembled.pipeline.client);
 			this.releaseIndexIdentity = () => this.indexIdentityGuard.release(this.indexConfigFingerprint);
+			this.traceStartup('thread:ready');
 			devLogger.info('index', `索引线程模式已启用:代际 ${assembled.resolved.generationId}`);
 			return true;
 		} catch (err) {
