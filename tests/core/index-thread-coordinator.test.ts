@@ -324,8 +324,12 @@ describe('失败重试一轮', () => {
 		});
 		const counters = await coordinator.start();
 		expect(counters).toMatchObject({ failures: 1, phase: 'partial-failure' });
-		expect(client.indexFile).toHaveBeenCalledTimes(2);
+		// 关键路径:首轮 + 2 轮延后重试 = 3 次后放弃;不能无限重试。
+		expect(client.indexFile).toHaveBeenCalledTimes(3);
 		expect(coordinator.failureDetails()[0]?.path).toBe('a.md');
+		// 放弃后再跑一轮:该路径被直接跳过,不再尝试。
+		await coordinator.start();
+		expect(client.indexFile).toHaveBeenCalledTimes(3);
 		coordinator.destroy();
 	});
 });
@@ -376,7 +380,8 @@ describe('批量提交', () => {
 		});
 		const counters = await coordinator.start();
 		expect(client.indexFiles).toHaveBeenCalledTimes(1);
-		expect(client.indexFile).toHaveBeenCalledTimes(4);
+		// a/c 各 1 次 + 坏文件 b 首轮 1 次 + 2 轮延后重试 = 5 次
+		expect(client.indexFile).toHaveBeenCalledTimes(5);
 		expect(counters).toMatchObject({ committed: 2, failures: 1 });
 		expect(coordinator.failureDetails()[0]?.path).toBe('b.md');
 		coordinator.destroy();

@@ -103,8 +103,22 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 	 * 只有重试后仍失败才最终计入失败。
 	 */
 	private readonly deferred = new Map<string, ThreadQueueEntry['op']>();
-	/** 当前是否处于「延后重试轮」—— 此轮失败即最终失败。 */
+	/** 当前是否处于「最后一轮延后重试」—— 此轮失败即最终失败。 */
 	private retryPass = false;
+	/**
+	 * 延后重试轮数上限。
+	 *
+	 * 关键路径(2026-11-06):首轮 + 2 轮延后 = 单文件最多尝试 3 次。机器繁忙时单篇超时
+	 * 多半是瞬时的,给足 3 次机会;仍失败就放弃,不能让同一篇无限重试把整轮拖住。
+	 */
+	private static readonly MAX_DEFERRED_PASSES = 2;
+	/**
+	 * 已放弃的文件 —— 后续轮次直接跳过。
+	 *
+	 * 关键路径:不记下来就会「每次启动重试 3 次、每次都失败」,用户永远等不到收敛。
+	 * 该集合在协调器实例内保留;重建协调器 (重载插件) 会重新给一次机会。
+	 */
+	private readonly abandoned = new Set<string>();
 	/** 失败文件的原操作 —— 重试必须按原操作重排队,删除失败不能变成重写。 */
 	private readonly failedOps = new Map<string, ThreadQueueEntry['op']>();
 	/** 失败样本(路径 + 原因),最多保留 5 条 —— 状态只报数量时仍能定位是哪个文件、为什么。 */
@@ -149,28 +163,39 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 		this.started = true;
 
 		const files = this.vault.listMarkdownFiles();
+		let skippedAbandoned = 0;
 		for (const filePath of files) {
 			if (this.stopping || this.destroyed) break;
+			// 关键路径:已放弃的路径不再入队,否则每轮都会重试到上限再放弃,永远收敛不了。
+			if (this.abandoned.has(filePath)) {
+				skippedAbandoned += 1;
+				continue;
+			}
 			this.queue.set(filePath, { op: 'upsert' });
+		}
+		if (skippedAbandoned > 0) {
+			devLogger.warn('index', `本轮跳过 ${skippedAbandoned} 个已放弃的路径(多次重试仍失败)`);
 		}
 		this.scanCompleted = true;
 		this.phaseValue = 'processing';
 		await this.drain();
 		// 关键路径:先把其余文件处理完,再回来重试延后的那些 —— 机器繁忙时它们不一定真坏。
-		if (!this.stopping && !this.pausedValue && this.deferred.size > 0) {
-			this.retryPass = true;
+		// 最多重试 MAX_DEFERRED_PASSES 轮(单文件共 3 次),最后一轮仍失败即放弃。
+		for (let pass = 1; pass <= IndexThreadCoordinator.MAX_DEFERRED_PASSES; pass += 1) {
+			if (this.stopping || this.pausedValue || this.deferred.size === 0) break;
+			const isLastPass = pass === IndexThreadCoordinator.MAX_DEFERRED_PASSES;
+			this.retryPass = isLastPass;
 			for (const [deferredPath, op] of [...this.deferred]) {
 				// 关键路径:重试保持原操作 —— 删除失败若改成重写,会把已删文件重新嵌入。
 				this.queue.set(deferredPath, { op });
 			}
 			this.deferred.clear();
 			await this.drain();
-			this.retryPass = false;
-			// 关键路径:只有重试后仍失败才告警 —— 首次失败属于「待重试」,不该提前报错。
-			if (this.failing.size > 0) {
-				const sample = this.failureSamples.map((item) => `${item.path}: ${item.message}`).join('; ');
-				devLogger.warn('index', `本轮仍有 ${this.failing.size} 个文件失败(已延后重试一次):${sample}`);
-			}
+		}
+		this.retryPass = false;
+		if (this.failing.size > 0) {
+			const sample = this.failureSamples.map((item) => `${item.path}: ${item.message}`).join('; ');
+			devLogger.warn('index', `本轮有 ${this.failing.size} 个文件连续重试 ${IndexThreadCoordinator.MAX_DEFERRED_PASSES + 1} 次仍失败,标记为放弃:${sample}`);
 		}
 		// 关键路径:暂停与撤销优先于「全部成功」—— 不能因为已处理的部分成功就报告 ready。
 		this.refreshPhase();
@@ -417,6 +442,8 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 						devLogger.warn('index', `线程索引失败(已延后重试):${filePath}:${message}`);
 					}
 					this.failing.add(filePath);
+					// 关键路径:放弃是终态,后续轮次不再重试,避免「每次都重试到上限」的无穷循环。
+					this.abandoned.add(filePath);
 				}
 			} finally {
 				this.activeCount = 0;
