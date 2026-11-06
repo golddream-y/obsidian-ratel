@@ -301,8 +301,11 @@ export class IndexManager {
         const now = Date.now();
         const last = this.rateSamples[this.rateSamples.length - 1];
         // 关键路径:同一 committed 不重复入窗,否则重复发布会把速率压到 0。
-        if (last === undefined || last.committed !== counters.committed) {
-            this.rateSamples.push({ at: now, committed: counters.committed });
+        // 关键路径(2026-11-06):速率必须基于**本轮真正写入**的篇数,不能基于「已核实」——
+        // 重载后大量未变更笔记按完成记录秒跳过,用核实数会算出 40+ 篇/秒这种假速度。
+        const written = counters.committedThisRound;
+        if (last === undefined || last.committed !== written) {
+            this.rateSamples.push({ at: now, committed: written });
             if (this.rateSamples.length > IndexManager.RATE_MAX_SAMPLES) {
                 this.rateSamples.splice(0, this.rateSamples.length - IndexManager.RATE_MAX_SAMPLES);
             }
@@ -318,6 +321,7 @@ export class IndexManager {
         const first = this.rateSamples[0]!;
         const elapsedMs = newest.at - first.at;
         const delta = newest.committed - first.committed;
+        // 窗口内没有真正写入(只是在跳过未变更文件)时不显示速率。
         if (elapsedMs < 1000 || delta <= 0) return undefined;
         return Math.round((delta * 1000 / elapsedMs) * 10) / 10;
     }

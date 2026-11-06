@@ -26,7 +26,8 @@ export interface ThreadIndexClient {
 		access?: 'read-only' | 'read-write';
 		chunkOptions?: { maxTokens?: number; overlapTokens?: number };
 	}): Promise<void>;
-	indexFile(filePath: string, content: string): Promise<{ chunkCount: number }>;
+	/** 单文件写入;`skipped: true` 表示内容未变、按完成记录直接复用(未做推理)。 */
+	indexFile(filePath: string, content: string): Promise<{ chunkCount: number; skipped?: boolean }>;
 	/** 批量写入;缺失时退化为逐个 `indexFile`。 */
 	indexFiles?(files: ReadonlyArray<{ path: string; content: string }>): Promise<Array<{ path: string; chunkCount: number; skipped?: boolean }>>;
 	deleteFile(filePath: string): Promise<{ removed: number }>;
@@ -124,6 +125,14 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 	/** 失败样本(路径 + 原因),最多保留 5 条 —— 状态只报数量时仍能定位是哪个文件、为什么。 */
 	private readonly failureSamples: Array<{ path: string; message: string }> = [];
 	private readonly verified = new Set<string>();
+	/**
+	 * 本轮**真正写入**完成记录的篇数（不含重载后按内容哈希直接跳过的未变更笔记）。
+	 *
+	 * 关键路径(2026-11-06):对外展示的「已索引」必须包含跳过项,否则数字会倒退;
+	 * 但**速率**只能基于真正写入的篇数 —— 否则重载后大量文件被秒跳过,
+	 * 速率会算出 40+ 篇/秒这种与推理速度无关的假数字。
+	 */
+	private writtenThisRound = 0;
 	private taskIdValue = 0;
 	private phaseValue: IndexPhase = 'ready';
 	private scanCompleted = false;
@@ -158,6 +167,7 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 		this.batchDisabled = false;
 		this.retryPass = false;
 		this.deferred.clear();
+		this.writtenThisRound = 0;
 		await this.client.start(this.startOptions);
 		// 关键路径:线程真的起来之后才算已启动,否则启动失败会把后续事件派给不存在的线程。
 		this.started = true;
@@ -239,7 +249,7 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 			total,
 			committed: this.verified.size,
 			pendingFiles,
-			committedThisRound: this.verified.size,
+			committedThisRound: this.writtenThisRound,
 			queued: this.queue.size,
 			active: this.activeCount,
 			pendingTransactions: 0,
@@ -274,8 +284,10 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 	}
 
 	/** 记录成功:清除失败标记、原操作与样本 —— 样本只描述「当前仍失败」的文件。 */
-	private markSuccess(filePath: string): void {
+	private markSuccess(filePath: string, written = true): void {
 		this.verified.add(filePath);
+		// 关键路径:速率只认真正写入的篇数,跳过(内容未变)不计入。
+		if (written) this.writtenThisRound += 1;
 		this.failing.delete(filePath);
 		this.failedOps.delete(filePath);
 		const sampleIndex = this.failureSamples.findIndex((item) => item.path === filePath);
@@ -383,10 +395,10 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 					const contents: Array<{ path: string; content: string }> = [];
 					for (const item of batch) contents.push({ path: item.path, content: await this.vault.readFile(item.path) });
 					const results = await this.client.indexFiles!(contents);
-					const done = new Set(results.map((item) => item.path));
+					const done = new Map(results.map((item) => [item.path, item.skipped === true]));
 					for (const item of batch) {
 						if (done.has(item.path)) {
-							this.markSuccess(item.path);
+							this.markSuccess(item.path, done.get(item.path) !== true);
 						} else {
 							this.queue.set(item.path, item.entry);
 						}
@@ -411,7 +423,9 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 					await this.client.deleteFile(filePath);
 				} else {
 					const content = await this.vault.readFile(filePath);
-					await this.client.indexFile(filePath, content);
+					const result = await this.client.indexFile(filePath, content);
+					this.markSuccess(filePath, result.skipped !== true);
+					continue;
 				}
 				this.markSuccess(filePath);
 			} catch (error) {

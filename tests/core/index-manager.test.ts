@@ -691,8 +691,8 @@ describe('索引速率采样（真实完成计数滑动窗口）', () => {
         vi.spyOn(Date, 'now')
             .mockReturnValueOnce(1000).mockReturnValueOnce(3000)
             .mockReturnValueOnce(3000).mockReturnValueOnce(3000);
-        expect(manager.sampleRate({ committed: 0 } as never)).toBeUndefined();
-        expect(manager.sampleRate({ committed: 4 } as never)).toBe(2);
+        expect(manager.sampleRate({ committedThisRound: 0 } as never)).toBeUndefined();
+        expect(manager.sampleRate({ committedThisRound: 4 } as never)).toBe(2);
         vi.restoreAllMocks();
     });
 
@@ -700,12 +700,12 @@ describe('索引速率采样（真实完成计数滑动窗口）', () => {
         const manager = makeManager();
         let now = 1000;
         vi.spyOn(Date, 'now').mockImplementation(() => now);
-        manager.sampleRate({ committed: 0 } as never);
+        manager.sampleRate({ committedThisRound: 0 } as never);
         now = 3000;
-        expect(manager.sampleRate({ committed: 4 } as never)).toBe(2);
+        expect(manager.sampleRate({ committedThisRound: 4 } as never)).toBe(2);
         // 同一 committed 再发布多次，窗口内容不变
         now = 3001;
-        expect(manager.sampleRate({ committed: 4 } as never)).toBe(2);
+        expect(manager.sampleRate({ committedThisRound: 4 } as never)).toBe(2);
         vi.restoreAllMocks();
     });
 
@@ -713,9 +713,9 @@ describe('索引速率采样（真实完成计数滑动窗口）', () => {
         const manager = makeManager();
         let now = 1000;
         vi.spyOn(Date, 'now').mockImplementation(() => now);
-        manager.sampleRate({ committed: 2 } as never);
+        manager.sampleRate({ committedThisRound: 2 } as never);
         now = 9000;
-        expect(manager.sampleRate({ committed: 2 } as never)).toBeUndefined();
+        expect(manager.sampleRate({ committedThisRound: 2 } as never)).toBeUndefined();
         vi.restoreAllMocks();
     });
 
@@ -725,11 +725,11 @@ describe('索引速率采样（真实完成计数滑动窗口）', () => {
         const manager = makeManager();
         let now = 1000;
         vi.spyOn(Date, 'now').mockImplementation(() => now);
-        expect(manager.sampleRate({ committed: 0 } as never)).toBeUndefined();
+        expect(manager.sampleRate({ committedThisRound: 0 } as never)).toBeUndefined();
         now = 15_000;   // 间隔 14 秒
-        expect(manager.sampleRate({ committed: 5 } as never)).toBe(0.4);
+        expect(manager.sampleRate({ committedThisRound: 5 } as never)).toBe(0.4);
         now = 29_000;   // 再间隔 14 秒
-        expect(manager.sampleRate({ committed: 10 } as never)).toBe(0.4);
+        expect(manager.sampleRate({ committedThisRound: 10 } as never)).toBe(0.4);
         vi.restoreAllMocks();
     });
 
@@ -740,20 +740,33 @@ describe('索引速率采样（真实完成计数滑动窗口）', () => {
         vi.spyOn(Date, 'now').mockImplementation(() => now);
         for (let i = 0; i <= 20; i += 1) {
             now = 1000 + i * 500;
-            manager.sampleRate({ committed: i } as never);
+            manager.sampleRate({ committedThisRound: i } as never);
         }
         expect(manager.rateSamples.length).toBeLessThanOrEqual(8);
         vi.restoreAllMocks();
     });
+    it('只在跳过未变更文件（本轮无写入）- 不显示速率', () => {
+        // 关键路径(2026-11-06 线上):重载后大量笔记按完成记录秒跳过,
+        // 若用「已核实」算速率会得到 40+ 篇/秒这种与推理无关的假数字。
+        const manager = makeManager();
+        let now = 1000;
+        vi.spyOn(Date, 'now').mockImplementation(() => now);
+        manager.sampleRate({ committed: 0, committedThisRound: 0 } as never);
+        now = 3000;
+        // 已核实 500 篇(全是跳过),但本轮真正写入 0 篇 → 不显示速率。
+        expect(manager.sampleRate({ committed: 500, committedThisRound: 0 } as never)).toBeUndefined();
+        vi.restoreAllMocks();
+    });
+
     it('停滞超过 20 秒没有新完成 - 不显示速率', () => {
         const manager = makeManager();
         let now = 1000;
         vi.spyOn(Date, 'now').mockImplementation(() => now);
-        manager.sampleRate({ committed: 0 } as never);
+        manager.sampleRate({ committedThisRound: 0 } as never);
         now = 5000;
-        manager.sampleRate({ committed: 4 } as never);
+        manager.sampleRate({ committedThisRound: 4 } as never);
         now = 60_000;   // 55 秒无进展
-        expect(manager.sampleRate({ committed: 4 } as never)).toBeUndefined();
+        expect(manager.sampleRate({ committedThisRound: 4 } as never)).toBeUndefined();
         vi.restoreAllMocks();
     });
 });
