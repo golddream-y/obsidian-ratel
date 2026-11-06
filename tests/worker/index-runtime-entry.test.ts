@@ -138,7 +138,8 @@ function makeEmbedScope(): {
 
 
 describe('入口装配索引会话', () => {
-	it('读写模式 - 会话打开并写入 - 状态反映真实块数', async () => {
+	// 关键路径:该用例在 CI 满载时会超过默认 5s 上限,显式给超时避免假失败。
+	it('读写模式 - 会话打开并写入 - 状态反映真实块数', { timeout: 30_000 }, async () => {
 		const { scope, out } = makeEmbedScope();
 		const entry = startIndexRuntimeWorker({ scope, fsOverride: makeFs() });
 		scope.onmessage?.({ data: { kind: 'init', runtimeId: 'rt-1', epoch: 1, root, access: 'read-write', chunkOptions: { maxTokens: 500, overlapTokens: 100 } } });

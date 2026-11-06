@@ -587,7 +587,9 @@ describe('批量写入', () => {
 		expect(indexWrites - baseline).toBeLessThanOrEqual(8);
 		const hits = await handlers['session.searchVector']!({ vector: Array.from({ length: DIMENSIONS }, () => 0.1), topK: 100 }) as { hits: Array<{ path: string }> };
 		expect(new Set(hits.hits.map((hit) => hit.path))).toEqual(new Set(files.map((file) => file.path)));
-	}, 30_000);
+		// 关键路径:100 篇真实分块 + 嵌入 + 分片落盘属规模用例,单独跑约 7s;
+		// 全量并发时会成倍放大,30s 曾出现假失败,按规模给足预算。
+	}, 120_000);
 
 	it('载荷缺少 files - 明确拒绝 - 不进入存储', async () => {
 		const handlers = createIndexSessionHandlers({ root, chunkOptions: CHUNK_OPTIONS, epoch: 1 });

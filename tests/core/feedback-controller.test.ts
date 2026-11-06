@@ -139,7 +139,7 @@ describe('FeedbackController', () => {
 	it('Index Failed - 仍弹 toastError(严重错误保留)', () => {
 		const ctl = createController();
 		ctl.start();
-		indexStatus$.set({ state: 'Failed', reason: 'vault 路径无效', totalDocs: 0 });
+		indexStatus$.set({ state: 'Failed', reason: 'vault 路径无效', total: 0 });
 		expect((userNotice.toastError as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith(expect.stringContaining('vault 路径无效'));
 		ctl.destroy();
 	});
@@ -237,6 +237,20 @@ describe('FeedbackController 索引阶段与计数展示', () => {
 		expect(snap.indexPartial).toBe(true);
 		expect(snap.indexCommittedFiles).toBe(6);
 		ctl.destroy();
+	});
+
+	it('索引速率 - Scanning 与 Queueing 都透传到快照 - 未提供时不伪造', () => {
+		const controller = createController();
+		controller.start();
+		// 关键路径:速率必须原样透传;字段名写错会静默丢弃,抽屉就永远不显示速度。
+		indexStatus$.set({ state: 'Scanning', scanned: 5, total: 100, committed: 5, pending: 95, failed: 0, phase: 'scanning', rate: 1.5 });
+		expect(get(userStatus.statusBar$).indexRate).toBe(1.5);
+		indexStatus$.set({ state: 'Queueing', phase: 'processing', total: 100, committed: 20, pending: 80, failed: 0, rate: 2.4 });
+		expect(get(userStatus.statusBar$).indexRate).toBe(2.4);
+		// 未提供速率时不得沿用上一轮的值。
+		indexStatus$.set({ state: 'Queueing', phase: 'processing', total: 100, committed: 21, pending: 79, failed: 0 });
+		expect(get(userStatus.statusBar$).indexRate).toBeUndefined();
+		controller.destroy();
 	});
 
 	it('Scanning + 尚无已提交文件 - 不声称部分可用', () => {
