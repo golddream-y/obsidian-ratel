@@ -51,11 +51,17 @@ export function evaluateChatSendGate(
 }
 
 /**
- * 判断 vault 向量检索是否就绪 — embedding 与索引均为 ready。
+ * 判断 vault 向量检索是否就绪。
+ *
+ * 关键路径(2026-11-07 线上):此前要求索引整体 ready 才允许检索,于是「索引中」
+ * 一律拒绝 —— 而状态条本身写着「已完成的笔记可用于搜索」,两边自相矛盾。
+ * 只要嵌入可用且已有提交过的文件,就应当允许检索;空库仍拒绝。
  *
  * @param status - StatusBar 当前快照
- * @returns 检索就绪时为 true
+ * @returns 可检索时为 true
  */
 export function isSearchReady(status: UserStatusSnapshot): boolean {
-	return status.embedding === 'ready' && status.index === 'ready';
+	if (status.embedding !== 'ready') return false;
+	if (status.index === 'ready') return true;
+	return (status.indexCommittedFiles ?? 0) > 0;
 }
