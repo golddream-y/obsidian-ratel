@@ -16,6 +16,7 @@ import { throwIfEmbeddingAborted, type EmbeddingPort } from '../ports/embedding'
 import type { EmbedOptions } from '../core/index-persistence-types';
 import { createTokenizer, parseVocab, type BertTokenizer } from './bert-tokenizer';
 import { tNow } from '../i18n';
+import { devLogger } from '../logging/dev-logger';
 
 // 关键路径:Tensor 构造函数在 embed 中复用,避免每次重复动态 import。
 type TensorConstructor = typeof ort.Tensor;
@@ -124,12 +125,18 @@ export class EmbeddingOnnx implements EmbeddingPort {
 	private async createSession(): Promise<ort.InferenceSession> {
 		const options = { executionProviders: ['wasm'] as const };
 		try {
-			return await ort.InferenceSession.create(this.deps.modelBuffer, {
+			const session = await ort.InferenceSession.create(this.deps.modelBuffer, {
 				...options,
 				executionProviders: ['webgpu'],
 			});
-		} catch {
+			// 关键路径:必须能看出到底走没走 GPU —— WebGPU 在 macOS 上就是 Metal,
+			// 没有这条日志就无法判断「慢」是没启用还是模型本身就这样。
+			devLogger.info('index', '嵌入后端:WebGPU(本机 GPU 加速已启用)');
+			return session;
+		} catch (error) {
 			// 关键路径:WebGPU 在部分桌面环境不可用(或打包未包含该 EP),回退 WASM。
+			const reason = error instanceof Error ? error.message : String(error);
+			devLogger.warn('index', `嵌入后端回退 WASM(WebGPU 不可用):${reason}`);
 			return ort.InferenceSession.create(this.deps.modelBuffer, options);
 		}
 	}
