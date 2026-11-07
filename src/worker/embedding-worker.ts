@@ -80,7 +80,20 @@ self.onmessage = async (e: MessageEvent): Promise<void> => {
 				if (embeddingOnnx === null) throw new Error('尚未初始化');
 				const startedAt = Date.now();
 				const batchSize = typeof msg.maxBatchSize === 'number' ? msg.maxBatchSize : 8;
-				const texts = Array.from({ length: batchSize }, (_, index) => `预热文本 ${index}：这段用来测量单块向量化耗时。`);
+				// 关键路径:预热必须用接近真实块的文本,否则测到的不是索引成本。
+				// 早先用一句短语,按真实长度填充时只有十几个 token,却在固定 512 时变成满长,
+				// 两种策略的「预热耗时」相差十几倍,读数完全不可比。
+				// 这里按约 400 个汉字生成,贴合分块上限,读数可直接与端到端对照。
+				const seeds = [
+					'索引写入线程的可靠性取决于提交顺序与恢复判定的严格程度,任何一步放宽都会在重启后表现为重复索引或进度倒退。',
+					'分片存储把单一文件拆成多个独立片段,单次写入只触碰目标分片,因此写入量与库的总规模解耦,大库不再越写越慢。',
+					'向量检索的召回质量由分块粒度、文本前缀与精排共同决定,任何一环缺失都会让相似内容排在无关结果之后。',
+					'嵌入速度取决于模型规模、序列长度与执行后端,短序列下调度开销占比升高,长序列下算力利用率上升。',
+				];
+				const texts = Array.from({ length: batchSize }, (_, index) => {
+					const seed = seeds[index % seeds.length]!;
+					return `${seed}(${index})`;
+				});
 				await embeddingOnnx.embed(texts);
 				self.postMessage({ type: 'warmup:done', blocks: batchSize, elapsedMs: Date.now() - startedAt });
 			} catch (err) {
