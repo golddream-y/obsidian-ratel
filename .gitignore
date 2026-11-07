@@ -44,3 +44,6 @@ CLAUDE.local.md
 # Superpowers brainstorming 可视化会话（仅本机）
 .superpowers/
 
+# 生成的分析报告（体积大、可再生成，不入库）
+*-report.json
+c2-chunk-migration-report.json
