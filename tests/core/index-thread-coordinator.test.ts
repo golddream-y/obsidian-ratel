@@ -231,6 +231,34 @@ describe('增量收敛与阶段', () => {
 });
 
 describe('单文件失败不中断整轮', () => {
+	it('批量写入按篇上报 - 与整批结果不重复计数', async () => {
+		// 关键路径:UI 进度靠「按篇事件」推进,整批结果稍后又到一次;
+		// 不做幂等就会把同一篇计两次(计数虚高、每块耗时算错)。
+		const client = {
+			start: vi.fn(async () => undefined),
+			indexFile: vi.fn(async () => ({ chunkCount: 1 })),
+			indexFiles: vi.fn(async (files: ReadonlyArray<{ path: string }>) => {
+				for (const file of files) {
+					client.onFileCommitted?.({ path: file.path, chunkCount: 2, skipped: false });
+				}
+				return files.map((file) => ({ path: file.path, chunkCount: 2 }));
+			}),
+			onFileCommitted: null as null | ((event: { path: string; chunkCount: number; skipped: boolean }) => void),
+			deleteFile: vi.fn(async () => ({ removed: 0 })),
+			recover: vi.fn(async () => ({ pending: 0, decisions: 0, failures: 0 })),
+			close: vi.fn(async () => undefined),
+		};
+		const coordinator = new IndexThreadCoordinator({
+			client: client as never,
+			vault: { listMarkdownFiles: () => ['a.md', 'b.md', 'c.md'], readFile: async () => '正文' },
+			start: START,
+		});
+		const counters = await coordinator.start();
+		// 3 篇各 2 块：按篇事件 3 次 + 整批结果 3 次,去重后仍是 3 篇 / 6 块。
+		expect(counters).toMatchObject({ committed: 3, committedThisRound: 3, committedBlocksThisRound: 6 });
+		coordinator.destroy();
+	});
+
 	it('首轮失败 - 先跳过继续处理其余文件 - 整轮结束后重试成功 - 不计失败', async () => {
 		// 关键路径(2026-11-06 线上):机器繁忙时单篇 embed 超时会让「进度不前、失败数上涨」。
 		// 首轮失败应记为「延后」,等其余文件处理完再回来重试;重试成功就不该算失败。

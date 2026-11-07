@@ -154,6 +154,12 @@ export function parseRuntimeMessage(value: unknown): IndexRuntimeMessage | null 
 		if (typeof value.callId !== 'string' || typeof value.ok !== 'boolean') return null;
 		return value as unknown as IndexRuntimeCallResult;
 	}
+	if (value.kind === 'event') {
+		// 关键路径:进度事件也必须过校验,否则会在宿主入口被整体丢弃 ——
+		// 表现为「按篇进度失效、仍整批跳」,却没有任何报错。
+		if (typeof value.type !== 'string' || value.type.length === 0) return null;
+		return value as unknown as IndexRuntimeEvent;
+	}
 	return null;
 }
 

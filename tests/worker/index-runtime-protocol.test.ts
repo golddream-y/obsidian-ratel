@@ -30,6 +30,15 @@ describe('运行时协议', () => {
 		expect(parseRuntimeMessage(null)).toBeNull();
 	});
 
+	it('进度事件 - 合法时解析成功、缺 type 拒绝', () => {
+		// 关键路径:事件不参与请求配对,但仍必须过校验 —— 漏掉分支会被静默丢弃,
+		// 表现为「进度仍整批跳」而没有任何报错。
+		const base = { protocolVersion: INDEX_RUNTIME_PROTOCOL_VERSION, runtimeId: 'rt-1', epoch: 1 };
+		expect(parseRuntimeMessage({ ...base, kind: 'event', type: 'file-committed', payload: { path: 'a.md' } })).toMatchObject({ kind: 'event', type: 'file-committed' });
+		expect(parseRuntimeMessage({ ...base, kind: 'event' })).toBeNull();
+		expect(parseRuntimeMessage({ ...base, kind: 'event', type: '' })).toBeNull();
+	});
+
 	it('载荷按字符串长度与结构递归计费 - 大字符串明显更大', () => {
 		expect(estimatePayloadBytes('abcd')).toBe(8);
 		expect(estimatePayloadBytes({ text: 'abcd' })).toBeGreaterThan(8);
