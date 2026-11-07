@@ -73,6 +73,21 @@ self.onmessage = async (e: MessageEvent): Promise<void> => {
 			}
 			break;
 		}
+		case 'warmup': {
+			// 关键路径(S-WEBGPU-EMBEDDING):装配层用它量一次真实单块耗时,
+			// 不必等整轮索引跑完才能判断 GPU 是否值得启用。
+			try {
+				if (embeddingOnnx === null) throw new Error('尚未初始化');
+				const startedAt = Date.now();
+				const batchSize = typeof msg.maxBatchSize === 'number' ? msg.maxBatchSize : 8;
+				const texts = Array.from({ length: batchSize }, (_, index) => `预热文本 ${index}：这段用来测量单块向量化耗时。`);
+				await embeddingOnnx.embed(texts);
+				self.postMessage({ type: 'warmup:done', blocks: batchSize, elapsedMs: Date.now() - startedAt });
+			} catch (err) {
+				self.postMessage({ type: 'warmup:error', error: err instanceof Error ? err.message : String(err) });
+			}
+			break;
+		}
 		case 'cancel': {
 			// 关键路径:取消单项请求;命中则在批次边界中止,未命中是无害的空操作。
 			const controller = msg.requestId === undefined ? undefined : abortControllers.get(msg.requestId);

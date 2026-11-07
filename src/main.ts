@@ -2963,6 +2963,7 @@ export default class RatelVaultPlugin extends Plugin {
 			return null;
 		}
 		let ok = false;
+		let warmupTimer: number | undefined;
 		try {
 			ok = await new Promise<boolean>((resolve) => {
 				const timer = window.setTimeout(() => {
@@ -2972,8 +2973,14 @@ export default class RatelVaultPlugin extends Plugin {
 				worker.onmessage = (event: MessageEvent) => {
 					const data = event.data as { type?: string; error?: string; stack?: string };
 					if (data.type === 'ready') {
-						window.clearTimeout(timer);
-						resolve(true);
+						// 关键路径:就绪后再跑一次 warmup 量真实单块耗时,
+						// 必须等它回包再 resolve —— 否则 finally 里的 terminate 会把
+						// 热身中的 Worker 直接杀掉,日志里永远看不到耗时。
+						worker.postMessage({ type: 'warmup', maxBatchSize: 8 });
+						warmupTimer = window.setTimeout(() => {
+							window.clearTimeout(timer);
+							resolve(true);
+						}, 20_000);
 					} else if (data.type === 'error') {
 						window.clearTimeout(timer);
 						// 关键路径:把真实失败原因写进日志,研发期不必再猜是 EP 未注册、
@@ -2992,6 +2999,26 @@ export default class RatelVaultPlugin extends Plugin {
 					{ type: 'init', deps, dimensions: embedding.dimensions, maxBatchSize: 16 },
 					[deps.modelBuffer, deps.wasmBinary],
 				);
+				// warmup 回包:记录真实速度后立刻结算探测。
+				worker.addEventListener('message', (warm: MessageEvent) => {
+					const payload = warm.data as { type?: string; blocks?: number; elapsedMs?: number; error?: string };
+					if (payload.type === 'warmup:done') {
+						const blocks = payload.blocks ?? 1;
+						const ms = payload.elapsedMs ?? 0;
+						devLogger.info(
+							'index',
+							`GPU 预热完成:${blocks} 块 / ${ms} ms(${(ms / blocks / 1000).toFixed(2)} 秒/块)`,
+						);
+						window.clearTimeout(warmupTimer);
+						window.clearTimeout(timer);
+						resolve(true);
+					} else if (payload.type === 'warmup:error') {
+						devLogger.warn('index', `GPU 预热失败:${payload.error ?? 'unknown'}`);
+						window.clearTimeout(warmupTimer);
+						window.clearTimeout(timer);
+						resolve(true);
+					}
+				});
 			});
 		} catch (error) {
 			devLogger.warn('index', `GPU 探测异常:${error instanceof Error ? error.message : String(error)}`);

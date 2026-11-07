@@ -144,6 +144,7 @@ export class EmbeddingOnnx implements EmbeddingPort {
 			devLogger.info('index', '嵌入后端:WASM(CPU 推理)');
 			return ort.InferenceSession.create(this.deps.modelBuffer, {
 				executionProviders: ['wasm'],
+				logSeverityLevel: 3,
 			});
 		}
 
@@ -159,6 +160,9 @@ export class EmbeddingOnnx implements EmbeddingPort {
 		// WASM Worker —— 两个独立实例,零污染。
 		const session = await ort.InferenceSession.create(this.deps.modelBuffer, {
 			executionProviders: ['webgpu'],
+			// 关键路径:ORT 的 C++ 层会为每个会话打印算子分配统计(W 级),
+			// GPU 路径每次装载都刷一屏;3 = error,只保留真正的错误。
+			logSeverityLevel: 3,
 		});
 		devLogger.info('index', '嵌入后端:WebGPU(本机 GPU 加速已启用)');
 		return session;
