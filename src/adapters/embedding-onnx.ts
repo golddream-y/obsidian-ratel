@@ -108,10 +108,30 @@ export class EmbeddingOnnx implements EmbeddingPort {
 		ort.env.wasm.wasmBinary = this.deps.wasmBinary;
 		ort.env.wasm.numThreads = 1;
 
-		this.session = await ort.InferenceSession.create(this.deps.modelBuffer, {
-			executionProviders: ['wasm'],
-		});
+		this.session = await this.createSession();
 		this.ready = true;
+	}
+
+	/**
+	 * 优先尝试 WebGPU，不可用时回退 WASM。
+	 *
+	 * 关键路径(2026-11-07 线上实测 5 秒/块):单线程 WASM 跑 448 token 的 bge-small 约
+	 * 3–5 秒，这是算力上限而非缺省配置问题。WebGPU 可用时可降到几十毫秒；
+	 * 桌面端未必支持，失败必须无声回退，不能让索引整体不可用。
+	 *
+	 * @returns 已创建的 ONNX 会话
+	 */
+	private async createSession(): Promise<ort.InferenceSession> {
+		const options = { executionProviders: ['wasm'] as const };
+		try {
+			return await ort.InferenceSession.create(this.deps.modelBuffer, {
+				...options,
+				executionProviders: ['webgpu'],
+			});
+		} catch {
+			// 关键路径:WebGPU 在部分桌面环境不可用(或打包未包含该 EP),回退 WASM。
+			return ort.InferenceSession.create(this.deps.modelBuffer, options);
+		}
 	}
 
 	/**
