@@ -385,7 +385,15 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 	 * 于是状态栏长时间停在「正在建立索引 + 未知进度转圈」,用户无法判断是否在推进。
 	 * 有界批让完成计数按批递增,状态可感知。
 	 */
-	private static readonly MAX_BATCH_FILES = 8;
+	/**
+	 * 单批文件数。
+	 *
+	 * 关键路径(2026-11-07):批内多篇是「先全部准备、再一起提交」,进度事件只能
+	 * 在批末集中触发,用户看到的是「一次跳 N 篇」。分片之后单文件提交只重写自己那
+	 * 一片(约占整库 1/N),写放大已经很小 —— 因此取 1,按篇提交换取逐篇进度。
+	 * 若将来重新追求写入合并,把该常量调大即可,批量通道代码仍在。
+	 */
+	private static readonly MAX_BATCH_FILES = 1;
 
 	private takeBatch(): Array<{ path: string; entry: ThreadQueueEntry }> {
 		const batch: Array<{ path: string; entry: ThreadQueueEntry }> = [];

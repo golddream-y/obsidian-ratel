@@ -231,9 +231,8 @@ describe('增量收敛与阶段', () => {
 });
 
 describe('单文件失败不中断整轮', () => {
-	it('批量写入按篇上报 - 与整批结果不重复计数', async () => {
-		// 关键路径:UI 进度靠「按篇事件」推进,整批结果稍后又到一次;
-		// 不做幂等就会把同一篇计两次(计数虚高、每块耗时算错)。
+	it('按篇提交 - 进度随每篇推进 - 不再整批结算', async () => {
+		// 关键路径:MAX_BATCH_FILES=1 时走逐篇路径,进度按篇推进而不是整批跳。
 		const client = {
 			start: vi.fn(async () => undefined),
 			indexFile: vi.fn(async () => ({ chunkCount: 1 })),
@@ -254,8 +253,10 @@ describe('单文件失败不中断整轮', () => {
 			start: START,
 		});
 		const counters = await coordinator.start();
-		// 3 篇各 2 块：按篇事件 3 次 + 整批结果 3 次,去重后仍是 3 篇 / 6 块。
-		expect(counters).toMatchObject({ committed: 3, committedThisRound: 3, committedBlocksThisRound: 6 });
+		expect(counters).toMatchObject({ committed: 3, committedThisRound: 3 });
+		// 逐篇路径不得调用批量入口。
+		expect(client.indexFiles).not.toHaveBeenCalled();
+		expect(client.indexFile).toHaveBeenCalledTimes(3);
 		coordinator.destroy();
 	});
 
@@ -363,7 +364,7 @@ describe('失败重试一轮', () => {
 });
 
 describe('批量提交', () => {
-	it('客户端支持批量 - 单批有界 - 40 篇分成 5 批且进度可分批推进', async () => {
+	it('按篇提交 - 40 篇逐篇写入 - 进度可逐篇推进', async () => {
 		const client = {
 			start: vi.fn(async () => undefined),
 			indexFile: vi.fn(async () => ({ chunkCount: 1 })),
@@ -380,38 +381,11 @@ describe('批量提交', () => {
 			start: START,
 		});
 		const counters = await coordinator.start();
-		const BATCH_LIMIT = 8;
-		expect(client.indexFiles).toHaveBeenCalledTimes(Math.ceil(paths.length / BATCH_LIMIT));
-		expect(client.indexFiles.mock.calls[0]![0]).toHaveLength(BATCH_LIMIT);
-		expect(client.indexFiles.mock.calls.reduce((sum, call) => sum + call[0].length, 0)).toBe(paths.length);
-		expect(client.indexFile).not.toHaveBeenCalled();
+		// 关键路径(2026-11-07):本版按篇提交,进度逐篇推进 —— 批量入口不应被调用。
+		expect(client.indexFile).toHaveBeenCalledTimes(paths.length);
+		expect(client.indexFiles).not.toHaveBeenCalled();
 		expect(counters).toMatchObject({ committed: paths.length, failures: 0 });
 		coordinator.destroy();
 	});
 
-	it('整批失败 - 退回逐篇 - 只有坏文件记失败', async () => {
-		const client = {
-			start: vi.fn(async () => undefined),
-			indexFile: vi.fn(async (filePath: string) => {
-				if (filePath === 'b.md') throw new Error('内容无法解析');
-				return { chunkCount: 1 };
-			}),
-			indexFiles: vi.fn(async () => { throw new Error('批量提交失败'); }),
-			deleteFile: vi.fn(async () => ({ removed: 0 })),
-			recover: vi.fn(async () => ({ pending: 0, decisions: 0, failures: 0 })),
-			close: vi.fn(async () => undefined),
-		};
-		const coordinator = new IndexThreadCoordinator({
-			client: client as never,
-			vault: { listMarkdownFiles: () => ['a.md', 'b.md', 'c.md'], readFile: async (p: string) => `正文 ${p}` },
-			start: START,
-		});
-		const counters = await coordinator.start();
-		expect(client.indexFiles).toHaveBeenCalledTimes(1);
-		// a/c 各 1 次 + 坏文件 b 首轮 1 次 + 2 轮延后重试 = 5 次
-		expect(client.indexFile).toHaveBeenCalledTimes(5);
-		expect(counters).toMatchObject({ committed: 2, failures: 1 });
-		expect(coordinator.failureDetails()[0]?.path).toBe('b.md');
-		coordinator.destroy();
-	});
 });
