@@ -77,9 +77,14 @@ GPU Worker 内部**不做 WASM 回退**：失败即让 init 失败，由装配�
 
 ### 胶水模块内联，不新增外发目的地
 
-jsep 胶水（46 KB）由 `scripts/gen-ort-glue.mjs` 在构建期转成 TS 常量，
+jsep 胶水（46 KB）由构建期读取并内联进 GPU Worker 产物，
 运行时在 Worker 内 `new Blob([glue])` → `URL.createObjectURL` → `wasmPaths.mjs`。
-不从 CDN 取，避免新增网络请求（现有 wasm 仍从 jsDelivr 下载，属既有边界）。
+不从 CDN 取，避免新增网络请求。
+
+**但是**：webgpu EP 还依赖带 jsep 的 wasm（26 MB），与 CPU 版不是同一个文件。
+`OrtRuntimeAssets.readGpuWasmBinary()` 把它单独缓存到插件目录，
+来源仍是同一 jsDelivr / 同一 ORT 包，**不新增外发目的地**，
+但首次 GPU 探测会多一次约 26 MB 下载（需在 1.5 更新说明里如实写明）。
 
 ### 三条硬约束 —— 保证 1.5 不重建索引
 
@@ -94,6 +99,16 @@ jsep 胶水（46 KB）由 `scripts/gen-ort-glue.mjs` 在构建期转成 TS 常�
 3. **不要换模型或维度**（换 Ollama `bge-m3` 1024 维属另一条路线，必须重建）
 
 只换后端 → 指纹逐字不变 → 代际不变 → **1.4.0 的索引直接复用，零重建**。
+
+### 追加根因：GPU 路径必须用 jsep wasm
+
+剥离 Node 判定后报错变为 `TypeError: c is not a function`：普通
+`ort-wasm-simd-threaded.wasm` 不导出 `webgpuInit` / `webgpuRegisterDevice`，
+胶水实例化后 ORT 调用这些函数即失败。修复：`getDeps({ gpu: true })` 改读
+`ort-wasm-simd-threaded.jsep.wasm`，probe 与 proxy 的 deps 工厂同源。
+
+同时 GPU Worker 产物改为**不压缩**、init 失败回传 `error.stack`，
+研发期能直接读到 ORT/胶水的真实函数名，而不是 `c is not a function`。
 
 ### 追加根因：胶水里的 Node 环境误判
 

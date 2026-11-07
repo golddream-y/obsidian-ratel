@@ -290,6 +290,8 @@ export default class RatelVaultPlugin extends Plugin {
 	private inlineWorker?: InlineWorker;
 	// 关键路径:EmbeddingWorkerProxy 把 ONNX 推理移入 Web Worker,onunload 时需 terminate 释放线程。
 	private embeddingWorkerProxy?: EmbeddingWorkerProxy;
+	/** 本会话是否选中 GPU 版嵌入 Worker;决定 deps 工厂取 jsep wasm。 */
+	private gpuWorkerSelected = false;
 	// 关键路径:Blob URL 在 onunload 需 revokeObjectURL 释放,避免内存泄漏。
 	private embeddingWorkerUrl?: string;
 	// 关键路径:indexDir 在 onload 计算,onLayoutReady 初始化 InlineWorker 时需要复用。
@@ -2945,7 +2947,7 @@ export default class RatelVaultPlugin extends Plugin {
 			devLogger.warn('index', 'GPU 探测跳过:Worker 代码未内联');
 			return null;
 		}
-		const deps = await this.modelManager.getDeps();
+		const deps = await this.modelManager.getDeps({ gpu: true });
 		if (deps === null) {
 			devLogger.warn('index', 'GPU 探测跳过:模型依赖不可用');
 			return null;
@@ -2968,7 +2970,7 @@ export default class RatelVaultPlugin extends Plugin {
 					resolve(false);
 				}, 30_000);
 				worker.onmessage = (event: MessageEvent) => {
-					const data = event.data as { type?: string; error?: string };
+					const data = event.data as { type?: string; error?: string; stack?: string };
 					if (data.type === 'ready') {
 						window.clearTimeout(timer);
 						resolve(true);
@@ -2976,7 +2978,8 @@ export default class RatelVaultPlugin extends Plugin {
 						window.clearTimeout(timer);
 						// 关键路径:把真实失败原因写进日志,研发期不必再猜是 EP 未注册、
 						// glue 加载失败还是 wasm 版本不匹配。
-						devLogger.warn('index', `GPU 嵌入 Worker 初始化失败:${data.error ?? 'unknown'}`);
+						const stack = data.stack === undefined ? '' : `\n${data.stack.split('\n').slice(0, 8).join('\n')}`;
+						devLogger.warn('index', `GPU 嵌入 Worker 初始化失败:${data.error ?? 'unknown'}${stack}`);
 						resolve(false);
 					}
 				};
@@ -3016,6 +3019,7 @@ export default class RatelVaultPlugin extends Plugin {
 		const gpuUrl = await this.probeGpuWorker(GPU_EMBEDDING_WORKER_CODE, embedding);
 		const workerUrl = gpuUrl ?? wasmUrl;
 		const workerType: 'classic' | 'module' = gpuUrl !== null ? 'module' : 'classic';
+		this.gpuWorkerSelected = gpuUrl !== null;
 		if (gpuUrl !== null) URL.revokeObjectURL(wasmUrl);
 		this.embeddingWorkerUrl = workerUrl;
 
@@ -3023,7 +3027,7 @@ export default class RatelVaultPlugin extends Plugin {
 		const proxy = new EmbeddingWorkerProxy(
 			workerUrl,
 			async () => {
-				const fresh = await this.modelManager.getDeps();
+				const fresh = await this.modelManager.getDeps({ gpu: this.gpuWorkerSelected });
 				if (!fresh) throw new Error(tNow('error.embedding.notInit'));
 				return fresh;
 			},

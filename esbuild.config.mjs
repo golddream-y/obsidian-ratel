@@ -405,7 +405,9 @@ const gpuEmbeddingWorkerContext = await esbuild.context({
 	sourcemap: prod ? false : 'inline',
 	treeShaking: true,
 	outfile: 'dist/embedding-worker-gpu.js',
-	minify: prod,
+	// 关键路径(研发期):不压缩,让 ORT/胶水初始化失败的堆栈可读;
+	// 正式发布前若体积不可接受再改回 prod,届时用 inline sourcemap 兜底。
+	minify: false,
 	alias: {
 		'onnxruntime-web': path.resolve(__dirname, 'node_modules/onnxruntime-web/dist/ort.webgpu.bundle.min.mjs'),
 		'onnxruntime-node': path.resolve(__dirname, 'src/adapters/empty-module.cjs'),

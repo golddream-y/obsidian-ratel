@@ -18,8 +18,17 @@ import type { ProgressInfo } from './model-downloader';
 /** 与 package.json `dependencies.onnxruntime-web` 版本保持同步。 */
 export const ORT_RUNTIME_VERSION = '1.27.0';
 
-/** 运行时 wasm 文件名 — 与 wasm bundle 配套。 */
+/** WASM 版(CPU)运行时文件名 — 与 ort.wasm.bundle 配套。 */
 export const ORT_WASM_FILENAME = 'ort-wasm-simd-threaded.wasm';
+
+/**
+ * WebGPU 版运行时文件名。
+ *
+ * 关键路径(S-WEBGPU-EMBEDDING):webgpu EP 依赖带 jsep(JS EP 接口)的 wasm,
+ * 用普通版会让胶水实例化后 `webgpuInit` 等导出缺失(线上报 `c is not a function`)。
+ * 与 CPU 版同一 CDN、同一 ORT 包,只是文件名不同;首次 GPU 探测时多下载约 26 MB。
+ */
+export const ORT_WASM_GPU_FILENAME = 'ort-wasm-simd-threaded.jsep.wasm';
 
 /** 完整文件至少约 10MB;过小视为损坏或未完成下载。 */
 const ORT_WASM_MIN_BYTES = 10 * 1024 * 1024;
@@ -29,8 +38,11 @@ const ORT_WASM_MIN_BYTES = 10 * 1024 * 1024;
  *
  * @param version - onnxruntime-web 包版本,默认 ORT_RUNTIME_VERSION。
  */
-export function getOrtWasmDownloadUrl(version: string = ORT_RUNTIME_VERSION): string {
-	return `https://cdn.jsdelivr.net/npm/onnxruntime-web@${version}/dist/${ORT_WASM_FILENAME}`;
+export function getOrtWasmDownloadUrl(
+	version: string = ORT_RUNTIME_VERSION,
+	filename: string = ORT_WASM_FILENAME,
+): string {
+	return `https://cdn.jsdelivr.net/npm/onnxruntime-web@${version}/dist/${filename}`;
 }
 
 /**
@@ -70,9 +82,14 @@ export class OrtRuntimeAssets {
 		private fetchFn: FetchFn = createDefaultFetch(),
 	) {}
 
-	/** 插件目录下的 WASM 缓存绝对路径。 */
+	/** 插件目录下的 CPU 版 WASM 缓存绝对路径。 */
 	get wasmPath(): string {
 		return path.join(this.pluginDir, ORT_WASM_FILENAME);
+	}
+
+	/** 插件目录下的 WebGPU 版 WASM 缓存绝对路径。 */
+	get gpuWasmPath(): string {
+		return path.join(this.pluginDir, ORT_WASM_GPU_FILENAME);
 	}
 
 	/**
@@ -118,13 +135,45 @@ export class OrtRuntimeAssets {
 		return new Uint8Array(wasmBuffer).buffer;
 	}
 
-	private async isWasmCached(): Promise<boolean> {
+	/**
+	 * 读取 WebGPU 版 WASM 二进制;必要时先下载缓存。
+	 *
+	 * 关键路径:与 CPU 版分开缓存,互不影响;GPU 探测失败时 CPU 版缓存仍完整可用。
+	 *
+	 * @returns 可传给 ort.env.wasm.wasmBinary 的 ArrayBuffer
+	 */
+	async readGpuWasmBinary(): Promise<ArrayBuffer> {
+		const filePath = this.gpuWasmPath;
+		if (!(await this.isCached(filePath))) {
+			await mkdir(this.pluginDir, { recursive: true });
+			const response = await this.fetchFn(getOrtWasmDownloadUrl(this.version, ORT_WASM_GPU_FILENAME));
+			if (response.status < 200 || response.status >= 300) {
+				throw new Error(tNow('error.ort.downloadFailed', { status: response.status }));
+			}
+			const buffer = Buffer.from(response.arrayBuffer);
+			if (buffer.byteLength < ORT_WASM_MIN_BYTES) {
+				throw new Error(tNow('error.ort.fileCorrupted', { bytes: buffer.byteLength }));
+			}
+			const tmpPath = `${filePath}.downloading`;
+			await writeFile(tmpPath, buffer);
+			await rename(tmpPath, filePath);
+		}
+		const wasmBuffer = await readFile(filePath);
+		return new Uint8Array(wasmBuffer).buffer;
+	}
+
+	/** 按路径判断缓存是否有效。 */
+	private async isCached(filePath: string): Promise<boolean> {
 		try {
-			await access(this.wasmPath);
-			const wasmBuffer = await readFile(this.wasmPath);
+			await access(filePath);
+			const wasmBuffer = await readFile(filePath);
 			return wasmBuffer.byteLength >= ORT_WASM_MIN_BYTES;
 		} catch {
 			return false;
 		}
+	}
+
+	private async isWasmCached(): Promise<boolean> {
+		return this.isCached(this.wasmPath);
 	}
 }

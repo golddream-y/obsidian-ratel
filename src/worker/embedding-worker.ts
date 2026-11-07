@@ -66,8 +66,10 @@ self.onmessage = async (e: MessageEvent): Promise<void> => {
 				self.postMessage({ type: 'ready', probe: probeInfo });
 			} catch (err) {
 				// 关键路径:初始化失败回复 error(无 requestId,广播式),主线程据此销毁 Worker。
-				const error = err instanceof Error ? err.message : String(err);
-				self.postMessage({ type: 'error', error: `初始化失败: ${error}` });
+				// 研发期带上堆栈:GPU 版产物不 minify,能直接定位到 ORT/胶水的具体函数。
+				const message = err instanceof Error ? err.message : String(err);
+				const stack = err instanceof Error ? err.stack : undefined;
+				self.postMessage({ type: 'error', error: `初始化失败: ${message}`, stack });
 			}
 			break;
 		}

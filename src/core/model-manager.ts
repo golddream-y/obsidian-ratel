@@ -189,12 +189,13 @@ export class ModelManager {
      * @returns 全新的模型依赖;模型未下载时返回 null。
      * @throws Error 文件读取失败(模型文件被删除等)。
      */
-    async getDeps(): Promise<EmbeddingOnnxDeps | null> {
+    async getDeps(options: { gpu?: boolean } = {}): Promise<EmbeddingOnnxDeps | null> {
         if (!this.modelDir) return null;
         // 关键路径:并行读盘,与 createDefaultEmbeddingFactory 一致的路径结构。
+        // GPU 版 Worker 必须用 jsep wasm,否则 webgpu EP 的导出函数缺失。
         const [onnxBuffer, wasmBinary, vocabContent] = await Promise.all([
             readFile(path.join(this.modelDir, 'model_quantized.onnx')),
-            this.ortAssets.readWasmBinary(),
+            options.gpu === true ? this.ortAssets.readGpuWasmBinary() : this.ortAssets.readWasmBinary(),
             readFile(path.join(this.modelDir, 'vocab.txt'), 'utf-8'),
         ]);
         // 关键路径:readFile 返回的 Buffer 底层 ArrayBuffer 可能大于实际数据,
