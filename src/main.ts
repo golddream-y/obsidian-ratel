@@ -142,6 +142,7 @@ import { UserNotice } from './user-feedback/user-notice';
 import { UserStatus, type IndexConclusionDiagnostics } from './user-feedback/user-status';
 import { CrashBreadcrumbs, type LastRunDiag } from './logging/breadcrumbs';
 import { isSearchReady } from './ui/chat/chat-send-gate';
+import { runGpuProbe } from './core/gpu-probe';
 import { applyLangPreference, tNow } from './i18n';
 import {
 	hasRerankApiKey,
@@ -1066,6 +1067,14 @@ export default class RatelVaultPlugin extends Plugin {
 		name: tNow('cmd.askVault'),
 		callback: () => {
 			void this.activateChatView();
+		},
+	});
+
+	this.addCommand({
+		id: 'diagnose-gpu-embedding',
+		name: tNow('cmd.diagnoseGpu'),
+		callback: () => {
+			void this.runGpuProbeDiagnostics();
 		},
 	});
 
@@ -3096,6 +3105,21 @@ export default class RatelVaultPlugin extends Plugin {
 	/**
 	 * 唤起或聚焦聊天侧栏 — 幂等,已存在则 reveal,否则在右侧栏创建。
 	 */
+	/**
+	 * 诊断命令：尝试用 WebGPU 执行器初始化本地模型，并如实回报结论。
+	 *
+	 * 关键路径：独立探针，不改变正式索引路径（始终 WASM），失败也不影响可用性。
+	 */
+	private async runGpuProbeDiagnostics(): Promise<void> {
+		const modelId = this.settings.embedLocalModel;
+		new Notice(tNow('notice.gpuProbeRunning'));
+		const outcome = await runGpuProbe(this.manifest.dir ?? '', modelId);
+		const summary = outcome.ok
+			? tNow('notice.gpuProbeOk')
+			: tNow('notice.gpuProbeFailed', { reason: outcome.error ?? 'unknown' });
+		new Notice(summary, 12000);
+	}
+
 	async activateChatView() {
 		const { workspace } = this.app;
 		let leaf = workspace.getLeavesOfType(VIEW_TYPE_CHAT)[0];

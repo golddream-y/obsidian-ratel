@@ -613,6 +613,9 @@ export const en: Strings = {
   // ==================== NoticeStrings ====================
   'notice.indexStatus': 'Index: {count} docs, last: {time}',
   'notice.indexNotReady': 'Index is not ready yet, please wait',
+  'notice.gpuProbeRunning': 'Testing GPU embedding (downloads ~26 MB runtime)…',
+  'notice.gpuProbeOk': 'GPU embedding works: WebGPU execution provider initialised',
+  'notice.gpuProbeFailed': 'GPU embedding unavailable: {reason}',
   'notice.indexPaused': 'Indexing paused',
   'notice.indexResumed': 'Indexing resumed',
   'notice.indexProgress': 'Ratel: indexing... {done}/{total} files',
@@ -1326,6 +1329,7 @@ export const en: Strings = {
   // ==================== CmdStrings ====================
   'cmd.askVault': 'Ask vault',
   'cmd.showReleaseNotes': 'Show release notes',
+  'cmd.diagnoseGpu': 'Diagnostics: test local GPU embedding',
   'cmd.showIndexStatus': 'Show index status',
   'cmd.rebuildIndex': 'Rebuild current index (verify file by file)',
   'cmd.pauseIndex': 'Pause indexing',
