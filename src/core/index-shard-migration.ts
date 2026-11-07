@@ -12,40 +12,6 @@
 
 import { access, mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { shardCountForBlocks, shardDirectoryName, shardIdForPath } from './index-shard-routing';
-
-/** 迁移结果。 */
-export interface ShardMigrationResult {
-	/** 本次是否真的拆分了旧布局。 */
-	migrated: boolean;
-	/** 生效片数;未迁移时取自既有 `layout.json`。 */
-	shardCount: number;
-	/** 搬迁的块数。 */
-	blockCount: number;
-}
-
-/** 迁移选项。 */
-export interface ShardMigrationOptions {
-	/** 代际目录绝对路径 — 旧 `index.json` 与 `shards/` 都在这层。 */
-	generationRoot: string;
-	/** 测试注入:已写片数达到该值后抛错,用于验证失败保留旧布局。 */
-	failAfterShard?: number;
-}
-
-/** vectra 索引文件结构 — 迁移只做分桶,其余字段原样保留。 */
-interface VectraIndexFile {
-	version?: number;
-	metadata_config?: Record<string, unknown>;
-	items?: VectraIndexItem[];
-}
-
-/** vectra 索引条目 — `norm` 必须原样保留,否则查询分数会变。 */
-interface VectraIndexItem {
-	id: string;
-	vector: number[];
-	norm?: number;
-	metadata?: Record<string, unknown>;
-}
 
 /** `shards/layout.json` — 记录片数与块数,作为「已迁移」的唯一标记。 */
 interface ShardLayoutFile {
