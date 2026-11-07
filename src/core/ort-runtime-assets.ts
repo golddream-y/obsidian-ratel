@@ -18,7 +18,13 @@ import type { ProgressInfo } from './model-downloader';
 /** 与 package.json `dependencies.onnxruntime-web` 版本保持同步。 */
 export const ORT_RUNTIME_VERSION = '1.27.0';
 
-export const ORT_WASM_FILENAME = 'ort-wasm-simd-threaded.wasm';
+/**
+ * 运行时 wasm 文件名。
+ *
+ * 关键路径(2026-11-07):webgpu bundle 依赖带 jsep(JS EP 接口)的 wasm;
+ * 用普通版本会让 webgpu 执行器缺失、静默回退 CPU。该文件约 26 MB(原 13 MB),首次启动下载一次。
+ */
+export const ORT_WASM_FILENAME = 'ort-wasm-simd-threaded.jsep.wasm';
 
 /** 完整文件至少约 10MB;过小视为损坏或未完成下载。 */
 const ORT_WASM_MIN_BYTES = 10 * 1024 * 1024;
