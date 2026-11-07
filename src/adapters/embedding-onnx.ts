@@ -67,6 +67,22 @@ export interface EmbeddingOnnxDeps {
 }
 
 /**
+ * 计算批内填充长度：取最长真实长度，向上对齐到 8 的倍数并夹在 [8, 512]。
+ *
+ * 关键路径：attention 算力随序列长度平方增长，按真实长度填充比固定 512 省数倍；
+ * 对齐到 8 是为了让同一批次的 shape 稳定，避免每次推理都换一个 kernel。
+ *
+ * @param lengths - 批内每条的 token 数（含 [CLS]/[SEP]）
+ * @returns 实际使用的序列长度
+ */
+function padLengthFor(lengths: number[]): number {
+	const longest = lengths.reduce((max, value) => (value > max ? value : max), 0);
+	if (longest <= 0) return 8;
+	const aligned = Math.ceil(longest / 8) * 8;
+	return Math.max(8, Math.min(512, aligned));
+}
+
+/**
  * 基于 onnxruntime-web 的本地 Embedding 适配器。
  *
  * 关键路径:
@@ -226,23 +242,30 @@ export class EmbeddingOnnx implements EmbeddingPort {
 	private async embedBatch(texts: string[]): Promise<number[][]> {
 		const maxLength = 512;
 		const batchSize = texts.length;
-		const inputIds = new BigInt64Array(batchSize * maxLength);
-		const attentionMask = new BigInt64Array(batchSize * maxLength);
-		const tokenTypeIds = new BigInt64Array(batchSize * maxLength);
+		// 关键路径(S-WEBGPU-EMBEDDING 性能):此前一律按 512 填充,而实际块长度常常只有
+		// 几十到一两百 token —— attention 的算力按长度平方增长,固定 512 意味着数倍浪费。
+		// 先按真实长度编码,再取批内最大值并向上对齐,把填充压到最小。
+		const encodedBatch = texts.map((text) => this.tokenizer.encode(text, maxLength));
+		const batchMaxLength = padLengthFor(encodedBatch.map((item) => item.attentionMask.reduce((sum, flag) => sum + flag, 0)));
+		const inputIds = new BigInt64Array(batchSize * batchMaxLength);
+		const attentionMask = new BigInt64Array(batchSize * batchMaxLength);
+		const tokenTypeIds = new BigInt64Array(batchSize * batchMaxLength);
+		const padId = 0;
 
 		for (let b = 0; b < batchSize; b++) {
-			const text = texts[b];
-			if (text === undefined) continue;
-			const encoded = this.tokenizer.encode(text, maxLength);
-			for (let i = 0; i < maxLength; i++) {
-				const offset = b * maxLength + i;
-				inputIds[offset] = BigInt(encoded.inputIds[i] ?? 0);
-				attentionMask[offset] = BigInt(encoded.attentionMask[i] ?? 0);
-				tokenTypeIds[offset] = BigInt(encoded.tokenTypeIds[i] ?? 0);
+			const encoded = encodedBatch[b];
+			if (encoded === undefined) continue;
+			for (let i = 0; i < batchMaxLength; i++) {
+				const offset = b * batchMaxLength + i;
+				const inRange = i < encoded.inputIds.length;
+				// 超出批内长度的位置填 pad,attention mask 置 0,不参与池化。
+				inputIds[offset] = BigInt(inRange ? (encoded.inputIds[i] ?? padId) : padId);
+				attentionMask[offset] = BigInt(inRange ? (encoded.attentionMask[i] ?? 0) : 0);
+				tokenTypeIds[offset] = BigInt(inRange ? (encoded.tokenTypeIds[i] ?? 0) : 0);
 			}
 		}
 
-		const dims = [batchSize, maxLength];
+		const dims = [batchSize, batchMaxLength];
 		const feeds = {
 			input_ids: new this.TensorCtor('int64', inputIds, dims),
 			attention_mask: new this.TensorCtor('int64', attentionMask, dims),
@@ -263,9 +286,10 @@ export class EmbeddingOnnx implements EmbeddingPort {
 		// 性能:mean pooling 与 L2 normalize 一次性在 JS 中完成,避免多次遍历。
 		const embeddings: number[][] = [];
 		for (let b = 0; b < batchSize; b++) {
-			const text = texts[b];
-			if (text === undefined) continue;
-			const encoded = this.tokenizer.encode(text, maxLength);
+			// 关键路径:复用本轮已编码结果,别再对同一段文本分词一次 ——
+			// 分词是纯 JS,重复做等于把省下的算力又还回去。
+			const encoded = encodedBatch[b];
+			if (encoded === undefined) continue;
 			const sums = new Float64Array(hiddenSize);
 			let maskSum = 0;
 

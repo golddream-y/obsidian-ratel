@@ -1286,8 +1286,15 @@ export default class RatelVaultPlugin extends Plugin {
 				return;
 			}
 			try {
-				const adapter = await gpu.requestAdapter();
-				devLogger.info('index', `渲染进程 WebGPU:可用 (adapter=${adapter === null ? 'null' : 'ok'})`);
+				const adapter = (await gpu.requestAdapter()) as { info?: { vendor?: string; architecture?: string; device?: string; description?: string } } | null;
+				// 关键路径(S-WEBGPU-EMBEDDING):必须区分真 GPU 与软件适配器(SwiftShader)。
+				// 拿不到硬件适配器时 WebGPU 会在 CPU 上模拟,速度接近甚至不如 WASM,
+				// 只报「adapter=ok」会把这种情况误当成 GPU 已启用。
+				const info = adapter?.info;
+				const detail = info === undefined
+					? 'info 不可用'
+					: `vendor=${info.vendor ?? '?'} architecture=${info.architecture ?? '?'} device=${info.device ?? '?'}`;
+				devLogger.info('index', `渲染进程 WebGPU:可用 (${detail})`);
 			} catch (error) {
 				devLogger.info('index', `渲染进程 WebGPU:requestAdapter 失败 ${error instanceof Error ? error.message : String(error)}`);
 			}
