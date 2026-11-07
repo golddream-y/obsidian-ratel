@@ -4,10 +4,10 @@
 **日期**:2026-08-03  
 **关联**:
 - [ADR-009](2026-07-06-skill-mechanism.md)(Skill 三源加载 / Discovery — 本 ADR 把 Discovery 并入能力池语义)
-- [ADR-010](2026-07-21-skill-vs-builtin-capability.md)(产品边界:何为内置、何为 Skill — 不变)
+- ADR-010(产品边界:何为内置、何为 Skill — 不变)
 - [ADR-012](2026-07-23-skill-activation-claude-aligned.md)(Skill 激活写入 Session — 执行语义不变)
 - [ADR-014](2026-08-03-mcp-host-platform.md)(MCP 作为能力池的一类供给)
-- [S-EVOLUTION](../superpowers/specs/2026-07-15-evolution-graph-agent.md)(Agent 平台总纲)
+- [S-EVOLUTION](../superpowers/archive/S-EVOLUTION/2026-07-15-evolution-graph-agent.md)(Agent 平台总纲)
 
 ---
 

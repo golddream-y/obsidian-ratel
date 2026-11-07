@@ -3,7 +3,7 @@
 **状态**:Accepted  
 **日期**:2026-08-19  
 **关联**:
-- [S-SR-LAYERING](../superpowers/specs/2026-08-19-sr-layering-design.md)(本 ADR 实现的 spec)
+- [S-SR-LAYERING](../superpowers/archive/S-SR-LAYERING/2026-08-19-sr-layering-design.md)(本 ADR 实现的 spec)
 - [ADR-012](2026-07-23-skill-activation-claude-aligned.md)(Skill 激活走会话消息路径,本 ADR 保持不变)
 - PRD §7.5(使用统计只做计数展示,不做自动治理)
 
@@ -75,4 +75,4 @@ memory 源内超总预算时:pinned 永不砍 → relatedTopics 尾条往上砍 
 - `src/prompts/injection/injector.ts`(PromptInjector 与 ownBudgetBytes 兜底截断)
 - `src/prompts/injection/ids.ts`(注入源 ID 集中登记)
 - `src/prompts/composer.ts`(memory 分层与裁剪顺序)
-- [S-SR-LAYERING spec](../superpowers/specs/2026-08-19-sr-layering-design.md)
+- [S-SR-LAYERING spec](../superpowers/archive/S-SR-LAYERING/2026-08-19-sr-layering-design.md)

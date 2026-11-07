@@ -84,7 +84,7 @@ graph TB
 | `chatModel` | string | `deepseek-v4-flash` | 模型标识 |
 | `chatApiBase` | string | `https://api.deepseek.com` | API base URL |
 
-**API Key**:存储在 SecretStorage,固定 secret ID `ratel-chat-openai-compatible`。用户在 Obsidian 设置 → Keychain 手动添加。本地 Ollama 端点不需要。详见 [secrets](../agent/secrets.md)。
+**API Key**:存储在 SecretStorage,固定 secret ID `ratel-chat-openai-compatible`。用户在 Obsidian 设置 → Keychain 手动添加。本地 Ollama 端点不需要。详见 secrets。
 
 **热重载**:`chatModel` / `chatApiBase` / `chatPreset` 任一变更都调 `plugin.rebuildLLM()`。Key 变更由 `secrets` 模块通知重建。
 
@@ -99,7 +99,7 @@ graph TB
 | `embedApiModel` | string | `bge-m3` | API 模型标识 |
 | `embedApiDimensions` | number | `1024` | API 模型向量维度 |
 
-**API Key**:存储在 SecretStorage,固定 secret ID `ratel-embed-openai-compatible`。本地 Ollama 端点不需要。详见 [secrets](../agent/secrets.md)。
+**API Key**:存储在 SecretStorage,固定 secret ID `ratel-embed-openai-compatible`。本地 Ollama 端点不需要。详见 secrets。
 
 **热重载**:任一字段变更调 `plugin.rebuildEmbeddingAdapter()`。Provider 切换后 `setControlValue` → `update()` 重渲染,由 `visible()` 互斥显示 local / api 字段。
 
@@ -111,7 +111,7 @@ graph TB
 | `rerankerApiBase` | string | 百炼默认 base | API base URL |
 | `rerankerModel` | string | 百炼默认 rerank 模型 | 模型标识 |
 
-**API Key**:存储在 SecretStorage,固定 secret ID `ratel-rerank-bailian`。未配置密钥时 Rerank 自动关闭(不报错,降级为不 rerank)。配置项标注 `note: '未配置密钥时 Rerank 自动关闭。'`。详见 [secrets](../agent/secrets.md)。
+**API Key**:存储在 SecretStorage,固定 secret ID `ratel-rerank-bailian`。未配置密钥时 Rerank 自动关闭(不报错,降级为不 rerank)。配置项标注 `note: '未配置密钥时 Rerank 自动关闭。'`。详见 secrets。
 
 **Provider 切换自动填 base**:切到 `bailian` 时自动填入官方默认 base,降低用户输入成本。`custom` 不填,用户自填。
 

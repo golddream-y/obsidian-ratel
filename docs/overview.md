@@ -1,4 +1,8 @@
 <!-- 覆盖：系统业务背景、领域定位、平台边界、核心实体、行业标准 -->
+
+> 本文是 2026-08-15 基线的业务领域速览（自动提取，对应提交 `370dc68`），用于快速了解领域定位、
+> 核心实体与安全红线。产品方向以 [prd/overview.md](prd/overview.md) 为准，现役架构以
+> [architecture/overview.md](architecture/overview.md) 为准；本文不随代码同步更新。
 <!-- meta:
   extracted_at: 2026-08-15
   git_hash: 370dc68d59998849cbe06d0867c6e9f3d95db4d1

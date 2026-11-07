@@ -1,4 +1,7 @@
-# ADR-007:索引清单独立于 data.json
+# ADR-022:索引清单独立于 data.json
+
+> 编号说明:本文原误用 ADR-007,与 `2026-06-28-model-context-window-registry.md` 冲突。
+> 后者已被 ADR-007 的外部引用固定,故本文改用未占用的 ADR-022;内容与结论不变。
 
 **日期**:2026-06-28
 **状态**:Accepted

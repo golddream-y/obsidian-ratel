@@ -4,9 +4,9 @@
 **日期**:2026-08-03  
 **关联**:
 - [ADR-001](2026-06-14-ratel-cors-strategy.md)(`requestUrl` 绕 CORS,HTTP MCP 复用)
-- [ADR-010](2026-07-21-skill-vs-builtin-capability.md)(内置能力 vs Skill 边界;MCP 属平台,不是 Skill)
+- ADR-010(内置能力 vs Skill 边界;MCP 属平台,不是 Skill)
 - [ADR-013](2026-08-03-graph-retrieval-minimize-human-curation.md)(融合检索卖点;MCP 是其外延)
-- [S-EVOLUTION](../superpowers/specs/2026-07-15-evolution-graph-agent.md)(原「网络仅模型 API」约束 — 本 ADR 修订该边界)
+- [S-EVOLUTION](../superpowers/archive/S-EVOLUTION/2026-07-15-evolution-graph-agent.md)(原「网络仅模型 API」约束 — 本 ADR 修订该边界)
 
 ---
 

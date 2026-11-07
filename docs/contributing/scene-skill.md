@@ -2,7 +2,7 @@
 
 读者：给 Ratel 写「按一个 Obsidian 场景，一次装好并配好」技能的人。本文规定技能包怎么放、模型按什么协议执行、哪些宿主写盘是允许的。日记场景是对照实现，不是唯一场景。
 
-产品需求见 [prd/ecosystem.md](prd/ecosystem.md)。执行层边界见 [architecture/host/ecosystem.md](architecture/host/ecosystem.md)。
+产品需求见 [prd/ecosystem.md](../architecture/host/ecosystem.md)。执行层边界见 [architecture/host/ecosystem.md](../architecture/host/ecosystem.md)。
 
 ## 1. 交付物
 

@@ -4,8 +4,8 @@
 **日期**:2026-07-23  
 **关联**:
 - [ADR-009](2026-07-06-skill-mechanism.md)(三源加载 / Discovery / 端口 — **本 ADR 修正其中「Active 段 + activeSkills Set」注入模型**)
-- [ADR-010](2026-07-21-skill-vs-builtin-capability.md)(产品边界不变)
-- [S-SKILL](../superpowers/specs/2026-07-06-skill-mechanism-design.md) §4.5(激活作用域)
+- ADR-010(产品边界不变)
+- [S-SKILL](../superpowers/archive/S-SKILL/2026-07-06-skill-mechanism-design.md) §4.5(激活作用域)
 
 ---
 
@@ -100,7 +100,7 @@ Claude 文档要点:invoke 后 skill 正文进入会话并留在本场对话;权
 - [Claude Code — Extend Claude with skills](https://code.claude.com/docs/en/skills)(激活后进入 conversation 并留在本 session)
 - [Agent Skills — progressive disclosure](https://agentskills.io/home)
 - [OpenAI Codex — Skills](https://developers.openai.com/codex/skills)
-- [ADR-009](2026-07-06-skill-mechanism.md) · [ADR-010](2026-07-21-skill-vs-builtin-capability.md)
+- [ADR-009](2026-07-06-skill-mechanism.md) · ADR-010
 
 ---
 
@@ -108,4 +108,4 @@ Claude 文档要点:invoke 后 skill 正文进入会话并留在本场对话;权
 
 | 日期 | 修订 | 来源 |
 |---|---|---|
-| 2026-08-17 | §3 `always` 机制废弃:`activation` 收敛两态后 `always` 按 `auto` 降级加载,按场一次性注入链路(`ensureAlwaysSkillsInjected`)删除;§5「明确不改动的部分」中 `always` frontmatter 语义一条随之失效,`enabled` 开关迁移至 `settings.skillEnabled`(持久化,Registry 加载后 `applyEnabledOverrides` 应用)。Discovery + activate_skill 写会话的核心模型不变;用户侧术语「激活」改「使用」 | [S-SKILL-UX](../superpowers/specs/2026-08-17-skill-ux-claude-aligned-design.md) |
+| 2026-08-17 | §3 `always` 机制废弃:`activation` 收敛两态后 `always` 按 `auto` 降级加载,按场一次性注入链路(`ensureAlwaysSkillsInjected`)删除;§5「明确不改动的部分」中 `always` frontmatter 语义一条随之失效,`enabled` 开关迁移至 `settings.skillEnabled`(持久化,Registry 加载后 `applyEnabledOverrides` 应用)。Discovery + activate_skill 写会话的核心模型不变;用户侧术语「激活」改「使用」 | [S-SKILL-UX](../superpowers/archive/S-SKILL-UX/2026-08-17-skill-ux-claude-aligned-design.md) |

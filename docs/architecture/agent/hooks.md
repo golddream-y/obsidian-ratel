@@ -251,7 +251,7 @@ LLM 工具调用
 - 第 2 层(pre-tool-use hook)是**可配置、可扩展**的 — 用户可注册自定义钩子
 - 第 3 层(Adapter 沙箱)是**硬性约束、不可关闭**的 — 即使 hook 被绕过,Adapter 仍兜底
 
-详见 [S-VAULT-TOOLS spec](../../superpowers/specs/2026-06-26-vault-file-tools-design.md) §8 安全设计。
+详见 [S-VAULT-TOOLS spec](../../superpowers/archive/S-VAULT-TOOLS/2026-06-26-vault-file-tools-design.md) §8 安全设计。
 
 ---
 

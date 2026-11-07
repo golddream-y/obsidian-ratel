@@ -5,7 +5,7 @@
 **关联**:
 - [ADR-004](2026-06-27-agent-loop-max-steps.md)（步数上限与 `finish_reason: length` 只提示、不自动续写）
 - [S-TURN-CARRY](../superpowers/archive/S-TURN-CARRY/2026-09-26-turn-carry-design.md)
-- [S-LOOP-STABILITY](../superpowers/specs/2026-09-26-loop-stability-design.md)（完全空步另续一次）
+- [S-LOOP-STABILITY](../superpowers/archive/S-LOOP-STABILITY/2026-09-26-loop-stability-design.md)（完全空步另续一次）
 - [S-COMPACT-V2](../superpowers/archive/S-COMPACT-V2/2026-08-13-compact-v2-design.md)（85% 自动压缩）
 
 ---

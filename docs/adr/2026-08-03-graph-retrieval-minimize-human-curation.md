@@ -3,8 +3,8 @@
 **状态**:Accepted  
 **日期**:2026-08-03  
 **关联**:
-- [S-EVOLUTION](../superpowers/specs/2026-07-15-evolution-graph-agent.md)(图谱原生 Agent 总纲)
-- [P-EVO-A-READ](../superpowers/plans/2026-07-15-evo-a-read.md)(链接 / tag / 结构信号读工具)
+- [S-EVOLUTION](../superpowers/archive/S-EVOLUTION/2026-07-15-evolution-graph-agent.md)(图谱原生 Agent 总纲)
+- [P-EVO-A-READ](../superpowers/archive/S-EVOLUTION/2026-07-15-evo-a-read.md)(链接 / tag / 结构信号读工具)
 - 既有混合检索(向量 + BM25;`search_vault`)— 本 ADR 定「图边」在产品与工程上的质量立场
 
 ---
@@ -150,4 +150,4 @@ Obsidian 的 wikilink / 反链 / 标签**可以**当作图关系,但语义是「
 - 补充论据(2026-08):Day Plan 类工作流使「打开过的笔记」自动挂到当日状态笔记 → Obsidian 自动关联 / 反链枢纽**不能**当金边
 - [Meilisearch — GraphRAG vs Vector RAG](https://www.meilisearch.com/blog/graph-rag-vs-vector-rag)
 - [Neo4j — What is GraphRAG](https://neo4j.com/blog/genai/what-is-graphrag)
-- [S-EVOLUTION](../superpowers/specs/2026-07-15-evolution-graph-agent.md) §杠杆与总纲
+- [S-EVOLUTION](../superpowers/archive/S-EVOLUTION/2026-07-15-evolution-graph-agent.md) §杠杆与总纲

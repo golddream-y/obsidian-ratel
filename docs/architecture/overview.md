@@ -3,7 +3,20 @@
 > 本文档是 Ratel Vault 技术架构的**唯一总入口**。5 分钟看懂系统由哪几块组成、它们怎么协作。
 > 各子系统的详细设计见 `docs/architecture/` 下的领域文档;非显然的技术选型见 `docs/adr/`。产品方向见 [prd/overview.md](../prd/overview.md)。
 
-设计提案：[索引执行与存储架构](proposals/2026-11-02-index-runtime.md)用于讨论独立索引线程、唯一存储视图、查询与恢复，以及自适应调度。提案尚未实现，不替代下文的现役架构说明。
+设计提案：[索引执行与存储架构](proposals/2026-11-02-index-runtime.md)用于讨论独立索引线程、唯一存储视图、查询与恢复，以及自适应调度。其中线程执行与分片存储已随 1.4.0 落地，自适应调度仍待实施；提案正文保留设计意图，现役行为以下文各领域文档与代码为准。
+
+---
+
+## 领域文档索引
+
+| 领域 | 文档 |
+|---|---|
+| Agent | [agent-loop](agent/agent-loop.md) · [chat](agent/chat.md) · [context-manager](agent/context-manager.md) · [context-compaction](agent/context-compaction.md) · [goal-mode](agent/goal-mode.md) · [tools](agent/tools.md) · [hooks](agent/hooks.md) · [prompt-management](agent/prompt-management.md) · [note-agents](agent/note-agents.md) · [capability-surface](agent/capability-surface.md) |
+| 宿主 | [obsidian-integration](host/obsidian-integration.md) · [index-controller](host/index-controller.md) · [worker-protocol](host/worker-protocol.md) · [persistence](host/persistence.md) · [settings](host/settings.md) · [mcp](host/mcp.md) · [ecosystem](host/ecosystem.md) · [plugin-profile](host/plugin-profile.md) · [folder-watcher](host/folder-watcher.md) · [运行时资产下载](host/asset-downloads.md) |
+| 模型 | [model-management](llm/model-management.md) · [streaming](llm/streaming.md) · [嵌入推理的分层执行](llm/embedding-inference.md) |
+| 检索 | [vector-index](rag/vector-index.md) · [retriever](rag/retriever.md) |
+| 决策记录 | [ADR 索引](../adr/README.md) |
+| 缺陷诊断 | [诊断索引](../bug-report/README.md) |
 
 ---
 

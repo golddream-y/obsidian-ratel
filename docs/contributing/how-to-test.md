@@ -1,6 +1,6 @@
 # Ratel 构建与真机测试指南
 
-> 适用版本：Ratel `1.3.0`，插件 ID `ratel-vault`。
+> 适用版本：以仓库根 `manifest.json` 的 `version` 为准；插件 ID `ratel-vault`。
 > 本文是本地构建、三文件手动安装和真机验收的唯一指南。只使用 Obsidian Sandbox，不链接、覆盖或启用日常库中的插件。
 
 ## 1. 外部条件与构建入口
@@ -34,7 +34,7 @@ cp styles.css dist/ratel-vault/styles.css
 | 用途 | 路径 | 说明 |
 |---|---|---|
 | 主 bundle | `dist/main.js` | esbuild 生产产物，已内联所需 Worker |
-| 清单源文件 | `manifest.json` | 当前版本 `1.3.0`，最低 Obsidian `1.13.1` |
+| 清单源文件 | `manifest.json` | 版本与 `manifest.json` 一致，最低 Obsidian `1.13.1` |
 | 样式源文件 | `styles.css` | 实际交付样式，不是可选的空占位 |
 | 手动安装目录 | `dist/ratel-vault/` | 仅复制其中三个文件到 vault |
 
@@ -72,7 +72,7 @@ cp dist/ratel-vault/styles.css "$VAULT/.obsidian/plugins/ratel-vault/styles.css"
 
 | 场景 | 操作 | 期望结果 | 失败表现 |
 |---|---|---|---|
-| 文件完整性 | 检查安装目录并读取 `manifest.json` | 三个文件直接位于 `ratel-vault/`；ID 为 `ratel-vault`、版本为 `1.3.0` | 缺文件、双层目录、ID 或版本不符，Obsidian 不识别插件 |
+| 文件完整性 | 检查安装目录并读取 `manifest.json` | 三个文件直接位于 `ratel-vault/`；ID 为 `ratel-vault`、版本与 `manifest.json` 一致 | 缺文件、双层目录、ID 或版本不符，Obsidian 不识别插件 |
 | 插件发现与启用 | 启动 Sandbox，在社区插件列表启用 Ratel | Ratel 出现在列表并可启用；控制台无模块解析或 `onload` 异常 | 列表无 Ratel、开关自动回退、控制台出现红字 |
 | 正常界面 | 点击 Ratel ribbon 图标，打开聊天并检查设置页 | 聊天与设置可打开；文字、按钮、表单无重叠、遮挡或不可辨 | 图标或视图缺失、空白页、布局错乱、控制台渲染异常 |
 | 空态 | 在没有聊天历史的新 Sandbox 打开聊天 | 显示可理解的初始/空状态，输入区可用，无伪造历史或报错 | 空白、持续加载、旧会话串入库、无法输入 |
@@ -100,3 +100,7 @@ cp dist/ratel-vault/styles.css "$VAULT/.obsidian/plugins/ratel-vault/styles.css"
 本次未运行 `npm run lint`、`npm run typecheck`，也未执行真实 Obsidian 安装与界面验收。**真实 vault 读取与解码、真实 ONNX 索引重建与检索均尚未真机验证，不得宣称完成。** 正常态、空态、身份/权限/网络错误态、加载/禁用态以及模型下载同样没有真机结论。
 
 构建警告涉及 `src/ui/chat/`、`src/ui/status/`、`src/ui/motion/`、`src/ui/orbs/` 下的既有 Svelte 文件，责任归对应 UI 实现维护者；本次未修改业务逻辑。若后续构建失败，应原样记录完整命令、首个错误及堆栈、涉及文件和责任模块，不得为让构建变绿而回退他人改动或顺手修改无关业务代码。
+
+## 附：一次完整执行记录
+
+[2026-11-04 真机验证执行记录](how-to-test-2026-11-04-run.md) 按本指南第 4–5 节执行，可对照其步骤与产物核对清单。
