@@ -3,7 +3,7 @@ import path from 'node:path';
 
 export default defineConfig({
 	// 与 esbuild 对齐:测试环境不注入实验入口,避免缺失构建期常量。
-	define: { __RATEL_INDEX_EXPERIMENT__: 'false' },
+	define: { __RATEL_INDEX_EXPERIMENT__: 'false', __RATEL_GPU_WORKER__: 'false', __RATEL_ORT_GLUE__: '""' },
 	// 关键路径:vitest 在 Node 环境下会命中 onnxruntime-web 的 Node 入口,
 	// 该入口的 worker 模块路径与 npm 包实际结构不兼容,导致端到端测试加载 wasm 失败。
 	// 这里强制测试使用 wasm bundle 入口(与 Obsidian 渲染进程一致且 wasm 内联),确保本地 Embedding 链路可验证。
@@ -13,6 +13,12 @@ export default defineConfig({
 			'@ratel/embedding-worker-code': path.resolve(
 				__dirname,
 				'tests/helpers/embedding-worker-code-stub.ts',
+			),
+			// 关键路径:GPU 版 Worker 代码同样是构建期虚拟模块;空 stub 让装配层
+			// 直接回退 WASM,测试不依赖真实 WebGPU 环境。
+			'@ratel/gpu-embedding-worker-code': path.resolve(
+				__dirname,
+				'tests/helpers/gpu-embedding-worker-code-stub.ts',
 			),
 			// 关键路径:esbuild 虚拟模块(skill 脚本沙箱 Worker)在 vitest 无构建期注入,
 			// 指向空 stub;导入 main.ts 的测试只关心装配,不执行真实脚本。

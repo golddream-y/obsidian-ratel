@@ -13,6 +13,18 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const EMBEDDING_WORKER_OUT = path.resolve(__dirname, 'dist/embedding-worker.js');
 const SKILL_SCRIPT_WORKER_OUT = path.resolve(__dirname, 'dist/skill-script-worker.js');
 const RUNTIME_WORKER_OUT = path.resolve(__dirname, 'dist/index-runtime-worker.js');
+const GPU_EMBEDDING_WORKER_OUT = path.resolve(__dirname, 'dist/embedding-worker-gpu.js');
+
+/**
+ * ONNX jsep 胶水模块源码 — 构建期内联进 GPU 版 Worker。
+ *
+ * 关键路径(S-WEBGPU-EMBEDDING):发版只允许三个文件,不能附带 .mjs 资产;
+ * webgpu EP 注册依赖该模块,缺了它必然报 backend not found。
+ */
+const ORT_JSEP_GLUE = readFileSync(
+	path.resolve(__dirname, 'node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.jsep.mjs'),
+	'utf-8',
+);
 
 // 内置 Skill 源目录 — 直接子目录 + SKILL.md,与 SkillFsAdapter 扫描契约一致
 const BUILTIN_SKILLS_DIR = path.resolve(__dirname, 'src/skills/builtin');
@@ -21,6 +33,29 @@ const BUILTIN_SKILLS_DIR = path.resolve(__dirname, 'src/skills/builtin');
  * 将 dist/embedding-worker.js 内容作为字符串常量注入 main.js(ADR-006)。
  * 商店 release 只含 main.js,运行时通过 Blob URL 加载 Worker。
  */
+/**
+ * 将 dist/embedding-worker-gpu.js 内联为字符串常量(GPU 版 ESM Worker)。
+ */
+function inlineGpuEmbeddingWorkerPlugin() {
+	return {
+		name: 'inline-gpu-embedding-worker',
+		setup(build) {
+			build.onResolve({ filter: /^@ratel\/gpu-embedding-worker-code$/ }, () => ({
+				path: '@ratel/gpu-embedding-worker-code',
+				namespace: 'ratel-gpu-embedding-worker',
+			}));
+			build.onLoad({ filter: /.*/, namespace: 'ratel-gpu-embedding-worker' }, () => {
+				let code = '';
+				if (existsSync(GPU_EMBEDDING_WORKER_OUT)) code = readFileSync(GPU_EMBEDDING_WORKER_OUT, 'utf-8');
+				return {
+					contents: `export const GPU_EMBEDDING_WORKER_CODE = ${JSON.stringify(code)};\n`,
+					loader: 'js',
+				};
+			});
+		},
+	};
+}
+
 function inlineEmbeddingWorkerPlugin() {
 	return {
 		name: 'inline-embedding-worker',
@@ -297,6 +332,7 @@ const mainContext = await esbuild.context({
 			preprocess: sveltePreprocess(),
 		}),
 		externalOnnxruntimeNodePlugin(),
+		inlineGpuEmbeddingWorkerPlugin(),
 		inlineEmbeddingWorkerPlugin(),
 		inlineSkillScriptWorkerPlugin(),
 		inlineRuntimeWorkerPlugin(),
@@ -333,6 +369,33 @@ const workerContext = await esbuild.context({
 	plugins: [externalOnnxruntimeNodePlugin()],
 });
 
+// GPU 版嵌入 Worker — ESM + webgpu bundle(S-WEBGPU-EMBEDDING)。
+// 关键路径:IIFE 会抹掉 import.meta,ORT 用它拼 glue/wasm 路径 → webgpu EP 从未注册。
+// 因此 GPU 版必须 ESM;运行时用 new Worker(url, { type: 'module' }) 加载。
+const gpuEmbeddingWorkerContext = await esbuild.context({
+	entryPoints: ['src/worker/embedding-worker.ts'],
+	bundle: true,
+	platform: 'browser',
+	format: 'esm',
+	target: 'es2021',
+	logLevel: 'info',
+	sourcemap: prod ? false : 'inline',
+	treeShaking: true,
+	outfile: 'dist/embedding-worker-gpu.js',
+	minify: prod,
+	alias: {
+		'onnxruntime-web': path.resolve(__dirname, 'node_modules/onnxruntime-web/dist/ort.webgpu.bundle.min.mjs'),
+		'onnxruntime-node': path.resolve(__dirname, 'src/adapters/empty-module.cjs'),
+		'@huggingface/transformers': path.resolve(__dirname, 'src/adapters/empty-transformers.cjs'),
+	},
+	define: {
+		__RATEL_GPU_WORKER__: 'true',
+		__RATEL_ORT_GLUE__: JSON.stringify(ORT_JSEP_GLUE),
+	},
+	external: ['node:fs/promises', 'obsidian'],
+	plugins: [externalOnnxruntimeNodePlugin()],
+});
+
 // Embedding Worker bundle (Web Worker, browser platform)
 // 关键路径:ONNX 推理在 Web Worker 中执行,platform 必须为 browser(不依赖 Node API)。
 // format: iife — Web Worker 需要自执行,IIFE 格式最兼容。
@@ -349,6 +412,11 @@ const embeddingWorkerContext = await esbuild.context({
 	sourcemap: prod ? false : 'inline',
 	treeShaking: true,
 	outfile: 'dist/embedding-worker.js',
+	// 关键路径:同一份 Worker 源码靠构建期 define 区分 WASM / GPU 两份产物。
+	define: {
+		__RATEL_GPU_WORKER__: 'false',
+		__RATEL_ORT_GLUE__: '""',
+	},
 	minify: prod,
 	// 关键路径:与 mainContext 一致的 alias — onnxruntime-web 强制走 wasm bundle 入口,
 	// onnxruntime-node / @huggingface/transformers 替换为空模块,防止原生模块进浏览器产物。
@@ -420,6 +488,7 @@ const runtimeWorkerContext = await esbuild.context({
 });
 
 if (prod) {
+	await gpuEmbeddingWorkerContext.rebuild();
 	await embeddingWorkerContext.rebuild();
 	await skillScriptWorkerContext.rebuild();
 	// 关键路径:主包内联运行时 Worker 代码,必须先产出该 artifact。
@@ -433,6 +502,7 @@ if (prod) {
 	}
 	process.exit(0);
 } else {
+	await gpuEmbeddingWorkerContext.rebuild();
 	await embeddingWorkerContext.rebuild();
 	await skillScriptWorkerContext.rebuild();
 	await runtimeWorkerContext.rebuild();

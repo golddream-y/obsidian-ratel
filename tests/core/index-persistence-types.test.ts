@@ -175,6 +175,23 @@ describe('配置指纹 computeConfigFingerprint', () => {
 		expect(await computeConfigFingerprint(withRuntimeOnly)).toBe(FINGERPRINT);
 	});
 
+	// 关键路径(S-WEBGPU-EMBEDDING 三条硬约束):执行后端不得进入指纹,
+	// 否则 1.5 从 WASM 切到 WebGPU 会让 1.4.0 的索引全量重建。
+	it('执行后端字段不参与指纹 - 切换 WASM/WebGPU 不重建索引', async () => {
+		for (const forbidden of ['executionBackend', 'enableWebgpu', 'glueSource', 'webgpu', 'backend']) {
+			expect(INDEX_CONFIG_FINGERPRINT_FIELDS).not.toContain(forbidden);
+		}
+		// 指纹字段清单固定 7 项;新增字段必须显式评审是否影响向量兼容性。
+		expect(INDEX_CONFIG_FINGERPRINT_FIELDS).toHaveLength(7);
+		const withBackend = {
+			...CONFIG,
+			enableWebgpu: true,
+			glueSource: 'inline-jsep-glue',
+			executionBackend: 'webgpu',
+		};
+		expect(await computeConfigFingerprint(withBackend as IndexConfigDescriptor)).toBe(FINGERPRINT);
+	});
+
 	it('计算配置指纹 - 向量维度不是正整数 - 以 config-invalid 拒绝', async () => {
 		await expectValidationError(
 			computeConfigFingerprint({ ...CONFIG, embeddingDimension: 0 }),

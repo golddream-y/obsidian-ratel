@@ -243,6 +243,22 @@ const FORWARDING_PROBES: Record<string, () => Promise<void>> = {
 	},
 };
 
+describe('WebGPU 后端不改写模型身份', () => {
+	// 关键路径(S-WEBGPU-EMBEDDING 硬约束 1):后端开关不得改变 embeddingModelId,
+	// 否则配置指纹变化,1.4.0 的索引会被全量重建。
+	it('启用 WebGPU 后端 - modelId 与维度不变', () => {
+		const emb = new EmbeddingOnnx({
+			vocabContent: '',
+			modelBuffer: new ArrayBuffer(0),
+			wasmBinary: new ArrayBuffer(0),
+			enableWebgpu: true,
+			glueSource: 'inline-jsep-glue',
+		});
+		expect(emb.modelId).toBe('local:bge-small-zh-v1.5');
+		expect(emb.dimensions).toBe(512);
+	});
+});
+
 describe('EmbeddingPort 实现清单守卫', () => {
 	beforeEach(() => {
 		mockRequestUrl.mockReset();

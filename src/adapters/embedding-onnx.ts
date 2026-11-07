@@ -54,6 +54,16 @@ export interface EmbeddingOnnxDeps {
 	 */
 	modelId?: string;
 
+	/**
+	 * 是否尝试 WebGPU 执行器。
+	 *
+	 * 关键路径(S-WEBGPU-EMBEDDING):只有 GPU 版 Worker 置 true;WASM 版缺省 false。
+	 * 该字段**不参与配置指纹**,因此切换后端不会重建索引。
+	 */
+	enableWebgpu?: boolean;
+
+	/** 构建期内联的 jsep 胶水模块源码;GPU 版非空。 */
+	glueSource?: string;
 }
 
 /**
@@ -71,6 +81,8 @@ export class EmbeddingOnnx implements EmbeddingPort {
 	private session!: ort.InferenceSession;
 	private TensorCtor!: TensorConstructor;
 	private ready = false;
+	/** 内联胶水模块的 Blob URL。 */
+	private glueUrl: string | undefined;
 	// 关键路径:单批最大文本数,过大时会分多批推理;取值依据是 bge-small 512 维 + WASM 单线程
 	// 场景下,16 条文本推理时间约数百毫秒,不会明显阻塞 UI。
 	private readonly maxBatchSize: number;
@@ -124,13 +136,41 @@ export class EmbeddingOnnx implements EmbeddingPort {
 	 * @returns 已创建的 ONNX 会话
 	 */
 	private async createSession(): Promise<ort.InferenceSession> {
-		// 关键路径(2026-11-07):本地推理只走 WASM。webgpu EP 在本打包方式下未注册
-		// (esbuild IIFE 抹掉 import.meta.url,glue 加载失败),且尝试失败会污染
-		// ORT 的 initWasm() 状态,导致连回退都不可用。GPU 加速另立研发项。
-		devLogger.info('index', '嵌入后端:WASM(CPU 推理)');
-		return ort.InferenceSession.create(this.deps.modelBuffer, {
-			executionProviders: ['wasm'],
+		if (this.deps.enableWebgpu !== true) {
+			devLogger.info('index', '嵌入后端:WASM(CPU 推理)');
+			return ort.InferenceSession.create(this.deps.modelBuffer, {
+				executionProviders: ['wasm'],
+			});
+		}
+
+		// 关键路径(S-WEBGPU-EMBEDDING):GPU 版 Worker 专用。
+		// 构建期内联的 jsep 胶水还原成 Blob URL 交给 ORT —— webgpu EP 注册依赖它;
+		// 缺了它 ORT 会去 fetch 相对路径(Blob Worker 下必然失败)并报 backend not found。
+		const glueUrl = this.createGlueUrl();
+		if (glueUrl !== undefined) {
+			(ort.env.wasm as { wasmPaths?: unknown }).wasmPaths = { mjs: glueUrl };
+		}
+		// 关键路径:此处**不做 WASM 回退**。同一 ORT 实例里 webgpu 尝试失败会污染
+		// initWasm(),导致回退也失败(1.4.0 实测)。失败直接抛,由装配层换一个全新的
+		// WASM Worker —— 两个独立实例,零污染。
+		const session = await ort.InferenceSession.create(this.deps.modelBuffer, {
+			executionProviders: ['webgpu'],
 		});
+		devLogger.info('index', '嵌入后端:WebGPU(本机 GPU 加速已启用)');
+		return session;
+	}
+
+	/** 把内联胶水源码还原成 Blob URL;源码缺失或环境不支持时返回 undefined。 */
+	private createGlueUrl(): string | undefined {
+		const source = this.deps.glueSource;
+		if (source === undefined || source.length === 0) return undefined;
+		if (typeof Blob !== 'function' || typeof URL?.createObjectURL !== 'function') return undefined;
+		try {
+			this.glueUrl ??= URL.createObjectURL(new Blob([source], { type: 'text/javascript' }));
+			return this.glueUrl;
+		} catch {
+			return undefined;
+		}
 	}
 
 	/**

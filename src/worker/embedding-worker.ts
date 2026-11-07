@@ -55,7 +55,13 @@ self.onmessage = async (e: MessageEvent): Promise<void> => {
 				const deps = msg.deps as EmbeddingOnnxDeps;
 				const dimensions = msg.dimensions as number;
 				const maxBatchSize = msg.maxBatchSize as number;
-				embeddingOnnx = new EmbeddingOnnx(deps, dimensions, maxBatchSize);
+				// 关键路径(S-WEBGPU-EMBEDDING):同一份源码打两份 Worker,靠构建期 define 区分。
+				// GPU 版(ESM + webgpu bundle)才尝试 WebGPU 并携带内联胶水;
+				// WASM 版(IIFE)保持纯 CPU 路径,行为与 1.4.0 完全一致。
+				const resolvedDeps: EmbeddingOnnxDeps = __RATEL_GPU_WORKER__
+					? { ...deps, enableWebgpu: true, glueSource: __RATEL_ORT_GLUE__ }
+					: deps;
+				embeddingOnnx = new EmbeddingOnnx(resolvedDeps, dimensions, maxBatchSize);
 				await embeddingOnnx.init();
 				self.postMessage({ type: 'ready', probe: probeInfo });
 			} catch (err) {

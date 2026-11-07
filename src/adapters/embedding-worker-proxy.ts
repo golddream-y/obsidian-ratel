@@ -135,6 +135,8 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 	private creating: Promise<void> | null = null;
 	private settleReady: { resolve: () => void; reject: (err: Error) => void } | null = null;
 	private readonly workerUrl: string;
+	/** Worker 加载类型:GPU 版是 ESM module,WASM 版是 classic。 */
+	private readonly workerType: 'classic' | 'module';
 	private readonly maxBatchSize: number;
 	private readonly createDeps: () => Promise<EmbeddingOnnxDeps>;
 	private readonly onLifecycle?: (kind: WorkerLifecycleKind) => void;
@@ -145,6 +147,7 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 	 * @param dimensions - 向量维度
 	 * @param maxBatchSize - Worker 内单批上限
 	 * @param onLifecycle - 可选;create / idle-terminate / crash,由装配层打 heartbeat
+	 * @param workerType - Worker 加载类型;GPU 版传 'module',WASM 版缺省 'classic'
 	 */
 	constructor(
 		workerUrl: string,
@@ -152,8 +155,10 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 		dimensions: number,
 		maxBatchSize = 16,
 		onLifecycle?: (kind: WorkerLifecycleKind) => void,
+		workerType: 'classic' | 'module' = 'classic',
 	) {
 		this.workerUrl = workerUrl;
+		this.workerType = workerType;
 		this.dimensions = dimensions;
 		this.maxBatchSize = maxBatchSize;
 		this.onLifecycle = onLifecycle;
@@ -294,7 +299,7 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 	 */
 	private async doCreate(): Promise<void> {
 		const deps = await this.createDeps();
-		const worker = new Worker(this.workerUrl);
+		const worker = new Worker(this.workerUrl, { type: this.workerType });
 		this.readyPromise = new Promise<void>((resolve, reject) => {
 			this.settleReady = { resolve, reject };
 		});

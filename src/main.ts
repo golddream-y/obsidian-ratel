@@ -6,6 +6,7 @@
  */
 
 import { EMBEDDING_WORKER_CODE } from '@ratel/embedding-worker-code';
+import { GPU_EMBEDDING_WORKER_CODE } from '@ratel/gpu-embedding-worker-code';
 import { BUILTIN_SKILLS, BUILTIN_SKILL_PROFILES, APP_VERSION } from '@ratel/builtin-skills-code';
 import { FileSystemAdapter, Notice, Plugin, TFile, apiVersion, requestUrl } from 'obsidian';
 import fs, { readdirSync } from 'node:fs';
@@ -2926,13 +2927,72 @@ export default class RatelVaultPlugin extends Plugin {
 		};
 	}
 
+	/**
+	 * 探测 GPU 版嵌入 Worker 能否初始化。
+	 *
+	 * 关键路径(S-WEBGPU-EMBEDDING):两个独立 Worker、两个独立 ORT 实例。
+	 * GPU 版 init 失败时直接 terminate 换 WASM 版,绝不在同一实例里回退 ——
+	 * 1.4.0 实测 webgpu 尝试失败会污染 initWasm(),导致 WASM 也不可用。
+	 *
+	 * @param gpuCode - GPU 版 Worker 源码(ESM)
+	 * @param embedding - 当前嵌入端口,提供维度
+	 * @returns 可用的 Blob URL;失败返回 null
+	 */
+	private async probeGpuWorker(gpuCode: string, embedding: EmbeddingPort): Promise<string | null> {
+		if (gpuCode.length === 0) return null;
+		const deps = await this.modelManager.getDeps();
+		if (deps === null) return null;
+		const url = URL.createObjectURL(new Blob([gpuCode], { type: 'text/javascript' }));
+		// 关键路径:ESM Worker 必须 type:'module',否则 import.meta.url 仍不可用。
+		const worker = new Worker(url, { type: 'module' });
+		let ok = false;
+		try {
+			ok = await new Promise<boolean>((resolve) => {
+				const timer = window.setTimeout(() => resolve(false), 30_000);
+				worker.onmessage = (event: MessageEvent) => {
+					const data = event.data as { type?: string };
+					if (data.type === 'ready') {
+						window.clearTimeout(timer);
+						resolve(true);
+					} else if (data.type === 'error') {
+						window.clearTimeout(timer);
+						resolve(false);
+					}
+				};
+				worker.onerror = () => {
+					window.clearTimeout(timer);
+					resolve(false);
+				};
+				worker.postMessage(
+					{ type: 'init', deps, dimensions: embedding.dimensions, maxBatchSize: 16 },
+					[deps.modelBuffer, deps.wasmBinary],
+				);
+			});
+		} catch {
+			ok = false;
+		} finally {
+			// 关键路径:探测用的 Worker 一定要关掉,正式实例由 proxy 惰性新建。
+			worker.terminate();
+		}
+		if (!ok) {
+			URL.revokeObjectURL(url);
+			devLogger.warn('index', 'GPU 嵌入 Worker 初始化失败,回退 WASM');
+			return null;
+		}
+		return url;
+	}
+
 	private async initEmbeddingWorkerProxy(embedding: EmbeddingPort): Promise<void> {
 		// 关键路径: embedding worker 脚本在构建期内联进 main.js(ADR-006),不再读磁盘 embedding-worker.js。
 		if (!EMBEDDING_WORKER_CODE) {
 			throw new Error(tNow('error.worker.notInlined'));
 		}
-		const blob = new Blob([EMBEDDING_WORKER_CODE], { type: 'application/javascript' });
-		const workerUrl = URL.createObjectURL(blob);
+		const wasmUrl = URL.createObjectURL(new Blob([EMBEDDING_WORKER_CODE], { type: 'application/javascript' }));
+		// 关键路径:先探测 GPU;失败一律回退到 1.4.0 的稳定 WASM 路径。
+		const gpuUrl = await this.probeGpuWorker(GPU_EMBEDDING_WORKER_CODE, embedding);
+		const workerUrl = gpuUrl ?? wasmUrl;
+		const workerType: 'classic' | 'module' = gpuUrl !== null ? 'module' : 'classic';
+		if (gpuUrl !== null) URL.revokeObjectURL(wasmUrl);
 		this.embeddingWorkerUrl = workerUrl;
 
 		// 关键路径:工厂每次 ensureWorker 都 getDeps,避免 transfer 掏空 ArrayBuffer 后空闲重建失败。
@@ -2946,6 +3006,7 @@ export default class RatelVaultPlugin extends Plugin {
 			embedding.dimensions,
 			16,
 			(kind) => this.breadcrumbs?.mark('heartbeat', undefined, `worker.${kind}`),
+			workerType,
 		);
 		this.embeddingWorkerProxy = proxy;
 
