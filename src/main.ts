@@ -2948,19 +2948,26 @@ export default class RatelVaultPlugin extends Plugin {
 		let ok = false;
 		try {
 			ok = await new Promise<boolean>((resolve) => {
-				const timer = window.setTimeout(() => resolve(false), 30_000);
+				const timer = window.setTimeout(() => {
+					devLogger.warn('index', 'GPU 嵌入 Worker 探测超时(30 秒),回退 WASM');
+					resolve(false);
+				}, 30_000);
 				worker.onmessage = (event: MessageEvent) => {
-					const data = event.data as { type?: string };
+					const data = event.data as { type?: string; error?: string };
 					if (data.type === 'ready') {
 						window.clearTimeout(timer);
 						resolve(true);
 					} else if (data.type === 'error') {
 						window.clearTimeout(timer);
+						// 关键路径:把真实失败原因写进日志,研发期不必再猜是 EP 未注册、
+						// glue 加载失败还是 wasm 版本不匹配。
+						devLogger.warn('index', `GPU 嵌入 Worker 初始化失败:${data.error ?? 'unknown'}`);
 						resolve(false);
 					}
 				};
-				worker.onerror = () => {
+				worker.onerror = (event: ErrorEvent) => {
 					window.clearTimeout(timer);
+					devLogger.warn('index', `GPU 嵌入 Worker 加载失败:${event.message}`);
 					resolve(false);
 				};
 				worker.postMessage(
