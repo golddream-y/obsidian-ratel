@@ -182,6 +182,15 @@ ORT 误判成 Node，浏览器原生 ESM 解析裸模块名 `worker_threads` 直
 胶水通过 Blob URL 由浏览器原生加载，esbuild 的 alias 管不到，**必须在构建期改字符串**：
 把两处 Node 判定固定为 `!1`，并在构建时校验模式存在（ORT 升级改写法会立即构建失败）。
 
+### 冷启动实测暴露的两个问题（已修）
+
+2026-11-07 21:07 全清冷启动暴露出两处与设计不符：
+
+| 现象 | 根因 | 修复 |
+|---|---|---|
+| GPU 可用却仍下载 CPU 运行时(13 MB)，且主线程打印 `嵌入后端:WASM` | `ModelManager.download()` 会立即 `createEmbedding()`，而它内部 `readWasmBinary()` 触发下载；该会话只作兜底，索引推理实际走 Worker 代理 | 主线程会话改为惰性构建(`lazyEmbedding`)，首次真正需要时才加载 |
+| 测速把 23 MB 运行时导向国际源 jsDelivr | 128 KB 探测以 TTFB 为主，小差距不足以代表 23 MB 全程吞吐 | 探测改 256 KB，并加 1.5 倍优势门槛：只有明显更快才推翻「国内优先」 |
+
 ## 影响面
 
 - `esbuild.config.mjs`：新增 GPU Worker 构建上下文与内联插件

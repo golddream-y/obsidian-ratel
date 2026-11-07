@@ -56,6 +56,8 @@ export class ModelManager {
     readonly status$ = writable<ModelStatus>({ state: 'NotStarted' });
     private downloader: ModelDownloader;
     private embedding: EmbeddingPort | null = null;
+    /** 惰性会话的在途构建 —— 并发首调用只建一次。 */
+    private lazyCreating: Promise<EmbeddingPort> | null = null;
     private cacheDir: string;
     // 关键路径:ortAssets 供 getDeps() 重新读盘,Web Worker 需要全新的 ArrayBuffer 副本 transfer。
     private ortAssets: OrtRuntimeAssets;
@@ -91,13 +93,16 @@ export class ModelManager {
     /**
      * @param onProgress - 进度回调。
      * @param options.skipCpuRuntime - 跳过 CPU 运行时下载。
+     * @param options.lazyEmbedding - 主线程 ONNX 会话改为惰性构建。
      *
      * 关键路径(S-WEBGPU-EMBEDDING):WebGPU 可用时只下 GPU 运行时(23 MB),
      * 不必再下 CPU 那份 13 MB;等 GPU 探测失败回退时再按需补下。
+     * 惰性构建同理 —— 索引推理最终走 EmbeddingWorkerProxy,主线程会话只是兜底;
+     * 提前建它等于白下 CPU 运行时、白占主线程做一次 WASM 编译。
      */
     async download(
         onProgress?: (p: ProgressInfo) => void,
-        options: { skipCpuRuntime?: boolean } = {},
+        options: { skipCpuRuntime?: boolean; lazyEmbedding?: boolean } = {},
     ): Promise<void> {
         this.status$.set({ state: 'Checking' });
         try {
@@ -154,7 +159,13 @@ export class ModelManager {
             // 关键路径:文件下载完后,ORT 还要编译 WASM + 加载模型权重,这在主线程可能需要几秒到十几秒,
             // 必须给用户状态反馈,否则会以为卡住了。
             this.status$.set({ state: 'Initializing' });
-            const embedding = await this.createEmbedding(modelDir);
+            let embedding: EmbeddingPort;
+            if (options.lazyEmbedding === true) {
+                // 关键路径:只登记模型目录,不在此刻建会话;真正需要时由 embed() 触发。
+                embedding = this.createLazyEmbedding(modelDir);
+            } else {
+                embedding = await this.createEmbedding(modelDir);
+            }
             this.embedding = embedding;
 
             this.status$.set({ state: 'Ready', modelId: embedding.modelId, size: 0, loadedAt: Date.now() });
@@ -167,6 +178,30 @@ export class ModelManager {
             this.status$.set({ state: 'Failed', reason });
             throw err instanceof Error ? err : new Error(reason);
         }
+    }
+
+    /**
+     * 构造惰性 Embedding 端口 — 首次 embed 时才真正加载模型与运行时。
+     *
+     * 关键路径:本地索引的推理走 EmbeddingWorkerProxy,主线程这份只在代理不可用时兜底。
+     * 提前构建会多做两件无用功:下载 CPU 运行时(13 MB)、在主线程编译一次 WASM 并挂载模型。
+     *
+     * @param modelDir - 已下载完成的模型目录
+     */
+    private createLazyEmbedding(modelDir: string): EmbeddingPort {
+        const resolve = async (): Promise<EmbeddingPort> => {
+            this.lazyCreating ??= this.createEmbedding(modelDir).then((created) => {
+                this.embedding = created;
+                return created;
+            });
+            return this.lazyCreating;
+        };
+        return {
+            // 维度与默认模型标识在建会话前即可确定,不依赖加载结果。
+            dimensions: 512,
+            modelId: 'local:bge-small-zh-v1.5',
+            embed: async (texts, options) => (await resolve()).embed(texts, options),
+        };
     }
 
     /**

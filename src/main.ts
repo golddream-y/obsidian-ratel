@@ -1356,7 +1356,7 @@ export default class RatelVaultPlugin extends Plugin {
 		});
 
 			try {
-				await this.modelManager.download(undefined, { skipCpuRuntime: webgpuCapable });
+				await this.modelManager.download(undefined, { skipCpuRuntime: webgpuCapable, lazyEmbedding: webgpuCapable });
 
 				// 关键路径(S-RETRIEVAL-QUALITY §4.1/§4.2):词表交给 Worker 一次(约 109KB)——
 				// Worker 侧据此做精确 token 计数;没拿到词表时按字符上界估算(高估方向,宁可块小也不许截断)。

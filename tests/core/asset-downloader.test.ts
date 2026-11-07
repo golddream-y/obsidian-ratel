@@ -180,3 +180,23 @@ describe('probeFastestMirror 测速', () => {
 		expect(fetchFn).not.toHaveBeenCalled();
 	});
 });
+
+describe('probeFastestMirror 优势门槛', () => {
+	it('优势不足 1.5 倍 - 维持声明顺序，不因噪声换源', async () => {
+		// 两个源都耗时，差距约 20%（60ms vs 50ms），不足以说明 23 MB 全程更快。
+		const fetchFn = vi.fn(async (url: string) => {
+			const wait = url.includes('domestic') ? 60 : 50;
+			await new Promise((r) => setTimeout(r, wait));
+			return { status: 206, arrayBuffer: new Uint8Array(4).buffer };
+		});
+		expect(await probeFastestMirror(MIRRORS, fetchFn)).toBe('国内源');
+	});
+
+	it('优势超过 1.5 倍 - 采纳更快的国际源', async () => {
+		const fetchFn = vi.fn(async (url: string) => {
+			if (url.includes('domestic')) await new Promise((r) => setTimeout(r, 240));
+			return { status: 206, arrayBuffer: new Uint8Array(4).buffer };
+		});
+		expect(await probeFastestMirror(MIRRORS, fetchFn)).toBe('国际源');
+	});
+});

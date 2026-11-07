@@ -228,10 +228,19 @@ export class MirrorPreference {
 }
 
 /** 测速探测默认取多少字节 —— 足够反映首字节延迟与初始吞吐，又不至于浪费流量。 */
-const PROBE_BYTES = 128 * 1024;
+const PROBE_BYTES = 256 * 1024;
 
 /** 单个镜像的测速超时（毫秒）。 */
 const PROBE_TIMEOUT_MS = 3000;
+
+/**
+ * 换成更快镜像所需的最小优势倍数。
+ *
+ * 关键路径:256 KB 的测量仍有噪声,小优势不足以说明 23 MB 全程更快。
+ * 只有明显更快(超过该倍数)才改变声明顺序,否则维持「国内优先」——
+ * 否则一次抖动就会把后续下载整体切到国际源。
+ */
+const PROBE_ADVANTAGE_RATIO = 1.5;
 
 /**
  * 并行测速，返回最快的镜像名。
@@ -273,5 +282,11 @@ export async function probeFastestMirror(
 	const usable = results.filter((item): item is { label: string; elapsedMs: number } => item !== null);
 	if (usable.length === 0) return undefined;
 	usable.sort((a, b) => a.elapsedMs - b.elapsedMs);
-	return usable[0]!.label;
+	const fastest = usable[0]!;
+	// 关键路径:首个镜像即声明优先级最高者;只有明显更快才换源,避免噪声决定结果。
+	const declared = usable.find((item) => item.label === mirrors[0]!.label);
+	if (declared === undefined) return fastest.label;
+	if (fastest.label === declared.label) return fastest.label;
+	const advantage = declared.elapsedMs / fastest.elapsedMs;
+	return advantage >= PROBE_ADVANTAGE_RATIO ? fastest.label : declared.label;
 }
