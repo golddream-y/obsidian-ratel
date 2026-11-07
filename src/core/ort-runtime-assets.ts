@@ -2,7 +2,7 @@
  * @file src/core/ort-runtime-assets.ts
  * @description ONNX Runtime Web WASM 运行时资产 — 懒下载并缓存到插件目录
  * @module core/ort-runtime-assets
- * @depends obsidian(requestUrl), node:fs/promises
+ * @depends core/asset-downloader, node:fs/promises
  *
  * 关键路径:Obsidian / BRAT 商店 release 只分发 main.js + manifest.json + styles.css,
  * WASM 不能随 release 附件安装;首次 local embedding 时从 jsDelivr 下载并缓存到 pluginDir。
@@ -10,10 +10,13 @@
  */
 
 import { requestUrl } from 'obsidian';
-import { access, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { access, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tNow } from '../i18n';
 import type { ProgressInfo } from './model-downloader';
+import { downloadWithMirrors, MirrorPreference } from './asset-downloader';
+import { devLogger } from '../logging/dev-logger';
+import type { DownloadMirror } from './asset-downloader';
 
 /** 与 package.json `dependencies.onnxruntime-web` 版本保持同步。 */
 export const ORT_RUNTIME_VERSION = '1.27.0';
@@ -42,12 +45,28 @@ const ORT_WASM_MIN_BYTES = 10 * 1024 * 1024;
  * 不引入新的数据去向 —— 来源仍是 onnxruntime-web 官方包，仅换托管位置。
  */
 const ORT_WASM_MIRRORS = [
-	(version: string, filename: string) => `https://registry.npmmirror.com/onnxruntime-web/${version}/files/dist/${filename}`,
-	(version: string, filename: string) => `https://cdn.jsdelivr.net/npm/onnxruntime-web@${version}/dist/${filename}`,
+	(version: string, filename: string): DownloadMirror => ({
+		label: 'npmmirror',
+		url: `https://registry.npmmirror.com/onnxruntime-web/${version}/files/dist/${filename}`,
+	}),
+	(version: string, filename: string): DownloadMirror => ({
+		label: 'jsDelivr',
+		url: `https://cdn.jsdelivr.net/npm/onnxruntime-web@${version}/dist/${filename}`,
+	}),
 ] as const;
 
-/** 单次下载的尝试次数上限（不含切换下载源）。 */
-const ORT_DOWNLOAD_ATTEMPTS = 2;
+/**
+ * 列出某个运行时文件按优先级排列的镜像。
+ *
+ * @param version - onnxruntime-web 包版本
+ * @param filename - dist 下的文件名
+ */
+export function getOrtWasmMirrors(
+	version: string = ORT_RUNTIME_VERSION,
+	filename: string = ORT_WASM_FILENAME,
+): DownloadMirror[] {
+	return ORT_WASM_MIRRORS.map((build) => build(version, filename));
+}
 
 /**
  * 列出某个运行时文件按优先级排列的全部下载地址。
@@ -59,7 +78,7 @@ export function getOrtWasmDownloadUrls(
 	version: string = ORT_RUNTIME_VERSION,
 	filename: string = ORT_WASM_FILENAME,
 ): string[] {
-	return ORT_WASM_MIRRORS.map((build) => build(version, filename));
+	return getOrtWasmMirrors(version, filename).map((mirror) => mirror.url);
 }
 
 /**
@@ -131,26 +150,7 @@ export class OrtRuntimeAssets {
 		if (await this.isWasmCached()) {
 			return;
 		}
-		await mkdir(this.pluginDir, { recursive: true });
-
-		const url = getOrtWasmDownloadUrl(this.version);
-		const response = await this.fetchFn(url);
-		if (response.status < 200 || response.status >= 300) {
-			throw new Error(tNow('error.ort.downloadFailed', { status: response.status }));
-		}
-
-		// 关键路径:requestUrl 不支持流式进度,只能下载完成后 emit 一次 1.0。
-		const buffer = Buffer.from(response.arrayBuffer);
-		if (buffer.byteLength < ORT_WASM_MIN_BYTES) {
-			throw new Error(
-				tNow('error.ort.fileCorrupted', { bytes: buffer.byteLength }),
-			);
-		}
-
-		const tmpPath = `${this.wasmPath}.downloading`;
-		await writeFile(tmpPath, buffer);
-		await rename(tmpPath, this.wasmPath);
-		onProgress?.({ file: ORT_WASM_FILENAME, progress: 1 });
+		await this.download(ORT_WASM_FILENAME, this.wasmPath, onProgress);
 	}
 
 	/**
@@ -184,10 +184,10 @@ export class OrtRuntimeAssets {
 	}
 
 	/**
-	 * 按镜像顺序下载运行时文件，每个镜像最多尝试若干次。
+	 * 下载运行时文件到指定路径。
 	 *
-	 * 关键路径：国内网络访问国际 CDN 常出现长时间挂起或中途断开，
-	 * 因此先试国内镜像、再试国际 CDN，并把每次失败写进日志便于支持定位。
+	 * 关键路径:与模型下载共用同一套多源回退与原子落盘实现,
+	 * 只是镜像清单不同 —— CPU 与 GPU 引擎也走同一条路径。
 	 *
 	 * @param filename - dist 下的文件名
 	 * @param targetPath - 落地绝对路径
@@ -198,35 +198,19 @@ export class OrtRuntimeAssets {
 		targetPath: string,
 		onProgress?: (p: ProgressInfo) => void,
 	): Promise<void> {
-		await mkdir(this.pluginDir, { recursive: true });
-		const urls = getOrtWasmDownloadUrls(this.version, filename);
-		const failures: string[] = [];
-		for (const [mirrorIndex, url] of urls.entries()) {
-			for (let attempt = 1; attempt <= ORT_DOWNLOAD_ATTEMPTS; attempt++) {
-				onProgress?.({ file: filename, progress: (mirrorIndex * ORT_DOWNLOAD_ATTEMPTS + attempt - 1) / (urls.length * ORT_DOWNLOAD_ATTEMPTS) });
-				try {
-					const response = await this.fetchFn(url);
-					if (response.status < 200 || response.status >= 300) {
-						failures.push(`${url} → HTTP ${response.status}`);
-						continue;
-					}
-					const buffer = Buffer.from(response.arrayBuffer);
-					if (buffer.byteLength < ORT_WASM_MIN_BYTES) {
-						failures.push(`${url} → 文件过小(${buffer.byteLength} 字节)`);
-						continue;
-					}
-					const tmpPath = `${targetPath}.downloading`;
-					await writeFile(tmpPath, buffer);
-					await rename(tmpPath, targetPath);
-					onProgress?.({ file: filename, progress: 1 });
-					return;
-				} catch (error) {
-					// 关键路径:网络异常(超时/断连/DNS)与状态码失败一样处理,换源重试。
-					failures.push(`${url} → ${error instanceof Error ? error.message : String(error)}`);
-				}
-			}
-		}
-		throw new Error(tNow('error.ort.downloadFailed', { status: failures.join(' | ') }));
+		const preference = new MirrorPreference(path.join(this.pluginDir, '.mirror-preference.json'));
+		const used = await downloadWithMirrors({
+			assetName: filename,
+			mirrors: await preference.rank('ort', getOrtWasmMirrors(this.version, filename)),
+			targetPath,
+			minBytes: ORT_WASM_MIN_BYTES,
+			onProgress,
+			fetchFn: this.fetchFn,
+			makeError: (detail) => new Error(tNow('error.ort.downloadFailed', { status: detail })),
+		});
+		// 关键路径:记住本次成功的源,下次优先用它。
+		await preference.remember('ort', used);
+		devLogger.info('index', `运行时下载源:${used}(${filename})`);
 	}
 
 	/** 按路径判断缓存是否有效。 */

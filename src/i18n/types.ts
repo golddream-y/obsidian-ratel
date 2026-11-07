@@ -802,6 +802,7 @@ export interface StatusStrings {
   'status.indexDetail.modelPreparing': string;
   'status.indexDetail.gpuRuntimeDownloading': string;
   'status.indexDetail.gpuRuntimeFailed': string;
+  'status.indexDetail.cpuRuntimeDownloading': string;
   'status.indexLabel.checkingChanges': string;
   'status.indexLabel.idle': string;
   'status.indexLabel.unknown': string;

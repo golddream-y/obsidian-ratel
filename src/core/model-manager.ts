@@ -88,7 +88,17 @@ export class ModelManager {
      *
      * @throws Error 任何 backend 失败都抛出,便于 main.ts / onLayoutReady catch。
      */
-    async download(onProgress?: (p: ProgressInfo) => void): Promise<void> {
+    /**
+     * @param onProgress - 进度回调。
+     * @param options.skipCpuRuntime - 跳过 CPU 运行时下载。
+     *
+     * 关键路径(S-WEBGPU-EMBEDDING):WebGPU 可用时只下 GPU 运行时(23 MB),
+     * 不必再下 CPU 那份 13 MB;等 GPU 探测失败回退时再按需补下。
+     */
+    async download(
+        onProgress?: (p: ProgressInfo) => void,
+        options: { skipCpuRuntime?: boolean } = {},
+    ): Promise<void> {
         this.status$.set({ state: 'Checking' });
         try {
             this.status$.set({ state: 'Downloading', progress: 0, speed: 0, eta: 0 });
@@ -122,10 +132,13 @@ export class ModelManager {
                 emitCombinedProgress();
             };
             // 关键路径:ORT WASM 与 ONNX 模型并行下载,首次初始化更快(ADR-006)。
-            const [modelDir] = await Promise.all([
-                this.downloader.ensureModel(reportModelProgress),
-                this.ortAssets.ensureWasm(reportWasmProgress),
-            ]);
+            // GPU 可用时跳过 CPU 运行时 —— 那份 13 MB 等回退时再按需下载。
+            const [modelDir] = options.skipCpuRuntime === true
+                ? [await this.downloader.ensureModel(reportModelProgress)]
+                : await Promise.all([
+                    this.downloader.ensureModel(reportModelProgress),
+                    this.ortAssets.ensureWasm(reportWasmProgress),
+                ]);
             // 关键路径:记录 modelDir 供 getDeps() 重新读盘,Web Worker 需要全新 ArrayBuffer 副本。
             this.modelDir = modelDir;
 

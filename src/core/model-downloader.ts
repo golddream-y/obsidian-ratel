@@ -2,20 +2,22 @@
  * @file src/core/model-downloader.ts
  * @description 本地 Embedding 模型下载器 — 从 ModelScope 下载 ONNX 模型 + vocab.txt
  * @module core/model-downloader
- * @depends obsidian(requestUrl), node:fs/promises, node:path, utils/disk-checker
+ * @depends core/asset-downloader, node:fs/promises, node:path, utils/disk-checker
  *
  * 设计要点:
  * - 固定模型:bge-small-zh-v1.5(Xenova 导出的 ONNX 版本)。
- * - 下载源:ModelScope(国内可访问),不走 HuggingFace Hub。
+ * - 下载源:ModelScope(国内优先)+ HuggingFace(国际兜底),同一模型的同一份文件。
  * - 只下载两个文件:onnx/model_quantized.onnx(24MB) + vocab.txt(109KB)。
  * - 磁盘检测在下载前(1.2 倍缓冲)。
  */
 
-import { requestUrl } from 'obsidian';
 import { hasEnoughDiskSpace } from '../utils/disk-checker';
 import { tNow } from '../i18n';
 import path from 'node:path';
-import { mkdir, writeFile, access, rm } from 'node:fs/promises';
+import { mkdir, access, rm } from 'node:fs/promises';
+import { downloadWithMirrors, MirrorPreference } from './asset-downloader';
+import { devLogger } from '../logging/dev-logger';
+import type { DownloadMirror } from './asset-downloader';
 
 /** 磁盘不足错误。 */
 export class InsufficientDiskError extends Error {
@@ -39,8 +41,31 @@ export const DEFAULT_LOCAL_MODEL = {
     neededBytes: 30 * 1024 * 1024,
 } as const;
 
-/** ModelScope 下载基地址。 */
+/** ModelScope 下载基地址(国内源,优先)。 */
 const MODELSCOPE_BASE = 'https://modelscope.cn/models/Xenova/bge-small-zh-v1.5/resolve/master';
+
+/** HuggingFace 下载基地址(国际源,ModelScope 不可用时兜底)。同一个开源模型的同一份文件。 */
+const HUGGINGFACE_BASE = 'https://huggingface.co/Xenova/bge-small-zh-v1.5/resolve/main';
+
+/** 模型文件的最小字节数 — 用于识别半截文件。 */
+const MODEL_MIN_BYTES: Record<string, number> = {
+    [DEFAULT_LOCAL_MODEL.onnxPath]: 20 * 1024 * 1024,
+    [DEFAULT_LOCAL_MODEL.vocabPath]: 50 * 1024,
+};
+
+/**
+ * 构造模型文件的多源下载列表。
+ *
+ * 关键路径:国内优先 ModelScope、国际兜底 HuggingFace —— 两者是同一模型的同一份文件。
+ *
+ * @param remoteName - 模型仓库内相对路径
+ */
+function buildModelMirrors(remoteName: string): DownloadMirror[] {
+    return [
+        { label: 'ModelScope', url: `${MODELSCOPE_BASE}/${remoteName}` },
+        { label: 'HuggingFace', url: `${HUGGINGFACE_BASE}/${remoteName}` },
+    ];
+}
 
 export class ModelDownloader {
     private cacheDir: string;
@@ -75,23 +100,21 @@ export class ModelDownloader {
         localPath: string,
         onProgress?: (p: ProgressInfo) => void,
     ): Promise<void> {
-        const url = `${MODELSCOPE_BASE}/${remoteName}`;
-        // 关键路径:用 Obsidian 内置 requestUrl 替代裸 fetch,处理 CORS/CSP 更稳。
-        // 设 throw:false 以手动解析状态码;下载二进制用 .arrayBuffer。
-        // 注意:requestUrl 不支持流式进度,只能下载完成后 emit 一次 1.0。
-        const response = await requestUrl({
-            url,
-            method: 'GET',
-            throw: false,
+        // 关键路径:与 ORT 运行时共用同一套多源回退、逐源重试与原子落盘 ——
+        // 此前模型直接写目标文件,中断会留下损坏文件且下次被当成已存在。
+        const preference = new MirrorPreference(path.join(path.dirname(this.cacheDir), '.mirror-preference.json'));
+        const used = await downloadWithMirrors({
+            assetName: remoteName,
+            mirrors: await preference.rank('model', buildModelMirrors(remoteName)),
+            targetPath: localPath,
+            minBytes: MODEL_MIN_BYTES[remoteName] ?? 0,
+            onProgress,
+            makeError: (detail) =>
+                new Error(tNow('error.model.downloadFailed', { name: remoteName, status: detail })),
         });
-        if (response.status < 200 || response.status >= 300) {
-            throw new Error(tNow('error.model.downloadFailed', { name: remoteName, status: response.status }));
-        }
-
-        const buffer = response.arrayBuffer;
-        onProgress?.({ file: remoteName, progress: 1 });
-
-        await writeFile(localPath, Buffer.from(buffer));
+        // 关键路径:记住本次成功的源,下次优先用它(自动适应不同网络位置)。
+        await preference.remember('model', used);
+        devLogger.info('model', `模型下载源:${used}(${remoteName})`);
     }
 
     /**

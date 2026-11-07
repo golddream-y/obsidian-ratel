@@ -797,6 +797,7 @@ export const en: Strings = {
   'status.indexLabel.failed': 'Failed',
   'status.indexLabel.initializing': 'Initializing',
   'status.indexDetail.gpuRuntimeDownloading': 'Downloading GPU runtime (~23 MB, {percent}%)',
+  'status.indexDetail.cpuRuntimeDownloading': 'Downloading CPU runtime (~13 MB)',
   'status.indexDetail.gpuRuntimeFailed': 'GPU runtime download failed; using CPU inference this round',
   'status.indexDetail.modelPreparing': 'Loading the embedding model (first run downloads and compiles the runtime)',
   'status.indexLabel.checkingChanges': 'Checking changes',

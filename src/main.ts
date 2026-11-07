@@ -292,6 +292,8 @@ export default class RatelVaultPlugin extends Plugin {
 	private embeddingWorkerProxy?: EmbeddingWorkerProxy;
 	/** 本会话是否选中 GPU 版嵌入 Worker;决定 deps 工厂取 jsep wasm。 */
 	private gpuWorkerSelected = false;
+	/** 本机是否有可用 WebGPU 硬件适配器;false 时完全不下载 GPU 运行时。 */
+	private webgpuCapable = false;
 	// 关键路径:Blob URL 在 onunload 需 revokeObjectURL 释放,避免内存泄漏。
 	private embeddingWorkerUrl?: string;
 	// 关键路径:indexDir 在 onload 计算,onLayoutReady 初始化 InlineWorker 时需要复用。
@@ -1330,6 +1332,9 @@ export default class RatelVaultPlugin extends Plugin {
 
 		// 关键路径:模型下载仅 local 模式需要;API 模式无本地模型,但仍要启动索引(P3 修复)。
 		if (this.settings.embedProvider === 'local') {
+			// 关键路径(S-WEBGPU-EMBEDDING):先判 GPU 能力,再决定下哪份运行时。
+			const webgpuCapable = await this.detectWebgpuAdapter();
+			this.webgpuCapable = webgpuCapable;
 			// 关键路径:本地模型下载/编译期间索引还没开始;不先把阶段说清楚,用户只会看到
 			// 「索引空闲」却点哪都卡,误判成索引卡死。
 			this.userStatus?.patch({
@@ -1351,7 +1356,7 @@ export default class RatelVaultPlugin extends Plugin {
 		});
 
 			try {
-				await this.modelManager.download();
+				await this.modelManager.download(undefined, { skipCpuRuntime: webgpuCapable });
 
 				// 关键路径(S-RETRIEVAL-QUALITY §4.1/§4.2):词表交给 Worker 一次(约 109KB)——
 				// Worker 侧据此做精确 token 计数;没拿到词表时按字符上界估算(高估方向,宁可块小也不许截断)。
@@ -2937,6 +2942,48 @@ export default class RatelVaultPlugin extends Plugin {
 	}
 
 	/**
+	 * 探测本机是否具备可用的 WebGPU 硬件适配器。
+	 *
+	 * 关键路径(S-WEBGPU-EMBEDDING):这一步必须在下载 GPU 运行时(23 MB)**之前**做。
+	 * 只看到 `navigator.gpu` 不够 —— 没有硬件适配器时会退化成软件模拟(SwiftShader),
+	 * 速度不如 CPU,却要先白下 23 MB。判为不可用就完全不碰 GPU 运行时。
+	 *
+	 * @returns 是否可用;同时把结论写进日志与快照
+	 */
+	private async detectWebgpuAdapter(): Promise<boolean> {
+		const gpu = (navigator as { gpu?: { requestAdapter(): Promise<unknown> } }).gpu;
+		if (gpu === undefined) {
+			devLogger.info('index', `渲染进程 WebGPU:navigator.gpu 不存在 (secureContext=${String(globalThis.isSecureContext ?? 'n/a')})`);
+			return false;
+		}
+		try {
+			const adapter = (await gpu.requestAdapter()) as {
+				info?: { vendor?: string; architecture?: string; device?: string; description?: string };
+			} | null;
+			if (adapter === null) {
+				devLogger.info('index', '渲染进程 WebGPU:没有可用适配器,本次走 CPU');
+				return false;
+			}
+			const info = adapter.info;
+			const detail = info === undefined
+				? 'info 不可用'
+				: `vendor=${info.vendor ?? '?'} architecture=${info.architecture ?? '?'} device=${info.device ?? '?'}`;
+			// 关键路径:软件适配器会让「有 WebGPU」变成假象,速度还不如 CPU。
+			const software = `${info?.vendor ?? ''} ${info?.architecture ?? ''} ${info?.description ?? ''}`.toLowerCase();
+			const isSoftware = software.includes('swiftshader') || software.includes('software');
+			if (isSoftware) {
+				devLogger.info('index', `渲染进程 WebGPU:仅有软件适配器(${detail}),本次走 CPU`);
+				return false;
+			}
+			devLogger.info('index', `渲染进程 WebGPU:可用 (${detail})`);
+			return true;
+		} catch (error) {
+			devLogger.info('index', `渲染进程 WebGPU:requestAdapter 失败 ${error instanceof Error ? error.message : String(error)}`);
+			return false;
+		}
+	}
+
+	/**
 	 * 探测 GPU 版嵌入 Worker 能否初始化。
 	 *
 	 * 关键路径(S-WEBGPU-EMBEDDING):两个独立 Worker、两个独立 ORT 实例。
@@ -2948,6 +2995,12 @@ export default class RatelVaultPlugin extends Plugin {
 	 * @returns 可用的 Blob URL;失败返回 null
 	 */
 	private async probeGpuWorker(gpuCode: string, embedding: EmbeddingPort): Promise<{ url: string; worker: Worker } | null> {
+		// 关键路径:能力不足时连试都不试 —— 试一次要先下 23 MB GPU 运行时。
+		if (!this.webgpuCapable) {
+			devLogger.info('index', 'GPU 探测跳过:本机无可用 WebGPU 适配器');
+			this.userStatus.patch({ embeddingBackend: 'wasm' });
+			return null;
+		}
 		// 关键路径(研发期):每一步都留痕,任何一次静默早退都会让结论无法判断。
 		devLogger.info('index', `GPU 探测开始:Worker 代码 ${gpuCode.length} 字节`);
 		if (gpuCode.length === 0) {
@@ -3061,7 +3114,11 @@ export default class RatelVaultPlugin extends Plugin {
 			worker.terminate();
 			URL.revokeObjectURL(url);
 			devLogger.warn('index', 'GPU 嵌入 Worker 初始化失败,回退 WASM');
-			this.userStatus.patch({ embeddingBackend: 'wasm' });
+			// 关键路径:GPU 失败后要补下 CPU 运行时(首次约 13 MB),必须让用户看到在等什么。
+			this.userStatus.patch({
+				embeddingBackend: 'wasm',
+				indexDetail: tNow('status.indexDetail.cpuRuntimeDownloading'),
+			});
 			return null;
 		}
 		// 关键路径:先摘掉探测期监听器,再交给 proxy 接管,避免重复处理消息。

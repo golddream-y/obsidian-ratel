@@ -802,6 +802,7 @@ const statusZh: StatusStrings = {
   'status.indexDetail.modelPreparing': '正在加载嵌入模型（首次需下载并编译运行时）',
   'status.indexDetail.gpuRuntimeDownloading': '正在下载 GPU 运行时（约 23 MB，{percent}%）',
   'status.indexDetail.gpuRuntimeFailed': 'GPU 运行时下载失败，本轮改用 CPU 推理',
+  'status.indexDetail.cpuRuntimeDownloading': '正在下载 CPU 运行时（约 13 MB）',
   'status.indexLabel.checkingChanges': '检查变更中',
   'status.indexLabel.idle': '空闲',
   'status.indexLabel.unknown': '…',
