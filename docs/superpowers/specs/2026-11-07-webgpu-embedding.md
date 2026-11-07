@@ -1,6 +1,6 @@
 # S-WEBGPU-EMBEDDING — 本地嵌入 WebGPU 加速（1.5 专项）
 
-- 状态：In Progress（设计中）
+- 状态：Active（核心路径已实测通过，待速度验收与工程收口）
 - 目标版本：1.5.0
 - 上一版本：`1.4.0`（已发布，本地嵌入为纯 WASM）
 - 参照 tag：`1.4.0`
@@ -36,6 +36,16 @@ m: new URL("ort-wasm-simd-threaded.asyncify.wasm", import.meta.url).href
 
 ESM 打包验证通过：同一 ORT 入口用 `format: 'esm'` 打包后，
 `import.meta.url` 保留 13 次、含 webgpu EP 实现代码。方案可行。
+
+**2026-11-07 19:03 实测通过**（生产库 `bb887f71` / Obsidian 1.15）：
+
+```
+[Ratel:index] GPU 探测成功:使用 WebGPU 执行器
+```
+
+根因链共四层，逐层剥开：IIFE 抹掉 `import.meta` → 胶水里的 Node 误判
+(`worker_threads`) → 胶水变体错误 (`c is not a function`) →
+胶水与运行时不是 asyncify 配对 (`webgpuInit is not a function`)。
 
 ## 目标
 

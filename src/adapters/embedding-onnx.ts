@@ -119,6 +119,10 @@ export class EmbeddingOnnx implements EmbeddingPort {
 		this.TensorCtor = ort.Tensor;
 
 		// 关键路径:直接传入 wasm 二进制,ORT 不再去 fetch/import 外部 .wasm/.mjs 文件。
+		// 关键路径:ORT 的 C++ 层默认会为每个会话打印算子分配统计
+		// (`VerifyEachNodeIsAssignedToAnEp`),GPU 版每次侦测+正式装配各建一次会话,
+		// 控制台会被这种性能提示刷屏。这里压到 error,只保留真正的错误。
+		ort.env.logLevel = 'error';
 		ort.env.wasm.wasmBinary = this.deps.wasmBinary;
 		ort.env.wasm.numThreads = 1;
 
