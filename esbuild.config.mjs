@@ -21,10 +21,33 @@ const GPU_EMBEDDING_WORKER_OUT = path.resolve(__dirname, 'dist/embedding-worker-
  * 关键路径(S-WEBGPU-EMBEDDING):发版只允许三个文件,不能附带 .mjs 资产;
  * webgpu EP 注册依赖该模块,缺了它必然报 backend not found。
  */
-const ORT_JSEP_GLUE = readFileSync(
+const RAW_ORT_JSEP_GLUE = readFileSync(
 	path.resolve(__dirname, 'node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.jsep.mjs'),
 	'utf-8',
 );
+
+/**
+ * 剥离 jsep 胶水里的 Node 环境判定。
+ *
+ * 关键路径(S-WEBGPU-EMBEDDING):胶水末尾有
+ *   `globalThis.process?.versions?.node && process.type != "renderer"` → `await import("worker_threads")`
+ * Obsidian 的 Blob Worker 里 Electron 注入的 `process.type` 不是 "renderer"(是 "worker"),
+ * ORT 会误判为 Node,浏览器原生 ESM 解析裸模块名 `worker_threads` 直接失败
+ * (线上报 `Failed to resolve module specifier 'worker_threads'`)。
+ * 把两处判定固定为 false,胶水就只会走浏览器路径 —— 该模块本来也只用于 WebGPU EP。
+ * 构建时强制校验模式存在:ORT 升级改了写法会立刻构建失败,不会静默退回旧 bug。
+ */
+const ORT_NODE_CHECKS = [
+	'globalThis.process?.versions?.node&&"renderer"!=globalThis.process?.type',
+	'globalThis.process?.versions?.node&&globalThis.process?.type!="renderer"',
+];
+let ORT_JSEP_GLUE = RAW_ORT_JSEP_GLUE;
+for (const pattern of ORT_NODE_CHECKS) {
+	if (!ORT_JSEP_GLUE.includes(pattern)) {
+		throw new Error(`ORT jsep 胶水结构变化,Node 判定未匹配: ${pattern}`);
+	}
+	ORT_JSEP_GLUE = ORT_JSEP_GLUE.replace(pattern, '!1');
+}
 
 // 内置 Skill 源目录 — 直接子目录 + SKILL.md,与 SkillFsAdapter 扫描契约一致
 const BUILTIN_SKILLS_DIR = path.resolve(__dirname, 'src/skills/builtin');

@@ -95,6 +95,26 @@ jsep 胶水（46 KB）由 `scripts/gen-ort-glue.mjs` 在构建期转成 TS 常�
 
 只换后端 → 指纹逐字不变 → 代际不变 → **1.4.0 的索引直接复用，零重建**。
 
+### 追加根因：胶水里的 Node 环境误判
+
+首次主库验证拿到真实报错：
+
+```
+no available backend found. ERR: [webgpu] TypeError: Failed to resolve module specifier 'worker_threads'
+```
+
+内联的 jsep 胶水末尾有 Node 判定：
+
+```js
+var isNode = globalThis.process?.versions?.node && globalThis.process?.type != "renderer";
+if (isNode) isPthread = (await import("worker_threads")).workerData === "em-pthread";
+```
+
+Obsidian 的 Blob Worker 里 Electron 注入的 `process.type` 不是 `"renderer"`（是 `"worker"`），
+ORT 误判成 Node，浏览器原生 ESM 解析裸模块名 `worker_threads` 直接失败。
+胶水通过 Blob URL 由浏览器原生加载，esbuild 的 alias 管不到，**必须在构建期改字符串**：
+把两处 Node 判定固定为 `!1`，并在构建时校验模式存在（ORT 升级改写法会立即构建失败）。
+
 ## 影响面
 
 - `esbuild.config.mjs`：新增 GPU Worker 构建上下文与内联插件
