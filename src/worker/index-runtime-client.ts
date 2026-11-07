@@ -31,6 +31,13 @@ export interface IndexRuntimeStartOptions {
 }
 
 /** 客户端依赖。 */
+/** 单篇完成事件。 */
+export interface IndexFileCommittedEvent {
+	path: string;
+	chunkCount: number;
+	skipped: boolean;
+}
+
 export interface IndexRuntimeClientOptions {
 	/** 自定义线程工厂;缺省用内联 Blob Worker。 */
 	createWorker?: RuntimeWorkerFactory;
@@ -74,6 +81,18 @@ export class IndexRuntimeClient {
 			createWorker: options.createWorker ?? defaultWorkerFactory(),
 			requestTimeoutMs: options.requestTimeoutMs ?? 30_000,
 			// 关键路径:Worker 反向请求的嵌入统一走仲裁器,查询优先。
+			// 关键路径:按篇进度事件转成回调 —— 协调器据此按篇推进计数,
+			// 不必等整批(8 篇)结算,否则 6 小时量级的索引会每 8 篇跳一次。
+			onEvent: (type, payload) => {
+				if (type !== 'file-committed') return;
+				const record = payload as { path?: unknown; chunkCount?: unknown; skipped?: unknown } | null;
+				if (typeof record?.path !== 'string') return;
+				this.onFileCommitted?.({
+					path: record.path,
+					chunkCount: typeof record.chunkCount === 'number' ? record.chunkCount : 0,
+					skipped: record.skipped === true,
+				});
+			},
 			onCall: async (method, payload) => {
 				if (method !== 'embed') throw new Error(`未知宿主方法: ${method}`);
 				const record = payload as { texts?: unknown; workload?: unknown } | null;
@@ -84,6 +103,9 @@ export class IndexRuntimeClient {
 			},
 		});
 	}
+
+	/** 单篇完成监听器 — 由协调器设置,用于按篇推进进度计数。 */
+	onFileCommitted: ((event: IndexFileCommittedEvent) => void) | null = null;
 
 	/** 运行时标识;测试与诊断用,协议帧必须与线程端一致。 */
 	get runtimeId(): string {

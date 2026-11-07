@@ -26,6 +26,8 @@ export interface ThreadIndexClient {
 		access?: 'read-only' | 'read-write';
 		chunkOptions?: { maxTokens?: number; overlapTokens?: number };
 	}): Promise<void>;
+	/** 注册「单篇完成」监听器 — 批量写入时按篇推进计数。 */
+	onFileCommitted?: ((event: { path: string; chunkCount: number; skipped: boolean }) => void) | null;
 	/** 单文件写入;`skipped: true` 表示内容未变、按完成记录直接复用(未做推理)。 */
 	indexFile(filePath: string, content: string): Promise<{ chunkCount: number; skipped?: boolean }>;
 	/** 批量写入;缺失时退化为逐个 `indexFile`。 */
@@ -175,6 +177,12 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 		// 关键路径:线程真的起来之后才算已启动,否则启动失败会把后续事件派给不存在的线程。
 		this.started = true;
 
+		// 关键路径:按篇推进 —— 批量提交时不等整批结算,进度按篇递增。
+		if (this.client.onFileCommitted !== undefined) {
+			this.client.onFileCommitted = (event) => {
+				this.markSuccess(event.path, event.skipped !== true, event.chunkCount);
+			};
+		}
 		const files = this.vault.listMarkdownFiles();
 		let skippedAbandoned = 0;
 		for (const filePath of files) {
@@ -289,6 +297,9 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 
 	/** 记录成功:清除失败标记、原操作与样本 —— 样本只描述「当前仍失败」的文件。 */
 	private markSuccess(filePath: string, written = true, blocks = 0): void {
+		// 关键路径:批量路径会先收到「按篇事件」、整批结束时又拿到结果,
+		// 幂等返回避免同一篇被计两次(计数虚高、速率失真)。
+		if (this.verified.has(filePath)) return;
 		this.verified.add(filePath);
 		// 关键路径:速率只认真正写入的篇数与块数,跳过(内容未变)不计入。
 		if (written) {

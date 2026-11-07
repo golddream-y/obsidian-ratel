@@ -55,6 +55,17 @@ export interface IndexRuntimeResponse {
 	error?: string;
 }
 
+/** Worker → 宿主的进度事件;不参与请求/响应配对。 */
+export interface IndexRuntimeEvent {
+	kind: 'event';
+	protocolVersion: typeof INDEX_RUNTIME_PROTOCOL_VERSION;
+	runtimeId: string;
+	epoch: number;
+	/** 事件类型,例如 `file-committed`。 */
+	type: string;
+	payload?: unknown;
+}
+
 /** 控制消息;不携带业务载荷。 */
 export interface IndexRuntimeControl {
 	kind: 'control';
@@ -95,7 +106,8 @@ export type IndexRuntimeMessage =
 	| IndexRuntimeResponse
 	| IndexRuntimeControl
 	| IndexRuntimeCall
-	| IndexRuntimeCallResult;
+	| IndexRuntimeCallResult
+	| IndexRuntimeEvent;
 
 /** 单条消息载荷上限（估算字节）。 */
 export const MAX_MESSAGE_BYTES = 24 * 1024 * 1024;

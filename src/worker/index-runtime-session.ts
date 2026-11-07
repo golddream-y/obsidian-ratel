@@ -36,6 +36,8 @@ export interface IndexSessionOptions {
 	createStorage?: (root: string) => AtomicIndexStorage;
 	/** 写权 epoch;提供日志装载时用于构造写所有权。 */
 	epoch?: number;
+	/** 进度事件出口 — 批量写入时按篇推送,让状态计数不必等整批结束。 */
+	emit?: (type: string, payload?: unknown) => void;
 }
 
 /** 会话使用的向量存储 — 单份 Vectra 与分片适配器对上层保持同一最小接口。 */
@@ -471,6 +473,8 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 			const single = await prepareUpsertFile({ path: filePath, content }, ctx);
 			if (single.skipped) {
 				results.push({ path: filePath, chunkCount: single.chunkCount, skipped: true });
+				// 关键路径:跳过也要按篇上报,否则重载后的快速核对阶段进度不动。
+				options.emit?.('file-committed', { path: filePath, chunkCount: single.chunkCount, skipped: true });
 				continue;
 			}
 			prepared.push(single);
@@ -494,6 +498,9 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 				for (const item of prepared) {
 					const done = await item.finalize();
 					results.push({ path: item.path, chunkCount: done.chunkCount });
+					// 关键路径:按篇上报 —— 整批 8 篇一起结算会让进度从 8 直接跳到 16,
+					// 6 小时量级的索引里这种跳变看起来像卡住。
+					options.emit?.('file-committed', { path: item.path, chunkCount: done.chunkCount });
 				}
 			});
 		}

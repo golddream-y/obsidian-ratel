@@ -54,6 +54,8 @@ export interface RuntimeServer {
 	readonly served: number;
 	/** 撤销并等待在途请求收敛。 */
 	revoke(reason: string): Promise<void>;
+	/** 主动向宿主推送一条进度事件(不参与请求/响应配对)。 */
+	emit(type: string, payload?: unknown): void;
 }
 
 /**
@@ -204,6 +206,18 @@ export function serveRuntime(options: RuntimeServerOptions): RuntimeServer {
 	};
 
 	return {
+		emit(type: string, payload?: unknown): void {
+			// 关键路径:事件不带 requestId,只用于进度;撤销后不再推送。
+			if (revoked) return;
+			send({
+				kind: 'event',
+				protocolVersion: INDEX_RUNTIME_PROTOCOL_VERSION,
+				runtimeId: grant.runtimeId,
+				epoch: grant.epoch,
+				type,
+				payload,
+			});
+		},
 		get revoked(): boolean {
 			return revoked;
 		},

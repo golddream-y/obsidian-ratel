@@ -45,6 +45,8 @@ export interface IndexRuntimeHostOptions {
 	maxInflightBytes?: number;
 	/** Worker 反向调用的处理函数(例如请求嵌入向量)。 */
 	onCall?: (method: string, payload: unknown) => unknown;
+	/** Worker 推送的进度事件;不参与请求配对。 */
+	onEvent?: (type: string, payload: unknown) => void;
 }
 
 /** 宿主错误码。 */
@@ -79,6 +81,7 @@ export class IndexRuntimeHost {
 	private readonly maxInflight: number;
 	private readonly maxInflightBytes: number;
 	private readonly onCall: ((method: string, payload: unknown) => unknown) | undefined;
+	private readonly onEvent: ((type: string, payload: unknown) => void) | undefined;
 	private inflightBytes = 0;
 	private sequence = 0;
 	private readonly createWorker: RuntimeWorkerFactory;
@@ -92,6 +95,7 @@ export class IndexRuntimeHost {
 		this.maxInflight = options.maxInflight ?? 8;
 		this.maxInflightBytes = options.maxInflightBytes ?? MAX_MESSAGE_BYTES;
 		this.onCall = options.onCall;
+		this.onEvent = options.onEvent;
 	}
 
 	/** 运行时标识;协议帧与 init 授权必须一致。 */
@@ -251,6 +255,15 @@ export class IndexRuntimeHost {
 		}
 		if (message.kind === 'call') {
 			void this.answerCall(message);
+			return;
+		}
+		if (message.kind === 'event') {
+			// 关键路径:进度事件不参与请求配对,直接转给上层;失败不能让线程受影响。
+			try {
+				this.onEvent?.(message.type, message.payload);
+			} catch {
+				// 忽略监听器异常:它只影响进度展示。
+			}
 			return;
 		}
 		if (message.kind === 'control' && message.control === 'cancel-ack' && message.requestId !== undefined) {

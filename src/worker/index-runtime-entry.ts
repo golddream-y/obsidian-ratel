@@ -103,11 +103,21 @@ export function startIndexRuntimeWorker(options: {
 				root: data.root,
 			});
 			// 关键路径:只读模式不装配索引入口 —— 关闭自动索引时必须零写入,不能靠上层不调用。
+			// 关键路径:事件出口要用服务循环的 send,而服务循环又需要 handlers ——
+			// 先占位,创建 server 之后立刻接上真实实现。
+			let emitEvent: (type: string, payload?: unknown) => void = () => {};
 			const handlers: RuntimeHandlers = data.access === 'read-only'
 				? guardReadOnly(baseHandlers)
-				: { ...baseHandlers, ...createIndexSessionHandlers({ root: data.root, chunkOptions: resolveChunkOptions(data.chunkOptions) }) };
+				: {
+					...baseHandlers,
+					...createIndexSessionHandlers({
+						root: data.root,
+						chunkOptions: resolveChunkOptions(data.chunkOptions),
+						emit: (type, payload) => emitEvent(type, payload),
+					}),
+				};
 			const sessionClose = handlers['session.close'];
-			server = serveRuntime({
+			const runtime = serveRuntime({
 				port,
 				grant,
 				handlers,
@@ -121,6 +131,9 @@ export function startIndexRuntimeWorker(options: {
 					}
 				},
 			});
+			// 关键路径:接上真实的事件出口(此时 server 已存在)。
+			emitEvent = (type, payload) => runtime.emit(type, payload);
+			server = runtime;
 			resolveReady();
 			return;
 		}
