@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { AtomicIndexStorage } from '../../src/adapters/atomic-index-storage';
 import { VectraStore } from '../../src/adapters/vector-vectra';
 import { createShardedStore } from '../../src/adapters/vector-vectra-sharded';
-import { ensureShardLayout, migrateSingleFileIndex, readShardLayout } from '../../src/core/index-shard-migration';
+import { archiveLegacySingleFileIndex, ensureShardLayout, readShardLayout } from '../../src/core/index-shard-migration';
 import { MIN_SHARDS } from '../../src/core/index-shard-routing';
 
 const roots: string[] = [];
@@ -66,48 +66,36 @@ async function writeLegacyIndex(root: string): Promise<void> {
 	}
 }
 
-describe('旧单份布局迁移', () => {
-	it('拆分后块集合与旧索引一致 - 向量与范数原样搬迁', async () => {
-		const root = await mkdtemp(path.join(os.tmpdir(), 'ratel-migrate-'));
+describe('旧单份索引归档（不再拆分）', () => {
+	it('旧单份索引存在 - 改名为 legacy - 不解析也不建分片', async () => {
+		// 关键路径(2026-11-07):拆分迁移没有经过真实数据验证,已移除。
+		// 升级后一律重建；旧文件只改名保留,便于回滚旧版本插件。
+		const root = await mkdtemp(path.join(os.tmpdir(), 'ratel-archive-'));
 		roots.push(root);
 		await writeLegacyIndex(root);
-		const result = await migrateSingleFileIndex({ generationRoot: root });
-		expect(result.migrated).toBe(true);
-		expect(result.shardCount).toBeGreaterThanOrEqual(8);
-		const items = await readAllItems(root);
-		expect(items).toHaveLength(PATHS.length);
-		// 向量与范数原样搬迁,不重新计算。
-		expect(items.map((item) => item.id).sort()).toEqual(PATHS.map((p) => `${p}#0`).sort());
-		expect(items.every((item) => item.norm > 0)).toBe(true);
-
-		const sharded = createShardedStore({ root, shardCount: result.shardCount });
-		await sharded.init();
-		const inspected = await sharded.inspectFiles(PATHS);
-		for (const relativePath of PATHS) expect(inspected.get(relativePath)).toHaveLength(1);
-	});
-
-	it('已存在 shards 布局 - 直接跳过 - 不重复拆分', async () => {
-		const root = await mkdtemp(path.join(os.tmpdir(), 'ratel-migrate-'));
-		roots.push(root);
-		await writeLegacyIndex(root);
-		const first = await migrateSingleFileIndex({ generationRoot: root });
-		const second = await migrateSingleFileIndex({ generationRoot: root });
-		expect(first.migrated).toBe(true);
-		expect(second.migrated).toBe(false);
-		expect(second.shardCount).toBe(first.shardCount);
-	});
-
-	it('写入中途失败 - 保留旧 index.json - 下次可重试', async () => {
-		const root = await mkdtemp(path.join(os.tmpdir(), 'ratel-migrate-'));
-		roots.push(root);
-		await writeLegacyIndex(root);
-		await expect(migrateSingleFileIndex({ generationRoot: root, failAfterShard: 2 })).rejects.toThrow();
-		expect(await exists(path.join(root, 'index.json'))).toBe(true);
-		expect(await exists(path.join(root, 'shards', 'layout.json'))).toBe(false);
-		// 重试成功,且旧文件归档不参与后续装配。
-		const retry = await migrateSingleFileIndex({ generationRoot: root });
-		expect(retry.migrated).toBe(true);
+		const result = await archiveLegacySingleFileIndex({ generationRoot: root });
+		expect(result.archived).toBe(true);
+		expect(await exists(path.join(root, 'index.json'))).toBe(false);
 		expect(await exists(path.join(root, 'index.json.legacy'))).toBe(true);
+		// 不建分片:重建由后续索引流程负责。
+		expect(await exists(path.join(root, 'shards', 'layout.json'))).toBe(false);
+	});
+
+	it('没有旧单份索引 - 不动任何文件', async () => {
+		const root = await mkdtemp(path.join(os.tmpdir(), 'ratel-archive-'));
+		roots.push(root);
+		const result = await archiveLegacySingleFileIndex({ generationRoot: root });
+		expect(result.archived).toBe(false);
+	});
+
+	it('已有分片布局 - 不归档旧文件', async () => {
+		const root = await mkdtemp(path.join(os.tmpdir(), 'ratel-archive-'));
+		roots.push(root);
+		await ensureShardLayout(root, 8);
+		await writeLegacyIndex(root);
+		const result = await archiveLegacySingleFileIndex({ generationRoot: root });
+		expect(result.archived).toBe(false);
+		expect(await exists(path.join(root, 'index.json'))).toBe(true);
 	});
 });
 
@@ -115,12 +103,11 @@ describe('分片布局只读读取', () => {
 	it('已有布局 - 返回片数与块数', async () => {
 		const root = await mkdtemp(path.join(os.tmpdir(), 'ratel-migrate-'));
 		roots.push(root);
-		await writeLegacyIndex(root);
-		const migrated = await migrateSingleFileIndex({ generationRoot: root });
+		await ensureShardLayout(root, 8);
 		const layout = await readShardLayout(root);
 		expect(layout).not.toBeNull();
-		expect(layout?.shardCount).toBe(migrated.shardCount);
-		expect(layout?.blockCount).toBe(PATHS.length);
+		expect(layout?.shardCount).toBe(8);
+		expect(layout?.blockCount).toBe(0);
 	});
 
 	it('布局缺失 - 返回 null - 不抛错', async () => {

@@ -65,61 +65,33 @@ interface ShardLayoutFile {
  * @returns 迁移结论、片数与块数。
  * @throws {Error} 写入中断或旧索引不可解析;此时旧布局保持可用。
  */
-export async function migrateSingleFileIndex(options: ShardMigrationOptions): Promise<ShardMigrationResult> {
+/**
+ * 归档旧版单份索引 — 不解析、不拆分，直接改名为 `.legacy`。
+ *
+ * 关键路径(2026-11-07):原实现会把旧 `index.json` 解析后拆成分片。该路径只在
+ * 「从 1.3.0 升级」时触发一次,缺少充分的真实数据验证(旧块没有 commitId/revision,
+ * 一致性无法证实,可能白拆一遍仍然重建),因此不再默认启用。
+ *
+ * 现在的语义:升级后一律重建索引。旧文件改名保留,便于回滚到旧版本插件;
+ * 不解析它,也就不存在「拆了一半」的中间态。
+ *
+ * @param options - 代际根目录
+ * @returns 是否发生了归档
+ */
+export async function archiveLegacySingleFileIndex(options: { generationRoot: string }): Promise<{ archived: boolean }> {
 	const generationRoot = path.resolve(options.generationRoot);
 	const legacyPath = path.join(generationRoot, 'index.json');
-	const shardsRoot = path.join(generationRoot, 'shards');
-	const layoutPath = path.join(shardsRoot, 'layout.json');
-
-	const layout = await readLayout(layoutPath);
-	// 已迁移时如实返回 layout 里记录的块数;恒返回 0 会让诊断读数与基准失真。
-	if (layout !== null) return { migrated: false, shardCount: layout.shardCount, blockCount: layout.blockCount };
-	if (!(await exists(legacyPath))) return { migrated: false, shardCount: 0, blockCount: 0 };
-
-	const legacy = JSON.parse(await readFile(legacyPath, 'utf8')) as VectraIndexFile;
-	const items = Array.isArray(legacy.items) ? legacy.items : [];
-	const shardCount = shardCountForBlocks(items.length);
-	const buckets = new Map<number, VectraIndexItem[]>();
-	for (const item of items) {
-		// 关键路径:只按字符串路径路由;非字符串元数据无法可靠归属,按空路径归片(不抛错,保留旧布局可用)。
-		const rawPath = item.metadata?.['path'];
-		const relativePath = typeof rawPath === 'string' ? rawPath : '';
-		const shardId = shardIdForPath(relativePath, shardCount);
-		const bucket = buckets.get(shardId);
-		if (bucket === undefined) buckets.set(shardId, [item]);
-		else bucket.push(item);
+	const archivedPath = `${legacyPath}.legacy`;
+	// 已有分片布局说明本代际已按新布局建过,不再动任何文件。
+	if ((await readLayout(path.join(generationRoot, 'shards', 'layout.json'))) !== null) return { archived: false };
+	if (!(await exists(legacyPath))) return { archived: false };
+	// 关键路径:改名失败(权限/占用)不阻断启动 —— 重建会覆盖分片,旧文件留着也不影响正确性。
+	try {
+		await rename(legacyPath, archivedPath);
+		return { archived: true };
+	} catch {
+		return { archived: false };
 	}
-
-	const ordered = [...buckets.entries()].sort((left, right) => left[0] - right[0]);
-	let written = 0;
-	for (const [shardId, bucket] of ordered) {
-		if (options.failAfterShard !== undefined && written >= options.failAfterShard) {
-			throw new Error(`迁移中断:已写 ${written} 片`);
-		}
-		const directory = path.join(shardsRoot, shardDirectoryName(shardId));
-		await mkdir(directory, { recursive: true });
-		await writeAtomic(
-			path.join(directory, 'index.json'),
-			JSON.stringify({
-				version: legacy.version ?? 1,
-				metadata_config: legacy.metadata_config ?? {},
-				items: bucket,
-			}),
-		);
-		written += 1;
-	}
-
-	await mkdir(shardsRoot, { recursive: true });
-	const layoutFile: ShardLayoutFile = {
-		version: 1,
-		shardCount,
-		blockCount: items.length,
-		migratedAt: Date.now(),
-	};
-	await writeAtomic(layoutPath, JSON.stringify(layoutFile));
-	// 关键路径:layout 落盘后才归档旧文件;此前失败一律保留旧布局。
-	await rename(legacyPath, `${legacyPath}.legacy`);
-	return { migrated: true, shardCount, blockCount: items.length };
 }
 
 /**

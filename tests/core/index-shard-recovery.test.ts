@@ -18,7 +18,7 @@ import { createWorkerJournal, WorkerJournalOwner } from '../../src/worker/index-
 import { AtomicIndexStorage } from '../../src/adapters/atomic-index-storage';
 import { VectraStore } from '../../src/adapters/vector-vectra';
 import { createShardedStore } from '../../src/adapters/vector-vectra-sharded';
-import { migrateSingleFileIndex, readShardLayout } from '../../src/core/index-shard-migration';
+import { ensureShardLayout, readShardLayout } from '../../src/core/index-shard-migration';
 import { sha256 } from '../../src/utils/hash';
 import type { RuntimeHandlerContext } from '../../src/worker/index-runtime-worker';
 
@@ -52,12 +52,17 @@ function makeEmbedContext(): { ctx: RuntimeHandlerContext; calls: string[][] } {
 	};
 }
 
-/** 造一个已迁移到分片布局的根:先写旧单份索引,再走真实的一次性迁移。 */
+/**
+ * 造一个分片布局的根并写入一篇种子笔记。
+ *
+ * 关键路径(2026-11-07):迁移能力已移除,这里直接按新布局建库,
+ * 不再借「写旧单份索引再迁移」构造现场。
+ */
 async function seedMigratedRoot(): Promise<number> {
-	const storage = new AtomicIndexStorage({ generationRoot: root });
-	const legacy = new VectraStore(root, { autoInit: false, storage });
-	await legacy.init();
-	await legacy.replaceFile({
+	const shardCount = 8;
+	await ensureShardLayout(root, shardCount);
+	const store = await openShardedStore(shardCount);
+	await store.replaceFile({
 		path: 'seed.md',
 		commitId: 'seed-commit',
 		blocks: [{
@@ -66,9 +71,7 @@ async function seedMigratedRoot(): Promise<number> {
 			metadata: { path: 'seed.md', chunkIndex: 0, commitId: 'seed-commit' },
 		}],
 	});
-	const migrated = await migrateSingleFileIndex({ generationRoot: root });
-	expect(migrated.migrated).toBe(true);
-	return migrated.shardCount;
+	return shardCount;
 }
 
 /** 按 layout 片数装配一份独立分片存储,用于构造崩溃现场与事后核对。 */

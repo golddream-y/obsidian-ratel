@@ -738,7 +738,7 @@ export const en: Strings = {
   'modal.release.permissions': "Your tool permissions are retained. Built-in tools are allowed by default; set them to “Ask” under Memory & permissions to confirm each action.",
   'modal.release.requirements': "Requires Obsidian {minAppVersion} or newer. Desktop only.",
   'modal.release.setupHeading': "After upgrading",
-  'modal.release.setup.provider': "**The first launch splits your existing index and may be slow — do not quit midway**; a copy of the old index is kept for rollback.",
+  'modal.release.setup.provider': "**The first launch after upgrading rebuilds the index** (the old layout cannot be reused directly). This may take a long time for a large vault — do not quit midway; a copy of the old index is kept for rollback.",
   'modal.release.setup.model': "Once search works, that old copy can be deleted; it keeps a full copy of the old index.",
   'modal.release.setup.firstTask': "To run on the main thread again: Settings → Note index → turn off the worker-thread option.",
   'modal.release.openSettings': 'Set up a model',

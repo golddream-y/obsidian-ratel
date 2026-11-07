@@ -14,7 +14,7 @@ import { randomUUID } from 'node:crypto';
 import { VectraStore, type PreparedBlock } from '../adapters/vector-vectra';
 import { createShardedStore, type ShardedVectorStore } from '../adapters/vector-vectra-sharded';
 import { AtomicIndexStorage } from '../adapters/atomic-index-storage';
-import { ensureShardLayout, migrateSingleFileIndex, readShardLayout } from '../core/index-shard-migration';
+import { ensureShardLayout, archiveLegacySingleFileIndex, readShardLayout } from '../core/index-shard-migration';
 import { shardCountForBlocks } from '../core/index-shard-routing';
 import { devLogger } from '../logging/dev-logger';
 import { chunkMarkdown, type ChunkOptions } from './chunker';
@@ -289,7 +289,7 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 			// 关键路径:启动先尝试一次旧单份布局迁移,再读 layout 决定片数。
 			// 迁移失败直接上抛(fail-closed):不吞错、不退回写单份索引 ——
 			// 退回会绕过迁移,让半拆分的旧文件与后续提交同时生效。
-			await migrateSingleFileIndex({ generationRoot: options.root });
+			await archiveLegacySingleFileIndex({ generationRoot: options.root });
 			const layout = await readShardLayout(options.root);
 			const storage = createStorage(options.root);
 			// 关键路径:全新代际(无 layout、无旧 index.json)也走分片,片数取下限 8。

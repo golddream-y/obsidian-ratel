@@ -25,7 +25,7 @@ import { VectraStore, type FileReplaceStore } from '../adapters/vector-vectra';
 import { type IndexVectorStore, createShardedStore } from '../adapters/vector-vectra-sharded';
 import {
 	ensureShardLayout,
-	migrateSingleFileIndex,
+	archiveLegacySingleFileIndex,
 	readShardLayout,
 } from './index-shard-migration';
 import { shardCountForBlocks } from './index-shard-routing';
@@ -446,7 +446,7 @@ export async function assembleIndexPipeline(deps: AssembleIndexPipelineDeps): Pr
 	const storage = createStorage(deps.indexDir);
 	// 关键路径:迁移失败 fail-closed(不 try/catch)—— 半拆分的旧文件与后续提交
 	// 同时生效会让块集合无法判定,宁可让上层走降级出口。
-	await migrateSingleFileIndex({ generationRoot: deps.indexDir });
+	await archiveLegacySingleFileIndex({ generationRoot: deps.indexDir });
 	const layout = await readShardLayout(deps.indexDir);
 	const store = createShardedStore({
 		root: deps.indexDir,

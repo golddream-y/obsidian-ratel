@@ -15,7 +15,7 @@ import { createEmbeddingBridge } from '../worker/index-runtime-embedding-bridge'
 import { IndexRuntimeClient } from '../worker/index-runtime-client';
 import type { RuntimeWorkerFactory } from '../worker/index-runtime-host';
 import { type IndexVectorStore, createShardedStore } from '../adapters/vector-vectra-sharded';
-import { ensureShardLayout, migrateSingleFileIndex, readShardLayout } from './index-shard-migration';
+import { ensureShardLayout, archiveLegacySingleFileIndex, readShardLayout } from './index-shard-migration';
 import { shardCountForBlocks } from './index-shard-routing';
 import { IndexThreadCoordinator, type ThreadIndexClient } from './index-thread-coordinator';
 import { resolveIndexGeneration, type ResolvedIndexGeneration } from './index-processor-port';
@@ -180,7 +180,7 @@ export async function assembleIndexThreadRuntime(deps: AssembleIndexThreadRuntim
 	// 决定片数,全新库取下限 8。这样线程会话(以及任何重启)打开时读到的都是分片布局,
 	// 不会出现「本次单份、下次分片」的撕裂。
 	// 迁移失败 fail-closed:不吞错,由调用方整体回落到主线程路径。
-	await migrateSingleFileIndex({ generationRoot: resolved.generationRoot });
+	await archiveLegacySingleFileIndex({ generationRoot: resolved.generationRoot });
 	const layout = await readShardLayout(resolved.generationRoot);
 	const store = createShardedStore({
 		root: resolved.generationRoot,

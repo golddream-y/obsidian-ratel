@@ -249,13 +249,14 @@ describe('两条装配路径统一走分片存储', () => {
 		expect(exists(path.join(threadGenerationRoot, 'index.json'))).toBe(false);
 	});
 
-	it('迁移失败 - 装配 reject - 不留下半成品 layout', async () => {
+	it('旧单份索引损坏 - 不再阻断装配 - 归档后重建', async () => {
+		// 关键路径(2026-11-07):拆分迁移已移除,升级后一律重建。
+		// 因此旧文件损坏不再是启动阻断条件 —— 改名归档即可,装配应照常成功。
 		const config = baseConfig();
 		const fingerprint = await computeConfigFingerprint(config);
 		const root = makeRoot();
 		const generationRoot = await generationRootOf(root, config);
 		fs.mkdirSync(generationRoot, { recursive: true });
-		// 关键路径:坏 JSON 让迁移在解析阶段失败 —— 此时还没写任何片与 layout。
 		fs.writeFileSync(path.join(generationRoot, 'index.json'), '{ 这不是合法索引 ', 'utf8');
 
 		await expect(setupWritableIndexRuntime({
@@ -267,30 +268,11 @@ describe('两条装配路径统一走分片存储', () => {
 			getChunkOptions: () => T0_CHUNK_OPTIONS,
 			chunkLimits: { chunkSize: config.chunkSize, chunkOverlap: config.chunkOverlap },
 			expectedDimension: DIMENSIONS,
-		})).rejects.toThrow();
+		})).resolves.toBeDefined();
 
-		expect(await readShardLayout(generationRoot)).toBeNull();
-		expect(exists(path.join(generationRoot, 'shards', 'layout.json'))).toBe(false);
-		// 装配失败不得改写旧文件:下次启动仍能读到同一份坏索引并重试(而不是误以为已迁移)。
-		expect(exists(path.join(generationRoot, 'index.json'))).toBe(true);
-
-		// 线程路径同样 fail-closed:迁移失败必须 reject,且不留下半成品 layout。
-		const threadRoot = makeRoot();
-		const threadGenerationRoot = await generationRootOf(threadRoot, config);
-		const threadGenerationId = deriveGenerationId(fingerprint);
-		fs.mkdirSync(threadGenerationRoot, { recursive: true });
-		fs.writeFileSync(path.join(threadGenerationRoot, 'index.json'), '{ 仍不是合法索引 ', 'utf8');
-		await expect(assembleIndexThreadRuntime({
-			indexRoot: threadRoot,
-			generations: createGenerationsStub(threadGenerationId, threadGenerationRoot, fingerprint),
-			config,
-			owner: OWNER_STUB as never,
-			expectedDimension: DIMENSIONS,
-			embedding: new FakeEmbeddingPort(DIMENSIONS),
-			vault: { listMarkdownFiles: () => [], readFile: async () => '' },
-		})).rejects.toThrow();
-		expect(await readShardLayout(threadGenerationRoot)).toBeNull();
-		expect(exists(path.join(threadGenerationRoot, 'shards', 'layout.json'))).toBe(false);
-		expect(exists(path.join(threadGenerationRoot, 'index.json'))).toBe(true);
+		// 旧文件被归档保留(可回滚旧版本插件),分片布局按新库建立。
+		expect(exists(path.join(generationRoot, 'index.json.legacy'))).toBe(true);
+		expect(exists(path.join(generationRoot, 'index.json'))).toBe(false);
+		expect(await readShardLayout(generationRoot)).not.toBeNull();
 	});
 });

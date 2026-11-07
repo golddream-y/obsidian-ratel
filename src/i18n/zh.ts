@@ -740,7 +740,7 @@ const modalZh: ModalStrings = {
   'modal.release.permissions': "工具权限沿用原设置。内置工具默认允许；需要逐项确认时，可在「记忆与权限」中改为「询问」。",
   'modal.release.requirements': "需要 Obsidian {minAppVersion} 或更新，仅支持桌面端。",
   'modal.release.setupHeading': "升级后",
-  'modal.release.setup.provider': "**首次启动会拆分旧索引，可能较慢，请不要中途退出**；旧索引文件会保留一份，便于回退。",
+  'modal.release.setup.provider': "**升级后首次启动会重建索引**（旧布局无法直接复用），按你的库规模可能需要较长时间，请不要中途退出；旧索引文件会保留一份便于回滚。",
   'modal.release.setup.model': "确认能正常搜索后，旧索引那份可以删掉，它一直占着一份旧索引的空间。",
   'modal.release.setup.firstTask': "想回到主线程：设置 → 笔记索引 → 关闭「索引写入使用独立线程」。",
   'modal.release.openSettings': '去配置模型',
