@@ -67,19 +67,29 @@ export interface EmbeddingOnnxDeps {
 }
 
 /**
- * 计算批内填充长度：取最长真实长度，向上对齐到 8 的倍数并夹在 [8, 512]。
+ * 可选序列长度档位 — 填充只对齐到这些值。
  *
- * 关键路径：attention 算力随序列长度平方增长，按真实长度填充比固定 512 省数倍；
- * 对齐到 8 是为了让同一批次的 shape 稳定，避免每次推理都换一个 kernel。
+ * 关键路径(S-WEBGPU-EMBEDDING):GPU 执行器会按输入形状建立流水线/缓冲区缓存,
+ * 形状种类越多,重复编译与分配越多。若按 8 的倍数对齐,一次索引里能出现 60 多种形状,
+ * 实测端到端从 0.26 秒/块退化到 0.43 秒/块;档位化把形状压到十几种,
+ * 同时仍保留「短块少算」的收益。
+ */
+const PAD_LENGTH_BUCKETS = [16, 32, 64, 96, 128, 160, 192, 224, 256, 320, 384, 448, 512] as const;
+
+/**
+ * 计算批内填充长度:取最长真实长度,向上取最近的档位,最大 512。
  *
- * @param lengths - 批内每条的 token 数（含 [CLS]/[SEP]）
+ * 关键路径:attention 算力随长度平方增长,按真实长度档位填充比固定 512 省算力;
+ * 而档位而非逐 8 对齐,是为了避免 GPU 上出现过多不同的输入形状。
+ *
+ * @param lengths - 批内每条的 token 数(含 [CLS]/[SEP])
  * @returns 实际使用的序列长度
  */
 function padLengthFor(lengths: number[]): number {
 	const longest = lengths.reduce((max, value) => (value > max ? value : max), 0);
-	if (longest <= 0) return 8;
-	const aligned = Math.ceil(longest / 8) * 8;
-	return Math.max(8, Math.min(512, aligned));
+	if (longest <= 0) return PAD_LENGTH_BUCKETS[0];
+	const bucket = PAD_LENGTH_BUCKETS.find((candidate) => candidate >= longest);
+	return bucket ?? 512;
 }
 
 /**

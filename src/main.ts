@@ -1280,28 +1280,6 @@ export default class RatelVaultPlugin extends Plugin {
 		this.feedbackController.refreshIndexStatus();
 
 		// 关键路径:Obsidian UI 布局就绪后再启动模型下载与索引,避免阻塞 onload。
-		// 关键路径(研发期诊断):渲染进程是否暴露 WebGPU,以及能否拿到适配器。
-		void (async () => {
-			const gpu = (navigator as { gpu?: { requestAdapter(): Promise<unknown> } }).gpu;
-			if (gpu === undefined) {
-				devLogger.info('index', `渲染进程 WebGPU:navigator.gpu 不存在 (secureContext=${String(globalThis.isSecureContext ?? 'n/a')})`);
-				return;
-			}
-			try {
-				const adapter = (await gpu.requestAdapter()) as { info?: { vendor?: string; architecture?: string; device?: string; description?: string } } | null;
-				// 关键路径(S-WEBGPU-EMBEDDING):必须区分真 GPU 与软件适配器(SwiftShader)。
-				// 拿不到硬件适配器时 WebGPU 会在 CPU 上模拟,速度接近甚至不如 WASM,
-				// 只报「adapter=ok」会把这种情况误当成 GPU 已启用。
-				const info = adapter?.info;
-				const detail = info === undefined
-					? 'info 不可用'
-					: `vendor=${info.vendor ?? '?'} architecture=${info.architecture ?? '?'} device=${info.device ?? '?'}`;
-				devLogger.info('index', `渲染进程 WebGPU:可用 (${detail})`);
-			} catch (error) {
-				devLogger.info('index', `渲染进程 WebGPU:requestAdapter 失败 ${error instanceof Error ? error.message : String(error)}`);
-			}
-		})();
-
 		this.app.workspace.onLayoutReady(() => {
 			// 关键路径:onLayoutReady 失败会更新 status$ = Failed,
 			// 显式 catch 仅兜底日志,避免 void 包装吞错(原版:下载失败静默无提示)。
