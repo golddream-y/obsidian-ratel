@@ -2939,12 +2939,27 @@ export default class RatelVaultPlugin extends Plugin {
 	 * @returns 可用的 Blob URL;失败返回 null
 	 */
 	private async probeGpuWorker(gpuCode: string, embedding: EmbeddingPort): Promise<string | null> {
-		if (gpuCode.length === 0) return null;
+		// 关键路径(研发期):每一步都留痕,任何一次静默早退都会让结论无法判断。
+		devLogger.info('index', `GPU 探测开始:Worker 代码 ${gpuCode.length} 字节`);
+		if (gpuCode.length === 0) {
+			devLogger.warn('index', 'GPU 探测跳过:Worker 代码未内联');
+			return null;
+		}
 		const deps = await this.modelManager.getDeps();
-		if (deps === null) return null;
-		const url = URL.createObjectURL(new Blob([gpuCode], { type: 'text/javascript' }));
-		// 关键路径:ESM Worker 必须 type:'module',否则 import.meta.url 仍不可用。
-		const worker = new Worker(url, { type: 'module' });
+		if (deps === null) {
+			devLogger.warn('index', 'GPU 探测跳过:模型依赖不可用');
+			return null;
+		}
+		let url: string;
+		let worker: Worker;
+		try {
+			url = URL.createObjectURL(new Blob([gpuCode], { type: 'text/javascript' }));
+			// 关键路径:ESM Worker 必须 type:'module',否则 import.meta.url 仍不可用。
+			worker = new Worker(url, { type: 'module' });
+		} catch (error) {
+			devLogger.warn('index', `GPU 探测跳过:Worker 创建失败 ${error instanceof Error ? error.message : String(error)}`);
+			return null;
+		}
 		let ok = false;
 		try {
 			ok = await new Promise<boolean>((resolve) => {
@@ -2975,7 +2990,8 @@ export default class RatelVaultPlugin extends Plugin {
 					[deps.modelBuffer, deps.wasmBinary],
 				);
 			});
-		} catch {
+		} catch (error) {
+			devLogger.warn('index', `GPU 探测异常:${error instanceof Error ? error.message : String(error)}`);
 			ok = false;
 		} finally {
 			// 关键路径:探测用的 Worker 一定要关掉,正式实例由 proxy 惰性新建。
@@ -2986,6 +3002,7 @@ export default class RatelVaultPlugin extends Plugin {
 			devLogger.warn('index', 'GPU 嵌入 Worker 初始化失败,回退 WASM');
 			return null;
 		}
+		devLogger.info('index', 'GPU 探测成功:使用 WebGPU 执行器');
 		return url;
 	}
 
