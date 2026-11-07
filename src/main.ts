@@ -2947,11 +2947,12 @@ export default class RatelVaultPlugin extends Plugin {
 	 * @param embedding - 当前嵌入端口,提供维度
 	 * @returns 可用的 Blob URL;失败返回 null
 	 */
-	private async probeGpuWorker(gpuCode: string, embedding: EmbeddingPort): Promise<string | null> {
+	private async probeGpuWorker(gpuCode: string, embedding: EmbeddingPort): Promise<{ url: string; worker: Worker } | null> {
 		// 关键路径(研发期):每一步都留痕,任何一次静默早退都会让结论无法判断。
 		devLogger.info('index', `GPU 探测开始:Worker 代码 ${gpuCode.length} 字节`);
 		if (gpuCode.length === 0) {
 			devLogger.warn('index', 'GPU 探测跳过:Worker 代码未内联');
+			this.userStatus.patch({ embeddingBackend: 'wasm' });
 			return null;
 		}
 		const deps = await this.modelManager.getDeps({ gpu: true });
@@ -2969,78 +2970,79 @@ export default class RatelVaultPlugin extends Plugin {
 			devLogger.warn('index', `GPU 探测跳过:Worker 创建失败 ${error instanceof Error ? error.message : String(error)}`);
 			return null;
 		}
+		// 关键路径:所有探测监听器挂在同一个 AbortController 上,
+		// 成功后一次性摘干净再交给 proxy,避免同一消息被处理两次。
+		const listeners = new AbortController();
 		let ok = false;
-		let warmupTimer: number | undefined;
 		try {
 			ok = await new Promise<boolean>((resolve) => {
-				const timer = window.setTimeout(() => {
-					devLogger.warn('index', 'GPU 嵌入 Worker 探测超时(30 秒),回退 WASM');
-					resolve(false);
-				}, 30_000);
-				worker.onmessage = (event: MessageEvent) => {
-					const data = event.data as { type?: string; error?: string; stack?: string };
-					if (data.type === 'ready') {
-						// 关键路径:就绪后再跑一次 warmup 量真实单块耗时,
-						// 必须等它回包再 resolve —— 否则 finally 里的 terminate 会把
-						// 热身中的 Worker 直接杀掉,日志里永远看不到耗时。
-						worker.postMessage({ type: 'warmup', maxBatchSize: 8 });
-						warmupTimer = window.setTimeout(() => {
-							window.clearTimeout(timer);
-							resolve(true);
-						}, 20_000);
-					} else if (data.type === 'error') {
-						window.clearTimeout(timer);
-						// 关键路径:把真实失败原因写进日志,研发期不必再猜是 EP 未注册、
-						// glue 加载失败还是 wasm 版本不匹配。
-						const stack = data.stack === undefined ? '' : `\n${data.stack.split('\n').slice(0, 8).join('\n')}`;
-						devLogger.warn('index', `GPU 嵌入 Worker 初始化失败:${data.error ?? 'unknown'}${stack}`);
-						resolve(false);
-					}
-				};
-				worker.onerror = (event: ErrorEvent) => {
+				let warmupTimer: number | undefined;
+				const settle = (value: boolean, reason?: string): void => {
+					if (reason !== undefined) devLogger.warn('index', reason);
 					window.clearTimeout(timer);
-					devLogger.warn('index', `GPU 嵌入 Worker 加载失败:${event.message}`);
-					resolve(false);
+					window.clearTimeout(warmupTimer);
+					resolve(value);
 				};
+				const timer = window.setTimeout(
+					() => settle(false, 'GPU 嵌入 Worker 探测超时(30 秒),回退 WASM'),
+					30_000,
+				);
+				worker.addEventListener(
+					'message',
+					(event: MessageEvent) => {
+						const data = event.data as { type?: string; error?: string; stack?: string; blocks?: number; elapsedMs?: number };
+						if (data.type === 'ready') {
+							// 关键路径:就绪后跑一次 warmup 量真实单块耗时;
+							// 必须等它回包再结算 —— 否则销毁/接管时热身还没完成。
+							worker.postMessage({ type: 'warmup', maxBatchSize: 8 });
+							warmupTimer = window.setTimeout(() => settle(true), 20_000);
+							return;
+						}
+						if (data.type === 'error') {
+							const stack = data.stack === undefined ? '' : `\n${data.stack.split('\n').slice(0, 8).join('\n')}`;
+							settle(false, `GPU 嵌入 Worker 初始化失败:${data.error ?? 'unknown'}${stack}`);
+							return;
+						}
+						if (data.type === 'warmup:done') {
+							const blocks = data.blocks ?? 1;
+							const ms = data.elapsedMs ?? 0;
+							devLogger.info('index', `GPU 预热完成:${blocks} 块 / ${ms} ms(${(ms / blocks / 1000).toFixed(2)} 秒/块)`);
+							settle(true);
+						} else if (data.type === 'warmup:error') {
+							devLogger.warn('index', `GPU 预热失败:${data.error ?? 'unknown'}`);
+							settle(true);
+						}
+					},
+					{ signal: listeners.signal },
+				);
+				worker.addEventListener(
+					'error',
+					(event: ErrorEvent) => settle(false, `GPU 嵌入 Worker 加载失败:${event.message}`),
+					{ signal: listeners.signal },
+				);
 				worker.postMessage(
 					{ type: 'init', deps, dimensions: embedding.dimensions, maxBatchSize: 16 },
 					[deps.modelBuffer, deps.wasmBinary],
 				);
-				// warmup 回包:记录真实速度后立刻结算探测。
-				worker.addEventListener('message', (warm: MessageEvent) => {
-					const payload = warm.data as { type?: string; blocks?: number; elapsedMs?: number; error?: string };
-					if (payload.type === 'warmup:done') {
-						const blocks = payload.blocks ?? 1;
-						const ms = payload.elapsedMs ?? 0;
-						devLogger.info(
-							'index',
-							`GPU 预热完成:${blocks} 块 / ${ms} ms(${(ms / blocks / 1000).toFixed(2)} 秒/块)`,
-						);
-						window.clearTimeout(warmupTimer);
-						window.clearTimeout(timer);
-						resolve(true);
-					} else if (payload.type === 'warmup:error') {
-						devLogger.warn('index', `GPU 预热失败:${payload.error ?? 'unknown'}`);
-						window.clearTimeout(warmupTimer);
-						window.clearTimeout(timer);
-						resolve(true);
-					}
-				});
 			});
 		} catch (error) {
 			devLogger.warn('index', `GPU 探测异常:${error instanceof Error ? error.message : String(error)}`);
 			ok = false;
-		} finally {
-			// 关键路径:探测用的 Worker 一定要关掉,正式实例由 proxy 惰性新建。
-			worker.terminate();
 		}
 		if (!ok) {
+			listeners.abort();
+			worker.terminate();
 			URL.revokeObjectURL(url);
 			devLogger.warn('index', 'GPU 嵌入 Worker 初始化失败,回退 WASM');
+			this.userStatus.patch({ embeddingBackend: 'wasm' });
 			return null;
 		}
+		// 关键路径:先摘掉探测期监听器,再交给 proxy 接管,避免重复处理消息。
+		listeners.abort();
 		devLogger.info('index', 'GPU 探测成功:使用 WebGPU 执行器');
-		return url;
+		// 关键路径:UI 要显示「GPU 推理 / CPU 推理」,后端结论必须进快照。
+		this.userStatus.patch({ embeddingBackend: 'webgpu' });
+		return { url, worker };
 	}
 
 	private async initEmbeddingWorkerProxy(embedding: EmbeddingPort): Promise<void> {
@@ -3050,11 +3052,11 @@ export default class RatelVaultPlugin extends Plugin {
 		}
 		const wasmUrl = URL.createObjectURL(new Blob([EMBEDDING_WORKER_CODE], { type: 'application/javascript' }));
 		// 关键路径:先探测 GPU;失败一律回退到 1.4.0 的稳定 WASM 路径。
-		const gpuUrl = await this.probeGpuWorker(GPU_EMBEDDING_WORKER_CODE, embedding);
-		const workerUrl = gpuUrl ?? wasmUrl;
-		const workerType: 'classic' | 'module' = gpuUrl !== null ? 'module' : 'classic';
-		this.gpuWorkerSelected = gpuUrl !== null;
-		if (gpuUrl !== null) URL.revokeObjectURL(wasmUrl);
+		const gpuProbe = await this.probeGpuWorker(GPU_EMBEDDING_WORKER_CODE, embedding);
+		const workerUrl = gpuProbe?.url ?? wasmUrl;
+		const workerType: 'classic' | 'module' = gpuProbe !== null ? 'module' : 'classic';
+		this.gpuWorkerSelected = gpuProbe !== null;
+		if (gpuProbe !== null) URL.revokeObjectURL(wasmUrl);
 		this.embeddingWorkerUrl = workerUrl;
 
 		// 关键路径:工厂每次 ensureWorker 都 getDeps,避免 transfer 掏空 ArrayBuffer 后空闲重建失败。
@@ -3069,6 +3071,7 @@ export default class RatelVaultPlugin extends Plugin {
 			16,
 			(kind) => this.breadcrumbs?.mark('heartbeat', undefined, `worker.${kind}`),
 			workerType,
+			gpuProbe?.worker,
 		);
 		this.embeddingWorkerProxy = proxy;
 

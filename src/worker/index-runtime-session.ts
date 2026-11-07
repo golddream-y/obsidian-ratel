@@ -51,6 +51,8 @@ interface SessionState {
 	manifest: IndexManifest | null;
 	chunkOptions: ChunkOptions;
 	written: number;
+	/** 本会话累计耗时（毫秒）— 用来定位「推理变快后」的剩余瓶颈。 */
+	timing: { chunkMs: number; embedMs: number; commitMs: number };
 }
 
 /**
@@ -130,7 +132,15 @@ function stringField(payload: unknown, key: string): string {
  * @param options 索引根与分块参数
  */
 export function createIndexSessionHandlers(options: IndexSessionOptions): RuntimeHandlers {
-	const state: SessionState = { store: null, journal: null, owner: null, manifest: null, chunkOptions: options.chunkOptions, written: 0 };
+	const state: SessionState = {
+		store: null,
+		journal: null,
+		owner: null,
+		manifest: null,
+		chunkOptions: options.chunkOptions,
+		written: 0,
+		timing: { chunkMs: 0, embedMs: 0, commitMs: 0 },
+	};
 	// 修复:服务循环会并发派发会话请求,存储访问必须由会话自身保证提交互斥与查询优先级。
 	const storeGate = new SessionStoreGate();
 	const createStorage = options.createStorage ?? ((root: string) => new AtomicIndexStorage({ generationRoot: root }));
@@ -198,7 +208,23 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 					`单文件提交偏慢(${Math.round(totalMs)}ms):${filePath} 分块=${Math.round(chunkedAt - startedAt)}ms 嵌入=${Math.round(embeddedAt - chunkedAt)}ms 提交=${Math.round(committedAt - embeddedAt)}ms 块数=${chunks.length}`,
 				);
 			}
+			// 关键路径(GPU 之后):推理已降到每块几十毫秒,剩余时间花在分块与提交上。
+			// 逐阶段累计并每 100 篇报一次,才能判断下一个该优化谁。
+			state.timing.chunkMs += chunkedAt - startedAt;
+			state.timing.embedMs += embeddedAt - chunkedAt;
+			state.timing.commitMs += committedAt - embeddedAt;
 			state.written += 1;
+			if (state.written % 100 === 0) {
+				const { chunkMs, embedMs, commitMs } = state.timing;
+				const sum = chunkMs + embedMs + commitMs;
+				if (sum > 0) {
+					const share = (value: number) => `${Math.round((value / sum) * 100)}%`;
+					devLogger.info(
+						'index',
+						`索引耗时构成(前 ${state.written} 篇):分块 ${share(chunkMs)} / 嵌入 ${share(embedMs)} / 提交 ${share(commitMs)}`,
+					);
+				}
+			}
 			return { chunkCount: blocks.length, commitId };
 		};
 		const prepareJournal = async () => {

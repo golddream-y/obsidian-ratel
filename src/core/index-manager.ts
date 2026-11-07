@@ -261,7 +261,9 @@ export class IndexManager {
             if (signature === this.lastCoordinatorSignature) return;
             this.lastCoordinatorSignature = signature;
             this.publishCoordinatorStatus(counters);
-        }, 500);
+          // 关键路径:GPU 推理后单篇耗时可低至 0.3 秒,500ms 采样会让计数一次跳两篇;
+          // 250ms 既能逐篇上屏,又不会把重绘压力抬到不可接受。
+        }, 250);
         try {
             const counters = await coordinator.start();
             if (this.unloaded) return null;

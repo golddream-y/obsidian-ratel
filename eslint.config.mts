@@ -14,6 +14,9 @@ export default tseslint.config(
 		// eslint.config.mts / vitest*.config.ts 不在 tsconfig include 内,跳过。
 		ignores: [
 			'dist/**',
+			// 关键路径:vendor 是逐行移植的第三方产物(仅两处 Node 判定补丁),
+			// 不为它改写风格,避免与上游对照失效。
+			'src/vendor/**',
 			'.agents/skills/**',
 			'.trae/**',
 			'scripts/**',

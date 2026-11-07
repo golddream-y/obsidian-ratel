@@ -771,6 +771,8 @@ export interface StatusStrings {
   'status.drawer.embedKind.local': string;
   'status.drawer.embedBadge.local': string;
   'status.drawer.embedBadge.api': string;
+  'status.drawer.embedBadge.gpu': string;
+  'status.drawer.embedBadge.cpu': string;
   'status.drawer.indexSecondsPerBlock': string;
   'status.drawer.embedKind.api': string;
   'status.drawer.section.context': string;

@@ -131,9 +131,10 @@
 		if (snap.index === 'failed' && snap.indexDetail) return snap.indexDetail;
 		// 关键路径:部分可用没有被宣告为 ready,但已有可检索版本,必须说明而不是只显示进度。
 		if (snap.indexPartial === true) {
-			// 关键路径:带上已可检索的篇数,让这句承诺与进度条一致,而不是一句无信息量的安慰。
+			// 关键路径:篇数已由右上「已索引 N / M 篇」表达,这里再报一次就是重复;
+			// 本句只负责说清「已有结果可检索」这个事实。
 			const committed = snap.indexCommittedFiles ?? 0;
-			if (committed > 0) return $t('status.drawer.searchAvailableCount', { count: committed });
+			if (committed > 0) return $t('status.drawer.searchAvailableCount');
 			return $t('status.drawer.searchAvailable');
 		}
 		// 关键路径:「正在生成向量并写入索引」会持续较长时间,必须说清这段在做什么、
@@ -149,6 +150,14 @@
 		if (idx === 'processing' || idx === 'scanning' || idx === 'queueing') return 'var(--interactive-accent)';
 		if (idx === 'ready') return 'var(--text-success)';
 		return 'var(--text-muted)';
+	});
+
+	// 关键路径:本地向量要说清跑在 GPU 还是 CPU 上 —— 用户凭这句判断索引快慢是否正常。
+	const embedBadgeText = $derived.by(() => {
+		if (embedKind === 'api') return $t('status.drawer.embedBadge.api');
+		if (snap.embeddingBackend === 'webgpu') return $t('status.drawer.embedBadge.gpu');
+		if (snap.embeddingBackend === 'wasm') return $t('status.drawer.embedBadge.cpu');
+		return $t('status.drawer.embedBadge.local');
 	});
 
 	const ctxPct = $derived(clampContextPct(usage.percentage));
@@ -167,7 +176,7 @@
 		<div class="ratel-drawer-section-title ratel-drawer-section-title--with-aside">
 			<span>{$t('status.drawer.section.index')}</span>
 			<span class="ratel-embed-badge" title={$t('status.drawer.label.embedding')}>
-				{embedKind === 'api' ? $t('status.drawer.embedBadge.api') : $t('status.drawer.embedBadge.local')}
+				{embedBadgeText}
 			</span>
 		</div>
 		<!-- 关键路径(2026-11-06):ready 时顶部状态栏已显示「就绪」,抽屉不再重复;

@@ -6,6 +6,7 @@ import { sveltePreprocess } from 'svelte-preprocess';
 import { mkdirSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -16,43 +17,37 @@ const RUNTIME_WORKER_OUT = path.resolve(__dirname, 'dist/index-runtime-worker.js
 const GPU_EMBEDDING_WORKER_OUT = path.resolve(__dirname, 'dist/embedding-worker-gpu.js');
 
 /**
- * ONNX 胶水模块源码 — 构建期内联进 GPU 版 Worker。
+ * ONNX 胶水模块 — 直接读仓库内 vendor 版本（已打好补丁）。
  *
- * 关键路径:S-WEBGPU-EMBEDDING 实测用错版本会报 `webgpuInit is not a function`。
- * `ort.webgpu.bundle` 内部固定按 asyncify 变体查找胶水(见 bundle 里
- * `let d="ort-wasm-simd-threaded.asyncify.mjs"`),jsep 版属于 `ort.webgpu.min.js`
- * 那条非 bundle 路径,胶水与运行时 ABI 不匹配。
+ * 关键路径(S-WEBGPU-EMBEDDING):
+ * 1. `ort.webgpu.bundle` 内部固定按 asyncify 变体查找胶水,jsep 版会让模块实例缺少
+ *    `webgpuInit`(线上报 `webgpuInit is not a function`)。
+ * 2. 上游胶水含 Node 环境判定,在 Obsidian 的 Blob Worker 里会误判并
+ *    `await import("worker_threads")`,浏览器解析裸模块名直接失败。
  *
- * 关键路径(S-WEBGPU-EMBEDDING):发版只允许三个文件,不能附带 .mjs 资产;
- * webgpu EP 注册依赖该模块,缺了它必然报 backend not found。
+ * 改在 vendor 文件里做(而不是构建期字符串替换),补丁可见、可 review、可逐行对照;
+ * 下面用哈希守卫保证上游一升级就立刻暴露,不会静默退回旧 bug。
  */
-const RAW_ORT_JSEP_GLUE = readFileSync(
-	path.resolve(__dirname, 'node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.asyncify.mjs'),
-	'utf-8',
+const VENDOR_GLUE_PATH = path.resolve(__dirname, 'src/vendor/ort-wasm-simd-threaded.asyncify.mjs');
+const UPSTREAM_GLUE_PATH = path.resolve(
+	__dirname,
+	'node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.asyncify.mjs',
 );
+const UPSTREAM_GLUE_SHA256 = '7236653b8565da4046e459cd0e274123419a1d9f1f8f18fd36c28058346ca655';
 
-/**
- * 剥离 jsep 胶水里的 Node 环境判定。
- *
- * 关键路径(S-WEBGPU-EMBEDDING):胶水末尾有
- *   `globalThis.process?.versions?.node && process.type != "renderer"` → `await import("worker_threads")`
- * Obsidian 的 Blob Worker 里 Electron 注入的 `process.type` 不是 "renderer"(是 "worker"),
- * ORT 会误判为 Node,浏览器原生 ESM 解析裸模块名 `worker_threads` 直接失败
- * (线上报 `Failed to resolve module specifier 'worker_threads'`)。
- * 把两处判定固定为 false,胶水就只会走浏览器路径 —— 该模块本来也只用于 WebGPU EP。
- * 构建时强制校验模式存在:ORT 升级改了写法会立刻构建失败,不会静默退回旧 bug。
- */
-const ORT_NODE_CHECKS = [
-	'globalThis.process?.versions?.node&&"renderer"!=globalThis.process?.type',
-	'globalThis.process?.versions?.node&&globalThis.process?.type!="renderer"',
-];
-let ORT_JSEP_GLUE = RAW_ORT_JSEP_GLUE;
-for (const pattern of ORT_NODE_CHECKS) {
-	if (!ORT_JSEP_GLUE.includes(pattern)) {
-		throw new Error(`ORT jsep 胶水结构变化,Node 判定未匹配: ${pattern}`);
+if (existsSync(UPSTREAM_GLUE_PATH)) {
+	const actual = createHash('sha256').update(readFileSync(UPSTREAM_GLUE_PATH)).digest('hex');
+	if (actual !== UPSTREAM_GLUE_SHA256) {
+		throw new Error(
+			`onnxruntime-web 胶水已变化,需要重新 vendor:\n` +
+				`  期望 sha256: ${UPSTREAM_GLUE_SHA256}\n` +
+				`  实际 sha256: ${actual}\n` +
+				`请重新生成 src/vendor/ort-wasm-simd-threaded.asyncify.mjs 并重打 Node 判定补丁。`,
+		);
 	}
-	ORT_JSEP_GLUE = ORT_JSEP_GLUE.replace(pattern, '!1');
 }
+
+const ORT_JSEP_GLUE = readFileSync(VENDOR_GLUE_PATH, 'utf-8');
 
 // 内置 Skill 源目录 — 直接子目录 + SKILL.md,与 SkillFsAdapter 扫描契约一致
 const BUILTIN_SKILLS_DIR = path.resolve(__dirname, 'src/skills/builtin');

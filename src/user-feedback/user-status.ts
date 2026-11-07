@@ -110,6 +110,13 @@ export interface UserStatusSnapshot {
 
 	embedding: 'loading' | 'ready' | 'unavailable';
 	worker: 'thread' | 'inline';
+	/**
+	 * 本地嵌入实际使用的执行后端。
+	 *
+	 * 关键路径:用户需要知道推理跑在 GPU 还是 CPU 上 —— 这直接决定索引快慢,
+	 * 也决定「为什么换台机器会变慢」。仅本地向量有值,远端服务为 undefined。
+	 */
+	embeddingBackend?: 'wasm' | 'webgpu';
 
 	/** 降级说明,有人话一行;存在时 StatusDrawer 降级区显示 */
 	degraded?: string;

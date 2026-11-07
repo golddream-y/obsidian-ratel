@@ -137,6 +137,13 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 	private readonly workerUrl: string;
 	/** Worker 加载类型:GPU 版是 ESM module,WASM 版是 classic。 */
 	private readonly workerType: 'classic' | 'module';
+	/**
+	 * 已被装配层预热过的 Worker（已 init + 完成一次 warmup）。
+	 *
+	 * 关键路径(S-WEBGPU-EMBEDDING):GPU 探测成功后直接接管该实例,
+	 * 不再销毁重建 —— 否则模型加载与 wasm 编译会白跑两次(每次约 1 秒)。
+	 */
+	private readonly prewarmed?: Worker;
 	private readonly maxBatchSize: number;
 	private readonly createDeps: () => Promise<EmbeddingOnnxDeps>;
 	private readonly onLifecycle?: (kind: WorkerLifecycleKind) => void;
@@ -148,6 +155,7 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 	 * @param maxBatchSize - Worker 内单批上限
 	 * @param onLifecycle - 可选;create / idle-terminate / crash,由装配层打 heartbeat
 	 * @param workerType - Worker 加载类型;GPU 版传 'module',WASM 版缺省 'classic'
+	 * @param prewarmed - 已 init 完成的 Worker;传入时跳过创建与 init
 	 */
 	constructor(
 		workerUrl: string,
@@ -156,9 +164,11 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 		maxBatchSize = 16,
 		onLifecycle?: (kind: WorkerLifecycleKind) => void,
 		workerType: 'classic' | 'module' = 'classic',
+		prewarmed?: Worker,
 	) {
 		this.workerUrl = workerUrl;
 		this.workerType = workerType;
+		this.prewarmed = prewarmed;
 		this.dimensions = dimensions;
 		this.maxBatchSize = maxBatchSize;
 		this.onLifecycle = onLifecycle;
@@ -298,6 +308,13 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 	 * 创建 Worker、绑定消息、发送 init(transfer ArrayBuffer)。
 	 */
 	private async doCreate(): Promise<void> {
+		// 关键路径:有预热实例就直接接管,省掉一次模型加载+wasm 编译。
+		if (this.prewarmed !== undefined) {
+			this.attachReadyWorker(this.prewarmed);
+			this.onLifecycle?.('create');
+			this.armIdleTimer();
+			return;
+		}
 		const deps = await this.createDeps();
 		const worker = new Worker(this.workerUrl, { type: this.workerType });
 		this.readyPromise = new Promise<void>((resolve, reject) => {
@@ -370,6 +387,31 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 		this.onLifecycle?.('create');
 		// 关键路径:create/warmup 起算空闲，不能等第一次 embed
 		this.armIdleTimer();
+	}
+
+	/**
+	 * 接管一个已经 init 完成的 Worker：只绑请求/崩溃处理器，不再发 init。
+	 *
+	 * @param worker - 装配层探测成功、已完成 warmup 的实例
+	 */
+	private attachReadyWorker(worker: Worker): void {
+		this.readyPromise = Promise.resolve();
+		this.settleReady = null;
+		worker.addEventListener('message', (e: MessageEvent) => {
+			const data = e.data as WorkerResponse;
+			if (data.type === 'embed:result') {
+				this.settlePending(data.requestId, undefined, data.vectors);
+			} else if (data.type === 'embed:progress') {
+				const entry = this.pending.get(data.requestId);
+				if (entry !== undefined) entry.onBatchComplete?.(data.done, data.total);
+			} else if (data.type === 'error' && data.requestId) {
+				this.settlePending(data.requestId, new Error(data.error));
+			}
+		});
+		worker.addEventListener('error', (err: ErrorEvent) => {
+			this.terminateWorker('crash', `Embedding Worker 崩溃: ${err.message}`);
+		});
+		this.worker = worker;
 	}
 
 	/**
