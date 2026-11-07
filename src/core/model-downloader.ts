@@ -105,7 +105,9 @@ export class ModelDownloader {
         const preference = new MirrorPreference(path.join(path.dirname(this.cacheDir), '.mirror-preference.json'));
         const used = await downloadWithMirrors({
             assetName: remoteName,
-            mirrors: await preference.rank('model', buildModelMirrors(remoteName)),
+            mirrors: await preference.rank('model', buildModelMirrors(remoteName), undefined, (line) =>
+                devLogger.info('model', `模型测速:${line}`),
+            ),
             targetPath: localPath,
             minBytes: MODEL_MIN_BYTES[remoteName] ?? 0,
             onProgress,

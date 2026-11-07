@@ -199,9 +199,12 @@ export class OrtRuntimeAssets {
 		onProgress?: (p: ProgressInfo) => void,
 	): Promise<void> {
 		const preference = new MirrorPreference(path.join(this.pluginDir, '.mirror-preference.json'));
+		const ordered = await preference.rank('ort', getOrtWasmMirrors(this.version, filename), undefined, (line) =>
+			devLogger.info('index', `运行时测速:${line}`),
+		);
 		const used = await downloadWithMirrors({
 			assetName: filename,
-			mirrors: await preference.rank('ort', getOrtWasmMirrors(this.version, filename)),
+			mirrors: ordered,
 			targetPath,
 			minBytes: ORT_WASM_MIN_BYTES,
 			onProgress,

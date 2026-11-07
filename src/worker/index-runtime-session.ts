@@ -214,7 +214,8 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 			state.timing.embedMs += embeddedAt - chunkedAt;
 			state.timing.commitMs += committedAt - embeddedAt;
 			state.written += 1;
-			if (state.written % 100 === 0) {
+			// 关键路径:20 篇先给一次结论,之后每 100 篇复述 —— 冷启动时不必等太久。
+			if (state.written === 20 || state.written % 100 === 0) {
 				const { chunkMs, embedMs, commitMs } = state.timing;
 				const sum = chunkMs + embedMs + commitMs;
 				if (sum > 0) {

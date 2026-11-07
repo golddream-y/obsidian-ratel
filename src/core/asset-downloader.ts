@@ -176,10 +176,15 @@ export class MirrorPreference {
 	 * @param mirrors - 声明的镜像顺序
 	 * @param fetchFn - 下载函数,用于测速
 	 */
-	async rank(key: string, mirrors: DownloadMirror[], fetchFn?: FetchFn): Promise<DownloadMirror[]> {
+	async rank(
+		key: string,
+		mirrors: DownloadMirror[],
+		fetchFn?: FetchFn,
+		probeTrace?: (line: string) => void,
+	): Promise<DownloadMirror[]> {
 		const remembered = await this.read(key);
 		if (remembered !== undefined) return this.putFirst(mirrors, remembered);
-		const fastest = await probeFastestMirror(mirrors, fetchFn);
+		const fastest = await probeFastestMirror(mirrors, fetchFn, probeTrace);
 		if (fastest === undefined) return mirrors;
 		return this.putFirst(mirrors, fastest);
 	}
@@ -260,6 +265,7 @@ const PROBE_ADVANTAGE_RATIO = 1.5;
 export async function probeFastestMirror(
 	mirrors: DownloadMirror[],
 	fetchFn: FetchFn = createDefaultFetch(),
+	probeTrace?: (line: string) => void,
 ): Promise<string | undefined> {
 	if (mirrors.length < 2) return undefined;
 	const results = await Promise.all(
@@ -283,6 +289,10 @@ export async function probeFastestMirror(
 	if (usable.length === 0) return undefined;
 	usable.sort((a, b) => a.elapsedMs - b.elapsedMs);
 	const fastest = usable[0]!;
+	// 关键路径:把每个镜像的实测耗时写出来,才能判断「维持国内优先」是否被噪声触发。
+	for (const item of usable) {
+		probeTrace?.(`${item.label} ${item.elapsedMs}ms`);
+	}
 	// 关键路径:首个镜像即声明优先级最高者;只有明显更快才换源,避免噪声决定结果。
 	const declared = usable.find((item) => item.label === mirrors[0]!.label);
 	if (declared === undefined) return fastest.label;

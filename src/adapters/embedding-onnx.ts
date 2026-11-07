@@ -256,7 +256,16 @@ export class EmbeddingOnnx implements EmbeddingPort {
 		// 几十到一两百 token —— attention 的算力按长度平方增长,固定 512 意味着数倍浪费。
 		// 先按真实长度编码,再取批内最大值并向上对齐,把填充压到最小。
 		const encodedBatch = texts.map((text) => this.tokenizer.encode(text, maxLength));
-		const batchMaxLength = padLengthFor(encodedBatch.map((item) => item.attentionMask.reduce((sum, flag) => sum + flag, 0)));
+		// 关键路径(S-WEBGPU-EMBEDDING 实测):GPU 与 CPU 对填充长度的偏好相反。
+		// - CPU 是算力瓶颈:注意力开销随长度平方增长,按真实长度档位填充能省下明显时间。
+		// - GPU 是形状瓶颈:实测固定 512 时 0.26 秒/块,一旦改用动态长度就掉到 0.38–0.41,
+		//   且把形状从 60 多种收敛到 13 档并没有改善 —— 说明代价来自「不是 512」本身
+		//   (会话按 512 编译后的缓冲区与流水线无法复用),不是形状种类多。
+		// 因此 GPU 路径直接用 512,CPU 路径保留档位化。
+		const useFixedShape = this.deps.enableWebgpu === true;
+		const batchMaxLength = useFixedShape
+			? maxLength
+			: padLengthFor(encodedBatch.map((item) => item.attentionMask.reduce((sum, flag) => sum + flag, 0)));
 		const inputIds = new BigInt64Array(batchSize * batchMaxLength);
 		const attentionMask = new BigInt64Array(batchSize * batchMaxLength);
 		const tokenTypeIds = new BigInt64Array(batchSize * batchMaxLength);
