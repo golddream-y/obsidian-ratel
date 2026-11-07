@@ -611,9 +611,6 @@ export interface SlashStrings {
 export interface NoticeStrings {
   'notice.indexStatus': string;
   'notice.indexNotReady': string;
-  'notice.gpuProbeRunning': string;
-  'notice.gpuProbeOk': string;
-  'notice.gpuProbeFailed': string;
   'notice.indexPaused': string;
   'notice.indexResumed': string;
   'notice.indexProgress': string;
@@ -1355,7 +1352,6 @@ export interface PromptLabelStrings {
 export interface CmdStrings {
   'cmd.askVault': string;
   'cmd.showReleaseNotes': string;
-  'cmd.diagnoseGpu': string;
   'cmd.showIndexStatus': string;
   'cmd.rebuildIndex': string;
   'cmd.pauseIndex': string;

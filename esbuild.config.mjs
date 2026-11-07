@@ -21,30 +21,6 @@ const BUILTIN_SKILLS_DIR = path.resolve(__dirname, 'src/skills/builtin');
  * 将 dist/embedding-worker.js 内容作为字符串常量注入 main.js(ADR-006)。
  * 商店 release 只含 main.js,运行时通过 Blob URL 加载 Worker。
  */
-/**
- * 将 dist/embedding-gpu-probe.js 内联为字符串常量(GPU 探针按需加载)。
- */
-function inlineGpuProbePlugin() {
-	return {
-		name: 'inline-gpu-probe',
-		setup(build) {
-			build.onResolve({ filter: /^@ratel\/gpu-probe-code$/ }, () => ({
-				path: '@ratel/gpu-probe-code',
-				namespace: 'ratel-gpu-probe',
-			}));
-			build.onLoad({ filter: /.*/, namespace: 'ratel-gpu-probe' }, () => {
-				let code = '';
-				const out = path.resolve(__dirname, 'dist/embedding-gpu-probe.js');
-				if (existsSync(out)) code = readFileSync(out, 'utf-8');
-				return {
-					contents: `export const GPU_PROBE_WORKER_CODE = ${JSON.stringify(code)};\n`,
-					loader: 'js',
-				};
-			});
-		},
-	};
-}
-
 function inlineEmbeddingWorkerPlugin() {
 	return {
 		name: 'inline-embedding-worker',
@@ -321,7 +297,6 @@ const mainContext = await esbuild.context({
 			preprocess: sveltePreprocess(),
 		}),
 		externalOnnxruntimeNodePlugin(),
-		inlineGpuProbePlugin(),
 		inlineEmbeddingWorkerPlugin(),
 		inlineSkillScriptWorkerPlugin(),
 		inlineRuntimeWorkerPlugin(),
@@ -358,26 +333,6 @@ const workerContext = await esbuild.context({
 	plugins: [externalOnnxruntimeNodePlugin()],
 });
 
-// GPU 探针 Worker bundle — 单独走 webgpu bundle，只用于诊断，不参与正式索引。
-const gpuProbeContext = await esbuild.context({
-	entryPoints: ['src/worker/embedding-gpu-probe.ts'],
-	bundle: true,
-	platform: 'browser',
-	format: 'iife',
-	target: 'es2021',
-	logLevel: 'info',
-	sourcemap: prod ? false : 'inline',
-	treeShaking: true,
-	outfile: 'dist/embedding-gpu-probe.js',
-	minify: prod,
-	alias: {
-		'onnxruntime-web': path.resolve(__dirname, 'node_modules/onnxruntime-web/dist/ort.webgpu.bundle.min.mjs'),
-		'onnxruntime-node': path.resolve(__dirname, 'src/adapters/empty-module.cjs'),
-		'@huggingface/transformers': path.resolve(__dirname, 'src/adapters/empty-transformers.cjs'),
-	},
-	plugins: [externalOnnxruntimeNodePlugin()],
-});
-
 // Embedding Worker bundle (Web Worker, browser platform)
 // 关键路径:ONNX 推理在 Web Worker 中执行,platform 必须为 browser(不依赖 Node API)。
 // format: iife — Web Worker 需要自执行,IIFE 格式最兼容。
@@ -398,7 +353,7 @@ const embeddingWorkerContext = await esbuild.context({
 	// 关键路径:与 mainContext 一致的 alias — onnxruntime-web 强制走 wasm bundle 入口,
 	// onnxruntime-node / @huggingface/transformers 替换为空模块,防止原生模块进浏览器产物。
 	alias: {
-		'onnxruntime-web': path.resolve(__dirname, 'node_modules/onnxruntime-web/dist/ort.wasm.bundle.min.mjs'),
+		'onnxruntime-web': path.resolve(__dirname, 'node_modules/onnxruntime-web/dist/ort.webgpu.bundle.min.mjs'),
 		'onnxruntime-node': path.resolve(__dirname, 'src/adapters/empty-module.cjs'),
 		'@huggingface/transformers': path.resolve(__dirname, 'src/adapters/empty-transformers.cjs'),
 	},
@@ -465,7 +420,6 @@ const runtimeWorkerContext = await esbuild.context({
 });
 
 if (prod) {
-	await gpuProbeContext.rebuild();
 	await embeddingWorkerContext.rebuild();
 	await skillScriptWorkerContext.rebuild();
 	// 关键路径:主包内联运行时 Worker 代码,必须先产出该 artifact。
@@ -479,7 +433,6 @@ if (prod) {
 	}
 	process.exit(0);
 } else {
-	await gpuProbeContext.rebuild();
 	await embeddingWorkerContext.rebuild();
 	await skillScriptWorkerContext.rebuild();
 	await runtimeWorkerContext.rebuild();
@@ -487,5 +440,4 @@ if (prod) {
 	await workerContext.watch();
 	await embeddingWorkerContext.watch();
 	await skillScriptWorkerContext.watch();
-	await gpuProbeContext.watch();
 }

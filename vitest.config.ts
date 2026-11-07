@@ -14,8 +14,6 @@ export default defineConfig({
 				__dirname,
 				'tests/helpers/embedding-worker-code-stub.ts',
 			),
-			// GPU 探针 Worker 代码同样由构建期注入,测试里用空 stub。
-			'@ratel/gpu-probe-code': path.resolve(__dirname, 'tests/helpers/gpu-probe-code-stub.ts'),
 			// 关键路径:esbuild 虚拟模块(skill 脚本沙箱 Worker)在 vitest 无构建期注入,
 			// 指向空 stub;导入 main.ts 的测试只关心装配,不执行真实脚本。
 			'@ratel/skill-script-worker-code': path.resolve(

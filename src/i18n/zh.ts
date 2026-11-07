@@ -613,9 +613,6 @@ const slashZh: SlashStrings = {
 const noticeZh: NoticeStrings = {
   'notice.indexStatus': '索引: {count} 篇,最后: {time}',
   'notice.indexNotReady': '索引尚未就绪,请稍候',
-  'notice.gpuProbeRunning': '正在测试 GPU 嵌入（会下载约 26 MB 运行时，请稍候）…',
-  'notice.gpuProbeOk': 'GPU 嵌入可用：WebGPU 执行器已成功初始化',
-  'notice.gpuProbeFailed': 'GPU 嵌入不可用：{reason}',
   'notice.indexPaused': '索引已暂停',
   'notice.indexResumed': '索引已恢复',
   'notice.indexProgress': 'Ratel: 正在索引... {done}/{total} 个文件',
@@ -1339,7 +1336,6 @@ const promptLabelZh: PromptLabelStrings = {
 const cmdZh: CmdStrings = {
   'cmd.askVault': '问 vault',
   'cmd.showReleaseNotes': '查看更新说明',
-  'cmd.diagnoseGpu': '诊断：测试本地 GPU 嵌入',
   'cmd.showIndexStatus': '查看索引状态',
   'cmd.rebuildIndex': '重建当前索引(逐文件重新核对)',
   'cmd.pauseIndex': '暂停索引',

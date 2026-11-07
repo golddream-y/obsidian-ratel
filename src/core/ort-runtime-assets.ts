@@ -18,8 +18,13 @@ import type { ProgressInfo } from './model-downloader';
 /** 与 package.json `dependencies.onnxruntime-web` 版本保持同步。 */
 export const ORT_RUNTIME_VERSION = '1.27.0';
 
-/** 运行时 wasm 文件名 — 与 wasm bundle 配套。 */
-export const ORT_WASM_FILENAME = 'ort-wasm-simd-threaded.wasm';
+/**
+ * 运行时 wasm 文件名。
+ *
+ * 关键路径:嵌入 Worker 用 webgpu bundle,配套的是带 jsep 的 wasm(约 26 MB);
+ * 普通版本会导致 webgpu 执行器不可用。胶水模块由构建期内联,不额外附文件。
+ */
+export const ORT_WASM_FILENAME = 'ort-wasm-simd-threaded.jsep.wasm';
 
 /** 完整文件至少约 10MB;过小视为损坏或未完成下载。 */
 const ORT_WASM_MIN_BYTES = 10 * 1024 * 1024;
