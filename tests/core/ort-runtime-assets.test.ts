@@ -18,7 +18,9 @@ vi.mock('obsidian', () => ({
 import {
 	OrtRuntimeAssets,
 	ORT_WASM_FILENAME,
+	ORT_WASM_GPU_FILENAME,
 	getOrtWasmDownloadUrl,
+	getOrtWasmDownloadUrls,
 } from '../../src/core/ort-runtime-assets';
 
 function createWasmBytes(size = 11 * 1024 * 1024): Uint8Array {
@@ -26,10 +28,24 @@ function createWasmBytes(size = 11 * 1024 * 1024): Uint8Array {
 }
 
 describe('getOrtWasmDownloadUrl', () => {
-	it('pins onnxruntime-web version on jsDelivr', () => {
+	it('pins onnxruntime-web version on the first mirror', () => {
+		// 关键路径:顺序即优先级 —— 国内镜像优先,国际 CDN 兜底。
 		expect(getOrtWasmDownloadUrl('1.27.0')).toBe(
-			`https://cdn.jsdelivr.net/npm/onnxruntime-web@1.27.0/dist/${ORT_WASM_FILENAME}`,
+			`https://registry.npmmirror.com/onnxruntime-web/1.27.0/files/dist/${ORT_WASM_FILENAME}`,
 		);
+	});
+
+	it('exposes every mirror for retry, all pointing at the same package file', () => {
+		const urls = getOrtWasmDownloadUrls('1.27.0', ORT_WASM_GPU_FILENAME);
+		expect(urls.length).toBeGreaterThanOrEqual(2);
+		// 关键路径:任何镜像都不能偏离开源包本身,否则等于引入未声明的下载来源。
+		for (const url of urls) {
+			expect(url).toContain('onnxruntime-web');
+			expect(url).toContain('1.27.0');
+			expect(url.endsWith(ORT_WASM_GPU_FILENAME)).toBe(true);
+		}
+		expect(urls.some((url) => url.includes('npmmirror.com'))).toBe(true);
+		expect(urls.some((url) => url.includes('jsdelivr.net'))).toBe(true);
 	});
 });
 

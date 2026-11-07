@@ -2955,9 +2955,36 @@ export default class RatelVaultPlugin extends Plugin {
 			this.userStatus.patch({ embeddingBackend: 'wasm' });
 			return null;
 		}
-		const deps = await this.modelManager.getDeps({ gpu: true });
+		// 关键路径:GPU 运行时是**可选的**。下载失败(国内网络访问 CDN 超时、
+		// 断连、镜像都不通)只能让本次探测放弃,绝不允许它抛出 —— 否则
+		// initEmbeddingWorkerProxy 整体失败,连 CPU 路径都建不起来,索引直接不可用。
+		let deps: Awaited<ReturnType<typeof this.modelManager.getDeps>> = null;
+		try {
+			deps = await this.modelManager.getDeps({
+				gpu: true,
+				onGpuRuntimeProgress: (info) => {
+					// 关键路径:23 MB 是首次才发生的一次性下载,用户必须知道在等什么,
+					// 否则会以为索引卡死。
+					this.userStatus.patch({
+						indexDetail: tNow('status.indexDetail.gpuRuntimeDownloading', {
+							percent: Math.round(info.progress * 100),
+						}),
+					});
+				},
+			});
+		} catch (error) {
+			devLogger.warn(
+				'index',
+				`GPU 运行时准备失败,回退 WASM:${error instanceof Error ? error.message : String(error)}`,
+			);
+			// 关键路径:失败不能静默 —— 用户需要知道「这次为什么是 CPU」,
+			// 但也不能弹错误框,因为索引本身仍然可用。
+			this.userStatus.patch({ embeddingBackend: 'wasm', indexDetail: tNow('status.indexDetail.gpuRuntimeFailed') });
+			return null;
+		}
 		if (deps === null) {
 			devLogger.warn('index', 'GPU 探测跳过:模型依赖不可用');
+			this.userStatus.patch({ embeddingBackend: 'wasm' });
 			return null;
 		}
 		let url: string;

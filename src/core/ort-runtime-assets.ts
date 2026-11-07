@@ -34,7 +34,36 @@ export const ORT_WASM_GPU_FILENAME = 'ort-wasm-simd-threaded.asyncify.wasm';
 const ORT_WASM_MIN_BYTES = 10 * 1024 * 1024;
 
 /**
- * 构造 jsDelivr CDN 上的 ORT WASM 下载 URL(版本 pin,避免漂移)。
+ * ORT 运行时文件的下载源，按顺序尝试。
+ *
+ * 关键路径：这两个都是同一个 npm 包里的同一份文件（字节一致），只是托管方不同。
+ * - `npmmirror`：阿里云国内镜像，国内网络更稳、通常更快。
+ * - `jsDelivr`：国际 CDN，作为国内源不可用时的回退。
+ * 不引入新的数据去向 —— 来源仍是 onnxruntime-web 官方包，仅换托管位置。
+ */
+const ORT_WASM_MIRRORS = [
+	(version: string, filename: string) => `https://registry.npmmirror.com/onnxruntime-web/${version}/files/dist/${filename}`,
+	(version: string, filename: string) => `https://cdn.jsdelivr.net/npm/onnxruntime-web@${version}/dist/${filename}`,
+] as const;
+
+/** 单次下载的尝试次数上限（不含切换下载源）。 */
+const ORT_DOWNLOAD_ATTEMPTS = 2;
+
+/**
+ * 列出某个运行时文件按优先级排列的全部下载地址。
+ *
+ * @param version - onnxruntime-web 包版本
+ * @param filename - dist 下的文件名
+ */
+export function getOrtWasmDownloadUrls(
+	version: string = ORT_RUNTIME_VERSION,
+	filename: string = ORT_WASM_FILENAME,
+): string[] {
+	return ORT_WASM_MIRRORS.map((build) => build(version, filename));
+}
+
+/**
+ * 构造 ORT WASM 首选下载 URL（保留旧签名，供既有调用与测试使用）。
  *
  * @param version - onnxruntime-web 包版本,默认 ORT_RUNTIME_VERSION。
  */
@@ -42,7 +71,7 @@ export function getOrtWasmDownloadUrl(
 	version: string = ORT_RUNTIME_VERSION,
 	filename: string = ORT_WASM_FILENAME,
 ): string {
-	return `https://cdn.jsdelivr.net/npm/onnxruntime-web@${version}/dist/${filename}`;
+	return getOrtWasmDownloadUrls(version, filename)[0]!;
 }
 
 /**
@@ -139,27 +168,65 @@ export class OrtRuntimeAssets {
 	 * 读取 WebGPU 版 WASM 二进制;必要时先下载缓存。
 	 *
 	 * 关键路径:与 CPU 版分开缓存,互不影响;GPU 探测失败时 CPU 版缓存仍完整可用。
+	 * 下载按「多个镜像 × 每源多次尝试」进行,任何一步失败都只是抛错,
+	 * 由调用方回退到 CPU 路径 —— 不得让 GPU 可选组件拖垮整个索引。
 	 *
+	 * @param onProgress - 可选进度回调(0-1),按镜像尝试阶段上报
 	 * @returns 可传给 ort.env.wasm.wasmBinary 的 ArrayBuffer
 	 */
-	async readGpuWasmBinary(): Promise<ArrayBuffer> {
+	async readGpuWasmBinary(onProgress?: (p: ProgressInfo) => void): Promise<ArrayBuffer> {
 		const filePath = this.gpuWasmPath;
 		if (!(await this.isCached(filePath))) {
-			await mkdir(this.pluginDir, { recursive: true });
-			const response = await this.fetchFn(getOrtWasmDownloadUrl(this.version, ORT_WASM_GPU_FILENAME));
-			if (response.status < 200 || response.status >= 300) {
-				throw new Error(tNow('error.ort.downloadFailed', { status: response.status }));
-			}
-			const buffer = Buffer.from(response.arrayBuffer);
-			if (buffer.byteLength < ORT_WASM_MIN_BYTES) {
-				throw new Error(tNow('error.ort.fileCorrupted', { bytes: buffer.byteLength }));
-			}
-			const tmpPath = `${filePath}.downloading`;
-			await writeFile(tmpPath, buffer);
-			await rename(tmpPath, filePath);
+			await this.download(ORT_WASM_GPU_FILENAME, filePath, onProgress);
 		}
 		const wasmBuffer = await readFile(filePath);
 		return new Uint8Array(wasmBuffer).buffer;
+	}
+
+	/**
+	 * 按镜像顺序下载运行时文件，每个镜像最多尝试若干次。
+	 *
+	 * 关键路径：国内网络访问国际 CDN 常出现长时间挂起或中途断开，
+	 * 因此先试国内镜像、再试国际 CDN，并把每次失败写进日志便于支持定位。
+	 *
+	 * @param filename - dist 下的文件名
+	 * @param targetPath - 落地绝对路径
+	 * @param onProgress - 可选进度回调
+	 */
+	private async download(
+		filename: string,
+		targetPath: string,
+		onProgress?: (p: ProgressInfo) => void,
+	): Promise<void> {
+		await mkdir(this.pluginDir, { recursive: true });
+		const urls = getOrtWasmDownloadUrls(this.version, filename);
+		const failures: string[] = [];
+		for (const [mirrorIndex, url] of urls.entries()) {
+			for (let attempt = 1; attempt <= ORT_DOWNLOAD_ATTEMPTS; attempt++) {
+				onProgress?.({ file: filename, progress: (mirrorIndex * ORT_DOWNLOAD_ATTEMPTS + attempt - 1) / (urls.length * ORT_DOWNLOAD_ATTEMPTS) });
+				try {
+					const response = await this.fetchFn(url);
+					if (response.status < 200 || response.status >= 300) {
+						failures.push(`${url} → HTTP ${response.status}`);
+						continue;
+					}
+					const buffer = Buffer.from(response.arrayBuffer);
+					if (buffer.byteLength < ORT_WASM_MIN_BYTES) {
+						failures.push(`${url} → 文件过小(${buffer.byteLength} 字节)`);
+						continue;
+					}
+					const tmpPath = `${targetPath}.downloading`;
+					await writeFile(tmpPath, buffer);
+					await rename(tmpPath, targetPath);
+					onProgress?.({ file: filename, progress: 1 });
+					return;
+				} catch (error) {
+					// 关键路径:网络异常(超时/断连/DNS)与状态码失败一样处理,换源重试。
+					failures.push(`${url} → ${error instanceof Error ? error.message : String(error)}`);
+				}
+			}
+		}
+		throw new Error(tNow('error.ort.downloadFailed', { status: failures.join(' | ') }));
 	}
 
 	/** 按路径判断缓存是否有效。 */
