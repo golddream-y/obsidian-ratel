@@ -762,6 +762,7 @@ export interface StatusStrings {
   'status.drawer.remainingCount': string;
   'status.drawer.failedCount': string;
   'status.drawer.searchAvailable': string;
+  'status.drawer.searchAvailableCount': string;
   'status.drawer.totalUnknown': string;
   'status.drawer.label.index': string;
   'status.drawer.label.currentFile': string;

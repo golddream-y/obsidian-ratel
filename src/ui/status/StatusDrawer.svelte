@@ -130,7 +130,12 @@
 		if (notice !== undefined) return notice;
 		if (snap.index === 'failed' && snap.indexDetail) return snap.indexDetail;
 		// 关键路径:部分可用没有被宣告为 ready,但已有可检索版本,必须说明而不是只显示进度。
-		if (snap.indexPartial === true) return $t('status.drawer.searchAvailable');
+		if (snap.indexPartial === true) {
+			// 关键路径:带上已可检索的篇数,让这句承诺与进度条一致,而不是一句无信息量的安慰。
+			const committed = snap.indexCommittedFiles ?? 0;
+			if (committed > 0) return $t('status.drawer.searchAvailableCount', { count: committed });
+			return $t('status.drawer.searchAvailable');
+		}
 		// 关键路径:「正在生成向量并写入索引」会持续较长时间,必须说清这段在做什么、
 		// 以及已有结果是否可用,否则用户只能看到一个长时间不动的状态标签。
 		if (snap.index === 'processing') return $t('status.detail.embeddingWriting');

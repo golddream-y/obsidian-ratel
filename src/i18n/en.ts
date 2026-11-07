@@ -759,6 +759,7 @@ export const en: Strings = {
   'status.drawer.remainingCount': '{count} remaining',
   'status.drawer.failedCount': '{count} failed',
   'status.drawer.searchAvailable': 'Completed notes are available for search',
+  'status.drawer.searchAvailableCount': '{count} notes are searchable so far',
   'status.drawer.totalUnknown': 'Total note count not yet known',
   'status.drawer.label.index': 'Index',
   'status.drawer.label.currentFile': 'Current file',

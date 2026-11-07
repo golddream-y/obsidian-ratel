@@ -762,6 +762,7 @@ const statusZh: StatusStrings = {
   'status.drawer.remainingCount': '剩余 {count} 篇',
   'status.drawer.failedCount': '失败 {count} 篇',
   'status.drawer.searchAvailable': '已完成的笔记可用于搜索',
+  'status.drawer.searchAvailableCount': '已完成 {count} 篇可用于搜索',
   'status.drawer.totalUnknown': '总篇数待确认',
   'status.drawer.label.index': '索引',
   'status.drawer.label.currentFile': '当前文件',
