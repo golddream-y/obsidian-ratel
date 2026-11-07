@@ -242,10 +242,13 @@ const mainContext = await esbuild.context({
 	// `exports"."` 的 default 指向 server 端(无 `mount`,只有 SSR 的 `render`)。
 	// Obsidian 是浏览器宿主,必须显式加 `browser` condition 才能命中 client runtime。
 	conditions: ['browser', 'default'],
-	// 关键路径:onnxruntime-web 走 webgpu bundle(内含 webgpu 执行器与 wasm 回退);WASM 二进制由 OrtRuntimeAssets 懒下载(ADR-006)。wasm-only bundle 没有 webgpu 执行器,会静默退回 CPU。
+	// 关键路径:onnxruntime-web 走 wasm bundle;WASM 二进制由 OrtRuntimeAssets 懒下载(ADR-006)。
+	// 不能用 ort.webgpu.bundle:它需要在 Worker 里动态 import 配套的 jsep glue 模块,
+	// 而本插件是 Blob Worker + 自带 wasm 字节流,拿不到该模块(线上崩 `Sp.$b is not a function`)。
+	// 因此本机 GPU 加速改由 API 嵌入服务(如本地 Ollama)承担。
 	mainFields: ['browser', 'module', 'main'],
 	alias: {
-		'onnxruntime-web': path.resolve(__dirname, 'node_modules/onnxruntime-web/dist/ort.webgpu.bundle.min.mjs'),
+		'onnxruntime-web': path.resolve(__dirname, 'node_modules/onnxruntime-web/dist/ort.wasm.bundle.min.mjs'),
 		'onnxruntime-node': path.resolve(__dirname, 'src/adapters/empty-module.cjs'),
 		'@huggingface/transformers': path.resolve(__dirname, 'src/adapters/empty-transformers.cjs'),
 		// 关键路径:vectra 的 Node 入口(index.js)会 re-export server 模块,连带引入 @grpc/grpc-js。
@@ -350,7 +353,7 @@ const embeddingWorkerContext = await esbuild.context({
 	// 关键路径:与 mainContext 一致的 alias — onnxruntime-web 强制走 wasm bundle 入口,
 	// onnxruntime-node / @huggingface/transformers 替换为空模块,防止原生模块进浏览器产物。
 	alias: {
-		'onnxruntime-web': path.resolve(__dirname, 'node_modules/onnxruntime-web/dist/ort.webgpu.bundle.min.mjs'),
+		'onnxruntime-web': path.resolve(__dirname, 'node_modules/onnxruntime-web/dist/ort.wasm.bundle.min.mjs'),
 		'onnxruntime-node': path.resolve(__dirname, 'src/adapters/empty-module.cjs'),
 		'@huggingface/transformers': path.resolve(__dirname, 'src/adapters/empty-transformers.cjs'),
 	},

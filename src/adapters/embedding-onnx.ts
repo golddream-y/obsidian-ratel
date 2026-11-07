@@ -123,22 +123,14 @@ export class EmbeddingOnnx implements EmbeddingPort {
 	 * @returns 已创建的 ONNX 会话
 	 */
 	private async createSession(): Promise<ort.InferenceSession> {
-		const options = { executionProviders: ['wasm'] as const };
-		try {
-			const session = await ort.InferenceSession.create(this.deps.modelBuffer, {
-				...options,
-				executionProviders: ['webgpu'],
-			});
-			// 关键路径:必须能看出到底走没走 GPU —— WebGPU 在 macOS 上就是 Metal,
-			// 没有这条日志就无法判断「慢」是没启用还是模型本身就这样。
-			devLogger.info('index', '嵌入后端:WebGPU(本机 GPU 加速已启用)');
-			return session;
-		} catch (error) {
-			// 关键路径:WebGPU 在部分桌面环境不可用(或打包未包含该 EP),回退 WASM。
-			const reason = error instanceof Error ? error.message : String(error);
-			devLogger.warn('index', `嵌入后端回退 WASM(WebGPU 不可用):${reason}`);
-			return ort.InferenceSession.create(this.deps.modelBuffer, options);
-		}
+		// 关键路径(2026-11-07):本地推理只能用 WASM 执行器。
+		// 曾尝试 ort.webgpu.bundle 走本机 GPU,但该 bundle 需要在 Worker 内动态 import
+		// 配套的 jsep glue 模块,而本插件是 Blob Worker + 自带 wasm 字节流,拿不到该模块,
+		// 线上直接崩(`Sp.$b is not a function`)。要 GPU 加速请改用 API 嵌入(如本地 Ollama)。
+		devLogger.info('index', '嵌入后端:WASM(CPU 推理)');
+		return ort.InferenceSession.create(this.deps.modelBuffer, {
+			executionProviders: ['wasm'],
+		});
 	}
 
 	/**

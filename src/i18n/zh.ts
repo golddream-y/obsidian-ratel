@@ -734,7 +734,7 @@ const modalZh: ModalStrings = {
   'modal.release.lead': "为 2.0 的大批量文件索引打底。1.3 并没有开启线程索引，这一版才真正把索引写入搬出主线程。",
   'modal.release.useHeading': "本次更新",
   'modal.release.use.find': "**索引时写入不再占主线程**，输入、切换笔记都保持响应。",
-  'modal.release.use.write': "**本地向量化快约 5 倍**（单块约 5 秒 → 约 0.85 秒）。",
+  'modal.release.use.write': "**状态条显示每块耗时**，可以直接看出本地向量化的实际速度。",
   'modal.release.use.workflow': "**进度逐篇推进**，状态条显示当前阶段与每块耗时。",
   'modal.release.use.goal': "**大库不再每次重写整份索引**，单次只写对应分片。",
   'modal.release.permissions': "工具权限沿用原设置。内置工具默认允许；需要逐项确认时，可在「记忆与权限」中改为「询问」。",

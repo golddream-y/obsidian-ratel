@@ -732,7 +732,7 @@ export const en: Strings = {
   'modal.release.lead': "Groundwork for 2.0's large-scale file indexing. 1.3 never had threaded indexing — this release actually moves index writes off the main thread.",
   'modal.release.useHeading': "What’s new",
   'modal.release.use.find': "**Index writes no longer block the main thread**, so typing and switching notes stay responsive.",
-  'modal.release.use.write': "**Local embedding is about 5× faster** (≈5s → ≈0.85s per block).",
+  'modal.release.use.write': "**Per-block timing is shown in the status bar**, so the real local embedding speed is visible.",
   'modal.release.use.workflow': "**Progress advances note by note**, with the current phase and per-block timing.",
   'modal.release.use.goal': "**Large vaults no longer rewrite the whole index**, only the affected shard.",
   'modal.release.permissions': "Your tool permissions are retained. Built-in tools are allowed by default; set them to “Ask” under Memory & permissions to confirm each action.",
