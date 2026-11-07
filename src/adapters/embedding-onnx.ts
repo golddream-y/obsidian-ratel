@@ -53,6 +53,7 @@ export interface EmbeddingOnnxDeps {
 	 * 模型标识,默认 local:bge-small-zh-v1.5。
 	 */
 	modelId?: string;
+
 }
 
 /**
@@ -123,10 +124,9 @@ export class EmbeddingOnnx implements EmbeddingPort {
 	 * @returns 已创建的 ONNX 会话
 	 */
 	private async createSession(): Promise<ort.InferenceSession> {
-		// 关键路径(2026-11-07):本地推理只能用 WASM 执行器。
-		// 曾尝试 ort.webgpu.bundle 走本机 GPU,但该 bundle 需要在 Worker 内动态 import
-		// 配套的 jsep glue 模块,而本插件是 Blob Worker + 自带 wasm 字节流,拿不到该模块,
-		// 线上直接崩(`Sp.$b is not a function`)。要 GPU 加速请改用 API 嵌入(如本地 Ollama)。
+		// 关键路径(2026-11-07):本地推理只走 WASM。webgpu EP 在本打包方式下未注册
+		// (esbuild IIFE 抹掉 import.meta.url,glue 加载失败),且尝试失败会污染
+		// ORT 的 initWasm() 状态,导致连回退都不可用。GPU 加速另立研发项。
 		devLogger.info('index', '嵌入后端:WASM(CPU 推理)');
 		return ort.InferenceSession.create(this.deps.modelBuffer, {
 			executionProviders: ['wasm'],

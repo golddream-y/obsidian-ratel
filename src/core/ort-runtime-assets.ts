@@ -16,8 +16,7 @@ import { tNow } from '../i18n';
 import type { ProgressInfo } from './model-downloader';
 
 /** 与 package.json `dependencies.onnxruntime-web` 版本保持同步。 */
-import { ORT_RUNTIME_VERSION } from '../adapters/ort-version';
-export { ORT_RUNTIME_VERSION };
+export const ORT_RUNTIME_VERSION = '1.27.0';
 
 /** 运行时 wasm 文件名 — 与 wasm bundle 配套。 */
 export const ORT_WASM_FILENAME = 'ort-wasm-simd-threaded.wasm';
