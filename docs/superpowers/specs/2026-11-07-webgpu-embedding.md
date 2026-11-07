@@ -100,6 +100,20 @@ jsep 胶水（46 KB）由构建期读取并内联进 GPU Worker 产物，
 
 只换后端 → 指纹逐字不变 → 代际不变 → **1.4.0 的索引直接复用，零重建**。
 
+### 追加根因：胶水/运行时必须是 asyncify 变体
+
+「GPU 路径必须用 jsep wasm」被实测推翻。带堆栈的报错为：
+
+```
+TypeError: z(...).webgpuInit is not a function
+```
+
+`webgpuInit` 由胶水模块在实例化时挂到模块对象上。`ort.webgpu.bundle` 内部固定按
+**asyncify** 变体查找胶水（bundle 里写死 `let d="ort-wasm-simd-threaded.asyncify.mjs"`），
+而 jsep 版属于 `ort.webgpu.min.js` 那条非 bundle 路径，ABI 不匹配 → 模块上没有 `webgpuInit`。
+
+修复：胶水与 wasm 都改用 asyncify 变体
+（`ort-wasm-simd-threaded.asyncify.mjs` 46 KB / `.asyncify.wasm` 23 MB）。
 ### 追加根因：GPU 路径必须用 jsep wasm
 
 剥离 Node 判定后报错变为 `TypeError: c is not a function`：普通

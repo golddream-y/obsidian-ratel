@@ -16,13 +16,18 @@ const RUNTIME_WORKER_OUT = path.resolve(__dirname, 'dist/index-runtime-worker.js
 const GPU_EMBEDDING_WORKER_OUT = path.resolve(__dirname, 'dist/embedding-worker-gpu.js');
 
 /**
- * ONNX jsep 胶水模块源码 — 构建期内联进 GPU 版 Worker。
+ * ONNX 胶水模块源码 — 构建期内联进 GPU 版 Worker。
+ *
+ * 关键路径:S-WEBGPU-EMBEDDING 实测用错版本会报 `webgpuInit is not a function`。
+ * `ort.webgpu.bundle` 内部固定按 asyncify 变体查找胶水(见 bundle 里
+ * `let d="ort-wasm-simd-threaded.asyncify.mjs"`),jsep 版属于 `ort.webgpu.min.js`
+ * 那条非 bundle 路径,胶水与运行时 ABI 不匹配。
  *
  * 关键路径(S-WEBGPU-EMBEDDING):发版只允许三个文件,不能附带 .mjs 资产;
  * webgpu EP 注册依赖该模块,缺了它必然报 backend not found。
  */
 const RAW_ORT_JSEP_GLUE = readFileSync(
-	path.resolve(__dirname, 'node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.jsep.mjs'),
+	path.resolve(__dirname, 'node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.asyncify.mjs'),
 	'utf-8',
 );
 

@@ -24,11 +24,11 @@ export const ORT_WASM_FILENAME = 'ort-wasm-simd-threaded.wasm';
 /**
  * WebGPU 版运行时文件名。
  *
- * 关键路径(S-WEBGPU-EMBEDDING):webgpu EP 依赖带 jsep(JS EP 接口)的 wasm,
- * 用普通版会让胶水实例化后 `webgpuInit` 等导出缺失(线上报 `c is not a function`)。
+ * 关键路径(S-WEBGPU-EMBEDDING):`ort.webgpu.bundle` 按 **asyncify** 变体查找胶水与
+ * wasm;用 jsep 版会让模块实例上缺少 `webgpuInit`(线上报 `webgpuInit is not a function`)。
  * 与 CPU 版同一 CDN、同一 ORT 包,只是文件名不同;首次 GPU 探测时多下载约 26 MB。
  */
-export const ORT_WASM_GPU_FILENAME = 'ort-wasm-simd-threaded.jsep.wasm';
+export const ORT_WASM_GPU_FILENAME = 'ort-wasm-simd-threaded.asyncify.wasm';
 
 /** 完整文件至少约 10MB;过小视为损坏或未完成下载。 */
 const ORT_WASM_MIN_BYTES = 10 * 1024 * 1024;
