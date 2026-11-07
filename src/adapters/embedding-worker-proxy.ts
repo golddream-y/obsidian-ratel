@@ -303,6 +303,11 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 			const data = e.data as WorkerResponse;
 			if (data.type === 'ready') {
 				worker.removeEventListener('message', onInitMessage);
+				// 关键路径(研发期诊断):记录 Worker 内是否暴露 WebGPU,决定 GPU 加速是否可行。
+				const probe = (data as { probe?: { hasGpu?: boolean; secureContext?: boolean } }).probe;
+				if (probe !== undefined) {
+					devLogger.info('index', `嵌入 Worker 环境:navigator.gpu=${probe.hasGpu === true}(secureContext=${probe.secureContext === true})`);
+				}
 				this.settleReady?.resolve();
 				this.settleReady = null;
 			} else if (data.type === 'error' && !data.requestId) {

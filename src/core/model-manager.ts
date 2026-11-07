@@ -11,7 +11,6 @@ import { EmbeddingOnnx, type EmbeddingOnnxDeps } from '../adapters/embedding-onn
 import type { EmbeddingPort } from '../ports/embedding';
 import { OrtRuntimeAssets } from './ort-runtime-assets';
 import { devLogger } from '../logging/dev-logger';
-import { ORT_WASM_JSEP_GLUE } from '../adapters/ort-wasm-glue.generated';
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 
@@ -38,7 +37,6 @@ export function createDefaultEmbeddingFactory(ortAssets: OrtRuntimeAssets) {
             vocabContent,
             modelBuffer,
             wasmBinary,
-            glueSource: ORT_WASM_JSEP_GLUE,
         });
         await embedding.init();
         return embedding;

@@ -24,6 +24,8 @@ import type { EmbeddingOnnxDeps } from '../adapters/embedding-onnx';
 // 关键路径:模块级状态,Worker 整个生命周期内只持有一个 EmbeddingOnnx 实例;
 // init 完成前为 null,所有 embed 请求会被拒绝。
 let embeddingOnnx: EmbeddingOnnx | null = null;
+/** 环境能力探测结果 — 随 ready 回传,避免在 Worker 里直接打控制台。 */
+let probeInfo: { hasGpu: boolean; secureContext: boolean } = { hasGpu: false, secureContext: false };
 
 /**
  * 在途推理请求的取消句柄 — 键是主线程的 requestId。
@@ -47,12 +49,15 @@ self.onmessage = async (e: MessageEvent): Promise<void> => {
 	switch (msg.type) {
 		case 'init': {
 			try {
+				// 关键路径(研发期诊断):把环境能力随 ready 一起报回主线程,由主线程统一记录日志。
+				const hasGpu = typeof navigator !== 'undefined' && 'gpu' in navigator;
+				probeInfo = { hasGpu, secureContext: globalThis.isSecureContext === true };
 				const deps = msg.deps as EmbeddingOnnxDeps;
 				const dimensions = msg.dimensions as number;
 				const maxBatchSize = msg.maxBatchSize as number;
 				embeddingOnnx = new EmbeddingOnnx(deps, dimensions, maxBatchSize);
 				await embeddingOnnx.init();
-				self.postMessage({ type: 'ready' });
+				self.postMessage({ type: 'ready', probe: probeInfo });
 			} catch (err) {
 				// 关键路径:初始化失败回复 error(无 requestId,广播式),主线程据此销毁 Worker。
 				const error = err instanceof Error ? err.message : String(err);

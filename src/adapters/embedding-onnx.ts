@@ -48,13 +48,6 @@ export interface EmbeddingOnnxDeps {
 	 * 也让测试环境可显式传入 node_modules 中的 wasm 文件。
 	 */
 	wasmBinary: ArrayBuffer;
-	/**
-	 * ONNX jsep wasm 胶水模块源码。
-	 *
-	 * 关键路径:webgpu 执行器要在 Worker 内 import 该模块;插件不能附带额外 .mjs 资产,
-	 * 因此构建期把它内联成字符串,运行时还原成 Blob URL 交给 ORT。
-	 */
-	glueSource?: string;
 
 	/**
 	 * 模型标识,默认 local:bge-small-zh-v1.5。
@@ -77,8 +70,6 @@ export class EmbeddingOnnx implements EmbeddingPort {
 	private session!: ort.InferenceSession;
 	private TensorCtor!: TensorConstructor;
 	private ready = false;
-	/** 内联胶水模块的 Blob URL。 */
-	private glueUrl: string | undefined;
 	// 关键路径:单批最大文本数,过大时会分多批推理;取值依据是 bge-small 512 维 + WASM 单线程
 	// 场景下,16 条文本推理时间约数百毫秒,不会明显阻塞 UI。
 	private readonly maxBatchSize: number;
@@ -132,38 +123,14 @@ export class EmbeddingOnnx implements EmbeddingPort {
 	 * @returns 已创建的 ONNX 会话
 	 */
 	private async createSession(): Promise<ort.InferenceSession> {
-		// 关键路径(2026-11-07):优先本机 GPU。webgpu 执行器需要在 Worker 内 import 配套的
-		// jsep 胶水模块;插件只能发三个文件,该模块构建期内联成字符串,这里还原成 Blob URL。
-		const glueUrl = this.createGlueUrl();
-		if (glueUrl !== undefined) {
-			(ort.env.wasm as { wasmPaths?: unknown }).wasmPaths = { mjs: glueUrl };
-		}
-		try {
-			const session = await ort.InferenceSession.create(this.deps.modelBuffer, {
-				executionProviders: ['webgpu'],
-			});
-			devLogger.info('index', '嵌入后端:WebGPU(本机 GPU 加速已启用)');
-			return session;
-		} catch (error) {
-			const reason = error instanceof Error ? error.message : String(error);
-			devLogger.warn('index', `嵌入后端回退 WASM(WebGPU 不可用):${reason}`);
-			return ort.InferenceSession.create(this.deps.modelBuffer, {
-				executionProviders: ['wasm'],
-			});
-		}
-	}
-
-	/** 把内联胶水源码还原成 Blob URL;源码缺失或环境不支持时返回 undefined。 */
-	private createGlueUrl(): string | undefined {
-		const source = this.deps.glueSource;
-		if (source === undefined || source.length === 0) return undefined;
-		if (typeof Blob !== 'function' || typeof URL?.createObjectURL !== 'function') return undefined;
-		try {
-			this.glueUrl ??= URL.createObjectURL(new Blob([source], { type: 'text/javascript' }));
-			return this.glueUrl;
-		} catch {
-			return undefined;
-		}
+		// 关键路径(2026-11-07):本地推理只能用 WASM 执行器。
+		// 曾尝试 ort.webgpu.bundle 走本机 GPU,但该 bundle 需要在 Worker 内动态 import
+		// 配套的 jsep glue 模块,而本插件是 Blob Worker + 自带 wasm 字节流,拿不到该模块,
+		// 线上直接崩(`Sp.$b is not a function`)。要 GPU 加速请改用 API 嵌入(如本地 Ollama)。
+		devLogger.info('index', '嵌入后端:WASM(CPU 推理)');
+		return ort.InferenceSession.create(this.deps.modelBuffer, {
+			executionProviders: ['wasm'],
+		});
 	}
 
 	/**

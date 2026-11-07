@@ -1275,6 +1275,21 @@ export default class RatelVaultPlugin extends Plugin {
 		this.feedbackController.refreshIndexStatus();
 
 		// 关键路径:Obsidian UI 布局就绪后再启动模型下载与索引,避免阻塞 onload。
+		// 关键路径(研发期诊断):渲染进程是否暴露 WebGPU,以及能否拿到适配器。
+		void (async () => {
+			const gpu = (navigator as { gpu?: { requestAdapter(): Promise<unknown> } }).gpu;
+			if (gpu === undefined) {
+				devLogger.info('index', `渲染进程 WebGPU:navigator.gpu 不存在 (secureContext=${String(globalThis.isSecureContext ?? 'n/a')})`);
+				return;
+			}
+			try {
+				const adapter = await gpu.requestAdapter();
+				devLogger.info('index', `渲染进程 WebGPU:可用 (adapter=${adapter === null ? 'null' : 'ok'})`);
+			} catch (error) {
+				devLogger.info('index', `渲染进程 WebGPU:requestAdapter 失败 ${error instanceof Error ? error.message : String(error)}`);
+			}
+		})();
+
 		this.app.workspace.onLayoutReady(() => {
 			// 关键路径:onLayoutReady 失败会更新 status$ = Failed,
 			// 显式 catch 仅兜底日志,避免 void 包装吞错(原版:下载失败静默无提示)。

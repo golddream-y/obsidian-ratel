@@ -69,7 +69,7 @@ describe('embedding-worker', () => {
 		}
 
 		// 关键路径:init 后应 postMessage ready
-		expect(postMessageSpy).toHaveBeenCalledWith({ type: 'ready' });
+		expect(postMessageSpy).toHaveBeenCalledWith(expect.objectContaining({ type: 'ready' }));
 	});
 
 	it('embed - 未 init 时回复 error', async () => {
@@ -116,7 +116,7 @@ describe('embedding-worker', () => {
 			await onmessageInit(initEvent);
 		}
 		// 关键路径:init 后应回复 ready
-		expect(postMessageSpy).toHaveBeenCalledWith({ type: 'ready' });
+		expect(postMessageSpy).toHaveBeenCalledWith(expect.objectContaining({ type: 'ready' }));
 
 		// 步骤 2:发 embed 请求
 		const embedEvent = {

@@ -353,7 +353,7 @@ const embeddingWorkerContext = await esbuild.context({
 	// 关键路径:与 mainContext 一致的 alias — onnxruntime-web 强制走 wasm bundle 入口,
 	// onnxruntime-node / @huggingface/transformers 替换为空模块,防止原生模块进浏览器产物。
 	alias: {
-		'onnxruntime-web': path.resolve(__dirname, 'node_modules/onnxruntime-web/dist/ort.webgpu.bundle.min.mjs'),
+		'onnxruntime-web': path.resolve(__dirname, 'node_modules/onnxruntime-web/dist/ort.wasm.bundle.min.mjs'),
 		'onnxruntime-node': path.resolve(__dirname, 'src/adapters/empty-module.cjs'),
 		'@huggingface/transformers': path.resolve(__dirname, 'src/adapters/empty-transformers.cjs'),
 	},
