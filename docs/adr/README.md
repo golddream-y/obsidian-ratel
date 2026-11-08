@@ -28,6 +28,7 @@
 | ADR-020 | 收笔护栏 | [2026-09-27-turn-completion-guard.md](2026-09-27-turn-completion-guard.md) |
 | ADR-021 | 检索链路关键决策调整 | [2026-10-26-retrieval-pipeline.md](2026-10-26-retrieval-pipeline.md) |
 | ADR-022 | 索引清单独立于 data.json | [2026-06-28-index-manifest-standalone-file.md](2026-06-28-index-manifest-standalone-file.md) |
+| ADR-023 | 索引「非推理开销」暂不优化 | [2026-11-08-index-non-inference-overhead.md](2026-11-08-index-non-inference-overhead.md) |
 
 ## 编号缺口
 

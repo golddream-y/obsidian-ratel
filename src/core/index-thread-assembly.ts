@@ -49,6 +49,8 @@ export interface AssembleIndexThreadDeps {
 	};
 	/** 分块预算。 */
 	chunkOptions?: { maxTokens?: number; overlapTokens?: number };
+	/** 本地词表内容 — 分块 token 计数用,必须与主线程同一份。 */
+	vocabContent?: string;
 	/** 自定义线程工厂(测试注入)。 */
 	createWorker?: RuntimeWorkerFactory;
 	/** 自定义客户端(测试注入)。 */
@@ -129,6 +131,7 @@ export function assembleIndexThreadPipeline(deps: AssembleIndexThreadDeps): Asse
 			configFingerprint: deps.configFingerprint,
 			expectedDimension: deps.expectedDimension,
 			chunkOptions: deps.chunkOptions,
+			vocabContent: deps.vocabContent,
 		},
 	});
 	return { coordinator, client, ...(deps.store === undefined ? {} : { store: deps.store }) };

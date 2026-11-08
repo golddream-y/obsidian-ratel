@@ -57,6 +57,13 @@ export interface ThreadCoordinatorStartOptions {
 	expectedDimension?: number;
 	access?: 'read-only' | 'read-write';
 	chunkOptions?: { maxTokens?: number; overlapTokens?: number };
+	/**
+	 * 本地词表内容 — 随启动帧下发给索引线程。
+	 *
+	 * 关键路径:分块的 token 计数必须与主线程共用同一份词表,否则同一条 chunkSize
+	 * 在两种索引模式下切出不同的块,完成记录的内容哈希随之失配。
+	 */
+	vocabContent?: string;
 }
 
 /** 构造参数。 */

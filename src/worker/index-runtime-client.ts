@@ -28,6 +28,8 @@ export interface IndexRuntimeStartOptions {
 	access?: 'read-only' | 'read-write';
 	/** 分块预算。 */
 	chunkOptions?: { maxTokens?: number; overlapTokens?: number };
+	/** 本地词表内容 — 让分块的 token 计数与主线程一致。 */
+	vocabContent?: string;
 }
 
 /** 客户端依赖。 */
@@ -131,6 +133,7 @@ export class IndexRuntimeClient {
 			root: options.root,
 			access: options.access ?? 'read-write',
 			chunkOptions: options.chunkOptions,
+			vocabContent: options.vocabContent,
 		});
 		await this.host.request('ping');
 		await this.host.request('session.open', {

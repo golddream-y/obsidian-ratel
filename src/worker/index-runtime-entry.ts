@@ -34,6 +34,14 @@ export interface RuntimeInitMessage {
 	access: 'read-only' | 'read-write';
 	/** 分块预算;缺省按模型输入上限留出保留区。 */
 	chunkOptions?: { maxTokens?: number; overlapTokens?: number };
+	/**
+	 * 本地词表内容(vocab.txt)。
+	 *
+	 * 关键路径:分块的 token 计数必须与主线程用同一套词表,否则同一条配置在
+	 * 线程模式与主线程模式会切出不同的块 —— 索引结果不严格等价,切换模式后
+	 * 完成记录的内容哈希对不上,表现为整库重索引。
+	 */
+	vocabContent?: string;
 }
 
 /** 判断是否为 init 帧。 */
@@ -112,7 +120,7 @@ export function startIndexRuntimeWorker(options: {
 					...baseHandlers,
 					...createIndexSessionHandlers({
 						root: data.root,
-						chunkOptions: resolveChunkOptions(data.chunkOptions),
+						chunkOptions: resolveChunkOptions(data.chunkOptions, data.vocabContent),
 						emit: (type, payload) => emitEvent(type, payload),
 					}),
 				};
@@ -150,9 +158,17 @@ export function startIndexRuntimeWorker(options: {
 	};
 }
 
-/** 构造分块参数 — count 是函数,不能过 postMessage,必须在 Worker 内部构造。 */
-function resolveChunkOptions(overrides?: { maxTokens?: number; overlapTokens?: number }): { maxTokens: number; overlapTokens: number; count: (text: string) => number } {
-	const counter = createTokenCounter(null);
+/**
+ * 构造分块参数 — count 是函数,不能过 postMessage,必须在 Worker 内部构造。
+ *
+ * 关键路径:必须带上本地词表做 token 计数。早先传 `null` 会退化成字符计数,
+ * 与主线程模式的 token 计数不一致,同一条 chunkSize 在两种模式下切出的块不同。
+ */
+export function resolveChunkOptions(
+	overrides?: { maxTokens?: number; overlapTokens?: number },
+	vocabContent?: string,
+): { maxTokens: number; overlapTokens: number; count: (text: string) => number } {
+	const counter = createTokenCounter(vocabContent ?? null);
 	return {
 		maxTokens: overrides?.maxTokens ?? counter.maxInputTokens - TOKEN_BUDGET_RESERVE,
 		overlapTokens: overrides?.overlapTokens ?? DEFAULT_CHUNK_OVERLAP,

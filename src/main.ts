@@ -2244,6 +2244,9 @@ export default class RatelVaultPlugin extends Plugin {
 					readFile: (filePath) => this.vault.readFile(filePath),
 				},
 				chunkLimits: { chunkSize: this.settings.chunkSize, chunkOverlap: this.settings.chunkOverlap },
+				// 关键路径:词表随 init 帧下发,让线程模式与主线程模式共用同一套 token 计数。
+				// 缺了它 Worker 会退化成字符计数,同一条 chunkSize 在两种模式下切出的块不同。
+				vocabContent: getVocabContent() ?? undefined,
 				legacy: null,
 			});
 			if (assembled.resolved === null || assembled.pipeline === null) {
