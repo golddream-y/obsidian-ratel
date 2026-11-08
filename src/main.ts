@@ -598,7 +598,9 @@ export default class RatelVaultPlugin extends Plugin {
 		};
 
 		const multiQuerySearcher = new MultiQuerySearcher({
-			embedding: this.effectiveEmbedding(),
+			// 关键路径(1.5.0 修复):查询走主线程 CPU 会话,不经 GPU worker。
+			// GPU 在小 shape 上会挂住不返回,查询一旦卡住就是整条检索链路超时。
+			embedding: this.embedding,
 			workerManager: this.workerManager,
 			vault: this.vault,
 			reranker,
@@ -1334,7 +1336,10 @@ export default class RatelVaultPlugin extends Plugin {
 		});
 
 			try {
-				await this.modelManager.download(undefined, { skipCpuRuntime: webgpuCapable, lazyEmbedding: webgpuCapable });
+				// 关键路径(1.5.0 修复):查询必须有一条不依赖 GPU worker 的路径。
+				// GPU 在查询的 [1, 短序列] 形状上会挂死(实测请求 120 秒无响应,工具层 60 秒先超时),
+				// 因此索引走 GPU worker、查询走主线程 CPU 会话;两份运行时都要备好。
+				await this.modelManager.download(undefined, { skipCpuRuntime: false, lazyEmbedding: false });
 
 				// 关键路径(S-RETRIEVAL-QUALITY §4.1/§4.2):词表交给 Worker 一次(约 109KB)——
 				// Worker 侧据此做精确 token 计数;没拿到词表时按字符上界估算(高估方向,宁可块小也不许截断)。
@@ -3064,7 +3069,12 @@ export default class RatelVaultPlugin extends Plugin {
 						if (data.type === 'warmup:done') {
 							const blocks = data.blocks ?? 1;
 							const ms = data.elapsedMs ?? 0;
+							const queryMs = (data as { queryElapsedMs?: number }).queryElapsedMs;
 							devLogger.info('index', `GPU 预热完成:${blocks} 块 / ${ms} ms(${(ms / blocks / 1000).toFixed(2)} 秒/块)`);
+							if (queryMs !== undefined) {
+								// 关键路径:单条查询与索引批次的耗时必须分开看 —— 两者形状不同。
+								devLogger.info('index', `GPU 单条查询:${queryMs} ms`);
+							}
 							settle(true);
 						} else if (data.type === 'warmup:error') {
 							devLogger.warn('index', `GPU 预热失败:${data.error ?? 'unknown'}`);

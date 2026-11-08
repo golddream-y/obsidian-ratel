@@ -95,7 +95,19 @@ self.onmessage = async (e: MessageEvent): Promise<void> => {
 					return `${seed}(${index})`;
 				});
 				await embeddingOnnx.embed(texts);
-				self.postMessage({ type: 'warmup:done', blocks: batchSize, elapsedMs: Date.now() - startedAt });
+				const batchMs = Date.now() - startedAt;
+				// 关键路径(诊断):索引批次是 [8, 长序列],查询是 [1, 短序列]。
+				// GPU 对输入形状敏感,换形状可能触发流水线重建。这里单独量一次单条短查询,
+				// 若它比整批还慢或直接挂住,就说明查询超时来自形状切换而不是检索链路。
+				const queryStartedAt = Date.now();
+				await embeddingOnnx.embed(['工程化']);
+				const queryMs = Date.now() - queryStartedAt;
+				self.postMessage({
+					type: 'warmup:done',
+					blocks: batchSize,
+					elapsedMs: batchMs,
+					queryElapsedMs: queryMs,
+				});
 			} catch (err) {
 				self.postMessage({ type: 'warmup:error', error: err instanceof Error ? err.message : String(err) });
 			}
