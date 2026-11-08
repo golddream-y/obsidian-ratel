@@ -135,6 +135,8 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 	 * 速率会算出 40+ 篇/秒这种与推理速度无关的假数字。
 	 */
 	private writtenThisRound = 0;
+	/** 本轮跳过(内容未变、按完成记录复用)的文件数 — 诊断恢复是否生效。 */
+	private skippedThisRound = 0;
 	/** 本轮真正写入的**块数** — 按块计量才能反映推理速度,不受文档大小影响。 */
 	private writtenBlocksThisRound = 0;
 	private taskIdValue = 0;
@@ -173,6 +175,7 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 		this.deferred.clear();
 		this.writtenThisRound = 0;
 		this.writtenBlocksThisRound = 0;
+		this.skippedThisRound = 0;
 		await this.client.start(this.startOptions);
 		// 关键路径:线程真的起来之后才算已启动,否则启动失败会把后续事件派给不存在的线程。
 		this.started = true;
@@ -214,6 +217,11 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 			await this.drain();
 		}
 		this.retryPass = false;
+		// 关键路径(诊断):重启后是否复用完成记录,一眼看清 —— 跳过数应接近已索引篇数。
+		devLogger.info(
+			'index',
+			`索引轮完成:写入 ${this.writtenThisRound} 篇 / 跳过 ${this.skippedThisRound} 篇(完成记录复用) / 失败 ${this.failing.size}`,
+		);
 		if (this.failing.size > 0) {
 			const sample = this.failureSamples.map((item) => `${item.path}: ${item.message}`).join('; ');
 			devLogger.warn('index', `本轮有 ${this.failing.size} 个文件连续重试 ${IndexThreadCoordinator.MAX_DEFERRED_PASSES + 1} 次仍失败,标记为放弃:${sample}`);
@@ -305,6 +313,8 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 		if (written) {
 			this.writtenThisRound += 1;
 			this.writtenBlocksThisRound += blocks;
+		} else {
+			this.skippedThisRound += 1;
 		}
 		this.failing.delete(filePath);
 		this.failedOps.delete(filePath);
