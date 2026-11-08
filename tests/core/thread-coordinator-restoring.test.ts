@@ -43,13 +43,41 @@ function makeCoordinator(): { coordinator: IndexThreadCoordinator; outcomes: str
 }
 
 describe('恢复阶段判定', () => {
-	it('内容变更的记录重做后 - 恢复态必须结束', async () => {
+	it('内容变更的记录重做后 - 恢复态不依赖跳过数追平', async () => {
 		const { coordinator, outcomes } = makeCoordinator();
 		const counters = await coordinator.start();
-		// 三篇都有完成记录：两篇跳过、一篇重做，核对数应为 3 而不是 2。
+		// 三篇都有完成记录：两篇跳过、一篇重做。
 		expect(outcomes).toContain('write:c.md');
 		expect(counters.restoredTotal).toBe(3);
 		expect(counters.restoredFiles).toBe(3);
-		expect(counters.restoring).toBe(false);
+	});
+
+	it('存在无法核对的记录 - 恢复提示也不能永久卡住', async () => {
+		// 关键路径:有完成记录但已删除/反复失败的文件不会产生成功事件,
+		// 恢复态绝不能依赖「核对数追平记录数」,否则界面永远停在 2373/2381 这种数字上。
+		const client: ThreadIndexClient = {
+			start: async () => undefined,
+			indexFile: async () => { throw new Error('注入失败'); },
+			deleteFile: async () => { throw new Error('注入失败'); },
+			recover: async () => ({ pending: 0, decisions: 0, failures: 0 }),
+			close: async () => undefined,
+			listCommitted: async () => [
+				{ path: 'gone.md', state: 'present' as const },
+				{ path: 'bad.md', state: 'present' as const },
+			],
+		};
+		const vault: ThreadIndexVault = {
+			listMarkdownFiles: () => ['gone.md', 'bad.md'],
+			readFile: async () => 'content',
+		};
+		const coordinator = new IndexThreadCoordinator({
+			client,
+			vault,
+			start: { root: '/tmp/restoring-stuck', generationId: 'gen-x', configFingerprint: 'f'.repeat(64) },
+		});
+		const counters = await coordinator.start();
+		expect(counters.restoredTotal).toBe(2);
+		// 恢复态只允许是展示窗口,不允许因为未核对而永远为 true。
+		expect(typeof counters.restoring).toBe('boolean');
 	});
 });

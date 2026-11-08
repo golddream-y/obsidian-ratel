@@ -80,6 +80,9 @@ const MAX_FAILURE_SAMPLES = 5;
 /** 每轮允许的崩溃重启次数上界。 */
 const MAX_CRASH_RESTARTS = 2;
 
+/** 恢复提示的展示时长(ms) — 仅影响 UI,不影响索引逻辑。 */
+const RESTORE_WINDOW_MS = 60_000;
+
 /**
  * 判断错误是否是「线程已退出」类。
  * @param message 错误消息
@@ -139,8 +142,16 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 	private writtenThisRound = 0;
 	/** 本轮跳过(内容未变、按完成记录复用)的文件数 — 诊断恢复是否生效。 */
 	private skippedThisRound = 0;
-	/** 是否处于「恢复已索引进度」阶段 — 首个真实写入前为 true。 */
+	/**
+	 * 是否处于「恢复已索引进度」展示窗口。
+	 *
+	 * 关键路径:恢复与新增写入是交织的,没有可靠的「全部核对完」信号 ——
+	 * 有完成记录但已删除、内容已变、反复失败的文件都不会产生「已核对」事件。
+	 * 因此这里只是一个**展示窗口**,不参与索引收敛,到点自然消退。
+	 */
 	private restoring = false;
+	/** 恢复窗口截止的墙钟时间戳(ms)。 */
+	private restoringUntil = 0;
 	/** 已恢复(跳过)的篇数 — 供 UI 展示「已核对 N 篇」。 */
 	private restoredCount = 0;
 	/** 本轮启动时磁盘上的完成记录总数 — 恢复进度的分母。 */
@@ -219,6 +230,9 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 			}
 		}
 		this.restoring = this.restoredTotal > 0;
+		// 关键路径:恢复提示只在重启后一段时间内展示,之后无论是否全部核对完都退出,
+		// 免得用户看到「已核对 2373/2381」永远停在那里。
+		this.restoringUntil = this.restoring ? Date.now() + RESTORE_WINDOW_MS : 0;
 		devLogger.info('index', `恢复阶段:${this.restoring ? `开启（待核对 ${this.restoredTotal} 篇）` : '跳过（无完成记录）'}`);
 
 		// 关键路径:按篇推进 —— 批量提交时不等整批结算,进度按篇递增。
@@ -265,7 +279,7 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 		);
 		// 关键路径(诊断):恢复态若没收敛,列出还没被核对的记录路径,
 		// 避免再靠「差几篇」这种表面数字去猜原因。
-		if (this.restoring) {
+		if (this.restoring && Date.now() < this.restoringUntil) {
 			const pending = [...this.receiptPaths].filter((p) => !this.verified.has(p));
 			devLogger.warn(
 				'index',
@@ -324,7 +338,7 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 			active: this.activeCount,
 			pendingTransactions: 0,
 			failures: this.failing.size,
-			restoring: this.restoring,
+			restoring: this.restoring && Date.now() < this.restoringUntil,
 			restoredFiles: this.examinedCount,
 			restoredTotal: this.restoredTotal,
 		};
@@ -370,10 +384,10 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 			this.skippedThisRound += 1;
 			this.restoredCount += 1;
 		}
-		// 关键路径:恢复进度按「有完成记录的路径已被核对过」推进,跳过与重做都算核对完成,
-		// 否则内容变更的记录会让进度永远差一截、提示不消失。
+		// 关键路径:核对计数仅作进度展示,不作为恢复态的退出条件。
+		// 有完成记录但已删除/变更/失败的文件都不会触发成功路径,
+		// 用「核对数追平记录数」当退出条件必然卡在末尾 —— 现场 2373/2381 就是这么来的。
 		if (this.receiptPaths.has(filePath)) this.examinedCount += 1;
-		if (this.restoring && this.examinedCount >= this.restoredTotal) this.restoring = false;
 		this.failing.delete(filePath);
 		this.failedOps.delete(filePath);
 		const sampleIndex = this.failureSamples.findIndex((item) => item.path === filePath);
