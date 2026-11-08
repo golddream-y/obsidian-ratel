@@ -253,6 +253,16 @@ describe('FeedbackController 索引阶段与计数展示', () => {
 		controller.destroy();
 	});
 
+	it('Queueing + restoring - 显示恢复已索引进度的文案而非低值进度', () => {
+		const controller = createController();
+		controller.start();
+		// 关键路径:重启后核对完成记录期间,必须让用户看到「正在恢复」,否则低值进度会被误判为从零重来。
+		indexStatus$.set({ state: 'Queueing', phase: 'processing', total: 2825, committed: 14, pending: 2811, failed: 0, restoring: true, restoredFiles: 1200 });
+		expect(get(userStatus.statusBar$).indexDetail).toContain('正在恢复');
+		expect(get(userStatus.statusBar$).indexDetail).toContain('1200');
+		controller.destroy();
+	});
+
 	it('Scanning + 尚无已提交文件 - 不声称部分可用', () => {
 		const ctl = createController();
 		ctl.start();

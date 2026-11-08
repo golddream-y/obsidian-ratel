@@ -137,6 +137,10 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 	private writtenThisRound = 0;
 	/** 本轮跳过(内容未变、按完成记录复用)的文件数 — 诊断恢复是否生效。 */
 	private skippedThisRound = 0;
+	/** 是否处于「恢复已索引进度」阶段 — 首个真实写入前为 true。 */
+	private restoring = false;
+	/** 已恢复(跳过)的篇数 — 供 UI 展示「已核对 N 篇」。 */
+	private restoredCount = 0;
 	/** 本轮真正写入的**块数** — 按块计量才能反映推理速度,不受文档大小影响。 */
 	private writtenBlocksThisRound = 0;
 	private taskIdValue = 0;
@@ -176,6 +180,9 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 		this.writtenThisRound = 0;
 		this.writtenBlocksThisRound = 0;
 		this.skippedThisRound = 0;
+		// 关键路径:启动先核对完成记录,此时尚未有真实写入,UI 应显示「恢复中」而非低值进度。
+		this.restoring = true;
+		this.restoredCount = 0;
 		await this.client.start(this.startOptions);
 		// 关键路径:线程真的起来之后才算已启动,否则启动失败会把后续事件派给不存在的线程。
 		this.started = true;
@@ -274,6 +281,8 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 			active: this.activeCount,
 			pendingTransactions: 0,
 			failures: this.failing.size,
+			restoring: this.restoring,
+			restoredFiles: this.restoredCount,
 		};
 	}
 
@@ -313,8 +322,11 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 		if (written) {
 			this.writtenThisRound += 1;
 			this.writtenBlocksThisRound += blocks;
+			// 关键路径:出现首个真实写入说明恢复核对已完成,进入正常索引阶段。
+			this.restoring = false;
 		} else {
 			this.skippedThisRound += 1;
+			this.restoredCount += 1;
 		}
 		this.failing.delete(filePath);
 		this.failedOps.delete(filePath);

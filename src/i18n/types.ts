@@ -831,6 +831,7 @@ export interface StatusStrings {
   'status.detail.recordsUnknown': string;
   'status.detail.configMismatch': string;
   'status.detail.reverifying': string;
+  'status.detail.restoring': string;
   // 关键路径(T7/I2/I6):索引不可用与配置漂移是必须上屏的事实
   'status.detail.indexUnavailable': string;
   'status.detail.configDrift': string;

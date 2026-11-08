@@ -181,6 +181,10 @@ export interface IndexTaskCounters {
 	active: number;
 	/** 未结算事务数。 */
 	pendingTransactions: number;
+	/** 是否处于「恢复已索引进度」阶段(重启后核对完成记录期间)。 */
+	restoring?: boolean;
+	/** 已恢复(按完成记录复用)的篇数。 */
+	restoredFiles?: number;
 	/**
 	 * 本轮未清除的失败数 — 按路径记账:同一路径后续成功处理即清除该路径的失败,
 	 * 其它路径的失败与其他来源(启动枚举失败)不受影响。

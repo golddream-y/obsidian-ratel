@@ -347,10 +347,13 @@ export class FeedbackController {
 			case 'Queueing':
 				Object.assign(patch, {
 					index: phase === 'processing' ? 'processing' : 'queueing',
-					// 关键路径:待处理量增加(重新核对)与单纯排队必须分开说明。
-					indexDetail: status.reverifying === true
-						? tNow('status.detail.reverifying')
-						: tNow('status.detail.pending', { count: status.pending }),
+					// 关键路径:恢复已索引进度(重启后核对完成记录)必须单独说明,
+					// 否则用户看到低值进度会误以为索引从零重来。
+					indexDetail: status.restoring === true
+						? tNow('status.detail.restoring', { count: status.restoredFiles ?? 0 })
+						: status.reverifying === true
+							? tNow('status.detail.reverifying')
+							: tNow('status.detail.pending', { count: status.pending }),
 					indexTotalFiles: status.total ?? (status.committed ?? 0),
 					indexCommittedFiles: status.committed ?? 0,
 					indexPendingFiles: status.pending,
