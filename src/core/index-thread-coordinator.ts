@@ -191,16 +191,20 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 		this.started = true;
 		// 关键路径:恢复阶段要有明确分母。取磁盘上的完成记录数,而不是靠「有没有写入」
 		// 推断 —— 恢复与新增写入是交织的,先遇到新文件不代表没有旧记录要核对。
-		if (this.client.listCommitted !== undefined) {
+		if (this.client.listCommitted === undefined) {
+			devLogger.warn('index', '线程客户端不支持 listCommitted,本轮不显示恢复进度');
+		} else {
 			try {
 				const records = await this.client.listCommitted();
 				this.restoredTotal = records.filter((record) => record.state === 'present').length;
+				devLogger.info('index', `恢复检查:完成记录 ${records.length} 条,其中 present ${this.restoredTotal} 条`);
 			} catch (error) {
 				devLogger.warn('index', '读取完成记录总数失败,本轮不显示恢复进度', error);
 				this.restoredTotal = 0;
 			}
 		}
 		this.restoring = this.restoredTotal > 0;
+		devLogger.info('index', `恢复阶段:${this.restoring ? `开启（待核对 ${this.restoredTotal} 篇）` : '跳过（无完成记录）'}`);
 
 		// 关键路径:按篇推进 —— 批量提交时不等整批结算,进度按篇递增。
 		if (this.client.onFileCommitted !== undefined) {
