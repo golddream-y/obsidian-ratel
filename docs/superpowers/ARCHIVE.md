@@ -34,6 +34,12 @@ pie showData title 归档形态分布
 
 ---
 
+## 2026-11
+
+| ID | 归档目录 | 日期 | 备注 |
+|---|---|---|---|
+| S-WEBGPU-EMBEDDING | [archive/S-WEBGPU-EMBEDDING/](archive/S-WEBGPU-EMBEDDING/) | 11-08 | 本地向量推理改用 WebGPU，失败回退 WASM；两份 Worker 产物、独立 ORT 实例、胶水 vendor 固化 + 哈希守卫；四条根因逐层收口。同期收敛下载为多源重试 + 原子落盘，并补索引恢复提示。随 1.5.0 交付 |
+
 ## 2026-10
 
 | ID | 归档目录 | 日期 | 备注 |

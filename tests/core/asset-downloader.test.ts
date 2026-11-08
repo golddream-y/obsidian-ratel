@@ -128,7 +128,8 @@ describe('downloadWithMirrors 多源回退', () => {
 describe('MirrorPreference 顺序决策', () => {
 	it('没有历史记录且未测速 - 保持声明顺序(国内优先)', async () => {
 		const preference = new MirrorPreference(path.join(tmpDir, 'pref.json'));
-		expect(await preference.rank('ort', MIRRORS)).toEqual(MIRRORS);
+		const offline = vi.fn().mockRejectedValue(new Error('offline'));
+		expect(await preference.rank('ort', MIRRORS, offline)).toEqual(MIRRORS);
 	});
 
 	it('记住成功的源 - 下次置顶', async () => {
@@ -149,13 +150,17 @@ describe('MirrorPreference 顺序决策', () => {
 		const filePath = path.join(tmpDir, 'pref.json');
 		await writeFile(filePath, 'not-json');
 		const preference = new MirrorPreference(filePath);
-		expect(await preference.rank('ort', MIRRORS)).toEqual(MIRRORS);
+		// 关键路径:没有历史记录时 rank 会去测速;这里注入必然失败的探测函数,
+		// 保证断言的是「损坏文件不崩溃、回落到声明顺序」,而不是网络抖动。
+		const offline = vi.fn().mockRejectedValue(new Error('offline'));
+		expect(await preference.rank('ort', MIRRORS, offline)).toEqual(MIRRORS);
 	});
 
 	it('不同资产类别互不影响', async () => {
 		const preference = new MirrorPreference(path.join(tmpDir, 'pref.json'));
 		await preference.remember('ort', '国际源');
-		expect(await preference.rank('model', MIRRORS)).toEqual(MIRRORS);
+		const offline = vi.fn().mockRejectedValue(new Error('offline'));
+		expect(await preference.rank('model', MIRRORS, offline)).toEqual(MIRRORS);
 	});
 });
 
