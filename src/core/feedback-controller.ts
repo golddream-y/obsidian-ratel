@@ -350,7 +350,10 @@ export class FeedbackController {
 					// 关键路径:恢复已索引进度(重启后核对完成记录)必须单独说明,
 					// 否则用户看到低值进度会误以为索引从零重来。
 					indexDetail: status.restoring === true
-						? tNow('status.detail.restoring', { count: status.restoredFiles ?? 0 })
+						? tNow('status.detail.restoring', {
+							done: status.restoredFiles ?? 0,
+							total: status.restoredTotal ?? 0,
+						})
 						: status.reverifying === true
 							? tNow('status.detail.reverifying')
 							: tNow('status.detail.pending', { count: status.pending }),
@@ -363,7 +366,20 @@ export class FeedbackController {
 				});
 				break;
 			case 'Processing':
-				Object.assign(patch, { index: 'processing', indexDetail: status.currentBatch[0] ?? undefined });
+				// 关键路径:恢复阶段与新增写入交织,Processing 也必须显示恢复进度 ——
+				// 只显示文件名会让用户以为索引从零重来(现场 994/2825 就是这么误判的)。
+				Object.assign(patch, {
+					index: 'processing',
+					indexDetail: status.restoring === true
+						? tNow('status.detail.restoring', {
+							done: status.restoredFiles ?? 0,
+							total: status.restoredTotal ?? 0,
+						})
+						: status.currentBatch[0] ?? undefined,
+					restoring: status.restoring,
+					restoredFiles: status.restoredFiles,
+					restoredTotal: status.restoredTotal,
+				});
 				break;
 			case 'Ready': {
 				const committed = status.committedDocs ?? status.totalDocs;

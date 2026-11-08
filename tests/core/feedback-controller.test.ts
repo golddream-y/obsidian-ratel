@@ -253,13 +253,30 @@ describe('FeedbackController 索引阶段与计数展示', () => {
 		controller.destroy();
 	});
 
+	it('Processing + restoring - 也显示恢复进度而不是只报文件名', () => {
+		const controller = createController();
+		controller.start();
+		// 关键路径:恢复与新增写入交织,Processing 若只显示文件名,用户会以为索引从零重来。
+		indexStatus$.set({
+			state: 'Processing',
+			currentBatch: ['某篇新笔记.md'],
+			restoring: true,
+			restoredFiles: 994,
+			restoredTotal: 2200,
+		});
+		expect(get(userStatus.statusBar$).indexDetail).toContain('正在恢复');
+		expect(get(userStatus.statusBar$).indexDetail).toContain('994 / 2200');
+		expect(get(userStatus.statusBar$).indexDetail).not.toContain('某篇新笔记');
+		controller.destroy();
+	});
+
 	it('Queueing + restoring - 显示恢复已索引进度的文案而非低值进度', () => {
 		const controller = createController();
 		controller.start();
 		// 关键路径:重启后核对完成记录期间,必须让用户看到「正在恢复」,否则低值进度会被误判为从零重来。
-		indexStatus$.set({ state: 'Queueing', phase: 'processing', total: 2825, committed: 14, pending: 2811, failed: 0, restoring: true, restoredFiles: 1200 });
+		indexStatus$.set({ state: 'Queueing', phase: 'processing', total: 2825, committed: 14, pending: 2811, failed: 0, restoring: true, restoredFiles: 1200, restoredTotal: 2200 });
 		expect(get(userStatus.statusBar$).indexDetail).toContain('正在恢复');
-		expect(get(userStatus.statusBar$).indexDetail).toContain('1200');
+		expect(get(userStatus.statusBar$).indexDetail).toContain('1200 / 2200');
 		controller.destroy();
 	});
 

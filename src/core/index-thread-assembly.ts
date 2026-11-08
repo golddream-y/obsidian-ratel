@@ -96,6 +96,7 @@ export function assembleIndexThreadPipeline(deps: AssembleIndexThreadDeps): Asse
 			indexFiles: (files) => client.indexFiles(files),
 			deleteFile: (filePath) => client.deleteFile(filePath),
 			recover: (inputs) => client.recover(inputs),
+			listCommitted: () => client.listCommitted(),
 			close: (reason) => client.close(reason),
 		};
 	// 关键路径:提权必须包在**最终**选用的客户端上,不能只包默认分支 —— 否则注入

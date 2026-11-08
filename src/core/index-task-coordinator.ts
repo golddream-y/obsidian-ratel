@@ -185,6 +185,8 @@ export interface IndexTaskCounters {
 	restoring?: boolean;
 	/** 已恢复(按完成记录复用)的篇数。 */
 	restoredFiles?: number;
+	/** 本轮启动时磁盘上的完成记录总数 — 恢复进度的分母。 */
+	restoredTotal?: number;
 	/**
 	 * 本轮未清除的失败数 — 按路径记账:同一路径后续成功处理即清除该路径的失败,
 	 * 其它路径的失败与其他来源(启动枚举失败)不受影响。

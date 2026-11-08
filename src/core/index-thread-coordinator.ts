@@ -35,6 +35,8 @@ export interface ThreadIndexClient {
 	deleteFile(filePath: string): Promise<{ removed: number }>;
 	recover(inputs: ReadonlyArray<{ path: string; hash: string | null }>): Promise<{ pending: number; decisions: number; failures: number }>;
 	close(reason?: string): Promise<void>;
+	/** 已落盘的完成记录；用于恢复阶段显示真实进度。缺失时不做恢复提示。 */
+	listCommitted?(): Promise<Array<{ path: string; state: 'present' | 'deleted' }>>;
 	/** 崩溃后重启;缺失表示该实现不支持自动恢复。 */
 	restart?(): Promise<void>;
 	/** 撤销在途请求;缺失表示只能停止调度新文件。 */
@@ -141,6 +143,8 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 	private restoring = false;
 	/** 已恢复(跳过)的篇数 — 供 UI 展示「已核对 N 篇」。 */
 	private restoredCount = 0;
+	/** 本轮启动时磁盘上的完成记录总数 — 恢复进度的分母。 */
+	private restoredTotal = 0;
 	/** 本轮真正写入的**块数** — 按块计量才能反映推理速度,不受文档大小影响。 */
 	private writtenBlocksThisRound = 0;
 	private taskIdValue = 0;
@@ -180,12 +184,23 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 		this.writtenThisRound = 0;
 		this.writtenBlocksThisRound = 0;
 		this.skippedThisRound = 0;
-		// 关键路径:启动先核对完成记录,此时尚未有真实写入,UI 应显示「恢复中」而非低值进度。
-		this.restoring = true;
 		this.restoredCount = 0;
+		this.restoredTotal = 0;
 		await this.client.start(this.startOptions);
 		// 关键路径:线程真的起来之后才算已启动,否则启动失败会把后续事件派给不存在的线程。
 		this.started = true;
+		// 关键路径:恢复阶段要有明确分母。取磁盘上的完成记录数,而不是靠「有没有写入」
+		// 推断 —— 恢复与新增写入是交织的,先遇到新文件不代表没有旧记录要核对。
+		if (this.client.listCommitted !== undefined) {
+			try {
+				const records = await this.client.listCommitted();
+				this.restoredTotal = records.filter((record) => record.state === 'present').length;
+			} catch (error) {
+				devLogger.warn('index', '读取完成记录总数失败,本轮不显示恢复进度', error);
+				this.restoredTotal = 0;
+			}
+		}
+		this.restoring = this.restoredTotal > 0;
 
 		// 关键路径:按篇推进 —— 批量提交时不等整批结算,进度按篇递增。
 		if (this.client.onFileCommitted !== undefined) {
@@ -283,6 +298,7 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 			failures: this.failing.size,
 			restoring: this.restoring,
 			restoredFiles: this.restoredCount,
+			restoredTotal: this.restoredTotal,
 		};
 	}
 
@@ -322,12 +338,13 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 		if (written) {
 			this.writtenThisRound += 1;
 			this.writtenBlocksThisRound += blocks;
-			// 关键路径:出现首个真实写入说明恢复核对已完成,进入正常索引阶段。
-			this.restoring = false;
 		} else {
 			this.skippedThisRound += 1;
 			this.restoredCount += 1;
 		}
+		// 关键路径:恢复态由「还没核对完已知的完成记录」决定,不由首个写入决定。
+		// 协调器先处理新文件时若按写入判定,恢复提示会立刻消失 —— 那正是现场看不到提示的原因。
+		if (this.restoring && this.restoredCount >= this.restoredTotal) this.restoring = false;
 		this.failing.delete(filePath);
 		this.failedOps.delete(filePath);
 		const sampleIndex = this.failureSamples.findIndex((item) => item.path === filePath);

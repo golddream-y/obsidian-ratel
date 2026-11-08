@@ -828,7 +828,7 @@ export const en: Strings = {
   'status.detail.recordsUnknown': 'Index state unknown: no trusted completion records, search is closed',
   'status.detail.configMismatch': 'Config generation changed: re-verification is required before search',
   'status.detail.reverifying': 'New changes increased pending work; re-verifying now',
-  'status.detail.restoring': 'Restoring indexed progress, {count} notes verified',
+  'status.detail.restoring': 'Restoring indexed progress ({done} / {total} notes verified)',
   // 关键路径(T7/I2/I6):索引不可用与配置漂移是必须上屏的事实,不允许静默
   'status.detail.indexUnavailable': 'Index unavailable: the runtime could not be assembled; search is disabled',
   'status.detail.configDrift': 'The embedding config changed in this session: index writes are paused to avoid mixing parameters; reload the plugin and rebuild the index',

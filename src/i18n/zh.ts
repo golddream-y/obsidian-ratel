@@ -831,7 +831,7 @@ const statusZh: StatusStrings = {
   'status.detail.recordsUnknown': '索引状态未知：没有可信的完成记录，检索已关闭',
   'status.detail.configMismatch': '配置代际已变化：需要重新核对后才能检索',
   'status.detail.reverifying': '变更导致待处理量增加，正在重新核对',
-  'status.detail.restoring': '正在恢复已索引进度，已核对 {count} 篇',
+  'status.detail.restoring': '正在恢复已索引进度（已核对 {done} / {total} 篇）',
   // 关键路径(T7/I2/I6):索引不可用与配置漂移是必须上屏的事实,不允许静默
   'status.detail.indexUnavailable': '索引不可用：运行时装配未成功，检索已关闭',
   'status.detail.configDrift': '嵌入配置已在本次会话内变更：为避免新旧参数混写，索引写入已暂停，请重新加载插件后重建索引',

@@ -26,8 +26,8 @@ export type IndexStatus =
     | { state: 'Init' }
     | { state: 'Diffing' }
     | { state: 'Scanning'; scanned: number; total: number; committed?: number; pending?: number; failed?: number; phase?: IndexPhase; secondsPerBlock?: number }
-    | { state: 'Queueing'; pending: number; reverifying?: boolean; restoring?: boolean; restoredFiles?: number; committed?: number; total?: number; failed?: number; phase?: IndexPhase; secondsPerBlock?: number }
-    | { state: 'Processing'; currentBatch: string[] }
+    | { state: 'Queueing'; pending: number; reverifying?: boolean; restoring?: boolean; restoredFiles?: number; restoredTotal?: number; committed?: number; total?: number; failed?: number; phase?: IndexPhase; secondsPerBlock?: number }
+    | { state: 'Processing'; currentBatch: string[]; restoring?: boolean; restoredFiles?: number; restoredTotal?: number }
     | { state: 'Ready'; totalDocs: number; lastIndexTime: number; committedDocs?: number; totalFiles?: number; pendingDocs?: number; failedDocs?: number; phase?: IndexPhase }
     | { state: 'Paused'; pending: number }
     /**
@@ -386,6 +386,7 @@ export class IndexManager {
             // 关键路径:恢复阶段单独透传,让 UI 显示「正在恢复已索引进度」而非低值进度。
             restoring: counters.restoring,
             restoredFiles: counters.restoredFiles,
+            restoredTotal: counters.restoredTotal,
             committed: counters.committed,
             total: counters.total,
             failed: counters.failures,
