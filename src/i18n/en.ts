@@ -770,7 +770,7 @@ export const en: Strings = {
   'status.drawer.embedBadge.gpu': 'GPU inference',
   'status.drawer.embedBadge.cpu': 'CPU inference',
   'status.drawer.embedBadge.api': 'Remote embedding service',
-  'status.drawer.indexSecondsPerBlock': 'about {seconds}s per block',
+  'status.drawer.indexSecondsPerBlock': 'currently ~{seconds}s per block overall',
   'status.drawer.embedKind.api': 'API',
   'status.drawer.section.context': 'Context',
   'status.drawer.label.usedMax': 'Used / Max',

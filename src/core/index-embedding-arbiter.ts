@@ -92,9 +92,11 @@ export class EmbeddingArbiter {
 		return this.queue.splice(index, 1)[0];
 	}
 
-	/** 吞吐统计用的累计量与下次打点阈值。 */
+	/** 吞吐统计用的累计量、上次打点位置与下次打点阈值。 */
 	private throughputBlocks = 0;
 	private throughputMs = 0;
+	private lastThroughputLogBlocks = 0;
+	private lastThroughputLogMs = 0;
 	private nextThroughputLogAt = 50;
 
 	/**
@@ -107,11 +109,19 @@ export class EmbeddingArbiter {
 		this.throughputBlocks += blocks;
 		this.throughputMs += elapsedMs;
 		if (this.throughputBlocks < this.nextThroughputLogAt) return;
-		const secondsPerBlock = this.throughputMs / 1000 / this.throughputBlocks;
+		// 关键路径:这里只测 `embed()` 批次,不含分块、等待与写盘;
+		// 页面「当前秒/块」按提交墙钟计算,两者不是同一指标。日志必须同时给出本段与累计,
+		// 否则累计均值会掩盖近期推理变慢,也会让人误以为它就是端到端速度。
+		const cumulativeSeconds = this.throughputMs / 1000 / this.throughputBlocks;
+		const segmentBlocks = this.throughputBlocks - this.lastThroughputLogBlocks;
+		const segmentMs = this.throughputMs - this.lastThroughputLogMs;
+		const segmentSeconds = segmentMs / 1000 / segmentBlocks;
 		devLogger.info(
 			'index',
-			`嵌入速度 ${secondsPerBlock.toFixed(2)} 秒/块(累计 ${this.throughputBlocks} 块 / ${Math.round(this.throughputMs / 1000)} 秒)`,
+			`纯推理:本段 ${segmentSeconds.toFixed(2)} 秒/块 / 累计 ${cumulativeSeconds.toFixed(2)} 秒/块(累计 ${this.throughputBlocks} 块)`,
 		);
+		this.lastThroughputLogBlocks = this.throughputBlocks;
+		this.lastThroughputLogMs = this.throughputMs;
 		this.nextThroughputLogAt = this.throughputBlocks * 2;
 	}
 

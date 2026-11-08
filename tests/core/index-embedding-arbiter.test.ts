@@ -4,8 +4,9 @@
  * @module tests/core/index-embedding-arbiter
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { EmbeddingArbiter } from '../../src/core/index-embedding-arbiter';
+import { devLogger } from '../../src/logging/dev-logger';
 
 /** 可控嵌入:每个批次都要等测试放行。 */
 function makeControlledEmbed(): {
@@ -108,5 +109,29 @@ describe('嵌入批次仲裁', () => {
 		const arbiter = new EmbeddingArbiter(async () => []);
 		await expect(arbiter.request([], 'query')).resolves.toEqual([]);
 		expect(arbiter.queued).toBe(0);
+	});
+
+	it('吞吐日志 - 分别报告本段与累计纯推理耗时 - 不用累计均值掩盖近期变慢', async () => {
+		const info = vi.spyOn(devLogger, 'info').mockImplementation(() => undefined);
+		const now = vi.spyOn(performance, 'now');
+		// 两批各 50 块：首批 5 秒，第二批 10 秒。
+		now.mockReturnValueOnce(0).mockReturnValueOnce(5000)
+			.mockReturnValueOnce(5000).mockReturnValueOnce(15000);
+		try {
+			const arbiter = new EmbeddingArbiter(async (texts) => texts.map(() => [0.1]), { maxBatchSize: 50 });
+			await arbiter.request(Array.from({ length: 50 }, () => 'a'), 'index');
+			await arbiter.request(Array.from({ length: 50 }, () => 'b'), 'index');
+
+			const messages = info.mock.calls.filter(([scope]) => scope === 'index').map(([, message]) => message);
+			expect(messages).toHaveLength(2);
+			expect(messages[0]).toContain('纯推理');
+			expect(messages[0]).toContain('本段 0.10 秒/块');
+			expect(messages[0]).toContain('累计 0.10 秒/块');
+			expect(messages[1]).toContain('本段 0.20 秒/块');
+			expect(messages[1]).toContain('累计 0.15 秒/块');
+		} finally {
+			info.mockRestore();
+			now.mockRestore();
+		}
 	});
 });

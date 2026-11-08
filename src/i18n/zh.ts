@@ -773,7 +773,7 @@ const statusZh: StatusStrings = {
   'status.drawer.embedBadge.gpu': 'GPU 推理',
   'status.drawer.embedBadge.cpu': 'CPU 推理',
   'status.drawer.embedBadge.api': '远端向量服务',
-  'status.drawer.indexSecondsPerBlock': '约 {seconds} 秒/块',
+  'status.drawer.indexSecondsPerBlock': '当前约 {seconds} 秒/块',
   'status.drawer.embedKind.api': 'API',
   'status.drawer.section.context': '上下文',
   'status.drawer.label.usedMax': '已用 / 上限',
