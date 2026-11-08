@@ -257,6 +257,10 @@ export class IndexManager {
             const signature = [
                 counters.taskId, counters.phase, counters.total, counters.committed,
                 counters.pendingFiles ?? 0, counters.failures, counters.active,
+                // 关键路径:恢复窗口到期本身要触发一次发布。
+                // 若签名不含恢复态,窗口到期后 counters 其它字段不变,定时器直接 return,
+                // UI 就永远停在「正在恢复已索引进度」——这正是上一版的残留症状。
+                counters.restoring === true, counters.restoredFiles ?? 0,
             ].join('|');
             if (signature === this.lastCoordinatorSignature) return;
             this.lastCoordinatorSignature = signature;
