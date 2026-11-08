@@ -121,7 +121,15 @@
 	const indexValue = $derived(
 		snap.index === 'failed' || snap.index === 'paused'
 			? labelIndex(snap.index)
-			: labelPhase(snap.indexPhase) ?? labelIndex(snap.index),
+			// 关键路径:恢复已索引进度期间必须替换掉「正在生成向量并写入索引」,
+			// 否则用户只看到低值进度、误以为索引从零重来。此前文案写在 indexDetail 上,
+			// 而抽屉正文并不渲染 indexDetail —— 提示因此从未出现过。
+			: snap.indexRestoring === true
+				? $t('status.drawer.restoring', {
+					done: snap.indexRestoredFiles ?? 0,
+					total: snap.indexRestoredTotal ?? 0,
+				})
+				: labelPhase(snap.indexPhase) ?? labelIndex(snap.index),
 	);
 	const indexing = $derived(['scanning', 'processing', 'queueing', 'diffing', 'init'].includes(snap.index));
 
@@ -139,6 +147,12 @@
 		}
 		// 关键路径:「正在生成向量并写入索引」会持续较长时间,必须说清这段在做什么、
 		// 以及已有结果是否可用,否则用户只能看到一个长时间不动的状态标签。
+		if (snap.indexRestoring === true) {
+			return $t('status.drawer.restoringHint', {
+				done: snap.indexRestoredFiles ?? 0,
+				total: snap.indexRestoredTotal ?? 0,
+			});
+		}
 		if (snap.index === 'processing') return $t('status.detail.embeddingWriting');
 		return undefined;
 	});

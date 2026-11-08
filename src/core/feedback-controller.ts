@@ -342,6 +342,9 @@ export class FeedbackController {
 					indexFailedFiles: status.failed ?? 0,
 					indexPartial: (status.committed ?? 0) > 0,
 					indexSecondsPerBlock: status.secondsPerBlock,
+					indexRestoring: status.restoring,
+					indexRestoredFiles: status.restoredFiles,
+					indexRestoredTotal: status.restoredTotal,
 				});
 				break;
 			case 'Queueing':
@@ -363,6 +366,9 @@ export class FeedbackController {
 					indexFailedFiles: status.failed ?? 0,
 					indexPartial: (status.committed ?? 0) > 0,
 					indexSecondsPerBlock: status.secondsPerBlock,
+					indexRestoring: status.restoring,
+					indexRestoredFiles: status.restoredFiles,
+					indexRestoredTotal: status.restoredTotal,
 				});
 				break;
 			case 'Processing':
@@ -376,9 +382,9 @@ export class FeedbackController {
 							total: status.restoredTotal ?? 0,
 						})
 						: status.currentBatch[0] ?? undefined,
-					restoring: status.restoring,
-					restoredFiles: status.restoredFiles,
-					restoredTotal: status.restoredTotal,
+					indexRestoring: status.restoring,
+					indexRestoredFiles: status.restoredFiles,
+					indexRestoredTotal: status.restoredTotal,
 				});
 				break;
 			case 'Ready': {

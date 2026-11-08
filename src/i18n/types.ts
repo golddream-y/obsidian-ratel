@@ -774,6 +774,8 @@ export interface StatusStrings {
   'status.drawer.embedBadge.gpu': string;
   'status.drawer.embedBadge.cpu': string;
   'status.drawer.indexSecondsPerBlock': string;
+  'status.drawer.restoring': string;
+  'status.drawer.restoringHint': string;
   'status.drawer.embedKind.api': string;
   'status.drawer.section.context': string;
   'status.drawer.label.usedMax': string;

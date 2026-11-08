@@ -103,6 +103,12 @@ export interface UserStatusSnapshot {
 	indexSecondsPerBlock?: number;
 	/** 待处理(队列 + 在途 + 未决事务)文件数。 */
 	indexPendingFiles?: number;
+	/** 是否处于「恢复已索引进度」阶段（重启后核对完成记录期间）。 */
+	indexRestoring?: boolean;
+	/** 已核对（按完成记录复用）的篇数。 */
+	indexRestoredFiles?: number;
+	/** 本轮启动时磁盘上的完成记录总数 — 恢复进度的分母。 */
+	indexRestoredTotal?: number;
 	/** 本轮未清除的失败数(按路径)。 */
 	indexFailedFiles?: number;
 	/** 迁移/回收的可报告结论 — 诊断落点(T7/I4),只放结论面。 */

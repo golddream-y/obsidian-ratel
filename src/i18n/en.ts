@@ -771,6 +771,8 @@ export const en: Strings = {
   'status.drawer.embedBadge.cpu': 'CPU inference',
   'status.drawer.embedBadge.api': 'Remote embedding service',
   'status.drawer.indexSecondsPerBlock': 'currently ~{seconds}s per block overall',
+  'status.drawer.restoring': 'Restoring indexed progress ({done} / {total} notes)',
+  'status.drawer.restoringHint': 'Verified notes are already searchable; their vectors are reused',
   'status.drawer.embedKind.api': 'API',
   'status.drawer.section.context': 'Context',
   'status.drawer.label.usedMax': 'Used / Max',

@@ -774,6 +774,8 @@ const statusZh: StatusStrings = {
   'status.drawer.embedBadge.cpu': 'CPU 推理',
   'status.drawer.embedBadge.api': '远端向量服务',
   'status.drawer.indexSecondsPerBlock': '当前约 {seconds} 秒/块',
+  'status.drawer.restoring': '正在恢复已索引进度（{done} / {total} 篇）',
+  'status.drawer.restoringHint': '已核对的笔记可直接用于搜索，无需重新生成向量',
   'status.drawer.embedKind.api': 'API',
   'status.drawer.section.context': '上下文',
   'status.drawer.label.usedMax': '已用 / 上限',

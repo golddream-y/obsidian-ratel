@@ -25,7 +25,7 @@ export type IndexStatus =
     | { state: 'Idle' }
     | { state: 'Init' }
     | { state: 'Diffing' }
-    | { state: 'Scanning'; scanned: number; total: number; committed?: number; pending?: number; failed?: number; phase?: IndexPhase; secondsPerBlock?: number }
+    | { state: 'Scanning'; scanned: number; total: number; committed?: number; pending?: number; failed?: number; phase?: IndexPhase; secondsPerBlock?: number; restoring?: boolean; restoredFiles?: number; restoredTotal?: number }
     | { state: 'Queueing'; pending: number; reverifying?: boolean; restoring?: boolean; restoredFiles?: number; restoredTotal?: number; committed?: number; total?: number; failed?: number; phase?: IndexPhase; secondsPerBlock?: number }
     | { state: 'Processing'; currentBatch: string[]; restoring?: boolean; restoredFiles?: number; restoredTotal?: number }
     | { state: 'Ready'; totalDocs: number; lastIndexTime: number; committedDocs?: number; totalFiles?: number; pendingDocs?: number; failedDocs?: number; phase?: IndexPhase }
@@ -373,6 +373,9 @@ export class IndexManager {
                 pending,
                 failed: counters.failures,
                 phase: counters.phase, secondsPerBlock,
+                restoring: counters.restoring,
+                restoredFiles: counters.restoredFiles,
+                restoredTotal: counters.restoredTotal,
             });
             return;
         }
