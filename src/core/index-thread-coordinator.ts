@@ -263,6 +263,15 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 			'index',
 			`索引轮完成:写入 ${this.writtenThisRound} 篇 / 跳过 ${this.skippedThisRound} 篇(完成记录复用) / 失败 ${this.failing.size}`,
 		);
+		// 关键路径(诊断):恢复态若没收敛,列出还没被核对的记录路径,
+		// 避免再靠「差几篇」这种表面数字去猜原因。
+		if (this.restoring) {
+			const pending = [...this.receiptPaths].filter((p) => !this.verified.has(p));
+			devLogger.warn(
+				'index',
+				`恢复未收敛:已核对 ${this.examinedCount}/${this.restoredTotal},未核对路径样本:${pending.slice(0, 10).join(' | ') || '(空)'}`,
+			);
+		}
 		if (this.failing.size > 0) {
 			const sample = this.failureSamples.map((item) => `${item.path}: ${item.message}`).join('; ');
 			devLogger.warn('index', `本轮有 ${this.failing.size} 个文件连续重试 ${IndexThreadCoordinator.MAX_DEFERRED_PASSES + 1} 次仍失败,标记为放弃:${sample}`);
