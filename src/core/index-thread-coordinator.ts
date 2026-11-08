@@ -145,6 +145,16 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 	private restoredCount = 0;
 	/** 本轮启动时磁盘上的完成记录总数 — 恢复进度的分母。 */
 	private restoredTotal = 0;
+	/**
+	 * 启动时存在完成记录的路径集合。
+	 *
+	 * 关键路径:恢复结束的判据是「这些路径都核对过」,而不是「跳过数追平记录数」——
+	 * 内容已变、代际隔离、或文件已删的记录会被计入失败/重做而不算跳过,
+	 * 用跳过数对比总数会永远追不平,界面就卡在 2304/2331 这种数字上。
+	 */
+	private receiptPaths: Set<string> = new Set();
+	/** 已核对过的「启动时已有完成记录」的路径数。 */
+	private examinedCount = 0;
 	/** 本轮真正写入的**块数** — 按块计量才能反映推理速度,不受文档大小影响。 */
 	private writtenBlocksThisRound = 0;
 	private taskIdValue = 0;
@@ -186,6 +196,8 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 		this.skippedThisRound = 0;
 		this.restoredCount = 0;
 		this.restoredTotal = 0;
+		this.examinedCount = 0;
+		this.receiptPaths = new Set();
 		await this.client.start(this.startOptions);
 		// 关键路径:线程真的起来之后才算已启动,否则启动失败会把后续事件派给不存在的线程。
 		this.started = true;
@@ -196,7 +208,10 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 		} else {
 			try {
 				const records = await this.client.listCommitted();
-				this.restoredTotal = records.filter((record) => record.state === 'present').length;
+				this.receiptPaths = new Set(
+					records.filter((record) => record.state === 'present').map((record) => record.path),
+				);
+				this.restoredTotal = this.receiptPaths.size;
 				devLogger.info('index', `恢复检查:完成记录 ${records.length} 条,其中 present ${this.restoredTotal} 条`);
 			} catch (error) {
 				devLogger.warn('index', '读取完成记录总数失败,本轮不显示恢复进度', error);
@@ -301,7 +316,7 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 			pendingTransactions: 0,
 			failures: this.failing.size,
 			restoring: this.restoring,
-			restoredFiles: this.restoredCount,
+			restoredFiles: this.examinedCount,
 			restoredTotal: this.restoredTotal,
 		};
 	}
@@ -346,9 +361,10 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 			this.skippedThisRound += 1;
 			this.restoredCount += 1;
 		}
-		// 关键路径:恢复态由「还没核对完已知的完成记录」决定,不由首个写入决定。
-		// 协调器先处理新文件时若按写入判定,恢复提示会立刻消失 —— 那正是现场看不到提示的原因。
-		if (this.restoring && this.restoredCount >= this.restoredTotal) this.restoring = false;
+		// 关键路径:恢复进度按「有完成记录的路径已被核对过」推进,跳过与重做都算核对完成,
+		// 否则内容变更的记录会让进度永远差一截、提示不消失。
+		if (this.receiptPaths.has(filePath)) this.examinedCount += 1;
+		if (this.restoring && this.examinedCount >= this.restoredTotal) this.restoring = false;
 		this.failing.delete(filePath);
 		this.failedOps.delete(filePath);
 		const sampleIndex = this.failureSamples.findIndex((item) => item.path === filePath);
