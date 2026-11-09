@@ -25,7 +25,12 @@ describe('Worker 生命周期原因', () => {
 		const lifecycle: Array<{ kind: string; reason?: string }> = [];
 		const proxy = new EmbeddingWorkerProxy(
 			'blob:test',
-			{ dimensions: 2, modelId: 'local:test' },
+			{
+				vocabContent: 'a\n',
+				modelBuffer: new ArrayBuffer(8),
+				wasmBinary: new ArrayBuffer(8),
+				modelId: 'local:test',
+			},
 			2,
 			8,
 			(kind, reason) => lifecycle.push({ kind, reason }),
@@ -39,5 +44,50 @@ describe('Worker 生命周期原因', () => {
 		expect(crash?.reason).toContain('超时');
 		// 诊断字段必须含批量信息，否则「批量过大」与「GPU 卡死」区分不开。
 		expect(crash?.reason).toContain('批量=1');
+	});
+});
+
+describe('GPU 设备丢失', () => {
+	it('收到 gpu:lost - 立即按 crash 重建并带出设备原因', async () => {
+		// 关键路径:设备丢失后推理不会抛错、只是永不返回；
+		// 若不做这条通道，用户要等到 120 秒超时才看到失败。
+		const lifecycle: Array<{ kind: string; reason?: string }> = [];
+		const listeners: Array<(event: MessageEvent) => void> = [];
+		const worker = {
+			postMessage: vi.fn(),
+			terminate: vi.fn(),
+			addEventListener: (type: string, listener: (event: MessageEvent) => void) => {
+				if (type === 'message') listeners.push(listener);
+			},
+			removeEventListener: vi.fn(),
+		} as unknown as Worker;
+		const proxy = new EmbeddingWorkerProxy(
+			'blob:test',
+			{
+				vocabContent: 'a\n',
+				modelBuffer: new ArrayBuffer(8),
+				wasmBinary: new ArrayBuffer(8),
+				modelId: 'local:test',
+			},
+			2,
+			8,
+			(kind, reason) => lifecycle.push({ kind, reason }),
+			'classic',
+			worker,
+		);
+		// 预热实例在首次使用时才挂监听，先发一次请求触发 attach。
+		const pending = proxy.embed(['工程化']).then(
+			() => new Error('应当被拒绝'),
+			(error: Error) => error,
+		);
+		await new Promise((resolve) => setTimeout(resolve, 5));
+		for (const listener of listeners) {
+			listener({ data: { type: 'gpu:lost', reason: 'destroyed:device removed' } } as MessageEvent);
+		}
+		const settled = await pending;
+		expect(settled.message).toContain('GPU 设备丢失');
+		const crash = lifecycle.find((item) => item.kind === 'crash');
+		expect(crash?.reason).toContain('GPU 设备丢失');
+		expect(crash?.reason).toContain('device removed');
 	});
 });

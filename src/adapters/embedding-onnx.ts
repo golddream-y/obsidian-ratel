@@ -27,6 +27,16 @@ type TensorConstructor = typeof ort.Tensor;
  * 关键路径:vocab 用内容(string)而非路径传递,让 Web Worker(无 node:fs)
  * 也能直接构造 tokenizer;主线程负责读文件后传入。
  */
+/**
+ * WebGPU 设备的最小结构化类型。
+ *
+ * 关键路径:项目没有引入 `@webgpu/types`，这里只声明真正用到的两个成员 ——
+ * 让 device 能传给 ORT 的 `executionProviders`,并且能挂上 `lost`。
+ */
+interface WebGpuDeviceLike {
+	lost: Promise<{ reason: string; message: string }>;
+}
+
 export interface EmbeddingOnnxDeps {
 	/**
 	 * vocab.txt 的文本内容。
@@ -61,6 +71,16 @@ export interface EmbeddingOnnxDeps {
 	 * 该字段**不参与配置指纹**,因此切换后端不会重建索引。
 	 */
 	enableWebgpu?: boolean;
+
+	/**
+	 * GPU 设备丢失回调。
+	 *
+	 * 关键路径(2026-11-09 现场):WebGPU 的 device 一旦丢失，`device.queue.submit()`
+	 * 之后的 Promise 永不 settle，ORT 内部不监听 `device.lost`，整个推理**静默挂起**；
+	 * 表现为请求等到 120 秒超时、Worker 被当成「崩溃」重建。自己创建 device 并监听
+	 * 它的 lost，就能在毫秒级知道设备已死，而不是两分钟后靠超时兜底。
+	 */
+	onGpuDeviceLost?: (reason: string) => void;
 
 	/** 构建期内联的 jsep 胶水模块源码;GPU 版非空。 */
 	glueSource?: string;
@@ -184,8 +204,37 @@ export class EmbeddingOnnx implements EmbeddingPort {
 		// 关键路径:此处**不做 WASM 回退**。同一 ORT 实例里 webgpu 尝试失败会污染
 		// initWasm(),导致回退也失败(1.4.0 实测)。失败直接抛,由装配层换一个全新的
 		// WASM Worker —— 两个独立实例,零污染。
+		// 关键路径:自己创建 device 才能监听它的丢失。传进 EP 后 ORT 直接复用它，
+		// 不再在内部另建一个——否则崩溃信号仍然拿不到。
+		const gpu = (globalThis as {
+			navigator?: {
+				gpu?: {
+					requestAdapter(): Promise<{
+						requestDevice(): Promise<WebGpuDeviceLike>;
+					} | null>;
+				};
+			};
+		}).navigator?.gpu;
+		let device: WebGpuDeviceLike | undefined;
+		if (gpu !== undefined) {
+			try {
+				const adapter = await gpu.requestAdapter();
+				if (adapter !== null && adapter !== undefined) {
+					device = await adapter.requestDevice();
+					// 关键路径:lost 是 Promise 而不是事件，必须在这里挂上；
+					// 触发时立刻回报，让装配层换新实例，而不是等请求超时。
+					void device.lost.then((info: { reason: string; message: string }) => {
+						this.deps.onGpuDeviceLost?.(`${info.reason}:${info.message}`);
+					});
+				}
+			} catch (error) {
+				// 自建失败不影响主流程：退回由 ORT 自己建 device。
+				devLogger.warn('index', '自建 GPU 设备失败,改由 ORT 内部创建', error);
+				device = undefined;
+			}
+		}
 		const session = await ort.InferenceSession.create(this.deps.modelBuffer, {
-			executionProviders: ['webgpu'],
+			executionProviders: [device === undefined ? 'webgpu' : { name: 'webgpu', device }],
 			// 关键路径:ORT 的 C++ 层会为每个会话打印算子分配统计(W 级),
 			// GPU 路径每次装载都刷一屏;3 = error,只保留真正的错误。
 			logSeverityLevel: 3,

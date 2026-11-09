@@ -80,11 +80,18 @@ interface WorkerErrorMessage {
 	error: string;
 }
 
+/** GPU 设备丢失 — 推理会静默挂起，必须在毫秒级上报。 */
+interface WorkerGpuLostMessage {
+	type: 'gpu:lost';
+	reason: string;
+}
+
 type WorkerResponse =
 	| WorkerReadyMessage
 	| WorkerEmbedResultMessage
 	| WorkerEmbedProgressMessage
-	| WorkerErrorMessage;
+	| WorkerErrorMessage
+	| WorkerGpuLostMessage;
 
 /** 一次挂起嵌入请求的结算与清理凭据。 */
 interface PendingEmbed {
@@ -368,6 +375,12 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 				if (entry !== undefined) entry.onBatchComplete?.(data.done, data.total);
 			} else if (data.type === 'error' && data.requestId) {
 				this.settlePending(data.requestId, new Error(data.error));
+			} else if (data.type === 'gpu:lost') {
+				// 关键路径(2026-11-09 现场):设备丢失后推理不会报错、只是永不返回。
+				// 收到这条就立刻重建，而不是让在途请求干等到超时 ——
+				// 用户感知是「瞬间恢复」而不是「卡两分钟」。
+				devLogger.error('worker', `GPU 设备丢失,重建嵌入运行时:${data.reason}`);
+				this.terminateWorker('crash', `GPU 设备丢失:${data.reason}`);
 			}
 		});
 
@@ -421,6 +434,11 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 				if (entry !== undefined) entry.onBatchComplete?.(data.done, data.total);
 			} else if (data.type === 'error' && data.requestId) {
 				this.settlePending(data.requestId, new Error(data.error));
+			} else if (data.type === 'gpu:lost') {
+				// 关键路径:预热复用路径（GPU 探测成功后接管实例）走的就是这里，
+				// 少了这条分支，设备丢失信号会被静默丢弃，用户仍要等 120 秒超时。
+				devLogger.error('worker', `GPU 设备丢失,重建嵌入运行时:${data.reason}`);
+				this.terminateWorker('crash', `GPU 设备丢失:${data.reason}`);
 			}
 		});
 		worker.addEventListener('error', (err: ErrorEvent) => {

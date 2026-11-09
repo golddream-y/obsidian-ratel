@@ -59,7 +59,16 @@ self.onmessage = async (e: MessageEvent): Promise<void> => {
 				// GPU 版(ESM + webgpu bundle)才尝试 WebGPU 并携带内联胶水;
 				// WASM 版(IIFE)保持纯 CPU 路径,行为与 1.4.0 完全一致。
 				const resolvedDeps: EmbeddingOnnxDeps = __RATEL_GPU_WORKER__
-					? { ...deps, enableWebgpu: true, glueSource: __RATEL_ORT_GLUE__ }
+					? {
+						...deps,
+						enableWebgpu: true,
+						glueSource: __RATEL_ORT_GLUE__,
+						// 关键路径:GPU 设备一旦丢失，推理会静默挂起、请求等到 120 秒超时。
+						// 这里在毫秒级把信号报给主线程，由它换一个全新实例。
+						onGpuDeviceLost: (reason: string) => {
+							self.postMessage({ type: 'gpu:lost', reason });
+						},
+					}
 					: deps;
 				embeddingOnnx = new EmbeddingOnnx(resolvedDeps, dimensions, maxBatchSize);
 				await embeddingOnnx.init();
