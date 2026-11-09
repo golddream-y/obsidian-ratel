@@ -7,6 +7,7 @@
 	 */
 	import type { Readable } from 'svelte/store';
 	import type { UserStatusSnapshot, ContextUsage } from '../../user-feedback/user-status';
+	import { setIcon } from 'obsidian';
 	import { t } from '../../i18n';
 	import { clampContextPct } from './strip-label';
 	import { indexProgressView } from './index-progress';
@@ -166,6 +167,27 @@
 		return 'var(--text-muted)';
 	});
 
+	/**
+	 * 后端图标名 —— 与文字一起说明「这一轮跑在什么上」。
+	 *
+	 * 关键路径:只用颜色或文字区分时,缩略扫读几乎看不出来;
+	 * 图标取 Obsidian 内置 lucide 集,跟随主题着色,不引入图片资源。
+	 */
+	const embedBadgeIcon = $derived.by(() => {
+		if (embedKind === 'api') return 'cloud';
+		if (snap.embeddingBackend === 'webgpu') return 'zap';
+		if (snap.embeddingBackend === 'wasm') return 'cpu';
+		return 'cpu';
+	});
+
+	let badgeIconEl: HTMLElement | undefined = $state();
+	// 关键路径:图标由 Obsidian 的 setIcon 注入,才能跟随主题前景色;
+	// 直接写死 SVG 会在浅色/深色主题下出现对不上的填充色。
+	$effect(() => {
+		if (badgeIconEl === undefined) return;
+		setIcon(badgeIconEl, embedBadgeIcon);
+	});
+
 	// 关键路径:本地向量要说清跑在 GPU 还是 CPU 上 —— 用户凭这句判断索引快慢是否正常。
 	const embedBadgeText = $derived.by(() => {
 		if (embedKind === 'api') return $t('status.drawer.embedBadge.api');
@@ -190,6 +212,7 @@
 		<div class="ratel-drawer-section-title ratel-drawer-section-title--with-aside">
 			<span>{$t('status.drawer.section.index')}</span>
 			<span class="ratel-embed-badge" title={$t('status.drawer.label.embedding')}>
+				<span class="ratel-embed-badge-icon" bind:this={badgeIconEl} aria-hidden="true"></span>
 				{embedBadgeText}
 			</span>
 		</div>
@@ -448,11 +471,25 @@
 	/* 关键路径:这里是**只读信息**,不是可点控件。边框 + 背景会把它画成按钮,
 	   与真正的操作控件(压缩上下文)混淆;因此只保留弱化文字,不用任何控件外观。 */
 	.ratel-embed-badge {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
 		font-size: 11px;
 		font-weight: 400;
 		letter-spacing: 0;
 		color: var(--text-faint);
 		white-space: nowrap;
+	}
+	/* 关键路径:图标与文字同色同高,保持「只读信息」的观感;
+	   放大或换成强调色会让这一行看起来像可点控件。 */
+	.ratel-embed-badge-icon {
+		display: inline-flex;
+		align-items: center;
+	}
+	.ratel-embed-badge-icon :global(svg) {
+		width: 12px;
+		height: 12px;
+		stroke-width: 2;
 	}
 	/* 标题行内的操作按钮 — 比常规微按钮更小,不撑高分组标题。 */
 	.ratel-drawer-micro-btn--inline {
