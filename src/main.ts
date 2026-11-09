@@ -105,6 +105,7 @@ import { AGENTS_FILE_NAME } from './tools/note-agents';
 import { MemoryStore } from './core/memory-store';
 import { shouldAutoEmbedTopics } from './core/memory-topics-auto-inject';
 import { createQueryEmbeddingPort } from './core/query-embedding';
+import { judgeGpuProbeMessage } from './core/gpu-probe';
 // 关键路径(S-SR-LAYERING):使用统计 — Skill 激活与记忆 topics 自动注入命中计数
 import { UsageStatsStore } from './core/usage-stats';
 import { createSearchMemoryTool } from './tools/search-memory';
@@ -3098,11 +3099,6 @@ export default class RatelVaultPlugin extends Plugin {
 							warmupTimer = window.setTimeout(() => settle(true), 20_000);
 							return;
 						}
-						if (data.type === 'error') {
-							const stack = data.stack === undefined ? '' : `\n${data.stack.split('\n').slice(0, 8).join('\n')}`;
-							settle(false, `GPU 嵌入 Worker 初始化失败:${data.error ?? 'unknown'}${stack}`);
-							return;
-						}
 						if (data.type === 'warmup:done') {
 							const blocks = data.blocks ?? 1;
 							const ms = data.elapsedMs ?? 0;
@@ -3112,11 +3108,18 @@ export default class RatelVaultPlugin extends Plugin {
 								// 关键路径:单条查询与索引批次的耗时必须分开看 —— 两者形状不同。
 								devLogger.info('index', `GPU 单条查询:${queryMs} ms`);
 							}
-							settle(true);
-						} else if (data.type === 'warmup:error') {
-							devLogger.warn('index', `GPU 预热失败:${data.error ?? 'unknown'}`);
-							settle(true);
 						}
+						// 关键路径:判定集中在 judgeGpuProbeMessage —— 预热失败必须判不可用。
+						// 早先这里把 warmup:error 也 settle(true)，等于把坏执行器投入使用。
+						const verdict = judgeGpuProbeMessage({ type: data.type ?? '', error: data.error });
+						if (!verdict.decided) return;
+						if (!verdict.usable) {
+							const stack = data.stack === undefined ? '' : `\n${data.stack.split('\n').slice(0, 8).join('\n')}`;
+							devLogger.warn('index', `${verdict.reason ?? 'GPU 不可用'},回退 WASM`);
+							settle(false, `${verdict.reason ?? 'GPU 不可用'}${stack}`);
+							return;
+						}
+						settle(true);
 					},
 					{ signal: listeners.signal },
 				);
@@ -3138,7 +3141,9 @@ export default class RatelVaultPlugin extends Plugin {
 			listeners.abort();
 			worker.terminate();
 			URL.revokeObjectURL(url);
-			devLogger.warn('index', 'GPU 嵌入 Worker 初始化失败,回退 WASM');
+			// 关键路径:初始化失败与「预热失败」都走到这里 —— 后者说明执行器跑不通推理,
+			// 同样必须回退,文案不能只提初始化。
+			devLogger.warn('index', 'GPU 嵌入 Worker 不可用,回退 WASM');
 			// 关键路径:GPU 失败后要补下 CPU 运行时(首次约 13 MB),必须让用户看到在等什么。
 			this.userStatus.patch({
 				embeddingBackend: 'wasm',
