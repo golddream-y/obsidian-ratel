@@ -598,9 +598,9 @@ export default class RatelVaultPlugin extends Plugin {
 		};
 
 		const multiQuerySearcher = new MultiQuerySearcher({
-			// 关键路径(1.5.0 修复):查询走主线程 CPU 会话,不经 GPU worker。
-			// GPU 在小 shape 上会挂住不返回,查询一旦卡住就是整条检索链路超时。
-			embedding: this.embedding,
+			// 关键路径:查询与索引共用同一嵌入端口 —— 实测 GPU 处理单条查询只要 81ms,
+			// 此前「GPU 小形状挂死」的判断不成立,把查询挪到主线程 CPU 反而拖慢索引。
+			embedding: this.effectiveEmbedding(),
 			workerManager: this.workerManager,
 			vault: this.vault,
 			reranker,
@@ -1336,10 +1336,10 @@ export default class RatelVaultPlugin extends Plugin {
 		});
 
 			try {
-				// 关键路径(1.5.0 修复):查询必须有一条不依赖 GPU worker 的路径。
-				// GPU 在查询的 [1, 短序列] 形状上会挂死(实测请求 120 秒无响应,工具层 60 秒先超时),
-				// 因此索引走 GPU worker、查询走主线程 CPU 会话;两份运行时都要备好。
-				await this.modelManager.download(undefined, { skipCpuRuntime: false, lazyEmbedding: false });
+				// 关键路径(1.5.1 回退):主线程常驻 CPU 会话会让内存翻倍并和 GPU worker 争 CPU,
+				// 实测纯推理从 0.11 秒/块恶化到 1.85 秒/块。GPU 可用时不再预先准备 CPU 会话,
+				// 只有 GPU worker 真正不可用时才惰性构建(那条路径会自行按需下载运行时)。
+				await this.modelManager.download(undefined, { skipCpuRuntime: webgpuCapable, lazyEmbedding: webgpuCapable });
 
 				// 关键路径(S-RETRIEVAL-QUALITY §4.1/§4.2):词表交给 Worker 一次(约 109KB)——
 				// Worker 侧据此做精确 token 计数;没拿到词表时按字符上界估算(高估方向,宁可块小也不许截断)。
