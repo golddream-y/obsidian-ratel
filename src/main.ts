@@ -3178,7 +3178,12 @@ export default class RatelVaultPlugin extends Plugin {
 			},
 			embedding.dimensions,
 			16,
-			(kind) => this.breadcrumbs?.mark('heartbeat', undefined, `worker.${kind}`),
+			(kind, reason) => {
+				// 关键路径:三种故障都叫 crash —— 请求超时、worker 抛错、init 失败。
+				// 只记枚举等于没记，排查时区分不开，必须把终止原因一并落盘。
+				const detail = reason === undefined ? `worker.${kind}` : `worker.${kind}:${reason.slice(0, 120)}`;
+				this.breadcrumbs?.mark('heartbeat', undefined, detail);
+			},
 			workerType,
 			gpuProbe?.worker,
 		);

@@ -146,14 +146,17 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 	private readonly prewarmed?: Worker;
 	private readonly maxBatchSize: number;
 	private readonly createDeps: () => Promise<EmbeddingOnnxDeps>;
-	private readonly onLifecycle?: (kind: WorkerLifecycleKind) => void;
+	private readonly onLifecycle?: (kind: WorkerLifecycleKind, reason?: string) => void;
+	/** 单次请求等待上限(ms) — 可注入，便于用真实分支验证超时行为。 */
+	private readonly requestTimeoutMs: number;
 
 	/**
 	 * @param workerUrl - Worker 脚本 URL(Blob URL)
 	 * @param depsOrFactory - 模型依赖对象,或每次 ensureWorker 都调用的工厂(transfer 会掏空 ArrayBuffer)
 	 * @param dimensions - 向量维度
 	 * @param maxBatchSize - Worker 内单批上限
-	 * @param onLifecycle - 可选;create / idle-terminate / crash,由装配层打 heartbeat
+	 * @param onLifecycle - 可选;create / idle-terminate / crash,由装配层打 heartbeat;
+	 *   第二个参数是**终止原因** —— 三种故障都叫 crash,只记枚举等于没记。
 	 * @param workerType - Worker 加载类型;GPU 版传 'module',WASM 版缺省 'classic'
 	 * @param prewarmed - 已 init 完成的 Worker;传入时跳过创建与 init
 	 */
@@ -162,9 +165,10 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 		depsOrFactory: DepsOrFactory,
 		dimensions: number,
 		maxBatchSize = 16,
-		onLifecycle?: (kind: WorkerLifecycleKind) => void,
+		onLifecycle?: (kind: WorkerLifecycleKind, reason?: string) => void,
 		workerType: 'classic' | 'module' = 'classic',
 		prewarmed?: Worker,
+		requestTimeoutMs = REQUEST_TIMEOUT_MS,
 	) {
 		this.workerUrl = workerUrl;
 		this.workerType = workerType;
@@ -172,6 +176,7 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 		this.dimensions = dimensions;
 		this.maxBatchSize = maxBatchSize;
 		this.onLifecycle = onLifecycle;
+		this.requestTimeoutMs = requestTimeoutMs;
 		if (typeof depsOrFactory === 'function') {
 			this.createDeps = depsOrFactory;
 			this.modelId = 'local:bge-small-zh-v1.5';
@@ -253,9 +258,19 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 				// 否则它会永久占住 pending,让后续所有嵌入调用排队到超时。
 				entry.timer = globalThis.setTimeout(() => {
 					if (!this.pending.has(requestId)) return;
-					this.settlePending(requestId, new Error(`Embedding Worker 请求超时(${REQUEST_TIMEOUT_MS / 1000} 秒)`));
-					this.terminateWorker('crash', 'Embedding Worker 因请求超时被重建');
-				}, REQUEST_TIMEOUT_MS);
+					// 关键路径(诊断):超时只说「120 秒没回来」对定位没有帮助 ——
+					// 必须同时记下这一批有多大、还有多少请求在排队、Worker 是否还活着,
+					// 否则「GPU 卡死」「消息丢失」「批量过大」三种原因无法区分。
+					const chars = texts.reduce((sum, text) => sum + text.length, 0);
+					devLogger.warn(
+						'worker',
+						`嵌入请求超时:${requestId} 批量=${texts.length} 字符=${chars} ` +
+							`排队=${this.pending.size} worker=${this.worker === null ? '无' : '存活'} ` +
+							`已发请求=${this.requestCounter}`,
+					);
+					this.settlePending(requestId, new Error(`Embedding Worker 请求超时(${this.requestTimeoutMs / 1000} 秒)`));
+					this.terminateWorker('crash', `Embedding Worker 因请求超时被重建(批量=${texts.length} 字符=${chars})`);
+				}, this.requestTimeoutMs);
 				this.pending.set(requestId, entry);
 				const msg: WorkerEmbedMessage = { type: 'embed', texts, requestId };
 				worker.postMessage(msg);
@@ -486,7 +501,7 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 		for (const requestId of [...this.pending.keys()]) {
 			this.settlePending(requestId, new Error(rejectMessage));
 		}
-		if (kind) this.onLifecycle?.(kind);
+		if (kind) this.onLifecycle?.(kind, rejectMessage);
 	}
 
 	/**
