@@ -104,6 +104,7 @@ import { AGENTS_FILE_NAME } from './tools/note-agents';
 // 3 个工具(search_memory / remember / forget_memory)复用 memoryStore 与 embeddingPort。
 import { MemoryStore } from './core/memory-store';
 import { shouldAutoEmbedTopics } from './core/memory-topics-auto-inject';
+import { createQueryEmbeddingPort } from './core/query-embedding';
 // 关键路径(S-SR-LAYERING):使用统计 — Skill 激活与记忆 topics 自动注入命中计数
 import { UsageStatsStore } from './core/usage-stats';
 import { createSearchMemoryTool } from './tools/search-memory';
@@ -271,6 +272,14 @@ import type { AgentGoal } from './core/goal-store';
  * - 所有 Obsidian API 访问都经过 `this.vault` / `this.persistence`,不直接 `import 'obsidian'` 调用。
  * - `onunload` 必须先 `workerManager.destroy()` 释放 Worker 进程。
  */
+/**
+ * 查询嵌入的等待上限(ms)。
+ *
+ * 关键路径:工具层 60 秒就判超时,查询必须在这个窗口内给出结论 ——
+ * 要么拿到向量,要么尽快降级,不能让用户等到整条检索链路超时。
+ */
+const QUERY_EMBED_TIMEOUT_MS = 15_000;
+
 export default class RatelVaultPlugin extends Plugin {
 	settings!: RatelVaultSettings;
 	vault!: ObsidianVault;
@@ -598,9 +607,9 @@ export default class RatelVaultPlugin extends Plugin {
 		};
 
 		const multiQuerySearcher = new MultiQuerySearcher({
-			// 关键路径:查询与索引共用同一嵌入端口 —— 实测 GPU 处理单条查询只要 81ms,
-			// 此前「GPU 小形状挂死」的判断不成立,把查询挪到主线程 CPU 反而拖慢索引。
-			embedding: this.effectiveEmbedding(),
+			// 关键路径:查询走带超时降级的端口 —— 正常情况用 GPU(实测单条约 80ms),
+			// 只有拿不到结果时才按需降级,不预先常驻 CPU 会话。
+			embedding: this.queryEmbedding(),
 			workerManager: this.workerManager,
 			vault: this.vault,
 			reranker,
@@ -1339,7 +1348,9 @@ export default class RatelVaultPlugin extends Plugin {
 				// 关键路径(1.5.1 回退):主线程常驻 CPU 会话会让内存翻倍并和 GPU worker 争 CPU,
 				// 实测纯推理从 0.11 秒/块恶化到 1.85 秒/块。GPU 可用时不再预先准备 CPU 会话,
 				// 只有 GPU worker 真正不可用时才惰性构建(那条路径会自行按需下载运行时)。
-				await this.modelManager.download(undefined, { skipCpuRuntime: webgpuCapable, lazyEmbedding: webgpuCapable });
+				// 关键路径:运行时照常下载(降级时不用等下载),但**会话保持惰性** ——
+				// 常驻 CPU 会话会和 GPU worker 争资源,这正是 1.5.1 的性能回归来源。
+				await this.modelManager.download(undefined, { skipCpuRuntime: false, lazyEmbedding: true });
 
 				// 关键路径(S-RETRIEVAL-QUALITY §4.1/§4.2):词表交给 Worker 一次(约 109KB)——
 				// Worker 侧据此做精确 token 计数;没拿到词表时按字符上界估算(高估方向,宁可块小也不许截断)。
@@ -2925,6 +2936,29 @@ export default class RatelVaultPlugin extends Plugin {
 			embed: (texts: string[], options?: Parameters<EmbeddingPort['embed']>[1]) =>
 				(this.embeddingWorkerProxy ?? this.embedding).embed(texts, options),
 		};
+	}
+
+	/**
+	 * 查询专用嵌入端口 — 短超时,失败时本次降级到主线程 CPU 会话。
+	 *
+	 * 关键路径(1.5.2):1.5.1 为了让查询绕开 GPU,把主线程 CPU 会话改成**常驻**,
+	 * 结果它和 GPU worker 争 CPU 与内存,纯推理从 0.11 秒/块恶化到 1.85 秒/块。
+	 * 正确做法是保持 CPU 会话惰性,只在查询真的拿不到结果时按需构建一次。
+	 *
+	 * @returns 带超时与降级的嵌入端口。
+	 */
+	private queryEmbedding(): EmbeddingPort {
+		return createQueryEmbeddingPort({
+			dimensions: this.embedding.dimensions,
+			modelId: this.embedding.modelId,
+			// 关键路径:传解析器而不是实例 —— 代理在 onLayoutReady 才创建。
+			primary: () => this.embeddingWorkerProxy,
+			fallback: this.embedding,
+			timeoutMs: QUERY_EMBED_TIMEOUT_MS,
+			onFallback: (error) => {
+				devLogger.warn('index', '查询嵌入未在时限内返回,本次降级到主线程 CPU', error);
+			},
+		});
 	}
 
 	/**
