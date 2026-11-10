@@ -24,8 +24,16 @@ describe('Ratelignore', () => {
     });
 
     it('文件不存在 - 用默认规则', () => {
-        const ri = new Ratelignore(TMP_DIR);
+        const ri = new Ratelignore(TMP_DIR, '.obsidian');
         expect(ri.ignores('.obsidian/plugins/foo.md')).toBe(true);
+        expect(ri.ignores('notes/daily.md')).toBe(false);
+    });
+
+    it('自定义配置目录 - 默认忽略注入的 configDir 而不是 .obsidian', () => {
+        // 关键路径:Obsidian 允许用户改配置目录名,默认规则必须跟随 vault.configDir。
+        const ri = new Ratelignore(TMP_DIR, '.my-config');
+        expect(ri.ignores('.my-config/plugins/foo.md')).toBe(true);
+        expect(ri.ignores('.obsidian/plugins/foo.md')).toBe(false);
         expect(ri.ignores('notes/daily.md')).toBe(false);
     });
 

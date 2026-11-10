@@ -16,7 +16,7 @@
 import { IndexManager, type IndexBackend, type IndexTaskCoordinatorPort } from './index-manager';
 import { FolderWatcher } from './folder-watcher';
 import { Ratelignore } from '../utils/ratelignore-parser';
-import { isIndexableMarkdownPath } from '../utils/path-safety';
+import { getConfigDirName, isIndexableMarkdownPath } from '../utils/path-safety';
 import { devLogger } from '../logging/dev-logger';
 import { get } from 'svelte/store';
 import { tNow } from '../i18n';
@@ -75,7 +75,7 @@ export class IndexController {
 
     constructor(private vault: VaultEventListener, backend: IndexBackend, vaultRoot: string, options: IndexControllerOptions = {}) {
         this.indexManager = new IndexManager(backend, options.coordinator);
-        this.ratelignore = new Ratelignore(vaultRoot);
+        this.ratelignore = new Ratelignore(vaultRoot, getConfigDirName());
         this.readOnlyView = options.readOnlyView;
     }
 

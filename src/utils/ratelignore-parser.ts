@@ -15,13 +15,23 @@ import path from 'path';
 import ignore from 'ignore';
 import { devLogger } from '../logging/dev-logger';
 
-const DEFAULT_RATELIGNORE = `.obsidian/
-.trash/
-.augmented-canvas/
-.obsidian-canvas/
-.obsidian-snippets/
-.ratel/
-`;
+const DEFAULT_RATELIGNORE_ENTRIES = [
+    '.trash/',
+    '.augmented-canvas/',
+    '.obsidian-canvas/',
+    '.obsidian-snippets/',
+    '.ratel/',
+];
+
+/**
+ * 默认忽略规则 — 配置目录名来自 `vault.configDir`,兼容用户自定义配置目录。
+ */
+function defaultRatelignore(configDirName: string): string {
+    const configDir = configDirName.replace(/\/+$/, '');
+    const entries = [...DEFAULT_RATELIGNORE_ENTRIES];
+    if (configDir) entries.unshift(`${configDir}/`);
+    return entries.join('\n') + '\n';
+}
 
 /**
  * `.ratelignore` 解析器 — gitignore 兼容的轻量过滤。
@@ -29,8 +39,8 @@ const DEFAULT_RATELIGNORE = `.obsidian/
 export class Ratelignore {
     private ig: ReturnType<typeof ignore>;
 
-    constructor(vaultRoot: string) {
-        this.ig = ignore().add(DEFAULT_RATELIGNORE);
+    constructor(vaultRoot: string, configDirName = '') {
+        this.ig = ignore().add(defaultRatelignore(configDirName));
 
         const ratelignorePath = path.join(vaultRoot, '.ratelignore');
         if (fs.existsSync(ratelignorePath)) {

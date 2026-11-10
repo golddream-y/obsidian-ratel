@@ -102,7 +102,7 @@ describe('run_skill_script 工具', () => {
 	});
 	afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
 
-	function makeTool(opts: { decision?: 'always' | 'once' | 'deny' } = {}) {
+	function makeTool(opts: { decision?: 'always' | 'once' | 'deny'; configDirName?: string } = {}) {
 		const gate = new ScriptTrustGate({
 			isTrusted: (id) => trusted.includes(id),
 			confirm: async () => opts.decision ?? 'once',
@@ -114,7 +114,7 @@ describe('run_skill_script 工具', () => {
 			failures,
 			timeoutMs: () => 30_000,
 			vaultRoot: () => '/vault',
-			configDirName: () => '.obsidian',
+			configDirName: () => opts.configDirName ?? '.obsidian',
 		});
 	}
 
@@ -127,6 +127,14 @@ describe('run_skill_script 工具', () => {
 		expect(sandbox.lastReq?.allowedDirs).toEqual(['/vault', dir]);
 		expect(sandbox.lastReq?.deniedDirs).toEqual([path.join('/vault', '.obsidian')]);
 		expect(sandbox.lastReq?.timeoutMs).toBe(30_000);
+	});
+
+	it('自定义配置目录 - deniedDirs 跟随 vault.configDir 而非默认 .obsidian', async () => {
+		// 关键路径:Obsidian 允许用户改配置目录名,denylist 必须用注入值。
+		trusted = ['data-cleaner/clean.js'];
+		const tool = makeTool({ configDirName: '.custom-config' });
+		await tool.execute({ skillName: 'data-cleaner', scriptPath: 'clean.js' });
+		expect(sandbox.lastReq?.deniedDirs).toEqual([path.join('/vault', '.custom-config')]);
 	});
 
 	it('用户拒绝 - 返回 denied 工具结果(不抛异常)', async () => {

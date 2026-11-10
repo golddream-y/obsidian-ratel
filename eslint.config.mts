@@ -91,6 +91,14 @@ export default tseslint.config(
 		},
 	},
 	{
+		// 关键路径:测试夹具需要按默认配置目录名构造临时 vault;
+		// 运行时代码已通过 vault.configDir 注入,这里不把夹具字面量当成缺陷。
+		files: ['src/skills/script-vm.test.ts', 'src/tools/run-skill-script.test.ts'],
+		rules: {
+			'obsidianmd/hardcoded-config-path': 'off',
+		},
+	},
+	{
 		// 关键路径:*.svelte 用 svelte-eslint-parser 解析,<script> 块走 TS parser
 		files: ['**/*.svelte'],
 		languageOptions: {
