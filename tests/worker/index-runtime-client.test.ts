@@ -128,9 +128,17 @@ describe('崩溃与重启', () => {
 
 describe('查询与索引的模型公平性', () => {
 	it('索引批次在途时到达的查询 - 插到剩余索引批次之前', async () => {
+		const sessionHandlers = createIndexSessionHandlers({ root, chunkOptions: { maxTokens: 8, overlapTokens: 0, count: (t) => t.length }, epoch: 1 });
+		let searchDispatched = false;
 		const handlers: RuntimeHandlers = {
 			ping: () => 'pong',
-			...createIndexSessionHandlers({ root, chunkOptions: { maxTokens: 8, overlapTokens: 0, count: (t) => t.length }, epoch: 1 }),
+			...sessionHandlers,
+			// 关键路径:查询处理器一进入就同步请求嵌入,标志置位即证明查询已入仲裁队列,
+			// 不再靠固定 sleep 猜测调度时机。
+			'session.search': (payload, ctx) => {
+				searchDispatched = true;
+				return sessionHandlers['session.search']!(payload, ctx);
+			},
 		};
 		let client!: IndexRuntimeClient;
 		const order: string[] = [];
@@ -150,12 +158,27 @@ describe('查询与索引的模型公平性', () => {
 			},
 		});
 		await client.start({ root, generationId: 'gen-fair', configFingerprint: FINGERPRINT, expectedDimension: DIMENSIONS });
+		/**
+		 * 等待调度发生，而不是猜一个固定 sleep。
+		 *
+		 * 关键路径：全量并发负载下 20ms 不足以让首个索引批次到达 embed，查询会先入队，
+		 * 顺序断言就会随机失败。这里只替换等待方式，断言强度不变。
+		 */
+		const waitForOrder = async (predicate: () => boolean): Promise<void> => {
+			const deadline = Date.now() + 2000;
+			while (!predicate()) {
+				if (Date.now() > deadline) throw new Error('等待批次调度超时');
+				await new Promise((resolve) => setTimeout(resolve, 5));
+			}
+		};
 		// 多块正文 → 多个索引批次,才能看出查询是否插队。
 		const longText = Array.from({ length: 8 }, (_, i) => `第${i}段需要被切开的正文内容`).join('\n');
 		const indexing = client.indexFile('a.md', longText);
-		await new Promise((resolve) => setTimeout(resolve, 20));
+		// 关键路径:先确认首个索引批次已占用嵌入通道,再发查询。
+		await waitForOrder(() => order.length > 0);
 		const searching = client.search('查询', 3);
-		await new Promise((resolve) => setTimeout(resolve, 20));
+		// 关键路径:查询处理器已进入 → 嵌入请求已入队;此时放行首个批次才能验证插队。
+		await waitForOrder(() => searchDispatched);
 		releaseGate();
 		await Promise.all([indexing, searching]);
 		// 首个索引批次在途 → 查询插入 → 剩余索引批次。
