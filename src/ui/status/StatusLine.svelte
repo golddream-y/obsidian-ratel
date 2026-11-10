@@ -96,6 +96,17 @@
 		if (state.tone === 'indexing') return 'index';
 		return 'thinking';
 	});
+
+	/**
+	 * 键盘操作与点击等价 — Enter/Space 展开或收起抽屉。
+	 *
+	 * 关键路径:Space 默认滚动页面,必须阻止;其余按键保持浏览器默认行为。
+	 */
+	function onKeydown(event: KeyboardEvent): void {
+		if (event.key !== 'Enter' && event.key !== ' ') return;
+		event.preventDefault();
+		onToggle();
+	}
 </script>
 
 <!-- 关键路径:整行可点击切换 Drawer;布局 点 | 文案 | % | ▲ -->
@@ -103,8 +114,10 @@
 	class="ratel-status-line"
 	onclick={onToggle}
 	role="button"
+	tabindex="0"
 	aria-expanded={expanded}
 	aria-label={expanded ? $t('status.drawer.collapse') : $t('status.drawer.expand')}
+	onkeydown={onKeydown}
 >
 	{#if showOrb}
 		<span class="ratel-sl-orb" aria-hidden="true">
@@ -158,6 +171,12 @@
 
 	.ratel-status-line:hover {
 		background: color-mix(in srgb, var(--text-normal) 2%, transparent);
+	}
+
+	/* 关键路径:键盘焦点必须可见 —— 与 hover 同色域,用主题强调色描边,不改变布局。 */
+	.ratel-status-line:focus-visible {
+		outline: 2px solid var(--interactive-accent);
+		outline-offset: -2px;
 	}
 
 	.ratel-sl-context-label { color: var(--text-muted); margin-right: 4px; font-weight: 400; }
