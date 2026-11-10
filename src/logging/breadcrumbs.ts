@@ -7,6 +7,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+/**
+ * 后台运行时宿主 — 崩溃面包屑同时服务 renderer 与 Node 测试,
+ * 需要读取 process.memoryUsage 并使用带 unref 的 Node 计时器,不能绑定到某个窗口。
+ */
+const backgroundRuntime = globalThis;
+
 export const BREADCRUMB_PHASES = [
 	'plugin.load', 'plugin.unload', 'heartbeat',
 	'send.enqueue', 'send.precheck', 'send.compact', 'compact.decide', 'compact.result',
@@ -115,9 +121,10 @@ export function formatBreadcrumbLine(input: {
 
 function defaultMemoryUsage(): MemorySample | null {
 	try {
-		const mem = (globalThis as { process?: { memoryUsage?: () => MemorySample } }).process?.memoryUsage;
+		const scope = backgroundRuntime as { process?: { memoryUsage?: () => MemorySample } };
+		const mem = scope.process?.memoryUsage;
 		if (typeof mem !== 'function') return null;
-		return mem.call((globalThis as { process: unknown }).process);
+		return mem.call(scope.process);
 	} catch {
 		return null;
 	}
@@ -196,7 +203,7 @@ export class CrashBreadcrumbs {
 		this.stopHeartbeat();
 		if (!this.opts.enabled()) return;
 		const ms = this.opts.heartbeatMs ?? HEARTBEAT_MS;
-		this.timer = setInterval(() => {
+		this.timer = backgroundRuntime.setInterval(() => {
 			if (!this.opts.enabled()) return;
 			this.mark('heartbeat', this.lastSessionId);
 		}, ms);
@@ -205,7 +212,7 @@ export class CrashBreadcrumbs {
 
 	stopHeartbeat(): void {
 		if (this.timer !== undefined) {
-			clearInterval(this.timer);
+			backgroundRuntime.clearInterval(this.timer);
 			this.timer = undefined;
 		}
 	}

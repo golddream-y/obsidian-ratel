@@ -20,6 +20,12 @@ import { tNow } from '../i18n';
 import type { IndexPhase } from './index-persistence-types';
 import type { IndexTaskCounters } from './index-task-coordinator';
 
+/**
+ * 后台计时器宿主 — 进度采样随插件生命周期启停,不绑定某个 popout 焦点窗口;
+ * renderer 内 globalThis 即主窗口全局,Node 测试中同样可用。
+ */
+const backgroundTimers = globalThis;
+
 /** 索引状态机(10 态)。Diffing = smartReindex hash diff 阶段。 */
 export type IndexStatus =
     | { state: 'Idle' }
@@ -288,7 +294,7 @@ export class IndexManager {
         const coordinator = this.coordinator;
         if (coordinator === undefined) return;
         this.lastCoordinatorSignature = null;
-        this.coordinatorProgressTimer = globalThis.setInterval(() => {
+        this.coordinatorProgressTimer = backgroundTimers.setInterval(() => {
             if (this.unloaded) return;
             const counters = coordinator.counters();
             const signature = [
@@ -311,7 +317,7 @@ export class IndexManager {
     /** 整轮结束或卸载时停止展示采样，避免悬挂任务保留定时器。 */
     private stopCoordinatorProgress(): void {
         if (this.coordinatorProgressTimer === null) return;
-        globalThis.clearInterval(this.coordinatorProgressTimer);
+        backgroundTimers.clearInterval(this.coordinatorProgressTimer);
         this.coordinatorProgressTimer = null;
     }
 

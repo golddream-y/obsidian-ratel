@@ -20,6 +20,12 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { ProgressInfo } from './model-downloader';
 
+/**
+ * 后台计时器宿主 — 镜像探测超时跟随本次下载,不绑定某个 popout 焦点窗口;
+ * renderer 内 globalThis 即主窗口全局,Node 测试中同样可用。
+ */
+const backgroundTimers = globalThis;
+
 /** 下载响应 — 只暴露本模块实际用到的字段,与 fetch/requestUrl 解耦。 */
 export interface DownloadResponse {
 	status: number;
@@ -271,17 +277,21 @@ export async function probeFastestMirror(
 	const results = await Promise.all(
 		mirrors.map(async (mirror) => {
 			const startedAt = Date.now();
+			let probeTimer: ReturnType<typeof setTimeout> | undefined;
 			try {
 				const response = await Promise.race([
 					fetchFn(mirror.url, { headers: { Range: `bytes=0-${PROBE_BYTES - 1}` } }),
 					new Promise<DownloadResponse>((_, reject) => {
-						setTimeout(() => reject(new Error('probe timeout')), PROBE_TIMEOUT_MS);
+						probeTimer = backgroundTimers.setTimeout(() => reject(new Error('probe timeout')), PROBE_TIMEOUT_MS);
 					}),
 				]);
 				if (response.status < 200 || response.status >= 400) return null;
 				return { label: mirror.label, elapsedMs: Date.now() - startedAt };
 			} catch {
 				return null;
+			} finally {
+				// 关键路径:探测先完成时必须撤掉超时计时器,否则进程/测试会被悬挂定时器拖住。
+				if (probeTimer !== undefined) backgroundTimers.clearTimeout(probeTimer);
 			}
 		}),
 	);

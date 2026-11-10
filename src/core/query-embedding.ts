@@ -18,6 +18,12 @@
 
 import { createEmbedAbortError, type EmbeddingPort } from '../ports/embedding';
 
+/**
+ * 后台计时器宿主 — 查询超时跟随本次调用,不绑定某个 popout 焦点窗口;
+ * renderer 内 globalThis 即主窗口全局,Node 测试中同样可用。
+ */
+const backgroundTimers = globalThis;
+
 /** 构造参数。 */
 export interface QueryEmbeddingDeps {
 	/** 向量维度。 */
@@ -61,7 +67,7 @@ export function createQueryEmbeddingPort(deps: QueryEmbeddingDeps): EmbeddingPor
 			const forwardAbort = (): void => controller.abort();
 			outward?.addEventListener('abort', forwardAbort, { once: true });
 
-			let timer: ReturnType<typeof globalThis.setTimeout> | undefined;
+			let timer: ReturnType<typeof setTimeout> | undefined;
 			let onOutwardAbort: (() => void) | undefined;
 			/**
 			 * 主动结束等待的信号源。
@@ -70,7 +76,7 @@ export function createQueryEmbeddingPort(deps: QueryEmbeddingDeps): EmbeddingPor
 			 * 超时形同虚设，用户照样要等到工具层的 60 秒上限。
 			 */
 			const stopped = new Promise<never>((_, reject) => {
-				timer = globalThis.setTimeout(() => {
+				timer = backgroundTimers.setTimeout(() => {
 					controller.abort();
 					reject(new Error(`查询嵌入等待超时(${deps.timeoutMs}ms)`));
 				}, deps.timeoutMs);
@@ -88,7 +94,7 @@ export function createQueryEmbeddingPort(deps: QueryEmbeddingDeps): EmbeddingPor
 				deps.onFallback?.(error);
 				return await deps.fallback.embed(texts, options);
 			} finally {
-				if (timer !== undefined) globalThis.clearTimeout(timer);
+				if (timer !== undefined) backgroundTimers.clearTimeout(timer);
 				if (onOutwardAbort !== undefined) outward?.removeEventListener('abort', onOutwardAbort);
 				outward?.removeEventListener('abort', forwardAbort);
 			}

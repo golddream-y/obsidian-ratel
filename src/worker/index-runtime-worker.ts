@@ -19,6 +19,12 @@ import {
 	type IndexRuntimeResponse,
 } from './index-runtime-protocol';
 
+/**
+ * Worker 计时器宿主 — 本文件运行在索引 Worker(或注入端口的 Node 测试)中,
+ * 没有 window;计时器随 Worker 线程与撤销收敛清理。
+ */
+const backgroundTimers = globalThis;
+
 /** 可注入的线程端口。 */
 export interface RuntimeServerPort {
 	postMessage(message: unknown): void;
@@ -103,7 +109,7 @@ export function serveRuntime(options: RuntimeServerOptions): RuntimeServer {
 			const pending = pendingCalls.get(message.callId);
 			if (pending === undefined) return;
 			pendingCalls.delete(message.callId);
-			if (pending.timer !== null) clearTimeout(pending.timer);
+			if (pending.timer !== null) backgroundTimers.clearTimeout(pending.timer);
 			if (message.ok) pending.resolve(message.result);
 			else pending.reject(new Error(message.error ?? '宿主调用失败'));
 			return;
@@ -143,7 +149,7 @@ export function serveRuntime(options: RuntimeServerOptions): RuntimeServer {
 		return new Promise<unknown>((resolve, reject) => {
 			const entry = { resolve, reject, timer: null as ReturnType<typeof setTimeout> | null };
 			pendingCalls.set(callId, entry);
-			entry.timer = setTimeout(() => {
+			entry.timer = backgroundTimers.setTimeout(() => {
 				pendingCalls.delete(callId);
 				reject(new Error(`宿主调用超时: ${method}`));
 			}, timeoutMs);
@@ -165,7 +171,7 @@ export function serveRuntime(options: RuntimeServerOptions): RuntimeServer {
 		if (revoked) return drainPromise ?? Promise.resolve();
 		revoked = true;
 		for (const [, pending] of pendingCalls) {
-			if (pending.timer !== null) clearTimeout(pending.timer);
+			if (pending.timer !== null) backgroundTimers.clearTimeout(pending.timer);
 			pending.reject(new Error('运行时已撤销'));
 		}
 		pendingCalls.clear();

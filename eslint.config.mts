@@ -55,8 +55,12 @@ export default tseslint.config(
 			parserOptions: {
 				project: './tsconfig.json',
 			},
-			// 构建期注入的常量,类型声明在 svelte.d.ts。
-			globals: { __RATEL_INDEX_EXPERIMENT__: 'readonly' },
+			// 构建期注入的常量,类型声明在 svelte.d.ts,值由 esbuild.config.mjs 的 define 写入。
+			globals: {
+				__RATEL_INDEX_EXPERIMENT__: 'readonly',
+				__RATEL_GPU_WORKER__: 'readonly',
+				__RATEL_ORT_GLUE__: 'readonly',
+			},
 		},
 	},
 	{
@@ -64,6 +68,26 @@ export default tseslint.config(
 		files: ['**/*.mjs', '**/*.cjs', 'scripts/**'],
 		languageOptions: {
 			globals: node,
+		},
+	},
+	{
+		// 关键路径:以下模块运行在后台/Worker 环境,计时器与全局对象不绑定某个 popout UI 窗口。
+		// obsidianmd 的 no-global-this 面向 UI 代码;在这些文件里 globalThis 是有意选择
+		// (Node 测试、子进程与 Worker 复用同一实现),因此只对这些文件关闭该规则。
+		files: [
+			'src/adapters/embedding-worker-proxy.ts',
+			'src/core/asset-downloader.ts',
+			'src/core/index-manager.ts',
+			'src/core/index-task-coordinator.ts',
+			'src/core/index-write-owner.ts',
+			'src/core/loop-stability.ts',
+			'src/core/query-embedding.ts',
+			'src/logging/breadcrumbs.ts',
+			'src/worker/index-runtime-host.ts',
+			'src/worker/index-runtime-worker.ts',
+		],
+		rules: {
+			'obsidianmd/no-global-this': 'off',
 		},
 	},
 	{

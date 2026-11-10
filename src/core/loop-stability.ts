@@ -11,6 +11,12 @@ export const WRAP_UP_REMAINING_STEPS = 5;
 export const TOOL_DEADLINE_MS = 60_000;
 
 /**
+ * 后台计时器宿主 — 工具截止时间跟随调用本身,不绑定某个 popout 焦点窗口;
+ * renderer 内 globalThis 即主窗口全局,Node 测试中同样可用。
+ */
+const backgroundTimers = globalThis;
+
+/**
  * 这一步是否该在出站请求末尾追加收束说明。
  *
  * @param step - 当前步，从 0 起
@@ -77,22 +83,22 @@ export function withToolDeadline<T>(
 			reject(Object.assign(new Error('用户取消'), { code: 'CANCELLED' }));
 			return;
 		}
-		const timer = setTimeout(() => {
+		const timer = backgroundTimers.setTimeout(() => {
 			reject(Object.assign(new Error(timeoutMessage), { code: 'TOOL_TIMEOUT' }));
 		}, ms);
 		const onAbort = () => {
-			clearTimeout(timer);
+			backgroundTimers.clearTimeout(timer);
 			reject(Object.assign(new Error('用户取消'), { code: 'CANCELLED' }));
 		};
 		signal?.addEventListener('abort', onAbort, { once: true });
 		work.then(
 			(value) => {
-				clearTimeout(timer);
+				backgroundTimers.clearTimeout(timer);
 				signal?.removeEventListener('abort', onAbort);
 				resolve(value);
 			},
 			(err) => {
-				clearTimeout(timer);
+				backgroundTimers.clearTimeout(timer);
 				signal?.removeEventListener('abort', onAbort);
 				reject(err instanceof Error ? err : new Error(String(err)));
 			},

@@ -140,6 +140,29 @@ describe('EmbeddingWorkerProxy', () => {
 		expect(mockWorker.terminate).toHaveBeenCalled();
 	});
 
+	it('terminate - 请求结算后清理超时计时器，卸载时清零空闲计时器', async () => {
+		vi.useFakeTimers();
+		const proxy = new EmbeddingWorkerProxy(
+			'mock-url',
+			emptyDeps(),
+			512,
+		);
+		const embedPromise = proxy.embed(['x']);
+		// 让 mock 的 init 回 ready，但不要推进到请求超时。
+		await vi.advanceTimersByTimeAsync(0);
+		const requestId = findLastEmbedCall(mockWorker).requestId;
+		mockWorker.onmessage?.({
+			data: { type: 'embed:result', requestId, vectors: [[0.1]] },
+		} as MessageEvent);
+		await embedPromise;
+		// 清掉 MockWorker.postMessage 自己排的 0ms 回调，只观察代理持有的计时器。
+		await vi.advanceTimersByTimeAsync(1);
+		// 请求超时计时器已随结算撤掉，仅剩空闲回收时钟。
+		expect(vi.getTimerCount()).toBe(1);
+		proxy.terminate();
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
 	it('Worker onerror - pending 请求被 reject', async () => {
 		const proxy = new EmbeddingWorkerProxy(
 			'mock-url',

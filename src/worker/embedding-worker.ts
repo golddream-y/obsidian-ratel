@@ -51,7 +51,7 @@ self.onmessage = async (e: MessageEvent): Promise<void> => {
 			try {
 				// 关键路径(研发期诊断):把环境能力随 ready 一起报回主线程,由主线程统一记录日志。
 				const hasGpu = typeof navigator !== 'undefined' && 'gpu' in navigator;
-				probeInfo = { hasGpu, secureContext: globalThis.isSecureContext === true };
+				probeInfo = { hasGpu, secureContext: self.isSecureContext === true };
 				const deps = msg.deps as EmbeddingOnnxDeps;
 				const dimensions = msg.dimensions as number;
 				const maxBatchSize = msg.maxBatchSize as number;

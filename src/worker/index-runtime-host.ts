@@ -20,6 +20,12 @@ import {
 	type IndexRuntimeRequest,
 } from './index-runtime-protocol';
 
+/**
+ * 后台计时器宿主 — 请求超时与强制回收随宿主停止/条目结算清理,
+ * 不绑定某个 popout 焦点窗口;Node 测试中同样可用。
+ */
+const backgroundTimers = globalThis;
+
 /** 宿主可见的最小 Worker 接口;测试可注入假实现。 */
 export interface RuntimeWorkerLike {
 	postMessage(message: unknown): void;
@@ -200,11 +206,11 @@ export class IndexRuntimeHost {
 			this.pending.set(requestId, entry);
 			this.inflightBytes += bytes;
 
-			entry.timer = setTimeout(() => {
+			entry.timer = backgroundTimers.setTimeout(() => {
 				// 关键路径:超时只结束调用方等待,配额等真实终态;同时发取消。
 				entry.settled.settle(() => reject(new IndexRuntimeHostError('timeout', `请求超时: ${method}`)));
 				this.postControl('cancel', `timeout:${requestId}`, requestId);
-				entry.hardTimer = setTimeout(() => this.dropEntry(requestId, true), effectiveTimeout);
+				entry.hardTimer = backgroundTimers.setTimeout(() => this.dropEntry(requestId, true), effectiveTimeout);
 			}, effectiveTimeout);
 
 			if (signal !== undefined) {
@@ -312,8 +318,8 @@ export class IndexRuntimeHost {
 		if (entry === undefined) return;
 		this.pending.delete(requestId);
 		this.inflightBytes = Math.max(0, this.inflightBytes - entry.bytes);
-		if (entry.timer !== null) clearTimeout(entry.timer);
-		if (entry.hardTimer !== null) clearTimeout(entry.hardTimer);
+		if (entry.timer !== null) backgroundTimers.clearTimeout(entry.timer);
+		if (entry.hardTimer !== null) backgroundTimers.clearTimeout(entry.hardTimer);
 		if (forced) this.unconfirmedDrops += 1;
 	}
 

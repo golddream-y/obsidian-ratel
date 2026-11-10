@@ -21,6 +21,12 @@ import { devLogger } from '../logging/dev-logger';
 /** 无挂起 embed 且距上次成功推理超过此时长则回收 Worker(5 分钟) */
 export const IDLE_TERMINATE_MS = 5 * 60_000;
 
+/**
+ * 后台计时器宿主 — 代理随插件生命周期存活,不绑定某个 popout 焦点窗口。
+ * renderer 内 globalThis 即主窗口全局,Node 测试中同样可用;终止时统一清理。
+ */
+const backgroundTimers = globalThis;
+
 /** Worker 生命周期事件;装配层用 heartbeat + n=worker.* 打点,不改 lastPhase */
 export type WorkerLifecycleKind = 'create' | 'idle-terminate' | 'crash';
 
@@ -263,7 +269,7 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 				}
 				// 关键路径:请求级超时 —— 卡住的请求必须主动结算并重建 Worker,
 				// 否则它会永久占住 pending,让后续所有嵌入调用排队到超时。
-				entry.timer = globalThis.setTimeout(() => {
+				entry.timer = backgroundTimers.setTimeout(() => {
 					if (!this.pending.has(requestId)) return;
 					// 关键路径(诊断):超时只说「120 秒没回来」对定位没有帮助 ——
 					// 必须同时记下这一批有多大、还有多少请求在排队、Worker 是否还活着,
@@ -475,7 +481,7 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 		if (entry === undefined) return;
 		this.pending.delete(requestId);
 		if (entry.timer !== undefined) {
-			globalThis.clearTimeout(entry.timer);
+			backgroundTimers.clearTimeout(entry.timer);
 			entry.timer = undefined;
 		}
 		entry.detachAbort?.();
@@ -528,7 +534,7 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 	private armIdleTimer(): void {
 		this.clearIdleTimer();
 		if (!this.worker) return;
-		this.idleTimer = globalThis.setTimeout(() => {
+		this.idleTimer = backgroundTimers.setTimeout(() => {
 			this.idleTimer = null;
 			if (this.pending.size > 0) return;
 			this.terminateWorker('idle-terminate');
@@ -537,7 +543,7 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 
 	private clearIdleTimer(): void {
 		if (this.idleTimer !== null) {
-			globalThis.clearTimeout(this.idleTimer);
+			backgroundTimers.clearTimeout(this.idleTimer);
 			this.idleTimer = null;
 		}
 	}

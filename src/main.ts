@@ -2974,7 +2974,7 @@ export default class RatelVaultPlugin extends Plugin {
 	private async detectWebgpuAdapter(): Promise<boolean> {
 		const gpu = (navigator as { gpu?: { requestAdapter(): Promise<unknown> } }).gpu;
 		if (gpu === undefined) {
-			devLogger.info('index', `渲染进程 WebGPU:navigator.gpu 不存在 (secureContext=${String(globalThis.isSecureContext ?? 'n/a')})`);
+			devLogger.info('index', `渲染进程 WebGPU:navigator.gpu 不存在 (secureContext=${String(window.isSecureContext ?? 'n/a')})`);
 			return false;
 		}
 		try {
