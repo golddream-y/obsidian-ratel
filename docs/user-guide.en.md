@@ -187,7 +187,7 @@ A skill is a reusable method. Built-in skills cover diary setup, daily ledger wo
 
 To install your own skill, place its folder containing `SKILL.md` under the vault's `.ratel/skills/`, or under `.ratel/skills/` in your user home directory, then reload the plugin. A vault skill takes precedence over a global skill with the same name. The Skills panel in the status drawer shows sources and supports enabling, disabling, editing, and deleting. Built-in skills are updated with the plugin and cannot be edited directly.
 
-Skills can include text in `references/` and JavaScript in `scripts/`. Scripts run in a sandbox without network access or external module loading, and cannot access Obsidian's configuration directory. Enabling host access does not loosen this sandbox. First execution asks for trust: allow and remember, allow once, or reject.
+Skills can include text in `references/` and JavaScript in `scripts/`. Scripts run in a restricted vm context with no default network access or external module loading, and cannot access Obsidian's configuration directory. Enabling host access does not loosen this restriction. Node's vm is not a hard security boundary—only run scripts you trust. First execution asks for trust: allow and remember, allow once, or reject.
 
 Scripts without progress time out after 30 seconds by default. Long tasks reporting progress can keep running, up to 10 minutes. Three consecutive failures block execution until trust is confirmed again. Adjust the unresponsive timeout in Advanced settings. See the [scene skill guide](contributing/scene-skill.md) for authoring details.
 
@@ -217,7 +217,7 @@ Select a mode below the chat input or in **Settings → Ratel → Memory & permi
 
 Host access is off by default and must be enabled manually in settings. Chat-based configuration cannot enable it. Once enabled, Ratel can list outside directories, read outside text files, import files unchanged, and run local commands. These four tools default to Ask. Safe and Auto modes process them according to individual settings and existing grants; Danger mode skips confirmation.
 
-Absolute paths copied from your file manager can be pasted into the input but are not treated as vault notes. Read content may enter model context. Commands can affect files or access the network; review the command and working directory when confirming. Turning host access off blocks these tools again.
+Absolute paths copied from your file manager can be pasted into the input but are not treated as vault notes. Read content may enter model context. Commands run with Obsidian's process privileges and can affect files or access the network; review the actual command when confirming. Turning host access off blocks these tools again.
 
 ### Storage and connections
 

@@ -78,7 +78,7 @@ Local embeddings need an initial download of the model and runtime assets. Open 
 
 ## Extend your workflow
 
-Configure chat, embedding, and reranking models independently. Skills store reusable instructions in Markdown, with optional references and sandboxed JavaScript. MCP can connect external tools such as web search. Subagents can assist with retrieval, review, and organization. Attached images go to the current chat model, which must support vision.
+Configure chat, embedding, and reranking models independently. Skills store reusable instructions in Markdown, with optional references and JavaScript run in a restricted vm context (not a hard security boundary). MCP can connect external tools such as web search. Subagents can assist with retrieval, review, and organization. Attached images go to the current chat model, which must support vision.
 
 [Use extensions](docs/user-guide.en.md#6-manage-chats-and-use-extensions) · [Product direction and capabilities not yet delivered](docs/prd/overview.md) · [Architecture](docs/architecture/overview.md) · [Repository layout](docs/contributing/project-layout.md) · [Decision records](docs/adr/README.md)
 

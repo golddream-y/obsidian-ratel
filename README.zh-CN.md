@@ -76,7 +76,7 @@ Ratel 内置日记场景：安装 Templater、Dataview 和 Day Planner，写入�
 
 ## 扩展你的工作流
 
-对话、嵌入和重排模型可以分别配置。Skill 用 Markdown 保存可复用做法，可附参考资料与 JavaScript 沙箱脚本；MCP 可接入网页搜索等外部工具；Subagent 可分担检索、审查与整理。图片会交给当前对话模型，需要它支持视觉输入。
+对话、嵌入和重排模型可以分别配置。Skill 用 Markdown 保存可复用做法，可附参考资料与受限 vm 上下文的 JavaScript 脚本（不是强安全边界）；MCP 可接入网页搜索等外部工具；Subagent 可分担检索、审查与整理。图片会交给当前对话模型，需要它支持视觉输入。
 
 [扩展使用方法](docs/user-guide.md#6-管理会话与使用扩展) · [产品方向与尚未交付的能力](docs/prd/overview.md) · [技术架构](docs/architecture/overview.md)
 
