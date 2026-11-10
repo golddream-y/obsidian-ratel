@@ -37,12 +37,18 @@ const mockEmbeddings: EmbeddingsModel = {
 };
 
 describe('VectraStore', () => {
-	let store: VectraStore;
+	let store!: VectraStore;
 
 	beforeEach(() => {
 		// 关键路径:每例新建实例并落在本例独立根上 —— 此前共享 store 时用例之间存在
 		// 「上一例写入的文档」这种隐式依赖(「更新后状态」用例靠前序用例留下文档才会通过)。
 		store = new VectraStore(TEST_INDEX_DIR, mockEmbeddings);
+	});
+
+	// 关键路径:先等构造期预热结算,再由外层 afterEach 删目录 —— 否则初始化尾巴
+	// 会在目录消失后以 ENOENT 未处理拒绝泄漏到运行器(不是靠 sleep 或重试掩盖)。
+	afterEach(async () => {
+		if (store) await store.close();
 	});
 
 	it('starts with empty status', async () => {

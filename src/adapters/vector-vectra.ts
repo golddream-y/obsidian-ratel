@@ -244,14 +244,45 @@ export class VectraStore implements VectorStore, FileReplaceStore {
 			this.embeddings = embeddingsOrOptions.embeddings;
 			this.storage = embeddingsOrOptions.storage;
 			if (embeddingsOrOptions.autoInit !== false) {
-				this._ready = this.init();
+				this.startAutoInit();
 			}
 		} else {
 			this.embeddings = embeddingsOrOptions as EmbeddingsModel | undefined;
 			this.storage = undefined;
-			this._ready = this.init();
+			this.startAutoInit();
 		}
 		this.writeOutcomeReader = asWriteOutcomeReader(this.storage);
+	}
+
+	/**
+	 * 启动构造期预热 — 这是 fire-and-forget 的异步链,必须自带拒绝处理。
+	 *
+	 * 关键路径:调用方可能因为 `needsReload`、参数错误或提前返回而永不 await 预热;
+	 * 若不在这里挂处理器,初始化失败(例如目录被并发清理)会升级成未处理拒绝,
+	 * 在宿主里表现为控制台异常。真正关心结果的调用方仍通过 `init()` / `ensureIndex()`
+	 * 拿到同一个拒绝,错误语义不变。
+	 */
+	private startAutoInit(): void {
+		this._ready = this.init();
+		void this._ready.catch(() => undefined);
+	}
+
+	/**
+	 * 关闭存储 — 等待内部初始化异步链结算后释放内存实例。
+	 *
+	 * 关键路径:vectra 的 catalog/index 写入发生在 `createIndex()` 内部并被 await,
+	 * 因此等待 `_ready` settle 就能保证没有落在磁盘上的尾巴;调用方随后删除索引目录
+	 * 不会触发 `ENOENT`。关闭后不再启动新的初始化,旧的 `_ready` 引用被丢弃。
+	 * 不引入计时器,保持适配器在窗口与 Worker 环境语义一致。
+	 */
+	async close(): Promise<void> {
+		const pending = this._ready;
+		this.index = null;
+		this._ready = null;
+		this.needsReload = false;
+		if (!pending) return;
+		// 成功或失败都算结算:初始化失败已由关心结果的调用方观察,这里只负责收敛。
+		await pending.then(() => undefined, () => undefined);
 	}
 
 	/**
