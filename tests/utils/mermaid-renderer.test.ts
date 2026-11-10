@@ -72,15 +72,22 @@ describe('renderMermaidBlocks', () => {
 		expect(block.querySelector('pre')).toBeNull();
 	});
 
-	it('renderMermaidBlocks - initialize 关闭 htmlLabels - 避免 DOMPurify 剥掉节点文字', async () => {
+	it('renderMermaidBlocks - 开启 htmlLabels 且 foreignObject 节点文字与 MathML 经清洗后保留', async () => {
 		const mermaidMod = await import('mermaid');
+		vi.mocked(mermaidMod.default.render).mockResolvedValueOnce({
+			svg: '<svg xmlns="http://www.w3.org/2000/svg"><g><foreignObject width="120" height="40"><div xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel">Client</span><math xmlns="http://www.w3.org/1998/Math/MathML"><mi>E</mi><mo>=</mo><mi>m</mi></math></div></foreignObject></g></svg>',
+			diagramType: 'flowchart',
+			bindFunctions: () => {},
+		});
 		const root = document.createElement('div');
-		root.innerHTML = `<div class="ratel-md-block" data-ratel-fence="mermaid" data-ratel-src="x"><div class="ratel-md-block-body"><pre><code class="language-mermaid">graph TD; A</code></pre></div></div>`;
+		root.innerHTML = `<div class="ratel-md-block" data-ratel-fence="mermaid" data-ratel-src="x"><div class="ratel-md-block-body"><pre><code class="language-mermaid">graph TD; A[Client]</code></pre></div></div>`;
 		document.body.appendChild(root);
 		await renderMermaidBlocks(root);
 		expect(mermaidMod.default.initialize).toHaveBeenLastCalledWith(
-			expect.objectContaining({ htmlLabels: false }),
+			expect.objectContaining({ htmlLabels: true }),
 		);
+		expect(root.querySelector('.ratel-mermaid')?.textContent).toContain('Client');
+		expect(root.querySelector('.ratel-mermaid math')).toBeTruthy();
 	});
 
 	it('renderMermaidBlocks - SVG text 节点标签 - sanitize 后仍保留文字', async () => {

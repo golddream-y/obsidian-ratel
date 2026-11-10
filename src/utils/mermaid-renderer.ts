@@ -21,9 +21,10 @@ mermaid.initialize({
 	startOnLoad: false,
 	theme: 'default',
 	securityLevel: 'strict',
-	// 修复:flowchart 默认 htmlLabels 把节点字放进 foreignObject>div;
-	// DOMPurify 会剥掉 SVG 命名空间里的 HTML,图框还在字没了。改 SVG <text>。
-	htmlLabels: false,
+	// 渲染验证:htmlLabels 保持开启,节点文字走 foreignObject>div;
+	// KaTeX 公式在 Mermaid 中依赖 HTML 标签,关闭后只能显示 $$...$$ 原文。
+	// DOMPurify 白名单已包含 foreignObject/div/span 与 MathML 标签。
+	htmlLabels: true,
 });
 
 /**
@@ -38,7 +39,7 @@ const MERMAID_SANITIZE_CONFIG = {
 	ADD_TAGS: [
 		'svg', 'path', 'g', 'rect', 'circle', 'line', 'text',
 		'tspan', 'polyline', 'polygon', 'defs', 'marker',
-		'foreignObject', 'span', 'use', 'style', 'title',
+		'foreignObject', 'span', 'div', 'use', 'style', 'title',
 	],
 	ADD_ATTR: [
 		'viewBox', 'd', 'fill', 'stroke', 'stroke-width', 'x', 'y',
@@ -48,6 +49,10 @@ const MERMAID_SANITIZE_CONFIG = {
 		'font-size', 'font-family', 'text-anchor', 'dominant-baseline',
 		'dx', 'dy', 'points', 'opacity',
 	],
+	// 关键路径:DOMPurify 默认不把 foreignObject 当作 HTML 集成点,
+	// 会把其中的 div/span 与 KaTeX MathML 当作非法命名空间直接删除。
+	// 声明后 HTML 标签与 MathML 才能随图表节点文字一起通过清洗。
+	HTML_INTEGRATION_POINTS: { foreignobject: true },
 };
 
 let renderCounter = 0;
@@ -116,7 +121,7 @@ function syncMermaidTheme(): void {
 		startOnLoad: false,
 		securityLevel: 'strict',
 		theme: resolveMermaidTheme(),
-		htmlLabels: false,
+		htmlLabels: true,
 	});
 }
 
