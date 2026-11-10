@@ -34,7 +34,8 @@
 		"onnxruntime-node": false,
 		"undici": "^7.28.0",
 		"adm-zip": "^0.6.0",
-		"protobufjs": "8.8.0"
+		"protobufjs": "8.8.0",
+		"js-yaml@3": "3.15.2"
 	},
 	"devDependencies": {
 		"@eslint/js": "^9.39.4",

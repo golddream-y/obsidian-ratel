@@ -103,7 +103,8 @@ export async function runConnectionTest(
 	const started = performance.now();
 	try {
 		// 收到首个增量即证明鉴权通过且模型存在,立即中止(break 触发迭代器 return)。
-		for await (const _delta of client.chat({
+		// 关键路径:只为确认鉴权与模型可用，收到首个增量即 break；不消费内容，故不绑定变量。
+		for await (const _ of client.chat({
 			messages: [{ role: "user", content: "hi" }],
 			options: { maxTokens: 1 },
 			signal: controller.signal,
