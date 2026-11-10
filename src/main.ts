@@ -525,15 +525,15 @@ export default class RatelVaultPlugin extends Plugin {
 		// 关键路径:记忆索引 VectraStore 用 autoInit: false — 等模型就绪后再 init,避免 onload 阶段阻塞。
 		// 关键路径(C2 修复):不向 VectraStore 注入 embeddings 模型 — upsertToIndex 改用
 		// embeddingPort.embed + upsertItem 预计算向量路径,绕过 vectra 内部 embeddings 调用。
-		// embeddingPort(this.embedding)在上方 rebuildEmbeddingAdapter 已构造,与记忆索引共享同一份
-		// ONNX FeatureExtractor,确保记忆向量化与 vault 索引向量化维度一致。
+		// 记忆与笔记索引使用同一模型；通过惰性端口在调用时选择已就绪的 Worker，
+		// 避免 onload 时提前绑定主线程 CPU，会在 GPU 可用时额外创建一份推理会话。
 		// 关键路径(B3):记忆索引同样注入原子存储 —— `endUpdate` 的落盘走临时文件 + rename,
 		// 提交失败时才能按写入结果区分「完整旧版」与「完整新版」,而不是一律报「状态不明」。
 		const memoryVectraStore = new VectraStore(memoryIndexDir, {
 			autoInit: false,
 			storage: this.createIndexStorage(memoryIndexDir),
 		});
-		this.memoryStore = new MemoryStore(memoryDir, memoryVectraStore, this.embedding);
+		this.memoryStore = new MemoryStore(memoryDir, memoryVectraStore, this.queryEmbedding());
 		this.memoryStore.ensureDir();
 		// 关键路径(S-SR-LAYERING):使用统计与记忆索引同域放 pluginDir,不进 data.json / vault(spec §4)。
 		this.usageStats = new UsageStatsStore(path.join(pluginDir, 'usage-stats.json'));
@@ -654,12 +654,12 @@ export default class RatelVaultPlugin extends Plugin {
 		this.tools.register(
 			createCopyNoteTool(this.vault, toolDefMap.get('copy_note')!),
 		);
-		// 关键路径:记忆工具 — 3 个新工具,复用 memoryStore 与主线程 embeddingPort。
+		// 记忆读写共用 GPU 优先的嵌入路由，交互查询保留超时后的 CPU 兜底。
 		// search_memory 是只读工具(查询记忆);remember / forget_memory 是写工具(触发 pre/post write hook)。
 		this.tools.register(
 			createSearchMemoryTool(
 				this.memoryStore,
-				this.embedding,
+				this.queryEmbedding(),
 				toolDefMap.get('search_memory')!,
 				// 关键路径:传 getter 现读 settings,设置面板改 memoryDynamicLimitKB 后立即生效,无需重载插件。
 				() => this.settings.memoryDynamicLimitKB * 1024,
@@ -1939,7 +1939,7 @@ export default class RatelVaultPlugin extends Plugin {
 				) {
 					try {
 						this.breadcrumbs?.mark('ask.embed.begin', sessionId, 1);
-						const vectors = await this.embedding.embed([message]);
+						const vectors = await this.queryEmbedding().embed([message]);
 						this.breadcrumbs?.mark('ask.embed.end', sessionId, 1);
 						const queryVector = vectors[0];
 						if (queryVector) {
