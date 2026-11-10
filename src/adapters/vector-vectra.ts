@@ -29,6 +29,7 @@ import fs from 'fs';
 import { tNow } from '../i18n';
 import { assertSafeRecordPath, validateBlockSet } from '../core/index-persistence-types';
 import type { AtomicWriteOutcome, AtomicWriteRecord } from './atomic-index-storage';
+import { createVectraTokenizer } from './vectra-tokenizer';
 
 // ==================== 公共契约 ====================
 
@@ -306,6 +307,9 @@ export class VectraStore implements VectorStore, FileReplaceStore {
 				folderPath: this.indexDir,
 				embeddings: this.embeddings,
 				storage: this.storage,
+				// 关键路径:显式注入 tokenizer,避免 vectra 默认实现把 GPT 词表带进主包;
+				// 索引线程构建不替换 gpt-tokenizer,仍包装真实分词(详见 vectra-tokenizer)。
+				tokenizer: createVectraTokenizer(),
 			});
 			// 关键路径:首次运行需在磁盘上落地 index.json + 索引文件。
 			if (!(await this.index.isIndexCreated())) {

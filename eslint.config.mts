@@ -60,6 +60,7 @@ export default tseslint.config(
 				__RATEL_INDEX_EXPERIMENT__: 'readonly',
 				__RATEL_GPU_WORKER__: 'readonly',
 				__RATEL_ORT_GLUE__: 'readonly',
+				__RATEL_VECTRA_GPT_TOKENIZER__: 'readonly',
 			},
 		},
 	},

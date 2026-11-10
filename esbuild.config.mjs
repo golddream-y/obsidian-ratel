@@ -312,6 +312,16 @@ const mainContext = await esbuild.context({
 		// 关键路径:vectra 的 Node 入口(index.js)会 re-export server 模块,连带引入 @grpc/grpc-js。
 		// Obsidian 渲染进程不需要 server 能力,强制走 browser 入口,只打包纯 JS 索引逻辑。
 		'vectra': path.resolve(__dirname, 'node_modules/vectra/lib/browser.js'),
+		// 关键路径:vectra 的 BM25 分支会带进英文语言模型(约 3.5MB)。本项目检索只调用
+		// `queryItems(vector, '', topK)`,从不传 `isBm25`,BM25 引擎与模型在运行时永远不会被创建;
+		// 三个替身只在 setupBm25 里被引用,不会影响向量写入、检索与事务提交。
+		'wink-bm25-text-search': path.resolve(__dirname, 'src/adapters/empty-module.cjs'),
+		'wink-nlp': path.resolve(__dirname, 'src/adapters/empty-module.cjs'),
+		'wink-eng-lite-web-model': path.resolve(__dirname, 'src/adapters/empty-module.cjs'),
+		// 关键路径:主线程只做只读检索与记忆写入(upsertItem),不会调用 vectra 分块;
+		// 索引线程是唯一需要 GPT 词表的地方,那边的构建保留真实实现。
+		// 主包替换为空模块由 `createVectraTokenizer()` 检测并降级,避免多带 2.6MB 词表。
+		'gpt-tokenizer': path.resolve(__dirname, 'src/adapters/empty-module.cjs'),
 	},
 	// 关键路径:本地 Embedding 改走 onnxruntime-web(纯 JS/WASM),
 	// 不打包 @huggingface/transformers(已移除依赖)。
@@ -345,6 +355,8 @@ const mainContext = await esbuild.context({
 	// 关键路径:T0 线程实验入口只在显式开启时进包,正常产物不注册该命令。
 	define: {
 		__RATEL_INDEX_EXPERIMENT__: JSON.stringify(process.env.RATEL_INDEX_EXPERIMENT === '1'),
+		// 关键路径:主包把 gpt-tokenizer 替换为空模块,分块适配改用可逆降级实现。
+		__RATEL_VECTRA_GPT_TOKENIZER__: 'false',
 	},
 	// 关键路径:为 .node 原生文件配置 loader,避免 esbuild 因无 loader 而报错。
 	// 这些文件仅来自 onnxruntime-node 的 Node 回退路径,实际在 Obsidian 渲染进程中不会执行。
@@ -389,6 +401,8 @@ const workerContext = await esbuild.context({
 		// 关键路径:Worker 同样使用 vectra 的 browser 入口,避免 grpc 等 Node-only 依赖被打包。
 		'vectra': path.resolve(__dirname, 'node_modules/vectra/lib/browser.js'),
 	},
+	// 关键路径:该 Worker 保留真实 GPT 分词,vectra 继续用自带 tokenizer。
+	define: { __RATEL_VECTRA_GPT_TOKENIZER__: 'true' },
 	plugins: [externalOnnxruntimeNodePlugin()],
 });
 
@@ -509,6 +523,8 @@ const runtimeWorkerContext = await esbuild.context({
 		'wink-bm25-text-search': path.resolve(__dirname, 'src/adapters/empty-module.cjs'),
 		'wink-eng-lite-web-model': path.resolve(__dirname, 'src/adapters/empty-module.cjs'),
 	},
+	// 关键路径:索引线程保留真实 GPT 分词,`createVectraTokenizer` 返回 undefined 走默认实现。
+	define: { __RATEL_VECTRA_GPT_TOKENIZER__: 'true' },
 	plugins: [],
 });
 

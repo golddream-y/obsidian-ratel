@@ -3,7 +3,13 @@ import path from 'node:path';
 
 export default defineConfig({
 	// 与 esbuild 对齐:测试环境不注入实验入口,避免缺失构建期常量。
-	define: { __RATEL_INDEX_EXPERIMENT__: 'false', __RATEL_GPU_WORKER__: 'false', __RATEL_ORT_GLUE__: '""' },
+	define: {
+		__RATEL_INDEX_EXPERIMENT__: 'false',
+		__RATEL_GPU_WORKER__: 'false',
+		__RATEL_ORT_GLUE__: '""',
+		// 测试保留真实 GPT 分词,与索引线程一致;降级分支只在主包构建里生效。
+		__RATEL_VECTRA_GPT_TOKENIZER__: 'true',
+	},
 	// 关键路径:vitest 在 Node 环境下会命中 onnxruntime-web 的 Node 入口,
 	// 该入口的 worker 模块路径与 npm 包实际结构不兼容,导致端到端测试加载 wasm 失败。
 	// 这里强制测试使用 wasm bundle 入口(与 Obsidian 渲染进程一致且 wasm 内联),确保本地 Embedding 链路可验证。

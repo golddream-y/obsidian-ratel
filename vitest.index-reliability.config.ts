@@ -11,8 +11,8 @@ import baseConfig from './vitest.config.ts';
  *   规模用例里的 **100 篇档三臂 A/B** 也由它打开(不要求 `RATEL_SCALE=1`)。因此
  *   `npx vitest run --config vitest.index-reliability.config.ts` 会直接产出 `judgeGate` 判定;
  *   `RATEL_SCALE=1` 只额外打开 1000 / 3000 篇档与 512 维读数表。
- * - **继承基础别名与 setupFiles**:`obsidian` / `onnxruntime-web` / `@ratel/*` 虚拟模块别名
- *   与 `global-polyfill` 直接取 `vitest.config.ts` 的值,避免两处漂移。
+ * - **继承基础别名、构建常量与 setupFiles**:`obsidian` / `onnxruntime-web` / `@ratel/*` 虚拟模块别名、
+ *   构建期 `define` 与 `global-polyfill` 直接取 `vitest.config.ts` 的值,避免两处漂移。
  * - **不隐式下载模型**:本配置的 include 面**从不包含** `tests/adapters/embedding-onnx.test.ts`
  *   (它由基础配置的 `RATEL_ONNX=1` 门控,跑真实 ORT 推理)。这里的嵌入端口是确定性假实现。
  *   若将来要在此配置里跑真实 ONNX,必须显式加入该文件并显式设置 `RATEL_ONNX=1`。
@@ -32,18 +32,26 @@ import baseConfig from './vitest.config.ts';
 interface BaseConfigShape {
 	resolve?: { alias?: Record<string, string> };
 	test?: { setupFiles?: string[] };
+	define?: Record<string, string>;
 }
 
 const base = baseConfig as BaseConfigShape;
 const alias = base.resolve?.alias;
 const setupFiles = base.test?.setupFiles;
-if (alias === undefined || setupFiles === undefined) {
-	// 关键路径:继承来源缺失时必须硬失败 —— 静默用空别名会让 `obsidian` 解析失败被误读成产品缺陷。
-	throw new Error('vitest.index-reliability.config.ts 需要 vitest.config.ts 的 resolve.alias 与 test.setupFiles');
+const define = base.define;
+if (alias === undefined || setupFiles === undefined || define === undefined) {
+	// 关键路径:继承来源缺失时必须硬失败 —— 静默用空别名会让 `obsidian` 解析失败被误读成产品缺陷;
+	// 缺少 define 会让 `__RATEL_VECTRA_GPT_TOKENIZER__` 在运行期未定义。
+	throw new Error(
+		'vitest.index-reliability.config.ts 需要 vitest.config.ts 的 resolve.alias、test.setupFiles 与 define',
+	);
 }
 
 export default defineConfig({
 	resolve: { alias },
+	// 关键路径:构建期常量(含 `__RATEL_VECTRA_GPT_TOKENIZER__`)必须与基础配置一致,
+	// 否则崩溃/规模用例在装配 VectraStore 时会因常量未定义而失败。
+	define,
 	test: {
 		include: [
 			'tests/core/index-reliability-crash.test.ts',

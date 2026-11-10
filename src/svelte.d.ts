@@ -35,3 +35,9 @@ declare const __RATEL_GPU_WORKER__: boolean;
 
 /** 构建期内联的 ONNX jsep 胶水模块源码；非 GPU 版为空字符串。 */
 declare const __RATEL_ORT_GLUE__: string;
+
+/**
+ * 构建期开关：当前产物是否保留 vectra 的 GPT 分词词表。
+ * 主包替换为空模块（false），索引线程保留真实实现（true）。
+ */
+declare const __RATEL_VECTRA_GPT_TOKENIZER__: boolean;

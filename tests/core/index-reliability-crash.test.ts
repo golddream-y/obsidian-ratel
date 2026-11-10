@@ -82,6 +82,9 @@ async function buildChildEntry(outDir: string): Promise<string> {
 			'@huggingface/transformers': path.resolve(REPO_ROOT, 'src/adapters/empty-transformers.cjs'),
 			'onnxruntime-node': path.resolve(REPO_ROOT, 'src/adapters/empty-module.cjs'),
 		},
+		// 关键路径:子进程模拟索引线程,必须与生产 Worker 构建一致地保留真实 GPT 分词;
+		// 该 define 缺省会让 `createVectraTokenizer` 在运行期抛出「未定义」。
+		define: { __RATEL_VECTRA_GPT_TOKENIZER__: 'true' },
 		external: ['obsidian', 'electron', ...builtinModules],
 	});
 	return outfile;
