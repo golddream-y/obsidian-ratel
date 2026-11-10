@@ -28,6 +28,12 @@ export interface ThreadIndexClient {
 	}): Promise<void>;
 	/** 注册「单篇完成」监听器 — 批量写入时按篇推进计数。 */
 	onFileCommitted?: ((event: { path: string; chunkCount: number; skipped: boolean }) => void) | null;
+	/** 注册「变更确认」监听器 — 重新分块前先用旧记录的块数占住分母。 */
+	onFileChanged?: ((event: { path: string; chunkCount: number }) => void) | null;
+	/** 注册「分块完成」监听器 — 分母按实际块数精确化(全新文件也要等这一步才入分母)。 */
+	onFileChunked?: ((event: { path: string; chunkCount: number }) => void) | null;
+	/** 注册「块已写入存储」监听器 — 与完成记录提交分开记账。 */
+	onFileBlocksStored?: ((event: { path: string; chunkCount: number }) => void) | null;
 	/** 单文件写入;`skipped: true` 表示内容未变、按完成记录直接复用(未做推理)。 */
 	indexFile(filePath: string, content: string): Promise<{ chunkCount: number; skipped?: boolean }>;
 	/** 批量写入;缺失时退化为逐个 `indexFile`。 */
@@ -36,7 +42,7 @@ export interface ThreadIndexClient {
 	recover(inputs: ReadonlyArray<{ path: string; hash: string | null }>): Promise<{ pending: number; decisions: number; failures: number }>;
 	close(reason?: string): Promise<void>;
 	/** 已落盘的完成记录；用于恢复阶段显示真实进度。缺失时不做恢复提示。 */
-	listCommitted?(): Promise<Array<{ path: string; state: 'present' | 'deleted' }>>;
+	listCommitted?(): Promise<Array<{ path: string; state: 'present' | 'deleted'; chunkCount?: number }>>;
 	/** 崩溃后重启;缺失表示该实现不支持自动恢复。 */
 	restart?(): Promise<void>;
 	/** 撤销在途请求;缺失表示只能停止调度新文件。 */
@@ -154,8 +160,29 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 	private receiptPaths: Set<string> = new Set();
 	/** 已核对过的唯一相关路径数，不等于成功提交数。 */
 	private examinedCount = 0;
-	/** 本轮真正写入的**块数** — 按块计量才能反映推理速度,不受文档大小影响。 */
-	private writtenBlocksThisRound = 0;
+	/** 本轮真正提交完成记录的**块数** — 速率只基于它,不受文档大小影响。 */
+	private blocksCommittedThisRound = 0;
+	/** 本轮已写入向量存储的块数 — 块已落盘,但完成记录未必已提交。 */
+	private blocksStoredThisRound = 0;
+	/** 本轮按完成记录复用的块数(内容未变,未做推理)。 */
+	private blocksReusedThisRound = 0;
+	/** 本轮失效(删除)路径移除的块数 — 只用于诊断对账,不计入写入。 */
+	private blocksRemovedThisRound = 0;
+	/** 已完成分块的精确块数。 */
+	private exactBlocksThisRound = 0;
+	/** 尚未分块文件的预估块数(来自完成记录 `chunkCount`)。 */
+	private readonly estimatedBlocks = new Map<string, number>();
+	private estimatedBlocksRemaining = 0;
+	/** 已收到分块/落盘事件的路径 — 同一篇的重复事件不重复计数。 */
+	private readonly chunkedPaths = new Set<string>();
+	private readonly storedPaths = new Set<string>();
+	/** 启动时已有完成记录的路径 — 用于区分「变更」与「新增」。 */
+	private knownPaths = new Set<string>();
+	/** 发现阶段结论(按篇):未变 / 新增 / 变更 / 失效。 */
+	private skippedFiles = 0;
+	private addedFiles = 0;
+	private changedFiles = 0;
+	private removedFiles = 0;
 	private taskIdValue = 0;
 	private phaseValue: IndexPhase = 'ready';
 	private scanCompleted = false;
@@ -191,7 +218,20 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 		this.retryPass = false;
 		this.deferred.clear();
 		this.writtenThisRound = 0;
-		this.writtenBlocksThisRound = 0;
+		this.blocksCommittedThisRound = 0;
+		this.blocksStoredThisRound = 0;
+		this.blocksReusedThisRound = 0;
+		this.blocksRemovedThisRound = 0;
+		this.exactBlocksThisRound = 0;
+		this.estimatedBlocks.clear();
+		this.estimatedBlocksRemaining = 0;
+		this.chunkedPaths.clear();
+		this.storedPaths.clear();
+		this.knownPaths = new Set();
+		this.skippedFiles = 0;
+		this.addedFiles = 0;
+		this.changedFiles = 0;
+		this.removedFiles = 0;
 		this.skippedThisRound = 0;
 		this.restoring = false;
 		this.restoredTotal = 0;
@@ -213,6 +253,17 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 					records.filter((record) => record.state === 'present' && currentPaths.has(record.path)).map((record) => record.path),
 				);
 				this.restoredTotal = this.receiptPaths.size;
+				this.knownPaths = new Set(this.receiptPaths);
+				for (const record of records) {
+					if (record.state !== 'present') continue;
+					if (currentPaths.has(record.path)) continue;
+					// 关键路径(块级记账):分母只统计本轮真正要重新写入或删除的文件。
+					// 未变文件不做推理,计入分母会把「已写 K / 共 M」稀释成假象。
+					this.seedEstimate(record.path, record.chunkCount ?? 0);
+					// 关键路径:完成记录存在但文件已不在库中 —— 必须排队删除。
+					// 否则失效文件永远留在记录里,分母预估也永远收敛不了。
+					this.queue.set(record.path, { op: 'delete' });
+				}
 				devLogger.info('index', `恢复检查:完成记录 ${records.length} 条,其中当前库相关 present ${this.restoredTotal} 条`);
 			} catch (error) {
 				devLogger.warn('index', '读取完成记录总数失败,本轮不显示恢复进度', error);
@@ -223,11 +274,16 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 		devLogger.info('index', `恢复阶段:${this.restoring ? `开启（待核对 ${this.restoredTotal} 篇）` : '跳过（无完成记录）'}`);
 
 		// 关键路径:按篇推进 —— 批量提交时不等整批结算,进度按篇递增。
-		if (this.client.onFileCommitted !== undefined) {
-			this.client.onFileCommitted = (event) => {
-				this.markSuccess(event.path, event.skipped !== true, event.chunkCount);
-			};
-		}
+		// 关键路径:无条件挂载回调 —— 客户端只需在事件到达时读取该字段,
+		// 不要求实现方预先声明;否则未声明的实现会静默丢失全部块级事件。
+		this.client.onFileCommitted = (event) => {
+			this.markSuccess(event.path, event.skipped !== true, event.chunkCount);
+		};
+		// 关键路径(块级记账):变更确认即用旧记录块数占住分母,分块完成后再换成精确值;
+		// 块落盘与完成记录提交分开上报,才能解释「UI 有块提交、库内记录未变」这类对账差异。
+		this.client.onFileChanged = (event) => this.seedEstimate(event.path, event.chunkCount);
+		this.client.onFileChunked = (event) => this.markChunked(event.path, event.chunkCount);
+		this.client.onFileBlocksStored = (event) => this.markBlocksStored(event.path, event.chunkCount);
 		let skippedAbandoned = 0;
 		for (const filePath of files) {
 			if (this.stopping || this.destroyed) break;
@@ -261,7 +317,9 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 		// 关键路径(诊断):重启后是否复用完成记录,一眼看清 —— 跳过数应接近已索引篇数。
 		devLogger.info(
 			'index',
-			`索引轮完成:写入 ${this.writtenThisRound} 篇 / 跳过 ${this.skippedThisRound} 篇(完成记录复用) / 失败 ${this.failing.size}`,
+			`索引轮完成:写入 ${this.writtenThisRound} 篇 / 跳过 ${this.skippedThisRound} 篇(完成记录复用) / 失败 ${this.failing.size}`
+			+ ` | 块:落盘 ${this.blocksStoredThisRound} / 提交 ${this.blocksCommittedThisRound} / 复用 ${this.blocksReusedThisRound} / 移除 ${this.blocksRemovedThisRound}`
+			+ ` | 发现:变更 ${this.changedFiles} / 新增 ${this.addedFiles} / 失效 ${this.removedFiles}`,
 		);
 		// 关键路径(诊断):恢复态若没收敛,列出还没被核对的记录路径,
 		// 避免再靠「差几篇」这种表面数字去猜原因。
@@ -324,7 +382,15 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 			committed: this.verified.size,
 			pendingFiles,
 			committedThisRound: this.writtenThisRound,
-			committedBlocksThisRound: this.writtenBlocksThisRound,
+			committedBlocksThisRound: this.blocksCommittedThisRound,
+			storedBlocksThisRound: this.blocksStoredThisRound,
+			reusedBlocksThisRound: this.blocksReusedThisRound,
+			totalBlocksThisRound: this.exactBlocksThisRound + this.estimatedBlocksRemaining,
+			blocksEstimated: this.estimatedBlocks.size > 0,
+			skippedFiles: this.skippedFiles,
+			addedFiles: this.addedFiles,
+			changedFiles: this.changedFiles,
+			removedFiles: this.removedFiles,
 			queued: this.queue.size,
 			active: this.activeCount,
 			pendingTransactions: 0,
@@ -338,7 +404,17 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 	/** 记录路径事件;销毁或停止调度后不再接收。 */
 	notify(filePath: string, op: 'upsert' | 'delete'): void {
 		if (this.destroyed || this.stopping) return;
-		if (op === 'delete') this.verified.delete(filePath);
+		if (op === 'delete') {
+			this.verified.delete(filePath);
+		} else {
+			// 关键路径(2026-11-10 真机):同一路径在增量里被重写时,上一轮留下的核验/分块/
+			// 落盘标记必须清掉。否则 markSuccess 把它当成重复事件直接返回 —— 库里的块在变,
+			// 界面的已写块数却冻在上一轮,两边永远对不上账。
+			this.verified.delete(filePath);
+			this.chunkedPaths.delete(filePath);
+			this.storedPaths.delete(filePath);
+			this.settleEstimate(filePath);
+		}
 		this.queue.set(filePath, { op });
 		this.phaseValue = this.pausedValue ? 'paused' : 'processing';
 	}
@@ -375,13 +451,82 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 		// 幂等返回避免同一篇被计两次(计数虚高、速率失真)。
 		if (this.verified.has(filePath)) return;
 		this.verified.add(filePath);
-		// 关键路径:速率只认真正写入的篇数与块数,跳过(内容未变)不计入。
+		// 关键路径:速率只认真正提交的块数,跳过(内容未变)只计入复用。
 		if (written) {
 			this.writtenThisRound += 1;
-			this.writtenBlocksThisRound += blocks;
+			this.blocksCommittedThisRound += Math.max(0, Math.floor(blocks));
+			if (this.knownPaths.has(filePath)) this.changedFiles += 1;
+			else this.addedFiles += 1;
 		} else {
 			this.skippedThisRound += 1;
+			this.blocksReusedThisRound += Math.max(0, Math.floor(blocks));
+			this.skippedFiles += 1;
 		}
+		this.settleEstimate(filePath);
+		this.clearFailure(filePath);
+	}
+
+	/**
+	 * 记录失效(删除)完成 — 失效块属于移除,不计入写入。
+	 *
+	 * 关键路径:失效文件先用完成记录 `chunkCount` 计入分母预估,
+	 * 删除完成后结算掉该预估,避免分母永远等不到写入。
+	 */
+	private markDeleted(filePath: string, removedBlocks: number): void {
+		this.markExamined(filePath);
+		if (this.verified.has(filePath)) return;
+		this.verified.add(filePath);
+		this.removedFiles += 1;
+		this.blocksRemovedThisRound += Math.max(0, Math.floor(removedBlocks));
+		this.settleEstimate(filePath);
+		this.clearFailure(filePath);
+	}
+
+	/**
+	 * 记录分块完成 — 用实际块数替换按完成记录做的预估。
+	 *
+	 * 关键路径:全新文件没有完成记录,只能等分块后才进入分母;
+	 * 变更文件此时把预估换成实际,界面据 `blocksEstimated` 标明是预估还是实际。
+	 */
+	private markChunked(filePath: string, blocks: number): void {
+		if (this.chunkedPaths.has(filePath)) return;
+		this.chunkedPaths.add(filePath);
+		this.exactBlocksThisRound += Math.max(0, Math.floor(blocks));
+		this.settleEstimate(filePath);
+	}
+
+	/**
+	 * 用完成记录的旧块数为某路径记一笔预估 — 同一路径只记一次。
+	 *
+	 * 关键路径:预估只服务「尚未分块」的变更/失效文件;已有精确块数或已预估的不重复累加,
+	 * 否则分母会被同一篇反复抬高,最终 K 永远追不上 M。
+	 */
+	private seedEstimate(filePath: string, blocks: number): void {
+		if (this.chunkedPaths.has(filePath)) return;
+		if (this.estimatedBlocks.has(filePath)) return;
+		const estimated = Math.max(0, Math.floor(blocks));
+		if (estimated === 0) return;
+		this.estimatedBlocks.set(filePath, estimated);
+		this.estimatedBlocksRemaining += estimated;
+	}
+
+	/** 记录块已写入向量存储(完成记录未必已提交)。 */
+	private markBlocksStored(filePath: string, blocks: number): void {
+		if (this.storedPaths.has(filePath)) return;
+		this.storedPaths.add(filePath);
+		this.blocksStoredThisRound += Math.max(0, Math.floor(blocks));
+	}
+
+	/** 结算某路径的预估块数 — 预估只在分块前有效,一次只扣一次。 */
+	private settleEstimate(filePath: string): void {
+		const estimated = this.estimatedBlocks.get(filePath);
+		if (estimated === undefined) return;
+		this.estimatedBlocks.delete(filePath);
+		this.estimatedBlocksRemaining = Math.max(0, this.estimatedBlocksRemaining - estimated);
+	}
+
+	/** 清除失败标记与样本。 */
+	private clearFailure(filePath: string): void {
 		this.failing.delete(filePath);
 		this.failedOps.delete(filePath);
 		const sampleIndex = this.failureSamples.findIndex((item) => item.path === filePath);
@@ -523,14 +668,14 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 			this.activeCount = 1;
 			try {
 				if (entry.op === 'delete') {
-					await this.client.deleteFile(filePath);
-				} else {
-					const content = await this.vault.readFile(filePath);
-					const result = await this.client.indexFile(filePath, content);
-					this.markSuccess(filePath, result.skipped !== true, result.chunkCount);
+					const removed = await this.client.deleteFile(filePath);
+					this.markDeleted(filePath, removed.removed);
 					continue;
 				}
-				this.markSuccess(filePath);
+				const content = await this.vault.readFile(filePath);
+				const result = await this.client.indexFile(filePath, content);
+				this.markSuccess(filePath, result.skipped !== true, result.chunkCount);
+				continue;
 			} catch (error) {
 				// 关键路径:只有「用户撤销」才算停止信号 —— 重新排队,等 resume 继续。
 				// 若把任意「请求已取消/超时」都当停止,一个文件的超时就会让整轮索引提前收工,

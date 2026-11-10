@@ -98,9 +98,26 @@ export interface UserStatusSnapshot {
 	indexTotalFiles?: number;
 	/** 已提交且可检索的文件数。 */
 	indexCommittedFiles?: number;
-	/** 当前索引速率(篇/秒) — 由真实完成计数滑动窗口推导;样本不足时 undefined。 */
-	/** 平均每块推理耗时(秒) — 与文档大小无关,能直接看出模型速度。 */
-	indexSecondsPerBlock?: number;
+	/** 当前索引速率(块/秒) — 只由真实提交计数滑动窗口推导;样本不足或纯核对时 undefined。 */
+	indexBlocksPerSecond?: number;
+	/** 本轮已写入向量存储的块数（块已落盘，完成记录未必已提交）。 */
+	indexStoredBlocks?: number;
+	/** 本轮已完成记录提交的块数 — 「已写」进度与速率都基于它。 */
+	indexCommittedBlocks?: number;
+	/** 本轮按完成记录复用的块数（内容未变，未推理）。 */
+	indexReusedBlocks?: number;
+	/** 嵌入阶段分母：已完成分块的实际块数 + 尚未分块文件的预估块数。 */
+	indexTotalBlocks?: number;
+	/** 分母是否仍含预估（未分块文件按完成记录 chunkCount 估算）。 */
+	indexBlocksEstimated?: boolean;
+	/** 发现阶段：内容未变、按完成记录复用的篇数。 */
+	indexSkippedFiles?: number;
+	/** 发现阶段：本轮新增的篇数。 */
+	indexAddedFiles?: number;
+	/** 发现阶段：本轮内容变化的篇数。 */
+	indexChangedFiles?: number;
+	/** 发现阶段：本轮失效（删除）的篇数。 */
+	indexRemovedFiles?: number;
 	/** 待处理(队列 + 在途 + 未决事务)文件数。 */
 	indexPendingFiles?: number;
 	/** 是否处于「恢复已索引进度」阶段（重启后核对完成记录期间）。 */

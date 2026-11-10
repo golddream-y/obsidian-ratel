@@ -163,11 +163,18 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 		// 关键路径:内容未变就不重新分块与嵌入 —— 这是「未变文件零重复嵌入」的判据,
 		// 也是重跑/reindex 不把整库重嵌一遍的唯一防线。
 		const inputHash = await sha256(content);
+		let previousChunkCount = 0;
 		if (state.journal !== null) {
 			const existing = await state.journal.readReceipt(filePath);
 			if (existing !== null && existing.inputHash === inputHash) {
 				return { path: filePath, chunkCount: existing.chunkCount, skipped: true as const };
 			}
+			if (existing !== null) previousChunkCount = existing.chunkCount;
+		}
+		// 关键路径(块级记账):变更文件在重新分块前,先用完成记录里的旧块数占住分母;
+		// 分块完成后由 `file-chunked` 换成精确值。全新文件没有旧记录,只能等分块。
+		if (previousChunkCount > 0) {
+			options.emit?.('file-changed', { path: filePath, chunkCount: previousChunkCount });
 		}
 		// 关键路径:确定要真正写入时才取存储 —— 跳过路径不该为了一份向量库付出打开分片的代价。
 		const store = requireStore();
@@ -175,6 +182,9 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 		const startedAt = performance.now();
 		const chunks = chunkMarkdown(content, state.chunkOptions);
 		const chunkedAt = performance.now();
+		// 关键路径(块级记账):分块一完成就上报实际块数 —— 全新文件在完成记录里没有
+		// `chunkCount`,宿主的分母只能靠这一步从「未知」转成精确。
+		options.emit?.('file-chunked', { path: filePath, chunkCount: chunks.length });
 		// 关键路径:先拿到全部向量再动磁盘,推理失败时旧版本块保持不变。
 		const vectors = chunks.length === 0
 			? []
@@ -278,9 +288,17 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 		const commit = async () => {
 			const prepared = await prepare();
 			if (prepared !== null) {
-				await prepared.journal.commit(prepared.transactionId);
+				// 关键路径(块级记账):两阶段提交把「块落盘」与「完成记录提交」拆开,
+				// 两者之间上报一次落盘块数,宿主才能区分已落盘与已提交。
+				const applied = await prepared.journal.applyBlocks(prepared.transactionId);
+				if (applied.applied && !applied.superseded) {
+					options.emit?.('file-blocks-written', { path: filePath, chunkCount: blocks.length });
+				}
+				// 与 journal.commit 的内部顺序一致:superseded 也走 finalize 以完成清理。
+				await prepared.journal.finalizeCommit(prepared.transactionId, applied.applied);
 			} else {
 				await store.replaceFile({ path: filePath, commitId, blocks });
+				options.emit?.('file-blocks-written', { path: filePath, chunkCount: blocks.length });
 			}
 			return completeCommit();
 		};
@@ -289,9 +307,13 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 		const writeBlocks = async (): Promise<void> => {
 			const prepared = await prepare();
 			if (prepared !== null) {
-				await prepared.journal.applyBlocks(prepared.transactionId);
+				const applied = await prepared.journal.applyBlocks(prepared.transactionId);
+				if (applied.applied && !applied.superseded) {
+					options.emit?.('file-blocks-written', { path: filePath, chunkCount: blocks.length });
+				}
 			} else {
 				await store.replaceFile({ path: filePath, commitId, blocks });
+				options.emit?.('file-blocks-written', { path: filePath, chunkCount: blocks.length });
 			}
 		};
 		const finalize = async () => {
@@ -392,8 +414,33 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 
 		'session.deleteFile': async (payload) => {
 			const store = requireStore();
-			const removed = await storeGate.runCommit(() => store.deleteByPath(stringField(payload, 'path')));
-			return { removed };
+			const filePath = stringField(payload, 'path');
+			const journal = state.journal;
+			if (journal === null) {
+				const removed = await storeGate.runCommit(() => store.deleteByPath(filePath));
+				return { removed };
+			}
+			return storeGate.runCommit(async () => {
+				const receipt = await journal.readReceipt(filePath);
+				// 关键路径(块级记账):删除必须落墓碑完成记录,否则失效记录会一直留在
+				// 完成记录里,启动对账每轮重新排队删除,分母预估也永远收敛不了。
+				if (receipt === null || receipt.state !== 'present') {
+					const removed = await store.deleteByPath(filePath);
+					return { removed };
+				}
+				const preparation = await journal.prepare({
+					path: filePath,
+					operation: 'delete',
+					inputHash: null,
+					revision: receipt.revision + 1,
+					previousCommitId: receipt.commitId,
+					previousRevision: receipt.revision,
+					blocks: [],
+				});
+				// 零块替换与墓碑记录在同一事务内完成:向量按路径清空,完成记录转 deleted。
+				await journal.commit(preparation.transactionId);
+				return { removed: receipt.chunkCount };
+			});
 		},
 
 		'session.manifest.load': async () => {

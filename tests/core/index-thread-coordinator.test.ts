@@ -106,6 +106,160 @@ describe('线程版协调器', () => {
 	});
 });
 
+describe('块级记账与发现口径', () => {
+	it('跳过/变更/新增 - 复用块、落盘块、提交块分开记 - 分母收敛到实际块数', async () => {
+		// 关键路径(2026-11-10):UI 曾出现「有块提交」而库内完成记录未变。
+		// 这里用事件把「分块 → 落盘 → 提交」三段显式驱动,验证三者不混账。
+		const client: Record<string, unknown> = {
+			start: vi.fn(async () => undefined),
+			listCommitted: vi.fn(async () => [
+				{ path: 'a.md', state: 'present', chunkCount: 5 },
+				{ path: 'b.md', state: 'present', chunkCount: 3 },
+			]),
+			indexFile: vi.fn(async (filePath: string) => {
+				const emit = client as {
+					onFileChunked?: (event: { path: string; chunkCount: number }) => void;
+					onFileBlocksStored?: (event: { path: string; chunkCount: number }) => void;
+					onFileCommitted?: (event: { path: string; chunkCount: number; skipped: boolean }) => void;
+				};
+				if (filePath === 'a.md') {
+					// 内容未变：不分块、不落盘，直接复用完成记录。
+					emit.onFileCommitted?.({ path: filePath, chunkCount: 5, skipped: true });
+					return { chunkCount: 5, skipped: true };
+				}
+				const chunkCount = filePath === 'b.md' ? 4 : 2;
+				emit.onFileChunked?.({ path: filePath, chunkCount });
+				emit.onFileBlocksStored?.({ path: filePath, chunkCount });
+				emit.onFileCommitted?.({ path: filePath, chunkCount, skipped: false });
+				return { chunkCount };
+			}),
+			deleteFile: vi.fn(async () => ({ removed: 0 })),
+			recover: vi.fn(async () => ({ pending: 0, decisions: 0, failures: 0 })),
+			close: vi.fn(async () => undefined),
+		};
+		const coordinator = new IndexThreadCoordinator({
+			client: client as never,
+			vault: { listMarkdownFiles: () => ['a.md', 'b.md', 'new.md'], readFile: async () => '正文' },
+			start: START,
+		});
+		const counters = await coordinator.start();
+		expect(counters).toMatchObject({
+			// 发现阶段：a 未变、b 变更、new 新增。
+			skippedFiles: 1,
+			changedFiles: 1,
+			addedFiles: 1,
+			removedFiles: 0,
+			// 复用 5 块；b 实际 4 块、new 2 块，落盘与提交一致。
+			reusedBlocksThisRound: 5,
+			storedBlocksThisRound: 6,
+			committedBlocksThisRound: 6,
+			// 分母不包含未变文件的复用块；本轮实际写入 b 4 + new 2 = 6 块。
+			totalBlocksThisRound: 6,
+			blocksEstimated: false,
+		});
+		expect(counters.committedThisRound).toBe(2);
+		coordinator.destroy();
+	});
+
+	it('增量重写同一路径 - 已写块数继续增加而不是冻在上一轮', async () => {
+		// 关键路径(2026-11-10 真机):`verified` 未清空时 markSuccess 会把增量重写当成重复事件,
+		// 库里的块已经变了,界面计数却不动 —— 这正是「两边对不上」的来源之一。
+		let blocks = 1;
+		const client: Record<string, unknown> = {
+			start: vi.fn(async () => undefined),
+			indexFile: vi.fn(async (filePath: string) => {
+				const emit = client as {
+					onFileChunked?: (event: { path: string; chunkCount: number }) => void;
+					onFileBlocksStored?: (event: { path: string; chunkCount: number }) => void;
+				};
+				emit.onFileChunked?.({ path: filePath, chunkCount: blocks });
+				emit.onFileBlocksStored?.({ path: filePath, chunkCount: blocks });
+				return { chunkCount: blocks };
+			}),
+			deleteFile: vi.fn(async () => ({ removed: 0 })),
+			recover: vi.fn(async () => ({ pending: 0, decisions: 0, failures: 0 })),
+			close: vi.fn(async () => undefined),
+		};
+		const coordinator = new IndexThreadCoordinator({
+			client: client as never,
+			vault: { listMarkdownFiles: () => ['a.md'], readFile: async () => '正文' },
+			start: START,
+		});
+		await coordinator.start();
+		expect(coordinator.counters().committedBlocksThisRound).toBe(1);
+		blocks = 3;
+		coordinator.notify('a.md', 'upsert');
+		await coordinator.drain();
+		expect(coordinator.counters()).toMatchObject({
+			storedBlocksThisRound: 4,
+			committedBlocksThisRound: 4,
+			totalBlocksThisRound: 4,
+			blocksEstimated: false,
+		});
+		coordinator.destroy();
+	});
+
+	it('变更文件 - 收到变更确认后失败 - 分母保留旧块数预估而非丢失', async () => {
+		const client: Record<string, unknown> = {
+			start: vi.fn(async () => undefined),
+			listCommitted: vi.fn(async () => [{ path: 'a.md', state: 'present', chunkCount: 3 }]),
+			indexFile: vi.fn(async (filePath: string) => {
+				const emit = client as { onFileChanged?: (event: { path: string; chunkCount: number }) => void };
+				emit.onFileChanged?.({ path: filePath, chunkCount: 3 });
+				throw new Error('嵌入失败');
+			}),
+			deleteFile: vi.fn(async () => ({ removed: 0 })),
+			recover: vi.fn(async () => ({ pending: 0, decisions: 0, failures: 0 })),
+			close: vi.fn(async () => undefined),
+		};
+		const coordinator = new IndexThreadCoordinator({
+			client: client as never,
+			vault: { listMarkdownFiles: () => ['a.md'], readFile: async () => '正文' },
+			start: START,
+		});
+		const counters = await coordinator.start();
+		// 没有分块事件时保留预估：分母不会凭空归零，界面可标「预估」。
+		expect(counters).toMatchObject({ totalBlocksThisRound: 3, blocksEstimated: true, failures: 1 });
+		coordinator.destroy();
+	});
+
+	it('启动对账 - 完成记录存在但文件已删除 - 排队删除并结算预估', async () => {
+		const client = {
+			start: vi.fn(async () => undefined),
+			onFileChanged: null as ((event: { path: string; chunkCount: number }) => void) | null,
+			onFileChunked: null as ((event: { path: string; chunkCount: number }) => void) | null,
+			listCommitted: vi.fn(async () => [
+				{ path: 'a.md', state: 'present', chunkCount: 2 },
+				{ path: 'gone.md', state: 'present', chunkCount: 4 },
+			]),
+			indexFile: vi.fn(async (filePath: string) => {
+				client.onFileChunked?.({ path: filePath, chunkCount: 2 });
+				return { chunkCount: 2 };
+			}),
+			deleteFile: vi.fn(async () => ({ removed: 4 })),
+			recover: vi.fn(async () => ({ pending: 0, decisions: 0, failures: 0 })),
+			close: vi.fn(async () => undefined),
+		};
+		const coordinator = new IndexThreadCoordinator({
+			client: client as never,
+			vault: { listMarkdownFiles: () => ['a.md'], readFile: async () => '正文' },
+			start: START,
+		});
+		const counters = await coordinator.start();
+		// 关键路径：已删除文件必须真正删记录，否则失效预估永远收敛不了。
+		expect(client.deleteFile).toHaveBeenCalledWith('gone.md');
+		expect(counters).toMatchObject({
+			removedFiles: 1,
+			committedBlocksThisRound: 2,
+			reusedBlocksThisRound: 0,
+			// 分母只剩本轮真正写入的 2 块，失效文件的 4 块预估已结算。
+			totalBlocksThisRound: 2,
+			blocksEstimated: false,
+		});
+		coordinator.destroy();
+	});
+});
+
 describe('线程崩溃恢复', () => {
 	it('首次写入遇到线程退出 - 重启后重试同一文件 - 不记为失败', async () => {
 		let attempts = 0;

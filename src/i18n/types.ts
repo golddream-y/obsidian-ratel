@@ -774,7 +774,11 @@ export interface StatusStrings {
   'status.drawer.embedBadge.api': string;
   'status.drawer.embedBadge.gpu': string;
   'status.drawer.embedBadge.cpu': string;
-  'status.drawer.indexSecondsPerBlock': string;
+  'status.drawer.indexBlocksPerSecond': string;
+  'status.drawer.blocksProgress': string;
+  'status.drawer.blocksProgressEstimated': string;
+  'status.drawer.blocksLedger': string;
+  'status.drawer.discoveryCounts': string;
   'status.drawer.restoring': string;
   'status.drawer.restoringHint': string;
   'status.drawer.embedKind.api': string;

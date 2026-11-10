@@ -306,6 +306,8 @@ export default class RatelVaultPlugin extends Plugin {
 	private webgpuCapable = false;
 	// 关键路径:Blob URL 在 onunload 需 revokeObjectURL 释放,避免内存泄漏。
 	private embeddingWorkerUrl?: string;
+	// 关键路径:GPU 选中时也要保留 WASM Blob URL —— 运行期 GPU 失败必须能回退到它。
+	private embeddingFallbackWorkerUrl?: string;
 	// 关键路径:indexDir 在 onload 计算,onLayoutReady 初始化 InlineWorker 时需要复用。
 	private indexDir!: string;
 	/**
@@ -1677,6 +1679,10 @@ export default class RatelVaultPlugin extends Plugin {
 		if (this.embeddingWorkerUrl) {
 			URL.revokeObjectURL(this.embeddingWorkerUrl);
 			this.embeddingWorkerUrl = undefined;
+		}
+		if (this.embeddingFallbackWorkerUrl) {
+			URL.revokeObjectURL(this.embeddingFallbackWorkerUrl);
+			this.embeddingFallbackWorkerUrl = undefined;
 		}
 		// 关键路径(ADR-017 兜底三件套之二):unload 击杀活跃脚本 Worker,不留孤儿线程。
 		this.skillScriptSandbox?.terminateAll();
@@ -3170,8 +3176,10 @@ export default class RatelVaultPlugin extends Plugin {
 		const workerUrl = gpuProbe?.url ?? wasmUrl;
 		const workerType: 'classic' | 'module' = gpuProbe !== null ? 'module' : 'classic';
 		this.gpuWorkerSelected = gpuProbe !== null;
-		if (gpuProbe !== null) URL.revokeObjectURL(wasmUrl);
 		this.embeddingWorkerUrl = workerUrl;
+		// 关键路径:GPU 选中时也必须保留 WASM Blob URL —— 运行期超时/设备丢失要回退到它。
+		// 提前 revoke 会让回退后的 Worker 创建直接失败,用户只能重启插件。
+		this.embeddingFallbackWorkerUrl = gpuProbe !== null ? wasmUrl : undefined;
 
 		// 关键路径:工厂每次 ensureWorker 都 getDeps,避免 transfer 掏空 ArrayBuffer 后空闲重建失败。
 		const proxy = new EmbeddingWorkerProxy(
@@ -3191,6 +3199,19 @@ export default class RatelVaultPlugin extends Plugin {
 			},
 			workerType,
 			gpuProbe?.worker,
+			undefined,
+			// 关键路径:只有 GPU 路径需要运行期回退;WASM 路径没有更低一级的执行器。
+			gpuProbe !== null
+				? {
+					fallback: () => ({ workerUrl: wasmUrl, workerType: 'classic' }),
+					onBackend: (backend) => {
+						// 关键路径:回退必须回写后端,否则徽标仍显示 GPU，与实际执行路径不一致。
+						// gpuWorkerSelected 同时切回 false，重建 Worker 时取 CPU 依赖。
+						this.gpuWorkerSelected = backend === 'webgpu';
+						this.userStatus.patch({ embeddingBackend: backend });
+					},
+				}
+				: undefined,
 		);
 		this.embeddingWorkerProxy = proxy;
 

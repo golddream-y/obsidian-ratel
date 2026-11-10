@@ -27,8 +27,23 @@ export const IDLE_TERMINATE_MS = 5 * 60_000;
  */
 const backgroundTimers = globalThis;
 
-/** Worker 生命周期事件;装配层用 heartbeat + n=worker.* 打点,不改 lastPhase */
-export type WorkerLifecycleKind = 'create' | 'idle-terminate' | 'crash';
+/**
+ * Worker 生命周期事件;装配层用 heartbeat + n=worker.* 打点,不改 lastPhase。
+ *
+ * `fallback` / `dead` 是运行期故障收敛点:前者表示已切换到 WASM 执行器,
+ * 后者表示连续失败达到上限、后续请求快速失败(必须让界面进入失败态而不是长期「索引中」)。
+ */
+export type WorkerLifecycleKind = 'create' | 'idle-terminate' | 'crash' | 'fallback' | 'dead';
+
+/**
+ * 运行期后端切换配置 — 由装配层注入,代理本身不认识 Obsidian 或用户状态。
+ */
+export interface EmbeddingProxyRuntimeOptions {
+	/** GPU 路径失败时切换到 WASM 执行器;返回 null 表示没有可回退的配置。 */
+	fallback?: () => { workerUrl: string; workerType: 'classic' | 'module' } | null;
+	/** 实际执行后端变化时通知装配层回写 embeddingBackend,保证徽标与执行路径一致。 */
+	onBackend?: (backend: 'wasm' | 'webgpu') => void;
+}
 
 type DepsOrFactory = EmbeddingOnnxDeps | (() => Promise<EmbeddingOnnxDeps>);
 
@@ -122,6 +137,23 @@ interface PendingEmbed {
 const REQUEST_TIMEOUT_MS = 120_000;
 
 /**
+ * GPU 路径运行期连续失败达到该次数后回退 WASM。
+ *
+ * 关键路径(2026-11-10 现场):同一个 GPU 执行器连续两次超时后，如果再按原路径重建，
+ * 只会让用户再等满一次 120 秒。第二次失败必须切到 WASM 并回写后端。
+ */
+export const RUNTIME_FALLBACK_THRESHOLD = 2;
+
+/**
+ * 已回退 WASM 后仍连续失败达到该次数则进入 dead。
+ *
+ * 关键路径:回退不是终点 —— WASM 也失败说明是模型/环境问题。
+ * 达到上限后快速失败,让索引把这些文件记为失败并进入失败态，
+ * 不能一直停在「索引中」却没有任何进展。
+ */
+export const FALLBACK_DEAD_THRESHOLD = 3;
+
+/**
  * EmbeddingWorkerProxy — Web Worker 代理实现 EmbeddingPort。
  *
  * 设计要点:
@@ -147,21 +179,29 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 	private loggedDead = false;
 	private creating: Promise<void> | null = null;
 	private settleReady: { resolve: () => void; reject: (err: Error) => void } | null = null;
-	private readonly workerUrl: string;
-	/** Worker 加载类型:GPU 版是 ESM module,WASM 版是 classic。 */
-	private readonly workerType: 'classic' | 'module';
+	/** 运行期当前使用的 Worker 脚本 — 回退 WASM 时替换。 */
+	private workerUrl: string;
+	/** 运行期当前使用的加载类型 — GPU 是 ESM module,WASM 是 classic。 */
+	private workerType: 'classic' | 'module';
 	/**
 	 * 已被装配层预热过的 Worker（已 init + 完成一次 warmup）。
 	 *
 	 * 关键路径(S-WEBGPU-EMBEDDING):GPU 探测成功后直接接管该实例,
 	 * 不再销毁重建 —— 否则模型加载与 wasm 编译会白跑两次(每次约 1 秒)。
+	 * 关键路径(2026-11-10):接管或终止后必须清空引用,否则下次创建会再接管一个已终止的 Worker。
 	 */
-	private readonly prewarmed?: Worker;
+	private prewarmed?: Worker;
 	private readonly maxBatchSize: number;
 	private readonly createDeps: () => Promise<EmbeddingOnnxDeps>;
 	private readonly onLifecycle?: (kind: WorkerLifecycleKind, reason?: string) => void;
 	/** 单次请求等待上限(ms) — 可注入，便于用真实分支验证超时行为。 */
 	private readonly requestTimeoutMs: number;
+	/** 运行期后端切换配置;未注入时保持原有「同路径重建」行为。 */
+	private readonly runtime?: EmbeddingProxyRuntimeOptions;
+	/** 运行期连续失败次数 — 成功即清零,达到上限触发回退或 dead。 */
+	private consecutiveRuntimeFailures = 0;
+	/** 是否已回退到 WASM;回退后不再尝试 GPU,连续失败改为收敛到 dead。 */
+	private fellBackToWasm = false;
 
 	/**
 	 * @param workerUrl - Worker 脚本 URL(Blob URL)
@@ -172,6 +212,8 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 	 *   第二个参数是**终止原因** —— 三种故障都叫 crash,只记枚举等于没记。
 	 * @param workerType - Worker 加载类型;GPU 版传 'module',WASM 版缺省 'classic'
 	 * @param prewarmed - 已 init 完成的 Worker;传入时跳过创建与 init
+	 * @param requestTimeoutMs - 单次请求等待上限(ms)
+	 * @param runtime - 可选;运行期回退 WASM 的配置与后端回写回调
 	 */
 	constructor(
 		workerUrl: string,
@@ -182,6 +224,7 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 		workerType: 'classic' | 'module' = 'classic',
 		prewarmed?: Worker,
 		requestTimeoutMs = REQUEST_TIMEOUT_MS,
+		runtime?: EmbeddingProxyRuntimeOptions,
 	) {
 		this.workerUrl = workerUrl;
 		this.workerType = workerType;
@@ -190,6 +233,7 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 		this.maxBatchSize = maxBatchSize;
 		this.onLifecycle = onLifecycle;
 		this.requestTimeoutMs = requestTimeoutMs;
+		this.runtime = runtime;
 		if (typeof depsOrFactory === 'function') {
 			this.createDeps = depsOrFactory;
 			this.modelId = 'local:bge-small-zh-v1.5';
@@ -282,12 +326,16 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 							`已发请求=${this.requestCounter}`,
 					);
 					this.settlePending(requestId, new Error(`Embedding Worker 请求超时(${this.requestTimeoutMs / 1000} 秒)`));
-					this.terminateWorker('crash', `Embedding Worker 因请求超时被重建(批量=${texts.length} 字符=${chars})`);
+					// 关键路径:超时不是「无脑同路径重建」—— GPU 连续超时必须回退 WASM,
+					// 否则用户会再等满一个 120 秒,而徽标仍显示 GPU。
+					this.handleRuntimeFailure(`Embedding Worker 因请求超时被重建(批量=${texts.length} 字符=${chars})`);
 				}, this.requestTimeoutMs);
 				this.pending.set(requestId, entry);
 				const msg: WorkerEmbedMessage = { type: 'embed', texts, requestId };
 				worker.postMessage(msg);
 			});
+			// 关键路径:真实推理成功才清零连续失败计数 —— 只有「有进展」才算恢复。
+			this.consecutiveRuntimeFailures = 0;
 			return result;
 		} finally {
 			// 业务错误也要重新 arm，避免 clearIdleTimer 后 Worker 常驻
@@ -383,18 +431,18 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 				this.settlePending(data.requestId, new Error(data.error));
 			} else if (data.type === 'gpu:lost') {
 				// 关键路径(2026-11-09 现场):设备丢失后推理不会报错、只是永不返回。
-				// 收到这条就立刻重建，而不是让在途请求干等到超时 ——
-				// 用户感知是「瞬间恢复」而不是「卡两分钟」。
-				devLogger.error('worker', `GPU 设备丢失,重建嵌入运行时:${data.reason}`);
-				this.terminateWorker('crash', `GPU 设备丢失:${data.reason}`);
+				// 收到这条立即回退 WASM 并回写后端，而不是让在途请求干等到超时 ——
+				// 用户感知是「瞬间恢复」而不是「卡两分钟」。GPU 已经没了，不需要再等第二次失败。
+				devLogger.error('worker', `GPU 设备丢失,回退 WASM:${data.reason}`);
+				this.handleRuntimeFailure(`GPU 设备丢失:${data.reason}`, { immediateFallback: true });
 			}
 		});
 
-		// 关键路径:运行时崩溃不算 init 失败,下次 embed 允许重建。
+		// 关键路径:运行时崩溃不算 init 失败,下次 embed 允许重建;连续崩溃同样收敛到回退/dead。
 		worker.addEventListener('error', (err: ErrorEvent) => {
 			this.settleReady?.reject(new Error(`Embedding Worker 崩溃: ${err.message}`));
 			this.settleReady = null;
-			this.terminateWorker('crash', `Embedding Worker 崩溃: ${err.message}`);
+			this.handleRuntimeFailure(`Embedding Worker 崩溃: ${err.message}`);
 		});
 
 		this.worker = worker;
@@ -431,6 +479,8 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 	private attachReadyWorker(worker: Worker): void {
 		this.readyPromise = Promise.resolve();
 		this.settleReady = null;
+		// 关键路径:预热实例一旦接管就归 this.worker 管理，清空引用避免重建时被二次接管。
+		this.prewarmed = undefined;
 		worker.addEventListener('message', (e: MessageEvent) => {
 			const data = e.data as WorkerResponse;
 			if (data.type === 'embed:result') {
@@ -443,30 +493,87 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 			} else if (data.type === 'gpu:lost') {
 				// 关键路径:预热复用路径（GPU 探测成功后接管实例）走的就是这里，
 				// 少了这条分支，设备丢失信号会被静默丢弃，用户仍要等 120 秒超时。
-				devLogger.error('worker', `GPU 设备丢失,重建嵌入运行时:${data.reason}`);
-				this.terminateWorker('crash', `GPU 设备丢失:${data.reason}`);
+				devLogger.error('worker', `GPU 设备丢失,回退 WASM:${data.reason}`);
+				this.handleRuntimeFailure(`GPU 设备丢失:${data.reason}`, { immediateFallback: true });
 			}
 		});
 		worker.addEventListener('error', (err: ErrorEvent) => {
-			this.terminateWorker('crash', `Embedding Worker 崩溃: ${err.message}`);
+			this.handleRuntimeFailure(`Embedding Worker 崩溃: ${err.message}`);
 		});
 		this.worker = worker;
 	}
 
 	/**
-	 * init 失败:累计次数,到 2 次进入 dead;不打 crash 生命周期。
+	 * init 失败:累计次数,到 2 次先尝试回退 WASM,无回退配置或已回退则进入 dead;不打 crash 生命周期。
 	 *
 	 * @param worker - 本次创建失败的 Worker 实例
 	 */
 	private handleInitFailure(worker: Worker): void {
 		this.consecutiveInitFailures += 1;
 		if (this.consecutiveInitFailures >= 2) {
-			this.dead = true;
+			// 关键路径:GPU 路径初始化连续失败也属于「连续失败」——先回退 WASM,
+			// 只有回退后仍失败(或没有回退配置)才进入 dead。
+			if (!this.fellBackToWasm && this.switchToFallback()) {
+				this.consecutiveInitFailures = 0;
+				this.onLifecycle?.('fallback', 'Embedding Worker 初始化连续失败,已切换到 WASM');
+			} else {
+				this.dead = true;
+			}
 		}
 		if (this.worker === worker) {
 			this.worker = null;
 		}
 		worker.terminate();
+	}
+
+	/**
+	 * 运行期失败的统一收敛点 — 超时、Worker 崩溃、GPU 设备丢失都走这里。
+	 *
+	 * 关键路径(2026-11-10 现场):此前超时与设备丢失都只是「按同一路径重建」,
+	 * 于是 GPU 连续失败时用户会再等满一个 120 秒,徽标也一直显示 GPU。
+	 * 现在:
+	 * - GPU 路径连续失败达到上限(或设备已丢失)→ 切 WASM 并回写后端;
+	 * - 已回退 WASM 仍连续失败达到上限 → 进入 dead,后续请求快速失败,
+	 *   让索引把这些文件记为失败、界面进入失败态,而不是长期停在「索引中」。
+	 *
+	 * @param reason - 诊断文案;不含路径、正文或密钥。
+	 * @param options - immediateFallback 为 true 时无需累计,立即回退(设备丢失)。
+	 */
+	private handleRuntimeFailure(reason: string, options: { immediateFallback?: boolean } = {}): void {
+		this.consecutiveRuntimeFailures += 1;
+		if (!this.fellBackToWasm) {
+			const shouldFallback = options.immediateFallback === true
+				|| this.consecutiveRuntimeFailures >= RUNTIME_FALLBACK_THRESHOLD;
+			if (shouldFallback && this.switchToFallback()) {
+				this.consecutiveRuntimeFailures = 0;
+				this.onLifecycle?.('fallback', reason);
+				this.terminateWorker(undefined, reason);
+				return;
+			}
+		} else if (this.consecutiveRuntimeFailures >= FALLBACK_DEAD_THRESHOLD) {
+			this.dead = true;
+			this.onLifecycle?.('dead', reason);
+		}
+		this.terminateWorker('crash', reason);
+	}
+
+	/**
+	 * 切换到装配层提供的 WASM 执行器。
+	 *
+	 * @returns 是否成功切换;未注入回退配置时返回 false,保持原有重建行为。
+	 */
+	private switchToFallback(): boolean {
+		const next = this.runtime?.fallback?.();
+		if (next === undefined || next === null) return false;
+		this.workerUrl = next.workerUrl;
+		this.workerType = next.workerType;
+		this.prewarmed = undefined;
+		this.fellBackToWasm = true;
+		this.consecutiveInitFailures = 0;
+		devLogger.warn('worker', 'GPU 嵌入运行期连续失败,已切换到 WASM 执行器');
+		// 关键路径:徽标必须跟着真实执行路径走 — 不回调装配层就会继续显示 GPU。
+		this.runtime?.onBackend?.('wasm');
+		return true;
 	}
 
 	/**
@@ -518,9 +625,13 @@ export class EmbeddingWorkerProxy implements EmbeddingPort {
 	 */
 	private terminateWorker(kind?: WorkerLifecycleKind, rejectMessage = 'Embedding Worker 已终止'): void {
 		this.clearIdleTimer();
-		if (this.worker) {
-			this.worker.terminate();
+		const current = this.worker;
+		if (current) {
+			current.terminate();
 			this.worker = null;
+			// 关键路径:预热实例被接管后同样挂在 this.worker 上;终止后必须清空引用,
+			// 否则下次创建会再次接管一个已终止的 Worker —— 表现为「每次都等满超时」。
+			if (this.prewarmed === current) this.prewarmed = undefined;
 		}
 		for (const requestId of [...this.pending.keys()]) {
 			this.settlePending(requestId, new Error(rejectMessage));

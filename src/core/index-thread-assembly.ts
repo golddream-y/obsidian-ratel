@@ -122,6 +122,36 @@ export function assembleIndexThreadPipeline(deps: AssembleIndexThreadDeps): Asse
 			},
 		}),
 	};
+	// 关键路径(2026-11-10 真机):事件回调必须在**真实**客户端上生效。对象展开会把
+	// 此刻还是 undefined 的四个回调固化成副本的自有属性,协调器之后赋值只改到副本,
+	// 线程按篇上报的「变更 / 分块 / 落盘」事件全部丢失 —— 块账本分母与落盘数恒为 0。
+	const eventTarget: ThreadIndexClient = deps.createClient === undefined ? client : baseClient;
+	Object.defineProperties(threadClient, {
+		onFileCommitted: {
+			get: () => eventTarget.onFileCommitted ?? null,
+			set: (value: ThreadIndexClient['onFileCommitted']) => { eventTarget.onFileCommitted = value; },
+			enumerable: true,
+			configurable: true,
+		},
+		onFileChanged: {
+			get: () => eventTarget.onFileChanged ?? null,
+			set: (value: ThreadIndexClient['onFileChanged']) => { eventTarget.onFileChanged = value; },
+			enumerable: true,
+			configurable: true,
+		},
+		onFileChunked: {
+			get: () => eventTarget.onFileChunked ?? null,
+			set: (value: ThreadIndexClient['onFileChunked']) => { eventTarget.onFileChunked = value; },
+			enumerable: true,
+			configurable: true,
+		},
+		onFileBlocksStored: {
+			get: () => eventTarget.onFileBlocksStored ?? null,
+			set: (value: ThreadIndexClient['onFileBlocksStored']) => { eventTarget.onFileBlocksStored = value; },
+			enumerable: true,
+			configurable: true,
+		},
+	});
 	const coordinator = new IndexThreadCoordinator({
 		client: threadClient,
 		vault: deps.vault,

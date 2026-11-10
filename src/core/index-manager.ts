@@ -26,13 +26,39 @@ import type { IndexTaskCounters } from './index-task-coordinator';
  */
 const backgroundTimers = globalThis;
 
+/**
+ * 块级与发现阶段计数 — 由协调器提供时随状态发布。
+ *
+ * 关键路径(2026-11-10):进度单位统一为「块」,并区分「已落盘」与「已提交」;
+ * 发现阶段只报篇数,不显示速率。旧字段 `secondsPerBlock` 已移除,不再对外暴露「秒/块」。
+ */
+export interface IndexBlockProgress {
+    /** 已写入向量存储的块数（块已落盘，完成记录未必已提交）。 */
+    storedBlocks?: number;
+    /** 已完成记录提交的块数。 */
+    committedBlocks?: number;
+    /** 按完成记录复用的块数（内容未变，未推理）。 */
+    reusedBlocks?: number;
+    /** 嵌入阶段分母：实际分块数 + 尚未分块文件的预估块数。 */
+    totalBlocks?: number;
+    /** 分母是否仍含预估（界面须标明预估/实际）。 */
+    blocksEstimated?: boolean;
+    /** 发现阶段：未变 / 新增 / 变更 / 失效（按篇）。 */
+    skippedFiles?: number;
+    addedFiles?: number;
+    changedFiles?: number;
+    removedFiles?: number;
+    /** 当前速率（块/秒）；只在真实提交且有足够样本时存在。 */
+    blocksPerSecond?: number;
+}
+
 /** 索引状态机(10 态)。Diffing = smartReindex hash diff 阶段。 */
 export type IndexStatus =
     | { state: 'Idle' }
     | { state: 'Init' }
     | { state: 'Diffing' }
-    | { state: 'Scanning'; scanned: number; total: number; committed?: number; pending?: number; failed?: number; phase?: IndexPhase; secondsPerBlock?: number; restoring?: boolean; restoredFiles?: number; restoredTotal?: number }
-    | { state: 'Queueing'; pending: number; reverifying?: boolean; restoring?: boolean; restoredFiles?: number; restoredTotal?: number; committed?: number; total?: number; failed?: number; phase?: IndexPhase; secondsPerBlock?: number }
+    | ({ state: 'Scanning'; scanned: number; total: number; committed?: number; pending?: number; failed?: number; phase?: IndexPhase; restoring?: boolean; restoredFiles?: number; restoredTotal?: number } & IndexBlockProgress)
+    | ({ state: 'Queueing'; pending: number; reverifying?: boolean; restoring?: boolean; restoredFiles?: number; restoredTotal?: number; committed?: number; total?: number; failed?: number; phase?: IndexPhase } & IndexBlockProgress)
     | { state: 'Processing'; currentBatch: string[]; restoring?: boolean; restoredFiles?: number; restoredTotal?: number }
     | { state: 'Ready'; totalDocs: number; lastIndexTime: number; committedDocs?: number; totalFiles?: number; pendingDocs?: number; failedDocs?: number; phase?: IndexPhase }
     | { state: 'Paused'; pending: number }
@@ -43,7 +69,7 @@ export type IndexStatus =
      * 因此失败路径必须在这里把码留下来,否则 `index-directory-not-owned`/`drop-refused`/
      * `owner-not-writable` 等新码只能落成 `error.index.unknown` + 开发向 message。
      */
-    | { state: 'Failed'; reason: string; errorCode?: string; committed?: number; total?: number; pending?: number; failed?: number; phase?: IndexPhase; secondsPerBlock?: number }
+    | ({ state: 'Failed'; reason: string; errorCode?: string; committed?: number; total?: number; pending?: number; failed?: number; phase?: IndexPhase } & IndexBlockProgress)
     | { state: 'Unloaded' };
 
 /** 已提交索引的只读摘要，不包含本次扫描或嵌入统计。 */
@@ -302,6 +328,14 @@ export class IndexManager {
                 counters.pendingFiles ?? 0, counters.failures, counters.active,
                 // 关键路径:恢复态本身也要进签名，否则它的变化不会触发发布。
                 counters.restoring === true, counters.restoredFiles ?? 0,
+                // 关键路径(块级记账):块计数与发现结论变化必须触发发布,
+                // 否则「已落盘/已提交」只在篇数变化时才刷新,无法实时对账。
+                counters.storedBlocksThisRound ?? 0,
+                counters.committedBlocksThisRound ?? 0,
+                counters.totalBlocksThisRound ?? 0,
+                counters.blocksEstimated === true,
+                counters.skippedFiles ?? 0, counters.addedFiles ?? 0,
+                counters.changedFiles ?? 0, counters.removedFiles ?? 0,
             ].join('|');
             if (signature !== this.lastCoordinatorSignature) {
                 this.lastCoordinatorSignature = signature;
@@ -326,13 +360,13 @@ export class IndexManager {
      *
      * 关键路径:未 ready 时不发布 Ready;阶段为 partial-failure 时保持 Failed 并沿用既有文案键。
      */
-    /** 由真实完成计数算当前速率(篇/秒);样本不足或窗口内零进展时返回 undefined。 */
-    private sampleSecondsPerBlock(counters: IndexTaskCounters): number | undefined {
+    /** 由真实提交计数算当前速率(块/秒);样本不足或窗口内零进展时返回 undefined。 */
+    private sampleBlocksPerSecond(counters: IndexTaskCounters): number | undefined {
         const now = Date.now();
         const last = this.rateSamples[this.rateSamples.length - 1];
         // 关键路径:同一 committed 不重复入窗,否则重复发布会把速率压到 0。
-        // 关键路径(2026-11-06):速率必须基于**本轮真正写入**的篇数,不能基于「已核实」——
-        // 重载后大量未变更笔记按完成记录秒跳过,用核实数会算出 40+ 篇/秒这种假速度。
+        // 关键路径(2026-11-06):速率必须基于**本轮真正写入**的计数,不能基于「已核实」——
+        // 重载后大量未变更笔记按完成记录秒跳过,用核实数会算出假速度。
         // 关键路径:按**块**计量 —— 按篇会被超大文档(最大 215 块)拉偏,
         // 生产库平均 14 块/篇,同一速度在两种口径下能差一个数量级。
         const written = counters.committedBlocksThisRound ?? 0;
@@ -344,7 +378,7 @@ export class IndexManager {
         }
         const newest = this.rateSamples[this.rateSamples.length - 1];
         if (newest === undefined) return undefined;
-        // 关键路径:停滞后不显示速率,避免"卡住了还显示 0.4 篇/秒"的误导。
+        // 关键路径:停滞后不显示速率,避免"卡住了还显示 0.4 块/秒"的误导。
         if (now - newest.at > IndexManager.RATE_STALE_MS) return undefined;
         // 关键路径(2026-11-06):此前用「最近 10 秒窗口 + 至少两个样本」。
         // 大库一批常超过 10 秒,上一个样本总被淘汰,窗口恒只剩 1 个 → 永不显示速率。
@@ -355,19 +389,35 @@ export class IndexManager {
         const delta = newest.committed - first.committed;
         // 窗口内没有真正写入(只是在跳过未变更文件)时不显示速率。
         if (elapsedMs < 1000 || delta <= 0) return undefined;
-        // 关键路径(2026-11-06):对外展示「多少秒一篇」而不是「篇/秒」——
-        // 索引通常几秒到几十秒一篇,换算成速率会得到 0.1 这类没有直观意义的小数。
-        const secondsPerBlock = elapsedMs / (delta * 1000);
-        // 秒数越大越该给小数位:≥10 取整,≥1 保留一位,更快的保留两位。
-        if (secondsPerBlock >= 10) return Math.round(secondsPerBlock);
-        if (secondsPerBlock >= 1) return Math.round(secondsPerBlock * 10) / 10;
-        return Math.round(secondsPerBlock * 100) / 100;
+        // 关键路径(2026-11-10):对外统一「块/秒」,不再暴露「秒/块」——
+        // 块是唯一吞吐单位,且只在真实提交时出现,避免纯核对阶段出现速率。
+        const blocksPerSecond = (delta * 1000) / elapsedMs;
+        // ≥10 取整;≥1 保留一位;更慢的保留两位(便于看出 0.5 与 0.73 的差别)。
+        if (blocksPerSecond >= 10) return Math.round(blocksPerSecond);
+        if (blocksPerSecond >= 1) return Math.round(blocksPerSecond * 10) / 10;
+        return Math.round(blocksPerSecond * 100) / 100;
+    }
+
+    /** 组装块级与发现阶段计数 — 主线程协调器未提供时字段为 undefined。 */
+    private blockProgressOf(counters: IndexTaskCounters): IndexBlockProgress {
+        return {
+            storedBlocks: counters.storedBlocksThisRound,
+            committedBlocks: counters.committedBlocksThisRound,
+            reusedBlocks: counters.reusedBlocksThisRound,
+            totalBlocks: counters.totalBlocksThisRound,
+            blocksEstimated: counters.blocksEstimated,
+            skippedFiles: counters.skippedFiles,
+            addedFiles: counters.addedFiles,
+            changedFiles: counters.changedFiles,
+            removedFiles: counters.removedFiles,
+        };
     }
 
     private publishCoordinatorStatus(counters: IndexTaskCounters): void {
         if (this.unloaded) return;
-        // 关键路径:对外是「秒/块」,沿用 rate 字段名会让人误读成速率,统一改名为 secondsPerBlock。
-        const secondsPerBlock = this.sampleSecondsPerBlock(counters);
+        // 关键路径:对外只报「块/秒」,并在纯核对(零提交)时不出现速率。
+        const blocksPerSecond = this.sampleBlocksPerSecond(counters);
+        const blockProgress = this.blockProgressOf(counters);
         // 展示按唯一文件计数；调度与 canMarkReady 仍保留原始队列/事务口径。
         const pending = counters.pendingFiles ?? Math.max(0, counters.total - counters.committed - counters.failures);
         if (this.paused) {
@@ -389,7 +439,7 @@ export class IndexManager {
         }
         if (counters.failures > 0) {
             this.status$.set({ state: 'Failed', reason: tNow('notice.indexPartialFailure', { count: counters.failures }),
-                committed: counters.committed, total: counters.total, pending, failed: counters.failures, phase: counters.phase, secondsPerBlock });
+                committed: counters.committed, total: counters.total, pending, failed: counters.failures, phase: counters.phase, blocksPerSecond, ...blockProgress });
             return;
         }
         if (!counters.scanComplete) {
@@ -400,7 +450,8 @@ export class IndexManager {
                 committed: counters.committed,
                 pending,
                 failed: counters.failures,
-                phase: counters.phase, secondsPerBlock,
+                phase: counters.phase, blocksPerSecond,
+                ...blockProgress,
                 restoring: counters.restoring,
                 restoredFiles: counters.restoredFiles,
                 restoredTotal: counters.restoredTotal,
@@ -421,7 +472,8 @@ export class IndexManager {
             committed: counters.committed,
             total: counters.total,
             failed: counters.failures,
-            phase: counters.phase, secondsPerBlock,
+            phase: counters.phase, blocksPerSecond,
+            ...blockProgress,
         });
     }
 
@@ -476,6 +528,10 @@ export class IndexManager {
             else this.publishCoordinatorStatus(counters);
             // 关键路径:入队只是开始，协调器会在后台逐篇处理；没有采样器就没人发布完成态。
             this.ensureCoordinatorProgress();
+            // 关键路径(2026-11-10 现场):上一轮收敛后 `drain()` 的循环已经退出,
+            // 只发状态不会重新消费队列 —— 增量事件会永远停在「待处理」。
+            // 与主线程分支一致,入队即触发一次非阻塞消费。
+            void this.scheduleFlush();
             return;
         }
         this.queue.set(path, { op, content });

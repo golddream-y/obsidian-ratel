@@ -239,17 +239,32 @@ describe('FeedbackController 索引阶段与计数展示', () => {
 		ctl.destroy();
 	});
 
-	it('索引速率 - Scanning 与 Queueing 都透传到快照 - 未提供时不伪造', () => {
+	it('索引速率 - Scanning 与 Queueing 都透传块速率 - 未提供时不伪造', () => {
 		const controller = createController();
 		controller.start();
-		// 关键路径:每块耗时必须原样透传;字段名写错会静默丢弃,抽屉就永远不显示速度。
-		indexStatus$.set({ state: 'Scanning', scanned: 5, total: 100, committed: 5, pending: 95, failed: 0, phase: 'scanning', secondsPerBlock: 1.5 });
-		expect(get(userStatus.statusBar$).indexSecondsPerBlock).toBe(1.5);
-		indexStatus$.set({ state: 'Queueing', phase: 'processing', total: 100, committed: 20, pending: 80, failed: 0, secondsPerBlock: 2.4 });
-		expect(get(userStatus.statusBar$).indexSecondsPerBlock).toBe(2.4);
+		// 关键路径:块速率必须原样透传;字段名写错会静默丢弃,抽屉就永远不显示速度。
+		indexStatus$.set({
+			state: 'Scanning', scanned: 5, total: 100, committed: 5, pending: 95, failed: 0, phase: 'scanning',
+			blocksPerSecond: 1.5, storedBlocks: 8, committedBlocks: 6, reusedBlocks: 40,
+			totalBlocks: 60, blocksEstimated: true,
+			skippedFiles: 90, addedFiles: 3, changedFiles: 5, removedFiles: 2,
+		});
+		const scanning = get(userStatus.statusBar$);
+		expect(scanning.indexBlocksPerSecond).toBe(1.5);
+		expect(scanning.indexStoredBlocks).toBe(8);
+		expect(scanning.indexCommittedBlocks).toBe(6);
+		expect(scanning.indexReusedBlocks).toBe(40);
+		expect(scanning.indexTotalBlocks).toBe(60);
+		expect(scanning.indexBlocksEstimated).toBe(true);
+		expect(scanning.indexSkippedFiles).toBe(90);
+		expect(scanning.indexAddedFiles).toBe(3);
+		expect(scanning.indexChangedFiles).toBe(5);
+		expect(scanning.indexRemovedFiles).toBe(2);
+		indexStatus$.set({ state: 'Queueing', phase: 'processing', total: 100, committed: 20, pending: 80, failed: 0, blocksPerSecond: 2.4 });
+		expect(get(userStatus.statusBar$).indexBlocksPerSecond).toBe(2.4);
 		// 未提供速率时不得沿用上一轮的值。
 		indexStatus$.set({ state: 'Queueing', phase: 'processing', total: 100, committed: 21, pending: 79, failed: 0 });
-		expect(get(userStatus.statusBar$).indexSecondsPerBlock).toBeUndefined();
+		expect(get(userStatus.statusBar$).indexBlocksPerSecond).toBeUndefined();
 		controller.destroy();
 	});
 

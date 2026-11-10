@@ -46,7 +46,12 @@ class CoordinatorStub implements IndexTaskCoordinatorPort {
         this.notified.push({ path, op });
     }
 
-    async drain(): Promise<void> {}
+    /** `drain` 调用次数 — 增量入队后必须真正驱动消费，而不是只发状态。 */
+    drained = 0;
+
+    async drain(): Promise<void> {
+        this.drained += 1;
+    }
 
     isReady(): boolean {
         return this.state.phase === 'ready' && this.state.failures === 0;
@@ -116,6 +121,21 @@ describe('IndexManager', () => {
         } finally {
             vi.useRealTimers();
         }
+    });
+
+    it('enqueue 增量 - 上一轮已收敛也要重新驱动消费', async () => {
+        // 关键路径(2026-11-10 真机):协调器 `drain()` 在队列清空后退出，
+        // 之后的增量事件只 `notify` 不 `drain`，队列永远停在待处理。
+        const coordinator = new CoordinatorStub();
+        const mgr = new IndexManager({
+            fullReindex: vi.fn().mockResolvedValue({ indexed: 0, errors: 0 }),
+            incrementalIndex: vi.fn().mockResolvedValue({ indexed: 1, errors: 0 }),
+            deleteFile: vi.fn().mockResolvedValue(1),
+        }, coordinator);
+        await mgr.onLayoutReady();
+        mgr.enqueue('late.md', 'upsert', 'content');
+        await vi.waitFor(() => expect(coordinator.drained).toBeGreaterThan(0));
+        expect(coordinator.notified).toEqual([{ path: 'late.md', op: 'upsert' }]);
     });
 
     it('pause - 状态 Paused;新事件入队不消费', async () => {
@@ -716,26 +736,26 @@ describe('索引速率采样（真实完成计数滑动窗口）', () => {
         return manager as any;
     }
 
-    it('窗口内完成计数递增 - 返回真实每块耗时', () => {
+    it('窗口内完成计数递增 - 返回真实块速率', () => {
         const manager = makeManager();
         vi.spyOn(Date, 'now')
             .mockReturnValueOnce(1000).mockReturnValueOnce(3000)
             .mockReturnValueOnce(3000).mockReturnValueOnce(3000);
-        expect(manager.sampleSecondsPerBlock({ committedBlocksThisRound: 0 } as never)).toBeUndefined();
-        expect(manager.sampleSecondsPerBlock({ committedBlocksThisRound: 4 } as never)).toBe(0.5);
+        expect(manager.sampleBlocksPerSecond({ committedBlocksThisRound: 0 } as never)).toBeUndefined();
+        expect(manager.sampleBlocksPerSecond({ committedBlocksThisRound: 4 } as never)).toBe(2);
         vi.restoreAllMocks();
     });
 
-    it('重复发布同一计数 - 不重复入窗 - 每块耗时不被拉长', () => {
+    it('重复发布同一计数 - 不重复入窗 - 块速率不被拉低', () => {
         const manager = makeManager();
         let now = 1000;
         vi.spyOn(Date, 'now').mockImplementation(() => now);
-        manager.sampleSecondsPerBlock({ committedBlocksThisRound: 0 } as never);
+        manager.sampleBlocksPerSecond({ committedBlocksThisRound: 0 } as never);
         now = 3000;
-        expect(manager.sampleSecondsPerBlock({ committedBlocksThisRound: 4 } as never)).toBe(0.5);
+        expect(manager.sampleBlocksPerSecond({ committedBlocksThisRound: 4 } as never)).toBe(2);
         // 同一 committed 再发布多次，窗口内容不变
         now = 3001;
-        expect(manager.sampleSecondsPerBlock({ committedBlocksThisRound: 4 } as never)).toBe(0.5);
+        expect(manager.sampleBlocksPerSecond({ committedBlocksThisRound: 4 } as never)).toBe(2);
         vi.restoreAllMocks();
     });
 
@@ -743,23 +763,23 @@ describe('索引速率采样（真实完成计数滑动窗口）', () => {
         const manager = makeManager();
         let now = 1000;
         vi.spyOn(Date, 'now').mockImplementation(() => now);
-        manager.sampleSecondsPerBlock({ committedBlocksThisRound: 2 } as never);
+        manager.sampleBlocksPerSecond({ committedBlocksThisRound: 2 } as never);
         now = 9000;
-        expect(manager.sampleSecondsPerBlock({ committedBlocksThisRound: 2 } as never)).toBeUndefined();
+        expect(manager.sampleBlocksPerSecond({ committedBlocksThisRound: 2 } as never)).toBeUndefined();
         vi.restoreAllMocks();
     });
 
-    it('慢批（两次发布间隔超过 10 秒）- 仍能算出每块耗时 - 不再恒为 undefined', () => {
+    it('慢批（两次发布间隔超过 10 秒）- 仍能算出块速率 - 不再恒为 undefined', () => {
         // 关键路径(2026-11-06 线上反馈):大库一批常超过 10 秒,旧的「10 秒窗口 + 至少两个样本」
         // 会永远只剩一个样本,导致速率时有时无。改为按样本数保留后必须能算出速率。
         const manager = makeManager();
         let now = 1000;
         vi.spyOn(Date, 'now').mockImplementation(() => now);
-        expect(manager.sampleSecondsPerBlock({ committedBlocksThisRound: 0 } as never)).toBeUndefined();
-        now = 15_000;   // 间隔 14 秒
-        expect(manager.sampleSecondsPerBlock({ committedBlocksThisRound: 5 } as never)).toBe(2.8);
-        now = 29_000;   // 再间隔 14 秒
-        expect(manager.sampleSecondsPerBlock({ committedBlocksThisRound: 10 } as never)).toBe(2.8);
+        expect(manager.sampleBlocksPerSecond({ committedBlocksThisRound: 0 } as never)).toBeUndefined();
+        now = 15_000;   // 间隔 14 秒,完成 5 块 → 约 0.36 块/秒
+        expect(manager.sampleBlocksPerSecond({ committedBlocksThisRound: 5 } as never)).toBe(0.36);
+        now = 29_000;   // 再间隔 14 秒,累计 10 块 → 速率保持
+        expect(manager.sampleBlocksPerSecond({ committedBlocksThisRound: 10 } as never)).toBe(0.36);
         vi.restoreAllMocks();
     });
 
@@ -770,33 +790,33 @@ describe('索引速率采样（真实完成计数滑动窗口）', () => {
         vi.spyOn(Date, 'now').mockImplementation(() => now);
         for (let i = 0; i <= 20; i += 1) {
             now = 1000 + i * 500;
-            manager.sampleSecondsPerBlock({ committedBlocksThisRound: i } as never);
+            manager.sampleBlocksPerSecond({ committedBlocksThisRound: i } as never);
         }
         expect(manager.rateSamples.length).toBeLessThanOrEqual(8);
         vi.restoreAllMocks();
     });
-    it('只在跳过未变更文件（本轮无写入）- 不显示每块耗时', () => {
+    it('只在跳过未变更文件（本轮无写入）- 不显示块速率', () => {
         // 关键路径(2026-11-06 线上):重载后大量笔记按完成记录秒跳过,
-        // 若用「已核实」算速率会得到 40+ 篇/秒这种与推理无关的假数字。
+        // 若用「已核实」算速率会得到与推理无关的假数字。
         const manager = makeManager();
         let now = 1000;
         vi.spyOn(Date, 'now').mockImplementation(() => now);
-        manager.sampleSecondsPerBlock({ committed: 0, committedBlocksThisRound: 0 } as never);
+        manager.sampleBlocksPerSecond({ committed: 0, committedBlocksThisRound: 0 } as never);
         now = 3000;
-        // 已核实 500 篇(全是跳过),但本轮真正写入 0 篇 → 不显示速率。
-        expect(manager.sampleSecondsPerBlock({ committed: 500, committedBlocksThisRound: 0 } as never)).toBeUndefined();
+        // 已核实 500 篇(全是跳过),但本轮真正提交 0 块 → 不显示速率。
+        expect(manager.sampleBlocksPerSecond({ committed: 500, committedBlocksThisRound: 0 } as never)).toBeUndefined();
         vi.restoreAllMocks();
     });
 
-    it('停滞超过 20 秒没有新完成 - 不显示每块耗时', () => {
+    it('停滞超过 20 秒没有新完成 - 不显示块速率', () => {
         const manager = makeManager();
         let now = 1000;
         vi.spyOn(Date, 'now').mockImplementation(() => now);
-        manager.sampleSecondsPerBlock({ committedBlocksThisRound: 0 } as never);
+        manager.sampleBlocksPerSecond({ committedBlocksThisRound: 0 } as never);
         now = 5000;
-        manager.sampleSecondsPerBlock({ committedBlocksThisRound: 4 } as never);
+        manager.sampleBlocksPerSecond({ committedBlocksThisRound: 4 } as never);
         now = 60_000;   // 55 秒无进展
-        expect(manager.sampleSecondsPerBlock({ committedBlocksThisRound: 4 } as never)).toBeUndefined();
+        expect(manager.sampleBlocksPerSecond({ committedBlocksThisRound: 4 } as never)).toBeUndefined();
         vi.restoreAllMocks();
     });
 });

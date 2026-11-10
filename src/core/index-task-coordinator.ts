@@ -175,6 +175,32 @@ export interface IndexTaskCounters {
 	committedThisRound: number;
 	/** 本轮真正写入的块数;缺省时按 0 处理(主线程协调器暂不提供)。 */
 	committedBlocksThisRound?: number;
+	/**
+	 * 本轮已写入向量存储的块数 —— 块已落盘,但完成记录未必已提交。
+	 *
+	 * 关键路径(2026-11-10 现场):UI 曾出现「有块提交」而真实库只有 1 条记录被重写。
+	 * 块落盘与记录提交必须分开记账,否则无法对账;缺省时按 0 处理。
+	 */
+	storedBlocksThisRound?: number;
+	/** 本轮按完成记录复用的块数(内容未变,未做推理)。 */
+	reusedBlocksThisRound?: number;
+	/**
+	 * 嵌入阶段分母:已完成分块的实际块数 + 尚未分块文件的预估块数。
+	 *
+	 * 关键路径:变更/失效文件先用完成记录里的 `chunkCount` 预估,分块后转精确;
+	 * 分母随处理进度单调收敛,不用「篇」冒充吞吐。
+	 */
+	totalBlocksThisRound?: number;
+	/** 分母是否仍含预估(仍有文件未分块,只按完成记录估过数)。 */
+	blocksEstimated?: boolean;
+	/** 发现阶段:内容未变、按完成记录复用的篇数。 */
+	skippedFiles?: number;
+	/** 发现阶段:本轮新增(启动时无完成记录)的篇数。 */
+	addedFiles?: number;
+	/** 发现阶段:本轮内容变化的篇数。 */
+	changedFiles?: number;
+	/** 发现阶段:本轮失效(删除)的篇数。 */
+	removedFiles?: number;
 	/** 仍有待处理工作的文件数(待重试、失败保留项与被队列上界丢弃尚未回收的路径)。 */
 	queued: number;
 	/** 在途提交数(0 或 1)。 */

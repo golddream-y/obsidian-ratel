@@ -54,6 +54,26 @@ describe('线程版索引装配', () => {
 		}));
 	});
 
+	it('装配后启动 - 按篇事件回调落到真实客户端', async () => {
+		// 关键路径(2026-11-10 真机):对象展开会把回调固化成副本的自有属性，
+		// 协调器赋值只改到副本，线程事件全部丢失（块账本落盘/分母恒为 0）。
+		const threadClient = makeThreadClient();
+		const pipeline = assembleIndexThreadPipeline({
+			indexRoot: '/tmp/index-root',
+			generationId: 'gen-x',
+			configFingerprint: 'b'.repeat(64),
+			expectedDimension: DIMENSIONS,
+			embedding: EMBEDDING,
+			vault: { listMarkdownFiles: () => [], readFile: async () => '' },
+			createClient: () => threadClient,
+		});
+		await pipeline.coordinator.start();
+		expect(threadClient.onFileCommitted).toBeTypeOf('function');
+		expect(threadClient.onFileChanged).toBeTypeOf('function');
+		expect(threadClient.onFileChunked).toBeTypeOf('function');
+		expect(threadClient.onFileBlocksStored).toBeTypeOf('function');
+	});
+
 	it('协调器枚举文件 - 逐个交给线程 - 计数与就绪一致', async () => {
 		const threadClient = makeThreadClient();
 		const pipeline = assembleIndexThreadPipeline({

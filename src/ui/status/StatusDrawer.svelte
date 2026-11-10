@@ -118,6 +118,17 @@
 	});
 
 	const progress = $derived(indexProgressView(snap));
+	const indexing = $derived(['scanning', 'processing', 'queueing', 'diffing', 'init'].includes(snap.index));
+	/**
+	 * 嵌入写入阶段 — 一旦有块真正落盘或提交就成立。
+	 *
+	 * 关键路径(2026-11-10 真机):恢复核对标志覆盖整轮，若以「核对已收敛」为前提，
+	 * 块账本与块/秒在增量轮里永远没有显示窗口。改用真实写入作为判据，
+	 * 核对阶段照旧按篇报数、不显示速率。
+	 */
+	const blockPhase = $derived(
+		indexing && progress.blocks !== null && (progress.blocks.committed > 0 || progress.blocks.stored > 0),
+	);
 	// 错误和暂停优先于阶段；正常运行只保留一个主状态，避免排队中/处理中并列。
 	const indexValue = $derived(
 		snap.index === 'failed' || snap.index === 'paused'
@@ -125,14 +136,16 @@
 			// 关键路径:恢复已索引进度期间必须替换掉「正在生成向量并写入索引」,
 			// 否则用户只看到低值进度、误以为索引从零重来。此前文案写在 indexDetail 上,
 			// 而抽屉正文并不渲染 indexDetail —— 提示因此从未出现过。
-			: snap.indexRestoring === true
+			// 一旦进入真实写入，就切回写入阶段的主状态，避免「正在核对」与块账本同时出现。
+			: snap.indexRestoring === true && !blockPhase
 				? $t('status.drawer.restoring', {
 					done: snap.indexRestoredFiles ?? 0,
 					total: snap.indexRestoredTotal ?? 0,
 				})
 				: labelPhase(snap.indexPhase) ?? labelIndex(snap.index),
 	);
-	const indexing = $derived(['scanning', 'processing', 'queueing', 'diffing', 'init'].includes(snap.index));
+	/** 进度条数值：块阶段用块百分比，其余用文件百分比。 */
+	const barPercentage = $derived(blockPhase ? progress.blocks?.percentage ?? null : progress.percentage);
 
 	const indexNoticeText = $derived.by(() => {
 		const notice = labelNotice(snap.indexNotice);
@@ -148,7 +161,7 @@
 		}
 		// 关键路径:「正在生成向量并写入索引」会持续较长时间,必须说清这段在做什么、
 		// 以及已有结果是否可用,否则用户只能看到一个长时间不动的状态标签。
-		if (snap.indexRestoring === true) {
+		if (snap.indexRestoring === true && !blockPhase) {
 			return $t('status.drawer.restoringHint', {
 				done: snap.indexRestoredFiles ?? 0,
 				total: snap.indexRestoredTotal ?? 0,
@@ -208,6 +221,19 @@
 	{/if}
 {/snippet}
 
+<!-- 块口径的写入进度：分母可能仍含预估，文案必须如实标出。 -->
+{#snippet blockCount()}
+	{#if progress.blocks}
+		<span class="ratel-index-count">
+			{#if progress.blocks.estimated}
+				{$t('status.drawer.blocksProgressEstimated', { done: progress.blocks.committed, total: progress.blocks.total })}
+			{:else}
+				{$t('status.drawer.blocksProgress', { done: progress.blocks.committed, total: progress.blocks.total })}
+			{/if}
+		</span>
+	{/if}
+{/snippet}
+
 <div class="ratel-drawer" class:ratel-drawer-open={expanded}>
 	<div class="ratel-drawer-inner">
 		<div class="ratel-drawer-section-title ratel-drawer-section-title--with-aside">
@@ -227,27 +253,49 @@
 			{:else}
 				<span class="ratel-index-state">{indexValue}</span>
 				<span class="ratel-index-aside">
-					{@render indexCount()}
-					{#if snap.indexSecondsPerBlock !== undefined && indexing}
-						<span class="ratel-index-rate">{$t('status.drawer.indexSecondsPerBlock', { seconds: snap.indexSecondsPerBlock })}</span>
+					{#if blockPhase}
+						{@render blockCount()}
+					{:else}
+						{@render indexCount()}
+					{/if}
+					{#if blockPhase && snap.indexBlocksPerSecond !== undefined}
+						<span class="ratel-index-rate">{$t('status.drawer.indexBlocksPerSecond', { rate: snap.indexBlocksPerSecond })}</span>
 					{/if}
 				</span>
 			{/if}
 		</div>
 		{/if}
-		{#if (indexing || snap.index === 'paused' || snap.index === 'failed' || snap.index === 'ready') && progress.total > 0}
+		{#if (indexing || snap.index === 'paused' || snap.index === 'failed' || snap.index === 'ready') && (progress.total > 0 || progress.blocks !== null)}
 			<div class="ratel-drawer-progress" role="progressbar"
 				aria-label={$t('status.drawer.label.index')}
-				aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress.percentage ?? undefined}>
-				<div class="ratel-drawer-progress-fill" class:ratel-progress-unknown={progress.percentage === null && indexing}
-					style={`width: ${progress.percentage ?? (indexing ? 28 : 0)}%; background: ${indexBarColor};`}></div>
+				aria-valuemin={0} aria-valuemax={100} aria-valuenow={barPercentage ?? undefined}>
+				<div class="ratel-drawer-progress-fill" class:ratel-progress-unknown={barPercentage === null && indexing}
+					style={`width: ${barPercentage ?? (indexing ? 28 : 0)}%; background: ${indexBarColor};`}></div>
 			</div>
 		{/if}
-		{#if progress.total === 0 || progress.failed > 0}
+		{#if progress.total === 0 || progress.failed > 0 || blockPhase || (snap.indexRestoring === true && indexing)}
 			<!-- 关键路径(2026-11-06 版面收敛):「已完成 X%」「剩余 X 篇」与标题的
 			     「8 / 97 篇」是同一份数据的三次重复表达;比例交给进度条,其余不再写文字。
 			     失败为 0 时不占位,只有真失败才提示。 -->
 			<div class="ratel-index-metrics">
+				<!-- 关键路径(块级记账):落盘、提交、复用分开报,才能解释「UI 有块提交、
+				     库内完成记录未变」这类对账差异。 -->
+				{#if blockPhase && progress.blocks}
+					<span>{$t('status.drawer.blocksLedger', {
+						stored: progress.blocks.stored,
+						committed: progress.blocks.committed,
+						reused: progress.blocks.reused,
+					})}</span>
+				{/if}
+				<!-- 关键路径:核对/发现阶段按篇报数，且不显示速率；进入写入段后让位给块账本。 -->
+				{#if snap.indexRestoring === true && indexing && !blockPhase}
+					<span>{$t('status.drawer.discoveryCounts', {
+						unchanged: progress.discovery.unchanged,
+						added: progress.discovery.added,
+						changed: progress.discovery.changed,
+						removed: progress.discovery.removed,
+					})}</span>
+				{/if}
 				{#if progress.total === 0}<span>{$t('status.drawer.totalUnknown')}</span>{/if}
 				{#if progress.failed > 0}
 					<span class="ratel-index-failed">{$t('status.drawer.failedCount', { count: progress.failed })}</span>

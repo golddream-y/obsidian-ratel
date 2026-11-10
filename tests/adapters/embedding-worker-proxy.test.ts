@@ -5,7 +5,7 @@
 
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { EmbeddingWorkerProxy, IDLE_TERMINATE_MS } from '../../src/adapters/embedding-worker-proxy';
+import { EmbeddingWorkerProxy, FALLBACK_DEAD_THRESHOLD, IDLE_TERMINATE_MS } from '../../src/adapters/embedding-worker-proxy';
 
 /**
  * Mock Worker — 模拟 Web Worker 的 postMessage/onmessage 行为。
@@ -52,6 +52,11 @@ function emptyDeps() {
 
 function workerCallCount(): number {
 	return (global.Worker as unknown as { mock: { calls: unknown[] } }).mock.calls.length;
+}
+
+/** Worker 构造参数 — 用于断言回退后实际创建的脚本 URL 与加载类型。 */
+function workerCtorCalls(): unknown[][] {
+	return (global.Worker as unknown as { mock: { calls: unknown[][] } }).mock.calls;
 }
 
 function findLastEmbedCall(worker: MockWorker): { requestId: string } {
@@ -614,6 +619,163 @@ describe('EmbeddingWorkerProxy — T5 批次活动、取消与运行时重置', 
 		const requestId = findLastEmbedCall(mockWorker).requestId;
 		mockWorker.onmessage?.({ data: { type: 'embed:result', requestId, vectors: [[0.7]] } } as MessageEvent);
 		await expect(third).resolves.toEqual([[0.7]]);
+		proxy.terminate();
+	});
+});
+
+describe('EmbeddingWorkerProxy — 运行期失败回退与上限', () => {
+	let mockWorker: MockWorker;
+
+	beforeEach(() => {
+		mockWorker = new MockWorker();
+		(global as any).Worker = vi.fn(function (this: unknown) {
+			mockWorker = new MockWorker();
+			return mockWorker;
+		});
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+		(global as any).Worker = originalWorker;
+	});
+
+	/** 推进一次「Worker 不回复 → 请求超时」的完整周期。 */
+	async function timeoutOnce(proxy: EmbeddingWorkerProxy, text: string): Promise<void> {
+		const pending = proxy.embed([text]);
+		await vi.advanceTimersByTimeAsync(0);
+		const rejected = expect(pending).rejects.toThrow(/请求超时/);
+		await vi.advanceTimersByTimeAsync(120_000);
+		await rejected;
+	}
+
+	it('连续两次请求超时 - 回退 WASM 并回写后端 - 下一次创建使用 WASM 脚本', async () => {
+		vi.useFakeTimers();
+		const lifecycle: string[] = [];
+		const onBackend = vi.fn();
+		const proxy = new EmbeddingWorkerProxy(
+			'gpu-url',
+			async () => emptyDeps(),
+			512,
+			16,
+			(k) => lifecycle.push(k),
+			'module',
+			undefined,
+			120_000,
+			{ fallback: () => ({ workerUrl: 'wasm-url', workerType: 'classic' }), onBackend },
+		);
+
+		// 第一次失败只重建，不改变执行路径。
+		await timeoutOnce(proxy, 'a');
+		expect(onBackend).not.toHaveBeenCalled();
+		expect(lifecycle).not.toContain('fallback');
+
+		// 第二次失败达到上限：必须切 WASM 并回写后端，不能继续按同一 GPU 路径重建。
+		await timeoutOnce(proxy, 'b');
+		expect(onBackend).toHaveBeenCalledWith('wasm');
+		expect(lifecycle).toContain('fallback');
+
+		const next = proxy.embed(['c']);
+		await vi.advanceTimersByTimeAsync(0);
+		const lastCall = workerCtorCalls().at(-1);
+		expect(lastCall?.[0]).toBe('wasm-url');
+		expect(lastCall?.[1]).toEqual({ type: 'classic' });
+		const requestId = findLastEmbedCall(mockWorker).requestId;
+		mockWorker.onmessage?.({ data: { type: 'embed:result', requestId, vectors: [[0.5]] } } as MessageEvent);
+		await expect(next).resolves.toEqual([[0.5]]);
+		proxy.terminate();
+	});
+
+	it('GPU 设备丢失 - 无需累计立即回退 WASM - 在途请求按真实失败结束', async () => {
+		const lifecycle: string[] = [];
+		const onBackend = vi.fn();
+		const proxy = new EmbeddingWorkerProxy(
+			'gpu-url',
+			emptyDeps(),
+			512,
+			16,
+			(k) => lifecycle.push(k),
+			'module',
+			undefined,
+			120_000,
+			{ fallback: () => ({ workerUrl: 'wasm-url', workerType: 'classic' }), onBackend },
+		);
+		const pending = proxy.embed(['a']);
+		await new Promise((r) => setTimeout(r, 10));
+		const rejected = expect(pending).rejects.toThrow(/GPU 设备丢失/);
+		mockWorker.onmessage?.({ data: { type: 'gpu:lost', reason: 'device-lost' } } as MessageEvent);
+		await rejected;
+		// 关键路径:设备已丢失，不能再等 120 秒；徽标必须立即跟随真实执行路径。
+		expect(onBackend).toHaveBeenCalledWith('wasm');
+		expect(lifecycle).toContain('fallback');
+
+		const before = workerCallCount();
+		const next = proxy.embed(['b']);
+		await new Promise((r) => setTimeout(r, 10));
+		expect(workerCallCount()).toBeGreaterThan(before);
+		expect(workerCtorCalls().at(-1)?.[0]).toBe('wasm-url');
+		const requestId = findLastEmbedCall(mockWorker).requestId;
+		mockWorker.onmessage?.({ data: { type: 'embed:result', requestId, vectors: [[0.6]] } } as MessageEvent);
+		await expect(next).resolves.toEqual([[0.6]]);
+		proxy.terminate();
+	});
+
+	it('回退 WASM 后仍连续失败 - 达到上限进入 dead - 后续请求快速失败不再创建 Worker', async () => {
+		vi.useFakeTimers();
+		const lifecycle: string[] = [];
+		const proxy = new EmbeddingWorkerProxy(
+			'gpu-url',
+			async () => emptyDeps(),
+			512,
+			16,
+			(k) => lifecycle.push(k),
+			'module',
+			undefined,
+			120_000,
+			{ fallback: () => ({ workerUrl: 'wasm-url', workerType: 'classic' }), onBackend: vi.fn() },
+		);
+
+		// 先经设备丢失立即回退到 WASM。
+		const lost = proxy.embed(['a']);
+		await vi.advanceTimersByTimeAsync(0);
+		const lostRejected = expect(lost).rejects.toThrow(/GPU 设备丢失/);
+		mockWorker.onmessage?.({ data: { type: 'gpu:lost', reason: 'gone' } } as MessageEvent);
+		await lostRejected;
+
+		for (let i = 0; i < FALLBACK_DEAD_THRESHOLD; i += 1) {
+			await timeoutOnce(proxy, `fail-${i}`);
+		}
+		expect(lifecycle).toContain('dead');
+
+		// 关键路径:dead 之后必须快速失败，让索引进入失败态，而不是长期停在「索引中」。
+		const callsAfterDead = workerCallCount();
+		await expect(proxy.embed(['z'])).rejects.toThrow('Embedding Worker 不可用');
+		expect(workerCallCount()).toBe(callsAfterDead);
+		proxy.terminate();
+	});
+
+	it('预热实例终止后 - 不被再次接管 - 下一次 embed 重新创建 Worker', async () => {
+		vi.useFakeTimers();
+		const prewarmed = new MockWorker();
+		const proxy = new EmbeddingWorkerProxy(
+			'mock-url',
+			async () => emptyDeps(),
+			512,
+			16,
+			undefined,
+			'classic',
+			prewarmed as unknown as Worker,
+		);
+		await proxy.ensureReady();
+		proxy.terminate();
+
+		// 关键路径:预热实例已被终止,若仍保留引用，下次会接管死实例并等满超时。
+		const before = workerCallCount();
+		const pending = proxy.embed(['a']);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(workerCallCount()).toBe(before + 1);
+		const requestId = findLastEmbedCall(mockWorker).requestId;
+		mockWorker.onmessage?.({ data: { type: 'embed:result', requestId, vectors: [[0.1]] } } as MessageEvent);
+		await expect(pending).resolves.toEqual([[0.1]]);
 		proxy.terminate();
 	});
 });

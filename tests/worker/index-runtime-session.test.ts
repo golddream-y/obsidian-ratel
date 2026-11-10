@@ -478,6 +478,29 @@ describe('可信完成记录列表', () => {
 		await handlers['session.open']!({});
 		await expect(handlers['session.listCommitted']!({})).rejects.toThrow('未启用日志');
 	});
+
+	it('带日志删除 - 完成记录墓碑化 - 重复删除不重复写', async () => {
+		const handlers = createIndexSessionHandlers({ root, chunkOptions: CHUNK_OPTIONS, epoch: 1 });
+		await handlers['session.open']!({ generationId: 'gen-tombstone', configFingerprint: FINGERPRINT, expectedDimension: DIMENSIONS });
+		const written = await handlers['session.upsertFile']!({ path: 'gone.md', content: '正文' }, makeContext().ctx) as { chunkCount: number };
+		const removed = await handlers['session.deleteFile']!({ path: 'gone.md' }) as { removed: number };
+		// 失效块数按删除前的完成记录报出,供宿主结算分母预估。
+		expect(removed.removed).toBe(written.chunkCount);
+		const storage = new AtomicIndexStorage({ generationRoot: root });
+		const verifier = createWorkerJournal({
+			generationRoot: root, generationId: 'gen-tombstone', configFingerprint: FINGERPRINT,
+			store: new VectraStore(root, { storage }), owner: new WorkerJournalOwner(2), expectedDimension: DIMENSIONS, storage,
+		});
+		const receipt = await verifier.readReceipt('gone.md');
+		expect(receipt?.state).toBe('deleted');
+		expect(receipt?.chunkCount).toBe(0);
+		const status = await handlers['session.status']!({}) as { totalDocs: number };
+		expect(status.totalDocs).toBe(0);
+		// 已墓碑化:重复删除只核对存储,不再新增事务或改写记录。
+		const again = await handlers['session.deleteFile']!({ path: 'gone.md' }) as { removed: number };
+		expect(again.removed).toBe(0);
+		expect((await verifier.readReceipt('gone.md'))?.revision).toBe(receipt?.revision);
+	});
 });
 
 describe('未变内容不重复嵌入', () => {

@@ -9,7 +9,7 @@
 import { get, type Readable } from 'svelte/store';
 import type { Unsubscriber } from 'svelte/store';
 import type { ModelStatus } from './model-manager';
-import type { IndexStatus } from './index-manager';
+import type { IndexStatus, IndexBlockProgress } from './index-manager';
 import type { IndexPhase } from './index-persistence-types';
 import { INDEX_VALIDATION_ERROR_CODES } from './index-persistence-types';
 import { devLogger } from '../logging/dev-logger';
@@ -323,6 +323,7 @@ export class FeedbackController {
 					index: 'idle', indexDetail: undefined, indexPartial: false, indexPhase: undefined,
 					indexTotalFiles: undefined, indexCommittedFiles: undefined,
 					indexPendingFiles: undefined, indexFailedFiles: undefined,
+					...this.clearedBlockProgress(),
 				});
 				break;
 			case 'Init':
@@ -341,7 +342,7 @@ export class FeedbackController {
 					indexPendingFiles: status.pending ?? 0,
 					indexFailedFiles: status.failed ?? 0,
 					indexPartial: (status.committed ?? 0) > 0,
-					indexSecondsPerBlock: status.secondsPerBlock,
+					...this.mapBlockProgress(status),
 					indexRestoring: status.restoring,
 					indexRestoredFiles: status.restoredFiles,
 					indexRestoredTotal: status.restoredTotal,
@@ -365,7 +366,7 @@ export class FeedbackController {
 					indexPendingFiles: status.pending,
 					indexFailedFiles: status.failed ?? 0,
 					indexPartial: (status.committed ?? 0) > 0,
-					indexSecondsPerBlock: status.secondsPerBlock,
+					...this.mapBlockProgress(status),
 					indexRestoring: status.restoring,
 					indexRestoredFiles: status.restoredFiles,
 					indexRestoredTotal: status.restoredTotal,
@@ -400,6 +401,8 @@ export class FeedbackController {
 					indexFailedFiles: status.failedDocs ?? 0,
 					// 关键路径:已提交少于总文件数时仍是「部分可用」,不得宣称全库已核对。
 					indexPartial: committed < total,
+					// 关键路径:本轮结束后块/发现计数不再代表当前活动,清掉避免残留进度条。
+					...this.clearedBlockProgress(),
 				});
 				break;
 			}
@@ -418,6 +421,7 @@ export class FeedbackController {
 					indexTotalFiles: status.total, indexCommittedFiles: status.committed ?? 0,
 					indexPendingFiles: status.pending ?? 0, indexFailedFiles: status.failed ?? 0,
 					indexPartial: (status.committed ?? 0) > 0,
+					...this.mapBlockProgress(status),
 				});
 				break;
 			case 'Unloaded':
@@ -455,6 +459,38 @@ export class FeedbackController {
 		else if (notice === 'records-unknown') patch.indexDetail = tNow('status.detail.recordsUnknown');
 
 		return patch;
+	}
+
+	/** 块级与发现阶段计数的映射 — 未提供的字段保持 undefined,由界面决定是否展示。 */
+	private mapBlockProgress(status: IndexBlockProgress): Partial<UserStatusSnapshot> {
+		return {
+			indexBlocksPerSecond: status.blocksPerSecond,
+			indexStoredBlocks: status.storedBlocks,
+			indexCommittedBlocks: status.committedBlocks,
+			indexReusedBlocks: status.reusedBlocks,
+			indexTotalBlocks: status.totalBlocks,
+			indexBlocksEstimated: status.blocksEstimated,
+			indexSkippedFiles: status.skippedFiles,
+			indexAddedFiles: status.addedFiles,
+			indexChangedFiles: status.changedFiles,
+			indexRemovedFiles: status.removedFiles,
+		};
+	}
+
+	/** 清空块级计数 — 本轮已结束,残留数字会被误读成仍在写入。 */
+	private clearedBlockProgress(): Partial<UserStatusSnapshot> {
+		return {
+			indexBlocksPerSecond: undefined,
+			indexStoredBlocks: undefined,
+			indexCommittedBlocks: undefined,
+			indexReusedBlocks: undefined,
+			indexTotalBlocks: undefined,
+			indexBlocksEstimated: undefined,
+			indexSkippedFiles: undefined,
+			indexAddedFiles: undefined,
+			indexChangedFiles: undefined,
+			indexRemovedFiles: undefined,
+		};
 	}
 
 	/** 组合当前须知;无信号且状态本身没有须知时为 undefined(不覆盖既有值)。 */
