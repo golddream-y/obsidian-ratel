@@ -10,13 +10,13 @@ import { en } from '../../../src/i18n/en';
 
 describe('恢复进度文案', () => {
 	it('中文带已核对数与总数，能替换掉普通索引文案', () => {
-		expect(zh['status.drawer.restoring']).toContain('正在恢复');
+		expect(zh['status.drawer.restoring']).toContain('正在核对已有索引');
 		expect(zh['status.drawer.restoring']).toContain('{done}');
 		expect(zh['status.drawer.restoring']).toContain('{total}');
 	});
 
 	it('英文同样带进度占位符', () => {
-		expect(en['status.drawer.restoring']).toContain('Restoring');
+		expect(en['status.drawer.restoring']).toContain('Verifying existing index');
 		expect(en['status.drawer.restoring']).toContain('{done}');
 		expect(en['status.drawer.restoring']).toContain('{total}');
 	});

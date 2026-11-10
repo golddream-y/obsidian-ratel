@@ -162,7 +162,8 @@
 		const idx = snap.index;
 		if (snap.indexPhase === 'stalled' || snap.indexPhase === 'stopping') return 'var(--text-warning)';
 		if (idx === 'failed') return 'var(--text-error)';
-		if (idx === 'processing' || idx === 'scanning' || idx === 'queueing') return 'var(--interactive-accent)';
+		// 主题强调色可能就是绿色；进行中使用警示色，与完成的成功色明确区分。
+		if (indexing) return 'var(--text-warning)';
 		if (idx === 'ready') return 'var(--text-success)';
 		return 'var(--text-muted)';
 	});
@@ -547,11 +548,9 @@
 		font-variant-numeric: tabular-nums;
 	}
 	.ratel-index-failed { color: var(--text-error); }
-	/* 层次 3/3:辅助说明 — 左侧细线 + 缩进表明「这是主状态的注解」,不与属性行齐平。 */
+	/* 辅助说明与进度条左对齐，不增加引用样式的竖线。 */
 	.ratel-index-notice {
 		margin: 0 0 10px;
-		padding-left: 8px;
-		border-left: 2px solid var(--background-modifier-border);
 		font-size: 11px;
 		line-height: 1.5;
 		color: var(--text-faint);

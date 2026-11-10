@@ -66,7 +66,11 @@
 		if (chatBusy && tone === 'thinking') {
 			return { tone: 'ready' as Tone, label: $t('status.index.ready') };
 		}
-		return { tone, label: $t(toneLabels[tone]) };
+		// 核对只复用已有向量，顶部也要与抽屉区分，不能统称「索引中」。
+		const labelKey = tone === 'indexing' && snap.indexRestoring === true
+			? 'status.index.verifying'
+			: toneLabels[tone];
+		return { tone, label: $t(labelKey) };
 	});
 
 	const label = $derived(

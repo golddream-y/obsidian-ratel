@@ -1,83 +1,131 @@
 /**
  * @file tests/core/thread-coordinator-restoring.test.ts
- * @description 恢复阶段判定 — 内容变更的记录也要让恢复态结束
+ * @description 恢复阶段判定 — 按当前库中的唯一完成记录路径核对进度
  * @module tests/core/thread-coordinator-restoring
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { IndexThreadCoordinator, type ThreadIndexClient, type ThreadIndexVault } from '../../src/core/index-thread-coordinator';
 
-/** 构造最小协调器：记录 3 条，其中 1 条内容已变（重做）、2 条跳过。 */
-function makeCoordinator(): { coordinator: IndexThreadCoordinator; outcomes: string[] } {
-	const outcomes: string[] = [];
+/** 构造真实调度器；仅替换线程与库的 IO 边界。 */
+function makeCoordinator(files = ['a.md', 'b.md', 'c.md'], receipts = files) {
 	const client: ThreadIndexClient = {
 		start: async () => undefined,
-		indexFile: async (filePath) => {
-			// a、b 内容未变 → 跳过；c 内容变了 → 重做（返回非 skipped）
-			if (filePath === 'c.md') {
-				outcomes.push(`write:${filePath}`);
-				return { chunkCount: 2 };
-			}
-			outcomes.push(`skip:${filePath}`);
-			return { chunkCount: 1, skipped: true };
-		},
+		indexFile: vi.fn(async (_path: string, _content: string) => ({ chunkCount: 1, skipped: true })),
 		deleteFile: async () => ({ removed: 0 }),
 		recover: async () => ({ pending: 0, decisions: 0, failures: 0 }),
 		close: async () => undefined,
-		listCommitted: async () => [
-			{ path: 'a.md', state: 'present' as const },
-			{ path: 'b.md', state: 'present' as const },
-			{ path: 'c.md', state: 'present' as const },
-		],
+		listCommitted: async () => receipts.map((path) => ({ path, state: 'present' as const })),
+		onFileCommitted: null,
 	};
 	const vault: ThreadIndexVault = {
-		listMarkdownFiles: () => ['a.md', 'b.md', 'c.md'],
-		readFile: async () => 'content',
+		listMarkdownFiles: () => files,
+		readFile: vi.fn(async (path: string) => `content:${path}`),
 	};
 	const coordinator = new IndexThreadCoordinator({
 		client,
 		vault,
 		start: { root: '/tmp/restoring-test', generationId: 'gen-x', configFingerprint: 'f'.repeat(64) },
 	});
-	return { coordinator, outcomes };
+	return { coordinator, client, vault };
 }
 
 describe('恢复阶段判定', () => {
-	it('内容变更的记录重做后 - 恢复态不依赖跳过数追平', async () => {
-		const { coordinator, outcomes } = makeCoordinator();
+	it('恢复核对 - 内容变更后重做 - 不依赖跳过数追平并立即退出', async () => {
+		const { coordinator, client } = makeCoordinator();
+		client.indexFile = async (path) => ({ chunkCount: 2, skipped: path !== 'c.md' });
 		const counters = await coordinator.start();
-		// 三篇都有完成记录：两篇跳过、一篇重做。
-		expect(outcomes).toContain('write:c.md');
-		expect(counters.restoredTotal).toBe(3);
-		expect(counters.restoredFiles).toBe(3);
+		expect(counters).toMatchObject({ restoredTotal: 3, restoredFiles: 3, restoring: false, committedThisRound: 1, phase: 'ready' });
 	});
 
-	it('存在无法核对的记录 - 恢复提示也不能永久卡住', async () => {
-		// 关键路径:有完成记录但已删除/反复失败的文件不会产生成功事件,
-		// 恢复态绝不能依赖「核对数追平记录数」,否则界面永远停在 2373/2381 这种数字上。
-		const client: ThreadIndexClient = {
-			start: async () => undefined,
-			indexFile: async () => { throw new Error('注入失败'); },
-			deleteFile: async () => { throw new Error('注入失败'); },
-			recover: async () => ({ pending: 0, decisions: 0, failures: 0 }),
-			close: async () => undefined,
-			listCommitted: async () => [
-				{ path: 'gone.md', state: 'present' as const },
-				{ path: 'bad.md', state: 'present' as const },
-			],
-		};
-		const vault: ThreadIndexVault = {
-			listMarkdownFiles: () => ['gone.md', 'bad.md'],
-			readFile: async () => 'content',
-		};
-		const coordinator = new IndexThreadCoordinator({
-			client,
-			vault,
-			start: { root: '/tmp/restoring-stuck', generationId: 'gen-x', configFingerprint: 'f'.repeat(64) },
-		});
+	it('恢复核对 - 二十条旧记录已不在库中且全部跳过 - 排除旧路径并立即退出', async () => {
+		const files = Array.from({ length: 2877 }, (_, i) => `note-${i}.md`);
+		const stale = Array.from({ length: 20 }, (_, i) => `old-${i}.md`);
+		const { coordinator, client, vault } = makeCoordinator(files, [...files, ...stale]);
 		const counters = await coordinator.start();
-		expect(counters.restoredTotal).toBe(2);
-		// 恢复态只允许是展示窗口,不允许因为未核对而永远为 true。
-		expect(typeof counters.restoring).toBe('boolean');
+		expect(counters).toMatchObject({ restoredTotal: 2877, restoredFiles: 2877, restoring: false, committed: 2877, committedThisRound: 0, phase: 'ready' });
+		expect(vault.readFile).toHaveBeenCalledTimes(2877);
+		expect(client.indexFile).toHaveBeenCalledTimes(2877);
+		expect(client.indexFile).toHaveBeenLastCalledWith('note-2876.md', 'content:note-2876.md');
+	});
+
+	it('恢复核对 - 最后一条记录最终失败 - 退出恢复但保留失败而非伪造提交', async () => {
+		const { coordinator, client } = makeCoordinator(['a.md', 'bad.md']);
+		let attempts = 0;
+		const restoringDuringAttempts: boolean[] = [];
+		client.indexFile = async (path) => {
+			if (path === 'bad.md') {
+				attempts += 1;
+				restoringDuringAttempts.push(coordinator.counters().restoring === true);
+				throw new Error('注入失败');
+			}
+			return { chunkCount: 1, skipped: true };
+		};
+		const counters = await coordinator.start();
+		expect(attempts).toBe(3);
+		expect(restoringDuringAttempts).toEqual([true, true, true]);
+		expect(counters).toMatchObject({ restoredTotal: 2, restoredFiles: 2, restoring: false, failures: 1, committed: 1, phase: 'partial-failure' });
+		expect(coordinator.isReady()).toBe(false);
+		// 已放弃路径下一轮不重试，不能伪造本轮已核对数，也不能保留恢复提示。
+		expect(await coordinator.start()).toMatchObject({ restoredTotal: 2, restoredFiles: 1, restoring: false, failures: 1, committed: 1, phase: 'partial-failure' });
+		expect(attempts).toBe(3);
+	});
+
+	it('恢复核对 - 新文件先处理后暂停 - 不提前结束旧记录核对', async () => {
+		const { coordinator, client } = makeCoordinator(['new.md', 'a.md'], ['a.md']);
+		client.indexFile = async () => {
+			coordinator.pause();
+			return { chunkCount: 1 };
+		};
+		const counters = await coordinator.start();
+		expect(counters).toMatchObject({ restoredTotal: 1, restoredFiles: 0, restoring: true, pendingFiles: 1, phase: 'paused' });
+		client.indexFile = async () => ({ chunkCount: 1, skipped: true });
+		coordinator.resume();
+		await coordinator.drain();
+		expect(coordinator.counters()).toMatchObject({ restoredFiles: 1, restoring: false, phase: 'ready' });
+	});
+
+	it('恢复核对 - 重复记录和完成事件及重复调度 - 唯一路径只计一次', async () => {
+		const { coordinator, client } = makeCoordinator(['a.md', 'b.md'], ['a.md', 'a.md', 'b.md']);
+		client.indexFile = async (path) => {
+			client.onFileCommitted?.({ path, chunkCount: 1, skipped: true });
+			client.onFileCommitted?.({ path, chunkCount: 1, skipped: true });
+			if (path === 'a.md') coordinator.pause();
+			return { chunkCount: 1, skipped: true };
+		};
+		await coordinator.start();
+		expect(coordinator.counters()).toMatchObject({ restoredTotal: 2, restoredFiles: 1, restoring: true });
+		coordinator.notify('a.md', 'upsert');
+		client.indexFile = async () => ({ chunkCount: 1, skipped: true });
+		coordinator.resume();
+		await coordinator.drain();
+		expect(coordinator.counters()).toMatchObject({ restoredTotal: 2, restoredFiles: 2, restoring: false });
+	});
+
+	it('恢复核对 - 实际核对超过六十秒仍有未处理路径 - 不按墙钟退出', async () => {
+		const clock = vi.spyOn(Date, 'now').mockReturnValue(1000);
+		try {
+			const { coordinator, client } = makeCoordinator(['a.md', 'b.md']);
+			client.indexFile = async () => {
+				clock.mockReturnValue(62_000);
+				coordinator.pause();
+				return { chunkCount: 1, skipped: true };
+			};
+			await coordinator.start();
+			expect(coordinator.counters()).toMatchObject({ restoredFiles: 1, restoredTotal: 2, restoring: true, pendingFiles: 1 });
+		} finally {
+			clock.mockRestore();
+		}
+	});
+
+	it('恢复核对 - 再次启动 - 重置进度且仍逐篇读取核对', async () => {
+		const { coordinator, client, vault } = makeCoordinator(['a.md']);
+		await coordinator.start();
+		client.start = async () => {
+			expect(coordinator.counters()).toMatchObject({ restoring: false, restoredFiles: 0, restoredTotal: 0 });
+		};
+		expect(await coordinator.start()).toMatchObject({ restoredFiles: 1, restoredTotal: 1, restoring: false });
+		expect(vault.readFile).toHaveBeenCalledTimes(2);
+		expect(client.indexFile).toHaveBeenCalledTimes(2);
 	});
 });

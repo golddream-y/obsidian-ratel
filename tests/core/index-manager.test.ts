@@ -89,6 +89,35 @@ describe('IndexManager', () => {
         await vi.waitFor(() => expect(get(manager.status$).state).toBe('Ready'));
     });
 
+    it('enqueue 增量 - 协调器后台跑完必须发布 Ready，不能停在索引中', async () => {
+        // 关键路径(2026-11-10 现场):增量入口只发布一次入队状态；协调器随后在后台
+        // 逐篇处理，若没有采样器，phase 变 ready 也没有发布动作，界面永远停在「索引中」。
+        vi.useFakeTimers();
+        try {
+            const coordinator = new CoordinatorStub();
+            const mgr = new IndexManager({
+                fullReindex: vi.fn().mockResolvedValue({ indexed: 0, errors: 0 }),
+                incrementalIndex: vi.fn().mockResolvedValue({ indexed: 1, errors: 0 }),
+                deleteFile: vi.fn().mockResolvedValue(1),
+            }, coordinator);
+            await mgr.onLayoutReady();
+            coordinator.set({ phase: 'processing', scanComplete: true, total: 1, committed: 0, pendingFiles: 1 });
+            mgr.enqueue('a.md', 'upsert', 'content');
+            expect(get(mgr.status$).state).not.toBe('Ready');
+
+            // 协调器处理完毕：计数收敛到 ready。
+            coordinator.set({ phase: 'ready', committed: 1, pendingFiles: 0, active: 0 });
+            await vi.advanceTimersByTimeAsync(300);
+            expect(get(mgr.status$)).toMatchObject({ state: 'Ready' });
+
+            // 收敛后采样器应自行停止，避免空转重渲染。
+            await vi.advanceTimersByTimeAsync(1_000);
+            expect(get(mgr.status$)).toMatchObject({ state: 'Ready' });
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
     it('pause - 状态 Paused;新事件入队不消费', async () => {
         await manager.onLayoutReady();
         manager.pause();

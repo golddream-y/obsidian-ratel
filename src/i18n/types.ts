@@ -748,6 +748,7 @@ export interface ModalStrings {
 // ==================== Status / Drawer ====================
 export interface StatusStrings {
   'status.index.indexing': string;
+  'status.index.verifying': string;
   'status.index.requestFailed': string;
   'status.index.notConfigured': string;
   'status.index.thinking': string;

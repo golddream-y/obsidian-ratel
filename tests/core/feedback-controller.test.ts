@@ -264,7 +264,7 @@ describe('FeedbackController 索引阶段与计数展示', () => {
 			restoredFiles: 994,
 			restoredTotal: 2200,
 		});
-		expect(get(userStatus.statusBar$).indexDetail).toContain('正在恢复');
+		expect(get(userStatus.statusBar$).indexDetail).toContain('正在核对已有索引');
 		expect(get(userStatus.statusBar$).indexDetail).toContain('994 / 2200');
 		expect(get(userStatus.statusBar$).indexDetail).not.toContain('某篇新笔记');
 		controller.destroy();
@@ -275,7 +275,7 @@ describe('FeedbackController 索引阶段与计数展示', () => {
 		controller.start();
 		// 关键路径:重启后核对完成记录期间,必须让用户看到「正在恢复」,否则低值进度会被误判为从零重来。
 		indexStatus$.set({ state: 'Queueing', phase: 'processing', total: 2825, committed: 14, pending: 2811, failed: 0, restoring: true, restoredFiles: 1200, restoredTotal: 2200 });
-		expect(get(userStatus.statusBar$).indexDetail).toContain('正在恢复');
+		expect(get(userStatus.statusBar$).indexDetail).toContain('正在核对已有索引');
 		expect(get(userStatus.statusBar$).indexDetail).toContain('1200 / 2200');
 		controller.destroy();
 	});

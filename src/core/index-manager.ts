@@ -250,24 +250,7 @@ export class IndexManager {
         // 修复：start 等待整轮收敛，不能等它返回才发布进度，否则长索引始终显示扫描中 0/0。
         // 关键路径:进度采样只在计数真的变化时发布 —— 每 250ms 无条件写 store 会让
         // 状态栏/抽屉以 4Hz 重渲染,索引期间反而制造主线程卡顿。
-        this.lastCoordinatorSignature = null;
-        this.coordinatorProgressTimer = globalThis.setInterval(() => {
-            if (this.unloaded) return;
-            const counters = coordinator.counters();
-            const signature = [
-                counters.taskId, counters.phase, counters.total, counters.committed,
-                counters.pendingFiles ?? 0, counters.failures, counters.active,
-                // 关键路径:恢复窗口到期本身要触发一次发布。
-                // 若签名不含恢复态,窗口到期后 counters 其它字段不变,定时器直接 return,
-                // UI 就永远停在「正在恢复已索引进度」——这正是上一版的残留症状。
-                counters.restoring === true, counters.restoredFiles ?? 0,
-            ].join('|');
-            if (signature === this.lastCoordinatorSignature) return;
-            this.lastCoordinatorSignature = signature;
-            this.publishCoordinatorStatus(counters);
-          // 关键路径:GPU 推理后单篇耗时可低至 0.3 秒,500ms 采样会让计数一次跳两篇;
-          // 250ms 既能逐篇上屏,又不会把重绘压力抬到不可接受。
-        }, 250);
+        this.ensureCoordinatorProgress();
         try {
             const counters = await coordinator.start();
             if (this.unloaded) return null;
@@ -288,6 +271,41 @@ export class IndexManager {
         } finally {
             this.stopCoordinatorProgress();
         }
+    }
+
+    /**
+     * 确保索引活动期间有进度采样。
+     *
+     * 关键路径(2026-11-10 现场):增量事件入队时只发布一次状态，协调器随后在后台
+     * 逐篇处理。整轮结束会停止采样，于是「改一个文件」这条路径跑完后 phase 已是
+     * ready 却没有任何发布动作 —— 界面永远停在「索引中」。增量入口必须启动同一套
+     * 采样，并在真正收敛后自行停止。
+     *
+     * 采样只在计数签名变化时发布：250ms 无条件写 store 会让状态栏以 4Hz 重渲染。
+     */
+    private ensureCoordinatorProgress(): void {
+        if (this.coordinatorProgressTimer !== null) return;
+        const coordinator = this.coordinator;
+        if (coordinator === undefined) return;
+        this.lastCoordinatorSignature = null;
+        this.coordinatorProgressTimer = globalThis.setInterval(() => {
+            if (this.unloaded) return;
+            const counters = coordinator.counters();
+            const signature = [
+                counters.taskId, counters.phase, counters.total, counters.committed,
+                counters.pendingFiles ?? 0, counters.failures, counters.active,
+                // 关键路径:恢复态本身也要进签名，否则它的变化不会触发发布。
+                counters.restoring === true, counters.restoredFiles ?? 0,
+            ].join('|');
+            if (signature !== this.lastCoordinatorSignature) {
+                this.lastCoordinatorSignature = signature;
+                this.publishCoordinatorStatus(counters);
+            }
+            // 关键路径:收敛后立即停表 —— 空转定时器会持续触发重渲染。
+            if (counters.phase === 'ready' && counters.active === 0 && (counters.pendingFiles ?? 0) === 0) {
+                this.stopCoordinatorProgress();
+            }
+        }, 250);
     }
 
     /** 整轮结束或卸载时停止展示采样，避免悬挂任务保留定时器。 */
@@ -450,6 +468,8 @@ export class IndexManager {
             const counters = coordinator.counters();
             if (this.paused) this.status$.set({ state: 'Paused', pending: this.pendingCount() });
             else this.publishCoordinatorStatus(counters);
+            // 关键路径:入队只是开始，协调器会在后台逐篇处理；没有采样器就没人发布完成态。
+            this.ensureCoordinatorProgress();
             return;
         }
         this.queue.set(path, { op, content });

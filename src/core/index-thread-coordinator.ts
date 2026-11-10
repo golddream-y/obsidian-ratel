@@ -87,9 +87,6 @@ const MAX_FAILURE_SAMPLES = 5;
 /** 每轮允许的崩溃重启次数上界。 */
 const MAX_CRASH_RESTARTS = 2;
 
-/** 恢复提示的展示时长(ms) — 仅影响 UI,不影响索引逻辑。 */
-const RESTORE_WINDOW_MS = 60_000;
-
 /**
  * 判断错误是否是「线程已退出」类。
  * @param message 错误消息
@@ -149,29 +146,13 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 	private writtenThisRound = 0;
 	/** 本轮跳过(内容未变、按完成记录复用)的文件数 — 诊断恢复是否生效。 */
 	private skippedThisRound = 0;
-	/**
-	 * 是否处于「恢复已索引进度」展示窗口。
-	 *
-	 * 关键路径:恢复与新增写入是交织的,没有可靠的「全部核对完」信号 ——
-	 * 有完成记录但已删除、内容已变、反复失败的文件都不会产生「已核对」事件。
-	 * 因此这里只是一个**展示窗口**,不参与索引收敛,到点自然消退。
-	 */
+	/** 是否仍有启动时的相关完成记录等待核对；不依赖墙钟时间。 */
 	private restoring = false;
-	/** 恢复窗口截止的墙钟时间戳(ms)。 */
-	private restoringUntil = 0;
-	/** 已恢复(跳过)的篇数 — 供 UI 展示「已核对 N 篇」。 */
-	private restoredCount = 0;
-	/** 本轮启动时磁盘上的完成记录总数 — 恢复进度的分母。 */
+	/** 本轮启动时完成记录与当前库路径交集的大小 — 恢复进度的分母。 */
 	private restoredTotal = 0;
-	/**
-	 * 启动时存在完成记录的路径集合。
-	 *
-	 * 关键路径:恢复结束的判据是「这些路径都核对过」,而不是「跳过数追平记录数」——
-	 * 内容已变、代际隔离、或文件已删的记录会被计入失败/重做而不算跳过,
-	 * 用跳过数对比总数会永远追不平,界面就卡在 2304/2331 这种数字上。
-	 */
+	/** 尚未成功或最终失败的相关路径；删除即计数，重复回调不会重复推进。 */
 	private receiptPaths: Set<string> = new Set();
-	/** 已核对过的「启动时已有完成记录」的路径数。 */
+	/** 已核对过的唯一相关路径数，不等于成功提交数。 */
 	private examinedCount = 0;
 	/** 本轮真正写入的**块数** — 按块计量才能反映推理速度,不受文档大小影响。 */
 	private writtenBlocksThisRound = 0;
@@ -212,14 +193,16 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 		this.writtenThisRound = 0;
 		this.writtenBlocksThisRound = 0;
 		this.skippedThisRound = 0;
-		this.restoredCount = 0;
+		this.restoring = false;
 		this.restoredTotal = 0;
 		this.examinedCount = 0;
 		this.receiptPaths = new Set();
 		await this.client.start(this.startOptions);
 		// 关键路径:线程真的起来之后才算已启动,否则启动失败会把后续事件派给不存在的线程。
 		this.started = true;
-		// 关键路径:恢复阶段要有明确分母。取磁盘上的完成记录数,而不是靠「有没有写入」
+		const files = this.vault.listMarkdownFiles();
+		const currentPaths = new Set(files);
+		// 修复:分母仅包含当前库仍存在的完成记录，旧路径不能阻止恢复收敛。不要靠「有没有写入」
 		// 推断 —— 恢复与新增写入是交织的,先遇到新文件不代表没有旧记录要核对。
 		if (this.client.listCommitted === undefined) {
 			devLogger.warn('index', '线程客户端不支持 listCommitted,本轮不显示恢复进度');
@@ -227,19 +210,16 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 			try {
 				const records = await this.client.listCommitted();
 				this.receiptPaths = new Set(
-					records.filter((record) => record.state === 'present').map((record) => record.path),
+					records.filter((record) => record.state === 'present' && currentPaths.has(record.path)).map((record) => record.path),
 				);
 				this.restoredTotal = this.receiptPaths.size;
-				devLogger.info('index', `恢复检查:完成记录 ${records.length} 条,其中 present ${this.restoredTotal} 条`);
+				devLogger.info('index', `恢复检查:完成记录 ${records.length} 条,其中当前库相关 present ${this.restoredTotal} 条`);
 			} catch (error) {
 				devLogger.warn('index', '读取完成记录总数失败,本轮不显示恢复进度', error);
 				this.restoredTotal = 0;
 			}
 		}
 		this.restoring = this.restoredTotal > 0;
-		// 关键路径:恢复提示只在重启后一段时间内展示,之后无论是否全部核对完都退出,
-		// 免得用户看到「已核对 2373/2381」永远停在那里。
-		this.restoringUntil = this.restoring ? Date.now() + RESTORE_WINDOW_MS : 0;
 		devLogger.info('index', `恢复阶段:${this.restoring ? `开启（待核对 ${this.restoredTotal} 篇）` : '跳过（无完成记录）'}`);
 
 		// 关键路径:按篇推进 —— 批量提交时不等整批结算,进度按篇递增。
@@ -248,7 +228,6 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 				this.markSuccess(event.path, event.skipped !== true, event.chunkCount);
 			};
 		}
-		const files = this.vault.listMarkdownFiles();
 		let skippedAbandoned = 0;
 		for (const filePath of files) {
 			if (this.stopping || this.destroyed) break;
@@ -286,8 +265,8 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 		);
 		// 关键路径(诊断):恢复态若没收敛,列出还没被核对的记录路径,
 		// 避免再靠「差几篇」这种表面数字去猜原因。
-		if (this.restoring && Date.now() < this.restoringUntil) {
-			const pending = [...this.receiptPaths].filter((p) => !this.verified.has(p));
+		if (this.restoring) {
+			const pending = [...this.receiptPaths];
 			devLogger.warn(
 				'index',
 				`恢复未收敛:已核对 ${this.examinedCount}/${this.restoredTotal},未核对路径样本:${pending.slice(0, 10).join(' | ') || '(空)'}`,
@@ -324,6 +303,11 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 		else if (this.failing.size > 0) this.phaseValue = 'partial-failure';
 		else if (this.activeCount > 0 || this.queue.size > 0 || this.deferred.size > 0) this.phaseValue = 'processing';
 		else this.phaseValue = 'ready';
+		// 关键路径:已放弃的历史失败不再核对，终态只收起提示，不伪造本轮核对数。
+		if (this.scanCompleted && !this.pausedValue && !this.stopping
+			&& this.activeCount === 0 && this.queue.size === 0 && this.deferred.size === 0) {
+			this.restoring = false;
+		}
 	}
 
 	/** 计数快照 — 与主线程协调器同口径。 */
@@ -345,7 +329,7 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 			active: this.activeCount,
 			pendingTransactions: 0,
 			failures: this.failing.size,
-			restoring: this.restoring && Date.now() < this.restoringUntil,
+			restoring: this.restoring,
 			restoredFiles: this.examinedCount,
 			restoredTotal: this.restoredTotal,
 		};
@@ -377,8 +361,16 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 		return this.failureSamples;
 	}
 
+	/** 仅成功或最终失败才完成核对；延后、撤销和未处理路径仍须等待。 */
+	private markExamined(filePath: string): void {
+		if (!this.receiptPaths.delete(filePath)) return;
+		this.examinedCount += 1;
+		this.restoring = this.receiptPaths.size > 0;
+	}
+
 	/** 记录成功:清除失败标记、原操作与样本 —— 样本只描述「当前仍失败」的文件。 */
 	private markSuccess(filePath: string, written = true, blocks = 0): void {
+		this.markExamined(filePath);
 		// 关键路径:批量路径会先收到「按篇事件」、整批结束时又拿到结果,
 		// 幂等返回避免同一篇被计两次(计数虚高、速率失真)。
 		if (this.verified.has(filePath)) return;
@@ -389,12 +381,7 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 			this.writtenBlocksThisRound += blocks;
 		} else {
 			this.skippedThisRound += 1;
-			this.restoredCount += 1;
 		}
-		// 关键路径:核对计数仅作进度展示,不作为恢复态的退出条件。
-		// 有完成记录但已删除/变更/失败的文件都不会触发成功路径,
-		// 用「核对数追平记录数」当退出条件必然卡在末尾 —— 现场 2373/2381 就是这么来的。
-		if (this.receiptPaths.has(filePath)) this.examinedCount += 1;
 		this.failing.delete(filePath);
 		this.failedOps.delete(filePath);
 		const sampleIndex = this.failureSamples.findIndex((item) => item.path === filePath);
@@ -574,6 +561,7 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 					this.failing.add(filePath);
 					// 关键路径:放弃是终态,后续轮次不再重试,避免「每次都重试到上限」的无穷循环。
 					this.abandoned.add(filePath);
+					this.markExamined(filePath);
 				}
 			} finally {
 				this.activeCount = 0;

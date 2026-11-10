@@ -745,6 +745,7 @@ export const en: Strings = {
 
   // ==================== StatusStrings ====================
   'status.index.indexing': 'Indexing',
+  'status.index.verifying': 'Verifying…',
   'status.index.requestFailed': 'Request failed',
   'status.index.notConfigured': 'Not configured',
   'status.index.thinking': 'Thinking…',
@@ -771,7 +772,7 @@ export const en: Strings = {
   'status.drawer.embedBadge.cpu': 'CPU inference',
   'status.drawer.embedBadge.api': 'Remote embedding service',
   'status.drawer.indexSecondsPerBlock': 'currently ~{seconds}s per block overall',
-  'status.drawer.restoring': 'Restoring indexed progress ({done} / {total} notes)',
+  'status.drawer.restoring': 'Verifying existing index ({done} / {total} notes)',
   'status.drawer.restoringHint': 'Verified notes are already searchable; their vectors are reused',
   'status.drawer.embedKind.api': 'API',
   'status.drawer.section.context': 'Context',
@@ -830,7 +831,7 @@ export const en: Strings = {
   'status.detail.recordsUnknown': 'Index state unknown: no trusted completion records, search is closed',
   'status.detail.configMismatch': 'Config generation changed: re-verification is required before search',
   'status.detail.reverifying': 'New changes increased pending work; re-verifying now',
-  'status.detail.restoring': 'Restoring indexed progress ({done} / {total} notes verified)',
+  'status.detail.restoring': 'Verifying existing index ({done} / {total} notes verified)',
   // 关键路径(T7/I2/I6):索引不可用与配置漂移是必须上屏的事实,不允许静默
   'status.detail.indexUnavailable': 'Index unavailable: the runtime could not be assembled; search is disabled',
   'status.detail.configDrift': 'The embedding config changed in this session: index writes are paused to avoid mixing parameters; reload the plugin and rebuild the index',
