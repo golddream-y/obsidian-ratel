@@ -30,8 +30,7 @@ type TensorConstructor = typeof ort.Tensor;
 /**
  * WebGPU 设备的最小结构化类型。
  *
- * 关键路径:项目没有引入 `@webgpu/types`，这里只声明真正用到的两个成员 ——
- * 让 device 能传给 ORT 的 `executionProviders`,并且能挂上 `lost`。
+ * 关键路径:项目没有引入 `@webgpu/types`，只声明观察 ORT 实际设备丢失所需的成员。
  */
 interface WebGpuDeviceLike {
 	lost: Promise<{ reason: string; message: string }>;
@@ -75,10 +74,8 @@ export interface EmbeddingOnnxDeps {
 	/**
 	 * GPU 设备丢失回调。
 	 *
-	 * 关键路径(2026-11-09 现场):WebGPU 的 device 一旦丢失，`device.queue.submit()`
-	 * 之后的 Promise 永不 settle，ORT 内部不监听 `device.lost`，整个推理**静默挂起**；
-	 * 表现为请求等到 120 秒超时、Worker 被当成「崩溃」重建。自己创建 device 并监听
-	 * 它的 lost，就能在毫秒级知道设备已死，而不是两分钟后靠超时兜底。
+	 * 关键路径:仅观察 ORT 实际使用设备的 lost，避免把推理挂起直接归因为设备丢失。
+	 * 回调通知装配层终止失效 Worker；终止不等于立即重建，后续请求才会重新装配。
 	 */
 	onGpuDeviceLost?: (reason: string) => void;
 
@@ -204,41 +201,27 @@ export class EmbeddingOnnx implements EmbeddingPort {
 		// 关键路径:此处**不做 WASM 回退**。同一 ORT 实例里 webgpu 尝试失败会污染
 		// initWasm(),导致回退也失败(1.4.0 实测)。失败直接抛,由装配层换一个全新的
 		// WASM Worker —— 两个独立实例,零污染。
-		// 关键路径:自己创建 device 才能监听它的丢失。传进 EP 后 ORT 直接复用它，
-		// 不再在内部另建一个——否则崩溃信号仍然拿不到。
-		const gpu = (globalThis as {
-			navigator?: {
-				gpu?: {
-					requestAdapter(): Promise<{
-						requestDevice(): Promise<WebGpuDeviceLike>;
-					} | null>;
-				};
-			};
-		}).navigator?.gpu;
-		let device: WebGpuDeviceLike | undefined;
-		if (gpu !== undefined) {
-			try {
-				const adapter = await gpu.requestAdapter();
-				if (adapter !== null && adapter !== undefined) {
-					device = await adapter.requestDevice();
-					// 关键路径:lost 是 Promise 而不是事件，必须在这里挂上；
-					// 触发时立刻回报，让装配层换新实例，而不是等请求超时。
-					void device.lost.then((info: { reason: string; message: string }) => {
-						this.deps.onGpuDeviceLost?.(`${info.reason}:${info.message}`);
-					});
-				}
-			} catch (error) {
-				// 自建失败不影响主流程：退回由 ORT 自己建 device。
-				devLogger.warn('index', '自建 GPU 设备失败,改由 ORT 内部创建', error);
-				device = undefined;
-			}
-		}
+		// 修复:ORT 1.27 自定义设备注册缺少 TimedWaitAny，导致等待操作返回状态 3；保留 ORT 自建路径。
 		const session = await ort.InferenceSession.create(this.deps.modelBuffer, {
-			executionProviders: [device === undefined ? 'webgpu' : { name: 'webgpu', device }],
+			executionProviders: ['webgpu'],
 			// 关键路径:ORT 的 C++ 层会为每个会话打印算子分配统计(W 级),
 			// GPU 路径每次装载都刷一屏;3 = error,只保留真正的错误。
 			logSeverityLevel: 3,
 		});
+		// 关键路径:只在会话创建后读取实际设备；提前读取 getter 可能触发设备创建。
+		try {
+			const device = await (ort.env.webgpu as { device?: WebGpuDeviceLike | Promise<WebGpuDeviceLike> }).device;
+			if (device?.lost === undefined) {
+				devLogger.warn('index', '无法监听 ORT GPU 设备丢失,保留已创建会话', '设备或 lost 不可用');
+			} else {
+				void device.lost.then((info) => {
+					this.deps.onGpuDeviceLost?.(`${info.reason}:${info.message}`);
+				});
+			}
+		} catch (error) {
+			// 修复:观察失败不代表会话不可用，不得因此触发 WASM 回退。
+			devLogger.warn('index', '无法监听 ORT GPU 设备丢失,保留已创建会话', error);
+		}
 		devLogger.info('index', '嵌入后端:WebGPU(本机 GPU 加速已启用)');
 		return session;
 	}
