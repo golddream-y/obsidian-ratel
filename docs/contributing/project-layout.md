@@ -40,12 +40,10 @@ AGENTS.md              # 指令事实源:仓库根
 AGENTS.local.md        # 本机层(路径与库名,gitignore,宿主叠加加载)
 .agents/skills/        # 技能目录(宿主自动发现)
   THIRD-PARTY.md       # 第三方技能来源与许可证登记
-.cursor/rules/         # Cursor 兼容副本(非事实源)
 ```
 
 - **指令**:`AGENTS.md` 家族是唯一事实源。宿主按「项目根 → 当前工作目录」逐层加载,并叠加同目录的 `AGENTS.local.md`(本机私有,不入库)。
 - **技能**:`.agents/skills/<name>/SKILL.md` 由宿主自动发现,frontmatter 需要 `name` 与 `description`;第三方技能的上游来源与许可证登记在 [.agents/skills/THIRD-PARTY.md](../../.agents/skills/THIRD-PARTY.md)。
-- **兼容层**:`.cursor/rules/*.mdc` 只在 Cursor 中工作时另读,内容与根 `AGENTS.md` 一致;两者不一致时以 `AGENTS.md` 为准。
 
 ## 2.0 需求与演进文档
 

@@ -6,7 +6,6 @@ Ratel 是面向 Obsidian 知识库的 Agent Harness，使用 TypeScript、Svelte
 
 - 指令事实源是 `AGENTS.md` 家族：仓库根一份，子目录（`src/`、`src/worker/`、`src/ui/`、`docs/`）各一份。子树规则只作用于该目录及其后代，不扩散到兄弟目录；宿主按「项目根 → 当前工作目录」逐层加载，触达更深目录后补齐，未自动注入时显式读取。
 - 本机私有路径与库名只写在仓库根 `AGENTS.local.md`（本地层，不进版本库），不得复制进受版本控制的内容。
-- `.cursor/rules/*.mdc` 是 Cursor 的兼容副本，仅在 Cursor 中工作时另读；它不是事实源，两处不一致时以 `AGENTS.md` 为准。
 - 优先级：用户与系统直接指令 > 项目文件；同目录 `AGENTS.override.md` 优先于 `AGENTS.md`。
 - Skill 名称可被发现不代表正文已读取。命中下表触发条件时加载对应 `SKILL.md`，再按它的说明按需读取参考文件；不能只凭名称执行。
 

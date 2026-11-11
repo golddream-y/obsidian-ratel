@@ -100,4 +100,4 @@ npx asar extract ~/Library/Application\ Support/obsidian/obsidian-<version>.asar
 - 设置页渲染：`src/ui/settings/*-render.ts`、`src/ui/settings/*-setting-page.ts`
 - i18n：`src/i18n/{zh,en,types}.ts`
 - 全局样式：`styles.css`（Svelte 侧栏样式规范见 obsidian-ui skill）
-- Sandbox 绝对路径：只查 gitignore 的 `.cursor/rules/*.local.mdc`
+- Sandbox 绝对路径：只查 gitignore 的本机 `AGENTS.local.md`
