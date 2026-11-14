@@ -48,6 +48,7 @@
 	<div
 		class="ratel-session-menu"
 		role="menu"
+		tabindex="-1"
 		aria-label={$t('chat.session.ariaHistory')}
 		onclick={(e) => e.stopPropagation()}
 		onkeydown={(e) => e.stopPropagation()}

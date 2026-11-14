@@ -775,6 +775,9 @@ export interface StatusStrings {
   'status.drawer.embedBadge.gpu': string;
   'status.drawer.embedBadge.cpu': string;
   'status.drawer.indexBlocksPerSecond': string;
+  'status.drawer.indexUpdating': string;
+  'status.drawer.indexUpdated': string;
+  'status.drawer.indexedTotal': string;
   'status.drawer.blocksProgress': string;
   'status.drawer.blocksProgressEstimated': string;
   'status.drawer.blocksLedger': string;

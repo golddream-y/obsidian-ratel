@@ -21,6 +21,7 @@ Follow this sequence: install → configure a chat model → review permissions 
 ### Install and configure a model
 
 1. In Obsidian, open **Settings → Community plugins → Browse**, search for **Ratel**, install, and enable it.
+   The main file is about 9.2 MiB, above Obsidian Sync Standard's 5 MB per-file limit, so `main.js` is not synced; install or update through the community catalog, BRAT, or a manual copy.
 2. Open **Settings → Ratel → Chat model** and click the row marked Current under Saved setups. Choose a provider, then a model. Ollama is under On this machine; search Common providers for Volcengine or DeepSeek. For a custom endpoint, enter its API Base and model name. Use a model available from your provider or installed locally.
 3. For a remote service, enter the API key in that setup's API key field. It is automatically synced to Obsidian Keychain for encrypted storage; no separate manual entry is needed. Local Ollama usually uses `http://localhost:11434/v1` without a key; start Ollama and prepare the model first.
 4. Check the key status in Ratel settings. Your chosen provider charges for model usage.
@@ -274,7 +275,7 @@ For repeated failures, inspect **Settings → Ratel → Advanced → Diagnostics
 
 ### Index status and index commands
 
-Expand the status strip to see one primary state and an indexed-note count, such as “Indexing notes · 234 / 1000 notes indexed”. Below the progress bar, “23.4% complete · 766 remaining · 0 failed” counts distinct notes, without adding internal tasks or transactions. While the total is unknown, the panel shows scanning without a misleading completion percentage. “Context 7%” at the top right is chat context usage, separate from index progress.
+Expand the status strip to see progress by phase: verification counts notes; updates count blocks completed in the current round. While the block total is still being calculated, the panel shows only the completed count, without a precise percentage or rate. Once the total is known, it shows completed / total blocks. Reused blocks are excluded from the current write total. Stored, committed, and reused counts remain available in collapsed diagnostics. The diagnostics entry is hidden after a normal completion and retained when failures or index notices need attention. Failures are shown separately and prevent an all-green completion indicator. “Context 7%” at the top right is chat context usage, separate from index progress.
 
 - **Partially available:** committed notes are searchable right away; you do not have to wait for the whole vault. Try pending notes again shortly.
 - **Re-verification needed:** a note you just edited is excluded from search until its new version is committed, so stale content is not returned.

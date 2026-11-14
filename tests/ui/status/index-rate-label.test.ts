@@ -22,8 +22,12 @@ describe('索引速率展示口径', () => {
 		expect(Object.values(en).some((text) => text.includes('s per block'))).toBe(false);
 	});
 
-	it('块进度区分预估与实际', () => {
-		expect(zh['status.drawer.blocksProgress']).toBe('已写 {done} / 共 {total} 块');
-		expect(zh['status.drawer.blocksProgressEstimated']).toBe('已写 {done} / 共 {total} 块（预估）');
+	it('块进度区分预估与实际，并标明本轮口径', () => {
+		// 关键路径:分母只含本轮待写块,复用块另报;文案必须写明「本轮」,
+		// 否则会与「复用 N 块」的全库量级并排出现,误读为分母错误。
+		expect(zh['status.drawer.blocksProgress']).toBe('本轮已完成 {done} / {total} 块');
+		expect(zh['status.drawer.blocksProgressEstimated']).toBe('已完成 {done} 块，正在计算剩余量');
+		expect(en['status.drawer.blocksProgressEstimated']).toBe('{done} blocks completed; calculating remaining work');
+		expect(zh['status.drawer.blocksLedger']).toContain('复用（内容未变）');
 	});
 });

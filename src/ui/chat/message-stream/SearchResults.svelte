@@ -58,7 +58,6 @@
 			<div
 				class="ratel-cites-row"
 				class:ratel-cite-enter={citeEnterActive && expanded && staggerMode === 'group'}
-				role="list"
 			>
 				{#each results as r, i}
 					<button
@@ -68,7 +67,6 @@
 						style:animation-delay={citeEnterActive && expanded && staggerMode === 'each'
 							? `${i * CITE_EACH_STAGGER_MS}ms`
 							: undefined}
-						role="listitem"
 						aria-label={$t('chat.cite.openNote', { path: r.path })}
 						title={r.path}
 						onclick={() => onOpenPath(r.path)}

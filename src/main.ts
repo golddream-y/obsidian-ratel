@@ -2264,7 +2264,9 @@ export default class RatelVaultPlugin extends Plugin {
 				chunkLimits: { chunkSize: this.settings.chunkSize, chunkOverlap: this.settings.chunkOverlap },
 				// 关键路径:词表随 init 帧下发,让线程模式与主线程模式共用同一套 token 计数。
 				// 缺了它 Worker 会退化成字符计数,同一条 chunkSize 在两种模式下切出的块不同。
-				vocabContent: getVocabContent() ?? undefined,
+				// 关键路径:传函数而非当时的值 —— 装配发生在 onload,词表要到 onLayoutReady
+				// 才就绪;提前取值会让线程分块退化成字符上界计数。
+				vocabContent: () => getVocabContent() ?? undefined,
 				legacy: null,
 			});
 			if (assembled.resolved === null || assembled.pipeline === null) {

@@ -159,6 +159,10 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 		appearanceUnsub?.();
 		if (navFlashTimer) clearTimeout(navFlashTimer);
 		if (errorHoldTimer) clearTimeout(errorHoldTimer);
+		if (compactFailTimer !== null) {
+			window.clearTimeout(compactFailTimer);
+			compactFailTimer = null;
+		}
 		if (retryCountdownTimer != null) {
 			window.clearInterval(retryCountdownTimer);
 			retryCountdownTimer = null;
@@ -190,6 +194,8 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 	let goalRoundSteps = $state(0);
 	let errorHoldActive = $state(false);
 	let errorHoldTimer: ReturnType<typeof setTimeout> | null = null;
+	/** 压缩失败后自动移除占位提示的延时 — 随视图卸载清理。 */
+	let compactFailTimer: number | null = null;
 	let sessionId = $state('');
 	let sessionShortTitle = $state('');
 	let sessionFullTitle = $state('');
@@ -1299,7 +1305,9 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 				if (!opts.auto) {
 					new Notice(tNow('chat.error.compactFailed', { message }), 5000);
 				}
-				setTimeout(() => {
+				if (compactFailTimer !== null) window.clearTimeout(compactFailTimer);
+				compactFailTimer = window.setTimeout(() => {
+					compactFailTimer = null;
 					if (sessionId === compactingSessionId) {
 						messages = messages.filter((m) => m.id !== runningId);
 					}

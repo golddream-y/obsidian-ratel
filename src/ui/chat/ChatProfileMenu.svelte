@@ -27,6 +27,7 @@
 	<div
 		class="ratel-chat-profile-menu"
 		role="menu"
+		tabindex="-1"
 		aria-label={$t('chat.profileMenu.ariaLabel')}
 		onclick={(e) => e.stopPropagation()}
 		onkeydown={(e) => e.stopPropagation()}

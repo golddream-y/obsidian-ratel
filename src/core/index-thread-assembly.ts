@@ -49,8 +49,13 @@ export interface AssembleIndexThreadDeps {
 	};
 	/** 分块预算。 */
 	chunkOptions?: { maxTokens?: number; overlapTokens?: number };
-	/** 本地词表内容 — 分块 token 计数用,必须与主线程同一份。 */
-	vocabContent?: string;
+	/**
+	 * 本地词表内容 — 分块 token 计数用,必须与主线程同一份。
+	 *
+	 * 关键路径:装配发生在 `onload`,而词表要等 `onLayoutReady` 才就绪。传函数时
+	 * 在**线程真正启动**的那一刻取值,避免提前捕获到 `undefined` 后退化成字符上界计数。
+	 */
+	vocabContent?: string | (() => string | undefined);
 	/** 自定义线程工厂(测试注入)。 */
 	createWorker?: RuntimeWorkerFactory;
 	/** 自定义客户端(测试注入)。 */
@@ -161,7 +166,11 @@ export function assembleIndexThreadPipeline(deps: AssembleIndexThreadDeps): Asse
 			configFingerprint: deps.configFingerprint,
 			expectedDimension: deps.expectedDimension,
 			chunkOptions: deps.chunkOptions,
-			vocabContent: deps.vocabContent,
+			// 关键路径:词表在 `client.start()` 时才取值 —— 装配早于词表就绪,提前捕获会让
+			// 分块从「词表精确计数」退化成「字符上界计数」。
+			get vocabContent() {
+				return typeof deps.vocabContent === 'function' ? deps.vocabContent() : deps.vocabContent;
+			},
 		},
 	});
 	return { coordinator, client, ...(deps.store === undefined ? {} : { store: deps.store }) };

@@ -49,10 +49,10 @@
 
 	function labelIndex(index: UserStatusSnapshot['index']): string {
 		switch (index) {
-			case 'ready': return $t('status.indexLabel.ready');
+			case 'ready': return $t('status.drawer.indexUpdated');
 			case 'scanning': return $t('status.indexLabel.scanning');
 			case 'queueing': return $t('status.indexLabel.queued');
-			case 'processing': return $t('status.indexLabel.processing');
+			case 'processing': return $t('status.drawer.indexUpdating');
 			case 'paused': return $t('status.indexLabel.paused');
 			case 'failed': return $t('status.indexLabel.failed');
 			case 'init': return $t('status.indexLabel.initializing');
@@ -70,9 +70,9 @@
 			case 'stopping': return $t('status.phase.stopping');
 			case 'migrating': return $t('status.phase.migrating');
 			case 'scanning': return $t('status.indexLabel.scanning');
-			case 'processing': return $t('status.indexLabel.processing');
+			case 'processing': return $t('status.drawer.indexUpdating');
 			case 'paused': return $t('status.indexLabel.paused');
-			case 'ready': return $t('status.indexLabel.ready');
+			case 'ready': return $t('status.drawer.indexUpdated');
 			case 'failed':
 			case 'partial-failure': return $t('status.indexLabel.failed');
 			default: return undefined;
@@ -119,19 +119,10 @@
 
 	const progress = $derived(indexProgressView(snap));
 	const indexing = $derived(['scanning', 'processing', 'queueing', 'diffing', 'init'].includes(snap.index));
-	/**
-	 * 嵌入写入阶段 — 一旦有块真正落盘或提交就成立。
-	 *
-	 * 关键路径(2026-11-10 真机):恢复核对标志覆盖整轮，若以「核对已收敛」为前提，
-	 * 块账本与块/秒在增量轮里永远没有显示窗口。改用真实写入作为判据，
-	 * 核对阶段照旧按篇报数、不显示速率。
-	 */
-	const blockPhase = $derived(
-		indexing && progress.blocks !== null && (progress.blocks.committed > 0 || progress.blocks.stored > 0),
-	);
+	const blockPhase = $derived(progress.blockPhase);
 	// 错误和暂停优先于阶段；正常运行只保留一个主状态，避免排队中/处理中并列。
 	const indexValue = $derived(
-		snap.index === 'failed' || snap.index === 'paused'
+		snap.index === 'ready' || snap.index === 'failed' || snap.index === 'paused'
 			? labelIndex(snap.index)
 			// 关键路径:恢复已索引进度期间必须替换掉「正在生成向量并写入索引」,
 			// 否则用户只看到低值进度、误以为索引从零重来。此前文案写在 indexDetail 上,
@@ -144,8 +135,8 @@
 				})
 				: labelPhase(snap.indexPhase) ?? labelIndex(snap.index),
 	);
-	/** 进度条数值：块阶段用块百分比，其余用文件百分比。 */
-	const barPercentage = $derived(blockPhase ? progress.blocks?.percentage ?? null : progress.percentage);
+	/** 预估块阶段保持不定进度，核对按篇、精确写入按块。 */
+	const barPercentage = $derived(progress.barPercentage);
 
 	const indexNoticeText = $derived.by(() => {
 		const notice = labelNotice(snap.indexNotice);
@@ -161,7 +152,7 @@
 		}
 		// 关键路径:「正在生成向量并写入索引」会持续较长时间,必须说清这段在做什么、
 		// 以及已有结果是否可用,否则用户只能看到一个长时间不动的状态标签。
-		if (snap.indexRestoring === true && !blockPhase) {
+		if (indexing && snap.indexRestoring === true && !blockPhase) {
 			return $t('status.drawer.restoringHint', {
 				done: snap.indexRestoredFiles ?? 0,
 				total: snap.indexRestoredTotal ?? 0,
@@ -171,15 +162,7 @@
 		return undefined;
 	});
 
-	const indexBarColor = $derived.by(() => {
-		const idx = snap.index;
-		if (snap.indexPhase === 'stalled' || snap.indexPhase === 'stopping') return 'var(--text-warning)';
-		if (idx === 'failed') return 'var(--text-error)';
-		// 主题强调色可能就是绿色；进行中使用警示色，与完成的成功色明确区分。
-		if (indexing) return 'var(--text-warning)';
-		if (idx === 'ready') return 'var(--text-success)';
-		return 'var(--text-muted)';
-	});
+	const indexBarColor = $derived(`var(--text-${progress.tone})`);
 
 	/**
 	 * 后端图标名 —— 与文字一起说明「这一轮跑在什么上」。
@@ -221,12 +204,12 @@
 	{/if}
 {/snippet}
 
-<!-- 块口径的写入进度：分母可能仍含预估，文案必须如实标出。 -->
+<!-- 关键路径:预估阶段只报已完成块数，避免把暂估总量当作精确分母。 -->
 {#snippet blockCount()}
 	{#if progress.blocks}
 		<span class="ratel-index-count">
 			{#if progress.blocks.estimated}
-				{$t('status.drawer.blocksProgressEstimated', { done: progress.blocks.committed, total: progress.blocks.total })}
+				{$t('status.drawer.blocksProgressEstimated', { done: progress.blocks.committed })}
 			{:else}
 				{$t('status.drawer.blocksProgress', { done: progress.blocks.committed, total: progress.blocks.total })}
 			{/if}
@@ -243,28 +226,21 @@
 				{embedBadgeText}
 			</span>
 		</div>
-		<!-- 关键路径(2026-11-06):ready 时顶部状态栏已显示「就绪」,抽屉不再重复;
-		     完成的语义由满格进度条与计数表达。计数在 ready 时靠左占据主数据位,
-		     避免左半边全空导致版面发虚。 -->
-		{#if snap.index !== 'ready' || progress.total > 0}
 		<div class="ratel-index-heading">
-			{#if snap.index === 'ready'}
-				{@render indexCount()}
-			{:else}
-				<span class="ratel-index-state">{indexValue}</span>
-				<span class="ratel-index-aside">
-					{#if blockPhase}
-						{@render blockCount()}
-					{:else}
-						{@render indexCount()}
-					{/if}
-					{#if blockPhase && snap.indexBlocksPerSecond !== undefined}
-						<span class="ratel-index-rate">{$t('status.drawer.indexBlocksPerSecond', { rate: snap.indexBlocksPerSecond })}</span>
-					{/if}
-				</span>
-			{/if}
+			<span class="ratel-index-state">{indexValue}</span>
+			<span class="ratel-index-aside">
+				{#if snap.index === 'ready'}
+					<span class="ratel-index-count">{$t('status.drawer.indexedTotal', { count: progress.indexed })}</span>
+				{:else if blockPhase}
+					{@render blockCount()}
+				{:else if snap.indexRestoring !== true}
+					{@render indexCount()}
+				{/if}
+				{#if progress.blocksPerSecond !== undefined}
+					<span class="ratel-index-rate">{$t('status.drawer.indexBlocksPerSecond', { rate: progress.blocksPerSecond })}</span>
+				{/if}
+			</span>
 		</div>
-		{/if}
 		{#if (indexing || snap.index === 'paused' || snap.index === 'failed' || snap.index === 'ready') && (progress.total > 0 || progress.blocks !== null)}
 			<div class="ratel-drawer-progress" role="progressbar"
 				aria-label={$t('status.drawer.label.index')}
@@ -273,30 +249,9 @@
 					style={`width: ${barPercentage ?? (indexing ? 28 : 0)}%; background: ${indexBarColor};`}></div>
 			</div>
 		{/if}
-		{#if progress.total === 0 || progress.failed > 0 || blockPhase || (snap.indexRestoring === true && indexing)}
-			<!-- 关键路径(2026-11-06 版面收敛):「已完成 X%」「剩余 X 篇」与标题的
-			     「8 / 97 篇」是同一份数据的三次重复表达;比例交给进度条,其余不再写文字。
-			     失败为 0 时不占位,只有真失败才提示。 -->
+		{#if (progress.total === 0 && !blockPhase && snap.index !== 'ready') || progress.failed > 0}
 			<div class="ratel-index-metrics">
-				<!-- 关键路径(块级记账):落盘、提交、复用分开报,才能解释「UI 有块提交、
-				     库内完成记录未变」这类对账差异。 -->
-				{#if blockPhase && progress.blocks}
-					<span>{$t('status.drawer.blocksLedger', {
-						stored: progress.blocks.stored,
-						committed: progress.blocks.committed,
-						reused: progress.blocks.reused,
-					})}</span>
-				{/if}
-				<!-- 关键路径:核对/发现阶段按篇报数，且不显示速率；进入写入段后让位给块账本。 -->
-				{#if snap.indexRestoring === true && indexing && !blockPhase}
-					<span>{$t('status.drawer.discoveryCounts', {
-						unchanged: progress.discovery.unchanged,
-						added: progress.discovery.added,
-						changed: progress.discovery.changed,
-						removed: progress.discovery.removed,
-					})}</span>
-				{/if}
-				{#if progress.total === 0}<span>{$t('status.drawer.totalUnknown')}</span>{/if}
+				{#if progress.total === 0 && !blockPhase && snap.index !== 'ready'}<span>{$t('status.drawer.totalUnknown')}</span>{/if}
 				{#if progress.failed > 0}
 					<span class="ratel-index-failed">{$t('status.drawer.failedCount', { count: progress.failed })}</span>
 				{/if}
@@ -305,10 +260,21 @@
 		{#if indexNoticeText}
 			<p class="ratel-index-notice" class:ratel-index-warning={snap.indexNotice !== undefined}>{indexNoticeText}</p>
 		{/if}
-		{#if indexDiagnosticsText}
+		{#if progress.showDiagnostics && (indexDiagnosticsText || progress.blocks || snap.indexRestoring === true || progress.failed > 0 || snap.indexNotice !== undefined)}
 			<details class="ratel-index-diagnostics">
 				<summary>{$t('status.drawer.label.indexDiagnostics')}</summary>
-				<p>{indexDiagnosticsText}</p>
+				<!-- 块账本与发现计数仅供诊断核对，默认折叠，保留既有迁移诊断。 -->
+				{#if progress.blocks}
+					<p>{$t('status.drawer.blocksLedger', {
+						stored: progress.blocks.stored,
+						committed: progress.blocks.committed,
+						reused: progress.blocks.reused,
+					})}</p>
+				{/if}
+				{#if snap.indexRestoring === true}
+					<p>{$t('status.drawer.discoveryCounts', progress.discovery)}</p>
+				{/if}
+				{#if indexDiagnosticsText}<p>{indexDiagnosticsText}</p>{/if}
 			</details>
 		{/if}
 		<div class="ratel-drawer-section-title ratel-drawer-section-title--with-aside">

@@ -463,7 +463,9 @@
 		pointer-events: none;
 	}
 
-	.ratel-messages.ratel-scroll-snap {
+	/* 关键路径:class 由 sticky-scroll.ts 运行时挂上,静态扫描看不到;
+	   用 :global 保留选择器,避免被误判为未使用而删掉瞬时滚底行为。 */
+	.ratel-messages:global(.ratel-scroll-snap) {
 		scroll-behavior: auto;
 	}
 

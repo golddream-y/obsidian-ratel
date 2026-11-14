@@ -57,6 +57,7 @@ Ratel 内置日记场景：安装 Templater、Dataview 和 Day Planner，写入�
 ## 开始使用
 
 1. 在 Obsidian **设置 → 社区插件 → 浏览**中搜索 **Ratel**，安装并启用。
+   Ratel 的主文件约 9.2 MiB。Obsidian Sync Standard 的单文件上限是 5 MB，`main.js` 不会通过 Sync 同步；请通过社区商店、BRAT 或手动复制安装与更新。
 2. 在 **设置 → Ratel → 对话模型**在“已保存的配置”中打开当前配置，选择提供商和模型。远端模型的 API Key 直接在该配置的模型设置界面填写，系统会自动同步到 Obsidian 钥匙串加密保存；本地 Ollama 通常无需密钥。
 3. 等待首次索引完成，点击侧栏 🦡 打开聊天，问：**“找出库里关于某个主题的笔记，列出来源。”**
 

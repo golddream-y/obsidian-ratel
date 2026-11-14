@@ -40,6 +40,7 @@
 
 <div
 	class="ratel-glare"
+	role="presentation"
 	class:is-on={enabled}
 	bind:this={root}
 	onpointermove={enabled ? onMove : undefined}

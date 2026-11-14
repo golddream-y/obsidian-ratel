@@ -11,6 +11,7 @@
 	import { renderMermaidBlocks } from '../../utils/mermaid-renderer';
 	import { enhanceCiteLinks } from '../chat/cite-enhance';
 	import { enhanceMdBlocks } from '../chat/md-block-enhance';
+	import { bindMarkdownLinkClick } from '../chat/md-link-handler';
 	import { bindCitePathTooltip } from '../chat/cite-path-tooltip';
 	import { pathForCiteIndex } from '../chat/open-chat-note';
 	import { tNow } from '../../i18n';
@@ -188,6 +189,12 @@
 		containerEl.classList.add('is-streaming-light');
 		lightTextNode = applyLightTextAction(containerEl, lightTextNode, action);
 	}
+
+	$effect(() => {
+		const el = containerEl;
+		if (!el) return;
+		return bindMarkdownLinkClick(el, { onOpenPath });
+	});
 
 	$effect(() => {
 		const next = { content, streaming, citeKey: citeKey() };

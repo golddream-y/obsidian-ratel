@@ -59,6 +59,7 @@ For work that takes several rounds, use `/goal` to agree on completion criteria.
 ## Get started
 
 1. In Obsidian, open **Settings → Community plugins → Browse**, search for **Ratel**, install, and enable it.
+   Ratel's main plugin file is about 9.2 MiB. Obsidian Sync Standard limits a single file to 5 MB, so `main.js` is not synced; install or update through the community catalog, BRAT, or a manual copy instead.
 2. In **Settings → Ratel → Chat model**, open the current row under Saved setups and select a provider and model. Enter the remote model's API key in that setup's model settings. It is automatically synced to Obsidian Keychain for encrypted storage; local Ollama usually needs no key.
 3. Wait for the first index, open chat with the 🦡 ribbon icon, and ask: **“Find notes about a topic in this vault and list the sources.”**
 

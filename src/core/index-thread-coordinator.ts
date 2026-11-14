@@ -143,6 +143,14 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 	private readonly failureSamples: Array<{ path: string; message: string }> = [];
 	private readonly verified = new Set<string>();
 	/**
+	 * 本轮已完成删除的路径 — 与 `verified` 分开。
+	 *
+	 * 关键路径:删除后文件已不在库里,不能再计入 `committed` / `total`,
+	 * 否则启动对账处理旧记录时会出现「已索引 2897 / 当前只有 2877 篇」。
+	 * 该集合只用于删除幂等,失效篇数走 `removedFiles`。
+	 */
+	private readonly deleted = new Set<string>();
+	/**
 	 * 本轮**真正写入**完成记录的篇数（不含重载后按内容哈希直接跳过的未变更笔记）。
 	 *
 	 * 关键路径(2026-11-06):对外展示的「已索引」必须包含跳过项,否则数字会倒退;
@@ -152,6 +160,10 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 	private writtenThisRound = 0;
 	/** 本轮跳过(内容未变、按完成记录复用)的文件数 — 诊断恢复是否生效。 */
 	private skippedThisRound = 0;
+	/** 本轮扫描到的库内篇数 — 与完成记录条数一起输出,供用户/诊断直接对账。 */
+	private inventoryCount = 0;
+	/** 本轮读到的完成记录条数(含失效记录)。 */
+	private recordsTotal = 0;
 	/** 是否仍有启动时的相关完成记录等待核对；不依赖墙钟时间。 */
 	private restoring = false;
 	/** 本轮启动时完成记录与当前库路径交集的大小 — 恢复进度的分母。 */
@@ -227,6 +239,7 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 		this.estimatedBlocksRemaining = 0;
 		this.chunkedPaths.clear();
 		this.storedPaths.clear();
+		this.deleted.clear();
 		this.knownPaths = new Set();
 		this.skippedFiles = 0;
 		this.addedFiles = 0;
@@ -237,10 +250,18 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 		this.restoredTotal = 0;
 		this.examinedCount = 0;
 		this.receiptPaths = new Set();
+		this.inventoryCount = 0;
+		this.recordsTotal = 0;
+		// 关键路径(诊断):分块计数口径必须一眼可见 —— 线程初始化没拿到词表时会退化成字符上界。
+		devLogger.info(
+			'index',
+			`分块计数:${this.startOptions.vocabContent ? '词表精确' : '字符上界(未收到词表)'}`,
+		);
 		await this.client.start(this.startOptions);
 		// 关键路径:线程真的起来之后才算已启动,否则启动失败会把后续事件派给不存在的线程。
 		this.started = true;
 		const files = this.vault.listMarkdownFiles();
+		this.inventoryCount = files.length;
 		const currentPaths = new Set(files);
 		// 修复:分母仅包含当前库仍存在的完成记录，旧路径不能阻止恢复收敛。不要靠「有没有写入」
 		// 推断 —— 恢复与新增写入是交织的,先遇到新文件不代表没有旧记录要核对。
@@ -249,6 +270,7 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 		} else {
 			try {
 				const records = await this.client.listCommitted();
+				this.recordsTotal = records.length;
 				this.receiptPaths = new Set(
 					records.filter((record) => record.state === 'present' && currentPaths.has(record.path)).map((record) => record.path),
 				);
@@ -319,7 +341,9 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 			'index',
 			`索引轮完成:写入 ${this.writtenThisRound} 篇 / 跳过 ${this.skippedThisRound} 篇(完成记录复用) / 失败 ${this.failing.size}`
 			+ ` | 块:落盘 ${this.blocksStoredThisRound} / 提交 ${this.blocksCommittedThisRound} / 复用 ${this.blocksReusedThisRound} / 移除 ${this.blocksRemovedThisRound}`
-			+ ` | 发现:变更 ${this.changedFiles} / 新增 ${this.addedFiles} / 失效 ${this.removedFiles}`,
+			+ ` | 发现:变更 ${this.changedFiles} / 新增 ${this.addedFiles} / 失效 ${this.removedFiles}`
+			// 关键路径(对账):库内篇数应与「完成记录 − 本轮失效」收敛相等,差值不为 0 才是问题。
+			+ ` | 对账:库内 ${this.inventoryCount} 篇 / 完成记录 ${this.recordsTotal} 条 / 差值 ${this.recordsTotal - this.removedFiles - this.inventoryCount}`,
 		);
 		// 关键路径(诊断):恢复态若没收敛,列出还没被核对的记录路径,
 		// 避免再靠「差几篇」这种表面数字去猜原因。
@@ -413,6 +437,7 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 			this.verified.delete(filePath);
 			this.chunkedPaths.delete(filePath);
 			this.storedPaths.delete(filePath);
+			this.deleted.delete(filePath);
 			this.settleEstimate(filePath);
 		}
 		this.queue.set(filePath, { op });
@@ -447,6 +472,7 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 	/** 记录成功:清除失败标记、原操作与样本 —— 样本只描述「当前仍失败」的文件。 */
 	private markSuccess(filePath: string, written = true, blocks = 0): void {
 		this.markExamined(filePath);
+		this.deleted.delete(filePath);
 		// 关键路径:批量路径会先收到「按篇事件」、整批结束时又拿到结果,
 		// 幂等返回避免同一篇被计两次(计数虚高、速率失真)。
 		if (this.verified.has(filePath)) return;
@@ -474,8 +500,8 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 	 */
 	private markDeleted(filePath: string, removedBlocks: number): void {
 		this.markExamined(filePath);
-		if (this.verified.has(filePath)) return;
-		this.verified.add(filePath);
+		if (this.deleted.has(filePath)) return;
+		this.deleted.add(filePath);
 		this.removedFiles += 1;
 		this.blocksRemovedThisRound += Math.max(0, Math.floor(removedBlocks));
 		this.settleEstimate(filePath);

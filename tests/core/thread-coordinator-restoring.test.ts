@@ -43,7 +43,7 @@ describe('恢复阶段判定', () => {
 		const stale = Array.from({ length: 20 }, (_, i) => `old-${i}.md`);
 		const { coordinator, client, vault } = makeCoordinator(files, [...files, ...stale]);
 		const counters = await coordinator.start();
-		expect(counters).toMatchObject({ restoredTotal: 2877, restoredFiles: 2877, restoring: false, committed: 2877, committedThisRound: 0, phase: 'ready' });
+		expect(counters).toMatchObject({ restoredTotal: 2877, restoredFiles: 2877, restoring: false, committed: 2877, committedThisRound: 0, removedFiles: 20, phase: 'ready' });
 		expect(vault.readFile).toHaveBeenCalledTimes(2877);
 		expect(client.indexFile).toHaveBeenCalledTimes(2877);
 		expect(client.indexFile).toHaveBeenLastCalledWith('note-2876.md', 'content:note-2876.md');

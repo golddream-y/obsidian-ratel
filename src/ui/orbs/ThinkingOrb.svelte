@@ -159,21 +159,24 @@
 	});
 </script>
 
-<canvas
-	bind:this={canvasEl}
-	class="ratel-thinking-orb"
-	role="img"
-	aria-label={ariaLabel ?? $t(labelKey)}
-	width={size}
-	height={size}
-	style:width="{size}px"
-	style:height="{size}px"
-></canvas>
+<div class="ratel-thinking-orb" role="img" aria-label={ariaLabel ?? $t(labelKey)}>
+	<canvas
+		bind:this={canvasEl}
+		aria-hidden="true"
+		width={size}
+		height={size}
+		style:width="{size}px"
+		style:height="{size}px"
+	></canvas>
+</div>
 
 <style>
 	.ratel-thinking-orb {
 		display: block;
 		flex-shrink: 0;
-		vertical-align: middle;
+	}
+
+	.ratel-thinking-orb > canvas {
+		display: block;
 	}
 </style>

@@ -124,7 +124,14 @@
 				style:animation-delay={motionOn ? `${staggerDelayMs(i) ?? 0}ms` : '0ms'}
 				role="option"
 				aria-selected={i === selectedIndex}
+				tabindex="-1"
 				onclick={() => onSelect(cmd)}
+				onkeydown={(e) => {
+					if (e.key === 'Enter' || e.key === ' ') {
+						e.preventDefault();
+						onSelect(cmd);
+					}
+				}}
 			>
 				<span class="ratel-sm-cmd">{cmd.name}</span>
 				<span class="ratel-sm-desc">{cmd.description}</span>

@@ -174,12 +174,14 @@
 		<!-- 点列集中在右侧中段；hover 时内侧同步显示该轮摘要（复用 anchor.summary，无新状态） -->
 		<div
 			class="ratel-chat-nav-cluster"
+			role="presentation"
 			bind:this={clusterEl}
 			onpointerleave={onClusterLeave}
 		>
 			{#each anchors as a, i (a.id)}
 				<div
 					class="ratel-chat-nav-row"
+					role="presentation"
 					class:is-hover={i === hoverIdx}
 					class:is-active={i === activeIdx}
 					onpointerenter={() => (hoverIdx = i)}
