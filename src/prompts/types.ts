@@ -15,6 +15,7 @@ export type PromptSectionId =
 	| 'agent.base'
 	| 'agent.rag.workflow'
 	| 'agent.rag.toolGuide'
+	| 'agent.hostAccessOff'
 	| 'injection.searchResults.body'
 	// 关键路径:记忆系统注入提示 — 支持用户在 Prompt overrides 面板覆盖默认中文模板。
 	| 'memory.systemPrompt'
@@ -36,6 +37,8 @@ export type InternalTask = 'intent' | 'rewrite';
 export interface PromptContext {
 	intent?: Intent;
 	tools: ToolDefinition[];
+	/** 是否允许读取库外文件;false 时注入对应说明。 */
+	hostAccessEnabled?: boolean;
 	message?: string;
 	query?: string;
 }

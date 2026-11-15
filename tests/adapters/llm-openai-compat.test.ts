@@ -596,3 +596,55 @@ describe.each(['sse','fallback'] as const)('参数契约公开入口 %s',path =>
 		expect(body.messages.find((m: { tool_call_id?: string }) => m.tool_call_id==='good')).toBeDefined();
 	});
 });
+
+describe('OpenCode Go 会话头', () => {
+	beforeEach(() => {
+		mockRequestUrl.mockReset();
+		mockHttpBehavior = 'error';
+		mockSseText = '';
+		capturedStreamBody = '';
+	});
+
+	async function collectOnce(llm: OpenAICompatLLM): Promise<void> {
+		mockRequestUrl.mockResolvedValueOnce({ status: 200, text: buildSseText(['data: [DONE]']) });
+		for await (const delta of llm.chat({ messages: [{ role: 'user', content: 'hi' }] })) void delta;
+	}
+
+	function lastHeaders(): Record<string, string> {
+		const call = mockRequestUrl.mock.calls.at(-1)?.[0] as { headers?: Record<string, string> } | undefined;
+		return call?.headers ?? {};
+	}
+
+	it('opencode 域名 - 自动带上会话头 - 同一实例多次请求保持一致', async () => {
+		const llm = new OpenAICompatLLM({ apiBase: 'https://opencode.ai/zen/go', apiKey: 'k', model: 'm' });
+		await collectOnce(llm);
+		const first = lastHeaders()['x-opencode-session'];
+		expect(first).toMatch(/^[0-9a-f-]{36}$/);
+		await collectOnce(llm);
+		expect(lastHeaders()['x-opencode-session']).toBe(first);
+	});
+
+	it('opencode 子域 - 同样注入 - 其他域名不注入', async () => {
+		const sub = new OpenAICompatLLM({ apiBase: 'https://go.opencode.ai/v1', apiKey: 'k', model: 'm' });
+		await collectOnce(sub);
+		expect(lastHeaders()['x-opencode-session']).toBeDefined();
+
+		const other = new OpenAICompatLLM({ apiBase: 'https://api.deepseek.com', apiKey: 'k', model: 'm' });
+		await collectOnce(other);
+		expect(lastHeaders()['x-opencode-session']).toBeUndefined();
+	});
+
+	it('显式配置的请求头 - 原样透传 - 用户值优先于自动注入', async () => {
+		const llm = new OpenAICompatLLM({
+			apiBase: 'https://opencode.ai/zen/go',
+			apiKey: 'k',
+			model: 'm',
+			headers: { 'X-Opencode-Session': 'caller-value', 'X-Tenant': 't1' },
+		});
+		await collectOnce(llm);
+		const headers = lastHeaders();
+		expect(headers['X-Tenant']).toBe('t1');
+		expect(headers['x-opencode-session']).toBeUndefined();
+		expect(Object.entries(headers).filter(([name]) => name.toLowerCase() === 'x-opencode-session').map(([, v]) => v)).toEqual(['caller-value']);
+	});
+});

@@ -68,6 +68,7 @@
 		isSafeVaultMentionPath,
 		isPastedAbsoluteFsPath,
 		parseActiveMentionQuery,
+		parsePastedVaultLink,
 	} from './input/mention-parser';
 	import { suggestMentions } from './input/mention-suggest';
 	import { validateAttachment, estimateImageTokens } from './input/attachment-utils';
@@ -1824,6 +1825,14 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 	function handlePaste(e: ClipboardEvent) {
 		const raw = (e.clipboardData?.getData('text') ?? '').trim();
 		if (!raw || raw.includes('\n')) return;
+		// 关键路径:从浏览器/系统「复制链接」得到的路径常被整体百分号编码(中文变成 %E6%9E%B6…),
+		// 直接粘贴会得到一串乱码。能解码成库内已存在的 .md 时,还原成 @路径。
+		const pastedLink = parsePastedVaultLink(raw);
+		if (pastedLink !== null && plugin.app.vault.getAbstractFileByPath(pastedLink) !== null) {
+			e.preventDefault();
+			insertMention(pastedLink);
+			return;
+		}
 		if (!isPastedAbsoluteFsPath(raw) || isSafeVaultMentionPath(raw.replace(/^@/, ''))) return;
 		if (plugin.settings.hostAccessEnabled) return;
 		new Notice(tNow('chat.mention.absoluteNeedsHost'), 5000);
@@ -2762,6 +2771,10 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 	}
 
 	.ratel-input-hl {
+		/* 关键路径:字形与光标统一由 textarea 自己渲染 —— 此前 textarea 透明、文字靠本层绘制,
+		   两层折行规则一旦不同(长路径/URL 的断行),光标就会落在错误的字上,表现为「删空格却删了最后一个字」。
+		   本层现在只画 token 底色,不再参与文字定位。 */
+		color: transparent;
 		position: absolute;
 		inset: 0;
 		padding: 8px 4px;
@@ -2782,14 +2795,16 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 	}
 
 	.ratel-slash-token {
-		color: var(--text-accent, var(--interactive-accent));
+		/* 关键路径:只上底色,不改字宽与颜色 —— 文字由 textarea 渲染,本层只做视觉标记。 */
+		background: color-mix(in srgb, var(--text-accent, var(--interactive-accent)) 18%, transparent);
+		border-radius: 3px;
 		font-family: inherit;
 		font-weight: inherit;
 		letter-spacing: inherit;
 	}
 
 	.ratel-slash-token--skill {
-		color: var(--color-purple, #7c5cbf);
+		background: color-mix(in srgb, var(--color-purple, #7c5cbf) 18%, transparent);
 	}
 
 	.ratel-skill-installed {
@@ -2835,8 +2850,9 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 	}
 
 	.ratel-input-shell textarea.ratel-input-ghost {
-		/* 有字时把字形交给下层高亮层,只留光标与选区 */
-		color: transparent;
+		/* 关键路径:保持可见文字。字形交给本层后,光标位置与可见字符天然一致,
+		   不再依赖高亮层的折行结果。 */
+		color: var(--text-normal);
 	}
 
 	.ratel-input-shell textarea::placeholder {

@@ -78,6 +78,8 @@ function withUserSendTime(msg: ChatMessage): ChatMessage {
 export interface ContextManagerDeps {
 	getOverrides: () => OverrideMap;
 	getTools: () => ToolDefinition[];
+	/** 是否允许读库外文件;false 时系统提示补充「开启权限或粘贴内容」的引导。 */
+	isHostAccessEnabled?: () => boolean;
 	/**
 	 * 关键路径:返回当前 Skill Discovery 段文本(由 Activator 产出)。
 	 * 空串表示不注入(无 enabled skill 时)。
@@ -588,7 +590,11 @@ export class ContextManager {
 	toMessages(intent: Intent = 'direct'): ChatMessage[] {
 		const overrides = this.deps.getOverrides();
 		const tools = this.deps.getTools();
-		const systemPrompt = composeAgentSystem(intent, { intent, tools }, overrides);
+		const systemPrompt = composeAgentSystem(
+			intent,
+			{ intent, tools, hostAccessEnabled: this.deps.isHostAccessEnabled?.() },
+			overrides,
+		);
 		const historyView = this.buildHistoryView();
 		const { head, tail } = this.splitHistoryView(historyView);
 

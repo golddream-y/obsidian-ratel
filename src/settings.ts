@@ -82,6 +82,8 @@ export interface RatelVaultSettings {
 	chatPreset: ChatPresetId;
 	chatModel: string;
 	chatApiBase: string;
+	/** 当前对话配置的额外请求头(随请求发送,不参与密钥存储) */
+	chatHeaders?: Record<string, string>;
 	/** 模型上下文窗口上限(token) — StatusLine 上下文使用率计算 */
 	chatModelMaxTokens: number;
 	/** 上下文接近上限时自动压缩(默认开) */

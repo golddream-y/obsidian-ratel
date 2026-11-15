@@ -18,6 +18,10 @@ import {
 import type RatelVaultPlugin from "../../main";
 import type { ChatProfile } from "../../settings/chat-profiles";
 import {
+	formatChatHeaders,
+	parseChatHeaders,
+} from "../../settings/chat-headers";
+import {
 	assignStoredProfileProvider,
 	deleteChatProfile,
 	inferChatProvider,
@@ -753,6 +757,8 @@ function renderProviderFields(
 		addModelText(plugin, host, profile, () =>
 			refreshProfileWindow(plugin, host, profile),
 		);
+		// 低频项放最后:自定义端口才用得上,不挤占模型与窗口的视线。
+		addCustomHeadersSetting(plugin, host, profile);
 		return;
 	}
 	const modelIds = listCatalogModels(catalog, providerId);
@@ -785,6 +791,8 @@ function renderProviderFields(
 			});
 		});
 	if (picked === CATALOG_MODEL_HAND) showHandModel(host, plugin, profile);
+	// 低频项放最后:绝大多数端点不需要自定义请求头。
+	addCustomHeadersSetting(plugin, host, profile);
 }
 
 /** 把供应商写进这一套，并让当前对话字段跟上。 */
@@ -1296,4 +1304,52 @@ function addWindowNumberInput(
 			})();
 		});
 	});
+}
+
+/**
+ * 追加「自定义请求头」设置行 — 低频项,固定排在该套设置的末尾。
+ *
+ * @param plugin - 插件实例
+ * @param host - 该套展开区容器
+ * @param profile - 正在编辑的那一套
+ */
+function addCustomHeadersSetting(
+	plugin: RatelVaultPlugin,
+	host: HTMLElement,
+	profile: ChatProfile,
+): void {
+	// 自定义请求头:少数兼容端点靠请求头路由(如 OpenCode Go 的 x-opencode-session)。
+	// 关键路径:本地代理转发到上游时无法按域名自动识别,只能由用户按端点填写。
+	new Setting(host)
+		.setName(tNow("settings.chatProfiles.headers.name"))
+		.setDesc(tNow("settings.chatProfiles.headers.desc"))
+		.addTextArea((area) => {
+			area.setPlaceholder(
+				tNow("settings.chatProfiles.headers.placeholder"),
+			);
+			area.setValue(formatChatHeaders(profile.headers));
+			area.inputEl.rows = 3;
+			area.inputEl.addEventListener("change", () => {
+				void (async () => {
+					const parsed = parseChatHeaders(area.getValue());
+					profile.headers =
+						Object.keys(parsed.headers).length > 0
+							? parsed.headers
+							: undefined;
+					if (profileIsActive(plugin, profile)) {
+						projectProfileToSettings(plugin.settings, profile);
+						plugin.rebuildLLM();
+					}
+					if (parsed.invalidLines.length > 0) {
+						new Notice(
+							tNow("settings.chatProfiles.headers.invalid", {
+								count: parsed.invalidLines.length,
+							}),
+							5000,
+						);
+					}
+					await persistProfileEdit(plugin);
+				})();
+			});
+		});
 }

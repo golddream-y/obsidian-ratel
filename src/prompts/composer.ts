@@ -88,6 +88,10 @@ export function composeAgentSystem(
 ): string {
 	const parts: string[] = [resolveSection('agent.base', overrides)];
 
+	if (ctx.hostAccessEnabled === false) {
+		parts.push(resolveSection('agent.hostAccessOff', overrides));
+	}
+
 	if (intent === 'rag') {
 		parts.push(resolveSection('agent.rag.workflow', overrides));
 		const toolGuide = interpolate(resolveSection('agent.rag.toolGuide', overrides), {

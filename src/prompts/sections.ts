@@ -36,6 +36,14 @@ function buildSections(): SectionMeta[] {
 			allowOverride: true,
 		},
 		{
+			id: 'agent.hostAccessOff',
+			label: tNow('promptLabel.agent.hostAccessOff'),
+			description: tNow('promptLabel.agent.hostAccessOff.desc'),
+			zone: 'static',
+			placeholders: [],
+			allowOverride: true,
+		},
+		{
 			id: 'agent.rag.toolGuide',
 			label: tNow('promptLabel.agent.rag.toolGuide'),
 			description: tNow('promptLabel.agent.rag.toolGuide.desc'),

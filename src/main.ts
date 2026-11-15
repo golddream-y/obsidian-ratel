@@ -1572,6 +1572,9 @@ export default class RatelVaultPlugin extends Plugin {
 				// localhost Ollama 免 Key 返回 null → 空串透传给 LLM(本地服务不校验)。
 				apiKey: resolveChatApiKey(this.app, this.settings) ?? '',
 				model: this.settings.chatModel,
+				// 关键路径:部分兼容端点(如 OpenCode Go)要求自定义请求头才能路由;
+				// 用户按配置填写,这里原样透传,不参与密钥存储。
+				headers: this.settings.chatHeaders,
 			}),
 		);
 	}
@@ -1897,6 +1900,8 @@ export default class RatelVaultPlugin extends Plugin {
 			: new ContextManager(this.persistence, {
 				getOverrides: () => this.settings.promptOverrides,
 				getTools: () => this.tools.definitions(),
+				// 关键路径:库外访问关闭时让模型知道「读不到是权限问题」,而不是回答文件不存在。
+				isHostAccessEnabled: () => this.settings.hostAccessEnabled === true,
 				// ADR-012:仅 Discovery;Active 指令写入 Session.messages。
 				// 关键路径(S-SR-LAYERING):传当前提问做相关性排序(两处 composeDiscovery 同步)。
 				getSkillsDiscovery: () =>
@@ -2145,6 +2150,7 @@ export default class RatelVaultPlugin extends Plugin {
 			{
 				getOverrides: () => this.settings.promptOverrides,
 				getTools: () => this.tools.definitions(),
+				isHostAccessEnabled: () => this.settings.hostAccessEnabled === true,
 			},
 			// 关键路径(S-CTX-TRIM):历史上限随窗口推导,与 ask() 路径保持一致
 			tailBudget(getEffectiveChatModelMaxTokens(this.settings)),

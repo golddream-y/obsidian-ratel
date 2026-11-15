@@ -49,9 +49,10 @@ description: >-
 - `feat` ≠ 一定 Added，`fix` ≠ 一定 Fixed。
 - 未发布特性上的修 bug **不能**写成 Fixed（用户会以为旧版也有这个坑）。
 - 同一新特性多笔提交合并成**一条**用户语言，不按 commit 堆条目。
-- 场景语言：做了什么、以前怎样、现在怎样。禁止模块名、路径、commit 哈希、含糊标题。
+- 说清用户能感知的变化即可，不要把「以前怎样 / 现在怎样」三段全铺开。禁止模块名、路径、commit 哈希、含糊标题。
 - 发版当天顶部就是 `[x.y.z] - 日期`。**不要加空的 `[Unreleased]`。**
 - 写完用「外行只读标题」试读；说不清就重写。
+- 篇幅与文案尺度（不写版本导语、每条一句加粗引导语加一句白话、不堆实现细节）见 [文档同步参考](../ratel-development-workflow/references/document-sync.md) 的 CHANGELOG 小节；CHANGELOG 与升级弹窗同样适用。
 
 例（0.7.0 vs 0.6.1）：`/goal` 整包 Added（含创建确认、满轮加轮）；贴图不再要视觉开关 → Changed；绝对路径不当成 `@` → Fixed（0.6.1 就会踩）。
 
@@ -71,6 +72,13 @@ description: >-
 同步：`package.json`、`manifest.json`、`versions.json`（当前 `minAppVersion`）、`package-lock.json` 根 version。
 
 0.x：feat → minor，fix → patch；用户口头覆盖优先。
+
+**1.x 判断标准（Added 不等于 minor）：**
+
+- 看用户**会不会因此改变使用方式**，不看段落里有没有 Added。
+- 给 minor：新增工具 / 斜杠命令 / 工作流；几项改动构成一个能一句话讲清的主题；需要用户迁移设置、重建索引或换模型。
+- 留在 patch：兼容口与配置项、只影响小众端点的适配、单条小特性；以及「修一批坑顺带补一个开关」这类版本。
+- 以已发布历史为先例（1.5.3 带 Added 仍为 patch）。不为单条小特性抬 minor，也不靠 minor 掩盖没有可讲主题的版本。
 
 ### A5. 质量
 

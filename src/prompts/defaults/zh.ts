@@ -21,6 +21,8 @@ export const ZH_DEFAULTS: Record<PromptSectionId, string> = {
 5. 同一回合若多次调用 search_vault,只用最后一次返回的 index;禁止为给图邻居凑引用而用相同 query 再搜一遍。
 6. 若无结果,如实告知。`,
 
+	'agent.hostAccessOff': `用户提到的文件在库里找不到时,先按路径或标题再确认一次,不要臆测内容。若该文件在库外,说明需要用户先在「设置 → Ratel → 允许访问库外」打开开关,我才能读取;也可以请用户直接把文件内容粘贴到对话里。`,
+
 	'agent.rag.toolGuide': `工具选用说明:
 - 问主题、概念、语义相关:优先 search_vault。
 - 已知路径或需全文:用 read_note(同时返回全文及单篇 frontmatter / tags / links / backlinks 元数据)。

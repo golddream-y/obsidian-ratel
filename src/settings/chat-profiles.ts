@@ -59,6 +59,13 @@ export interface ChatProfile {
 	keySerial?: number;
 	/** 新建和复制配置只使用自己的密钥；旧配置未设置时保留历史槽位回退。 */
 	allowLegacyKeyFallback?: boolean;
+	/**
+	 * 额外请求头 — 少数 OpenAI 兼容端点要求自定义头才能路由。
+	 *
+	 * 关键路径:OpenCode Go 要求 `x-opencode-session`;本地代理转发时无法按域名自动识别,
+	 * 必须由用户按端点配置。值会随请求发送,界面需说明这不是密钥存储位置。
+	 */
+	headers?: Record<string, string>;
 }
 
 /** 生成稳定 id(创建时一次,之后不变)。 */
@@ -164,6 +171,7 @@ export function switchChatProfile(settings: RatelVaultSettings, id: string): voi
 	settings.chatModel = target.model;
 	settings.contextLengthPreset = target.contextLengthPreset;
 	settings.chatModelMaxTokens = target.chatModelMaxTokens;
+	settings.chatHeaders = target.headers ? { ...target.headers } : {};
 	settings.activeChatProfileId = target.id;
 }
 
@@ -435,4 +443,5 @@ export function projectProfileToSettings(settings: RatelVaultSettings, profile: 
 	settings.chatModel = profile.model;
 	settings.contextLengthPreset = profile.contextLengthPreset;
 	settings.chatModelMaxTokens = profile.chatModelMaxTokens;
+	settings.chatHeaders = profile.headers ? { ...profile.headers } : {};
 }

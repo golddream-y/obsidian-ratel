@@ -28,7 +28,7 @@ Follow this sequence: install → configure a chat model → review permissions 
 
 In Saved setups, choose New setup; after naming it, the setup page opens directly so you can choose a provider and model and enter its key. Nothing is inherited from the previous setup. To reuse an existing setup, open it and choose Copy setup; its model, endpoint, window, and key are copied to an independent setup. Neither action switches the active setup automatically. After configuring it, choose Set as current or switch from the chat top bar.
 
-You can also configure without a network: a new setup defaults to Custom, so you can fill in the endpoint, key, model name, and context window right away; for an existing setup opened offline, provider choice is locked and shown as offline, while the other fields stay editable and save normally. Once back online, choose the provider or model once more to realign with the provider list. Test connection on the setup page sends one minimal request to verify the endpoint, key, and model; on failure it states the reason (invalid key, unknown model, network failure, or timeout) with a troubleshooting hint.
+You can also configure without a network: a new setup defaults to Custom, so you can fill in the endpoint, key, model name, and context window right away; for an existing setup opened offline, provider choice is locked and shown as offline, while the other fields stay editable and save normally. Once back online, choose the provider or model once more to realign with the provider list. Test connection on the setup page sends one minimal request to verify the endpoint, key, and model; on failure it states the reason (invalid key, unknown model, network failure, or timeout) with a troubleshooting hint. A few compatible endpoints also require an extra request header (for example `x-opencode-session` on OpenCode Go); add one "name: value" per line under Custom headers at the bottom of that setup. Official addresses are filled in automatically.
 
 Embeddings run locally by default. First use downloads the model and WASM runtime assets, then indexes your notes. You can keep using Obsidian during this process. The strip above the chat input shows progress and explains why sending is blocked until ready. Indexing completes note by note: once a note has been verified, it is searchable while the strip says “Partially available,” without waiting for the whole vault.
 
@@ -310,7 +310,7 @@ The first five are fixed commands; the last two come from enabled skills. Select
 
 | Settings tab | Purpose |
 |---|---|
-| Chat model | Language, saved setups (provider, model, address, API key, and context length), automatic compression. |
+| Chat model | Language, saved setups (provider, model, address, API key, context length, and custom headers), automatic compression. |
 | Note index | Embeddings, token-based chunk size presets, automatic indexing, and reranking source and toggle. |
 | Memory & permissions | Memory, diary conventions, goals, tool permissions, host access. |
 | Appearance | Colors, accent, message navigation, motion, and mascot. |

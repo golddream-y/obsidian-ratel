@@ -124,6 +124,10 @@ export interface SettingsStrings {
   'settings.chatProfiles.provider.sectionCommon': string;
   'settings.chatProfiles.provider.sectionMatch': string;
   'settings.chatProfiles.apiBase.name': string;
+  'settings.chatProfiles.headers.name': string;
+  'settings.chatProfiles.headers.desc': string;
+  'settings.chatProfiles.headers.placeholder': string;
+  'settings.chatProfiles.headers.invalid': string;
   'settings.chatProfiles.apiBase.placeholder': string;
   'settings.chatProfiles.model.name': string;
   'settings.chatProfiles.model.handDesc': string;
@@ -1130,6 +1134,8 @@ export interface PromptLabelStrings {
   'promptLabel.agent.base.desc': string;
   'promptLabel.agent.rag.workflow': string;
   'promptLabel.agent.rag.workflow.desc': string;
+  'promptLabel.agent.hostAccessOff': string;
+  'promptLabel.agent.hostAccessOff.desc': string;
   'promptLabel.agent.rag.toolGuide': string;
   'promptLabel.agent.rag.toolGuide.desc': string;
   'promptLabel.injection.searchResults.body': string;

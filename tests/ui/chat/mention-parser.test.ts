@@ -11,6 +11,7 @@ import {
 	isSafeVaultMentionPath,
 	isPastedAbsoluteFsPath,
 	parseActiveMentionQuery,
+	parsePastedVaultLink,
 } from '../../../src/ui/chat/input/mention-parser';
 
 describe('extractMentions / formatMentionToken', () => {
@@ -88,5 +89,29 @@ describe('parseActiveMentionQuery', () => {
 
 	it('parseActiveMentionQuery - 邮箱中的 @ - null', () => {
 		expect(parseActiveMentionQuery('a@b')).toBeNull();
+	});
+});
+
+describe('粘贴的编码路径还原', () => {
+	it('整段百分号编码的中文路径 - 解码为库内路径', () => {
+		expect(parsePastedVaultLink('%E6%9E%B6%E6%9E%84.md')).toBe('架构.md');
+	});
+
+	it('obsidian 链接 - 取 file 参数并解码', () => {
+		expect(parsePastedVaultLink('obsidian://open?vault=v&file=%E6%9E%B6%E6%9E%84%2Fnotes.md')).toBe('架构/notes.md');
+	});
+
+	it('普通文本与绝对路径 - 不当作库内链接', () => {
+		expect(parsePastedVaultLink('随便一句话')).toBeNull();
+		expect(parsePastedVaultLink('/tmp/note.md')).toBeNull();
+		expect(parsePastedVaultLink('C:/notes/a.md')).toBeNull();
+	});
+
+	it('编码的向上跳转 - 拒绝', () => {
+		expect(parsePastedVaultLink('%2e%2e%2fsecret.md')).toBeNull();
+	});
+
+	it('非 markdown - 不转换', () => {
+		expect(parsePastedVaultLink('%E5%9B%BE%E7%89%87.png')).toBeNull();
 	});
 });

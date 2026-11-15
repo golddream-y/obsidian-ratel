@@ -167,6 +167,8 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 	/** 是否仍有启动时的相关完成记录等待核对；不依赖墙钟时间。 */
 	private restoring = false;
 	/** 本轮启动时完成记录与当前库路径交集的大小 — 恢复进度的分母。 */
+	/** 本轮开始时间 — 只用于完成日志的耗时读数,不参与进度判定。 */
+	private roundStartedAt = 0;
 	private restoredTotal = 0;
 	/** 尚未成功或最终失败的相关路径；删除即计数，重复回调不会重复推进。 */
 	private receiptPaths: Set<string> = new Set();
@@ -221,6 +223,7 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 	async start(): Promise<IndexTaskCounters> {
 		if (this.destroyed) throw new Error('协调器已销毁');
 		this.taskIdValue += 1;
+		this.roundStartedAt = Date.now();
 		this.scanCompleted = false;
 		this.phaseValue = 'scanning';
 		this.stopping = false;
@@ -339,7 +342,7 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 		// 关键路径(诊断):重启后是否复用完成记录,一眼看清 —— 跳过数应接近已索引篇数。
 		devLogger.info(
 			'index',
-			`索引轮完成:写入 ${this.writtenThisRound} 篇 / 跳过 ${this.skippedThisRound} 篇(完成记录复用) / 失败 ${this.failing.size}`
+			`索引轮完成(用时 ${this.roundStartedAt > 0 ? ((Date.now() - this.roundStartedAt) / 1000).toFixed(1) : '—'} 秒):写入 ${this.writtenThisRound} 篇 / 跳过 ${this.skippedThisRound} 篇(完成记录复用) / 失败 ${this.failing.size}`
 			+ ` | 块:落盘 ${this.blocksStoredThisRound} / 提交 ${this.blocksCommittedThisRound} / 复用 ${this.blocksReusedThisRound} / 移除 ${this.blocksRemovedThisRound}`
 			+ ` | 发现:变更 ${this.changedFiles} / 新增 ${this.addedFiles} / 失效 ${this.removedFiles}`
 			// 关键路径(对账):库内篇数应与「完成记录 − 本轮失效」收敛相等,差值不为 0 才是问题。

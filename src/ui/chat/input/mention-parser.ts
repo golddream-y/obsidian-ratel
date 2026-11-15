@@ -89,3 +89,50 @@ export function parseActiveMentionQuery(textBeforeCursor: string): string | null
 	}
 	return after;
 }
+
+/**
+ * 从粘贴文本里还原「被 URL 编码的库内笔记路径」。
+ *
+ * 场景:从浏览器、其他应用或 Obsidian 的「复制链接」拿到的路径常被整体百分号编码
+ * (中文路径会变成 `%E6%9E%B6…`),直接粘进输入框会得到一串乱码。
+ *
+ * 设计要点:
+ * - 只接受**相对路径**且必须以 `.md` 结尾;绝对路径仍按库外路径处理,不在这里转 mention。
+ * - 拒绝含 `..` 的路径,避免借 `%2e%2e` 跳出库目录。
+ * - 非编码、非链接形态的普通文本原样返回 null,不改变正常粘贴行为。
+ *
+ * @param text - 剪贴板文本
+ * @returns 解码后的库内相对路径;不匹配返回 null
+ */
+export function parsePastedVaultLink(text: string): string | null {
+	const raw = text.trim();
+	if (!raw || raw.includes('\n')) return null;
+
+	let candidate: string | null = null;
+	if (/^obsidian:\/\//i.test(raw)) {
+		try {
+			candidate = new URL(raw).searchParams.get('file');
+		} catch {
+			return null;
+		}
+	} else if (/^app:\/\//i.test(raw)) {
+		try {
+			candidate = decodeURIComponent(new URL(raw).pathname.replace(/^\/+/, ''));
+		} catch {
+			return null;
+		}
+	} else if (/%[0-9a-f]{2}/i.test(raw)) {
+		try {
+			candidate = decodeURIComponent(raw);
+		} catch {
+			return null;
+		}
+	}
+
+	if (candidate === null) return null;
+	const path = candidate.replace(/^\.\//, '').trim();
+	if (!path || !path.toLowerCase().endsWith('.md')) return null;
+	if (/^[a-zA-Z]:[\\/]/.test(path) || path.startsWith('/')) return null;
+	if (path.split(/[\\/]+/).some((segment) => segment === '..')) return null;
+	return path.replace(/[\\/]+/g, '/');
+}

@@ -93,6 +93,8 @@ export async function runConnectionTest(
 		apiBase: profile.apiBase.trim(),
 		apiKey,
 		model: profile.model.trim(),
+		// 连接测试必须与真实请求同头,否则用户会看到测试失败而实际可用。
+		headers: profile.headers,
 	});
 
 	const controller = new AbortController();

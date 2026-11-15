@@ -8,6 +8,7 @@
 import { requestUrl } from 'obsidian';
 import * as https from 'node:https';
 import * as http from 'node:http';
+import { randomUUID } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import type { LLMClient, ChatRequest, ChatDelta, ToolCall } from '../ports/llm';
 import { parseToolArguments } from '../core/tool-args';
@@ -28,6 +29,25 @@ interface DeepSeekConfig {
 	apiBase: string;
 	apiKey: string;
 	model: string;
+	/** 额外请求头;调用方显式给的值优先于自动注入。 */
+	headers?: Record<string, string>;
+	/** 显式会话标识;缺省按端点自动生成(OpenCode Go 需要)。 */
+	sessionId?: string;
+}
+
+/**
+ * 端点是否为 OpenCode Go / Zen 网关。
+ *
+ * 关键路径:该网关自 2026-09-05 起要求每个请求带 `x-opencode-session` 做路由与缓存亲和,
+ * 缺失直接 400 MissingSessionID。按主机名判定,不依赖用户配置的供应商名字。
+ */
+function isOpencodeHost(apiBase: string): boolean {
+	try {
+		const host = new URL(apiBase).hostname.toLowerCase();
+		return host === 'opencode.ai' || host.endsWith('.opencode.ai');
+	} catch {
+		return false;
+	}
 }
 
 /**
@@ -62,7 +82,34 @@ interface OpenAIToolCallChunk {
  *   }
  */
 export class OpenAICompatLLM implements LLMClient {
-	constructor(private config: DeepSeekConfig) {}
+	/**
+	 * 会话标识 — 同一适配器实例内稳定,满足网关「同一会话同一值」的路由要求。
+	 *
+	 * 关键路径:重建适配器(改配置)会更换标识,属预期行为;网关只要求值稳定且不重复。
+	 */
+	private readonly sessionId?: string;
+
+	constructor(private config: DeepSeekConfig) {
+		this.sessionId = config.sessionId
+			?? (isOpencodeHost(config.apiBase) ? randomUUID() : undefined);
+	}
+
+	/**
+	 * 组装请求头:基础头 → 调用方配置头 → 自动会话头。
+	 *
+	 * 关键路径:配置头大小写不敏感地优先,避免自动注入覆盖调用方显式给出的会话值。
+	 */
+	private requestHeaders(base: Record<string, string>): Record<string, string> {
+		const headers: Record<string, string> = { ...base };
+		for (const [name, value] of Object.entries(this.config.headers ?? {})) {
+			headers[name] = value;
+		}
+		const hasSession = Object.keys(headers).some((name) => name.toLowerCase() === 'x-opencode-session');
+		if (!hasSession && this.sessionId !== undefined) {
+			headers['x-opencode-session'] = this.sessionId;
+		}
+		return headers;
+	}
 
 	/**
 	 * HTTP 非 2xx：文案走 i18n，并挂 status 供 S-LLM-RETRY 判定。
@@ -101,13 +148,14 @@ export class OpenAICompatLLM implements LLMClient {
 	async *chat(req: ChatRequest): AsyncIterable<ChatDelta> {
 		const body = this.buildRequestBody(req);
 		const url = new URL(`${this.config.apiBase}/chat/completions`);
-		const headers: Record<string, string> = {
+		const baseHeaders: Record<string, string> = {
 			'Content-Type': 'application/json',
 			'Accept': 'text/event-stream',
 		};
 		if (this.config.apiKey) {
-			headers['Authorization'] = `Bearer ${this.config.apiKey}`;
+			baseHeaders['Authorization'] = `Bearer ${this.config.apiKey}`;
 		}
+		const headers = this.requestHeaders(baseHeaders);
 
 		// 关键路径:Node.js 原生 http/https 流式读取。
 		// 按协议选择 http 或 https 模块,Ollama 本地端点可能走 http。
@@ -396,10 +444,10 @@ export class OpenAICompatLLM implements LLMClient {
 		const response = await requestUrl({
 			url: `${this.config.apiBase}/chat/completions`,
 			method: 'POST',
-			headers: {
+			headers: this.requestHeaders({
 				'Content-Type': 'application/json',
 				'Authorization': `Bearer ${this.config.apiKey}`,
-			},
+			}),
 			body: JSON.stringify(body),
 			throw: false,
 		});

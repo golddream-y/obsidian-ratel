@@ -15,6 +15,7 @@ import { VectraStore, type PreparedBlock } from '../adapters/vector-vectra';
 import { createShardedStore, type ShardedVectorStore } from '../adapters/vector-vectra-sharded';
 import { AtomicIndexStorage } from '../adapters/atomic-index-storage';
 import { ensureShardLayout, archiveLegacySingleFileIndex, readShardLayout } from '../core/index-shard-migration';
+import { redistributeShardsIfNeeded } from '../core/index-shard-redistribute';
 import { shardCountForBlocks } from '../core/index-shard-routing';
 import { devLogger } from '../logging/dev-logger';
 import { chunkMarkdown, type ChunkOptions } from './chunker';
@@ -340,6 +341,9 @@ export function createIndexSessionHandlers(options: IndexSessionOptions): Runtim
 			// 迁移失败直接上抛(fail-closed):不吞错、不退回写单份索引 ——
 			// 退回会绕过迁移,让半拆分的旧文件与后续提交同时生效。
 			await archiveLegacySingleFileIndex({ generationRoot: options.root });
+			// 关键路径:片数只增不减 —— 块数增长后先重分布,再按新布局打开存储。
+			// 否则 6 万块挤在 8 片里,每次提交都要重写约 90 MB 整片。
+			await redistributeShardsIfNeeded(options.root, (message) => devLogger.info('index', message));
 			const layout = await readShardLayout(options.root);
 			const storage = createStorage(options.root);
 			// 关键路径:全新代际(无 layout、无旧 index.json)也走分片,片数取下限 8。

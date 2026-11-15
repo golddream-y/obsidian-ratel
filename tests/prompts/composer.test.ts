@@ -145,3 +145,20 @@ describe('composeCompactMessages', () => {
 		expect(messages[0]!.content).toBe('自定义摘要指令:对话');
 	});
 });
+
+describe('库外访问引导', () => {
+	it('允许访问库外关闭 - 提示开启权限或粘贴内容 - 开启时不注入', () => {
+		// 关键路径:工具在关闭时根本不注册,模型只能看到「文件不存在」;提示必须来自常驻系统段。
+		const off = composeAgentSystem('rag', { intent: 'rag', tools: SAMPLE_TOOLS, hostAccessEnabled: false }, {});
+		expect(off).toContain('允许访问库外');
+		expect(off).toContain('粘贴');
+
+		const on = composeAgentSystem('rag', { intent: 'rag', tools: SAMPLE_TOOLS, hostAccessEnabled: true }, {});
+		expect(on).not.toContain('允许访问库外');
+	});
+
+	it('未声明开关 - 不注入该段 - 不影响既有提示', () => {
+		const prompt = composeAgentSystem('rag', { intent: 'rag', tools: SAMPLE_TOOLS }, {});
+		expect(prompt).not.toContain('允许访问库外');
+	});
+});
