@@ -245,6 +245,10 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 	});
 	// 关键路径:/compact 压缩进行中标志,控制 loading hint 显示
 	let isCompacting = $state(false);
+	/** 正在压缩的会话 — 切场后不得把旧会话的「压缩中」显示到新会话上。 */
+	let compactingSessionId = $state<string | null>(null);
+	/** 压缩请求的取消句柄 — 用户点停止要能真正中断摘要请求。 */
+	let compactAbort: AbortController | null = null;
 
 	// ==================== 对话进度轨 ====================
 	let navHighlightId = $state<string | null>(null);
@@ -577,6 +581,7 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 	async function abortActiveGeneration(): Promise<void> {
 		if (!isRunning && !abortController && !isCompacting) return;
 		abortController?.abort();
+		compactAbort?.abort();
 		const deadline = Date.now() + 8000;
 		while ((isRunning || isCompacting) && Date.now() < deadline) {
 			await sleep(40);
@@ -1035,7 +1040,8 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 		if (s.model === 'checking' || s.model === 'initializing') {
 			return { type: 'preparing' as const, text: $t('chat.workbar.preparing') };
 		}
-		if (isCompacting) {
+		// 关键路径:压缩按会话归属 —— 切到别的会话后不能继续显示「压缩中」。
+		if (isCompacting && compactingSessionId === sessionId) {
 			return { type: 'compacting' as const, text: $t('chat.workbar.compacting') };
 		}
 		return null;
@@ -1251,7 +1257,11 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 		if (isCompacting || isRunning) return;
 
 		isCompacting = true;
-		const compactingSessionId = sessionId;
+		// 局部快照用于比对;同名状态只负责让 UI 知道「哪个会话在压」,不在闭包里改它。
+		const targetSessionId = sessionId;
+		compactingSessionId = targetSessionId;
+		const controller = new AbortController();
+		compactAbort = controller;
 		const runningId = newMessageId();
 		messages = [
 			...messages,
@@ -1263,12 +1273,13 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 			const result = await compactSession(
 				ctx,
 				plugin.llm,
-				compactingSessionId,
+				targetSessionId,
 				plugin.settings.promptOverrides,
+				{ signal: controller.signal },
 			);
 			if (result.skipped) {
-				plugin.breadcrumbs?.mark('compact.result', compactingSessionId, 'skip;reason=short');
-				if (sessionId === compactingSessionId) {
+				plugin.breadcrumbs?.mark('compact.result', targetSessionId, 'skip;reason=short');
+				if (sessionId === targetSessionId) {
 					messages = messages.filter((m) => m.id !== runningId);
 					if (!opts.auto) {
 						new Notice(tNow('chat.compact.tooShort'), 2500);
@@ -1277,9 +1288,9 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 				return;
 			}
 			// 关键路径:切场后只写 persistence,不把旧场 hydrate 进新场 UI
-			if (sessionId !== compactingSessionId) return;
-			await ctx.load(compactingSessionId);
-			messages = await hydrateSessionMessages(ctx.getTranscript(), plugin.attachments, compactingSessionId, {
+			if (sessionId !== targetSessionId) return;
+			await ctx.load(targetSessionId);
+			messages = await hydrateSessionMessages(ctx.getTranscript(), plugin.attachments, targetSessionId, {
 				markers: ctx.getCompactMarkers(),
 				resolveMcpServerLabel,
 			});
@@ -1287,19 +1298,26 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 			if (!opts.auto) {
 				new Notice(tNow('chat.compacted'), 2500);
 			}
-			compactCircuit.succeed(compactingSessionId);
-			plugin.breadcrumbs?.mark('compact.result', compactingSessionId, 'ok');
+			compactCircuit.succeed(targetSessionId);
+			plugin.breadcrumbs?.mark('compact.result', targetSessionId, 'ok');
 			plugin.userStatus.patchContextUsage({
 				usedTokens: ctx.tokenCount(),
 				maxTokens: getEffectiveChatModelMaxTokens(plugin.settings),
 				source: 'estimate',
 			});
 		} catch (err) {
-			compactCircuit.fail(compactingSessionId);
+			// 关键路径:用户主动停止不是故障 —— 不弹失败提示,也不计入熔断。
+			if (controller.signal.aborted) {
+				if (sessionId === targetSessionId) {
+					messages = messages.filter((m) => m.id !== runningId);
+				}
+				return;
+			}
+			compactCircuit.fail(targetSessionId);
 			const message = err instanceof Error ? err.message : String(err);
 			const failReason = message.replace(/\n/g, ' ').replace(/\|/g, '_').slice(0, 80);
-			plugin.breadcrumbs?.mark('compact.result', compactingSessionId, `fail;reason=${failReason}`);
-			if (sessionId === compactingSessionId) {
+			plugin.breadcrumbs?.mark('compact.result', targetSessionId, `fail;reason=${failReason}`);
+			if (sessionId === targetSessionId) {
 				messages = messages.map((m) =>
 					m.id === runningId ? { ...m, compactPhase: 'failed' as const } : m,
 				);
@@ -1309,13 +1327,15 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 				if (compactFailTimer !== null) window.clearTimeout(compactFailTimer);
 				compactFailTimer = window.setTimeout(() => {
 					compactFailTimer = null;
-					if (sessionId === compactingSessionId) {
+					if (sessionId === targetSessionId) {
 						messages = messages.filter((m) => m.id !== runningId);
 					}
 				}, 2500);
 			}
 		} finally {
 			isCompacting = false;
+			compactingSessionId = null;
+			if (compactAbort === controller) compactAbort = null;
 		}
 	}
 
@@ -1709,6 +1729,8 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 
 	function stopGeneration() {
 		abortController?.abort();
+		// 关键路径:压缩与对话共用一个停止入口,否则「停止」后摘要仍在跑。
+		compactAbort?.abort();
 	}
 
 	function showTakeoverConfirm(objective: string): Promise<boolean> {

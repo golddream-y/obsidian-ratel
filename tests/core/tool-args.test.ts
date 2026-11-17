@@ -31,3 +31,12 @@ it('旧 raw 识别 - 没有元数据 - 原因未知且不泄露正文',() => {
 	expect(getToolArgsIssue({ raw: '业务',path: 'a.md' })).toBeNull();
 	expect(formatToolArgsModelError('read_note',issue!)).not.toContain('私有正文');
 });
+
+it('写入类工具被截断 - 反馈指向分段提交 - 不提固定字数',() => {
+	for(const name of ['write_note','append_note']) {
+		const error=formatToolArgsModelError(name,{ kind:'output-limit',raw:'{"path":' });
+		expect(error).toMatch(/apply_patch/);
+		expect(error).toMatch(/没有写入任何文件/);
+		expect(error).not.toMatch(/\d[\d,]*\s*(tokens?|字|字符)/);
+	}
+});

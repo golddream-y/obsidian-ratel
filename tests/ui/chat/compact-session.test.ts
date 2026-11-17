@@ -231,3 +231,42 @@ describe('compactSession', () => {
 		expect(ctx.getCompactMarkers()[0]!.summary).toBe('溢出摘要');
 	});
 });
+
+describe('compactSession 取消', () => {
+	it('compactSession - 外部取消 - 停止读取流且不写 marker', async () => {
+		const sessions = new Map<string, Session>();
+		sessions.set('s1', {
+			id: 's1',
+			title: '',
+			messages: [
+				{ role: 'user', content: '问1' },
+				{ role: 'assistant', content: '答1' },
+				{ role: 'user', content: '问2' },
+				{ role: 'assistant', content: '答2' },
+			],
+			createdAt: 0,
+			updatedAt: 0,
+		});
+		const ctx = new ContextManager(createPersistence(sessions), undefined, 8000);
+		const controller = new AbortController();
+		let receivedSignal: AbortSignal | undefined;
+		const llm: LLMClient = {
+			async *chat(req: ChatRequest) {
+				receivedSignal = req.signal;
+				yield { text: '部分摘要' };
+				controller.abort();
+				// 关键路径:取消后流仍可能再吐一段;实现必须自查信号,不能继续拼摘要。
+				yield { text: '不应写入摘要' };
+			},
+			supportsImages: false,
+			countTokens: () => 0,
+		};
+
+		await expect(compactSession(ctx, llm, 's1', {}, { signal: controller.signal })).rejects.toThrow();
+
+		// 信号必须真的传给 LLM,否则网络请求无法中断。
+		expect(receivedSignal).toBe(controller.signal);
+		await ctx.load('s1');
+		expect(ctx.getCompactMarkers()).toHaveLength(0);
+	});
+});

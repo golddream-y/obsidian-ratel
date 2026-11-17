@@ -32,6 +32,13 @@ export interface CompactResult {
 export interface CompactSessionOptions {
 	/** marker.afterIndex;缺省为 transcript.length - 1 */
 	untilIndex?: number;
+	/**
+	 * 取消信号 — 直通到 LLM 请求。
+	 *
+	 * 关键路径:此前压缩不带信号,用户点停止只停了对话请求,压缩仍会跑完并在当前会话
+	 * 继续显示「压缩中」;切到别的会话也照样显示。
+	 */
+	signal?: AbortSignal;
 }
 
 /**
@@ -82,7 +89,7 @@ export async function compactSession(
 		.join('\n');
 
 	const llmMessages = composeCompactMessages({ history: historyText }, overrides);
-	const summary = await collectStream(llm.chat({ messages: llmMessages }));
+	const summary = await collectStream(llm.chat({ messages: llmMessages, signal: opts?.signal }), opts?.signal);
 
 	if (!summary.trim()) {
 		throw new Error(tNow('error.compact.emptySummary'));
@@ -105,11 +112,14 @@ export async function compactSession(
  * @param stream - LLM chat 返回的异步迭代流
  * @returns 拼接后的完整文本
  */
-async function collectStream(stream: AsyncIterable<ChatDelta>): Promise<string> {
+async function collectStream(stream: AsyncIterable<ChatDelta>, signal?: AbortSignal): Promise<string> {
 	let result = '';
 	for await (const delta of stream) {
+		// 关键路径:取消后流仍可能再吐一段,必须自查信号,否则会把半截摘要写进 marker。
+		if (signal?.aborted === true) throw new Error(tNow('error.compact.cancelled'));
 		// 关键路径:只取最终输出文本,忽略 reasoning(思考过程不进摘要)
 		if (delta.text) result += delta.text;
 	}
+	if (signal?.aborted === true) throw new Error(tNow('error.compact.cancelled'));
 	return result;
 }

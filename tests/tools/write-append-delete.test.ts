@@ -57,3 +57,19 @@ describe('write/append/delete tools', () => {
 		expect(await vault.fileExists('del.md')).toBe(false);
 	});
 });
+
+describe('缺 content 参数', () => {
+	it('write_note - 只有 path - 明确缺字段且不落盘', async () => {
+		const vault = createMockVaultPort({ files: {} });
+		const tool = createWriteNoteTool(vault, makeToolDef('write_note'));
+		await expect(tool.execute({ path: 'a.md' })).rejects.toThrow(/缺少 content/);
+		await expect(tool.execute({ path: 'a.md' })).rejects.toThrow(/没有写入任何文件/);
+		await expect(vault.readFile('a.md')).rejects.toThrow();
+	});
+
+	it('append_note - content 为 null - 仍按类型错误提示', async () => {
+		const vault = createMockVaultPort({ files: { 'a.md': 'x' } });
+		const tool = createAppendNoteTool(vault, makeToolDef('append_note'));
+		await expect(tool.execute({ path: 'a.md', content: null })).rejects.toThrow(/必须是字符串/);
+	});
+});

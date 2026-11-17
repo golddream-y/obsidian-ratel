@@ -66,9 +66,15 @@ export function formatToolArgsModelError(name: string,issue: ToolArgsIssue): str
 		'output-limit': '响应因输出长度上限结束，参数同时无法解析；这是响应级证据',
 		'legacy-unparsed': '旧记录参数未解析，无法确认失败原因',
 	}[issue.kind];
-	const retry=name==='apply_patch'
-		? `请用同一工具重新发送含 patch 字符串的 JSON 对象。合法参数示例：${JSON.stringify(APPLY_PATCH_EXAMPLE)}`
-		:'请按该工具 schema 重新发送完整 JSON 参数对象。';
-	const shorter=issue.kind==='output-limit'? '可减小本次参数内容；不要推断任何文件已修改。':'';
+	// 关键路径:截断是工程层能观测到的事实(finishReason=length),反馈必须给可执行的下一步,
+	// 而不是让模型猜一个字数阈值。不同端点的输出预算差异极大,提示词里的固定数字不可靠。
+	const renameTools=['write_note','append_note'];
+	const isLongWrite=issue.kind==='output-limit'&&renameTools.includes(name);
+	const retry=isLongWrite
+		? '本次没有写入任何文件。改用 apply_patch 分段提交，或用 write_note 先建骨架再逐段补；不要重发同样的整篇参数。'
+		:name==='apply_patch'
+			? `请用同一工具重新发送含 patch 字符串的 JSON 对象。合法参数示例：${JSON.stringify(APPLY_PATCH_EXAMPLE)}`
+			:'请按该工具 schema 重新发送完整 JSON 参数对象。';
+	const shorter=issue.kind==='output-limit'&&!isLongWrite? '不要推断任何文件已修改。':'';
 	return `${name} 未执行：${reason}。${retry}${shorter}`;
 }

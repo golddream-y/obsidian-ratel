@@ -133,9 +133,9 @@ export const ZH_DEFAULTS: Record<PromptSectionId, string> = {
 	'tool.list_files.description': '列出 vault 某目录下的文件与子文件夹(非递归)。',
 
 	'tool.write_note.param.path': 'vault 相对路径',
-	'tool.write_note.param.content': '要写入的全文。必填字符串，与 path 在同一次调用里给出。',
+	'tool.write_note.param.content': '要写入的全文，必填字符串，与 path 在同一次调用里给出。改动已存在笔记的局部内容请使用局部修改工具，不要整篇重写。',
 	'tool.append_note.param.path': 'vault 相对路径',
-	'tool.append_note.param.content': '要追加的正文。必填字符串，与 path 在同一次调用里给出。',
+	'tool.append_note.param.content': '要追加的正文，必填字符串，与 path 在同一次调用里给出。追加大量内容如一次放不下，请分多次追加。',
 	'tool.edit_note.param.path': 'vault 相对路径',
 	'tool.edit_note.param.old_string': '要替换的原文，须与文件完全一致且只出现一次。必填字符串。',
 	'tool.edit_note.param.new_string': '替换进去的文本。必填字符串。',

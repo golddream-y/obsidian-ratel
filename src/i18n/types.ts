@@ -1004,6 +1004,7 @@ export interface ErrorStrings {
   'error.tool.patchAmbiguous': string;
   'error.tool.patchEof': string;
   'error.tool.invalidContent': string;
+  'error.tool.missingContent': string;
   'error.tool.offloadMarker': string;
   'error.tool.invalidQuery': string;
   'error.tool.invalidArg': string;
@@ -1018,6 +1019,7 @@ export interface ErrorStrings {
   'error.tool.hostPathInsideVault': string;
   'error.tool.hostFileTooLarge': string;
   'error.compact.emptySummary': string;
+  'error.compact.cancelled': string;
   'error.compact.failed': string;
   // 关键路径:Embedding / Vector / Tokenizer 适配器用户可见错误
   'error.embedding.notInit': string;

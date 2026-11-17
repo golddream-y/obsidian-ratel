@@ -30,6 +30,11 @@ export function createAppendNoteTool(
 		readOnly: false,
 		async execute(args) {
 			const path = requireString(args, 'path', 'path');
+			// 关键路径:缺失与类型错误分开报 —— 缺字段多半是单次参数太长被截断,
+			// 只回一句「必须是字符串」会让模型反复重试同样的写法。
+			if (!('content' in args)) {
+				throw new Error(tNow('error.tool.missingContent'));
+			}
 			if (typeof args.content !== 'string') {
 				throw new Error(tNow('error.tool.invalidContent'));
 			}
