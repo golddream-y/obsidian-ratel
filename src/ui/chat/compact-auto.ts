@@ -21,9 +21,11 @@ export function decidePreSendCompact(input: {
 
 /** 一轮结束后是否应自动压缩 */
 export function decidePostTurnCompact(input: {
+	completed: boolean;
 	enabled: boolean;
 	percentage: number;
 	circuitOpen: boolean;
 }): boolean {
+	if (!input.completed) return false;
 	return shouldAutoCompact(input.percentage, input.enabled, input.circuitOpen);
 }

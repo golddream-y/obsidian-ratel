@@ -124,11 +124,11 @@ export async function* agentLoop(
 	// 关键路径:maxSteps 可配置(见 ADR-004),未传时降级默认值 50。
 	const effectiveMaxSteps = maxSteps ?? DEFAULT_MAX_STEPS;
 	const onBreadcrumb = req.onBreadcrumb;
-	// 关键路径:保存流末尾的 API 真值 token,finally 阶段 yield 到 message.end
-	// 声明在函数顶部,确保 try/finally 与 for 循环都能访问(跨多步累积最后一个 usage)。
+	// 请求用量在每次出站时重置，计费字段继续跨步累加。
 	let lastUsage: { promptTokens: number; completionTokens: number } | undefined;
-	let stepPromptTokensSum = 0;
-	let stepCompletionTokensSum = 0;
+	let stepPromptTokensSum: number | undefined;
+	let stepCompletionTokensSum: number | undefined;
+	let completed = false;
 	// 加载或初始化 session,然后把用户消息压入上下文。
 	await ctx.load(req.sessionId);
 	// 关键路径(S-CHAT-TIME):load 后、addUser 前刷新 env — 间隔行基于上一轮 user,不含本轮
@@ -219,6 +219,7 @@ export async function* agentLoop(
 				// 关键路径(S-RUN-STATUS-PHASES):消息数组已组装完、请求即将出站。
 				// 意图分类那次小 LLM 调用不发此事件 — 它语义上属于「本地准备」。
 				yield { type: 'message.request', payload: { step } };
+				lastUsage = undefined;
 				const stream = llm.chat({
 					messages: chatMessages,
 					tools: tools.definitions(),
@@ -253,8 +254,8 @@ export async function* agentLoop(
 					}
 					// 关键路径:捕获 API 真值 token,finally 阶段 yield
 					if (delta.usage) {
-						stepPromptTokensSum += delta.usage.promptTokens;
-						stepCompletionTokensSum += delta.usage.completionTokens;
+						stepPromptTokensSum = (stepPromptTokensSum ?? 0) + delta.usage.promptTokens;
+						stepCompletionTokensSum = (stepCompletionTokensSum ?? 0) + delta.usage.completionTokens;
 						lastUsage = delta.usage;
 						recordUsageCalibration(
 							ctx.sessionId,
@@ -366,6 +367,7 @@ export async function* agentLoop(
 					appendCarrySystemOnNextChat = true;
 					continue;
 				}
+				completed = finishOk && accumulatedText.trim() !== '';
 				loopExitedViaBreak = true;
 				break;
 			}
@@ -556,10 +558,11 @@ export async function* agentLoop(
 			type: 'message.end',
 			payload: {
 				tokens: ctx.tokenCount(),
+				completed,
 				promptTokens: lastUsage?.promptTokens,
 				completionTokens: lastUsage?.completionTokens,
-				stepPromptTokens: stepPromptTokensSum || undefined,
-				stepCompletionTokens: stepCompletionTokensSum || undefined,
+				stepPromptTokens: stepPromptTokensSum,
+				stepCompletionTokens: stepCompletionTokensSum,
 			},
 		};
 	}

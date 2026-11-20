@@ -361,6 +361,25 @@ describe('撤销在途请求', () => {
 });
 
 describe('增量收敛与阶段', () => {
+	it.each([1, 3])('增量写入 - 前 %i 次失败 - 有限重试后收敛', async (failures) => {
+		const { client } = makeClient();
+		const coordinator = new IndexThreadCoordinator({ client, vault: VAULT, start: START });
+		await coordinator.start();
+		client.indexFile.mockClear();
+		for (let attempt = 0; attempt < failures; attempt += 1) {
+			client.indexFile.mockRejectedValueOnce(new Error('宿主调用超时: embed'));
+		}
+		coordinator.notify('c.md', 'upsert');
+		await coordinator.drain();
+		expect(client.indexFile).toHaveBeenCalledTimes(Math.min(failures + 1, 3));
+		expect(coordinator.counters()).toMatchObject({
+			pendingFiles: 0,
+			failures: failures === 1 ? 0 : 1,
+			phase: failures === 1 ? 'ready' : 'partial-failure',
+		});
+		coordinator.destroy();
+	});
+
 	it('启动后收到文件事件 - drain 处理 - 阶段回到 ready', async () => {
 		const { client, indexed } = makeClient();
 		const coordinator = new IndexThreadCoordinator({ client, vault: VAULT, start: START });

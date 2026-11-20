@@ -45,9 +45,21 @@ describe('decidePreSendCompact', () => {
 });
 
 describe('decidePostTurnCompact', () => {
+	it('decidePostTurnCompact - 回合未完成且超过阈值 - false', () => {
+		expect(
+			decidePostTurnCompact({
+				completed: false,
+				enabled: true,
+				percentage: 99,
+				circuitOpen: false,
+			}),
+		).toBe(false);
+	});
+
 	it('decidePostTurnCompact - 达阈值且启用 - true', () => {
 		expect(
 			decidePostTurnCompact({
+				completed: true,
 				enabled: true,
 				percentage: 85,
 				circuitOpen: false,
@@ -58,6 +70,7 @@ describe('decidePostTurnCompact', () => {
 	it('decidePostTurnCompact - 断路已开 - false', () => {
 		expect(
 			decidePostTurnCompact({
+				completed: true,
 				enabled: true,
 				percentage: 90,
 				circuitOpen: true,

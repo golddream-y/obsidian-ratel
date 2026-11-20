@@ -256,6 +256,7 @@ describe('agentLoop', () => {
 		}
 
 		const toolCallCount = events.filter((e) => e.type === 'tool.call').length;
+		expect(events.find((event) => event.type === 'message.end')?.payload.completed).toBe(false);
 		expect(toolCallCount).toBeLessThanOrEqual(5);
 		expect(events.some((e) => e.type === 'error' && e.payload.code === 'LLM_ERROR')).toBe(false);
 		expect(events.some((e) => e.type === 'message.delta' && e.payload.text.includes('这一轮步数用完了'))).toBe(true);
@@ -587,7 +588,7 @@ describe('agentLoop', () => {
 		const deltas = events.filter((e) => e.type === 'message.delta');
 		expect(deltas.length).toBeGreaterThanOrEqual(1);
 		expect(events.some((e) => e.type === 'error' && e.payload.code === 'CANCELLED')).toBe(true);
-		expect(events.some((e) => e.type === 'message.end')).toBe(true);
+		expect(events.find((event) => event.type === 'message.end')?.payload.completed).toBe(false);
 	});
 
 	it('取消 - 第一个工具内 abort - 不执行后续工具也不进下一轮 LLM', async () => {
@@ -1198,7 +1199,7 @@ describe('agentLoop', () => {
 		const ctx = new ContextManager(persistence, undefined, 8000);
 		const llm = createMockLLM([
 			[
-				{ text: 'hi' },
+				{ text: 'normal answer '.repeat(20) },
 				{ text: '', usage: { promptTokens: 10, completionTokens: 5 } },
 			],
 		]);
@@ -1219,7 +1220,7 @@ describe('agentLoop', () => {
 		expect(endEvent!.payload.completionTokens).toBe(5);
 	});
 
-	it('message.end - 多步流 step 字段为跨步累计总和', async () => {
+	it.each([true, false])('message.end - 末步报告用量=%s - 窗口用量与跨步消耗分别统计', async (reportsFinalUsage) => {
 		const persistence = createMockPersistence();
 		const ctx = new ContextManager(persistence, undefined, 8000);
 		const writeTool: Tool = {
@@ -1240,8 +1241,8 @@ describe('agentLoop', () => {
 				{ text: '', usage: { promptTokens: 10, completionTokens: 5 } },
 			],
 			[
-				{ text: 'done' },
-				{ text: '', usage: { promptTokens: 20, completionTokens: 8 } },
+				{ text: 'normal answer '.repeat(20) },
+				...(reportsFinalUsage ? [{ text: '', usage: { promptTokens: 20, completionTokens: 8 } }] : []),
 			],
 		]);
 		const hooks = new HookRegistry();
@@ -1255,10 +1256,11 @@ describe('agentLoop', () => {
 
 		const endEvent = events.find((e) => e.type === 'message.end') as
 			Extract<AgentEvent, { type: 'message.end' }> | undefined;
-		expect(endEvent!.payload.stepPromptTokens).toBe(30);
-		expect(endEvent!.payload.stepCompletionTokens).toBe(13);
-		expect(endEvent!.payload.promptTokens).toBe(20);
-		expect(endEvent!.payload.completionTokens).toBe(8);
+		expect(endEvent!.payload.completed).toBe(true);
+		expect(endEvent!.payload.stepPromptTokens).toBe(reportsFinalUsage ? 30 : 10);
+		expect(endEvent!.payload.stepCompletionTokens).toBe(reportsFinalUsage ? 13 : 5);
+		expect(endEvent!.payload.promptTokens).toBe(reportsFinalUsage ? 20 : undefined);
+		expect(endEvent!.payload.completionTokens).toBe(reportsFinalUsage ? 8 : undefined);
 	});
 
 	it('agentLoop - skipAddUserMessage true - 不重复追加 user', async () => {

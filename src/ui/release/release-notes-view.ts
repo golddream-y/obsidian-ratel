@@ -12,41 +12,26 @@ import type RatelVaultPlugin from '../../main';
 /** 工作区视图类型。注册后，升级时用新标签打开，而不是对话框。 */
 export const VIEW_TYPE_RELEASE_NOTES = 'ratel-release-notes';
 
-const USE_KEYS = [
-	'modal.release.use.find',
-	'modal.release.use.write',
-	'modal.release.use.workflow',
-	'modal.release.use.goal',
-] as const;
-
-const SETUP_KEYS = [
-	'modal.release.setup.provider',
-	'modal.release.setup.model',
-	'modal.release.setup.firstTask',
-] as const;
-
 /**
  * 拼出更新说明的 Markdown。标题用当前插件版本。
+ *
+ * 关键路径:条目正文是整段 i18n 文本(一行一条),发版时整段重写。
+ * 此前用固定槽位 key(use.find / setup.firstTask 等)逐条覆盖,漏改一个就会把上一版内容
+ * 残留在升级弹窗里,甚至出现两条一模一样的说明;整段重写不会有"漏掉某条"的可能。
  *
  * @param version - manifest.version
  * @param minAppVersion - manifest.minAppVersion
  * @returns 交给 MarkdownRenderer 的正文
  */
 export function buildReleaseNotesMarkdown(version: string, minAppVersion: string): string {
-	const uses = USE_KEYS.map((key) => `- ${tNow(key)}`).join('\n');
-	const setup = SETUP_KEYS.map((key, index) => `${index + 1}. ${tNow(key)}`).join('\n');
 	return [
 		`# ${tNow('modal.release.title', { version })}`,
 		'',
 		tNow('modal.release.lead'),
 		'',
-		`## ${tNow('modal.release.useHeading')}`,
+		tNow('modal.release.uses'),
 		'',
-		uses,
-		'',
-		`## ${tNow('modal.release.setupHeading')}`,
-		'',
-		setup,
+		tNow('modal.release.setup'),
 		'',
 		tNow('modal.release.permissions'),
 		'',

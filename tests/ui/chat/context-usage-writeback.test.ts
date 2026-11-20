@@ -25,14 +25,14 @@ describe('resolveApiUsedTokens', () => {
 		).toBe(1280);
 	});
 
-	it('resolveApiUsedTokens - 无最后一步只有各步合计 - 退回合计', () => {
+	it('resolveApiUsedTokens - 无最后一步只有各步合计 - 保留估算', () => {
 		expect(
 			resolveApiUsedTokens({
 				tokens: 0,
 				stepPromptTokens: 30000,
 				stepCompletionTokens: 400,
 			}),
-		).toBe(30400);
+		).toBeUndefined();
 	});
 
 	it('resolveApiUsedTokens - 无任何 usage - 返回 undefined', () => {

@@ -325,20 +325,6 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 		this.scanCompleted = true;
 		this.phaseValue = 'processing';
 		await this.drain();
-		// 关键路径:先把其余文件处理完,再回来重试延后的那些 —— 机器繁忙时它们不一定真坏。
-		// 最多重试 MAX_DEFERRED_PASSES 轮(单文件共 3 次),最后一轮仍失败即放弃。
-		for (let pass = 1; pass <= IndexThreadCoordinator.MAX_DEFERRED_PASSES; pass += 1) {
-			if (this.stopping || this.pausedValue || this.deferred.size === 0) break;
-			const isLastPass = pass === IndexThreadCoordinator.MAX_DEFERRED_PASSES;
-			this.retryPass = isLastPass;
-			for (const [deferredPath, op] of [...this.deferred]) {
-				// 关键路径:重试保持原操作 —— 删除失败若改成重写,会把已删文件重新嵌入。
-				this.queue.set(deferredPath, { op });
-			}
-			this.deferred.clear();
-			await this.drain();
-		}
-		this.retryPass = false;
 		// 关键路径(诊断):重启后是否复用完成记录,一眼看清 —— 跳过数应接近已索引篇数。
 		devLogger.info(
 			'index',
@@ -443,6 +429,7 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 			this.deleted.delete(filePath);
 			this.settleEstimate(filePath);
 		}
+		this.deferred.delete(filePath);
 		this.queue.set(filePath, { op });
 		this.phaseValue = this.pausedValue ? 'paused' : 'processing';
 	}
@@ -451,12 +438,31 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 	async drain(): Promise<void> {
 		if (!this.started) return;
 		if (this.loop !== null) return this.loop;
-		this.loop = this.runLoop();
+		this.loop = this.runWithDeferredRetries();
 		try {
 			await this.loop;
 		} finally {
 			this.loop = null;
 			this.refreshPhase();
+		}
+	}
+
+	/** 启动和增量共用有限重试，先处理其他文件，再回头处理延后的项目。 */
+	private async runWithDeferredRetries(): Promise<void> {
+		try {
+			await this.runLoop();
+			for (let pass = 1; pass <= IndexThreadCoordinator.MAX_DEFERRED_PASSES; pass += 1) {
+				if (this.destroyed || this.stopping || this.pausedValue || this.deferred.size === 0) break;
+				this.retryPass = pass === IndexThreadCoordinator.MAX_DEFERRED_PASSES;
+				for (const [path, op] of this.deferred) {
+					// 延后的操作不能覆盖等待期间收到的新事件。
+					if (!this.queue.has(path)) this.queue.set(path, { op });
+				}
+				this.deferred.clear();
+				await this.runLoop();
+			}
+		} finally {
+			this.retryPass = false;
 		}
 	}
 
@@ -564,7 +570,7 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 
 	/** 当前是否可标记 ready。 */
 	isReady(): boolean {
-		return this.scanCompleted && this.queue.size === 0 && this.activeCount === 0 && this.failing.size === 0;
+		return this.scanCompleted && this.queue.size === 0 && this.deferred.size === 0 && this.activeCount === 0 && this.failing.size === 0;
 	}
 
 	/** 暂停:停止调度新文件,在途文件跑完。 */
@@ -598,6 +604,7 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 		if (this.destroyed) return;
 		this.destroyed = true;
 		this.queue.clear();
+		this.deferred.clear();
 		void this.client.close('协调器销毁');
 	}
 
@@ -722,7 +729,7 @@ export class IndexThreadCoordinator implements IndexTaskCoordinatorPort {
 				} else if (!this.retryPass) {
 					// 关键路径:首轮失败先「延后」—— 继续处理其余文件,整轮结束后再回来重试,
 					// 期间不计入失败数。机器繁忙时单篇超时很常见,立刻判失败会让进度看起来卡死。
-					this.deferred.set(filePath, entry.op);
+					if (!this.destroyed && !this.queue.has(filePath)) this.deferred.set(filePath, entry.op);
 					this.recordFailureSample(filePath, message);
 				} else {
 					// 延后重试轮仍失败 → 最终失败,保留在失败集合里,不能当成已处理。

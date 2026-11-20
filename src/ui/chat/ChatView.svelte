@@ -233,14 +233,17 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 	let isUserNearBottom = $state(true);
 	const SCROLL_NEAR_BOTTOM_THRESHOLD = 80;
 	// 关键路径:合帧器 — 贴底写入与进度轨度量共用同一帧,流式期间每帧最多一次布局
-	let wantsBottomScroll = false;
+	let bottomScrollRequest: 'follow' | 'force' | null = null;
 	const layoutFrame = new FrameCoalescer(() => {
-		// 关键路径:先捕获并复位标志,el 未挂载提前 return 时也不残留到下一帧
-		const shouldScroll = wantsBottomScroll;
-		wantsBottomScroll = false;
+		const request = bottomScrollRequest;
+		bottomScrollRequest = null;
 		const el = messagesEl;
 		if (!el) return;
-		if (shouldScroll && isUserNearBottom) snapScrollToBottom(el);
+		// 修复:内容重排触发的滚动事件可能在此帧前更新贴底状态,显式回底仍须执行。
+		if (request === 'force' || (request === 'follow' && isUserNearBottom)) {
+			snapScrollToBottom(el);
+			isUserNearBottom = true;
+		}
 		updateNavMetrics(el);
 	});
 	// 关键路径:/compact 压缩进行中标志,控制 loading hint 显示
@@ -279,7 +282,7 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 	// 关键路径:sticky-to-bottom — 用户主动上滑时尊重浏览历史,只在用户处于底部时自动滚动
 	const scrollToBottom = () => {
 		if (!isUserNearBottom) return;
-		wantsBottomScroll = true;
+		bottomScrollRequest ??= 'follow';
 		layoutFrame.request();
 	};
 
@@ -303,7 +306,7 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 	/** 回底：恢复 sticky 并滚到最新。 */
 	function forceScrollToBottom() {
 		isUserNearBottom = true;
-		wantsBottomScroll = true;
+		bottomScrollRequest = 'force';
 		layoutFrame.request();
 	}
 
@@ -1241,15 +1244,18 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 	}
 
 	/** 从 persistence 重水合 compact 分隔(与 runCompactInChat 成功路径一致)。 */
-	async function rehydrateCompactMarkersInUi(targetSessionId: string): Promise<void> {
+	async function rehydrateCompactMarkersInUi(targetSessionId: string): Promise<number | undefined> {
 		if (targetSessionId !== sessionId) return;
 		const ctx = plugin.createContext();
 		await ctx.load(targetSessionId);
-		messages = await hydrateSessionMessages(ctx.getTranscript(), plugin.attachments, targetSessionId, {
+		const hydrated = await hydrateSessionMessages(ctx.getTranscript(), plugin.attachments, targetSessionId, {
 			markers: ctx.getCompactMarkers(),
 			resolveMcpServerLabel,
 		});
+		if (targetSessionId !== sessionId) return;
+		messages = hydrated;
 		lastCiteSearchResults = latestCiteSearchResults(messages);
+		return ctx.tokenCount();
 	}
 
 	async function runCompactInChat(opts: { auto: boolean }) {
@@ -1290,10 +1296,12 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 			// 关键路径:切场后只写 persistence,不把旧场 hydrate 进新场 UI
 			if (sessionId !== targetSessionId) return;
 			await ctx.load(targetSessionId);
-			messages = await hydrateSessionMessages(ctx.getTranscript(), plugin.attachments, targetSessionId, {
+			const hydrated = await hydrateSessionMessages(ctx.getTranscript(), plugin.attachments, targetSessionId, {
 				markers: ctx.getCompactMarkers(),
 				resolveMcpServerLabel,
 			});
+			if (sessionId !== targetSessionId) return;
+			messages = hydrated;
 			lastCiteSearchResults = latestCiteSearchResults(messages);
 			if (!opts.auto) {
 				new Notice(tNow('chat.compacted'), 2500);
@@ -1422,6 +1430,7 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 			}
 		}
 
+		const targetSessionId = sessionId;
 		// 策略 A:发送文本以 textarea 为准(含 @path 字面量);extractMentions 仅开发日志,零 readFile
 		const mentioned = extractMentions(text).filter(isSafeVaultMentionPath);
 		if (mentioned.length > 0) {
@@ -1432,7 +1441,7 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 			hasChatApiKey: hasChatApiKey(plugin.app, plugin.settings),
 		});
 		if (!currentGate.canSend) return;
-		plugin.breadcrumbs?.mark('send.enqueue', sessionId);
+		plugin.breadcrumbs?.mark('send.enqueue', targetSessionId);
 
 		const currentAttachments = get(attachmentStore).map((a) => ({
 			fileName: a.fileName,
@@ -1445,24 +1454,26 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 
 		// 关键路径:发送前先压 — 尚未 push 本条 user,符合 spec
 		let preCtx = plugin.createContext();
-		await preCtx.load(sessionId);
-		plugin.breadcrumbs?.mark('send.precheck', sessionId, preCtx.getTranscript().length);
-		const preUsage = preCtx.getContextUsage(maxTokens, attachmentTokens);
+		await preCtx.load(targetSessionId);
+		if (targetSessionId !== sessionId || switching || isRunning || isCompacting) return;
+		plugin.breadcrumbs?.mark('send.precheck', targetSessionId, preCtx.getTranscript().length);
+		const preSendTokens = preCtx.tokenCount() + attachmentTokens + estimateTokens(opts?.llmText ?? text);
+		const preSendPercentage = maxTokens > 0 ? Math.round((preSendTokens / maxTokens) * 100) : 0;
 		const willPreSendCompact = decidePreSendCompact({
 			enabled: plugin.settings.autoCompactEnabled !== false,
-			percentage: preUsage.percentage,
-			circuitOpen: compactCircuit.isOpen(sessionId),
+			percentage: preSendPercentage,
+			circuitOpen: compactCircuit.isOpen(targetSessionId),
 			isRunning,
 			isCompacting,
 		});
 		plugin.breadcrumbs?.mark(
 			'compact.decide',
-			sessionId,
-			`action=${willPreSendCompact ? 'summary' : 'none'};pct=${preUsage.percentage};used=${preUsage.usedTokens};max=${maxTokens};source=estimate`,
+			targetSessionId,
+			`action=${willPreSendCompact ? 'summary' : 'none'};pct=${preSendPercentage};used=${preSendTokens};max=${maxTokens};source=estimate`,
 		);
 		let compactPathTaken = false;
 		if (willPreSendCompact) {
-			plugin.breadcrumbs?.mark('send.compact', sessionId);
+			plugin.breadcrumbs?.mark('send.compact', targetSessionId);
 			await runCompactInChat({ auto: true });
 			compactPathTaken = true;
 		}
@@ -1471,8 +1482,10 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 			compactPathTaken,
 			preCtx,
 			() => plugin.createContext(),
-			sessionId,
+			targetSessionId,
 		);
+
+		if (targetSessionId !== sessionId || switching || isRunning || isCompacting) return;
 
 		const leadingSkill = matchLeadingSkill(text, slashSkills.map((skill) => skill.name));
 		let modelMessage = opts?.llmText;
@@ -1487,6 +1500,8 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 				}
 			}
 		}
+
+		if (targetSessionId !== sessionId || switching || isRunning || isCompacting) return;
 
 		// 关键路径:用 push + 从数组中取出 Proxy 引用,触发细粒度 DOM 更新
 		const wasEmpty = messages.length === 0;
@@ -1527,34 +1542,33 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 		// 与 MessageList 打字指示双重叠;model 状态只由 FeedbackController 维护。
 		let lastToolName: string | undefined;
 
-		// 第 1 层:send 前估算。估算不计工具正文,不能把上一轮接口真值盖成 0%。
-		const previousUsed = get(plugin.userStatus.contextUsage$).usedTokens;
-		const baselineUsed = Math.max(estimateMessagesTokens(messages), previousUsed);
+		// 按压缩后的投影，加上即将发送的正文与附件。
+		let baselineUsed = preCtx.tokenCount() + estimateTokens(modelMessage ?? text) + attachmentTokens;
 		plugin.userStatus.patchContextUsage({
 			usedTokens: baselineUsed,
 			maxTokens,
-			attachmentTokens,
+			attachmentTokens: 0,
 			source: 'estimate',
 		});
 
 		// 第 2 层:流式中累计 delta token
 		let streamingUsed = 0;
-		/** 本轮 API usage 真值(若有) — 轮后自动压校准用 */
-		let lastTurnApiTokens: number | null = null;
+		let postTurnUsedTokens: number | undefined;
+		let turnCompleted = false;
+		let turnFailed = false;
 
 		// 关键路径:用户发新消息,强制滚到底(忽略之前的手动上滑)
-		isUserNearBottom = true;
-		scrollToBottom();
+		forceScrollToBottom();
 
 		try {
 			// 关键路径(S-VISION v1.3):发送前 write-once 落盘,ask 只传 KB 级引用;
 			// base64 来自入队前拷贝的 currentAttachments,不读 pending 队列(队列已清空)
 			const refs: AttachmentRef[] = [];
 			for (const att of currentAttachments) {
-				refs.push(await plugin.attachments.save(sessionId, att));
+				refs.push(await plugin.attachments.save(targetSessionId, att));
 			}
 			const events = plugin.ask(
-				sessionId,
+				targetSessionId,
 				text,
 				ac.signal,
 				refs.length > 0 ? refs : undefined,
@@ -1562,17 +1576,20 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 					...(opts?.goalRound ? { goalRound: true } : {}),
 					...(modelMessage && modelMessage !== text ? { modelMessage } : {}),
 					preloadedContext: preCtx,
-					onRetryWait: handleRetryWait,
+					onRetryWait: (state) => {
+						if (targetSessionId === sessionId && abortController === ac) handleRetryWait(state);
+					},
 				},
 			);
 
 			for await (const event of events) {
+				if (targetSessionId !== sessionId || abortController !== ac) continue;
 				switch (event.type) {
 					case 'message.start':
 						if (event.payload.role === 'assistant') runStep += 1;
 						break;
 					case 'compact.applied': {
-						if (event.payload.sessionId !== sessionId) break;
+						if (event.payload.sessionId !== targetSessionId) break;
 						const inFlight =
 							am.role === 'assistant'
 								? {
@@ -1586,7 +1603,11 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 										...(typeof am.createdAt === 'number' ? { createdAt: am.createdAt } : {}),
 									}
 								: null;
-						await rehydrateCompactMarkersInUi(sessionId);
+						const compactedTokens = await rehydrateCompactMarkersInUi(targetSessionId);
+						if (compactedTokens === undefined || targetSessionId !== sessionId || abortController !== ac) break;
+						baselineUsed = compactedTokens + attachmentTokens;
+						streamingUsed = 0;
+						plugin.userStatus.patchContextUsage({ usedTokens: baselineUsed, source: 'estimate' });
 						if (inFlight) {
 							messages.push(inFlight);
 							am = messages[messages.length - 1] as Message;
@@ -1652,78 +1673,82 @@ import { goalRevision as goalRevisionStore } from '../goal/goal-revision';
 						break;
 					case 'message.end': {
 						llmRequestInFlight = false;
-						// 窗口占用看最后一步的输入+输出。各步合计是本轮消耗，会把同一段历史加很多次。
+						const {
+							completed,
+							tokens,
+							promptTokens,
+							completionTokens,
+							stepPromptTokens,
+							stepCompletionTokens,
+						} = event.payload;
+						postTurnUsedTokens = tokens;
+						turnCompleted = completed === true;
 						const apiUsed = resolveApiUsedTokens(event.payload);
-						if (apiUsed != null) {
-							lastTurnApiTokens = apiUsed;
+						if (apiUsed != null || stepPromptTokens != null || stepCompletionTokens != null) {
 							am.tokenUsage = {
-								promptTokens: event.payload.promptTokens ?? event.payload.stepPromptTokens ?? 0,
-								completionTokens: event.payload.completionTokens ?? event.payload.stepCompletionTokens ?? 0,
+								promptTokens: promptTokens ?? stepPromptTokens ?? 0,
+								completionTokens: completionTokens ?? stepCompletionTokens ?? 0,
 							};
-							plugin.userStatus.patchContextUsage({
-								usedTokens: apiUsed,
-								maxTokens: getEffectiveChatModelMaxTokens(plugin.settings),
-								source: 'api',
-							});
 						}
+						plugin.userStatus.patchContextUsage({
+							usedTokens: apiUsed ?? tokens,
+							maxTokens,
+							attachmentTokens: 0,
+							source: apiUsed == null ? 'estimate' : 'api',
+						});
 						sessionDirty = true;
 						void maybeGenerateTitle();
 						void refreshSessionIndex();
 						break;
 					}
 					case 'error':
+						turnFailed = true;
 						llmRequestInFlight = false;
 						handleAgentError(am, event.payload.code, event.payload.message, lastToolName);
 						break;
 				}
 			}
 		} catch (err) {
-			if (ac.signal.aborted) {
-				am.cancelled = true;
-			} else {
-				const message = err instanceof Error ? err.message : String(err);
-				handleAgentError(am, 'LLM_ERROR', message);
+			turnFailed = true;
+			if (targetSessionId === sessionId && abortController === ac) {
+				if (ac.signal.aborted) {
+					am.cancelled = true;
+				} else {
+					const message = err instanceof Error ? err.message : String(err);
+					handleAgentError(am, 'LLM_ERROR', message);
+				}
 			}
 		} finally {
-			clearRetryCountdown();
-			retryWait = null;
-			retryRemainingMs = 0;
-			isRunning = false;
-			llmRequestInFlight = false;
-			abortController = null;
-			scrollToBottom();
+			if (abortController === ac) {
+				clearRetryCountdown();
+				retryWait = null;
+				retryRemainingMs = 0;
+				isRunning = false;
+				llmRequestInFlight = false;
+				abortController = null;
+				if (targetSessionId === sessionId) scrollToBottom();
+			}
+		}
 
-			// 关键路径:整轮结束后自动压 — 不在流式中途插队
-			let postTurnPercentage: number;
-			let postTurnUsedTokens: number;
-			let postTurnSource: 'api' | 'estimate';
-			if (lastTurnApiTokens != null) {
-				postTurnUsedTokens = lastTurnApiTokens;
-				postTurnSource = 'api';
-				postTurnPercentage =
-					maxTokens > 0 ? Math.round((lastTurnApiTokens / maxTokens) * 100) : 0;
-			} else {
-				const postCtx = plugin.createContext();
-				await postCtx.load(sessionId);
-				const postUsage = postCtx.getContextUsage(maxTokens);
-				postTurnUsedTokens = postUsage.usedTokens;
-				postTurnPercentage = postUsage.percentage;
-				postTurnSource = 'estimate';
-			}
-			const willPostTurnCompact = decidePostTurnCompact({
-				enabled: plugin.settings.autoCompactEnabled !== false,
-				percentage: postTurnPercentage,
-				circuitOpen: compactCircuit.isOpen(sessionId),
-			});
-			plugin.breadcrumbs?.mark(
-				'compact.decide',
-				sessionId,
-				`action=${willPostTurnCompact ? 'summary' : 'none'};pct=${postTurnPercentage};used=${postTurnUsedTokens};max=${maxTokens};source=${postTurnSource}`,
-			);
-			if (willPostTurnCompact) {
-				plugin.breadcrumbs?.mark('send.compact', sessionId);
-				await runCompactInChat({ auto: true });
-			}
+		if (postTurnUsedTokens === undefined || targetSessionId !== sessionId || switching) return;
+
+		// 轮后判断看已落盘历史的出站投影，API 用量只反映刚完成的请求。
+		const postTurnPercentage =
+			maxTokens > 0 ? Math.round((postTurnUsedTokens / maxTokens) * 100) : 0;
+		const willPostTurnCompact = decidePostTurnCompact({
+			enabled: plugin.settings.autoCompactEnabled !== false,
+			percentage: postTurnPercentage,
+			completed: turnCompleted && !turnFailed && !ac.signal.aborted,
+			circuitOpen: compactCircuit.isOpen(targetSessionId),
+		});
+		plugin.breadcrumbs?.mark(
+			'compact.decide',
+			targetSessionId,
+			`action=${willPostTurnCompact ? 'summary' : 'none'};pct=${postTurnPercentage};used=${postTurnUsedTokens};max=${maxTokens};source=estimate`,
+		);
+		if (willPostTurnCompact) {
+			plugin.breadcrumbs?.mark('send.compact', targetSessionId);
+			await runCompactInChat({ auto: true });
 		}
 	}
 

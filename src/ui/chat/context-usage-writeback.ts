@@ -20,14 +20,11 @@ export type MessageEndPayload = {
  * 最后一步的输入加上该步输出，才是这一轮结束时窗口里的量。
  *
  * @param payload - message.end 的 payload
- * @returns 窗口占用；无任何 usage 时返回 undefined（调用方保留估算）
+ * @returns 窗口占用；最后一步未报告用量时返回 undefined（调用方使用估算）
  */
 export function resolveApiUsedTokens(payload: MessageEndPayload): number | undefined {
 	if (payload.promptTokens != null && payload.completionTokens != null) {
 		return payload.promptTokens + payload.completionTokens;
-	}
-	if (payload.stepPromptTokens != null && payload.stepCompletionTokens != null) {
-		return payload.stepPromptTokens + payload.stepCompletionTokens;
 	}
 	return undefined;
 }

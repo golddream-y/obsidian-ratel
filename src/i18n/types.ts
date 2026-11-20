@@ -735,17 +735,10 @@ export interface ModalStrings {
   'modal.mcpSpawn.cancel': string;
   'modal.release.title': string;
   'modal.release.lead': string;
-  'modal.release.useHeading': string;
-  'modal.release.use.find': string;
-  'modal.release.use.write': string;
-  'modal.release.use.workflow': string;
-  'modal.release.use.goal': string;
+  'modal.release.uses': string;
   'modal.release.permissions': string;
   'modal.release.requirements': string;
-  'modal.release.setupHeading': string;
-  'modal.release.setup.provider': string;
-  'modal.release.setup.model': string;
-  'modal.release.setup.firstTask': string;
+  'modal.release.setup': string;
   'modal.release.openSettings': string;
 }
 

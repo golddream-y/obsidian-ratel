@@ -40,6 +40,8 @@ export type AgentEvent =
 			type: 'message.end';
 			payload: {
 				tokens: number;
+				/** 末步正常给出回答，可继续执行轮后操作。 */
+				completed?: boolean;
 				promptTokens?: number;
 				completionTokens?: number;
 				/** F1:跨步累计 prompt tokens(向后兼容,优先于 promptTokens) */
